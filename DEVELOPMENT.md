@@ -153,9 +153,7 @@ only in GitHub Actions against the [development target](./README.md#version-comp
 installed chat compatibility. Other chat channels are outside this matrix.
 
 The integration uses the public
-[`before_tool_call.requireApproval` hook](https://docs.openclaw.ai/plugins/plugin-permission-requests),
-without protected Gateway APIs, generic MCP approval restoration, or changes to
-Git/GitHub authorization.
+[`before_tool_call.requireApproval` hook](https://docs.openclaw.ai/plugins/plugin-permission-requests).
 
 ## Coding Standards
 

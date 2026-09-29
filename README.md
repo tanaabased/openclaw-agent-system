@@ -45,12 +45,13 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ### Tools
 
-- [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
 - [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
 - [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
 - [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
-- [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
+- [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
+- [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
+- [`agent_system_model_routing`](./tools/model-routing/README.md) — Resolve model and effort candidates from the agent's profiles.
 
 ### Channels
 
@@ -58,13 +59,13 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ### CLI
 
-- [`openclaw agent-system validate`](./CLI.md#openclaw-agent-system-validate) — Validate the workspace manifest.
+- [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
+- [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
 - [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
 - [`openclaw agent-system install`](./CLI.md#openclaw-agent-system-install) — Apply configuration and dependency setup.
-- [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
-- [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
 - [`openclaw agent-system notifications`](./CLI.md#openclaw-agent-system-notifications) — Refresh and inspect GitHub assignments.
 - [`openclaw agent-system tool`](./CLI.md#openclaw-agent-system-tool) — Run a configured tool as the agent.
+- [`openclaw agent-system validate`](./CLI.md#openclaw-agent-system-validate) — Validate the workspace manifest.
 - [Complete CLI reference](./CLI.md) — All commands, options, and examples.
 
 ### Configuration
@@ -74,14 +75,15 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ### Skills
 
+- [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
 - [Doctor](./skills/doctor/SKILL.md) — Inspect readiness without applying repairs.
-- [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
 - [Git CLI](./skills/git-cli/SKILL.md) — Work with the agent's Git identity and policy.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Prepare, reuse, and remove managed worktrees.
-- [Google CLI](./skills/google-cli/SKILL.md) — Work through the agent's Google account.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Work through the agent's GitHub account.
 - [GitHub Update](./skills/github-update/SKILL.md) — Publish missing progress from a private notification session.
-- [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
+- [Google CLI](./skills/google-cli/SKILL.md) — Work through the agent's Google account.
+- [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
+- [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 
 ## Installation
 
@@ -111,6 +113,7 @@ For a development checkout, follow [Install from source](./DEVELOPMENT.md#instal
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
 | Unreleased           | 2026.9.5         | 2026.9.6           |
+| 0.7.0                | 2026.9.5         | 2026.9.6           |
 | 0.6.0                | 2026.9.2         | 2026.9.3           |
 | 0.5.3                | 2026.7.1         | 2026.7.2           |
 
@@ -197,12 +200,10 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-OpenClaw `install` prepares the agent's managed tools before running applicable
-setup, asks for confirmation interactively, and proceeds without a prompt in CI
-or with `--yes`. Doctor runs setup checks without applying changes. Use checks and
-repeatable applies to make subsequent installs safe; arbitrary setup effects are
-not rolled back. See [Setup](./MANIFEST.md#setup) for inline scripts, named steps,
-runtime filters, and cloning repositories with the agent's Git/GitHub identity.
+`install` runs host setup, prepares managed tools, then runs agent setup. It asks
+for consent interactively; CI or `--yes` runs unattended. Doctor runs setup
+checks without repairs. Make applies safe to repeat: earlier effects are not
+rolled back on failure. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See

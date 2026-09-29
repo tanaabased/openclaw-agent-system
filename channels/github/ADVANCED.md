@@ -1,8 +1,7 @@
 # GitHub Notifications Advanced Guide
 
-Complete configuration, command, and operational reference for the shipped
-GitHub notification channel. Start with the [README](./README.md) to configure
-and verify the common workflow. [Design](./DESIGN.md) describes the target lifecycle.
+Configuration, commands, and operations for the GitHub notification channel.
+Start with the [README](./README.md) for setup. [Design](./DESIGN.md) describes the target lifecycle.
 
 - [Configuration reference](#configuration-reference)
 - [CLI reference](#cli)
@@ -18,13 +17,13 @@ and verify the common workflow. [Design](./DESIGN.md) describes the target lifec
 
 Declare `github.notifications` in the workspace manifest; see the
 [complete example](./README.md#configuration) and shared
-[manifest rules](../../MANIFEST.md). All channel fields are listed below.
+[manifest rules](../../MANIFEST.md).
 
 | Field under `github.notifications` | Required | Default                 | Values                                   |
 | ---------------------------------- | -------- | ----------------------- | ---------------------------------------- |
-| `assignment-types`                 | no       | `[issue, pull-request]` | One or both kinds, without duplicates    |
-| `approved-actors`                  | yes      | none                    | Nonempty list of pinned user identities  |
 | `allowed-repository-owners`        | no       | any owner               | Nonempty list of pinned owner identities |
+| `approved-actors`                  | yes      | none                    | Nonempty list of pinned user identities  |
+| `assignment-types`                 | no       | `[issue, pull-request]` | One or both kinds, without duplicates    |
 | `initial-mode`                     | no       | `work`                  | `guided` or `work`                       |
 | `interval-minutes`                 | no       | `5`                     | Integer from `1` through `1440`          |
 | `max-concurrent-issues`            | no       | `2`                     | Positive integer                         |
@@ -61,11 +60,9 @@ github:
           node-id: REPLACE_WITH_REAL_GITHUB_NODE_ID
 ```
 
-Omitting `pull-request` or either field retains its default. This changes the
-default PR assignee from the issue author to the actor whose admitted assignment
-started the work; a missing actor identity fails delivery rather than falling
-back to the author. An interrupted handoff reuses its PR and reconciles only
-missing recipients, without re-requesting a submitted review.
+A missing assigning-actor identity fails delivery rather than falling back to
+the issue author. An interrupted handoff reuses its PR and adds only missing
+recipients, without re-requesting a submitted review.
 
 ### `agent_system_github_task_pr`
 
@@ -78,8 +75,8 @@ publishes terminally without a model tool call.
 
 | Parameter | Type   | Required | Default             | Description                   |
 | --------- | ------ | -------- | ------------------- | ----------------------------- |
-| `title`   | string | no       | current issue title | Title for a newly created PR. |
 | `body`    | string | no       | `Closes #<issue>`   | Body for a newly created PR.  |
+| `title`   | string | no       | current issue title | Title for a newly created PR. |
 
 #### Usage
 
@@ -99,9 +96,7 @@ not merge. It is unavailable outside a prepared issue-owned session.
 
 The response reports `status: linked` for the completed PR link and a
 `handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
-durable handoff is published, then `published` on a later call. Normal
-notification reconciliation completes the card and issue comment asynchronously;
-the tool does not run that turn itself.
+durable handoff is published, then `published` on a later call. The tool does not run the asynchronous handoff turn itself.
 
 ### `github.notifications.assignment-types`
 
@@ -203,6 +198,9 @@ notifications remain blocked until its required hooks are available.
 
 ## CLI
 
+Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
+operations return nonzero.
+
 `openclaw as` aliases `openclaw agent-system`. Bare `notifications` prints help.
 
 ### `openclaw agent-system notifications refresh`
@@ -214,11 +212,11 @@ Run one GitHub notification intake cycle immediately.
 | Option or argument             | Required             | Default             | Description                                                                  |
 | ------------------------------ | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
 | `--agent <id>`                 | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
-| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
+| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
 | `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
+| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
 | `--timeout <seconds>`          | no                   | `300`               | Positive integer bounding the complete refresh cycle.                        |
-| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
 
 #### Usage
 
@@ -242,9 +240,6 @@ timeout. If execution is busy or the wait ends, newly admitted items remain visi
 through `notifications status` and can resume on a later cycle. The CLI waits for
 any execution it starts to settle before exiting.
 
-Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
-operations return nonzero.
-
 ### `openclaw agent-system notifications status`
 
 Read durable notification state without advancing intake.
@@ -254,10 +249,10 @@ Read durable notification state without advancing intake.
 | Option or argument             | Required             | Default             | Description                                                                  |
 | ------------------------------ | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
 | `--agent <id>`                 | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
-| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
+| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
 | `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
-| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
+| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
 
 #### Usage
 
@@ -275,9 +270,6 @@ worktree, cleanup, scheduling state, and aggregate active, queued, and limit
 counts when available. Waiting items include a stable reason code. A durable
 monitor diagnostic returns `degraded` and a nonzero exit code.
 
-Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
-operations return nonzero.
-
 ### `openclaw agent-system notifications wait`
 
 Wait for one semantic notification checkpoint without parsing session history or presentation text.
@@ -287,13 +279,13 @@ Wait for one semantic notification checkpoint without parsing session history or
 | Option or argument             | Required             | Default             | Description                                                                  |
 | ------------------------------ | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
 | `--agent <id>`                 | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
-| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
+| `--for <target>`               | yes                  | none                | Select a supported lifecycle checkpoint below.                               |
+| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
 | `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
-| `--for <target>`               | yes                  | none                | Select a supported lifecycle checkpoint below.                               |
 | `--refresh`                    | no                   | off                 | Advance provider-owned intake while waiting.                                 |
+| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
 | `--timeout <seconds>`          | no                   | `300`               | Positive integer bounding the complete wait.                                 |
-| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
 
 #### Usage
 
@@ -316,17 +308,14 @@ Supported targets:
 
 | Target                | Selector required | Meaning                                       |
 | --------------------- | ----------------- | --------------------------------------------- |
-| `baseline-ready`      | no                | The first safe provider observation completed |
 | `assignment-rejected` | yes               | The selected assignment failed admission      |
+| `baseline-ready`      | no                | The first safe provider observation completed |
 | `prepared`            | yes               | Lifecycle-owned intake resources are ready    |
-| `worktree-ready`      | yes               | The selected issue worktree is ready          |
 | `retired`             | yes               | The selected assignment retired logically     |
+| `worktree-ready`      | yes               | The selected issue worktree is ready          |
 
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.
-
-Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
-operations return nonzero.
 
 ## Model routing
 
@@ -398,8 +387,6 @@ happens next. GitHub prose cannot select or elevate the configured mode.
 
 The channel also:
 
-- records existing assignments as a safe baseline during `install`, without
-  creating work for them
 - admits only configured assignment types, approved actors, eligible repository
   owners, and repositories where the agent has sufficient access
 - keeps approved issue and delivery pull-request comments in the issue-owned

@@ -71,7 +71,7 @@ jobs:
         uses: tanaabased/actions/publish-npm@v1
         with:
           tarball: ${{ steps.pack.outputs.tarball-path }}
-          update-prerelease-tag-on-stable: true
+          sync-edge-tag: true
           channel-token: ${{ secrets.TANAAB_NPM_DEPLOY }}
 
   release-clawhub:
@@ -122,7 +122,6 @@ jobs:
         with:
           tarball: ${{ steps.pack.outputs.tarball-path }}
           owner: tanaab
-          tags: ${{ github.event.release.prerelease && 'edge' || 'latest,edge' }}
           source-repo: ${{ github.repository }}
           source-commit: ${{ github.sha }}
           clawhub-token: ${{ secrets.TANAAB_LOBSTER_BOAT }}

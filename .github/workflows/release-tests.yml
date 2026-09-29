@@ -66,14 +66,13 @@ jobs:
         with:
           dry-run: true
           tarball: ${{ steps.pack.outputs.tarball-path }}
-          update-prerelease-tag-on-stable: true
+          sync-edge-tag: true
       - name: Validate ClawHub publisher
         uses: tanaabased/actions/publish-clawhub@v1
         with:
           dry-run: true
           tarball: ${{ steps.pack.outputs.tarball-path }}
           owner: tanaab
-          tags: edge
           source-repo: ${{ github.repository }}
           source-commit: ${{ github.event.pull_request.head.sha }}
           wait-timeout: 1800

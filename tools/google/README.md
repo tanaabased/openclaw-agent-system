@@ -18,9 +18,9 @@ Declare `google` in the workspace's `agent.yaml`:
 | --------------------- | ------------------------------------- | -------- | ------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `account`             | [ResolvableString](../../MANIFEST.md) | no       | `agent.email` | Expected Google account; an explicit value overrides the agent email. One must be declared and resolve to a Google email.   |
 | `credential-encoding` | `json` or `base64`                    | no       | `json`        | Representation of both OAuth JSON bindings. Base64 must be canonical, padded, single-line UTF-8 JSON; it is not encryption. |
+| `keyring-password`    | environment binding name              | yes      | none          | Nonempty password for this agent's encrypted file keyring.                                                                  |
 | `oauth-client`        | environment binding name              | yes      | none          | Complete downloaded Desktop OAuth client JSON.                                                                              |
 | `oauth-token`         | environment binding name              | yes      | none          | Complete GoG-exported refresh authorization JSON for this account.                                                          |
-| `keyring-password`    | environment binding name              | yes      | none          | Nonempty password for this agent's encrypted file keyring.                                                                  |
 
 ```yaml
 agent:
@@ -54,15 +54,15 @@ Only the three credential values need secret storage.
 
 | Variable or setting                                                | Required                       | Source and precedence                                                                                             | Default                                     | Store in 1Password? |
 | ------------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------- |
-| `GOG_CREDENTIALS_JSON_B64`                                         | yes, with the example bindings | Declared agent environment; decoded according to `credential-encoding`                                            | none                                        | yes                 |
-| `GOG_TOKEN_JSON_B64`                                               | yes, with the example bindings | Declared agent environment; must match the expected account and OAuth client                                      | none                                        | yes                 |
-| `GOG_KEYRING_PASSWORD`                                             | yes, with the example binding  | Declared agent environment; supplied only to explicit credential consumers and GoG child processes                | none                                        | yes                 |
-| `GOG_HOME`                                                         | no                             | Launching host environment wins over declared agent environment, then the derived per-agent home                  | private state root / agent ID / `tools/gog` | no                  |
 | `GOG_ACCOUNT`                                                      | no                             | Managed execution ignores inherited selection and supplies the resolved `google.account`, otherwise `agent.email` | resolved email                              | no                  |
-| `GOG_CLIENT`                                                       | no                             | Managed execution fixes the local label through `--client=agent-system`                                           | `agent-system`                              | no                  |
-| `GOG_KEYRING_BACKEND`                                              | no                             | Managed execution fixes the backend; inherited values cannot redirect it                                          | `file`                                      | no                  |
 | `GOG_AUTH_MODE`                                                    | no                             | Managed execution fixes the authentication mode                                                                   | `stored`                                    | no                  |
+| `GOG_CLIENT`                                                       | no                             | Managed execution fixes the local label through `--client=agent-system`                                           | `agent-system`                              | no                  |
 | `GOG_CONFIG_DIR`, `GOG_DATA_DIR`, `GOG_STATE_DIR`, `GOG_CACHE_DIR` | no                             | Derived for each managed generation or invocation; inherited overrides are discarded                              | private subdirectories                      | no                  |
+| `GOG_CREDENTIALS_JSON_B64`                                         | yes, with the example bindings | Declared agent environment; decoded according to `credential-encoding`                                            | none                                        | yes                 |
+| `GOG_HOME`                                                         | no                             | Launching host environment wins over declared agent environment, then the derived per-agent home                  | private state root / agent ID / `tools/gog` | no                  |
+| `GOG_KEYRING_BACKEND`                                              | no                             | Managed execution fixes the backend; inherited values cannot redirect it                                          | `file`                                      | no                  |
+| `GOG_KEYRING_PASSWORD`                                             | yes, with the example binding  | Declared agent environment; supplied only to explicit credential consumers and GoG child processes                | none                                        | yes                 |
+| `GOG_TOKEN_JSON_B64`                                               | yes, with the example bindings | Declared agent environment; must match the expected account and OAuth client                                      | none                                        | yes                 |
 
 Without a home override, Agent System uses
 `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/tools/gog` when `XDG_CONFIG_HOME`
@@ -281,13 +281,13 @@ for argument details.
 
 | Service  | Commands                                                                                                     |
 | -------- | ------------------------------------------------------------------------------------------------------------ |
-| Gmail    | `search`, `get`, `send`, `attachment`                                                                        |
 | Calendar | `events`, `event`, `calendars`, `create`, `update`, `delete`                                                 |
-| Drive    | `ls`, `search`, `get`, `upload`, `download`, `mkdir`, `copy`, `delete`, `rename`, `move`, `share`, `unshare` |
+| Contacts | `list`, `search`, `get`, `create`, `update`, `delete`                                                        |
 | Docs     | `info`, `cat`, `create`, `export`, `copy`, `insert`, `write`                                                 |
+| Drive    | `ls`, `search`, `get`, `upload`, `download`, `mkdir`, `copy`, `delete`, `rename`, `move`, `share`, `unshare` |
+| Gmail    | `search`, `get`, `send`, `attachment`                                                                        |
 | Sheets   | `get`, `update`, `append`, `clear`, `create`, `metadata`, `export`, `copy`                                   |
 | Slides   | `info`, `create`, `export`, `copy`, `list-slides`, `update-notes`, `insert-text`                             |
-| Contacts | `list`, `search`, `get`, `create`, `update`, `delete`                                                        |
 | Tasks    | `lists list`, `lists create`, `list`, `get`, `add`, `update`, `done`, `undo`, `delete`                       |
 
 Auth/config administration, account/client/home/credential overrides, alternate
@@ -318,8 +318,8 @@ authority and is suitable for bound scripts.
 
 | Option or argument | Required | Default | Description                                          |
 | ------------------ | -------- | ------- | ---------------------------------------------------- |
-| GoG arguments      | yes      | none    | Same canonical command surface as the native tool.   |
 | `--agent-system`   | no       | off     | Diagnostic used alone to identify the packaged shim. |
+| GoG arguments      | yes      | none    | Same canonical command surface as the native tool.   |
 
 ### Usage
 

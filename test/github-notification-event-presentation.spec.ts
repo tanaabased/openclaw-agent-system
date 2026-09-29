@@ -76,13 +76,15 @@ describe('channels/github/events/presentation', () => {
   });
 
   it('should render the pull request handoff for private and github surfaces', () => {
+    const input = {
+      issueNumber: 12,
+      pullRequestNumber: 45,
+      repositoryName: 'example',
+      repositoryOwner: 'tanaabased',
+    };
+    const privateText = githubNotificationPullRequestOpenedCard(input);
     assert.equal(
-      githubNotificationPullRequestOpenedCard({
-        issueNumber: 12,
-        pullRequestNumber: 45,
-        repositoryName: 'example',
-        repositoryOwner: 'tanaabased',
-      }),
+      privateText,
       [
         '## 🔀 Pull request opened',
         '',
@@ -91,12 +93,15 @@ describe('channels/github/events/presentation', () => {
         '- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
       ].join('\n'),
     );
-    const publicText = githubNotificationPullRequestHandoffComment(45);
+    const publicText = githubNotificationPullRequestHandoffComment(input);
+    assert.equal(publicText, privateText);
     assert.equal(
       githubNotificationPublicationText('pull-request-handoff', [{ text: publicText }]),
       publicText,
     );
-    assert.match(publicText, /Replies.*originated/u);
+    assert.throws(() =>
+      githubNotificationPullRequestHandoffComment({ ...input, pullRequestNumber: 0 }),
+    );
   });
 
   it('should select varied safe acknowledgments deterministically by assignment', () => {

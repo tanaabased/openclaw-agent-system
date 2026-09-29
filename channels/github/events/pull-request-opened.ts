@@ -12,7 +12,7 @@ interface GitHubNotificationPullRequestOpenedPresentationInput {
   repositoryOwner: string;
 }
 
-/** Render one trusted private card for an issue lifecycle's delivery pull request. */
+/** Render the shared card for an issue lifecycle's delivery pull request. */
 export function githubNotificationPullRequestOpenedCard(
   input: GitHubNotificationPullRequestOpenedPresentationInput,
 ): string {
@@ -42,17 +42,13 @@ export function githubNotificationPullRequestOpenedCard(
 }
 
 /** Render the deterministic issue comment that announces the delivery pull request. */
-export function githubNotificationPullRequestHandoffComment(pullRequestNumber: number): string {
-  if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) {
+export function githubNotificationPullRequestHandoffComment(
+  input: GitHubNotificationPullRequestOpenedPresentationInput,
+): string {
+  if (!Number.isSafeInteger(input.pullRequestNumber) || input.pullRequestNumber < 1) {
     throw new Error('GitHub notification pull request numbers must be positive safe integers.');
   }
-  return [
-    '## Pull request opened',
-    '',
-    `- **Pull request:** #${pullRequestNumber}`,
-    '- **Conversation:** Comments on this issue and its delivery pull request now continue in the same private work session.',
-    '- **Replies:** Each response is posted back to the issue or pull request where its comment originated.',
-  ].join('\n');
+  return githubNotificationPullRequestOpenedCard(input);
 }
 
 const githubNotificationPullRequestOpenedEvent = {

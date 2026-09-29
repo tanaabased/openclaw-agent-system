@@ -1,11 +1,8 @@
 # Codex
 
-Agent System's standalone Codex plugin provides workspace context, setup, and
-model routing from the shared `agent.yaml`. OpenClaw remains the primary
-integration; start with the [README](./README.md) for its full lifecycle.
-
-This guide covers standalone Codex. Codex running as an OpenClaw agent harness
-uses the OpenClaw integration and its managed tools instead.
+The standalone Codex plugin provides workspace context, setup, and model routing
+from `agent.yaml`. OpenClaw remains the [primary integration](./README.md);
+OpenClaw-hosted Codex uses that integration and its managed tools.
 
 ## Plugin Installation
 
@@ -53,11 +50,11 @@ Then use $agent-system-doctor to check readiness.
 Standalone Codex supports workspace context and [applicable setup steps](./MANIFEST.md#setup).
 Git and GitHub use native host commands and authorization.
 
+- [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
 - [Doctor](./skills/doctor/SKILL.md) — Inspect readiness without applying repairs.
-- [Install](./skills/install/SKILL.md) — Apply the workspace's Codex setup steps.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guide native host Git operations.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guide native host GitHub operations.
-- [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
+- [Install](./skills/install/SKILL.md) — Apply the workspace's Codex setup steps.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 
 ## Model Routing

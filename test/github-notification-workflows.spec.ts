@@ -424,7 +424,7 @@ describe('github notification workflows', () => {
     assert.match(source, /\.body \| contains\("Closes #"/u);
     assert.match(source, /index\("emoriwan"\) != null/u);
     assert.match(source, /agent-system-github-publication:pull-request-handoff/u);
-    assert.match(source, /contains\("## Pull request opened"\)/u);
+    assert.match(source, /contains\("## 🔀 Pull request opened"\)/u);
     assert.match(source, /agent-system-github-publication:github-reply/u);
     assert.match(source, /pr comment/u);
     assert.match(
@@ -460,7 +460,7 @@ describe('github notification workflows', () => {
     );
     assert.equal(source.match(/--for retired/gu)?.length, 2);
     assert.match(source, /if test -s "\$TMPDIR\/notification-ssh\.key-id"/u);
-    const handoffAssertionIndex = source.indexOf('## Pull request opened');
+    const handoffAssertionIndex = source.indexOf('## 🔀 Pull request opened');
     const replyAssertionIndex = source.indexOf('contains("@emoriwan")');
     const closureAssertionIndex = source.indexOf('--json mergedAt,state');
     const reopenAssertionIndex = source.indexOf('pr reopen "$pull_request_number"');

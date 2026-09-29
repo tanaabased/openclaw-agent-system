@@ -1,12 +1,9 @@
 # Global Configuration
 
 Set plugin-wide options under `plugins.entries.agent-system.config` in OpenClaw
-configuration. These settings belong to the operator; workspace declarations
-belong in the [manifest](./MANIFEST.md). Start with the [README](./README.md) for installation.
+configuration. Workspace declarations belong in the [manifest](./MANIFEST.md).
 
 ## `githubNotifications`
-
-Controls operator-wide GitHub notification intake limits.
 
 | Field                  | Type    | Required | Default | Description                                       |
 | ---------------------- | ------- | -------- | ------- | ------------------------------------------------- |
@@ -28,14 +25,14 @@ and command results are not cached.
 
 | Field             | Type    | Required | Default | Behavior                                                                               |
 | ----------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
-| `mode`            | string  | no       | `timed` | `off`, `timed`, or `process-lifetime`.                                                 |
 | `durationSeconds` | number  | no       | `300`   | Timed mode only; greater than zero, at most `4503599627370`.                           |
 | `maxEntries`      | integer | no       | `128`   | Maximum agent/workspace entries, from `1` to `1024`; oldest entries are evicted first. |
+| `mode`            | string  | no       | `timed` | `off`, `timed`, or `process-lifetime`.                                                 |
 
-Timed values expire after the configured duration from retrieval; cache hits do
-not extend it. Expiry refreshes values on demand, not an unchanged authenticated
-client. Process-lifetime mode retains values until invalidation, eviction, or
-exit. Off mode disables reuse between operations.
+`timed` values expire from retrieval time; cache hits do not extend expiry.
+Expired values refresh on demand without replacing an unchanged authenticated
+client. `process-lifetime` retains values until invalidation, eviction, or exit;
+`off` disables reuse between operations.
 
 ```bash
 # retain values for five hours
@@ -48,10 +45,8 @@ openclaw agent-system credentials cache status --json
 openclaw agent-system credentials cache flush --agent data --json
 ```
 
-Status requires `operator.read`; flush requires `operator.admin`. Both contact
-the running Gateway without reading 1Password. Status reports policy, occupancy,
-expiry, backoff, and usage counters without secrets. An unreachable or
-unauthorized Gateway returns an error.
+See [`status`](./CLI.md#openclaw-agent-system-credentials-cache-status) and
+[`flush`](./CLI.md#openclaw-agent-system-credentials-cache-flush) for Gateway permissions and output.
 
 Authorization and local credential/configuration changes are checked on each
 operation. Reload, agent removal, credential changes, flush, and shutdown

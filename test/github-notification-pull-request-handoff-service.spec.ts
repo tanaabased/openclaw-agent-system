@@ -90,6 +90,7 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         repositoryId: item.repositoryNodeId,
       });
       let state = createGitHubNotificationConversationState(agentId, workspaceDir);
+      let privateCard = '';
       const assignmentText = 'I reviewed the assignment and have a plan ready.';
       state.conversations[conversationId] = {
         assignmentResponse: {
@@ -185,6 +186,7 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
             assert.equal(input.messageId, 'pull-request-opened:PR_delivery');
             assert.equal(input.sourceId, 'PR_delivery');
             assert.equal(input.ctxPayload.Provider, githubNotificationChannelId);
+            privateCard = input.ctxPayload.Body ?? '';
             assert.match(input.ctxPayload.Body ?? '', /Pull request opened/u);
             assert.match(input.ctxPayload.Body ?? '', /originating item/u);
             assert.deepEqual(state.conversations[conversationId]?.activeTurn, {
@@ -202,6 +204,7 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
             assert.ok(handoff?.status === 'pending');
             assert.equal(input.target, handoff.target);
             assert.equal(input.text, handoff.publicText);
+            assert.equal(input.text, privateCard);
             return {
               receipt: { databaseId: 101, nodeId: 'IC_handoff' },
               status: 'published' as const,
