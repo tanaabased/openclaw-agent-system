@@ -71,7 +71,7 @@ jobs:
         uses: tanaabased/actions/publish-npm@v1
         with:
           tarball: ${{ steps.pack.outputs.tarball-path }}
-          update-prerelease-tag-on-stable: true
+          sync-edge-tag: true
           channel-token: ${{ secrets.TANAAB_NPM_DEPLOY }}
 
   release-clawhub:
