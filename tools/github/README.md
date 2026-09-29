@@ -4,9 +4,9 @@
   <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub CLI" width="180" />
 </p>
 
-The GitHub CLI tool runs ordinary noninteractive `gh` commands with the active
-agent's credential, isolated configuration, and operation policy. It is the
-preferred GitHub path when an Agent System workspace declares `github`.
+The GitHub CLI tool runs noninteractive `gh` commands with the active agent's
+credential, isolated configuration, and policy. Enable it through the workspace's
+`github` declaration.
 
 > [!IMPORTANT]
 > GitHub authorization and server-side protections are authoritative. Agent
@@ -15,13 +15,11 @@ preferred GitHub path when an Agent System workspace declares `github`.
 
 ## Overview
 
-One shared runtime provides three GitHub interfaces:
-
 | Interface                       | Purpose                                                      |
 | ------------------------------- | ------------------------------------------------------------ |
 | `agent_system_github`           | Model-facing OpenClaw tool                                   |
-| `openclaw agent-system tool gh` | Explicit operator command                                    |
 | `gh`                            | Packaged compatibility shim on supported agent command paths |
+| `openclaw agent-system tool gh` | Explicit operator command                                    |
 
 The model-facing tool uses the trusted active agent. Direct CLI and shell use are
 operator interfaces unless OpenClaw supplies an active-agent binding. Every
@@ -112,11 +110,11 @@ not hostile-process secret isolation.
 
 ### `github.policy`
 
-| Field                                                                          | Values          | Required | Default | Covers                                             |
-| ------------------------------------------------------------------------------ | --------------- | -------- | ------- | -------------------------------------------------- |
-| `releases`                                                                     | `allow`, `deny` | no       | `deny`  | Creating, editing, deleting, or uploading releases |
-| The default needs no manifest entry. Add the field only when this agent should |
-| be able to mutate releases:                                                    |
+| Field      | Values          | Required | Default | Covers                                             |
+| ---------- | --------------- | -------- | ------- | -------------------------------------------------- |
+| `releases` | `allow`, `deny` | no       | `deny`  | Creating, editing, deleting, or uploading releases |
+
+Enable release mutations only when the agent needs them:
 
 ```yaml
 github:
@@ -150,17 +148,18 @@ Agent System resolves the environment or token.
 
 ### `github.config`
 
-| Field                                                                             | Values                | Required | Default    |
-| --------------------------------------------------------------------------------- | --------------------- | -------- | ---------- |
-| `git-protocol`                                                                    | `ssh`, `https`        | no       | `ssh`      |
-| `color-labels`                                                                    | `enabled`, `disabled` | no       | `enabled`  |
-| `accessible-colors`                                                               | `enabled`, `disabled` | no       | `disabled` |
-| `spinner`                                                                         | `enabled`, `disabled` | no       | `enabled`  |
-| `telemetry`                                                                       | `enabled`, `disabled` | no       | `disabled` |
-| Agent System writes a token-free `config.yml` beneath a private per-agent state   |
-| directory and supplies it through `GH_CONFIG_DIR`. It never reads or modifies the |
-| operator's normal `~/.config/gh` configuration. The child environment also        |
-| disables prompts and editor launches and uses `cat` as its pager.                 |
+| Field               | Values                | Required | Default    |
+| ------------------- | --------------------- | -------- | ---------- |
+| `accessible-colors` | `enabled`, `disabled` | no       | `disabled` |
+| `color-labels`      | `enabled`, `disabled` | no       | `enabled`  |
+| `git-protocol`      | `ssh`, `https`        | no       | `ssh`      |
+| `spinner`           | `enabled`, `disabled` | no       | `enabled`  |
+| `telemetry`         | `enabled`, `disabled` | no       | `disabled` |
+
+Agent System writes a token-free `config.yml` beneath a private per-agent state
+directory and supplies it through `GH_CONFIG_DIR`. It never reads or modifies the
+operator's normal `~/.config/gh` configuration. The child environment also
+disables prompts and editor launches and uses `cat` as its pager.
 
 ### `github.ssh-keys`
 
@@ -203,8 +202,8 @@ Run ordinary GitHub CLI commands through the agent’s account and operation pol
 
 | Option or argument     | Required | Default             | Description                                                |
 | ---------------------- | -------- | ------------------- | ---------------------------------------------------------- |
-| `--agent <id>`         | no       | workspace discovery | Use the exact configured workspace for an installed agent. |
 | `-- <gh-arguments...>` | yes      | none                | Pass ordinary GitHub CLI arguments unchanged.              |
+| `--agent <id>`         | no       | workspace discovery | Use the exact configured workspace for an installed agent. |
 
 #### Usage
 

@@ -4,17 +4,16 @@
   <img src="../../skills/install/assets/icon-large.svg" alt="Agent System Install" width="180" />
 </p>
 
-Install reconciles the active agent's declared configuration and setup, including
-dependency installation and workspace configuration. It calls the same service
-as the operator CLI after OpenClaw grants one native chat approval.
+Install applies the active agent's configuration and setup after native chat
+approval, using the same service as the operator CLI.
 
 ## Overview
 
 | Interface                                                                     | Purpose                                          |
 | ----------------------------------------------------------------------------- | ------------------------------------------------ |
 | `agent_system_install`                                                        | Native tool for the active OpenClaw agent        |
-| [`openclaw agent-system install`](../../CLI.md#openclaw-agent-system-install) | Operator command                                 |
 | [Install skill](../../skills/install/SKILL.md)                                | Select the owning runtime and guide installation |
+| [`openclaw agent-system install`](../../CLI.md#openclaw-agent-system-install) | Operator command                                 |
 
 ## Requirements
 
@@ -41,10 +40,10 @@ for consent lifetime, cancellation, and supported chat surfaces.
 
 | Parameter          | Type    | Required | Default      | Description                                                                                          |
 | ------------------ | ------- | -------- | ------------ | ---------------------------------------------------------------------------------------------------- |
-| `skipSetup`        | boolean | no       | `false`      | Skip every setup check and apply; reconcile other components.                                        |
-| `skipSetupHost`    | boolean | no       | `false`      | Skip host setup checks and applies; reconcile other components.                                      |
-| `skipSetupAgent`   | boolean | no       | `false`      | Skip agent setup checks and applies; reconcile other components.                                     |
 | `rebuildCodexPath` | boolean | no       | `false`      | Replace the saved Codex PATH baseline with the invoking environment.                                 |
+| `skipSetup`        | boolean | no       | `false`      | Skip every setup check and apply; reconcile other components.                                        |
+| `skipSetupAgent`   | boolean | no       | `false`      | Skip agent setup checks and applies; reconcile other components.                                     |
+| `skipSetupHost`    | boolean | no       | `false`      | Skip host setup checks and applies; reconcile other components.                                      |
 | `timeoutMs`        | integer | no       | host default | OpenClaw-hosted Codex tool-call budget, from `1` through `600000` ms. Pass `600000` for ten minutes. |
 
 ### Usage
@@ -73,11 +72,10 @@ Replace the saved Codex PATH baseline:
 { "rebuildCodexPath": true, "timeoutMs": 600000 }
 ```
 
-The optional parameters may be combined. `skipSetup` takes precedence over
-either phase flag; both phase flags together have the same effect. The approval
-description identifies the selected setup scope and any requested PATH rebuild
-before execution. Skipped phases run no checks or applies. Managed components
-still reconcile and enforce their executable, credential, and identity checks.
+Combine parameters as needed. `skipSetup` skips both phases; setting both phase
+flags has the same effect. Approval shows the setup scope and any PATH rebuild.
+Skipped phases run no commands; other components still reconcile and enforce
+executable, credential, and identity checks.
 
 Omitting `timeoutMs` retains the host's default (90 seconds in OpenClaw-hosted
 Codex). This argument does not extend the two-minute approval window or

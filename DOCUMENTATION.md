@@ -10,22 +10,22 @@ boundaries, not a checklist of files to update; leave aligned documents unchange
 
 | Document                                                             | Owns                                                                                                                                                                                                        |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [README.md](./README.md)                                             | Product positioning, installation, version compatibility, the common manifest workflow, and first verification.                                                                                             |
-| [MANIFEST.md](./MANIFEST.md)                                         | Workspace manifest discovery, schema, setup, environment resolution, and path projection.                                                                                                                   |
-| [CLI.md](./CLI.md)                                                   | Common commands and execution boundaries.                                                                                                                                                                   |
-| [CONFIG.md](./CONFIG.md)                                             | Operator-owned OpenClaw plugin settings.                                                                                                                                                                    |
-| [CODEX.md](./CODEX.md)                                               | Standalone Codex installation, binding, context, setup, model routing, and development. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.                                               |
-| `tools/<capability>/README.md`                                       | Each tool's complete configuration, invocation, policy, lifecycle, and security guide.                                                                                                                      |
+| `.github/OPTIMIZATION.md`                                            | Repository-only audit guidance and accepted optimization decisions.                                                                                                                                         |
+| `AGENTS.md`                                                          | Essential repository constraints and required reading for conditional work.                                                                                                                                 |
+| [API.md](./API.md)                                                   | Public planning surface for the future cross-plugin Tool API; explicitly not yet available.                                                                                                                 |
+| [CHANGELOG.md](./CHANGELOG.md)                                       | Implemented changes.                                                                                                                                                                                        |
 | `channels/<provider>/README.md`                                      | Each channel's common setup, configuration example, verification, and essential limitations. Use a sibling `ADVANCED.md` as the first expansion for complete references and less-common operational detail. |
 | [channels/github/ADVANCED.md](./channels/github/ADVANCED.md)         | Shipped notification configuration and commands, model routing, processing, security, and upgrades.                                                                                                         |
 | [channels/github/DESIGN.md](./channels/github/DESIGN.md)             | Target notification message flow, lifecycle types, stable machine identifiers, modes, states, context boundaries, and publication behavior.                                                                 |
 | [channels/github/PRESENTATION.md](./channels/github/PRESENTATION.md) | Reusable human-visible notification components and styling; no lifecycle or feature behavior.                                                                                                               |
+| [CLI.md](./CLI.md)                                                   | Common commands and execution boundaries.                                                                                                                                                                   |
+| [CODEX.md](./CODEX.md)                                               | Standalone Codex installation, binding, context, setup, model routing, and development. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.                                               |
+| [CONFIG.md](./CONFIG.md)                                             | Operator-owned OpenClaw plugin settings.                                                                                                                                                                    |
 | [DEVELOPMENT.md](./DEVELOPMENT.md)                                   | OpenClaw source installation, DevGuard, runtime logging, validation, and coding standards.                                                                                                                  |
-| [API.md](./API.md)                                                   | Public planning surface for the future cross-plugin Tool API; explicitly not yet available.                                                                                                                 |
-| [CHANGELOG.md](./CHANGELOG.md)                                       | Implemented changes.                                                                                                                                                                                        |
 | `DOCUMENTATION.md`                                                   | Documentation ownership, change gates, and reference formats.                                                                                                                                               |
-| `AGENTS.md`                                                          | Essential repository constraints and required reading for conditional work.                                                                                                                                 |
-| `.github/OPTIMIZATION.md`                                            | Repository-only audit guidance and accepted optimization decisions.                                                                                                                                         |
+| [MANIFEST.md](./MANIFEST.md)                                         | Workspace manifest discovery, schema, setup, environment resolution, and path projection.                                                                                                                   |
+| [README.md](./README.md)                                             | Product positioning, installation, version compatibility, the common manifest workflow, and first verification.                                                                                             |
+| `tools/<capability>/README.md`                                       | Each tool's complete configuration, invocation, policy, lifecycle, and security guide.                                                                                                                      |
 
 Keep root summaries short and link to the owning tool or channel guide. Link shared
 manifest rules, such as model routing, instead of reproducing them. Use contextual
@@ -49,6 +49,10 @@ section in the work summary. If none applies, leave the document alone.
 - Stop expanding a documentation change when it would require a new ownership decision; propose that change separately. Do not edit the conventions merely to make an unrelated diff conform.
 
 ## Command References
+
+Alphabetize lookup tables by their identifying name or machine ID, ignoring
+Markdown formatting. Preserve chronological, precedence, and execution order
+where that order carries meaning.
 
 Keep explanatory code comments fully lowercase; preserve required casing in
 commands, identifiers, environment-variable names, and expected values.

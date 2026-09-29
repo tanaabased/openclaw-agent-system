@@ -54,16 +54,13 @@ The eventual versioned contract is expected to cover:
 | Surface                  | Purpose                                                     |
 | ------------------------ | ----------------------------------------------------------- |
 | API version              | Declare compatibility with the Agent System Tool API.       |
-| Tool id                  | Give the tool a stable diagnostic and ownership key.        |
-| Tool definitions         | Supply static model schemas and operation behavior.         |
 | Configuration projection | Validate and resolve the tool's manifest section.           |
 | Lifecycle contributions  | Add optional validation, doctor, and install behavior.      |
 | Runtime handle           | Request authorized execution and narrowly scoped resources. |
+| Tool definitions         | Supply static model schemas and operation behavior.         |
+| Tool id                  | Give the tool a stable diagnostic and ownership key.        |
 
-The concrete TypeScript imports and registration call are intentionally not
-documented yet: no supported public package export or OpenClaw cross-plugin
-runtime capability currently exists. Publishing example code before those
-boundaries are real would create an API that Agent System cannot support.
+No supported public import or registration call exists yet.
 
 ## Security Requirements
 

@@ -19,9 +19,8 @@ Choose the initial mode through `github.notifications.initial-mode`:
 | `guided` | Prepares the session and worktree, acknowledges the assignment, and waits for direction. |
 | `work`   | Assesses the issue, may publish a plan, and schedules one private implementation turn.   |
 
-Work proceeds toward a validated change and delivery pull request. Guided waits
-for direction. Approved issue and delivery pull-request comments continue in the
-same private session; GitHub prose cannot elevate the configured mode. See
+Approved issue and delivery pull-request comments continue in the same private
+session; GitHub prose cannot elevate the configured mode. See
 [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
 publication, and retirement behavior.
 

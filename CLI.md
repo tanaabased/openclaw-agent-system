@@ -8,22 +8,26 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 
 **Core commands**
 
-- [`openclaw agent-system validate`](#openclaw-agent-system-validate)
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
+- [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
 - [`openclaw agent-system backup verify`](#openclaw-agent-system-backup-verify)
+- [`openclaw agent-system credentials cache flush`](#openclaw-agent-system-credentials-cache-flush)
+- [`openclaw agent-system credentials cache status`](#openclaw-agent-system-credentials-cache-status)
+- [`openclaw agent-system credentials set op`](#openclaw-agent-system-credentials-set-op)
+- [`openclaw agent-system credentials unset op`](#openclaw-agent-system-credentials-unset-op)
+- [`openclaw agent-system credentials validate op`](#openclaw-agent-system-credentials-validate-op)
+- [`openclaw agent-system doctor`](#openclaw-agent-system-doctor)
 - [`openclaw agent-system env`](#openclaw-agent-system-env)
 - [`openclaw agent-system install`](#openclaw-agent-system-install)
-- [`openclaw agent-system doctor`](#openclaw-agent-system-doctor)
-- [`openclaw agent-system credentials set op`](#openclaw-agent-system-credentials-set-op)
-- [`openclaw agent-system credentials validate op`](#openclaw-agent-system-credentials-validate-op)
-- [`openclaw agent-system credentials unset op`](#openclaw-agent-system-credentials-unset-op)
-- [`openclaw agent-system credentials cache status`](#openclaw-agent-system-credentials-cache-status)
-- [`openclaw agent-system credentials cache flush`](#openclaw-agent-system-credentials-cache-flush)
+- [`openclaw agent-system tool`](#openclaw-agent-system-tool)
+- [`openclaw agent-system validate`](#openclaw-agent-system-validate)
 
 **Component commands**
 
-- [`openclaw agent-system notifications`](#openclaw-agent-system-notifications) — [GitHub channel](./channels/github/ADVANCED.md).
-- [`openclaw agent-system tool`](#openclaw-agent-system-tool) — [Git](./tools/git/README.md), [GitHub](./tools/github/README.md), and [Google](./tools/google/README.md) tools.
+- [`openclaw agent-system notifications`](#openclaw-agent-system-notifications) — GitHub notifications.
+- [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Git commands and managed worktrees.
+- [`openclaw agent-system tool gh`](./tools/github/README.md#cli) — GitHub CLI commands.
+- [`openclaw agent-system tool gog`](./tools/google/README.md#agent_system_google) — Google commands.
 
 ## `openclaw agent-system validate`
 
@@ -47,27 +51,29 @@ openclaw agent-system validate [--agent <id>] [--json]
 openclaw agent-system validate --json
 ```
 
-The result identifies the selected agent and workspace and reports the core and
-configured capability declarations that passed validation.
-
 ## `openclaw agent-system backup create`
 
 Capture selected workspace files and, by default, the selected agent's OpenClaw
-SQLite database in a private, verified `.tar.gz`. Other OpenClaw state and external
-sources are outside this per-agent archive.
+SQLite database in a private, verified `.tar.gz`.
+
+> [!TIP]
+> Backups can contain credentials and session data. If the destination is inside
+> your workspace, add it to `.gitignore`—for the default, use `.agent-system/backups/`.
+> Creation adds a local `.git/info/exclude` rule when needed; a committed
+> `.gitignore` rule also protects future clones.
 
 ### Options
 
 | Option or argument           | Required | Default                             | Description                                                                                    |
 | ---------------------------- | -------- | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `--agent <id>`               | no       | workspace discovery                 | Select an installed agent; operators only.                                                     |
-| `--output <directory>`       | no       | manifest or `.agent-system/backups` | Resolve relative destinations against the discovered workspace.                                |
-| `--openclaw-state <mode>`    | no       | manifest or `auto`                  | `auto` captures an existing agent database; `required` also fails if absent; `off` omits it.   |
+| `--dry-run`                  | no       | off                                 | Report settings and selection without writing any files, ignore rules, locks, or staging.      |
+| `--exclude <patterns...>`    | no       | manifest or `[]`                    | Repeatable globs applied last; replace the manifest list. `--exclude=` clears it.              |
 | `--git-ignore[=true\|false]` | no       | manifest or `false`                 | Bare flag means `true`; omission inherits the manifest.                                        |
 | `--include <patterns...>`    | no       | manifest or `[]`                    | Repeatable quoted workspace-relative globs; replace the manifest list. `--include=` clears it. |
-| `--exclude <patterns...>`    | no       | manifest or `[]`                    | Repeatable globs applied last; replace the manifest list. `--exclude=` clears it.              |
-| `--dry-run`                  | no       | off                                 | Report settings and selection without writing any files, ignore rules, locks, or staging.      |
 | `--json`                     | no       | off                                 | Write one structured result, including failures.                                               |
+| `--openclaw-state <mode>`    | no       | manifest or `auto`                  | `auto` captures an existing agent database; `required` also fails if absent; `off` omits it.   |
+| `--output <directory>`       | no       | manifest or `.agent-system/backups` | Resolve relative destinations against the discovered workspace.                                |
 
 ### Usage
 
@@ -91,11 +97,12 @@ openclaw agent-system backup create --json
 openclaw as backup create --exclude= --git-ignore=false
 ```
 
-Selection skips `**/node_modules/**`, `**/.npm/_cacache/**`, and `**/.eslintcache`.
-Optional Git-ignore runs before includes; excludes run last. Includes recover ignored
-files. Exact includes must exist, unmatched globs produce diagnostics, and selected
-special files fail. Git-ignore requires a repository and keeps tracked files.
-Patterns must be safe workspace-relative paths using `/`.
+Selection skips `**/node_modules/**`, `**/.npm/_cacache/**`, and
+`**/.eslintcache` unless explicitly included. Optional Git-ignore filtering runs before includes; excludes
+run last. Git-ignore requires a repository and retains tracked files. Includes
+can recover ignored files but cannot override mandatory exclusions. Use safe
+workspace-relative patterns with `/`: exact paths must exist, unmatched globs
+produce diagnostics, and selected special files fail.
 
 Default and selected destinations and `.agent-system/backup-staging` are always
 excluded, including path aliases. Exclude previous custom destinations explicitly.
@@ -105,27 +112,19 @@ Operators may choose local destinations. Bound callers cannot set `--agent` and
 may use only their workspace or configured external destination. Host-resolved
 workspaces inside OpenClaw state are supported, but destinations cannot contain
 the workspace or use runtime-only state or Git metadata. Git destinations must
-be untracked and ignored; creation adds a local `info/exclude` rule if needed.
+be untracked and ignored.
 
-Archives are private (`0600`) and published only after verification. A captured
-database appears as `openclaw-state/manifest.json` and
-`openclaw-state/database.sqlite`; the archive root also contains `manifest.json`
-and `workspace/`. OpenClaw resolves configured agent directories, captures
-committed WAL data, sanitizes transient lease rows, compacts its private copy,
-and verifies database ownership. Derived memory indexes and embeddings remain
-in the database for recovery; Agent System applies no table pruning and never
-copies the live database or its sidecars. `auto` records a genuinely absent
-database as absent, but capture
-or verification failures abort publication. `off` records an explicit omission.
-The root manifest records coverage, versions, snapshot metadata, and byte size.
+Verified archives use mode `0600` and contain `manifest.json`, `workspace/`,
+and, when captured, `openclaw-state/manifest.json` and
+`openclaw-state/database.sqlite`. The database snapshot includes committed WAL
+data, memory indexes, and embeddings. Capture or verification failures abort
+publication; `auto` records an absent database, while `off` records an omission.
+Inspect the root manifest for coverage, versions, and snapshot details.
 
-The database can contain sessions, transcripts, memory indexes, auth profiles,
-and plugin state. Treat the whole archive as full-state sensitive. Workspace
-files and the database are captured separately, without a cross-file atomic
-guarantee. Out-of-workspace sources and external memory backends remain outside
-coverage and are reported as limitations. Setup applies may create backups;
-checks may only preview or verify. Retention, uploads, and scheduling remain
-separate features.
+Workspace and database capture are not atomic together. Other OpenClaw state,
+out-of-workspace sources, and external memory backends are excluded. Setup
+applies may create backups; checks may only preview or verify. Retention,
+uploads, and scheduling are not provided.
 
 ## `openclaw agent-system backup verify`
 
@@ -136,9 +135,9 @@ workspace. Operators can verify an archive without an installed workspace.
 
 | Option or argument | Required | Default | Description                                                   |
 | ------------------ | -------- | ------- | ------------------------------------------------------------- |
-| `<archive>`        | yes      | none    | Local `.tar.gz` path, relative to the current directory.      |
 | `--agent <id>`     | no       | none    | Require this recorded agent identity; operators only.         |
 | `--json`           | no       | off     | Write one structured verification result, including failures. |
+| `<archive>`        | yes      | none    | Local `.tar.gz` path, relative to the current directory.      |
 
 ### Usage
 
@@ -171,10 +170,10 @@ inspection. Recovery does not register or activate the agent.
 
 | Option or argument     | Required | Default | Description                                                    |
 | ---------------------- | -------- | ------- | -------------------------------------------------------------- |
-| `<archive>`            | yes      | none    | Local backup archive path.                                     |
-| `--target <directory>` | yes      | none    | Absent or empty private recovery directory outside live state. |
 | `--agent <id>`         | no       | none    | Require this recorded agent identity.                          |
 | `--json`               | no       | off     | Write one structured result, including failures.               |
+| `--target <directory>` | yes      | none    | Absent or empty private recovery directory outside live state. |
+| `<archive>`            | yes      | none    | Local backup archive path.                                     |
 
 ### Usage
 
@@ -227,24 +226,23 @@ openclaw agent-system env [--agent <id>] [--json]
 openclaw agent-system env --agent tanaabot --json
 ```
 
-The result reports each variable’s name, winning source, required state, and
-override count without printing values.
+Output lists variable names, sources, required state, and override counts; values stay private.
 
 ## `openclaw agent-system install`
 
-Install the current workspace agent and reconcile its identity, models, memory, paths, configured capabilities, and setup steps for dependency installation and configuration.
+Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
 
 ### Options
 
 | Option or argument     | Required | Default | Description                                                                                          |
 | ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `--yes`                | no       | off     | Consent to setup without prompting.                                                                  |
-| `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
-| `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
-| `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
-| `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
-| `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
 | `--json`               | no       | off     | Write one undecorated structured result to stdout.                                                   |
+| `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
+| `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
+| `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
+| `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
+| `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
+| `--yes`                | no       | off     | Consent to setup without prompting.                                                                  |
 
 ### Usage
 
@@ -260,12 +258,12 @@ openclaw agent-system install
 openclaw agent-system install --yes --json
 ```
 
-All switches are boolean. `--skip-setup` skips both phases and takes precedence
-when combined with either phase flag; the two phase flags together have the
-same effect. Skipping one phase does not skip managed component reconciliation.
-`--skip-setup` takes precedence over consent.
+`--skip-setup` skips both phases regardless of consent; combining the two phase
+flags has the same effect. Other components still reconcile and enforce their
+executable, credential, and identity checks.
+
 Interactive installation previews applicable commands, shells, and timeouts on
-stderr. Declining or cancelling stops before any mutation. No applicable setup
+stderr. Declining or cancelling stops before mutation. No applicable setup
 means no prompt.
 
 Unattended consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
@@ -276,8 +274,6 @@ If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;
 rerun install after fixing the blocker. With `--json`, stdout contains one
 failure object with `status: "failed"`, `outcomes`, `blocked`, and `unattempted`.
-Skipping host setup never relaxes executable, credential, or live identity
-checks for components that still reconcile.
 
 > [!NOTE]
 > Environment flags accept trimmed, case-insensitive `1`, `true`, `yes`, or `on`.
@@ -366,8 +362,8 @@ Check the agent’s credential against every 1Password resource declared in its 
 | Option or argument | Required | Default             | Description                                                                         |
 | ------------------ | -------- | ------------------- | ----------------------------------------------------------------------------------- |
 | `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent.                 |
-| `--store <id>`     | no       | automatic           | Select `keychain`, `secret-service`, or `file`; see [storage](#credential-storage). |
 | `--from-env`       | no       | off                 | Validate only `OP_SERVICE_ACCOUNT_TOKEN` from the process environment.              |
+| `--store <id>`     | no       | automatic           | Select `keychain`, `secret-service`, or `file`; see [storage](#credential-storage). |
 
 ### Usage
 
@@ -459,42 +455,18 @@ Requires `operator.admin`. An unreachable or unauthorized Gateway fails; a
 local clear is not Gateway success. Flush does not reset provider backoff or
 quota. See [cache configuration](./CONFIG.md#opcache).
 
-## `openclaw agent-system notifications`
-
-Show help for the GitHub notification commands.
-
-### Options
-
-No command-specific options.
-
-### Usage
-
-```text
-openclaw agent-system notifications
-```
-
-```sh
-# list the available notification subcommands.
-openclaw agent-system notifications
-```
-
-The channel guide owns the complete command references:
-
-- [`openclaw agent-system notifications refresh`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-refresh)
-- [`openclaw agent-system notifications status`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-status)
-- [`openclaw agent-system notifications wait`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-wait)
-
 ## `openclaw agent-system tool`
 
-Run a registered tool command with an explicitly selected operator identity for administration, testing, or debugging. Agents use the corresponding native `agent_system_*` tool.
+Run a registered command as the selected agent. This is an operator interface;
+agents use the corresponding native `agent_system_*` tool.
 
 ### Options
 
 | Option or argument  | Required | Default             | Description                                                         |
 | ------------------- | -------- | ------------------- | ------------------------------------------------------------------- |
-| `<command>`         | yes      | none                | Select `git`, `gh`, `gog`, or `worktree`.                           |
-| `--agent <id>`      | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
 | `-- <arguments...>` | yes      | none                | Pass the remaining arguments to the selected command.               |
+| `--agent <id>`      | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
+| `<command>`         | yes      | none                | Use a **Command** value from the table below.                       |
 
 ### Usage
 
@@ -514,7 +486,30 @@ openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 | `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli)                 | [Packaged shim](./tools/github/README.md#shim)                     |
 | `agent_system_google`       | `gog`      | [Usage](./tools/google/README.md#agent_system_google) | [Packaged shim](./tools/google/README.md#gog-and-agent_system_gog) |
 
-Tool-specific arguments, policy, and routing behavior belong in the linked guide.
+## `openclaw agent-system notifications`
+
+Show help for the GitHub notification commands.
+
+### Options
+
+No command-specific options.
+
+### Usage
+
+```text
+openclaw agent-system notifications
+```
+
+```sh
+# list the available notification subcommands.
+openclaw agent-system notifications
+```
+
+Subcommands:
+
+- [`openclaw agent-system notifications refresh`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-refresh)
+- [`openclaw agent-system notifications status`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-status)
+- [`openclaw agent-system notifications wait`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-wait)
 
 ## Credential Storage
 

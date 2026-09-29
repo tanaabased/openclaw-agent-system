@@ -46,29 +46,22 @@ environment:
     NODE_ENV: development
 ```
 
-See [Configuration](#configuration) for core fields. Component-specific fields
-are listed below and documented by their owning guides.
-
 ## Component Configuration
 
 | Type    | ID                          | Manifest key           | Configuration                                                                    |
 | ------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
 | tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
 | tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
 | tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
 | tool    | `agent_system_google`       | `google`               | [Configuration reference](./tools/google/README.md#configuration)                |
-| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
 
-A manifest section opts the workspace into its capability. Tool IDs use
-underscores; the channel ID uses hyphens.
+Declare a component's manifest key to enable it.
 
 ## Configuration
 
-The workspace manifest declares the agent's desired state. `install` reconciles
-owned OpenClaw settings; credentials remain outside `openclaw.json`.
-[Global Configuration](./CONFIG.md) covers operator-owned plugin settings.
-
-A complete core configuration can contain:
+`install` applies declared state to owned OpenClaw settings; credentials remain
+outside `openclaw.json`. Core configuration example:
 
 ```yaml
 schema-version: 1
@@ -125,12 +118,12 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 
 | Field         | Type                               | Required      | Default                  | Behavior                                                         |
 | ------------- | ---------------------------------- | ------------- | ------------------------ | ---------------------------------------------------------------- |
+| `avatar`      | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw avatar is retained. |
+| `description` | string                             | no            | none                     | Agent description retained for configured consumers.             |
+| `email`       | string or `from-environment` value | no            | none                     | Agent email available to configured consumers.                   |
+| `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
 | `id`          | string                             | yes           | none                     | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
 | `name`        | string or `from-environment` value | for `install` | none                     | Agent display name applied to OpenClaw by `install`.             |
-| `email`       | string or `from-environment` value | no            | none                     | Agent email available to configured consumers.                   |
-| `description` | string                             | no            | none                     | Agent description retained for configured consumers.             |
-| `avatar`      | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw avatar is retained. |
-| `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:
@@ -157,13 +150,12 @@ Each profile requires both fields:
 
 | Field    | Type                         | Required | Default | Behavior                                                      |
 | -------- | ---------------------------- | -------- | ------- | ------------------------------------------------------------- |
-| `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
 | `effort` | `medium`, `high`, or `xhigh` | yes      | none    | Explicit profile effort, intersected with runtime support.    |
+| `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
 
-Model and effort values come from these profiles; the router has no built-in tier
-mapping or parser-supplied effort default. The shared [routing helper](./tools/model-routing/README.md)
-validates assessments and independent explicit selections. Its `inspect` result
-exposes `profiles.default` for configuration generators.
+The [routing helper](./tools/model-routing/README.md) validates assessments and
+explicit selections against these profiles; it has no built-in model or effort
+defaults. Configuration generators can read `profiles.default` from `inspect`.
 
 Model refs cannot select an authentication profile. Runtime and credential
 configuration remain outside the manifest.
@@ -202,9 +194,9 @@ required:
 
 | Field      | Type                      | Required | Default | Behavior                                                                  |
 | ---------- | ------------------------- | -------- | ------- | ------------------------------------------------------------------------- |
-| `provider` | `none`, `local`, `openai` | yes      | none    | Selects keyword-only, local embedding, or OpenAI embedding search.        |
-| `model`    | string                    | no       | none    | Overrides OpenClaw's embedding model; valid only with `openai`.           |
 | `api-key`  | environment name          | no       | none    | Reads one declared Agent System environment binding; valid with `openai`. |
+| `model`    | string                    | no       | none    | Overrides OpenClaw's embedding model; valid only with `openai`.           |
+| `provider` | `none`, `local`, `openai` | yes      | none    | Selects keyword-only, local embedding, or OpenAI embedding search.        |
 
 `install` sets the bound agent's provider and fallback, plus the optional model
 and API-key reference, while preserving other memory settings and agents. The
@@ -249,10 +241,10 @@ openclaw memory status --index --agent tanaabot
 | Field          | Type                    | Required | Default | Behavior                                                              |
 | -------------- | ----------------------- | -------- | ------- | --------------------------------------------------------------------- |
 | `dotenv`       | string or string list   | no       | none    | Ordered workspace-relative dotenv files.                              |
-| `set`          | string or `from-op` map | no       | none    | Explicit values merged over dotenv values.                            |
 | `op`           | string or string list   | no       | none    | Ordered 1Password Environment IDs merged after `set`.                 |
 | `path-prepend` | string or string list   | no       | none    | Ordered workspace-relative executable directories.                    |
 | `required`     | string list             | no       | none    | Names that fail complete environment resolution when absent or empty. |
+| `set`          | string or `from-op` map | no       | none    | Explicit values merged over dotenv values.                            |
 
 Schema-owned YAML keys use kebab-case. Environment names and user-defined
 identifiers remain literal and are never casing-converted. See
@@ -261,16 +253,16 @@ identifiers remain literal and are never casing-converted. See
 
 ### `backup`
 
-Optional defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
-Omit `backup` to use the defaults. Loading the manifest creates no backups.
+Defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
+Loading the manifest creates no backups.
 
 | Field                   | Type                         | Required | Default                 | Description                                                      |
 | ----------------------- | ---------------------------- | -------- | ----------------------- | ---------------------------------------------------------------- |
-| `backup.output`         | string                       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
-| `backup.git-ignore`     | boolean                      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
-| `backup.openclaw-state` | `auto`, `required`, or `off` | no       | `auto`                  | Capture an existing agent database, require it, or omit it.      |
-| `backup.include`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
 | `backup.exclude`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns applied last; exclusions win.   |
+| `backup.git-ignore`     | boolean                      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
+| `backup.include`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
+| `backup.openclaw-state` | `auto`, `required`, or `off` | no       | `auto`                  | Capture an existing agent database, require it, or omit it.      |
+| `backup.output`         | string                       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
 
 ```yaml
 backup:
@@ -292,9 +284,8 @@ backup-specific environment layer. Include/exclude options replace their manifes
 lists; `--include=` and `--exclude=` clear them. Includes cannot override mandatory
 exclusions. Exclude previous custom destinations explicitly.
 
-The selected agent's OpenClaw database is captured through OpenClaw's snapshot
-command when present. See the command reference for coverage, destination
-restrictions, permissions, selection rules, and diagnostics.
+See the [backup command](./CLI.md#openclaw-agent-system-backup-create) for coverage,
+destination restrictions, and sensitive-archive handling.
 
 ### Setup
 
@@ -311,9 +302,9 @@ make checks read-only and applies safe to repeat.
 
 | Top-level key | Type              | Required | Default | Behavior                                                                  |
 | ------------- | ----------------- | -------- | ------- | ------------------------------------------------------------------------- |
-| `setup-host`  | setup declaration | no       | none    | Runs before agent and managed-tool reconciliation.                        |
-| `setup-agent` | setup declaration | no       | none    | Runs after managed-tool prerequisites.                                    |
 | `setup`       | setup declaration | no       | none    | Deprecated fallback for `setup-agent`; ignored when `setup-agent` exists. |
+| `setup-agent` | setup declaration | no       | none    | Runs after managed-tool prerequisites.                                    |
+| `setup-host`  | setup declaration | no       | none    | Runs before agent and managed-tool reconciliation.                        |
 
 #### Syntax
 
@@ -358,11 +349,9 @@ workspace, not from the setup file's directory.
 | `check: [test, -d, repos]` / `apply: [mkdir, -p, repos]`            | Literal argument array, without shell parsing or expansion                    |
 | `apply: { command: mkdir, args: [-p, repos], timeout-seconds: 60 }` | Direct executable with optional arguments and timeout; also valid for `check` |
 
-Use `steps` for multiple operations in declaration order. String commands inherit
-its shell unless a step overrides it; direct commands ignore shell selection.
-Declare host preparation and agent setup separately; no per-step phase is needed.
-The manifest is validated before either section runs.
-This example assumes the referenced script exists:
+Use `steps` for ordered operations. Strings inherit the section's shell unless a
+step overrides it; direct commands ignore shell selection. The manifest is
+validated before either phase runs. This example requires `./scripts/dependencies`:
 
 ```yaml
 setup-host:
@@ -404,8 +393,8 @@ removed afterward:
 
 | Shell  | Invocation                                        |
 | ------ | ------------------------------------------------- |
-| `sh`   | `sh -e <script>`                                  |
 | `bash` | `bash --noprofile --norc -e -o pipefail <script>` |
+| `sh`   | `sh -e <script>`                                  |
 | `zsh`  | `zsh -f -e -o PIPE_FAIL <script>`                 |
 
 There are no custom shell wrappers or automatic login-shell selection. Every
@@ -498,13 +487,9 @@ responsibility. `validate` only validates declarations and never executes them.
 
 #### Agent identity and repository cloning
 
-For applicable OpenClaw setup, installation first runs `setup-host`, then
-establishes agent registration, managed paths, and configured Git/GitHub/Google
-tools, including declared GitHub SSH-key registration. Agent-bound setup runs next;
-remaining lifecycle components follow. Unavailable managed-tool prerequisites
-block agent-bound setup. `setup-host` can install host executables but
-cannot use managed agent credentials or tools. Stored 1Password access is checked
-before either setup section.
+OpenClaw installation checks stored 1Password access, runs `setup-host`, registers
+the agent and managed tools, then runs `setup-agent`. Missing managed-tool
+prerequisites block agent setup; remaining lifecycle components follow it.
 
 To clone as the agent, first declare its [Git identity and SSH
 keys](./tools/git/README.md#configuration-reference) and [GitHub username, token,
@@ -524,13 +509,10 @@ setup-agent:
         git clone git@github.com:your-org/project.git repos/project
 ```
 
-Replace `your-org/project` with the repository to clone. Managed `gh` uses the
-agent's token and verifies the declared `github.username`; managed `git` uses
-the agent's identity and SSH configuration. Both shell and direct commands use
-the same binding, policy, and working-directory boundaries, without falling
-back to the operator's tool identity. This does not switch OS accounts: the
-process still runs as the installing OS user. The example is OpenClaw-only
-because it relies on that integration's managed tools.
+Replace `your-org/project` with the target repository. Within agent scope,
+managed `gh` and `git` use the declared agent identities without operator-identity
+fallback. The process still runs as the installing OS user. This example requires
+OpenClaw's managed tools.
 
 ## Environment Resolution
 

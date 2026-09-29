@@ -4,22 +4,19 @@
   <img src="../../assets/git-icon-large.svg" alt="Agent System Git" width="180" />
 </p>
 
-The Git capability runs ordinary noninteractive `git` commands and manages
-durable worktrees with the active agent's declared identity, workspace, SSH
-configuration, and operation policy. It is the preferred Git path when an Agent
-System workspace declares `git`.
+The Git tools run noninteractive `git` commands and manage durable worktrees
+with the active agent's identity, SSH configuration, and policy. Enable them
+through the workspace's `git` declaration.
 
 ## Overview
-
-One shared runtime provides five Git interfaces:
 
 | Interface                             | Purpose                                                      |
 | ------------------------------------- | ------------------------------------------------------------ |
 | `agent_system_git`                    | Model-facing ordinary Git tool                               |
 | `agent_system_git_worktree`           | Model-facing managed-worktree tool                           |
+| `git`                                 | Packaged compatibility shim on supported agent command paths |
 | `openclaw agent-system tool git`      | Explicit operator Git command                                |
 | `openclaw agent-system tool worktree` | Explicit operator managed-worktree command                   |
-| `git`                                 | Packaged compatibility shim on supported agent command paths |
 
 Model-facing tools use the trusted active agent. Direct CLI and shell use are
 operator interfaces unless OpenClaw supplies an active-agent binding. Every
@@ -132,8 +129,8 @@ readiness.
 
 | Field                  | Type                    | Required | Default |
 | ---------------------- | ----------------------- | -------- | ------- |
-| `key`                  | environment binding     | yes      | none    |
 | `allowed-signers-file` | workspace-relative path | no       | none    |
+| `key`                  | environment binding     | yes      | none    |
 
 The presence of `git.signing` SSH-signs every commit and tag. `key` names one
 variable in the completed Agent System environment; it is never private-key
@@ -165,9 +162,9 @@ operation.
 
 | Field                | Type                                        | Required | Default                      |
 | -------------------- | ------------------------------------------- | -------- | ---------------------------- |
-| `root`               | path                                        | no       | `.agent-system/worktrees`    |
-| `repositories.root`  | path                                        | no       | `.agent-system/repositories` |
 | `repositories.local` | repository-id-to-authoritative-path mapping | no       | none                         |
+| `repositories.root`  | path                                        | no       | `.agent-system/repositories` |
+| `root`               | path                                        | no       | `.agent-system/worktrees`    |
 
 An empty object enables workspace-local managed repositories and worktrees.
 Custom roots and local repository overrides are optional:
@@ -222,12 +219,12 @@ while `doctor` checks the configured roots, ignore state, and local overrides.
 
 ### `git.policy`
 
-| Field                                                                           | Values          | Required | Default | Covers                                                        |
-| ------------------------------------------------------------------------------- | --------------- | -------- | ------- | ------------------------------------------------------------- |
-| `force-push`                                                                    | `allow`, `deny` | no       | `deny`  | `--force`, `-f`, `--force-with-lease`, and positive refspecs  |
-| `delete-remote-ref`                                                             | `allow`, `deny` | no       | `deny`  | `--delete`, `-d`, `--prune`, deletion refspecs, and mirroring |
-| The defaults need no manifest entry. Add only a field that this agent should be |
-| able to exercise; omitted fields remain denied:                                 |
+| Field               | Values          | Required | Default | Covers                                                        |
+| ------------------- | --------------- | -------- | ------- | ------------------------------------------------------------- |
+| `delete-remote-ref` | `allow`, `deny` | no       | `deny`  | `--delete`, `-d`, `--prune`, deletion refspecs, and mirroring |
+| `force-push`        | `allow`, `deny` | no       | `deny`  | `--force`, `-f`, `--force-with-lease`, and positive refspecs  |
+
+Omitted fields remain denied. Enable only the required remote effects:
 
 ```yaml
 git:
@@ -276,8 +273,8 @@ Run ordinary Git commands with the agent’s configured identity and policy.
 
 | Option or argument      | Required | Default             | Description                                                |
 | ----------------------- | -------- | ------------------- | ---------------------------------------------------------- |
-| `--agent <id>`          | no       | workspace discovery | Use the exact configured workspace for an installed agent. |
 | `-- <git-arguments...>` | yes      | none                | Pass ordinary Git arguments unchanged.                     |
+| `--agent <id>`          | no       | workspace discovery | Use the exact configured workspace for an installed agent. |
 
 #### Usage
 
@@ -307,10 +304,10 @@ Prepare or reuse a deterministic managed worktree.
 | Option or argument  | Required | Default                  | Description                                                                     |
 | ------------------- | -------- | ------------------------ | ------------------------------------------------------------------------------- |
 | `--agent <id>`      | no       | workspace discovery      | Use the exact configured workspace for an installed agent.                      |
+| `--clone-url <url>` | no       | saved or declared source | Provide the source for a new managed repository.                                |
+| `<base-ref>`        | yes      | none                     | Base ref; use a remote ref such as `origin/main` for the latest fetched branch. |
 | `<repository-id>`   | yes      | none                     | Select the managed repository or declared local override.                       |
 | `<work-id>`         | yes      | none                     | Stable work identity; prefer `<task-id>-<brief-kebab-case-description>`.        |
-| `<base-ref>`        | yes      | none                     | Base ref; use a remote ref such as `origin/main` for the latest fetched branch. |
-| `--clone-url <url>` | no       | saved or declared source | Provide the source for a new managed repository.                                |
 
 #### Usage
 
@@ -433,7 +430,5 @@ host fallback.
 - [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md): model-facing Git guidance
 - [Git worktree skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-worktree/SKILL.md): model-facing worktree guidance
 
-The Git logo is by [Jason Long](https://git-scm.com/downloads/logos) and is
-licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The
-packaged mark preserves the official geometry and uses the Agent System brand
-color.
+Git logo by [Jason Long](https://git-scm.com/downloads/logos), licensed under
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); recolored for Agent System.

@@ -13,8 +13,8 @@ OpenClaw grants one native chat approval.
 | Interface                                                                   | Purpose                                        |
 | --------------------------------------------------------------------------- | ---------------------------------------------- |
 | `agent_system_doctor`                                                       | Native tool for the active OpenClaw agent      |
-| [`openclaw agent-system doctor`](../../CLI.md#openclaw-agent-system-doctor) | Operator command; `status` is an alias         |
 | [Doctor skill](../../skills/doctor/SKILL.md)                                | Select the owning runtime and guide inspection |
+| [`openclaw agent-system doctor`](../../CLI.md#openclaw-agent-system-doctor) | Operator command; `status` is an alias         |
 
 ## Requirements
 
