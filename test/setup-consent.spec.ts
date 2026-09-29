@@ -68,24 +68,28 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
         installService: {
           async install(input) {
             assert.equal(input.runtime, 'openclaw');
-            events.push(input.skipSetup ? 'install:skip' : 'install:apply');
+            events.push(
+              input.skipSetupHost && input.skipSetupAgent ? 'install:skip' : 'install:apply',
+            );
             return {
               agentId: 'emori',
               workspaceDir: '/workspace',
-              outcomes: input.skipSetup
-                ? []
-                : [
-                    {
-                      component: 'setup',
-                      stepId: 'default',
-                      status: 'updated',
-                      code: 'setup-applied',
-                      message: 'Setup step default',
-                    },
-                  ],
-              warnings: input.skipSetup
-                ? [{ component: 'setup', code: 'setup-skipped', message: 'Setup skipped' }]
-                : [],
+              outcomes:
+                input.skipSetupHost && input.skipSetupAgent
+                  ? []
+                  : [
+                      {
+                        component: 'setup',
+                        stepId: 'default',
+                        status: 'updated',
+                        code: 'setup-applied',
+                        message: 'Setup step default',
+                      },
+                    ],
+              warnings:
+                input.skipSetupHost && input.skipSetupAgent
+                  ? [{ component: 'setup', code: 'setup-skipped', message: 'Setup skipped' }]
+                  : [],
             };
           },
         },
@@ -105,6 +109,22 @@ describe('cli/setup-consent', () => {
     assert.ok(preview.indexOf('setup-host: default') < preview.indexOf('setup-agent: default'));
     assert.match(preview, /host apply/u);
     assert.match(preview, /private-script/u);
+  });
+
+  it('should preview only the selected setup phase', async () => {
+    const host = normalizeAgentSetup({ check: 'host check', apply: 'host apply' });
+    assert.equal(host.status, 'valid');
+    if (host.status !== 'valid') return;
+    for (const selection of [
+      { skipSetupHost: true, skipped: 'host apply', included: 'private-script' },
+      { skipSetupAgent: true, skipped: 'private-script', included: 'host apply' },
+    ]) {
+      const test = fixture({ setupHost: host.setup, ...selection });
+      assert.equal(await confirmSetupInstall(test.options), true);
+      assert.deepEqual(test.events, ['prompt']);
+      assert.doesNotMatch(test.stderr.join(''), new RegExp(selection.skipped, 'u'));
+      assert.match(test.stderr.join(''), new RegExp(selection.included, 'u'));
+    }
   });
 
   it('should preview only applicable steps and require no prompt when none apply', async () => {

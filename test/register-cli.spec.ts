@@ -801,7 +801,14 @@ describe('cli/register', () => {
 
   it('should expose value-less setup switches and reject attached boolean values', async () => {
     for (const alias of ['agent-system', 'as']) {
-      for (const flag of ['--yes', '--non-interactive', '--skip-setup', '--rebuild-codex-path']) {
+      for (const flag of [
+        '--yes',
+        '--non-interactive',
+        '--skip-setup',
+        '--skip-setup-host',
+        '--skip-setup-agent',
+        '--rebuild-codex-path',
+      ]) {
         const { program, calls } = createProgram();
         await program.parseAsync(['node', 'openclaw', alias, 'install', flag]);
         assert.equal(calls.install.length, 1);
@@ -859,6 +866,8 @@ describe('cli/register', () => {
         ['install', '--yes'],
         ['install', '--non-interactive'],
         ['install', '--skip-setup'],
+        ['install', '--skip-setup-host'],
+        ['install', '--skip-setup-agent'],
         ['install', '--rebuild-codex-path'],
         ['doctor'],
         ['status', '--agent', 'tanaabot'],

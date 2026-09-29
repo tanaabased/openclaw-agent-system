@@ -3,6 +3,7 @@ import type SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import setupStepApplies from '../agent/setup-runtime.ts';
 import type { AgentSetupRuntime } from '../manifest/setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
+import { selectedSetupPhases, type InstallSetupOptions } from '../agent/install-options.ts';
 
 export interface AgentSystemLifecycleContext {
   manifest: AgentManifest;
@@ -67,8 +68,18 @@ export interface AgentSystemLifecycleReconcileResult {
   warnings: AgentSystemLifecycleWarning[];
 }
 
+export interface AgentSystemLifecycleWorkItem {
+  component: string;
+  stepId?: string;
+}
+
+export interface AgentSystemLifecycleProgress extends AgentSystemLifecycleReconcileResult {
+  unattempted: AgentSystemLifecycleWorkItem[];
+}
+
 export class AgentSystemLifecycleError extends Error {
   override name = 'AgentSystemLifecycleError';
+  readonly rawMessage: string;
 
   constructor(
     readonly component: string,
@@ -77,8 +88,10 @@ export class AgentSystemLifecycleError extends Error {
     options?: ErrorOptions,
     readonly providerDiagnostic?: ProviderDiagnostic,
     readonly stepId?: string,
+    readonly progress?: AgentSystemLifecycleProgress,
   ) {
     super(withProviderDiagnostic(message, providerDiagnostic), options);
+    this.rawMessage = message;
   }
 }
 
@@ -105,6 +118,16 @@ export interface AgentSystemLifecycleContribution {
     outcomes: readonly ContributionOutcome[];
     warnings?: readonly ContributionWarning[];
   }>;
+}
+
+type OrderedContribution = AgentSystemLifecycleContribution & { stepIds?: readonly string[] };
+
+function pendingWork(
+  contributions: readonly OrderedContribution[],
+): AgentSystemLifecycleWorkItem[] {
+  return contributions.flatMap(({ id, stepIds }) =>
+    stepIds ? stepIds.map((stepId) => ({ component: id, stepId })) : [{ component: id }],
+  );
 }
 
 /** Preserve registration order around the pre-agent and agent-bound setup boundaries. */
@@ -196,23 +219,45 @@ export default class AgentSystemLifecycleRegistry {
 
   async reconcile(
     context: AgentSystemLifecycleExecutionContext,
-    options: { skipSetup?: boolean } = {},
+    options: InstallSetupOptions = {},
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const outcomes: AgentSystemLifecycleOutcome[] = [];
     const warnings: AgentSystemLifecycleWarning[] = [];
-    for (const contribution of this.#ordered(context, options.skipSetup)) {
+    const ordered = this.#ordered(context, options);
+    for (const [index, contribution] of ordered.entries()) {
       context.signal?.throwIfAborted();
       await context.assertCurrent?.();
       let result;
       try {
         result = await contribution.reconcile?.(context);
       } catch (error) {
-        if (error instanceof AgentSystemLifecycleError) throw error;
+        const failure =
+          error instanceof AgentSystemLifecycleError
+            ? error
+            : new AgentSystemLifecycleError(
+                contribution.id,
+                `${contribution.id}-reconcile-failed`,
+                `The ${contribution.id} lifecycle state could not be reconciled.`,
+                { cause: error },
+              );
         throw new AgentSystemLifecycleError(
-          contribution.id,
-          `${contribution.id}-reconcile-failed`,
-          `The ${contribution.id} lifecycle state could not be reconciled.`,
-          { cause: error },
+          failure.component,
+          failure.code,
+          failure.rawMessage,
+          failure.cause === undefined ? undefined : { cause: failure.cause },
+          failure.providerDiagnostic,
+          failure.stepId,
+          {
+            outcomes: [...outcomes, ...(failure.progress?.outcomes ?? [])],
+            warnings: [...warnings, ...(failure.progress?.warnings ?? [])],
+            unattempted: [
+              ...(contribution.id === 'setup' && !failure.progress
+                ? pendingWork([contribution])
+                : []),
+              ...(failure.progress?.unattempted ?? []),
+              ...pendingWork(ordered.slice(index + 1)),
+            ],
+          },
         );
       }
       if (!result) continue;
@@ -231,10 +276,13 @@ export default class AgentSystemLifecycleRegistry {
 
   #ordered(
     context: AgentSystemLifecycleExecutionContext,
-    skipSetup = false,
-  ): AgentSystemLifecycleContribution[] {
+    options: InstallSetupOptions = {},
+  ): OrderedContribution[] {
     const configured = this.#configured(context.manifest);
-    if ((!context.manifest.setup && !context.manifest.setupHost) || skipSetup) return configured;
+    const { skipSetupHost, skipSetupAgent } = selectedSetupPhases(options);
+    const hostSteps = !skipSetupHost && (context.manifest.setupHost?.steps.length ?? 0) > 0;
+    const agentSteps = !skipSetupAgent && (context.manifest.setup?.steps.length ?? 0) > 0;
+    if (!hostSteps && !agentSteps) return configured;
     const setupLifecycle = this.setupLifecycle;
     if (!setupLifecycle) {
       throw new AgentSystemLifecycleError(
@@ -243,14 +291,12 @@ export default class AgentSystemLifecycleRegistry {
         'Setup execution is unavailable.',
       );
     }
-    const hostSteps = (context.manifest.setupHost?.steps.length ?? 0) > 0;
-    const agentSteps = (context.manifest.setup?.steps.length ?? 0) > 0;
     // These owners establish the identity, launchers, and credentials needed by agent-bound setup.
-    const prerequisiteIds = context.manifest.setup?.steps.some((step) =>
-      setupStepApplies(step, context.runtime),
-    )
-      ? ['agent', 'path', 'git', 'github', 'google']
-      : [];
+    const prerequisiteIds =
+      agentSteps &&
+      context.manifest.setup?.steps.some((step) => setupStepApplies(step, context.runtime))
+        ? ['agent', 'path', 'git', 'github', 'google']
+        : [];
     const prerequisites = prerequisiteIds.flatMap((id) =>
       configured.filter((entry) => entry.id === id),
     );
@@ -260,6 +306,7 @@ export default class AgentSystemLifecycleRegistry {
         ? [
             {
               id: 'setup',
+              stepIds: context.manifest.setupHost?.steps.map(({ id }) => id),
               isConfigured: () => true,
               inspect: () => setupLifecycle.inspect(context, 'host'),
               reconcile: () => setupLifecycle.reconcile(context, 'host'),
@@ -271,6 +318,7 @@ export default class AgentSystemLifecycleRegistry {
         ? [
             {
               id: 'setup',
+              stepIds: context.manifest.setup?.steps.map(({ id }) => id),
               isConfigured: () => true,
               inspect: () => setupLifecycle.inspect(context, 'agent'),
               reconcile: async (input: AgentSystemLifecycleExecutionContext) => {

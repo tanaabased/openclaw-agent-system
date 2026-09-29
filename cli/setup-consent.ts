@@ -8,16 +8,16 @@ import type {
   AgentSetupRuntime,
 } from '../manifest/setup-schema.ts';
 import setupStepApplies from '../agent/setup-runtime.ts';
+import { selectedSetupPhases, type InstallSetupOptions } from '../agent/install-options.ts';
 import type { CliOutput } from './output.ts';
 
-export interface SetupConsentOptions {
+export interface SetupConsentOptions extends InstallSetupOptions {
   runtime: AgentSetupRuntime;
   setup?: AgentSetupConfiguration;
   setupHost?: AgentSetupConfiguration;
   workspaceDir: string;
   yes?: boolean;
   nonInteractive?: boolean;
-  skipSetup?: boolean;
   environment?: Readonly<NodeJS.ProcessEnv>;
   input?: Readable;
   output: CliOutput;
@@ -37,15 +37,30 @@ function describeCommand(command: AgentSetupCommand): string {
 /** Ask before any install mutation; only this deliberate preview includes command text. */
 export default async function confirmSetupInstall(options: SetupConsentOptions): Promise<boolean> {
   if (!options.setup && !options.setupHost) return true;
-  if (options.skipSetup) {
+  const { skipSetupHost, skipSetupAgent } = selectedSetupPhases(options);
+  if (skipSetupHost && skipSetupAgent) {
     options.output.writeStderr(
       'Warning: setup was skipped; no setup checks or applies will run.\n',
     );
     return true;
   }
+  if (skipSetupHost && options.setupHost)
+    options.output.writeStderr(
+      'Warning: host setup was skipped; no host setup checks or applies will run.\n',
+    );
+  if (skipSetupAgent && options.setup)
+    options.output.writeStderr(
+      'Warning: agent setup was skipped; no agent setup checks or applies will run.\n',
+    );
   const applicable = [
-    ...(options.setupHost?.steps ?? []).map((step) => ({ step, stage: 'setup-host' })),
-    ...(options.setup?.steps ?? []).map((step) => ({ step, stage: 'setup-agent' })),
+    ...(!skipSetupHost ? (options.setupHost?.steps ?? []) : []).map((step) => ({
+      step,
+      stage: 'setup-host',
+    })),
+    ...(!skipSetupAgent ? (options.setup?.steps ?? []) : []).map((step) => ({
+      step,
+      stage: 'setup-agent',
+    })),
   ].filter(({ step }) => setupStepApplies(step, options.runtime));
   if (applicable.length === 0) return true;
   const environment = options.environment ?? process.env;

@@ -441,6 +441,8 @@ export default function registerAgentSystemCli(
     .option('--yes', 'Confirm setup without prompting.')
     .option('--non-interactive', 'Run without interactive prompts.')
     .option('--skip-setup', 'Skip all setup checks and applies with a warning.')
+    .option('--skip-setup-host', 'Skip host setup checks and applies with a warning.')
+    .option('--skip-setup-agent', 'Skip agent setup checks and applies with a warning.')
     .option(
       '--rebuild-codex-path',
       'Replace the saved Codex PATH baseline with this process environment.',
@@ -454,6 +456,8 @@ export default function registerAgentSystemCli(
         yes: install.opts().yes === true,
         nonInteractive: install.opts().nonInteractive === true,
         skipSetup: install.opts().skipSetup === true,
+        skipSetupHost: install.opts().skipSetupHost === true,
+        skipSetupAgent: install.opts().skipSetupAgent === true,
         rebuildCodexPath: install.opts().rebuildCodexPath === true,
         environment,
         ...(options.input ? { input: options.input } : {}),

@@ -332,6 +332,96 @@ describe('setup installation lifecycle', () => {
     assert.ok(calls.includes('setup:clone:check'));
   });
 
+  it('should select host and agent setup independently while keeping managed components active', async () => {
+    for (const selection of [
+      { options: { skipSetupHost: true }, host: false, agent: true },
+      { options: { skipSetupAgent: true }, host: true, agent: false },
+      { options: { skipSetupHost: true, skipSetupAgent: true }, host: false, agent: false },
+      { options: { skipSetup: true, skipSetupAgent: false }, host: false, agent: false },
+    ]) {
+      const { context, calls, install, ids } = fixture();
+      context.manifest.setupHost = {
+        steps: [
+          {
+            id: 'host-tools',
+            apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
+          },
+        ],
+      };
+      const result = await install.install({ ...context, ...selection.options });
+      assert.equal(
+        calls.some((call) => call.startsWith('pre-agent:')),
+        selection.host,
+      );
+      assert.equal(
+        calls.some((call) => call.startsWith('setup:')),
+        selection.agent,
+      );
+      assert.deepEqual(
+        calls
+          .filter((call) => call.startsWith('install:'))
+          .map((call) => call.slice(8))
+          .sort(),
+        [...ids].sort(),
+      );
+      assert.equal(
+        result.outcomes.some(({ stepId }) => stepId === 'host-tools'),
+        selection.host,
+      );
+      assert.equal(
+        result.outcomes.some(({ stepId }) => stepId === 'clone'),
+        selection.agent,
+      );
+    }
+  });
+
+  it('should converge agent setup and managed components when host setup is already provisioned', async () => {
+    const { context, calls, install } = fixture();
+    context.manifest.setupHost = {
+      steps: [
+        {
+          id: 'host-tools',
+          apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
+        },
+      ],
+    };
+    await install.install(context);
+    calls.length = 0;
+    const result = await install.install({ ...context, skipSetupHost: true });
+    assert.ok(!calls.some((call) => call.startsWith('pre-agent:')));
+    assert.ok(
+      result.outcomes.some(({ stepId, status }) => stepId === 'clone' && status === 'unchanged'),
+    );
+    assert.ok(
+      result.outcomes.some(
+        ({ component, status }) => component === 'agent' && status === 'unchanged',
+      ),
+    );
+  });
+
+  it('should retain completed setup steps and list later work on failure', async () => {
+    const { context, install, state } = fixture();
+    state.failedSetup = 'configure';
+    await assert.rejects(install.install(context), (error: unknown) => {
+      assert.ok(error instanceof Error && 'progress' in error);
+      const failure = error as {
+        progress: {
+          outcomes: Array<{ component: string; stepId?: string }>;
+          unattempted: Array<{ component: string; stepId?: string }>;
+        };
+      };
+      assert.ok(
+        failure.progress.outcomes.some(
+          ({ component, stepId }) => component === 'setup' && stepId === 'clone',
+        ),
+      );
+      assert.ok(failure.progress.outcomes.some(({ component }) => component === 'github'));
+      assert.ok(failure.progress.unattempted.some(({ component }) => component === 'models'));
+      assert.ok(!failure.progress.outcomes.some(({ stepId }) => stepId === 'configure'));
+      return true;
+    });
+  });
+
   it('should stop before setup when tool preparation fails', async () => {
     let commands = 0;
     const { context } = fixture();

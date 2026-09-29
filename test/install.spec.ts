@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import installAgentSystem from '../cli/install.ts';
-import type { AgentInstallResult } from '../agent/install-service.ts';
+import { AgentInstallError, type AgentInstallResult } from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { createCliStyles, type CliStyles } from '../cli/output.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
@@ -23,6 +23,8 @@ function createHarness(
     json?: boolean;
     manifest?: AgentManifestLoadResult;
     rebuildCodexPath?: boolean;
+    skipSetupHost?: boolean;
+    skipSetupAgent?: boolean;
     styles?: CliStyles;
     terminalColumns?: number;
   } = {},
@@ -86,6 +88,8 @@ function createHarness(
         },
         setExitCode: (code) => exitCodes.push(code),
         ...(options.rebuildCodexPath ? { rebuildCodexPath: true } : {}),
+        ...(options.skipSetupHost ? { skipSetupHost: true } : {}),
+        ...(options.skipSetupAgent ? { skipSetupAgent: true } : {}),
         styles: options.styles ?? createCliStyles({ NO_COLOR: '1' }),
         terminalColumns: options.terminalColumns,
         workspaceDir: '/current',
@@ -100,6 +104,13 @@ describe('cli/install', () => {
     await run();
 
     assert.equal(calls.install[0]?.rebuildCodexPath, true);
+  });
+
+  it('should forward individual setup selections', async () => {
+    const { calls, run } = createHarness({ skipSetupHost: true, skipSetupAgent: true });
+    await run();
+    assert.equal((calls.install[0] as { skipSetupHost?: boolean }).skipSetupHost, true);
+    assert.equal((calls.install[0] as { skipSetupAgent?: boolean }).skipSetupAgent, true);
   });
 
   it('should install a loaded workspace manifest and report completed outcomes', async () => {
@@ -369,7 +380,8 @@ describe('cli/install', () => {
 
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
-    assert.deepEqual(diagnostics, ['install: agent workspace conflict\n']);
+    assert.match(diagnostics.join(''), /install: agent workspace conflict/u);
+    assert.match(diagnostics.join(''), /Unattempted work: lifecycle/u);
   });
 
   it('should attribute lifecycle reconciliation failures to their component', async () => {
@@ -385,9 +397,67 @@ describe('cli/install', () => {
 
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
-    assert.deepEqual(diagnostics, [
-      'github: GitHub config reconciliation failed. code=github-config-reconcile-failed\n',
-    ]);
+    assert.match(
+      diagnostics.join(''),
+      /github: GitHub config reconciliation failed. code=github-config-reconcile-failed/u,
+    );
+    assert.match(diagnostics.join(''), /Unattempted work: lifecycle/u);
+  });
+
+  it('should report completed, blocked, and unattempted work in one json failure', async () => {
+    const error = new AgentSystemLifecycleError(
+      'google',
+      'google-tool_unavailable',
+      'Google requires gog on the host runtime PATH.',
+      undefined,
+      undefined,
+      undefined,
+      {
+        outcomes: [
+          {
+            component: 'agent',
+            code: 'agent-created',
+            status: 'created',
+            message: 'agent registered',
+          },
+        ],
+        warnings: [],
+        unattempted: [{ component: 'setup', stepId: 'agent-step' }],
+      },
+    );
+    const { diagnostics, exitCodes, output, run } = createHarness({
+      install: error,
+      json: true,
+      skipSetupHost: true,
+    });
+    await run();
+    assert.deepEqual(exitCodes, [1]);
+    const result = JSON.parse(output.join(''));
+    assert.equal(result.status, 'failed');
+    assert.deepEqual(
+      result.outcomes.map(({ component }: { component: string }) => component),
+      ['agent'],
+    );
+    assert.equal(result.blocked.component, 'google');
+    assert.equal(result.blocked.code, 'google-tool_unavailable');
+    assert.deepEqual(result.unattempted, [{ component: 'setup', stepId: 'agent-step' }]);
+    assert.equal(result.earlierChangesRemainApplied, true);
+    assert.match(result.hint, /Host setup was skipped/u);
+    assert.match(diagnostics.join(''), /Earlier completed changes remain applied/u);
+    assert.match(result.recovery, /blocking component may also have partial effects/u);
+  });
+
+  it('should keep preflight credential failures nonzero and structured', async () => {
+    const { exitCodes, output, run } = createHarness({
+      install: new AgentInstallError('Stored credential missing.', 'op-credential-not-stored'),
+      json: true,
+    });
+    await run();
+    assert.deepEqual(exitCodes, [1]);
+    const result = JSON.parse(output.join(''));
+    assert.equal(result.blocked.code, 'op-credential-not-stored');
+    assert.deepEqual(result.outcomes, []);
+    assert.deepEqual(result.unattempted, [{ component: 'lifecycle' }]);
   });
 
   it('should not install an invalid workspace manifest', async () => {
