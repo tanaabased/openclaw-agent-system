@@ -529,21 +529,7 @@ export default class GitHubNotificationIssueDeliveryService {
     const completed =
       reviewers.length === 0
         ? new Set<string>()
-        : logins(
-            await this.#github(
-              github,
-              [
-                'api',
-                `${pullEndpoint}/reviews`,
-                '--paginate',
-                '--slurp',
-                '--jq',
-                '[.[][]|select(.state != "PENDING")|.user.login]',
-              ],
-              input.signal,
-            ),
-            'completed reviewers',
-          );
+        : await this.#completedReviewers(github, pullEndpoint, input.signal);
     const missingReviewers = reviewers.filter(
       ({ login }) => !pending.has(login.toLowerCase()) && !completed.has(login.toLowerCase()),
     );
@@ -615,26 +601,38 @@ export default class GitHubNotificationIssueDeliveryService {
         ),
         'requested reviewers',
       );
-      const reviewed = logins(
-        await this.#github(
-          github,
-          [
-            'api',
-            `${pullEndpoint}/reviews`,
-            '--paginate',
-            '--slurp',
-            '--jq',
-            '[.[][]|select(.state != "PENDING")|.user.login]',
-          ],
-          input.signal,
-        ),
-        'completed reviewers',
-      );
+      const reviewed = await this.#completedReviewers(github, pullEndpoint, input.signal);
       for (const { login } of missingReviewers) {
         if (!requested.has(login.toLowerCase()) && !reviewed.has(login.toLowerCase()))
           throw new Error(`GitHub did not request review from ${login} on pull request ${number}.`);
       }
     }
+  }
+
+  async #completedReviewers(
+    github: Awaited<ReturnType<GitHubAccountClient['connect']>>,
+    pullEndpoint: string,
+    signal?: AbortSignal,
+  ): Promise<Set<string>> {
+    const pages = await this.#github(
+      github,
+      ['api', `${pullEndpoint}/reviews`, '--paginate', '--slurp'],
+      signal,
+    );
+    if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
+      throw new Error('GitHub returned invalid pull request review pages.');
+    }
+    const reviewers: string[] = [];
+    for (const page of pages) {
+      for (const value of page) {
+        const review = record(value, 'pull request review');
+        const state = requiredString(review.state, 'pull request review state', 32);
+        if (state === 'PENDING') continue;
+        const user = record(review.user, 'pull request reviewer');
+        reviewers.push(requiredString(user.login, 'pull request reviewer login', 100));
+      }
+    }
+    return logins(reviewers, 'completed reviewers');
   }
 
   async #githubStatus(

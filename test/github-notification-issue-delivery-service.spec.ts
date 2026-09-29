@@ -59,7 +59,7 @@ function serviceHarness(
     reviewers?: GitHubIdentityPin[];
     existingAssignees?: GitHubIdentityPin[];
     existingRequestedReviewers?: string[];
-    completedReviewers?: string[];
+    reviewPages?: Array<Array<{ state: string; user: { login: string } }>>;
     failReviewRequestOnce?: boolean;
     ineligibleAssignee?: string;
     ineligibleReviewer?: string;
@@ -181,7 +181,8 @@ function serviceHarness(
               return cliResult(JSON.stringify([...requestedReviewers]));
             }
             if (endpoint === 'repos/tanaabased/example/pulls/45/reviews') {
-              return cliResult(JSON.stringify(options.completedReviewers ?? []));
+              assert.deepEqual(argv, ['api', endpoint, '--paginate', '--slurp']);
+              return cliResult(JSON.stringify(options.reviewPages ?? [[]]));
             }
             throw new Error(`unexpected GitHub request: ${argv.join(' ')}`);
           },
@@ -314,7 +315,10 @@ describe('channels/github/conversation/issue-delivery-service', () => {
       assignees: [{ login: 'maintainer', nodeId: 'U_maintainer' }],
       reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
       existingAssignees: [{ login: 'pirog', nodeId: 'U_actor' }],
-      completedReviewers: ['reviewer'],
+      reviewPages: [
+        [{ state: 'PENDING', user: { login: 'codeowner' } }],
+        [{ state: 'APPROVED', user: { login: 'reviewer' } }],
+      ],
       existingRequestedReviewers: ['codeowner'],
       existingPullRequest: pullRequest(),
       remoteSha: originalSha,
@@ -342,6 +346,7 @@ describe('channels/github/conversation/issue-delivery-service', () => {
   it('should resume recipient reconciliation on the same pull request after a review request failure', async () => {
     const scenario = serviceHarness({
       reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
+      reviewPages: [[{ state: 'PENDING', user: { login: 'reviewer' } }]],
       failReviewRequestOnce: true,
       commitMessage: '#12: add fixture file\n',
       remoteSha: originalSha,
