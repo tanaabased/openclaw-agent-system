@@ -183,8 +183,9 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
       if (!refreshed.authorized) {
         throw handoffFailure('authorization', 'authority-revoked');
       }
+      let handoffStatus;
       try {
-        await services.handoff.checkpointTask({
+        handoffStatus = await services.handoff.checkpointTask({
           agentId: scope.agentId,
           item,
           pullRequest,
@@ -195,8 +196,9 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
         throw handoffFailure('checkpoint', 'checkpoint-failed');
       }
       return {
+        handoffStatus,
         number: pullRequest.pullRequestNumber,
-        status: 'linked-pending-handoff',
+        status: 'linked',
       };
     },
     id: 'github-task-pr',
@@ -208,7 +210,7 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
         summary: 'Create or link the current issue task pull request and reconcile recipients.',
       }),
       description:
-        'Create or link the current GitHub issue task PR on its managed branch. Applies configured assignees and reviewers and records the PR for issue-owned comment intake. Use instead of gh pr create for this task; never merges.',
+        'Create or link the current GitHub issue task PR on its managed branch. Applies configured assignees and reviewers and records the PR for issue-owned comment intake. Returns a handoff status snapshot; normal notification reconciliation completes the card and issue comment. Use instead of gh pr create for this task; never merges.',
       inputFromCommand: () => ({}),
       label: 'Publish Task PR',
       name: 'agent_system_github_task_pr',

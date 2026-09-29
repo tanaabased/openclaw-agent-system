@@ -125,7 +125,7 @@ export default class GitHubNotificationPullRequestHandoffService {
       GitHubNotificationPullRequestHandoffCheckpointInput,
       'executionSurface' | 'lifecycle'
     >,
-  ): Promise<void> {
+  ): Promise<'awaiting-reconciliation' | 'published'> {
     this.#validateInput(input);
     const current = await this.#dependencies.conversationStateStore.read(
       input.agentId,
@@ -155,7 +155,7 @@ export default class GitHubNotificationPullRequestHandoffService {
       if (conversation.implementation?.status !== 'completed') {
         throw new Error('Automatic Work delivery still owns this pull request handoff.');
       }
-      return;
+      return existing.handoff?.status === 'published' ? 'published' : 'awaiting-reconciliation';
     }
     const next = structuredClone(current);
     next.conversation!.implementation = { status: 'completed' };
@@ -167,6 +167,7 @@ export default class GitHubNotificationPullRequestHandoffService {
       status: 'open',
     };
     await this.#dependencies.conversationStateStore.write(next);
+    return 'awaiting-reconciliation';
   }
 
   async reconcile(input: GitHubNotificationPullRequestHandoffReconcileInput): Promise<void> {

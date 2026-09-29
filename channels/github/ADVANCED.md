@@ -97,6 +97,12 @@ session; the next notification reconciliation completes the ordinary
 `pull-request-opened` card, comment baseline, and issue handoff. The tool does
 not merge. It is unavailable outside a prepared issue-owned session.
 
+The response reports `status: linked` for the completed PR link and a
+`handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
+durable handoff is published, then `published` on a later call. Normal
+notification reconciliation completes the card and issue comment asynchronously;
+the tool does not run that turn itself.
+
 ### `github.notifications.assignment-types`
 
 Selects the assignment kinds the channel discovers. Direct pull-request

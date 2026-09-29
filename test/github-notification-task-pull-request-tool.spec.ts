@@ -48,6 +48,7 @@ describe('channels/github/publication/task-pull-request-tool', () => {
     let authorized = true;
     let failPublication = false;
     let failCheckpoint = false;
+    let handoffStatus: 'awaiting-reconciliation' | 'published' = 'awaiting-reconciliation';
     const dependencies: Parameters<typeof createGitHubNotificationTaskPullRequestTool>[0] = {
       conversations: {
         async readRouted() {
@@ -91,6 +92,7 @@ describe('channels/github/publication/task-pull-request-tool', () => {
                 pullRequestNodeId: 'PR_task',
                 pullRequestNumber: 45,
               });
+              return handoffStatus;
             },
           },
         }) as never,
@@ -144,8 +146,19 @@ describe('channels/github/publication/task-pull-request-tool', () => {
     assert.ok(tool && !Array.isArray(tool));
     const result = await tool.execute('call-1', { title: 'Ready for review' });
     assert.deepEqual((result.details as { output: unknown })?.output, {
+      handoffStatus: 'awaiting-reconciliation',
       number: 45,
-      status: 'linked-pending-handoff',
+      status: 'linked',
+    });
+    assert.deepEqual(calls, ['authorize', 'publish', 'authorize', 'checkpoint']);
+
+    calls.length = 0;
+    handoffStatus = 'published';
+    const retry = await tool.execute('call-published-retry', { title: 'Ready for review' });
+    assert.deepEqual((retry.details as { output: unknown })?.output, {
+      handoffStatus: 'published',
+      number: 45,
+      status: 'linked',
     });
     assert.deepEqual(calls, ['authorize', 'publish', 'authorize', 'checkpoint']);
 
