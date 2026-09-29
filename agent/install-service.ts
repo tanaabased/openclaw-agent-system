@@ -8,6 +8,7 @@ import type {
   AgentSystemLifecycleOutcome,
   AgentSystemLifecycleWarning,
 } from '../core/lifecycle-registry.ts';
+import { selectedSetupPhases, type InstallSetupOptions } from './install-options.ts';
 
 export interface AgentInstallResult {
   agentId: string;
@@ -21,9 +22,8 @@ export interface AgentInstallServiceDependencies {
   lifecycleRegistry: Pick<AgentSystemLifecycleRegistry, 'reconcile'>;
 }
 
-export interface AgentInstallInput extends AgentSystemLifecycleExecutionContext {
-  skipSetup?: boolean;
-}
+export interface AgentInstallInput
+  extends AgentSystemLifecycleExecutionContext, InstallSetupOptions {}
 
 export class AgentInstallError extends Error {
   override name = 'AgentInstallError';
@@ -61,19 +61,40 @@ export default class AgentInstallService {
       }
     }
 
-    const lifecycle = await this.#dependencies.lifecycleRegistry.reconcile(input, {
-      skipSetup: input.skipSetup === true,
-    });
+    const selection = selectedSetupPhases(input);
+    const lifecycle = await this.#dependencies.lifecycleRegistry.reconcile(input, selection);
     return {
       agentId: input.manifest.agent.id,
       outcomes: lifecycle.outcomes,
       warnings: [
-        ...(input.skipSetup && (input.manifest.setup || input.manifest.setupHost)
+        ...(selection.skipSetupHost &&
+        selection.skipSetupAgent &&
+        (input.manifest.setup || input.manifest.setupHost)
           ? [
               {
                 code: 'setup-skipped',
                 component: 'setup',
                 message: 'Setup was skipped; declared steps have not been verified or applied.',
+              },
+            ]
+          : []),
+        ...(!selection.skipSetupAgent && selection.skipSetupHost && input.manifest.setupHost
+          ? [
+              {
+                code: 'setup-host-skipped',
+                component: 'setup',
+                message:
+                  'Host setup was skipped; declared steps have not been verified or applied.',
+              },
+            ]
+          : []),
+        ...(!selection.skipSetupHost && selection.skipSetupAgent && input.manifest.setup
+          ? [
+              {
+                code: 'setup-agent-skipped',
+                component: 'setup',
+                message:
+                  'Agent setup was skipped; declared steps have not been verified or applied.',
               },
             ]
           : []),

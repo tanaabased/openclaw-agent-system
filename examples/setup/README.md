@@ -98,7 +98,7 @@ cd "$TMPDIR/setup-failures"
 touch block-later-check
 if openclaw as install --yes --json > "$TMPDIR/setup-failed.stdout" 2> "$TMPDIR/setup-failed.stderr"; then exit 1; fi
 grep -F 'setup-apply-failed' "$TMPDIR/setup-failed.stderr" | grep -F 'repair'
-test ! -s "$TMPDIR/setup-failed.stdout"
+jq -e '.status == "failed" and .blocked.stepId == "repair" and .earlierChangesRemainApplied and (.outcomes | any(.stepId == "preserved")) and (.unattempted | any(.stepId == "later"))' "$TMPDIR/setup-failed.stdout"
 if grep -F 'setup-private-output-sentinel' "$TMPDIR/setup-failed.stderr"; then exit 1; fi
 grep -F 'Setup Test Agent <setup-failures@example.invalid>' git-identity
 test "$(wc -l < preserved | tr -d ' ')" = 1
@@ -134,7 +134,7 @@ if ! grep -F 'setup-not-converged' "$TMPDIR/setup-nonconvergent.stderr" | grep -
   cat "$TMPDIR/setup-nonconvergent.stdout" "$TMPDIR/setup-nonconvergent.stderr" >&2
   exit 1
 fi
-test ! -s "$TMPDIR/setup-nonconvergent.stdout"
+jq -e '.status == "failed" and .blocked.stepId == "nonconvergent" and (.unattempted | any(.stepId == "forbidden"))' "$TMPDIR/setup-nonconvergent.stdout"
 test -f nonconvergent-applied
 test ! -e forbidden-later
 
@@ -149,7 +149,7 @@ if ! grep -F 'setup-apply-failed' "$TMPDIR/setup-timeout.stderr" | grep -F 'time
   cat "$TMPDIR/setup-timeout.stdout" "$TMPDIR/setup-timeout.stderr" >&2
   exit 1
 fi
-test ! -s "$TMPDIR/setup-timeout.stdout"
+jq -e '.status == "failed" and .blocked.stepId == "timeout" and (.unattempted | any(.stepId == "forbidden"))' "$TMPDIR/setup-timeout.stdout"
 test ! -e forbidden-later
 test ! -e timeout-survived
 
@@ -160,6 +160,17 @@ openclaw as install --yes --json | jq -e '[.outcomes[] | select(.component == "s
 openclaw as doctor --json | jq -e '.status == "healthy" and (.findings | any(.stepId == "default" and .code == "setup-not-applicable" and .status == "skipped"))'
 test ! -e forbidden-runtime-check
 test ! -e forbidden-runtime-apply
+
+# should run host setup while skipping agent setup and keeping managed components active
+cd "$TMPDIR/setup-tanaabot"
+openclaw as install --skip-setup-agent --yes --json | jq -e '(.warnings | any(.code == "setup-agent-skipped")) and (.outcomes | any(.stepId == "host-tools" and .status == "unchanged") and any(.component == "github") and all(.stepId == null or .stepId == "host-tools"))'
+test "$(wc -l < checked-runs | tr -d ' ')" = 1
+test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
+
+# should run agent setup while skipping host checks and applies
+cd "$TMPDIR/setup-tanaabot"
+openclaw as install --skip-setup-host --yes --json | jq -e '(.warnings | any(.code == "setup-host-skipped")) and (.outcomes | any(.stepId == "checkout" and .status == "unchanged") and any(.stepId == "repeatable" and .status == "updated") and all(.stepId != "host-tools"))'
+test "$(wc -l < unchecked-runs | tr -d ' ')" = 3
 ```
 
 ## Cleanup

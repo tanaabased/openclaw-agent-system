@@ -71,6 +71,11 @@ async function fixture() {
       },
     ],
     new SetupLifecycleService({
+      async runPreAgent(command, _target, signal) {
+        assert.equal(signal?.aborted, false);
+        calls.push(`host:${command.kind === 'shell' ? command.script : command.executable}`);
+        return { exitCode: 0, timedOut: false, truncated: false };
+      },
       async run(command, _target, signal) {
         assert.equal(signal?.aborted, false);
         calls.push(command.kind === 'shell' ? command.script : command.executable);
@@ -332,6 +337,42 @@ describe('agent/lifecycle-approval', () => {
     request.requireApproval.onResolution('allow-once');
     await f.approval.execute('agent_system_install', { skipSetup: true }, 'call', f.toolContext);
     assert.deepEqual(f.calls, ['credentials', 'reconcile']);
+  });
+
+  it('should bind individual setup phases to approval and execution', async () => {
+    for (const params of [{ skipSetupHost: true }, { skipSetupAgent: true }]) {
+      const f = await fixture();
+      await writeFile(
+        join(f.root, 'agent.yaml'),
+        `${manifest}\nsetup-host:\n  steps:\n    - id: host\n      apply: host-approved\n`,
+      );
+      const request = await f.request('agent_system_install', params, f.context);
+      assert.match(
+        request.requireApproval.description,
+        params.skipSetupHost ? /skip host setup/u : /skip agent setup/u,
+      );
+      request.requireApproval.onResolution('allow-once');
+      await f.approval.execute('agent_system_install', params, 'call', f.toolContext);
+      assert.equal(
+        f.calls.some((call) => call.startsWith('host:')),
+        params.skipSetupAgent === true,
+      );
+      assert.equal(f.calls.includes('check-approved'), params.skipSetupHost === true);
+      f.controller.abort();
+    }
+  });
+
+  it('should require fresh approval when the selected setup phase changes', async () => {
+    const f = await fixture();
+    const first = await f.request('agent_system_install', { skipSetupHost: true }, f.context);
+    first.requireApproval.onResolution('allow-once');
+    await f.request('agent_system_install', { skipSetupAgent: true }, f.context);
+    await assert.rejects(
+      f.approval.execute('agent_system_install', { skipSetupHost: true }, 'call', f.toolContext),
+      { code: 'approval_denied' },
+    );
+    assert.deepEqual(f.calls, []);
+    f.controller.abort();
   });
 
   it('should bind a Codex PATH rebuild to the approved install', async () => {

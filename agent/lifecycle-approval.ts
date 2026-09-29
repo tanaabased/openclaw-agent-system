@@ -5,6 +5,7 @@ import { Value } from 'typebox/value';
 
 import type AgentDoctorService from './doctor-service.ts';
 import type AgentInstallService from './install-service.ts';
+import { selectedSetupPhases, type InstallSetupOptions } from './install-options.ts';
 import setupStepApplies from './setup-runtime.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -23,7 +24,8 @@ interface PendingOperation {
   loaded: LoadedManifest;
   rebuildCodexPath: boolean;
   workspaceDir: string;
-  skipSetup: boolean;
+  skipSetupHost: boolean;
+  skipSetupAgent: boolean;
   allowed: boolean;
   signals: Set<AbortSignal>;
   expiresAt: number;
@@ -82,7 +84,7 @@ export default class AgentLifecycleApproval {
     context.abortSignal?.throwIfAborted();
     const operation = name === 'agent_system_install' ? 'Install' : 'Doctor';
     const rebuildCodexPath = 'rebuildCodexPath' in params && params.rebuildCodexPath === true;
-    const skipSetup = 'skipSetup' in params && params.skipSetup === true;
+    const selection = selectedSetupPhases(params as InstallSetupOptions);
     // Codex can revisit the hook between native approval and dynamic tool execution.
     if (
       previous?.allowed &&
@@ -93,7 +95,8 @@ export default class AgentLifecycleApproval {
       loaded.path === previous.loaded.path &&
       workspaceDir === previous.workspaceDir &&
       rebuildCodexPath === previous.rebuildCodexPath &&
-      skipSetup === previous.skipSetup
+      selection.skipSetupHost === previous.skipSetupHost &&
+      selection.skipSetupAgent === previous.skipSetupAgent
     ) {
       if (context.abortSignal) {
         previous.signals.add(context.abortSignal);
@@ -102,13 +105,19 @@ export default class AgentLifecycleApproval {
       return {};
     }
     previous?.dispose();
-    const steps = skipSetup
-      ? []
-      : [
-          ...(loaded.manifest.setupHost?.steps ?? []),
-          ...(loaded.manifest.setup?.steps ?? []),
-        ].filter((step) => setupStepApplies(step, 'openclaw'));
-    const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : skipSetup ? 'Reconcile configured state; skip setup.' : 'Reconcile configured state and run declared setup checks and applies.'}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
+    const steps = [
+      ...(!selection.skipSetupHost ? (loaded.manifest.setupHost?.steps ?? []) : []),
+      ...(!selection.skipSetupAgent ? (loaded.manifest.setup?.steps ?? []) : []),
+    ].filter((step) => setupStepApplies(step, 'openclaw'));
+    const setupScope =
+      selection.skipSetupHost && selection.skipSetupAgent
+        ? 'skip setup'
+        : selection.skipSetupHost
+          ? 'skip host setup; run agent setup'
+          : selection.skipSetupAgent
+            ? 'run host setup; skip agent setup'
+            : 'run host and agent setup';
+    const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : `Reconcile configured state; ${setupScope}.`}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
     // Do not let the host's display bound silently omit the target or selected operation.
     if (description.length > 512) denied();
     const timeoutMs = 120_000;
@@ -116,7 +125,7 @@ export default class AgentLifecycleApproval {
       loaded: structuredClone(loaded),
       rebuildCodexPath,
       workspaceDir,
-      skipSetup,
+      ...selection,
       allowed: false,
       signals: new Set(context.abortSignal ? [context.abortSignal] : []),
       expiresAt: Date.now() + timeoutMs,
@@ -168,7 +177,8 @@ export default class AgentLifecycleApproval {
       !Value.Check(lifecycleParameters(name), params) ||
       ((params as { rebuildCodexPath?: boolean }).rebuildCodexPath === true) !==
         pending.rebuildCodexPath ||
-      ((params as { skipSetup?: boolean }).skipSetup === true) !== pending.skipSetup
+      selectedSetupPhases(params as InstallSetupOptions).skipSetupHost !== pending.skipSetupHost ||
+      selectedSetupPhases(params as InstallSetupOptions).skipSetupAgent !== pending.skipSetupAgent
     )
       denied();
     const signals = [...pending.signals, ...(signal ? [signal] : [])];
@@ -205,7 +215,11 @@ export default class AgentLifecycleApproval {
           assertCurrent,
         };
         return name === 'agent_system_install'
-          ? this.dependencies.installService.install({ ...input, skipSetup: pending.skipSetup })
+          ? this.dependencies.installService.install({
+              ...input,
+              skipSetupHost: pending.skipSetupHost,
+              skipSetupAgent: pending.skipSetupAgent,
+            })
           : this.dependencies.doctorService.inspect(input);
       },
     );

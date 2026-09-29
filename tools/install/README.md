@@ -42,6 +42,8 @@ for consent lifetime, cancellation, and supported chat surfaces.
 | Parameter          | Type    | Required | Default      | Description                                                                                          |
 | ------------------ | ------- | -------- | ------------ | ---------------------------------------------------------------------------------------------------- |
 | `skipSetup`        | boolean | no       | `false`      | Skip every setup check and apply; reconcile other components.                                        |
+| `skipSetupHost`    | boolean | no       | `false`      | Skip host setup checks and applies; reconcile other components.                                      |
+| `skipSetupAgent`   | boolean | no       | `false`      | Skip agent setup checks and applies; reconcile other components.                                     |
 | `rebuildCodexPath` | boolean | no       | `false`      | Replace the saved Codex PATH baseline with the invoking environment.                                 |
 | `timeoutMs`        | integer | no       | host default | OpenClaw-hosted Codex tool-call budget, from `1` through `600000` ms. Pass `600000` for ten minutes. |
 
@@ -59,14 +61,23 @@ Install other components while skipping setup:
 { "skipSetup": true, "timeoutMs": 600000 }
 ```
 
+Install host dependencies and managed components while deferring agent setup:
+
+```json
+{ "skipSetupAgent": true, "timeoutMs": 600000 }
+```
+
 Replace the saved Codex PATH baseline:
 
 ```json
 { "rebuildCodexPath": true, "timeoutMs": 600000 }
 ```
 
-The optional parameters may be combined. The approval description identifies
-setup scope and any requested PATH rebuild before execution.
+The optional parameters may be combined. `skipSetup` takes precedence over
+either phase flag; both phase flags together have the same effect. The approval
+description identifies the selected setup scope and any requested PATH rebuild
+before execution. Skipped phases run no checks or applies. Managed components
+still reconcile and enforce their executable, credential, and identity checks.
 
 Omitting `timeoutMs` retains the host's default (90 seconds in OpenClaw-hosted
 Codex). This argument does not extend the two-minute approval window or

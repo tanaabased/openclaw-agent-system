@@ -241,13 +241,15 @@ Install the current workspace agent and reconcile its identity, models, memory, 
 | `--yes`                | no       | off     | Consent to setup without prompting.                                                                  |
 | `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
 | `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
+| `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
+| `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
 | `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
 | `--json`               | no       | off     | Write one undecorated structured result to stdout.                                                   |
 
 ### Usage
 
 ```text
-openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--rebuild-codex-path] [--json]
+openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
 ```
 
 ```sh
@@ -258,14 +260,24 @@ openclaw agent-system install
 openclaw agent-system install --yes --json
 ```
 
-All switches are boolean; `--skip-setup` takes precedence over consent.
+All switches are boolean. `--skip-setup` skips both phases and takes precedence
+when combined with either phase flag; the two phase flags together have the
+same effect. Skipping one phase does not skip managed component reconciliation.
+`--skip-setup` takes precedence over consent.
 Interactive installation previews applicable commands, shells, and timeouts on
 stderr. Declining or cancelling stops before any mutation. No applicable setup
 means no prompt.
 
 Unattended consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
 or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent;
-prompts and warnings never enter stdout JSON. Consent is not persisted.
+prompts and warning diagnostics stay on stderr. Consent is not persisted.
+
+If reconciliation fails, install exits nonzero and reports completed outcomes,
+the blocking component, and unattempted work. Earlier changes remain applied;
+rerun install after fixing the blocker. With `--json`, stdout contains one
+failure object with `status: "failed"`, `outcomes`, `blocked`, and `unattempted`.
+Skipping host setup never relaxes executable, credential, or live identity
+checks for components that still reconcile.
 
 > [!NOTE]
 > Environment flags accept trimmed, case-insensitive `1`, `true`, `yes`, or `on`.

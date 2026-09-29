@@ -12,6 +12,8 @@ export const installParameters = Type.Object(
     ),
     rebuildCodexPath: Type.Optional(Type.Boolean()),
     skipSetup: Type.Optional(Type.Boolean()),
+    skipSetupHost: Type.Optional(Type.Boolean()),
+    skipSetupAgent: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
