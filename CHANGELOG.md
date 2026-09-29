@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.8.0 - [September 29, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.8.0)
+
 ### New Features
 
 - Added `openclaw agent-system backup restore` command to restore verified backups into a fresh directory. [#175](https://github.com/tanaabased/openclaw-agent-system/issues/175)
