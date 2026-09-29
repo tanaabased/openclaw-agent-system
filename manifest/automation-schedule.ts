@@ -1,3 +1,5 @@
+const maximumMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
 export interface AutomationCronFields {
   minutes: number[];
   hours: number[];
@@ -39,12 +41,12 @@ function timestamp(source: string): string {
     m = Number(month),
     d = Number(day);
   const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
-  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const days = m === 2 && !leap ? 28 : maximumMonthDays[m - 1];
   if (
     m < 1 ||
     m > 12 ||
     d < 1 ||
-    d > days[m - 1]! ||
+    d > days! ||
     Number(hour) > 23 ||
     Number(minute) > 59 ||
     Number(second) > 59
@@ -102,29 +104,15 @@ function cron(source: string, timezone: string): Extract<AutomationSchedule, { k
       return invalid();
     }
   }
-  // the gregorian calendar repeats every 400 years; this proves possibility without a clock.
-  let possible = false;
-  for (let year = 2000; year < 2400 && !possible; year++) {
-    for (const selectedMonth of month.values) {
-      const count = new Date(Date.UTC(year, selectedMonth, 0)).getUTCDate();
-      for (let date = 1; date <= count; date++) {
-        const dayMatches = day.values.includes(date);
-        const weekdayMatches = weekday.values.includes(
-          new Date(Date.UTC(year, selectedMonth - 1, date)).getUTCDay(),
-        );
-        if (
-          day.wildcard || weekday.wildcard
-            ? dayMatches && weekdayMatches
-            : dayMatches || weekdayMatches
-        ) {
-          possible = true;
-          break;
-        }
-      }
-      if (possible) break;
-    }
-  }
-  if (!possible) return invalid();
+  // without a year field, every valid calendar date eventually falls on every weekday.
+  // restricted day fields use or; otherwise a selected month must contain a selected day.
+  if (
+    (day.wildcard || weekday.wildcard) &&
+    !month.values.some((selected) =>
+      day.values.some((date) => date <= maximumMonthDays[selected - 1]!),
+    )
+  )
+    return invalid();
   return {
     kind: 'cron',
     fields: {

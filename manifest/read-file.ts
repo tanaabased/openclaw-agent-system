@@ -1,31 +1,14 @@
 import { createHash } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 
+import isPathContained from '../utils/is-path-contained.ts';
 import { maximumManifestBytes } from './discover.ts';
 import type { ManifestDiagnostic } from './types.ts';
 
 export interface ManifestFileDependency {
   path: string;
   fingerprint: string;
-}
-
-function fileDiagnostic(
-  code: string,
-  reference: string,
-  detail: string,
-  fieldPath: string,
-): ManifestDiagnostic {
-  return {
-    code,
-    fieldPath: `${fieldPath}/file`,
-    message: `Referenced file ${JSON.stringify(reference)} ${detail}`,
-    severity: 'error',
-  };
-}
-function withinWorkspace(workspace: string, path: string): boolean {
-  const remainder = relative(workspace, path);
-  return remainder !== '..' && !remainder.startsWith('../') && !isAbsolute(remainder);
 }
 
 /** read a bounded local reference, relative to its containing file, within the workspace. */
@@ -39,37 +22,29 @@ export default async function readManifestFile(
   | { status: 'valid'; path: string; fingerprint: string; contents: Buffer; source: string }
   | { status: 'invalid'; path?: string; diagnostics: ManifestDiagnostic[] }
 > {
+  const failure = (suffix: string, detail: string, path?: string) => ({
+    status: 'invalid' as const,
+    ...(path === undefined ? {} : { path }),
+    diagnostics: [
+      {
+        code: `${codePrefix}-${suffix}`,
+        fieldPath: `${fieldPath}/file`,
+        message: `Referenced file ${JSON.stringify(reference)} ${detail}`,
+        severity: 'error' as const,
+      },
+    ],
+  });
   if (
     isAbsolute(reference) ||
     /^[a-z][a-z0-9+.-]*:/iu.test(reference) ||
     reference.includes('\\') ||
     reference.includes('\0')
   ) {
-    return {
-      status: 'invalid',
-      diagnostics: [
-        fileDiagnostic(
-          `${codePrefix}-path`,
-          reference,
-          'must be a local relative path.',
-          fieldPath,
-        ),
-      ],
-    };
+    return failure('path', 'must be a local relative path.');
   }
   const path = resolve(dirname(manifestPath), reference);
-  if (!withinWorkspace(workspaceDir, path)) {
-    return {
-      status: 'invalid',
-      diagnostics: [
-        fileDiagnostic(
-          `${codePrefix}-escape`,
-          reference,
-          'escapes the agent workspace.',
-          fieldPath,
-        ),
-      ],
-    };
+  if (!isPathContained(workspaceDir, path)) {
+    return failure('escape', 'escapes the agent workspace.');
   }
 
   let canonicalPath: string;
@@ -78,92 +53,39 @@ export default async function readManifestFile(
       realpath(workspaceDir),
       realpath(path),
     ]);
-    if (!withinWorkspace(canonicalWorkspace, resolvedFile)) {
-      return {
-        status: 'invalid',
-        path,
-        diagnostics: [
-          fileDiagnostic(
-            `${codePrefix}-escape`,
-            reference,
-            'escapes the agent workspace through a symlink.',
-            fieldPath,
-          ),
-        ],
-      };
+    if (!isPathContained(canonicalWorkspace, resolvedFile)) {
+      return failure('escape', 'escapes the agent workspace through a symlink.', path);
     }
     canonicalPath = resolvedFile;
     if (!(await stat(canonicalPath)).isFile()) {
-      return {
-        status: 'invalid',
-        path,
-        diagnostics: [
-          fileDiagnostic(
-            `${codePrefix}-not-regular`,
-            reference,
-            'must name a regular file.',
-            fieldPath,
-          ),
-        ],
-      };
+      return failure('not-regular', 'must name a regular file.', path);
     }
   } catch (error) {
-    return {
-      status: 'invalid',
+    return failure(
+      'unreadable',
+      `could not be inspected (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
       path,
-      diagnostics: [
-        fileDiagnostic(
-          `${codePrefix}-unreadable`,
-          reference,
-          `could not be inspected (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
-          fieldPath,
-        ),
-      ],
-    };
+    );
   }
 
   let contents: Buffer;
   try {
     contents = await readFile(canonicalPath);
   } catch (error) {
-    return {
-      status: 'invalid',
+    return failure(
+      'unreadable',
+      `could not be read (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
       path,
-      diagnostics: [
-        fileDiagnostic(
-          `${codePrefix}-unreadable`,
-          reference,
-          `could not be read (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
-          fieldPath,
-        ),
-      ],
-    };
+    );
   }
   if (contents.byteLength > maximumManifestBytes) {
-    return {
-      status: 'invalid',
-      path,
-      diagnostics: [
-        fileDiagnostic(
-          `${codePrefix}-too-large`,
-          reference,
-          `exceeds the ${maximumManifestBytes}-byte size limit.`,
-          fieldPath,
-        ),
-      ],
-    };
+    return failure('too-large', `exceeds the ${maximumManifestBytes}-byte size limit.`, path);
   }
   let source: string;
   try {
     source = new TextDecoder('utf-8', { fatal: true }).decode(contents);
   } catch {
-    return {
-      status: 'invalid',
-      path,
-      diagnostics: [
-        fileDiagnostic(`${codePrefix}-encoding`, reference, 'must be valid UTF-8.', fieldPath),
-      ],
-    };
+    return failure('encoding', 'must be valid UTF-8.', path);
   }
   const fingerprint = createHash('sha256')
     .update(canonicalPath)

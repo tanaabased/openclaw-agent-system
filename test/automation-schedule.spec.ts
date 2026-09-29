@@ -63,6 +63,9 @@ describe('manifest/automation-schedule', () => {
     assert.throws(() => normalize('0 0 31 2 *'));
     assert.throws(() => normalize('0 0 31 4,6,9,11 *'));
     assert.equal(normalize('0 0 29 2 *').kind, 'cron');
+    assert.equal(normalize('0 0 29 2 */2').kind, 'cron');
+    assert.equal(normalize('0 0 31 4,5 *').kind, 'cron');
+    assert.equal(normalize('0 0 */2 2 1').kind, 'cron');
     assert.equal(normalize('0 0 31 2 1').kind, 'cron');
     assert.throws(() => normalize('0 0 31 2 */2'));
   });
