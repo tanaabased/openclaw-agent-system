@@ -122,7 +122,6 @@ jobs:
         with:
           tarball: ${{ steps.pack.outputs.tarball-path }}
           owner: tanaab
-          tags: ${{ github.event.release.prerelease && 'edge' || 'latest,edge' }}
           source-repo: ${{ github.repository }}
           source-commit: ${{ github.sha }}
           clawhub-token: ${{ secrets.TANAAB_LOBSTER_BOAT }}

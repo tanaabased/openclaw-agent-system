@@ -73,7 +73,6 @@ jobs:
           dry-run: true
           tarball: ${{ steps.pack.outputs.tarball-path }}
           owner: tanaab
-          tags: edge
           source-repo: ${{ github.repository }}
           source-commit: ${{ github.event.pull_request.head.sha }}
           wait-timeout: 1800
