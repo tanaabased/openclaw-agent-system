@@ -1,3 +1,13 @@
+import {
+  admitReviewFeedback,
+  isReviewFeedback,
+  readReviewFeedback,
+  reviewFeedback,
+  reviewReplyFeedback,
+  reviewFeedbackRevision,
+  type GitHubCanonicalFeedback,
+  type GitHubReviewFeedback,
+} from './review-feedback.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import {
@@ -250,6 +260,24 @@ export default class GitHubNotificationCommentOrchestrator {
           ]
         : []),
     ];
+    if (
+      Object.values(existingConversation?.revisions ?? {}).some(
+        (revision) => revision.review && revision.status === 'admitted',
+      )
+    ) {
+      await this.#reconcileReviews(
+        agentId,
+        conversationId,
+        item,
+        sources,
+        opened,
+        modeId,
+        monitor.workspaceDir,
+        options,
+        maximumCommentResponsesPerReconciliation,
+      );
+      return;
+    }
     const pages: Array<{
       comments: GitHubCanonicalIssueComment[];
       source: GitHubNotificationCommentSource;
@@ -388,6 +416,234 @@ export default class GitHubNotificationCommentOrchestrator {
       responseCount += 1;
       if (responseCount >= maximumCommentResponsesPerReconciliation) return;
     }
+    await this.#reconcileReviews(
+      agentId,
+      conversationId,
+      item,
+      sources,
+      opened,
+      modeId,
+      monitor.workspaceDir,
+      options,
+      maximumCommentResponsesPerReconciliation - responseCount,
+    );
+  }
+
+  async #reconcileReviews(
+    agentId: string,
+    conversationId: string,
+    item: GitHubNotificationItemState,
+    sources: GitHubNotificationCommentSource[],
+    opened: Extract<
+      Awaited<
+        ReturnType<GitHubNotificationCommentOrchestratorDependencies['assignmentAuthority']['open']>
+      >,
+      { authorized: true }
+    >,
+    modeId: GitHubNotificationModeId,
+    workspaceDir: string,
+    options: GitHubNotificationCommentReconcileOptions,
+    budget: number,
+  ): Promise<void> {
+    const client = opened.client.reviews;
+    if (!client) return;
+    const owner = item.repositoryOwner;
+    const name = item.repositoryName;
+    for (const source of sources.filter((value) => value.itemType === 'pull-request')) {
+      const initial = await this.#dependencies.conversationStateStore.read(agentId, conversationId);
+      const cursor = initial?.conversation?.reviewIntake?.[source.number] ?? {
+        reviewsPage: 1,
+        commentsPage: 1,
+      };
+      const consume = async (feedback: GitHubReviewFeedback) => {
+        if (feedback.feedback.review.state === 'PENDING' || !feedback.feedback.review.submittedAt)
+          return;
+        const snapshot = await this.#dependencies.conversationStateStore.read(
+          agentId,
+          conversationId,
+        );
+        const previous = snapshot?.conversation?.revisions[feedback.nodeId];
+        const revision = reviewFeedbackRevision(feedback);
+        if (previous?.revisionId === revision.revisionId && previous.status !== 'admitted') {
+          if (
+            cursor.baselineBefore !== undefined &&
+            previous.reviewBaselineAt !== cursor.baselineBefore
+          )
+            await this.#checkpointRevision(agentId, conversationId, feedback.nodeId, {
+              ...previous,
+              reviewBaselineAt: cursor.baselineBefore,
+            });
+          return;
+        }
+        if (
+          previous?.status === 'admitted' &&
+          previous.revisionId === revision.revisionId &&
+          previous.review
+        )
+          feedback.feedback.receipt = previous.review;
+        const exact = await readReviewFeedback(
+          client,
+          owner,
+          name,
+          source.number,
+          feedback.databaseId,
+          feedback.feedback.receipt,
+        );
+        if (
+          exact.nodeId !== feedback.nodeId ||
+          reviewFeedbackRevision(exact).revisionId !== revision.revisionId
+        )
+          throw new GitHubNotificationCommentOrchestratorError(
+            'github-notification-comment-revision-changed',
+          );
+        const admission = admitReviewFeedback({
+          account: opened.client.identity,
+          comment: exact,
+          configuration: opened.configuration,
+          maximumCommentCharacters: opened.client.maximumCommentCharacters,
+        });
+        const unchanged =
+          !exact.feedback.receipt.summarySelected && exact.feedback.receipt.selected.length === 0;
+        const baseline =
+          unchanged ||
+          (previous?.reviewBaselineAt !== cursor.baselineBefore &&
+            cursor.baselineBefore !== undefined &&
+            Date.parse(exact.createdAt) <= cursor.baselineBefore);
+        const checkpoint: GitHubNotificationCommentRevisionState = {
+          ...revision,
+          commentDatabaseId: exact.databaseId,
+          review: exact.feedback.receipt,
+          ...(cursor.baselineBefore !== undefined
+            ? { reviewBaselineAt: cursor.baselineBefore }
+            : {}),
+          source: { itemType: source.itemType, number: source.number },
+          status: baseline
+            ? 'baseline'
+            : admission.disposition === 'approved'
+              ? 'admitted'
+              : 'rejected',
+          reasonCode: baseline ? 'comment-baseline' : admission.code,
+        };
+        await this.#checkpointRevision(agentId, conversationId, exact.nodeId, checkpoint);
+        if (baseline || admission.disposition !== 'approved') return;
+        await this.#respond(
+          agentId,
+          conversationId,
+          options.executionSurface,
+          exact,
+          [],
+          revision,
+          item,
+          modeId,
+          checkpoint.source,
+          workspaceDir,
+          options.signal,
+        );
+        budget--;
+      };
+      const interrupted = Object.values(initial?.conversation?.revisions ?? {}).find(
+        (revision) =>
+          revision.status === 'admitted' &&
+          revision.review &&
+          revision.source.number === source.number,
+      );
+      if (interrupted?.review) {
+        const exact = await readReviewFeedback(
+          client,
+          owner,
+          name,
+          source.number,
+          interrupted.commentDatabaseId,
+          interrupted.review,
+        );
+        await consume(
+          exact.feedback.receipt.kind === 'review'
+            ? reviewFeedback(
+                exact.feedback.review,
+                exact.feedback.comments,
+                interrupted.consumedReview,
+              )
+            : exact,
+        );
+        if (budget <= 0) return;
+      }
+      const reviews = await client.listReviews(owner, name, source.number, cursor.reviewsPage);
+      for (const review of reviews.values) {
+        if (review.state === 'PENDING' || !review.submittedAt) continue;
+        const snapshot = await this.#dependencies.conversationStateStore.read(
+          agentId,
+          conversationId,
+        );
+        const previous = snapshot?.conversation?.revisions[review.nodeId];
+        const consumed =
+          previous?.consumedReview ??
+          (previous?.status === 'responded' || previous?.status === 'baseline'
+            ? previous.review
+            : undefined);
+        await consume(
+          reviewFeedback(
+            review,
+            await client.getReviewComments(owner, name, source.number, review.databaseId),
+            consumed,
+          ),
+        );
+        if (budget <= 0) return;
+      }
+      await this.#checkpointReviewCursor(agentId, conversationId, source.number, {
+        ...cursor,
+        reviewsPage: reviews.nextPage,
+      });
+      const replies = await client.listComments(owner, name, source.number, cursor.commentsPage);
+      for (const reply of replies.values) {
+        if (!reply.replyToId) continue;
+        const review = await client.getReview(owner, name, source.number, reply.reviewId);
+        const snapshot = await this.#dependencies.conversationStateStore.read(
+          agentId,
+          conversationId,
+        );
+        const group = snapshot?.conversation?.revisions[review.nodeId]?.review;
+        if (
+          group?.members[reply.nodeId] ||
+          (!group &&
+            Date.parse(reply.createdAt) <= Date.parse(review.submittedAt ?? '') &&
+            reply.author?.nodeId === review.author?.nodeId)
+        )
+          continue;
+        await consume(reviewReplyFeedback(review, reply));
+        if (budget <= 0) return;
+      }
+      await this.#checkpointReviewCursor(agentId, conversationId, source.number, {
+        ...cursor,
+        reviewsPage: reviews.nextPage,
+        commentsPage: replies.nextPage,
+      });
+    }
+  }
+
+  async #checkpointReviewCursor(
+    agentId: string,
+    conversationId: string,
+    number: number,
+    cursor: { reviewsPage: number; commentsPage: number; baselineBefore?: number },
+  ): Promise<void> {
+    const current = await this.#dependencies.conversationStateStore.read(agentId, conversationId);
+    if (!current?.conversation)
+      throw new GitHubNotificationCommentOrchestratorError(
+        'github-notification-conversation-state-missing',
+      );
+    const previous = current.conversation.reviewIntake?.[number] ?? {
+      reviewsPage: 1,
+      commentsPage: 1,
+    };
+    if (
+      previous.reviewsPage === cursor.reviewsPage &&
+      previous.commentsPage === cursor.commentsPage &&
+      previous.baselineBefore === cursor.baselineBefore
+    )
+      return;
+    const next = structuredClone(current);
+    next.conversation!.reviewIntake = { ...next.conversation!.reviewIntake, [number]: cursor };
+    await this.#dependencies.conversationStateStore.write(next);
   }
 
   async #reconcileDeliveryPullRequest(
@@ -423,6 +679,12 @@ export default class GitHubNotificationCommentOrchestrator {
     if (status === source.status) return false;
     const updatedSource = updated.deliveryPullRequest!;
     updatedSource.status = status;
+    if (status === 'open' && source.status === 'closed') {
+      updated.reviewIntake = {
+        ...updated.reviewIntake,
+        [source.number]: { reviewsPage: 1, commentsPage: 1, baselineBefore: this.#clock() },
+      };
+    }
     if (status !== 'open' || source.status === 'closed') {
       updatedSource.baselineEstablished = false;
     }
@@ -448,7 +710,7 @@ export default class GitHubNotificationCommentOrchestrator {
     agentId: string,
     conversationId: string,
     executionSurface: GitHubNotificationExecutionSurface,
-    comment: GitHubCanonicalIssueComment,
+    comment: GitHubCanonicalFeedback,
     mentions: readonly GitHubCommentMention[],
     revision: GitHubCommentRevision,
     item: GitHubNotificationItemState,
@@ -473,6 +735,7 @@ export default class GitHubNotificationCommentOrchestrator {
       });
     } catch (error) {
       await this.#checkpointRevision(agentId, conversationId, comment.nodeId, {
+        ...(isReviewFeedback(comment) ? { review: comment.feedback.receipt } : {}),
         bodyDigest: revision.bodyDigest,
         commentDatabaseId: comment.databaseId,
         failureCode: errorCode(error),
@@ -485,6 +748,7 @@ export default class GitHubNotificationCommentOrchestrator {
     }
     if (response.publication.status === 'withheld') {
       await this.#checkpointRevision(agentId, conversationId, comment.nodeId, {
+        ...(isReviewFeedback(comment) ? { review: comment.feedback.receipt } : {}),
         bodyDigest: revision.bodyDigest,
         commentDatabaseId: comment.databaseId,
         publication: { reasonCode: response.publication.code, status: 'withheld' },
@@ -514,6 +778,7 @@ export default class GitHubNotificationCommentOrchestrator {
       source: publicationSource,
     });
     await this.#checkpointRevision(agentId, conversationId, comment.nodeId, {
+      ...(isReviewFeedback(comment) ? { review: comment.feedback.receipt } : {}),
       bodyDigest: revision.bodyDigest,
       commentDatabaseId: comment.databaseId,
       publication: {
@@ -552,12 +817,35 @@ export default class GitHubNotificationCommentOrchestrator {
   ): Promise<void> {
     const publication = revision.publication;
     if (!publication || publication.status !== 'pending') return;
-    const result = await this.#dependencies.publications.publish({
-      accountId: agentId,
-      ...(signal === undefined ? {} : { signal }),
-      target: publication.target,
-      text: publication.publicText,
-    });
+    let result;
+    try {
+      result = await this.#dependencies.publications.publish({
+        accountId: agentId,
+        ...(signal === undefined ? {} : { signal }),
+        target: publication.target,
+        text: publication.publicText,
+      });
+    } catch (error) {
+      if (
+        !revision.review ||
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        ![
+          'github-notification-publication-source-changed',
+          'comment-actor-unapproved',
+          'comment-mention-missing',
+          'comment-mention-quote-only',
+          'comment-review-pending',
+          'github-notification-resource-missing',
+        ].includes(String(error.code))
+      )
+        throw error;
+      await this.#checkpointRevision(agentId, conversationId, commentNodeId, {
+        ...revision,
+        publication: { status: 'withheld', reasonCode: String(error.code) },
+      });
+      return;
+    }
     await this.#checkpointPublished(
       agentId,
       conversationId,
@@ -620,6 +908,26 @@ export default class GitHubNotificationCommentOrchestrator {
     } else {
       delete updatedConversation.activeTurn;
     }
+    const previous = updatedConversation.revisions[commentNodeId];
+    if (previous?.reviewBaselineAt !== undefined && revision.reviewBaselineAt === undefined)
+      revision = { ...revision, reviewBaselineAt: previous.reviewBaselineAt };
+    if (revision.review) {
+      const consumed =
+        revision.status === 'responded' || revision.status === 'baseline'
+          ? revision.review
+          : (previous?.consumedReview ??
+            (previous?.status === 'responded' || previous?.status === 'baseline'
+              ? previous.review
+              : undefined));
+      if (consumed) revision = { ...revision, consumedReview: consumed };
+    }
+    if (
+      !Object.hasOwn(updatedConversation.revisions, commentNodeId) &&
+      Object.keys(updatedConversation.revisions).length >= 400
+    )
+      throw new GitHubNotificationCommentOrchestratorError(
+        'github-notification-feedback-capacity-exceeded',
+      );
     updatedConversation.revisions[commentNodeId] = revision;
     await this.#dependencies.conversationStateStore.write(state);
     return state;

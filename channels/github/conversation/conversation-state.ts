@@ -1,3 +1,4 @@
+import type { GitHubReviewReceipt } from './review-feedback.ts';
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { validModelRouting, type ModelRouting } from './model-routing.ts';
@@ -73,6 +74,9 @@ export interface GitHubNotificationImplementationState {
 }
 
 export interface GitHubNotificationCommentRevisionState {
+  review?: GitHubReviewReceipt;
+  consumedReview?: GitHubReviewReceipt;
+  reviewBaselineAt?: number;
   bodyDigest: string;
   commentDatabaseId: number;
   failureCode?: string;
@@ -84,6 +88,10 @@ export interface GitHubNotificationCommentRevisionState {
 }
 
 export interface GitHubNotificationConversation {
+  reviewIntake?: Record<
+    string,
+    { reviewsPage: number; commentsPage: number; baselineBefore?: number }
+  >;
   modelRouting?: ModelRouting;
   acknowledgment?: GitHubNotificationAssignmentAcknowledgmentState;
   activeTurn?: GitHubNotificationActiveTurnState;
@@ -266,14 +274,83 @@ function validPublication(
     : !hasReceipt;
 }
 
+function validReviewIntake(value: unknown): boolean {
+  return (
+    record(value) &&
+    Object.keys(value).length <= 2 &&
+    Object.entries(value).every(
+      ([number, cursor]) =>
+        /^[1-9]\d*$/u.test(number) &&
+        record(cursor) &&
+        onlyKeys(cursor, ['reviewsPage', 'commentsPage', 'baselineBefore']) &&
+        [cursor.reviewsPage, cursor.commentsPage].every(
+          (page) => Number.isSafeInteger(page) && Number(page) > 0,
+        ) &&
+        (cursor.baselineBefore === undefined ||
+          (Number.isSafeInteger(cursor.baselineBefore) && Number(cursor.baselineBefore) > 0)),
+    )
+  );
+}
+
+function validReviewReceipt(value: unknown): boolean {
+  if (
+    !record(value) ||
+    !onlyKeys(value, [
+      'kind',
+      'reviewId',
+      'summaryDigest',
+      'members',
+      'selected',
+      'summarySelected',
+    ]) ||
+    !['review', 'review-comment'].includes(String(value.kind)) ||
+    !Number.isSafeInteger(value.reviewId) ||
+    Number(value.reviewId) < 1 ||
+    !digest(value.summaryDigest) ||
+    typeof value.summarySelected !== 'boolean' ||
+    !record(value.members) ||
+    Object.keys(value.members).length > 400 ||
+    !Array.isArray(value.selected) ||
+    value.selected.length > 400
+  )
+    return false;
+  const members = value.members;
+  return (
+    Object.entries(members).every(
+      ([id, member]) =>
+        nodeId(id) &&
+        record(member) &&
+        onlyKeys(member, ['databaseId', 'digest']) &&
+        Number.isSafeInteger(member.databaseId) &&
+        Number(member.databaseId) > 0 &&
+        digest(member.digest),
+    ) &&
+    value.selected.every((id) => typeof id === 'string' && Object.hasOwn(members, id)) &&
+    new Set(value.selected).size === value.selected.length
+  );
+}
+
+export function githubConversationRecordVersion(
+  conversation: GitHubNotificationConversation | undefined,
+): 1 | 2 | 3 {
+  return conversation?.reviewIntake ||
+    Object.values(conversation?.revisions ?? {}).some((revision) => revision.review)
+    ? 3
+    : conversation?.modelRouting
+      ? 2
+      : 1;
+}
+
 function validRevision(
   value: unknown,
   conversationId: string,
   schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7,
+  reviews = false,
 ): boolean {
   if (
     !record(value) ||
     !onlyKeys(value, [
+      ...(reviews ? ['review', 'consumedReview', 'reviewBaselineAt'] : []),
       'bodyDigest',
       'commentDatabaseId',
       'failureCode',
@@ -293,6 +370,19 @@ function validRevision(
   ) {
     return false;
   }
+  if (
+    value.review !== undefined &&
+    (!validReviewReceipt(value.review) ||
+      !record(value.source) ||
+      value.source.itemType !== 'pull-request')
+  )
+    return false;
+  if (value.consumedReview !== undefined && !validReviewReceipt(value.consumedReview)) return false;
+  if (
+    value.reviewBaselineAt !== undefined &&
+    (!Number.isSafeInteger(value.reviewBaselineAt) || Number(value.reviewBaselineAt) <= 0)
+  )
+    return false;
   if (schemaVersion >= 7 && !validSource(value.source)) return false;
   if (value.status === 'responded') {
     return validPublication(value.publication, conversationId, 'github-reply');
@@ -350,10 +440,12 @@ function validConversation(
   value: unknown,
   conversationId: string,
   schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7,
+  reviews = false,
 ): boolean {
   if (
     !record(value) ||
     !onlyKeys(value, [
+      ...(reviews ? ['reviewIntake'] : []),
       ...(schemaVersion >= 3 ? ['acknowledgment'] : []),
       ...(schemaVersion >= 2 ? ['activeTurn'] : []),
       ...(schemaVersion >= 4 ? ['assignmentResponse'] : []),
@@ -387,6 +479,7 @@ function validConversation(
     (value.mode !== 'guided' && value.mode !== 'work') ||
     (value.modelRouting !== undefined &&
       (value.lifecycleId !== 'issue' || !validModelRouting(value.modelRouting))) ||
+    (value.reviewIntake !== undefined && !validReviewIntake(value.reviewIntake)) ||
     !record(value.revisions) ||
     Object.keys(value.revisions).length > maximumRevisions
   ) {
@@ -398,8 +491,18 @@ function validConversation(
   if (schemaVersion >= 7 && deliveryPullRequest !== undefined && value.lifecycleId !== 'issue') {
     return false;
   }
+  if (
+    record(value.reviewIntake) &&
+    !Object.keys(value.reviewIntake).every(
+      (number) =>
+        (ownerSource.itemType === 'pull-request' && ownerSource.number === Number(number)) ||
+        (deliveryPullRequest !== undefined && deliveryPullRequest.number === Number(number)),
+    )
+  )
+    return false;
   return Object.entries(value.revisions).every(([key, revision]) => {
-    if (!nodeId(key) || !validRevision(revision, conversationId, schemaVersion)) return false;
+    if (!nodeId(key) || !validRevision(revision, conversationId, schemaVersion, reviews))
+      return false;
     if (schemaVersion < 7 || !record(revision) || !validSource(revision.source)) return true;
     const revisionSource = revision.source;
     return (
@@ -540,14 +643,24 @@ export function decodeGitHubNotificationConversationRecord(
       'schemaVersion',
       'workspaceDir',
     ]) ||
-    (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
-    (value.schemaVersion === 2) !==
-      (record(value.conversation) && value.conversation.modelRouting !== undefined) ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
+    (value.schemaVersion !== 3 &&
+      (value.schemaVersion === 2) !==
+        (record(value.conversation) && value.conversation.modelRouting !== undefined)) ||
     value.agentId !== index.agentId ||
     value.workspaceDir !== index.workspaceDir ||
     value.conversationId !== conversationId
   )
     return undefined;
+  if (value.schemaVersion === 3) {
+    if (!validConversation(value.conversation, conversationId, 7, true)) return undefined;
+    return {
+      agentId: index.agentId,
+      workspaceDir: index.workspaceDir,
+      conversationId,
+      conversation: value.conversation as unknown as GitHubNotificationConversation,
+    };
+  }
   const state = decodeGitHubNotificationConversationState(
     {
       agentId: value.agentId,

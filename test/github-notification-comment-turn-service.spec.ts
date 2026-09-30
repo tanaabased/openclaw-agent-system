@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
 
+import { reviewFixture, reviewCommentFixture } from './github-review-fixtures.ts';
+import {
+  isReviewFeedback,
+  reviewFeedback,
+  reviewFeedbackRevision,
+  type GitHubReviewFeedback,
+} from '../channels/github/conversation/review-feedback.ts';
+
 import type { ChannelInboundTurnPlan } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
@@ -159,6 +167,7 @@ async function respondWithCandidates(
   currentConfig: OpenClawConfig = config,
   finalText = 'Private response remains available.',
   recipientText?: string,
+  feedback?: GitHubReviewFeedback,
 ) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
@@ -167,7 +176,7 @@ async function respondWithCandidates(
     worktreeBranch: 'issue-12',
     worktreePath: '/workspace/worktrees/issue-12',
   };
-  const comment = incomingComment();
+  const comment = feedback ?? incomingComment();
   const contracts = createGitHubNotificationTurnContractResolver();
   const service = new GitHubNotificationCommentTurnService({
     coordinator: new GitHubNotificationModelTurnCoordinator({
@@ -207,13 +216,45 @@ async function respondWithCandidates(
     item,
     mentions: incomingMentions(comment),
     modeId: 'work',
-    revision: githubCommentRevision(comment),
-    source: { itemType: 'issue', number: item.number },
+    revision: isReviewFeedback(comment)
+      ? reviewFeedbackRevision(comment)
+      : githubCommentRevision(comment),
+    source: feedback
+      ? { itemType: 'pull-request', number: 45 }
+      : { itemType: 'issue', number: item.number },
     workspaceDir,
   });
 }
 
 describe('channels/github/conversation/comment-turn-service', () => {
+  it('should carry review provenance through both transports without creating another session', async () => {
+    const review = reviewFixture();
+    review.body = 'Review summary without an account mention';
+    const finding = reviewCommentFixture({ body: '@tanaabot handle empty arrays' });
+    const feedback = reviewFeedback(review, [finding]);
+    for (const surface of ['gateway', 'cli-one-shot'] as const) {
+      await respondWithCandidates(
+        [],
+        surface,
+        (_options, context) => {
+          const serialized = JSON.stringify(context.ChannelStructuredContext);
+          assert.ok(serialized.includes(finding.diffHunk.replace(/\n/gu, '\\n')));
+          assert.ok(serialized.includes(finding.url));
+          assert.ok(serialized.includes('"line":null'));
+          assert.ok(serialized.includes('"originalLine":1'));
+          assert.match(String(context.BodyForAgent), /empty arrays/u);
+          assert.ok(String(context.RawBody).includes(finding.nodeId));
+          assert.match(String(context.SessionKey), /github:issue:r_repo:12/u);
+        },
+        undefined,
+        config,
+        'I will address the findings.',
+        undefined,
+        feedback,
+      );
+    }
+  });
+
   it('should carry recovery recipient defaults through the cli one-shot contract', async () => {
     await respondWithCandidates(
       [],

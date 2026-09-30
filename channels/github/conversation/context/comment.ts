@@ -1,8 +1,13 @@
-import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from '../comment-admission.ts';
+import {
+  isReviewFeedback,
+  reviewFeedbackContext,
+  type GitHubCanonicalFeedback,
+} from '../review-feedback.ts';
+import type { GitHubCommentRevision } from '../comment-admission.ts';
 import type { GitHubNotificationConversationSource } from '../conversation-state.ts';
 
 export interface GitHubNotificationCommentContextInput {
-  comment: GitHubCanonicalIssueComment;
+  comment: GitHubCanonicalFeedback;
   lifecycleContext: Readonly<Record<string, unknown>>;
   revision: GitHubCommentRevision;
   source: GitHubNotificationConversationSource;
@@ -18,6 +23,7 @@ export default function githubNotificationCommentContext(
       nodeId: input.comment.nodeId,
       revisionId: input.revision.revisionId,
     },
+    ...(isReviewFeedback(input.comment) ? { feedback: reviewFeedbackContext(input.comment) } : {}),
     source: input.source,
     ...input.lifecycleContext,
   };

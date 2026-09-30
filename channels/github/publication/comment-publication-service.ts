@@ -1,3 +1,9 @@
+import {
+  admitReviewFeedback,
+  isReviewFeedback,
+  readReviewFeedback,
+  reviewFeedbackRevision,
+} from '../conversation/review-feedback.ts';
 import { resolve } from 'node:path';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -197,19 +203,34 @@ export default class GitHubNotificationCommentPublicationService {
         if (authorized.kind !== 'reply') {
           return { client: opened.client };
         }
-        const exact = await opened.client.getIssueComment(
-          authorized.item.repositoryOwner,
-          authorized.item.repositoryName,
-          authorized.destination.number,
-          authorized.revision.commentDatabaseId,
-        );
-        const current = githubCommentRevision(exact);
-        const admission = admitGitHubComment({
+        const review = authorized.revision.review;
+        if (review && !opened.client.reviews) fail('github-notification-review-client-missing');
+        const exact = review
+          ? await readReviewFeedback(
+              opened.client.reviews!,
+              authorized.item.repositoryOwner,
+              authorized.item.repositoryName,
+              authorized.destination.number,
+              authorized.revision.commentDatabaseId,
+              review,
+            )
+          : await opened.client.getIssueComment(
+              authorized.item.repositoryOwner,
+              authorized.item.repositoryName,
+              authorized.destination.number,
+              authorized.revision.commentDatabaseId,
+            );
+        const current = isReviewFeedback(exact)
+          ? reviewFeedbackRevision(exact)
+          : githubCommentRevision(exact);
+        const admissionInput = {
           account: opened.client.identity,
-          comment: exact,
           configuration: opened.configuration,
           maximumCommentCharacters: opened.client.maximumCommentCharacters,
-        });
+        };
+        const admission = isReviewFeedback(exact)
+          ? admitReviewFeedback({ ...admissionInput, comment: exact })
+          : admitGitHubComment({ ...admissionInput, comment: exact });
         if (
           admission.disposition !== 'approved' ||
           exact.nodeId !== authorized.commentNodeId ||

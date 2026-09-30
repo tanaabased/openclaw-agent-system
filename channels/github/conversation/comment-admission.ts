@@ -19,6 +19,7 @@ export type GitHubCommentAdmissionCode =
   | 'comment-actor-self'
   | 'comment-actor-unapproved'
   | 'comment-actor-unsupported'
+  | 'comment-review-pending'
   | 'comment-approved'
   | 'comment-body-truncated'
   | 'comment-mention-missing'

@@ -492,25 +492,25 @@ describe('scripts/github-notification-model-scenarios', () => {
     const executionScenarios = [
       {
         commitMessage: 'add implementation fixture',
-        fileContents: 'implementation fixture ready.',
+        patchContents: '+implementation fixture ready.',
         filename: 'implementation-fixture-123-4.txt',
         id: 'implementation',
       },
       {
         commitMessage: 'add pull request lifecycle fixture',
-        fileContents: 'pull request lifecycle fixture ready.',
+        patchContents: '+pull request lifecycle fixture ready.',
         filename: 'pull-request-lifecycle-fixture-123-4.txt',
         id: 'pr-lifecycle',
       },
       {
         commitMessage: 'add comment fixture',
-        fileContents: 'comment fixture ready.',
+        patchContents: '+comment fixture ready.\n+review fixture ready.',
         filename: 'comment-fixture-123-4.txt',
         id: 'comment',
       },
       {
         commitMessage: 'add completed retirement fixture',
-        fileContents: 'completed retirement fixture ready.',
+        patchContents: '+completed retirement fixture ready.',
         filename: 'completed-retirement-fixture-123-4.txt',
         id: 'retirement',
       },
@@ -579,7 +579,7 @@ describe('scripts/github-notification-model-scenarios', () => {
         input: [
           '*** Begin Patch',
           `*** Add File: /tmp/worktrees/issue-42/${executionScenario.filename}`,
-          `+${executionScenario.fileContents}`,
+          executionScenario.patchContents,
           '*** End Patch',
         ].join('\n'),
       });
@@ -642,6 +642,10 @@ describe('scripts/github-notification-model-scenarios', () => {
               'Your final response is published back to the exact source comment.',
             ].join('\n'),
             role: 'system',
+          },
+          {
+            content: `Earlier request: ${entry.scenarioId === 'comment' ? 'ready-111-1' : 'pr-ready-111-1'}`,
+            role: 'user',
           },
           {
             content: `@tanaabot Reply briefly with ${entry.token}.`,

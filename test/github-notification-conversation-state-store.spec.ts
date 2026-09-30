@@ -14,6 +14,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { reviewFixture, reviewCommentFixture } from './github-review-fixtures.ts';
+import {
+  reviewFeedback,
+  reviewFeedbackRevision,
+} from '../channels/github/conversation/review-feedback.ts';
+
 import GitHubNotificationConversationStateStore from '../channels/github/conversation/conversation-state-store.ts';
 import GitHubNotificationAssignmentAcknowledgmentService from '../channels/github/conversation/assignment-acknowledgment-service.ts';
 import type { GitHubNotificationConversationSnapshot } from '../channels/github/conversation/conversation-state.ts';
@@ -115,6 +121,43 @@ describe('channels/github/conversation/conversation-state-store', () => {
     corrupt.conversation.modelRouting.decision.model = 'openai/unconfigured';
     await writeFile(recordPath(routed), JSON.stringify(corrupt));
     await assert.rejects(restarted.read(routed.agentId, routed.conversationId));
+  });
+
+  it('should upgrade ordinary records and retain review membership and cursors across a restart', async () => {
+    const value = snapshot();
+    await store.write(value);
+    assert.equal(JSON.parse(await readFile(recordPath(value), 'utf8')).schemaVersion, 1);
+    const feedback = reviewFeedback(reviewFixture(), [reviewCommentFixture()]);
+    const revision = reviewFeedbackRevision(feedback);
+    value.conversation!.deliveryPullRequest = {
+      baselineEstablished: true,
+      eventRecorded: true,
+      nodeId: 'PR_delivery',
+      number: 45,
+      status: 'open',
+    };
+    value.conversation!.reviewIntake = { 45: { reviewsPage: 2, commentsPage: 3 } };
+    value.conversation!.revisions[feedback.nodeId] = {
+      ...revision,
+      commentDatabaseId: feedback.databaseId,
+      review: feedback.feedback.receipt,
+      source: { itemType: 'pull-request', number: 45 },
+      status: 'admitted',
+    };
+    value.conversation!.activeTurn = { eventId: 'comment', sourceId: revision.revisionId };
+    await store.write(value);
+    const contents = await readFile(recordPath(value), 'utf8');
+    assert.equal(JSON.parse(contents).schemaVersion, 3);
+    assert.ok(!contents.includes('Handle the empty list'));
+    const restarted = new GitHubNotificationConversationStateStore({
+      rootDir,
+      currentUid: process.getuid?.(),
+    });
+    assert.deepEqual(await restarted.read(value.agentId, value.conversationId), value);
+    const corrupt = JSON.parse(contents);
+    corrupt.conversation.revisions[feedback.nodeId].review.selected.push('PRRC_unknown');
+    await writeFile(recordPath(value), JSON.stringify(corrupt));
+    await assert.rejects(restarted.read(value.agentId, value.conversationId));
   });
 
   it('should persist private lifecycle files behind a small routing index', async () => {
