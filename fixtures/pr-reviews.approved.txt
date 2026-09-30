@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "api",
+    "repos/{repository}/pulls/{pr}/reviews?per_page=1",
+    "--paginate",
+    "--slurp"
+  ],
+  "caseId": "pr-reviews",
+  "executable": "gh",
+  "exitCode": 0,
+  "schemaVersion": 1,
+  "stderr": "",
+  "stdin": null,
+  "stdout": "[[{\"state\":\"PENDING\",\"user\":{\"login\":\"reviewer\"}}],[],[{\"state\":\"COMMENTED\",\"user\":{\"login\":\"reviewer\"}}]]"
+}

@@ -97,6 +97,9 @@
     "build": "bun scripts/build-task.ts",
     "codex:check": "codex-tools cache check",
     "codex:sync": "codex-tools cache sync",
+    "fixtures:accept": "bun scripts/cli-fixtures.ts accept",
+    "fixtures:check": "bun scripts/cli-fixtures.ts check",
+    "fixtures:record": "bun scripts/cli-fixtures.ts record",
     "format:check": "prettier . --check --ignore-unknown",
     "format:write": "prettier . --write --ignore-unknown",
     "leia": "bun ./node_modules/.bin/leia",
@@ -139,6 +142,7 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
+    "@approval-tests/approvals": "^7.5.8",
     "@copilotkit/aimock": "1.35.0",
     "@eslint/js": "^10.0.1",
     "@lando/leia": "2.0.0",

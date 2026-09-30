@@ -17,6 +17,9 @@ reports/
 .temp/
 .tmp/
 temp/
+fixtures/*.received.txt
+fixtures/*.received.meta.json
+.approval_tests_temp/
 
 # Operating-system and editor files
 .DS_Store

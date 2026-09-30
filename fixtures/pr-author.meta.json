@@ -1,0 +1,13 @@
+{
+  "author": "pirog",
+  "capturedAt": "2026-09-29T15:37:44.198Z",
+  "captureDigest": "6a1f589665e604b8517bf8713d8db96a8a5b61d2c327cb3e958036a905a65d3e",
+  "caseId": "pr-author",
+  "cliVersion": "gh version 2.101.0 (2026-09-15)",
+  "effectiveLogin": "pirog",
+  "pr": 547,
+  "repository": "tanaabased/big-test-bucket",
+  "requiredActors": {
+    "author": "pirog"
+  }
+}

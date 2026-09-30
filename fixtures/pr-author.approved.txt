@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "api",
+    "repos/{repository}/pulls/{pr}",
+    "--jq",
+    "{nodeId:.user.node_id}"
+  ],
+  "caseId": "pr-author",
+  "executable": "gh",
+  "exitCode": 0,
+  "schemaVersion": 1,
+  "stderr": "",
+  "stdin": null,
+  "stdout": "{\"nodeId\":\"U_agent\"}\n"
+}

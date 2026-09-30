@@ -8,6 +8,7 @@ import type { GitToolConfiguration } from '../tools/git/config-schema.ts';
 import { classifyGitOperation } from '../tools/git/operation-classifier.ts';
 import { authorizeGitOperation } from '../tools/git/policy.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
+import { githubCliFixtureArgv, loadApprovedCliFixture } from '../scripts/cli-fixtures.ts';
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace';
@@ -65,6 +66,7 @@ function serviceHarness(
     ineligibleReviewer?: string;
     commitCount?: number;
     pullRequestAuthorNodeId?: string;
+    plainTextAuthor?: boolean;
   } = {},
 ) {
   let amended = false;
@@ -129,11 +131,14 @@ function serviceHarness(
               return cliResult(JSON.stringify(createdPullRequest));
             }
             if (endpoint === 'repos/tanaabased/example/pulls/45' && !argv.includes('PATCH')) {
-              const authorNodeId = options.pullRequestAuthorNodeId ?? 'U_agent';
+              assert.deepEqual(argv, githubCliFixtureArgv('pr-author', 'tanaabased/example', 45));
+              const authorNodeId = options.pullRequestAuthorNodeId;
               return cliResult(
-                argv.includes('.user.node_id')
-                  ? authorNodeId
-                  : JSON.stringify({ nodeId: authorNodeId }),
+                options.plainTextAuthor
+                  ? 'U_agent\n'
+                  : authorNodeId
+                    ? JSON.stringify({ nodeId: authorNodeId })
+                    : loadApprovedCliFixture('pr-author').stdout,
               );
             }
             if (endpoint === 'repos/tanaabased/example/pulls/45' && argv.includes('PATCH')) {
@@ -181,8 +186,12 @@ function serviceHarness(
               return cliResult(JSON.stringify([...requestedReviewers]));
             }
             if (endpoint === 'repos/tanaabased/example/pulls/45/reviews') {
-              assert.deepEqual(argv, ['api', endpoint, '--paginate', '--slurp']);
-              return cliResult(JSON.stringify(options.reviewPages ?? [[]]));
+              assert.deepEqual(argv, githubCliFixtureArgv('pr-reviews', 'tanaabased/example', 45));
+              return cliResult(
+                options.reviewPages
+                  ? JSON.stringify(options.reviewPages)
+                  : loadApprovedCliFixture('pr-reviews').stdout,
+              );
             }
             throw new Error(`unexpected GitHub request: ${argv.join(' ')}`);
           },
@@ -315,10 +324,6 @@ describe('channels/github/conversation/issue-delivery-service', () => {
       assignees: [{ login: 'maintainer', nodeId: 'U_maintainer' }],
       reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
       existingAssignees: [{ login: 'pirog', nodeId: 'U_actor' }],
-      reviewPages: [
-        [{ state: 'PENDING', user: { login: 'codeowner' } }],
-        [{ state: 'APPROVED', user: { login: 'reviewer' } }],
-      ],
       existingRequestedReviewers: ['codeowner'],
       existingPullRequest: pullRequest(),
       remoteSha: originalSha,
@@ -433,6 +438,7 @@ describe('channels/github/conversation/issue-delivery-service', () => {
     const ineligible = serviceHarness({
       reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
       ineligibleReviewer: 'reviewer',
+      reviewPages: [[{ state: 'PENDING', user: { login: 'reviewer' } }]],
     });
     await assert.rejects(ineligible.delivery.deliver(input), /reviewer reviewer is not eligible/u);
     assert.equal(
@@ -510,6 +516,7 @@ describe('channels/github/conversation/issue-delivery-service', () => {
       existingPullRequest: pullRequest({ body: 'Authored explanation', title: 'Authored title' }),
       remoteSha: originalSha,
       reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
+      reviewPages: [[{ state: 'PENDING', user: { login: 'reviewer' } }]],
     });
     const input = { agentId, item: approvedNotificationItem(), workspaceDir, worktree };
     const first = await scenario.delivery.publishTaskPullRequest(input);
@@ -578,5 +585,22 @@ describe('channels/github/conversation/issue-delivery-service', () => {
       /does not match the task worktree/u,
     );
     assert.equal(divergent.githubRequests.length, 0);
+  });
+
+  it('should reject a text author response where the recorded CLI returns a JSON object', async () => {
+    const scenario = serviceHarness({
+      existingPullRequest: pullRequest(),
+      plainTextAuthor: true,
+      remoteSha: originalSha,
+    });
+    await assert.rejects(
+      scenario.delivery.publishTaskPullRequest({
+        agentId,
+        item: approvedNotificationItem(),
+        workspaceDir,
+        worktree,
+      }),
+      /invalid issue delivery data/u,
+    );
   });
 });
