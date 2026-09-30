@@ -124,7 +124,10 @@ bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup cancel
 cd "$TMPDIR/automation-agent"
 cp "$GITHUB_WORKSPACE/examples/automations/prompt.yaml" automations.yaml
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json
-bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait prompt
+if ! bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait prompt; then
+  grep '^automation-fixture-match: ' "$TMPDIR/openclaw-aimock.log" >&2 || true
+  exit 1
+fi
 openclaw-aimock evidence --scenario automations --expected-evidence "$GITHUB_WORKSPACE/examples/automations/expected-evidence.json"
 ```
 
