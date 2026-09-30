@@ -871,6 +871,11 @@ describe('cli/register', () => {
         ['install', '--rebuild-codex-path'],
         ['doctor'],
         ['status', '--agent', 'tanaabot'],
+        ['credentials', 'set', 'op', '--from-env'],
+        ['credentials', 'validate', 'op'],
+        ['credentials', 'unset', 'op'],
+        ['credentials', 'cache', 'status'],
+        ['credentials', 'cache', 'flush'],
       ]) {
         for (const environment of [
           {
@@ -903,6 +908,10 @@ describe('cli/register', () => {
           assert.deepEqual(test.calls.install, []);
           assert.deepEqual(test.calls.doctor, []);
           assert.deepEqual(test.calls.workspace, []);
+          assert.deepEqual(test.calls.credentialInput, []);
+          assert.deepEqual(test.calls.credentialSet, []);
+          assert.deepEqual(test.calls.credentialValidate, []);
+          assert.deepEqual(test.calls.credentialUnset, []);
           assert.match(test.diagnostics.join(''), /operator commands/u);
         }
       }

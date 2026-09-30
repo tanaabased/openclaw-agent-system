@@ -440,27 +440,12 @@ describe('agent/setup-command-service', function () {
     }
   });
 
-  it('should reject setup and credential operator routes before invoking their services', async () => {
-    const cases = [
-      'agent-system install',
-      'as doctor',
-      'as status',
-      'as credentials set op --from-env',
-      'as credentials validate op',
-      'as credentials unset op',
-      'as credentials cache status',
-      'as credentials cache flush',
-    ];
-    const script = cases
-      .map((args, index) => `if openclaw ${args} 2> rejection-${index}; then exit 99; fi`)
-      .join('\n');
-    assert.equal((await run(script)).exitCode, 0);
-    for (let index = 0; index < cases.length; index++) {
-      assert.match(
-        await readFile(join(workspaceDir, `rejection-${index}`), 'utf8'),
-        /operator commands.*setup descendants/u,
-      );
-    }
+  it('should reject an operator route in a real setup descendant before invoking services', async () => {
+    assert.equal((await run('if openclaw as doctor 2> rejection; then exit 99; fi')).exitCode, 0);
+    assert.match(
+      await readFile(join(workspaceDir, 'rejection'), 'utf8'),
+      /operator commands.*setup descendants/u,
+    );
     assert.deepEqual(environmentCalls, []);
   });
 
