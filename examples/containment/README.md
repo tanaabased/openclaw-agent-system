@@ -42,7 +42,7 @@ if ! openclaw agent \
   --agent tanaabot \
   --session-key agent:tanaabot:agent-system-containment-leia \
   --message-file "$GITHUB_WORKSPACE/examples/containment/cross-agent.md" \
-  --timeout 180; then
+  --timeout 600; then
   openclaw gateway call chat.history \
     --params '{"sessionKey":"agent:tanaabot:agent-system-containment-leia","limit":10,"maxBytes":32768}' \
     --json | jq '{messages: [.messages[] | select(.role == "assistant" or .role == "toolResult")]}'
@@ -60,7 +60,7 @@ openclaw agent \
   --agent emori \
   --session-key agent:emori:agent-system-setup-containment-leia \
   --message-file "$GITHUB_WORKSPACE/examples/containment/setup-native.md" \
-  --timeout 180
+  --timeout 600
 grep -Fx verified "$TMPDIR/agent-system-setup-boundary-native.txt"
 test ! -e "$TMPDIR/agent-system-forbidden-setup"
 ```

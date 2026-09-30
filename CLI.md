@@ -9,6 +9,7 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 **Core commands**
 
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
+- [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune)
 - [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
 - [`openclaw agent-system backup verify`](#openclaw-agent-system-backup-verify)
 - [`openclaw agent-system credentials cache flush`](#openclaw-agent-system-credentials-cache-flush)
@@ -123,8 +124,49 @@ Inspect the root manifest for coverage, versions, and snapshot details.
 
 Workspace and database capture are not atomic together. Other OpenClaw state,
 out-of-workspace sources, and external memory backends are excluded. Setup
-applies may create backups; checks may only preview or verify. Retention,
-uploads, and scheduling are not provided.
+applies may create backups; checks may only preview or verify. Uploads and
+scheduling are not provided.
+
+## `openclaw agent-system backup prune`
+
+Keep the newest local archives for the selected agent by embedded capture time.
+Run only after the exact archive returned by creation has been verified and
+successfully uploaded; this command does not upload or schedule backups.
+
+### Options
+
+| Option or argument     | Required | Default                             | Description                                                   |
+| ---------------------- | -------- | ----------------------------------- | ------------------------------------------------------------- |
+| `--agent <id>`         | no       | workspace discovery                 | Select an installed agent; operators only.                    |
+| `--dry-run`            | no       | off                                 | Report the same retention decision without writing any state. |
+| `--json`               | no       | off                                 | Write one structured result, including failures.              |
+| `--keep <count>`       | yes      | none                                | Positive integer number of eligible archives to retain.       |
+| `--output <directory>` | no       | manifest or `.agent-system/backups` | Resolve relative destinations against the selected workspace. |
+
+### Usage
+
+```text
+openclaw agent-system backup prune --keep <positive-integer>
+  [--agent <id>] [--output <directory>] [--dry-run] [--json]
+```
+
+```sh
+# preview local retention after a successful backup upload.
+openclaw as backup prune --keep 3 --dry-run --json
+
+# remove only eligible older local archives.
+openclaw as backup prune --keep 3 --json
+```
+
+Only immediate regular `.tar.gz` files with valid embedded v1/v2 metadata for
+the selected agent are eligible. Ties use filename order. Unreadable or unrelated
+entries, subdirectories, links, and pending writes are skipped with reasons.
+Every retained archive is fully verified before any deletion; a failure aborts
+without deleting. Apply coordinates with creation and stops if the candidate set
+changes. JSON reports `kept`, `deleted`, `wouldDelete`, and `skipped`; failures
+return nonzero and include any deletions already completed. Bound callers keep
+the same destination and agent restrictions as creation. Setup checks allow only
+`--dry-run`.
 
 ## `openclaw agent-system backup verify`
 
