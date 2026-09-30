@@ -87,6 +87,7 @@ describe('scripts/example-model-scenarios', () => {
     const diagnostic = mock.method(console, 'error', () => {});
     const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
     valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
+    valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
     try {
       assert.equal(matchFixture([...scenario.fixtures], valid), scenario.fixtures[0]);
       assert.equal(diagnostic.mock.callCount(), 0);
@@ -94,7 +95,10 @@ describe('scripts/example-model-scenarios', () => {
         const invalid = structuredClone(valid);
         if (field === 'model') invalid.model = 'private-model';
         if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
-        if (field === 'prompt') invalid.messages[1]!.content = 'private-prompt';
+        if (field === 'prompt') {
+          invalid.messages[1]!.content = 'private-prompt';
+          invalid.messages.push({ role: 'assistant', content: scenario.userPromptSignals![0]! });
+        }
         if (field === 'noToolResult') {
           invalid.messages.push({ role: 'tool', content: 'private-result', tool_call_id: 'call' });
         }

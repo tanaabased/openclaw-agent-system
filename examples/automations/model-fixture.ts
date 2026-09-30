@@ -11,11 +11,14 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
     .filter((message) => message.role === 'system')
     .map((message) => getTextContent(message.content) ?? '')
     .join('\n');
-  const userMessage = request.messages.findLast((message) => message.role === 'user');
+  const hasPrompt = request.messages.some(
+    (message) =>
+      message.role === 'user' && (getTextContent(message.content) ?? '').includes(prompt),
+  );
   const checks = {
     model: model.test(request.model),
     identity: systemText.includes(identity),
-    prompt: (getTextContent(userMessage?.content ?? null) ?? '').includes(prompt),
+    prompt: hasPrompt,
     noToolResult: !request.messages.some((message) => message.role === 'tool'),
   };
   const matches = Object.values(checks).every(Boolean);
