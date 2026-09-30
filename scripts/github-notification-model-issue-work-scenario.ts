@@ -174,7 +174,7 @@ function issueWorkToolResponse(
             input: [
               '*** Begin Patch',
               `*** Add File: ${join(worktreePath, filename)}`,
-              `+${options.fileContents}`,
+              ...options.fileContents.split('\n').map((line) => `+${line}`),
               '*** End Patch',
             ].join('\n'),
           }),
