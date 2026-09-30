@@ -15,9 +15,6 @@ denied() {
   grep -F 'operator commands are unavailable to agent or setup descendants' "$probe.stderr"
 }
 
-denied env CI=1 NONINTERACTIVE=on openclaw agent-system install --yes --json
 denied env CI=1 NONINTERACTIVE=on openclaw as install --non-interactive --json
-denied openclaw agent-system doctor --json
-denied openclaw as status --json
 test ! -e "$TMPDIR/agent-system-forbidden-setup"
 printf '%s\n' verified > "$probe.txt"

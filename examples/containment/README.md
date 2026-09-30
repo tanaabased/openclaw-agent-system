@@ -1,6 +1,6 @@
 # Agent Command Containment Example
 
-This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that a repository helper can use a managed shim with the active identity but cannot switch identity by changing into another agent workspace. Both native OpenClaw and Codex descendants must reject setup operator commands, including unattended install and Doctor/status aliases.
+This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that a repository helper can use a managed shim with the active identity but cannot switch identity by changing into another agent workspace. Both native OpenClaw and Codex descendants must reject one unattended operator install through the `openclaw as` alias. Unit tests cover the other install, Doctor, and status forms.
 
 The live model exercises native command execution in both runtimes; assertions depend on filesystem evidence rather than final wording. This scenario tests the OpenClaw [development target](../../README.md#version-compatibility).
 
