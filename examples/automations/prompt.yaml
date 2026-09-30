@@ -1,0 +1,5 @@
+- id: prompt
+  runtimes: [openclaw]
+  schedule: in 30 seconds
+  timeout-seconds: 120
+  prompt: Acknowledge the scheduled owning-agent context.

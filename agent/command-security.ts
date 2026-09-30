@@ -58,6 +58,14 @@ function operatorDecision(
       ...(crossAgent.targetAgentId ? { targetAgentId: crossAgent.targetAgentId } : {}),
     };
   }
+  if (invocations.some(({ surface }) => surface === 'automation')) {
+    return {
+      blockReason:
+        'Scheduled automation execution is operator-only. Ask the operator to synchronize or run the owned job.',
+      code: 'agent-automation-operator-only',
+      severity: 'error',
+    };
+  }
   if (invocations.some(({ surface }) => surface === 'setup')) {
     return {
       blockReason:

@@ -8,6 +8,7 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 
 **Core commands**
 
+- [`openclaw agent-system automation-execute`](#openclaw-agent-system-automation-execute)
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
 - [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune)
 - [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
@@ -270,7 +271,37 @@ openclaw agent-system env --agent tanaabot --json
 
 Output lists variable names, sources, required state, and override counts; values stay private.
 
+## `openclaw agent-system automation-execute`
+
+Execute one synchronized command automation. This is the scheduler's operator-only
+entrypoint; use [Install](#openclaw-agent-system-install) to reconcile declarations.
+
+### Options
+
+| Option or argument | Required | Default | Description                                                           |
+| ------------------ | -------- | ------- | --------------------------------------------------------------------- |
+| `--hash <hash>`    | yes      | none    | Require the synchronized effective SHA-256 hash.                      |
+| `--id <id>`        | yes      | none    | Select the manifest automation ID in the current installed workspace. |
+
+### Usage
+
+```text
+openclaw agent-system automation-execute --id <id> --hash <hash>
+```
+
+The native scheduler supplies the exact arguments, fixed executable, profile, and
+workspace. This entrypoint accepts no agent selector. Agent descendants and invalid
+inherited authority are rejected before execution. Stale, disabled, removed, or
+native-drifted jobs fail before temporary authority or tool credentials are issued.
+It returns one bounded JSON status and a nonzero exit status on failure. Direct
+operator invocation is a manual command execution and does not create a native
+scheduled occurrence or update its history.
+
 ## `openclaw agent-system install`
+
+Repository [automations](./MANIFEST.md#automations) reconcile only through this
+operator path and require a running Gateway. Completed one-shots and native safety
+disable remain protected; failed synchronization reports partial results.
 
 Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
 
@@ -334,6 +365,10 @@ Installation:
 Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
 
 ## `openclaw agent-system doctor`
+
+Automation findings report owned native drift, disabled or completed jobs,
+unsupported targets, and execution/delivery failures without changing or running
+jobs. Scheduler inspection requires the operator's native read permission.
 
 Inspect registration, identity, models, memory, paths, and configured capabilities for drift without repairs. `openclaw agent-system status` is an alias.
 

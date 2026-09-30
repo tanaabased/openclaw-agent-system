@@ -57,7 +57,7 @@ function request(
 
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, ['agent', 'credentials', 'github']);
+    assert.deepEqual(exampleModelScenarioIds, ['agent', 'automations', 'credentials', 'github']);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');

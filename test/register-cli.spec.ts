@@ -43,6 +43,7 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
 function createProgram(
   input?: Readable,
   dependencies: {
+    automationRunner?: boolean;
     backupService?: WorkspaceBackupService;
     manifestResult?: AgentManifestLoadResult;
     environment?: Readonly<NodeJS.ProcessEnv>;
@@ -100,6 +101,9 @@ function createProgram(
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
+    ...(dependencies.automationRunner
+      ? { automations: {} as never, boundCommands: {} as never }
+      : {}),
     backupService: dependencies.backupService,
     environment: dependencies.environment ?? {},
     ...(dependencies.commandAuthority ? { commandAuthority: dependencies.commandAuthority } : {}),
@@ -863,6 +867,7 @@ describe('cli/register', () => {
   it('should deny setup operator routes for native and codex descendants before manifest loading', async () => {
     for (const alias of ['agent-system', 'as']) {
       for (const args of [
+        ['automation-execute', '--id', 'job', '--hash', 'a'.repeat(64)],
         ['install', '--yes'],
         ['install', '--non-interactive'],
         ['install', '--skip-setup'],
@@ -885,6 +890,7 @@ describe('cli/register', () => {
           },
         ]) {
           const test = createProgram(undefined, {
+            automationRunner: true,
             environment,
             commandAuthority: {
               async classify() {

@@ -68,6 +68,20 @@ function context(agentId = 'tanaabot') {
 }
 
 describe('agent/command-security', () => {
+  it('should block scheduled runner selection before an agent command executes', async () => {
+    const { handler } = setup();
+    const result = (await handler(
+      {
+        toolName: 'exec',
+        params: { command: 'openclaw as automation-execute --id job --hash secret' },
+      } as never,
+      context() as never,
+    )) as { block?: boolean; blockReason?: string };
+    assert.equal(result?.block, true);
+    assert.match(result?.blockReason ?? '', /operator-only/u);
+    assert.ok(!result?.blockReason?.includes('secret'));
+  });
+
   it('should register a high-priority before-tool-call gate', () => {
     const { registrations } = setup();
 

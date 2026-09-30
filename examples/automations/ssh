@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+# a deterministic remote boundary holds real managed ssh credentials until cancellation.
+case "$*" in
+  *automation-fixture.invalid*)
+    printf '%s\n' "$$" > "$TMPDIR/automation-ssh.pid"
+    printf '%s\n' "$SSH_AUTH_SOCK" > "$TMPDIR/automation-ssh.socket"
+    sleep 180
+    ;;
+  *) exec /usr/bin/ssh "$@" ;;
+esac
