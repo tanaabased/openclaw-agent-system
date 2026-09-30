@@ -107,7 +107,7 @@ describe('scripts/cli-fixtures', () => {
     }
   });
 
-  it('should preserve review page shape and reject a single page', () => {
+  it('should require a later completed review from the declared reviewer', () => {
     const fixtureDir = mkdtempSync(join(tmpdir(), 'cli-fixtures-'));
     try {
       const base = {
@@ -132,6 +132,21 @@ describe('scripts/cli-fixtures', () => {
       assert.throws(
         () => runCliFixture({ ...base, execute: fakeCli(`${JSON.stringify([pages.flat()])}\n`) }),
         /at least two actual pages/u,
+      );
+      assert.throws(
+        () =>
+          runCliFixture({
+            ...base,
+            execute: fakeCli(
+              `${JSON.stringify([pages[0], [{ state: 'COMMENTED', user: { login: 'other' } }]])}\n`,
+            ),
+          }),
+        /declared reviewer on a later page/u,
+      );
+      assert.throws(
+        () =>
+          runCliFixture({ ...base, execute: fakeCli(`${JSON.stringify(pages.toReversed())}\n`) }),
+        /declared reviewer on a later page/u,
       );
     } finally {
       rmSync(fixtureDir, { force: true, recursive: true });

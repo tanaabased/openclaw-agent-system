@@ -124,7 +124,7 @@ The default Mocha suite keeps behavior-focused specifications flat in [`test/`](
 
 The mock delivery tests consume approved CLI captures directly from [`fixtures/`](./fixtures/). The fixture commands are local, explicitly invoked tools; they do not run in CI or as a release prerequisite and need no live model.
 
-Use a disposable pull request in `tanaabased/big-test-bucket`. The PR-author case requires a declared author. The review case also requires a declared reviewer and real pending and completed reviews. The capture requests one review per page to exercise pagination without creating a large review history; the production command retains GitHub's ordinary page size. Arrange the actor roles before recording, and close the PR and remove its setup branch when finished. The recorder creates no GitHub resources itself.
+Use a disposable pull request in `tanaabased/big-test-bucket`. The PR-author case requires a declared author. The review case requires a pending review followed by a completed review from the declared reviewer on a later page. The capture requests one review per page to exercise pagination without creating a large review history; the production command retains GitHub's ordinary page size. Arrange the actor roles before recording, and close the PR and remove its setup branch when finished. The recorder creates no GitHub resources itself.
 
 `gh` uses the current native login or `GH_TOKEN`. An operator may supply `GH_TOKEN` through an `op run` wrapper; the recorder does not read 1Password references or retain tokens. It checks the effective identity, repository access, and declared PR author before running a case.
 

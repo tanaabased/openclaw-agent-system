@@ -161,28 +161,30 @@ function normalizedOutput(
   if (!Array.isArray(value) || value.length < 2 || !value.every(Array.isArray)) {
     throw new Error('The review capture must contain at least two actual pages.');
   }
-  let pending = false;
-  let completed = false;
-  let declaredReviewer = false;
-  const pages = value.map((page: unknown[]) =>
+  let pendingReviewerPage: number | undefined;
+  let completedLaterPage = false;
+  const pages = value.map((page: unknown[], pageIndex) =>
     page.map((entry) => {
       const review = object(entry, 'pull request review');
       const state = nonemptyString(review.state, 'review state');
       const login = safeLogin(object(review.user, 'review user').login, 'reviewer login');
-      if (state === 'PENDING') pending = true;
-      else completed = true;
-      if (login.toLowerCase() === reviewer.toLowerCase()) declaredReviewer = true;
+      const declaredReviewer = login.toLowerCase() === reviewer.toLowerCase();
+      if (declaredReviewer) {
+        if (state === 'PENDING') pendingReviewerPage ??= pageIndex;
+        else if (pendingReviewerPage !== undefined && pageIndex > pendingReviewerPage)
+          completedLaterPage = true;
+      }
       return {
         state,
         user: {
-          login: login.toLowerCase() === reviewer.toLowerCase() ? 'reviewer' : 'other-reviewer',
+          login: declaredReviewer ? 'reviewer' : 'other-reviewer',
         },
       };
     }),
   );
-  if (!pending || !completed || !declaredReviewer) {
+  if (!completedLaterPage) {
     throw new Error(
-      'The review capture needs pending and completed reviews and the declared reviewer.',
+      'The review capture needs a pending review followed by a completed review from the declared reviewer on a later page.',
     );
   }
   return `${JSON.stringify(pages)}${newline}`;
