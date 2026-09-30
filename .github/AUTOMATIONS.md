@@ -3,8 +3,9 @@
 Research and proposed implementation contract for [#193](https://github.com/tanaabased/openclaw-agent-system/issues/193)
 under [#192](https://github.com/tanaabased/openclaw-agent-system/issues/192).
 This repository-only document is not shipped configuration documentation. The
-current parser rejects `automations`; promote the supported parts into the public
-references as #194–#197 implement them. No scheduler or adapter is implemented here.
+shared declaration parser is implemented in #194 and documented in
+[MANIFEST.md](../MANIFEST.md#automations). Native scheduling and adapters remain
+implementation work for #195–#197.
 
 ## Recommended First Delivery
 
@@ -214,7 +215,7 @@ are lifecycle callbacks and do not establish a scheduler reconciliation API.
 ## Proposed Manifest Shape
 
 Keep one shared declaration, with runtime-specific support reported per job.
-This syntax is for #194; it is not accepted by the current parser.
+The shared syntax is implemented by #194; runtime support remains adapter-owned.
 
 | Field             | Type / default                        | Contract                                                                                                                                        |
 | ----------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |

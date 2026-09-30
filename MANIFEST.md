@@ -13,6 +13,7 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
   - [`memory`](#memory)
   - [`environment`](#environment)
   - [`backup`](#backup)
+  - [`automations`](#automations)
   - [Setup](#setup)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
@@ -286,6 +287,89 @@ exclusions. Exclude previous custom destinations explicitly.
 
 See the [backup command](./CLI.md#openclaw-agent-system-backup-create) for coverage,
 destination restrictions, and sensitive-archive handling.
+
+### `automations`
+
+Declare an inline list or `{ file: ./automations.yaml }` naming one YAML list;
+omission and `[]` declare no jobs. Parsing is supported. Native scheduling,
+execution, and runtime capability checks await the adapters.
+
+| Field             | Type                                                       | Required         | Default       | Description                                                                    |
+| ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |
+| `enabled`         | boolean                                                    | no               | `true`        | Desired enabled state.                                                         |
+| `id`              | lowercase kebab-case string                                | yes              | none          | Stable unique ID within the workspace.                                         |
+| `overrides`       | runtime mapping                                            | no               | none          | Prompt-only `openclaw` / `codex` settings below.                               |
+| `payload`         | command or prompt object                                   | one payload form | none          | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
+| `prompt`          | nonblank string or `{ file: relative-path }`               | one payload form | none          | Inline text or UTF-8 prompt file.                                              |
+| `run`             | nonblank shell string, argv array, or `{ command, args? }` | one payload form | none          | Command; argv stays literal and ordered.                                       |
+| `runtimes`        | unique nonempty list of `openclaw` / `codex`               | no               | both          | Runtime applicability.                                                         |
+| `schedule`        | string or object                                           | yes              | none          | Schedule forms below.                                                          |
+| `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`          | Shell strings only; place inside `payload` for long-form commands.             |
+| `timeout-seconds` | integer, 1–3600                                            | no               | runtime-owned | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
+
+Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
+[setup command syntax](#syntax), without setup checks, steps, or timeout defaults.
+Each `overrides.openclaw` or `overrides.codex` object accepts only:
+
+| Field    | Type                                              | Required | Default          |
+| -------- | ------------------------------------------------- | -------- | ---------------- |
+| `effort` | nonblank string                                   | no       | adapter-resolved |
+| `model`  | nonblank string                                   | no       | adapter-resolved |
+| `target` | `independent` or `{ thread: existing-native-id }` | no       | `independent`    |
+
+```yaml
+# .agent-system/agent.yaml
+automations:
+  file: ./automations.yaml
+```
+
+```yaml
+# .agent-system/automations.yaml
+- id: review
+  schedule: every 1 hour
+  prompt:
+    file: ../prompts/review.md
+- id: github-check
+  runtimes: [openclaw]
+  schedule: '0 9 * * 1-5'
+  run: [gh, api, user, --jq, .login]
+```
+
+Files resolve relative to their containing file; execution cwd remains the
+workspace root. References stay within the workspace and follow the [loader's
+size and encoding rules](#discovery). External YAML contains a list, without recursive inclusion.
+Missing or invalid references fail validation rather than declaring no jobs.
+
+#### Schedules
+
+| Form               | Example                                                           | Meaning                                |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
+| Recurring interval | `every 1 hour` or `{ every: 60 minutes }`                         | Elapsed-time recurrence.               |
+| Relative one-shot  | `in 1 hour` or `{ in: 60 minutes }`                               | Delay from initial activation.         |
+| Absolute one-shot  | `'2026-10-01T09:00:00-04:00'` or `{ at: '2026-10-01T13:00:00Z' }` | RFC 3339 timestamp, normalized to UTC. |
+| Cron               | `'0 9 * * 1-5'` or `{ cron: '0 9 * * 1-5' }`                      | Numeric five-field calendar schedule.  |
+
+Durations use positive integers with matching singular/plural seconds, minutes,
+hours, or days (86,400 seconds). Timestamps require seconds and an explicit offset,
+with at most millisecond precision and no leap seconds.
+
+Cron fields are minute 0–59, hour 0–23, day 1–31, month 1–12, and weekday 0–6.
+Use `*`, numbers, ascending ranges, lists, and positive steps on `*` or ranges.
+Day-of-month and day-of-week use OR when both are restricted.
+
+Schedule objects accept exactly one trigger key, plus:
+
+| Field        | Type                  | Required | Default  | Description               |
+| ------------ | --------------------- | -------- | -------- | ------------------------- |
+| `missed-run` | `native`              | no       | `native` | Native catch-up behavior. |
+| `timezone`   | IANA zone or `native` | no       | `native` | Cron only.                |
+
+#### Effective content and trigger identity
+
+Formatting-only edits do not cause drift; prompt/script content and argv order do.
+Only the selected runtime's overrides apply. Executable dependencies are not
+recursively hashed. Payload, timeout, and enabled-state edits preserve one-shot
+trigger identity; activation and completion state belong to reconciliation.
 
 ### Setup
 

@@ -2,21 +2,25 @@ import { Type, type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { ManifestDiagnostic } from './types.ts';
+import {
+  commandShellSchema,
+  commandScriptSchema,
+  commandExecutableSchema,
+  commandArgumentSchema,
+  commandArgvSchema,
+  normalizeCommand,
+  unsafeCommandExecutable,
+} from './command-schema.ts';
 
 export const setupDefaultTimeoutSeconds = 600;
 export const setupMaximumTimeoutSeconds = 3_600;
 
-const shellSchema = Type.Union([Type.Literal('sh'), Type.Literal('bash'), Type.Literal('zsh')]);
+const shellSchema = commandShellSchema;
 const runtimeSchema = Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]);
-const scriptSchema = Type.String({ pattern: '^(?=[\\s\\S]*\\S)[^\\u0000]*(?![\\s\\S])' });
-const executableSchema = Type.String({
-  pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])',
-});
-const argumentSchema = Type.String({ pattern: '^[^\\u0000]*(?![\\s\\S])' });
-const argvSchema = Type.Intersect([
-  Type.Tuple([executableSchema], { additionalItems: true }),
-  Type.Array(argumentSchema),
-]);
+const scriptSchema = commandScriptSchema;
+const executableSchema = commandExecutableSchema;
+const argumentSchema = commandArgumentSchema;
+const argvSchema = commandArgvSchema;
 const commandObjectSchema = Type.Object(
   {
     command: executableSchema,
@@ -142,22 +146,12 @@ function schemaDiagnostics(schema: TSchema, value: unknown, prefix: string): Man
 }
 
 function decodeCommand(command: ExternalCommand, shell: AgentSetupShell): AgentSetupCommand {
-  if (typeof command === 'string') {
-    return { kind: 'shell', script: command, shell, timeoutSeconds: setupDefaultTimeoutSeconds };
-  }
-  if (Array.isArray(command)) {
-    return {
-      kind: 'exec',
-      executable: command[0],
-      args: command.slice(1),
-      timeoutSeconds: setupDefaultTimeoutSeconds,
-    };
-  }
   return {
-    kind: 'exec',
-    executable: command.command,
-    args: [...(command.args ?? [])],
-    timeoutSeconds: command['timeout-seconds'] ?? setupDefaultTimeoutSeconds,
+    ...normalizeCommand(command, shell),
+    timeoutSeconds:
+      typeof command === 'object' && !Array.isArray(command)
+        ? (command['timeout-seconds'] ?? setupDefaultTimeoutSeconds)
+        : setupDefaultTimeoutSeconds,
   };
 }
 
@@ -197,7 +191,7 @@ export function normalizeAgentSetup(value: unknown, fieldPath = '/setup'): Norma
       const command = entry[key];
       if (command === undefined || typeof command === 'string') continue;
       const executable = Array.isArray(command) ? command[0] : command.command;
-      if (executable === '.' || executable.includes('\\') || executable.split('/').includes('..')) {
+      if (unsafeCommandExecutable(executable)) {
         diagnostics.push(
           diagnostic(
             'manifest-setup-unsafe-path',

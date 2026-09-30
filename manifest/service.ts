@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
+import { join, relative } from 'node:path';
+
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import discoverManifest, { discoverManifestFromDirectory } from './discover.ts';
@@ -10,6 +12,7 @@ import {
   type AgentManifestLoadResult,
   type AgentManifestValidationCheck,
 } from './load.ts';
+import readManifestFile from './read-file.ts';
 import type { AgentManifest, ManifestDiagnostic } from './types.ts';
 import resolveAgentId, { type AgentRuntimeContext } from '../agent/resolve-id.ts';
 
@@ -210,7 +213,20 @@ export default class AgentManifestService {
         const hostFingerprint = cached.result.setupHostFilePath
           ? await setupFileFingerprint(cached.result.setupHostFilePath)
           : undefined;
+        const automationFiles = await Promise.all(
+          (cached.result.automationFiles ?? []).map(async (file) => {
+            const current = await readManifestFile(
+              relative(discovery.workspaceDir, file.path),
+              join(discovery.workspaceDir, 'agent.yaml'),
+              discovery.workspaceDir,
+              '/automations',
+              'manifest-automation-file',
+            );
+            return current.status === 'valid' && current.fingerprint === file.fingerprint;
+          }),
+        );
         if (
+          automationFiles.every(Boolean) &&
           (!cached.result.setupFilePath ||
             agentFingerprint === cached.result.setupFileFingerprint) &&
           (!cached.result.setupHostFilePath ||
@@ -219,6 +235,7 @@ export default class AgentManifestService {
           return cached.result;
       } else if (
         cached.result.status === 'invalid' &&
+        !cached.result.automationFilePaths?.length &&
         !cached.result.setupFilePath &&
         !cached.result.setupHostFilePath
       ) {
