@@ -5,6 +5,12 @@ import { join } from 'node:path';
 // ci-only bounded observation through public gateway rpc; no private scheduler reads.
 if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('GitHub Actions only.');
 const [action, id] = process.argv.slice(2);
+const workspace = join(process.env.TMPDIR!, 'automation-agent');
+const stages = ['started', 'git', 'github', 'agent-selection', 'workspace', 'done'];
+async function stage() {
+  const value = await readFile(join(workspace, `${id}.stage`), 'utf8').catch(() => '');
+  return stages.includes(value.trim()) ? value.trim() : 'not-recorded';
+}
 async function rpc(method: string, params: object) {
   const child = Bun.spawn(
     ['openclaw', 'gateway', 'call', method, '--params', JSON.stringify(params), '--json'],
@@ -26,15 +32,30 @@ if (action === 'wait') {
       const expected = ['policy', 'missing', 'timeout', 'cancel', 'stale', 'disabled'].includes(id!)
         ? 'error'
         : 'ok';
-      assert.equal(job.state.lastRunStatus, expected);
+      assert.equal(
+        job.state.lastRunStatus,
+        expected,
+        `${id}: unexpected native status; fixture stage=${await stage()}`,
+      );
+      if (id === 'timeout') {
+        assert.match(String(job.state.lastError), /timed out/iu, 'expected native timeout');
+      }
+      if (id === 'cancel') {
+        const runs = await rpc('cron.runs', { id: job.id, limit: 1 });
+        assert.ok(
+          runs.entries?.some((run: { summary?: string }) =>
+            run.summary?.includes('"code":"automation-cancelled"'),
+          ),
+          'expected runner cancellation acknowledgement',
+        );
+      }
       process.stdout.write(`${id}: ${expected}\n`);
       process.exit(0);
     }
     await Bun.sleep(2000);
   }
-  throw new Error('Scheduled occurrence did not finish before the observation deadline.');
+  throw new Error(`Scheduled occurrence did not finish; fixture stage=${await stage()}.`);
 } else if (action === 'cleanup') {
-  const workspace = join(process.env.TMPDIR!, 'automation-agent');
   const authority = (await readFile(join(workspace, `${id}.authority`), 'utf8')).trim();
   assert.match(authority, /^[a-f0-9]+$/u);
   const { homedir } = await import('node:os');

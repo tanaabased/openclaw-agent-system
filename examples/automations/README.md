@@ -13,14 +13,16 @@ This scenario runs only in GitHub Actions.
 # should prepare the packed plugin and isolated scheduler fixtures
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-ssh-key
 openclaw-aimock prepare --scenario automations
-mkdir -p "$TMPDIR/automation-agent" "$TMPDIR/automation-host-bin"
+mkdir -p "$TMPDIR/automation-agent" "$TMPDIR/automation-other" "$TMPDIR/automation-host-bin"
+printf 'schema-version: 1\nagent:\n  id: automation-other\n' > "$TMPDIR/automation-other/agent.yaml"
+openclaw agents add automation-other --workspace "$TMPDIR/automation-other" --non-interactive --json
 cp "$GITHUB_WORKSPACE/examples/automations/ssh" "$TMPDIR/automation-host-bin/ssh"
 chmod 700 "$TMPDIR/automation-host-bin/ssh"
 cp "$GITHUB_WORKSPACE/examples/automations/agent.yaml" "$TMPDIR/automation-agent/agent.yaml"
 cp "$GITHUB_WORKSPACE/examples/automations/IDENTITY.md" "$TMPDIR/automation-agent/IDENTITY.md"
 cp "$GITHUB_WORKSPACE/examples/automations/probe.sh" "$TMPDIR/automation-agent/probe.sh"
 printf '[]\n' > "$TMPDIR/automation-agent/automations.yaml"
-PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
+OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
 cd "$TMPDIR/automation-agent"
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes
 ```
@@ -35,8 +37,6 @@ PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --j
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait identity
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' identity.git
 grep -Fx tanaabot identity.github
-test ! -s cross-agent.stdout
-test ! -s cross-workspace.stdout
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup identity
 curl -fsS "$(cat "$TMPDIR/openclaw-aimock.url")/proof/evidence" | jq -e '.requestCount == 0'
 
@@ -49,6 +49,15 @@ PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --j
 cp "$GITHUB_WORKSPACE/examples/automations/identity.yaml" automations.yaml
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json
 openclaw gateway call cron.list --params '{"includeDisabled":true}' --json | jq -r '.jobs[] | select(.name == "Agent System: identity" and .enabled == false) | .id' | diff - identity.native-id
+
+# should reject explicit agent selection and another registered workspace
+cd "$TMPDIR/automation-agent"
+cp "$GITHUB_WORKSPACE/examples/automations/containment.yaml" automations.yaml
+PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json
+bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait containment
+test ! -s cross-agent.stdout
+test ! -s cross-workspace.stdout
+bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup containment
 
 # should reject changed command content before creating authority
 cd "$TMPDIR/automation-agent"
@@ -90,6 +99,7 @@ bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup missing
 cd "$TMPDIR/automation-agent"
 cp "$GITHUB_WORKSPACE/examples/automations/agent.yaml" agent.yaml
 cp "$GITHUB_WORKSPACE/examples/automations/timeout.yaml" automations.yaml
+rm -f "$TMPDIR/automation-ssh.pid" "$TMPDIR/automation-ssh.socket"
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait timeout
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup timeout
@@ -104,6 +114,8 @@ for attempt in $(seq 1 90); do
   sleep 2
 done
 test -f "$TMPDIR/automation-ssh.socket"
+test -S "$(cat "$TMPDIR/automation-ssh.socket")"
+kill -0 "$(cat "$TMPDIR/automation-ssh.pid")"
 kill -TERM "$(cat cancel.runner)"
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait cancel
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup cancel

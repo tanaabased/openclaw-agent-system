@@ -105,6 +105,7 @@ export function projectAutomation(
             timeoutSeconds,
             lightContext: false,
             allowUnsafeExternalContent: false,
+            toolsAllow: ['*'],
             ...(override?.model ? { model: override.model.trim() } : {}),
             ...(override?.effort ? { thinking: override.effort.trim() } : {}),
           },
@@ -161,7 +162,7 @@ export function automationPatch(
       model: desired.payload.model ?? null,
       thinking: desired.payload.thinking ?? null,
       fallbacks: null,
-      toolsAllow: null,
+      toolsAllow: desired.payload.toolsAllow,
     };
   } else if (patch.payload) patch.payload = { ...desired.payload, toolsAllow: null };
   if (patch.delivery) {

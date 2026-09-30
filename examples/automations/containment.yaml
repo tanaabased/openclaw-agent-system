@@ -1,0 +1,5 @@
+- id: containment
+  runtimes: [openclaw]
+  schedule: in 30 seconds
+  timeout-seconds: 180
+  run: [sh, ./probe.sh, containment]

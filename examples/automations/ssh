@@ -3,8 +3,13 @@ set -eu
 # a deterministic remote boundary holds real managed ssh credentials until cancellation.
 case "$*" in
   *automation-fixture.invalid*)
+    case " $* " in
+      *' -G '*) exec /usr/bin/ssh "$@" ;;
+    esac
+    socket=$(/usr/bin/ssh -G -F "$AGENT_SYSTEM_SSH_CONFIG" automation-fixture.invalid | awk '$1 == "identityagent" { print $2 }')
+    test -S "$socket"
     printf '%s\n' "$$" > "$TMPDIR/automation-ssh.pid"
-    printf '%s\n' "$SSH_AUTH_SOCK" > "$TMPDIR/automation-ssh.socket"
+    printf '%s\n' "$socket" > "$TMPDIR/automation-ssh.socket"
     sleep 180
     ;;
   *) exec /usr/bin/ssh "$@" ;;

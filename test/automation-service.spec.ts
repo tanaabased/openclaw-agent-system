@@ -57,6 +57,8 @@ describe('agent/automation-service', () => {
           configRevision: String(++revision),
           state: {},
         } as NativeAutomation;
+        if (job.payload.kind === 'agentTurn' && job.payload.toolsAllow === undefined)
+          job.payload.toolsAllow = ['*'];
         native.push(job);
         if (afterWriteFailure) {
           afterWriteFailure = false;
@@ -78,6 +80,8 @@ describe('agent/automation-service', () => {
           if (value === null) delete (patch.delivery as Record<string, unknown>)[key];
       }
       Object.assign(job, patch, { configRevision: String(++revision) });
+      if (job.payload.kind === 'agentTurn' && job.payload.toolsAllow === undefined)
+        job.payload.toolsAllow = ['*'];
       for (const key of ['trigger', 'pacing', 'sessionKey']) if (job[key] === null) delete job[key];
       if (afterWriteFailure) {
         afterWriteFailure = false;
@@ -334,10 +338,18 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.agentId, 'tanaabot');
     assert.equal(native[0]!.sessionTarget, 'isolated');
+    assert.deepEqual(native[0]!.payload.toolsAllow, ['*']);
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.equal(mutations().length, 0);
+    native[0]!.payload.toolsAllow = ['read'];
+    await service.reconcile(manifest, root);
+    assert.deepEqual(native[0]!.payload.toolsAllow, ['*']);
     manifest.automations[0]!.overrides = {};
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.payload.model, undefined);
     assert.equal(native[0]!.payload.thinking, undefined);
+    assert.deepEqual(native[0]!.payload.toolsAllow, ['*']);
     assert.deepEqual(automationPatch(native[0]!, native[0]!), {});
     assert.equal(
       nativeAutomationHash(native[0]!),

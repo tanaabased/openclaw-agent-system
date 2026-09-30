@@ -5,14 +5,21 @@ printf '%s\n' "$PPID" > "$mode.runner"
 printf '%s\n' "$AGENT_SYSTEM_EXEC_AUTHORITY" > "$mode.authority"
 test -z "${GH_TOKEN:-}"
 test -z "${AUTOMATION_GITHUB_TOKEN:-}"
+printf 'started\n' > "$mode.stage"
 case "$mode" in
   identity)
+    printf 'git\n' > "$mode.stage"
     git var GIT_AUTHOR_IDENT > identity.git
+    printf 'github\n' > "$mode.stage"
     gh api user --jq .login > identity.github
-    if gh --agent other api user > cross-agent.stdout 2> cross-agent.stderr; then exit 1; fi
-    mkdir -p other
-    printf 'schema-version: 1\nagent:\n  id: other\n' > other/agent.yaml
-    if (cd other && gh api user) > cross-workspace.stdout 2> cross-workspace.stderr; then exit 1; fi
+    ;;
+  containment)
+    printf 'agent-selection\n' > "$mode.stage"
+    if openclaw agent-system tool gh --agent automation-other -- api user > cross-agent.stdout 2> cross-agent.stderr; then exit 1; fi
+    grep -F invalid_arguments cross-agent.stderr
+    printf 'workspace\n' > "$mode.stage"
+    if (cd "$TMPDIR/automation-other" && gh api user) > cross-workspace.stdout 2> cross-workspace.stderr; then exit 1; fi
+    grep -F agent_not_resolved cross-workspace.stderr
     ;;
   policy)
     if gh release create never-publish --repo tanaabased/big-test-bucket > policy.stdout 2> policy.stderr; then exit 1; fi
@@ -27,4 +34,5 @@ case "$mode" in
     ;;
   *) exit 1 ;;
 esac
+printf 'done\n' > "$mode.stage"
 printf 'done\n' > "$mode.done"
