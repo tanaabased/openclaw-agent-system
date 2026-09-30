@@ -266,7 +266,16 @@ export default class GitHubReviewClient implements GitHubPullRequestReviewClient
         comments.set(comment.nodeId, comment);
       }
       if (comments.size > maximumReviewComments) break;
-      if (result.nextPage === 1) return [...comments.values()];
+      if (result.nextPage === 1) {
+        const complete: GitHubPullRequestReviewComment[] = [];
+        for (const listed of comments.values()) {
+          const comment = await this.getComment(owner, name, number, listed.databaseId);
+          if (comment.reviewId !== id || comment.nodeId !== listed.nodeId)
+            throw new Error('GitHub returned a comment for another review member.');
+          complete.push(comment);
+        }
+        return complete;
+      }
     }
     throw new GitHubWorkEventClientError(
       'github-notification-review-truncated',

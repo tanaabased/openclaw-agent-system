@@ -147,11 +147,11 @@ blob="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notificat
 content="$(printf 'replacement fixture line\nreplacement second line\n' | base64 | tr -d '\n')"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method PUT "/repos/tanaabased/big-test-bucket/contents/$filename" -f "branch=$branch" -f "sha=$blob" -f "content=$content" -f 'message=replace disposable review fixture'
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "/repos/tanaabased/big-test-bucket/pulls/$pr/reviews/$review/comments" > "$TMPDIR/review-findings.json"
-  if jq -e 'length == 2 and all(.[]; .position == null and .original_position != null)' "$TMPDIR/review-findings.json"; then break; fi
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "/repos/tanaabased/big-test-bucket/pulls/$pr/comments?per_page=100" --jq "map(select(.pull_request_review_id == $review))" > "$TMPDIR/review-findings.json"
+  if jq -e 'length == 2 and all(.[]; has("line") and .line == null and .side == "RIGHT") and (map(.original_line) | sort) == [1, 2]' "$TMPDIR/review-findings.json"; then break; fi
   sleep 2
 done
-jq -e 'length == 2 and all(.[]; .position == null and .original_position != null)' "$TMPDIR/review-findings.json"
+jq -e 'length == 2 and all(.[]; has("line") and .line == null and .side == "RIGHT") and (map(.original_line) | sort) == [1, 2]' "$TMPDIR/review-findings.json"
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw-github-notifications refresh-completed --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --timeout 180

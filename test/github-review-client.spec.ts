@@ -34,14 +34,29 @@ function rawComment(id = 82) {
     start_line: null,
     original_start_line: null,
     start_side: null,
-    position: null,
+    position: 1,
     original_position: 1,
   };
+}
+function rawReviewMember(id = 82) {
+  const value: Record<string, unknown> = { ...rawComment(id) };
+  for (const key of [
+    'line',
+    'original_line',
+    'start_line',
+    'original_start_line',
+    'side',
+    'start_side',
+    'in_reply_to_id',
+  ])
+    delete value[key];
+  return value;
 }
 function fixture() {
   const requests: string[][] = [];
   let body: unknown = [rawReview()];
   let more = false;
+  let exact: unknown;
   const client = new GitHubWorkEventClient({
     identity: { login: 'tanaabot', nodeId: 'U_bot' },
     async execute(argv) {
@@ -57,7 +72,11 @@ function fixture() {
               ]
             : []),
           '',
-          JSON.stringify(body),
+          JSON.stringify(
+            exact !== undefined && argv.some((value) => /\/pulls\/comments\/\d+$/u.test(value))
+              ? exact
+              : body,
+          ),
         ].join('\n'),
         timedOut: false,
         truncated: false,
@@ -67,6 +86,9 @@ function fixture() {
   return {
     client: client.reviews,
     requests,
+    setExact(value: unknown) {
+      exact = value;
+    },
     set(value: unknown, next = false) {
       body = value;
       more = next;
@@ -119,13 +141,17 @@ describe('channels/github/provider/review-client', () => {
     await assert.rejects(h.client.getComment('tanaabased', 'example', 45, 82), /permalink/u);
   });
 
-  it('should assemble all review pages without executing a partial group', async () => {
+  it('should complete sparse review pages with exact locations and reply relationships', async () => {
     const requests: string[][] = [];
     const client = new GitHubWorkEventClient({
       identity: { login: 'tanaabot', nodeId: 'U_bot' },
       async execute(argv) {
         requests.push(argv);
         const first = argv.includes('page=1');
+        const exactId = argv
+          .find((value) => /\/pulls\/comments\/\d+$/u.test(value))
+          ?.split('/')
+          .at(-1);
         return {
           exitCode: 0,
           stderr: '',
@@ -133,7 +159,13 @@ describe('channels/github/provider/review-client', () => {
             'HTTP/2 200 OK',
             ...(first ? ['link: <https://api.github.com/next>; rel="next"'] : []),
             '',
-            JSON.stringify([rawComment(first ? 82 : 83)]),
+            JSON.stringify(
+              exactId
+                ? { ...rawComment(Number(exactId)), in_reply_to_id: exactId === '83' ? 82 : null }
+                : first
+                  ? [rawReviewMember(82)]
+                  : [rawReviewMember(82), rawReviewMember(83)],
+            ),
           ].join('\n'),
           timedOut: false,
           truncated: false,
@@ -145,11 +177,34 @@ describe('channels/github/provider/review-client', () => {
       comments.map((value) => value.databaseId),
       [82, 83],
     );
-    assert.ok(
-      requests.every((args) =>
-        args.includes('/repos/tanaabased/example/pulls/45/reviews/81/comments'),
-      ),
+    assert.deepEqual(
+      requests.map((args) => args.find((value) => value.startsWith('/repos/'))),
+      [
+        '/repos/tanaabased/example/pulls/45/reviews/81/comments',
+        '/repos/tanaabased/example/pulls/45/reviews/81/comments',
+        '/repos/tanaabased/example/pulls/comments/82',
+        '/repos/tanaabased/example/pulls/comments/83',
+      ],
     );
+    assert.equal(comments[0]?.line, null);
+    assert.equal(comments[0]?.originalLine, 1);
+    assert.equal(comments[0]?.side, 'RIGHT');
+    assert.equal(comments[0]?.position, 1);
+    assert.equal(comments[1]?.replyToId, 82);
+  });
+
+  it('should reject a group when an exact member no longer matches its listed identity', async () => {
+    const h = fixture();
+    h.set([rawReviewMember()]);
+    for (const changed of [
+      { pull_request_review_id: 99 },
+      { node_id: 'PRRC_other' },
+      { id: 83 },
+      { pull_request_url: 'https://api.github.com/repos/tanaabased/example/pulls/46' },
+    ]) {
+      h.setExact({ ...rawComment(), ...changed });
+      await assert.rejects(h.client.getReviewComments('tanaabased', 'example', 45, 81), /another/u);
+    }
   });
 
   it('should mark bounded bodies and diffs and fail explicitly at the group pagination boundary', async () => {
@@ -167,5 +222,9 @@ describe('channels/github/provider/review-client', () => {
     await assert.rejects(h.client.getReviewComments('tanaabased', 'example', 45, 81), {
       code: 'github-notification-review-truncated',
     });
+    assert.equal(
+      h.requests.slice(1).some((args) => args.some((value) => /\/pulls\/comments\//u.test(value))),
+      false,
+    );
   });
 });
