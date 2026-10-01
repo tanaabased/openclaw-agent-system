@@ -237,7 +237,32 @@ describe('google store', () => {
       'unchanged',
     );
   });
-  it('should distinguish revoked authorization and refuse an unreviewed executable version', async () => {
+  it('should accept reviewed versions and subsequent stable minor and patch releases', async () => {
+    for (const version of [
+      'v0.42.0',
+      'v0.43.0 (test)',
+      'gog v0.43.1',
+      'gogcli 0.44.0',
+      'v0.100.0+build.1',
+    ])
+      await new GoogleClient(fakeGoogle([], { version }), {}).checkVersion(
+        {},
+        workspace,
+        googleConfiguration.account,
+      );
+  });
+  it('should reject older, prerelease, major and unrecognized versions', async () => {
+    for (const version of ['v0.41.99', 'v0.43.0-dev', 'v0.44.0-rc.1', 'v1.0.0', 'unknown'])
+      await assert.rejects(
+        new GoogleClient(fakeGoogle([], { version }), {}).checkVersion(
+          {},
+          workspace,
+          googleConfiguration.account,
+        ),
+        { code: 'tool_unavailable' },
+      );
+  });
+  it('should distinguish revoked authorization and refuse an unsupported executable version', async () => {
     await assert.rejects(
       store(root, [], { exitCode: 4 }).reconcile(
         'one',
@@ -248,7 +273,7 @@ describe('google store', () => {
       { credentialRejected: true },
     );
     await assert.rejects(
-      store(root, [], { version: 'v0.43.0' }).reconcile(
+      store(root, [], { version: 'v1.0.0' }).reconcile(
         'one',
         googleConfiguration.account,
         material(),

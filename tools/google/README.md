@@ -1,11 +1,16 @@
 # Google
 
 Agent System runs a reviewed GoG command surface with one ordinary Google user
-OAuth account per OpenClaw agent. The host supplies GoG **v0.42.0**, optionally
+OAuth account per OpenClaw agent. The host supplies GoG, optionally
 through [`setup-host`](../../MANIFEST.md#setup); Agent System does not implement
 OAuth consent. Google scopes and resource permissions remain authoritative. No
 additional ClawHub skill, GoG
 plugin, or MCP server is needed.
+
+GoG **v0.43.0** is reviewed. Stable releases **>=0.42.0 <1.0.0** are accepted;
+minor and patch updates do not require an exact version match. The admitted
+commands and flags remain restricted to the reviewed surface. Older releases,
+prereleases, and a future 1.x release require a compatibility review.
 
 Standalone Codex keeps native host-authorized Google operations. Its Agent System
 Doctor and Install remain limited to Codex setup steps.
@@ -90,7 +95,8 @@ when the complete client JSON is provided.
 
 ## Per-agent onboarding
 
-1. Install [GoG v0.42.0](https://github.com/openclaw/gogcli/releases/tag/v0.42.0).
+1. Install [GoG v0.43.0](https://github.com/openclaw/gogcli/releases/tag/v0.43.0)
+   or a compatible stable release in the range above.
    Follow the [upstream OAuth quickstart](https://gogcli.sh/quickstart.html) to
    select the Cloud project, enable needed APIs, configure the audience, and
    download a Desktop OAuth client JSON. Reuse the production client for other

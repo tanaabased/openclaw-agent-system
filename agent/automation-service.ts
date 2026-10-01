@@ -4,6 +4,9 @@ import {
   AutomationError,
   listNativeAutomations,
   nativeAutomation,
+  nativeAutomationHistory,
+  nativeAutomationRun,
+  type AutomationHistoryOptions,
   type AutomationGateway,
   type NativeAutomation,
 } from './automation-gateway.ts';
@@ -72,12 +75,158 @@ export default class AutomationService {
     };
   }
 
+  async list(manifest: AgentManifest, workspaceDir: string) {
+    const { context, store } = await this.scope(manifest, workspaceDir);
+    const ledger = await store.read();
+    const observed = this.dependencies.request
+      ? await listNativeAutomations(this.dependencies.request)
+      : [];
+    const findings = await this.inspect(manifest, workspaceDir, {
+      context,
+      store,
+      ledger,
+      observed,
+    });
+    const ids = new Set([
+      ...(manifest.automations ?? []).map(({ id }) => id),
+      ...ledger.records.map(({ id }) => id),
+    ]);
+    return {
+      runtime: 'openclaw',
+      workspaceDir: context.workspaceDir,
+      status: findings.some(({ status }) => status !== 'healthy' && status !== 'skipped')
+        ? 'attention'
+        : 'aligned',
+      jobs: [...ids].map((id) => {
+        const declared = manifest.automations?.find((job) => job.id === id);
+        const record = ledger.records.find((entry) => entry.id === id);
+        const native = record ? this.owned(record, observed, context.agentId) : undefined;
+        return {
+          id,
+          declared: Boolean(declared),
+          enabled: declared?.enabled ?? false,
+          applicable: declared?.runtimes.includes('openclaw') ?? true,
+          nativeId: record?.nativeId ?? null,
+          nativeEnabled: native?.enabled ?? null,
+          execution: ['ok', 'error', 'skipped'].includes(String(native?.state.lastRunStatus))
+            ? native!.state.lastRunStatus
+            : 'unavailable',
+          delivery: ['delivered', 'not-delivered', 'unknown', 'not-requested'].includes(
+            String(native?.state.lastDeliveryStatus),
+          )
+            ? native!.state.lastDeliveryStatus
+            : 'unavailable',
+          removed: record?.removed ?? false,
+          findings: findings.filter(({ stepId }) => stepId === id),
+        };
+      }),
+      findings,
+    };
+  }
+
+  private async resolveOwned(manifest: AgentManifest, workspaceDir: string, id: string) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id)) throw new AutomationError('automation-id-invalid');
+    if (!this.dependencies.request) throw new AutomationError('automation-requires-operator-sync');
+    const { context, store } = await this.scope(manifest, workspaceDir);
+    const ledger = await store.read();
+    const record = ledger.records.find((entry) => entry.id === id);
+    if (!record?.nativeId || record.pending)
+      throw new AutomationError('automation-owned-job-missing');
+    const native = nativeAutomation(
+      await this.dependencies.request('cron.get', { id: record.nativeId }),
+    );
+    if (!this.owned(record, [native], context.agentId))
+      throw new AutomationError('automation-owned-job-missing');
+    return { context, record, native };
+  }
+
+  async run(manifest: AgentManifest, workspaceDir: string, id: string) {
+    const job = manifest.automations?.find((entry) => entry.id === id);
+    if (!job) throw new AutomationError('automation-id-missing');
+    if (!job.runtimes.includes('openclaw'))
+      throw new AutomationError('automation-runtime-unsupported');
+    const { context, record, native } = await this.resolveOwned(manifest, workspaceDir, id);
+    if (
+      !job.enabled ||
+      record.removed ||
+      !native.enabled ||
+      native.state.autoDisabled ||
+      retainedOneShot(native)
+    )
+      throw new AutomationError('automation-run-disabled');
+    const effective = effectiveAutomation(job, context);
+    if (
+      record.hash !== effective.hash ||
+      nativeAutomationHash(native) !== record.nativeHash ||
+      nativeAutomationHash(native) !== nativeAutomationHash(projectAutomation(job, record, context))
+    )
+      throw new AutomationError('automation-execution-drift');
+    const loaded = await this.dependencies.manifestService.loadForAgentId(
+      context.agentId,
+      'service',
+    );
+    if (
+      loaded.status !== 'loaded' ||
+      loaded.manifest.agent.id !== context.agentId ||
+      (await realpath(loaded.scope.workspaceDir)) !== context.workspaceDir ||
+      automationHash(loaded.manifest.automations ?? []) !==
+        automationHash(manifest.automations ?? [])
+    )
+      throw new AutomationError('automation-manifest-changed');
+    const result = nativeAutomationRun(
+      await this.dependencies.request!('cron.run', { id: native.id, mode: 'if-enabled' }),
+    );
+    return {
+      runtime: 'openclaw',
+      id,
+      nativeId: native.id,
+      ...result,
+      execution: 'unavailable',
+      delivery: 'unavailable',
+    };
+  }
+
+  async runs(
+    manifest: AgentManifest,
+    workspaceDir: string,
+    id: string,
+    options: AutomationHistoryOptions,
+  ) {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > 200 ||
+      !Number.isSafeInteger(options.offset) ||
+      options.offset < 0 ||
+      (options.runId !== undefined && !options.runId.trim())
+    )
+      throw new AutomationError('automation-history-options-invalid');
+    const { native } = await this.resolveOwned(manifest, workspaceDir, id);
+    const result = nativeAutomationHistory(
+      await this.dependencies.request!('cron.runs', {
+        id: native.id,
+        limit: options.limit,
+        offset: options.offset,
+        ...(options.runId !== undefined ? { runId: options.runId } : {}),
+      }),
+      native.id,
+      options,
+    );
+    return { runtime: 'openclaw', id, nativeId: native.id, status: 'ok', ...result };
+  }
+
   async inspect(
     manifest: AgentManifest,
     workspaceDir: string,
+    snapshot?: {
+      context: AutomationProjectionContext;
+      store: AutomationStore;
+      ledger: AutomationLedger;
+      observed: NativeAutomation[];
+    },
   ): Promise<AgentSystemLifecycleFinding[]> {
-    const { store, context } = await this.scope(manifest, workspaceDir);
-    const ledger = await store.read();
+    const { store, context } = snapshot ?? (await this.scope(manifest, workspaceDir));
+    const ledger = snapshot?.ledger ?? (await store.read());
     const declarations = (manifest.automations ?? []).filter((job) =>
       job.runtimes.includes('openclaw'),
     );
@@ -101,7 +250,7 @@ export default class AutomationService {
     });
     if (!this.dependencies.request)
       return [finding('operator', 'manual', 'automation-requires-operator-sync')];
-    const observed = await listNativeAutomations(this.dependencies.request);
+    const observed = snapshot?.observed ?? (await listNativeAutomations(this.dependencies.request));
     const findings: AgentSystemLifecycleFinding[] = [];
     const status = await this.dependencies.request('cron.status', {});
     if (status.enabled === false)

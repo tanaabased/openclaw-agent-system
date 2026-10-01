@@ -1,0 +1,626 @@
+{
+  "rpc": [
+    {
+      "method": "cron.add",
+      "params": {
+        "name": "Agent System: capture",
+        "declarationKey": "agent-system:fixture-scope:capture",
+        "agentId": "automation-tanaabot",
+        "enabled": false,
+        "deleteAfterRun": false,
+        "schedule": {
+          "kind": "every",
+          "everyMs": 3600000,
+          "anchorMs": 1790862001348
+        },
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "delivery": {
+          "mode": "none",
+          "bestEffort": false
+        },
+        "failureAlert": false,
+        "payload": {
+          "kind": "command",
+          "argv": [
+            "/runtime/node",
+            "/runtime/openclaw.mjs",
+            "agent-system",
+            "automation-execute",
+            "--id",
+            "capture",
+            "--hash",
+            "5bcfd30ca947010a84ddd040feb155fac652cfed133ae7e4e12bfb4ad37b68e4"
+          ],
+          "cwd": "/workspace/fixture",
+          "env": {
+            "OPENCLAW_PROFILE": "fixture-profile",
+            "OPENCLAW_STATE_DIR": "/profile/fixture",
+            "OPENCLAW_CONFIG_PATH": "/profile/fixture/openclaw.json"
+          },
+          "input": "",
+          "timeoutSeconds": 1800,
+          "noOutputTimeoutSeconds": 3600,
+          "outputMaxBytes": 16384
+        }
+      },
+      "response": {
+        "created": true,
+        "job": {
+          "id": "native-16",
+          "declarationKey": "agent-system:fixture-scope:capture",
+          "agentId": "automation-tanaabot",
+          "name": "Agent System: capture",
+          "enabled": false,
+          "deleteAfterRun": false,
+          "createdAtMs": 1790862001365,
+          "updatedAtMs": 1790862001365,
+          "schedule": {
+            "kind": "every",
+            "everyMs": 3600000,
+            "anchorMs": 1790862001348
+          },
+          "sessionTarget": "isolated",
+          "wakeMode": "now",
+          "payload": {
+            "kind": "command",
+            "argv": [
+              "/runtime/node",
+              "/runtime/openclaw.mjs",
+              "agent-system",
+              "automation-execute",
+              "--id",
+              "capture",
+              "--hash",
+              "5bcfd30ca947010a84ddd040feb155fac652cfed133ae7e4e12bfb4ad37b68e4"
+            ],
+            "cwd": "/workspace/fixture",
+            "env": {
+              "OPENCLAW_PROFILE": "fixture-profile",
+              "OPENCLAW_STATE_DIR": "/profile/fixture",
+              "OPENCLAW_CONFIG_PATH": "/profile/fixture/openclaw.json"
+            },
+            "input": "",
+            "timeoutSeconds": 1800,
+            "noOutputTimeoutSeconds": 3600,
+            "outputMaxBytes": 16384
+          },
+          "delivery": {
+            "mode": "none",
+            "bestEffort": false
+          },
+          "failureAlert": false,
+          "state": {},
+          "configRevision": "sha256:pdgG83exWp5IXUcn1BDkOahWyIIeDXEJLHvemu35_XM"
+        },
+        "deliveryPreview": {
+          "label": "not requested",
+          "detail": "not requested"
+        }
+      }
+    },
+    {
+      "method": "cron.get",
+      "params": {
+        "id": "native-16"
+      },
+      "response": {
+        "id": "native-16",
+        "declarationKey": "agent-system:fixture-scope:capture",
+        "agentId": "automation-tanaabot",
+        "name": "Agent System: capture",
+        "enabled": false,
+        "deleteAfterRun": false,
+        "createdAtMs": 1790862001365,
+        "updatedAtMs": 1790862001365,
+        "schedule": {
+          "kind": "every",
+          "everyMs": 3600000,
+          "anchorMs": 1790862001348
+        },
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "payload": {
+          "kind": "command",
+          "argv": [
+            "/runtime/node",
+            "/runtime/openclaw.mjs",
+            "agent-system",
+            "automation-execute",
+            "--id",
+            "capture",
+            "--hash",
+            "5bcfd30ca947010a84ddd040feb155fac652cfed133ae7e4e12bfb4ad37b68e4"
+          ],
+          "cwd": "/workspace/fixture",
+          "env": {
+            "OPENCLAW_PROFILE": "fixture-profile",
+            "OPENCLAW_STATE_DIR": "/profile/fixture",
+            "OPENCLAW_CONFIG_PATH": "/profile/fixture/openclaw.json"
+          },
+          "input": "",
+          "timeoutSeconds": 1800,
+          "noOutputTimeoutSeconds": 3600,
+          "outputMaxBytes": 16384
+        },
+        "delivery": {
+          "mode": "none",
+          "bestEffort": false
+        },
+        "failureAlert": false,
+        "state": {},
+        "configRevision": "sha256:pdgG83exWp5IXUcn1BDkOahWyIIeDXEJLHvemu35_XM"
+      }
+    },
+    {
+      "method": "cron.update",
+      "params": {
+        "id": "native-16",
+        "expectedConfigRevision": "sha256:vX4gRKjPi8HN0M0qePekgM5PwavD1sTIGDOz8erhexA",
+        "patch": {
+          "schedule": {
+            "kind": "every",
+            "everyMs": 7200000,
+            "anchorMs": 1790862097314
+          },
+          "payload": {
+            "kind": "command",
+            "argv": [
+              "/runtime/node",
+              "/runtime/openclaw.mjs",
+              "agent-system",
+              "automation-execute",
+              "--id",
+              "capture",
+              "--hash",
+              "46177a55f16e0a47ed1652ba707ed691e91b64a658bd06c7be1372c1f084b7b0"
+            ],
+            "cwd": "/workspace/fixture",
+            "env": {
+              "OPENCLAW_PROFILE": "fixture-profile",
+              "OPENCLAW_STATE_DIR": "/profile/fixture",
+              "OPENCLAW_CONFIG_PATH": "/profile/fixture/openclaw.json"
+            },
+            "input": "",
+            "timeoutSeconds": 1800,
+            "noOutputTimeoutSeconds": 3600,
+            "outputMaxBytes": 16384,
+            "toolsAllow": null
+          }
+        }
+      },
+      "response": {
+        "id": "native-16",
+        "declarationKey": "agent-system:fixture-scope:capture",
+        "agentId": "automation-tanaabot",
+        "name": "Agent System: capture",
+        "enabled": true,
+        "deleteAfterRun": false,
+        "createdAtMs": 1790862001365,
+        "schedule": {
+          "kind": "every",
+          "everyMs": 7200000,
+          "anchorMs": 1790862097314
+        },
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "payload": {
+          "kind": "command",
+          "argv": [
+            "/runtime/node",
+            "/runtime/openclaw.mjs",
+            "agent-system",
+            "automation-execute",
+            "--id",
+            "capture",
+            "--hash",
+            "46177a55f16e0a47ed1652ba707ed691e91b64a658bd06c7be1372c1f084b7b0"
+          ],
+          "cwd": "/workspace/fixture",
+          "env": {
+            "OPENCLAW_PROFILE": "fixture-profile",
+            "OPENCLAW_STATE_DIR": "/profile/fixture",
+            "OPENCLAW_CONFIG_PATH": "/profile/fixture/openclaw.json"
+          },
+          "input": "",
+          "timeoutSeconds": 1800,
+          "noOutputTimeoutSeconds": 3600,
+          "outputMaxBytes": 16384
+        },
+        "delivery": {
+          "mode": "none",
+          "bestEffort": false
+        },
+        "failureAlert": false,
+        "state": {
+          "nextRunAtMs": 1790869297314,
+          "consecutiveErrors": 2,
+          "scheduleErrorCount": 0,
+          "scheduleActivatedAtMs": 1790862097336,
+          "lastRunAtMs": 1790862084688,
+          "lastRunStatus": "error",
+          "lastStatus": "error",
+          "lastDurationMs": 12207,
+          "lastDiagnostics": {
+            "summary": "stdout:\n{\"id\":\"capture\",\"status\":\"error\",\"code\":\"automation-command-completed\",\"exitCode\":7}\n\nstderr:\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 3231.9ms\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 2518.5ms\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-9Nn4hH: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-7PyYIE: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only\u2026",
+            "entries": [
+              {
+                "ts": 1790862096895,
+                "source": "exec",
+                "severity": "error",
+                "message": "command error: \"/runtime/node\" \"/runtime/openclaw.mjs\" \"agent-system\" \"automation-execute\" \"--id\" \"capture\" \"--hash\" \"5bcfd30ca947010a84ddd040feb155fac652cfed133ae7e4e12bfb4ad37b68e4\"",
+                "exitCode": 1
+              }
+            ]
+          },
+          "lastDiagnosticSummary": "stdout:\n{\"id\":\"capture\",\"status\":\"error\",\"code\":\"automation-command-completed\",\"exitCode\":7}\n\nstderr:\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 3231.9ms\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 2518.5ms\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-9Nn4hH: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-7PyYIE: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 4.2 MiB, budget 306 seconds\n[state/sqlite] SQLite read-only\u2026",
+          "lastDeliveryStatus": "not-requested",
+          "lastFailureNotificationDeliveryStatus": "not-requested",
+          "consecutiveSkipped": 0,
+          "lastError": "command exited with code 1"
+        },
+        "updatedAtMs": 1790862097336,
+        "configRevision": "sha256:b8z4sxpsqJ2URsOg62Q9IIE5h0RpBr_Ng-H9eX06CLY",
+        "nextRunAtMs": 1790869297314,
+        "lastRunAtMs": 1790862084688,
+        "lastRunStatus": "error",
+        "lastRunError": "command exited with code 1",
+        "lastDeliveryStatus": "not-requested",
+        "lastFailureNotificationDeliveryStatus": "not-requested"
+      }
+    },
+    {
+      "method": "cron.run",
+      "params": {
+        "id": "native-16",
+        "mode": "if-enabled"
+      },
+      "response": {
+        "ok": true,
+        "enqueued": true,
+        "runId": "run-17",
+        "processInstanceId": "ad1ee595-5494-4fa0-931d-5c16f345b5af"
+      }
+    },
+    {
+      "method": "cron.runs",
+      "params": {
+        "id": "native-16",
+        "limit": 1,
+        "offset": 0,
+        "runId": "run-17"
+      },
+      "response": {
+        "entries": [
+          {
+            "ts": 1790862025605,
+            "jobId": "native-16",
+            "action": "finished",
+            "status": "ok",
+            "completionStatus": "succeeded",
+            "summary": "stdout:\n{\"id\":\"capture\",\"status\":\"ok\",\"code\":\"automation-command-completed\",\"exitCode\":0}\n\nstderr:\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 3256.6ms\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 2534.3ms\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-RNZYJG: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-awsZCO: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-KDtO9H: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds",
+            "runId": "run-17",
+            "diagnostics": {
+              "summary": "stdout:\n{\"id\":\"capture\",\"status\":\"ok\",\"code\":\"automation-command-completed\",\"exitCode\":0}\n\nstderr:\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 3256.6ms\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 2534.3ms\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-RNZYJG: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-awsZCO: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only sn\u2026",
+              "entries": [
+                {
+                  "ts": 1790862025605,
+                  "source": "exec",
+                  "severity": "info",
+                  "message": "command ok: \"/runtime/node\" \"/runtime/openclaw.mjs\" \"agent-system\" \"automation-execute\" \"--id\" \"capture\" \"--hash\" \"5bcfd30ca947010a84ddd040feb155fac652cfed133ae7e4e12bfb4ad37b68e4\"",
+                  "exitCode": 0
+                }
+              ]
+            },
+            "runAtMs": 1790862013699,
+            "durationMs": 11906,
+            "nextRunAtMs": 1790865601348,
+            "deliveryStatus": "not-requested",
+            "delivery": {
+              "intended": {
+                "source": "explicit"
+              }
+            },
+            "jobName": "Agent System: capture"
+          }
+        ],
+        "total": 1,
+        "offset": 0,
+        "limit": 1,
+        "hasMore": false,
+        "nextOffset": null
+      }
+    },
+    {
+      "method": "cron.runs",
+      "params": {
+        "id": "native-16",
+        "limit": 1,
+        "offset": 0,
+        "runId": "run-18"
+      },
+      "response": {
+        "entries": [
+          {
+            "ts": 1790862049533,
+            "jobId": "native-16",
+            "action": "finished",
+            "status": "error",
+            "completionStatus": "failed",
+            "error": "command exited with code 1",
+            "summary": "stdout:\n{\"id\":\"capture\",\"status\":\"error\",\"code\":\"automation-command-completed\",\"exitCode\":7}\n\nstderr:\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 3250.3ms\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 2531.9ms\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-3y7LR5: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-84UiTL: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-i7SvyM: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds",
+            "runId": "run-18",
+            "diagnostics": {
+              "summary": "stdout:\n{\"id\":\"capture\",\"status\":\"error\",\"code\":\"automation-command-completed\",\"exitCode\":7}\n\nstderr:\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 3250.3ms\n[plugins] loading agent-system from /profile/fixture/npm/projects/tanaab-openclaw-agent-system-e221d088a5/node_modules/@tanaab/openclaw-agent-system/dist/index.js\n[plugins] loaded 1 plugin(s) (1 attempted) in 2531.9ms\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-3y7LR5: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw/openclaw-sqlite-readonly-v2-84UiTL: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /home/fixture/.cache/openclaw: 4.0 KiB, budget 301 seconds\n[state/sqlite] SQLite read-only snapshot for /profile/fixture/state/openclaw.sqlite: 8.0 MiB, budget 311 seconds\n[state/sqlite] SQLite read-only\u2026",
+              "entries": [
+                {
+                  "ts": 1790862049532,
+                  "source": "exec",
+                  "severity": "error",
+                  "message": "command error: \"/runtime/node\" \"/runtime/openclaw.mjs\" \"agent-system\" \"automation-execute\" \"--id\" \"capture\" \"--hash\" \"5bcfd30ca947010a84ddd040feb155fac652cfed133ae7e4e12bfb4ad37b68e4\"",
+                  "exitCode": 1
+                }
+              ]
+            },
+            "runAtMs": 1790862037699,
+            "durationMs": 11834,
+            "nextRunAtMs": 1790865601348,
+            "deliveryStatus": "not-requested",
+            "delivery": {
+              "intended": {
+                "source": "explicit"
+              }
+            },
+            "jobName": "Agent System: capture"
+          }
+        ],
+        "total": 1,
+        "offset": 0,
+        "limit": 1,
+        "hasMore": false,
+        "nextOffset": null
+      }
+    },
+    {
+      "method": "cron.add",
+      "params": {
+        "name": "capture-delivery",
+        "agentId": "automation-tanaabot",
+        "enabled": false,
+        "schedule": {
+          "kind": "every",
+          "everyMs": 3600000
+        },
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "payload": {
+          "kind": "command",
+          "argv": [
+            "sh",
+            "/workspace/fixture/capture.sh"
+          ],
+          "cwd": "/workspace/fixture",
+          "timeoutSeconds": 10
+        },
+        "delivery": {
+          "mode": "webhook",
+          "to": "http://127.0.0.1:1/automation-197-unavailable",
+          "bestEffort": false
+        }
+      },
+      "response": {
+        "id": "native-20",
+        "agentId": "automation-tanaabot",
+        "name": "capture-delivery",
+        "enabled": false,
+        "createdAtMs": 1790862109973,
+        "updatedAtMs": 1790862109973,
+        "schedule": {
+          "kind": "every",
+          "everyMs": 3600000,
+          "anchorMs": 1790862109973
+        },
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "payload": {
+          "kind": "command",
+          "argv": [
+            "sh",
+            "/workspace/fixture/capture.sh"
+          ],
+          "cwd": "/workspace/fixture",
+          "timeoutSeconds": 10
+        },
+        "delivery": {
+          "mode": "webhook",
+          "to": "http://127.0.0.1:1/automation-197-unavailable",
+          "bestEffort": false
+        },
+        "state": {},
+        "configRevision": "sha256:tKXyoaaKx8hMJt1ZiGH7ztYMlm8Nk1DZcby_TfvT4aQ",
+        "deliveryPreview": {
+          "label": "webhook:http://127.0.0.1:1/automation-197-unavailable",
+          "detail": "webhook"
+        }
+      }
+    },
+    {
+      "method": "cron.runs",
+      "params": {
+        "id": "native-20",
+        "limit": 1,
+        "offset": 0,
+        "runId": "run-21"
+      },
+      "response": {
+        "entries": [
+          {
+            "ts": 1790862110039,
+            "jobId": "native-20",
+            "action": "finished",
+            "status": "ok",
+            "completionStatus": "failed",
+            "summary": "delivery fixture success",
+            "runId": "run-21",
+            "diagnostics": {
+              "summary": "delivery fixture success",
+              "entries": [
+                {
+                  "ts": 1790862110032,
+                  "source": "exec",
+                  "severity": "info",
+                  "message": "command ok: \"sh\" \"/workspace/fixture/capture.sh\"",
+                  "exitCode": 0
+                }
+              ]
+            },
+            "runAtMs": 1790862110020,
+            "durationMs": 19,
+            "delivered": false,
+            "deliveryStatus": "not-delivered",
+            "deliveryError": "Blocked hostname or private/internal/special-use IP address",
+            "delivery": {
+              "intended": {
+                "to": "http://127.0.0.1:1/automation-197-unavailable",
+                "source": "explicit"
+              },
+              "delivered": false,
+              "resolved": {
+                "to": "http://127.0.0.1:1/automation-197-unavailable",
+                "source": "explicit",
+                "ok": false,
+                "error": "Blocked hostname or private/internal/special-use IP address"
+              }
+            },
+            "jobName": "capture-delivery"
+          }
+        ],
+        "total": 1,
+        "offset": 0,
+        "limit": 1,
+        "hasMore": false,
+        "nextOffset": null
+      }
+    },
+    {
+      "method": "cron.status",
+      "params": {},
+      "response": {
+        "enabled": true,
+        "triggersEnabled": true,
+        "storePath": "/profile/fixture/state/openclaw.sqlite",
+        "storage": "sqlite",
+        "sqlitePath": "/profile/fixture/state/openclaw.sqlite",
+        "jobs": 218,
+        "nextWakeAtMs": 1790863382765
+      }
+    }
+  ],
+  "cli": [
+    {
+      "executable": "openclaw",
+      "argv": [
+        "agent-system",
+        "automations",
+        "sync",
+        "--json"
+      ],
+      "exitCode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"runtime\": \"openclaw\",\n  \"status\": \"synchronized\",\n  \"outcomes\": [\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"capture\",\n      \"code\": \"automation-synchronized\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation capture is synchronized.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"identity\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation identity is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"paused-review\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation paused-review is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"containment\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation containment is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"stale\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation stale is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"disabled\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation disabled is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"policy\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation policy is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"missing\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation missing is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"timeout\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation timeout is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"cancel\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation cancel is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"prompt\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation prompt is disabled; ownership and native history are retained.\"\n    }\n  ],\n  \"warnings\": []\n}\n",
+      "timedOut": false,
+      "truncated": false
+    },
+    {
+      "executable": "openclaw",
+      "argv": [
+        "as",
+        "automations",
+        "runs",
+        "capture",
+        "--run-id",
+        "run-17",
+        "--limit",
+        "1",
+        "--json"
+      ],
+      "exitCode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"runtime\": \"openclaw\",\n  \"id\": \"capture\",\n  \"nativeId\": \"native-16\",\n  \"status\": \"ok\",\n  \"entries\": [\n    {\n      \"ts\": 1790862025605,\n      \"runId\": \"run-17\",\n      \"execution\": \"ok\",\n      \"delivery\": \"not-requested\"\n    }\n  ],\n  \"total\": 1,\n  \"offset\": 0,\n  \"limit\": 1,\n  \"hasMore\": false,\n  \"nextOffset\": null\n}\n",
+      "timedOut": false,
+      "truncated": false
+    },
+    {
+      "executable": "openclaw",
+      "argv": [
+        "agent-system",
+        "automations",
+        "list",
+        "--json"
+      ],
+      "exitCode": 1,
+      "stderr": "",
+      "stdout": "{\n  \"runtime\": \"openclaw\",\n  \"workspaceDir\": \"/workspace/fixture\",\n  \"status\": \"attention\",\n  \"jobs\": [\n    {\n      \"id\": \"capture\",\n      \"declared\": true,\n      \"enabled\": true,\n      \"applicable\": true,\n      \"nativeId\": \"native-16\",\n      \"nativeEnabled\": true,\n      \"execution\": \"error\",\n      \"delivery\": \"not-requested\",\n      \"removed\": false,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"capture\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-healthy\",\n          \"message\": \"Automation capture: healthy.\"\n        },\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"capture\",\n          \"status\": \"warning\",\n          \"code\": \"automation-execution-failed\",\n          \"message\": \"Automation capture: execution-failed.\",\n          \"remediation\": \"Run operator install after resolving the reported condition; no job was executed.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"identity\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-15\",\n      \"nativeEnabled\": false,\n      \"execution\": \"ok\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"identity\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation identity: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"paused-review\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-11\",\n      \"nativeEnabled\": false,\n      \"execution\": \"unavailable\",\n      \"delivery\": \"unavailable\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"paused-review\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation paused-review: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"containment\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-13\",\n      \"nativeEnabled\": false,\n      \"execution\": \"ok\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"containment\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation containment: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"stale\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-10\",\n      \"nativeEnabled\": false,\n      \"execution\": \"error\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"stale\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation stale: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"disabled\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-9\",\n      \"nativeEnabled\": false,\n      \"execution\": \"error\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"disabled\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation disabled: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"policy\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-12\",\n      \"nativeEnabled\": false,\n      \"execution\": \"error\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"policy\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation policy: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"missing\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-14\",\n      \"nativeEnabled\": false,\n      \"execution\": \"error\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"missing\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation missing: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"timeout\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-7\",\n      \"nativeEnabled\": false,\n      \"execution\": \"error\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"timeout\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation timeout: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"cancel\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-6\",\n      \"nativeEnabled\": false,\n      \"execution\": \"error\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"cancel\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation cancel: disabled.\"\n        }\n      ]\n    },\n    {\n      \"id\": \"prompt\",\n      \"declared\": false,\n      \"enabled\": false,\n      \"applicable\": true,\n      \"nativeId\": \"native-8\",\n      \"nativeEnabled\": false,\n      \"execution\": \"ok\",\n      \"delivery\": \"not-requested\",\n      \"removed\": true,\n      \"findings\": [\n        {\n          \"component\": \"automations\",\n          \"stepId\": \"prompt\",\n          \"status\": \"healthy\",\n          \"code\": \"automation-disabled\",\n          \"message\": \"Automation prompt: disabled.\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"capture\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-healthy\",\n      \"message\": \"Automation capture: healthy.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"capture\",\n      \"status\": \"warning\",\n      \"code\": \"automation-execution-failed\",\n      \"message\": \"Automation capture: execution-failed.\",\n      \"remediation\": \"Run operator install after resolving the reported condition; no job was executed.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"identity\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation identity: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"paused-review\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation paused-review: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"containment\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation containment: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"stale\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation stale: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"disabled\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation disabled: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"policy\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation policy: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"missing\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation missing: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"timeout\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation timeout: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"cancel\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation cancel: disabled.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"prompt\",\n      \"status\": \"healthy\",\n      \"code\": \"automation-disabled\",\n      \"message\": \"Automation prompt: disabled.\"\n    }\n  ]\n}\n",
+      "timedOut": false,
+      "truncated": false
+    },
+    {
+      "executable": "openclaw",
+      "argv": [
+        "as",
+        "automations",
+        "run",
+        "missing",
+        "--json"
+      ],
+      "exitCode": 1,
+      "stderr": "Automation operation stopped (automation-id-missing).\n",
+      "stdout": "{\n  \"status\": \"failed\",\n  \"code\": \"automation-id-missing\"\n}\n",
+      "timedOut": false,
+      "truncated": false
+    },
+    {
+      "executable": "openclaw",
+      "argv": [
+        "as",
+        "automations",
+        "run",
+        "capture",
+        "--json"
+      ],
+      "exitCode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"runtime\": \"openclaw\",\n  \"id\": \"capture\",\n  \"nativeId\": \"native-16\",\n  \"status\": \"queued\",\n  \"runId\": \"run-19\",\n  \"execution\": \"unavailable\",\n  \"delivery\": \"unavailable\"\n}\n",
+      "timedOut": false,
+      "truncated": false
+    },
+    {
+      "executable": "openclaw",
+      "argv": [
+        "as",
+        "automations",
+        "sync",
+        "--json"
+      ],
+      "exitCode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"runtime\": \"openclaw\",\n  \"status\": \"synchronized\",\n  \"outcomes\": [\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"capture\",\n      \"code\": \"automation-synchronized\",\n      \"status\": \"updated\",\n      \"message\": \"Automation capture is synchronized.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"identity\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation identity is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"paused-review\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation paused-review is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"containment\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation containment is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"stale\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation stale is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"disabled\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation disabled is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"policy\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation policy is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"missing\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation missing is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"timeout\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation timeout is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"cancel\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation cancel is disabled; ownership and native history are retained.\"\n    },\n    {\n      \"component\": \"automations\",\n      \"stepId\": \"prompt\",\n      \"code\": \"automation-disabled-retained\",\n      \"status\": \"unchanged\",\n      \"message\": \"Automation prompt is disabled; ownership and native history are retained.\"\n    }\n  ],\n  \"warnings\": []\n}\n",
+      "timedOut": false,
+      "truncated": false
+    },
+    {
+      "executable": "openclaw",
+      "argv": [
+        "as",
+        "automations",
+        "run",
+        "--help"
+      ],
+      "exitCode": 0,
+      "stderr": "",
+      "stdout": "\nOpenClaw 2026.9.6 (eb377ac) \u2014 All your chats, one OpenClaw.\n\nUsage: openclaw agent-system automations run [options] <id>\n\nQueue one enabled synchronized job by manifest id.\n\nOptions:\n  --agent <id>  Select an installed agent (operators only).\n  -h, --help    Display help for command\n  --json        Write one structured JSON result.\n",
+      "timedOut": false,
+      "truncated": false
+    }
+  ]
+}

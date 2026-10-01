@@ -2,6 +2,10 @@ import type { Readable } from 'node:stream';
 import type { Option } from 'commander';
 
 import executeAutomation from './automation-execute.ts';
+import automationList from './automation-list.ts';
+import automationRun from './automation-run.ts';
+import automationRuns from './automation-runs.ts';
+import automationSync from './automation-sync.ts';
 import type AutomationService from '../agent/automation-service.ts';
 import type BoundCommandService from '../agent/bound-command-service.ts';
 
@@ -119,6 +123,59 @@ export default function registerAgentSystemCli(
     .alias('as')
     .description('Manage reproducible OpenClaw agent workspaces.')
     .action(() => writeHelp(agentSystem, output));
+  if (options.automations) {
+    const automations = agentSystem
+      .command('automations')
+      .description('List, synchronize, run, and inspect owned repository automations.')
+      .action(() => writeHelp(automations, output));
+    for (const action of ['list', 'sync', 'run', 'runs'] as const) {
+      const command = automations
+        .command(action === 'run' || action === 'runs' ? `${action} <id>` : action)
+        .description(
+          {
+            list: 'Inspect declared and native state without applying changes.',
+            sync: 'Reconcile owned automations using the install lifecycle.',
+            run: 'Queue one enabled synchronized job by manifest id.',
+            runs: 'Read native execution and delivery history by manifest id.',
+          }[action],
+        )
+        .option('--agent <id>', 'Select an installed agent (operators only).')
+        .option('--json', 'Write one structured JSON result.');
+      if (action === 'runs')
+        command
+          .addOption(
+            command
+              .createOption('--limit <count>', 'Maximum history entries, from 1 to 200.')
+              .default('50'),
+          )
+          .addOption(
+            command.createOption('--offset <count>', 'History entries to skip.').default('0'),
+          )
+          .option('--run-id <id>', 'Filter by the native occurrence id.');
+      command.action(async (...args: unknown[]) => {
+        if (!(await allowOperatorCommand())) return;
+        const selected = command.opts();
+        const common = {
+          ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+          automations: options.automations!,
+          manifestService: options.manifestService,
+          json: selected.json === true,
+          output,
+          setExitCode,
+          workspaceDir: cwd(),
+        };
+        if (action === 'list') await automationList(common);
+        else if (action === 'sync') await automationSync(common);
+        else if (action === 'run') await automationRun(common, String(args[0]));
+        else
+          await automationRuns(common, String(args[0]), {
+            limit: /^\d+$/u.test(String(selected.limit)) ? Number(selected.limit) : NaN,
+            offset: /^\d+$/u.test(String(selected.offset)) ? Number(selected.offset) : NaN,
+            ...(typeof selected.runId === 'string' ? { runId: selected.runId } : {}),
+          });
+      });
+    }
+  }
   if (options.automations && options.boundCommands) {
     const execute = agentSystem
       .command('automation-execute')

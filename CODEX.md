@@ -120,6 +120,16 @@ may leave `automation-journal-busy`; first confirm no reconciliation is running,
 then remove only that stale Agent System `.lock` directory. Never repair native
 scheduler files or delete the ownership ledger to force a sync.
 
+The trusted `automationRuntime` also accepts `list` and `sync` with the same
+project/thread JSON inputs as `plan`. Both inspect desired/native inventory; `sync`
+returns the plan for Install's authorized native write sequence. It does not apply
+headless scheduler writes. `automations --help` documents the internal routes.
+`run` and `runs` accept `{ "id": "manifest-id" }` and exit 1 with respectively
+`automation-run-now-unsupported` and `automation-history-unavailable`. Neither
+creates a task, changes a job, or claims a scheduler occurrence. An explicitly
+requested manual task has separate task history and does not consume a saved
+one-shot or prove native scheduling.
+
 Native request/response and saved-state captures live in `fixtures/` with separate
 provenance. Capture, comparison, and acceptance are explicit development work;
 ordinary tests consume reviewed captures without contacting the app. Constructed

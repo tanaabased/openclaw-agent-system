@@ -37,7 +37,7 @@ export function fakeGoogle(
 ) {
   return async (request: AgentSystemCliRunRequest) => {
     requests.push(request);
-    if (request.argv.includes('--version')) return result(options.version ?? 'v0.42.0 (test)');
+    if (request.argv.includes('--version')) return result(options.version ?? 'v0.43.0 (test)');
     const data = request.environment.GOG_DATA_DIR!;
     if (request.argv.includes('credentials')) {
       await mkdir(join(data, 'keyring'), { mode: 0o700 });

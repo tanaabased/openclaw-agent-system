@@ -4,6 +4,8 @@ import {
   acknowledgeCodexAutomation,
   cancelCodexAutomation,
   inspectCodexAutomations,
+  listCodexAutomations,
+  codexAutomationRunGap,
   prepareCodexAutomation,
 } from './codex-automations.ts';
 import { CodexAutomationError } from './codex-automation-state.ts';
@@ -225,6 +227,26 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'setup') return runSetup(args.slice(1));
   if (command === 'automations') {
     const action = args[1];
+    if (action === '--help') {
+      process.stdout.write(
+        'Usage: automations <list|sync|run|runs|inspect|plan|prepare|acknowledge|cancel> --plugin-data <path>\nRequests are JSON on stdin; run and runs require id. Sync plans native app writes; run-now and execution/delivery history are unavailable.\n',
+      );
+      return;
+    }
+    if (
+      ![
+        'list',
+        'sync',
+        'run',
+        'runs',
+        'inspect',
+        'plan',
+        'prepare',
+        'acknowledge',
+        'cancel',
+      ].includes(action ?? '')
+    )
+      throw new Error('unknown automation operation');
     const pluginData = parsePluginData(args.slice(2));
     const input: unknown = JSON.parse(await readStandardInput());
     if (!input || typeof input !== 'object' || Array.isArray(input))
@@ -232,7 +254,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const request = input as Record<string, unknown>;
     if (
       Object.keys(request).some(
-        (key) => !['projects', 'threads', 'digest', 'receipt'].includes(key),
+        (key) => !['projects', 'threads', 'digest', 'receipt', 'id'].includes(key),
       ) ||
       (request.threads !== undefined && !Array.isArray(request.threads))
     )
@@ -241,6 +263,16 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       projects: request.projects,
       threads: request.threads as unknown[] | undefined,
     };
+    if (action === 'list' || action === 'sync') {
+      writeJson(await listCodexAutomations(pluginData, inputs));
+      return;
+    }
+    if (action === 'run' || action === 'runs') {
+      if (typeof request.id !== 'string') throw new Error('expected a manifest automation id');
+      writeJson(await codexAutomationRunGap(pluginData, request.id, action));
+      process.exitCode = 1;
+      return;
+    }
     if (action === 'inspect' || action === 'plan') {
       writeJson(await inspectCodexAutomations(pluginData, inputs));
       return;
@@ -252,7 +284,10 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       writeJson(await acknowledgeCodexAutomation(pluginData, request.digest, request.receipt));
     else if (action === 'cancel')
       writeJson(await cancelCodexAutomation(pluginData, request.digest));
-    else throw new Error('expected automations inspect, plan, prepare, acknowledge, or cancel');
+    else
+      throw new Error(
+        'expected automations list, sync, run, runs, inspect, plan, prepare, acknowledge, or cancel',
+      );
     return;
   }
   throw new Error('expected session-start, binding, setup, automations, or model-routing command');

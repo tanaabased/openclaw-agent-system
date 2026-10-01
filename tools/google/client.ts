@@ -134,7 +134,7 @@ export default class GoogleClient {
     } catch {
       throw new AgentSystemToolError(
         'tool_unavailable',
-        'The google tool requires gog on the host runtime PATH. Install GoG v0.42.0.',
+        'The google tool requires gog on the host runtime PATH. Install GoG v0.43.0 or a compatible stable 0.x release.',
       );
     }
   }
@@ -142,10 +142,14 @@ export default class GoogleClient {
   async checkVersion(environment: Record<string, string>, cwd: string, account: string) {
     const version = await this.run(environment, cwd, account, ['--version']);
     assertGoogleResult(version);
-    if (!/^(?:gog(?:cli)?\s+)?v?0\.42\.0(?:\s|$)/u.test(version.stdout.trim()))
+    const match = /^(?:gog(?:cli)?\s+)?v?0\.(\d+)\.\d+(?:\+[\w.-]+)?(?:\s|$)/u.exec(
+      version.stdout.trim(),
+    );
+    const minor = Number(match?.[1]);
+    if (!match || !Number.isSafeInteger(minor) || minor < 42)
       throw new AgentSystemToolError(
         'tool_unavailable',
-        'Managed Google commands require the reviewed GoG v0.42.0 command contract.',
+        'Managed Google commands require a stable GoG release >=0.42.0 <1.0.0. GoG v0.43.0 is reviewed.',
       );
   }
 

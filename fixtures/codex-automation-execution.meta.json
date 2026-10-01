@@ -1,0 +1,15 @@
+{
+  "issue": 197,
+  "capturedAt": "2026-10-01T12:56:09.733712+00:00",
+  "source": "packed 8e6f825 Codex runtime helper; native app scheduler create/update/delete; read_thread and filesystem side effect",
+  "file": "codex-automation-execution.approved.txt",
+  "sha256": "bccf2c46451b1a0f6bbe0958be87f544ed57ac65713b262da7a645b33a40ba8f",
+  "review": "Compared full native tool receipts and saved TOML before acceptance. Confirmed scheduler-created task, completed turn, exact 19-byte file, paused same job, native deletion, and byte-identical two existing personal job definitions. Only literal path/project/thread/scope substitutions; response structure retained.",
+  "boundaries": [
+    "User explicitly registered the disposable local project; current Me binding was not replaced.",
+    "One real minutely independent scheduled prompt completed; no manual task was created.",
+    "Native run-now and execution/delivery history remain unavailable to the automation adapter. Completed task and side effect are separate acceptance evidence.",
+    "This captures execution success, not delivery telemetry or all recurrence/heartbeat modes.",
+    "Recorder and live comparison are not enabled in ordinary CI."
+  ]
+}

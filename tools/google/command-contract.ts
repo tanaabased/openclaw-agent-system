@@ -7,6 +7,7 @@ export interface GoogleCommandContract {
 }
 
 // reviewed against gogcli v0.42.0, commit 792107a3a77dde04bd41bd176abfd15ff4aa24d6.
+// unchanged command/flag declarations reviewed in v0.43.0, commit 3b5122f4c81c5df6df38ee48e01327f1034364ee.
 // admit canonical commands and only their inspected flags; aliases remain unavailable.
 export const googleCommandContract: Record<string, GoogleCommandContract> = {
   'gmail search': {
