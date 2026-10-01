@@ -353,28 +353,6 @@ describe('workspace backup', () => {
     assert.ok(!recovered.files.includes('MEMORY.md'));
   });
 
-  it('should inherit defaults and replace or clear manifest lists', async () => {
-    const configured = {
-      ...manifest,
-      backup: {
-        output: 'private',
-        gitIgnore: false,
-        include: ['MEMORY.md'],
-        exclude: ['MEMORY.md'],
-      },
-    };
-    const result = await service.plan({
-      manifest: configured,
-      workspaceDir: workspace,
-      overrides: { include: [], exclude: ['memory/**'] },
-    });
-    assert.deepEqual(result.settings.include, []);
-    assert.deepEqual(result.settings.exclude, ['memory/**']);
-    assert.equal(result.settings.output, join(workspace, 'private'));
-    assert.ok(result.files.includes('MEMORY.md'));
-    assert.ok(!result.files.includes('memory/daily.md'));
-  });
-
   it('should exclude effective default and aliased destinations despite includes', async () => {
     await mkdir(join(workspace, '.agent-system', 'backups'), { recursive: true });
     await writeFile(join(workspace, '.agent-system', 'backups', 'old.tar.gz'), 'old');

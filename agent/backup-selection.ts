@@ -11,6 +11,7 @@ import {
   BackupError,
   backupControlDirectory,
   backupDefaultOutput,
+  type BackupSettings,
   type BackupPlan,
   type BackupRuntimeProtection,
 } from './backup-types.ts';
@@ -79,6 +80,20 @@ export function backupPathProtected(path: string, protectedPaths: string[]): boo
   return protectedPaths.some((root) => isPathContained(root, path));
 }
 
+/** resolve manifest defaults and explicit CLI replacements before filesystem selection. */
+export function resolveBackupConfiguration(
+  configured: BackupConfiguration = {},
+  overrides: BackupConfiguration = {},
+): BackupSettings {
+  return {
+    output: overrides.output ?? configured.output ?? backupDefaultOutput,
+    gitIgnore: overrides.gitIgnore ?? configured.gitIgnore ?? false,
+    openclawState: overrides.openclawState ?? configured.openclawState ?? 'auto',
+    include: overrides.include ?? configured.include ?? [],
+    exclude: overrides.exclude ?? configured.exclude ?? [],
+  };
+}
+
 /** enumerate before git filtering so explicit includes can recover ignored descendants. */
 export async function planWorkspaceBackup(options: {
   manifest: AgentManifest;
@@ -90,15 +105,10 @@ export async function planWorkspaceBackup(options: {
 }): Promise<BackupPlan> {
   const workspaceDir = await realpath(options.workspaceDir);
   const configured = options.manifest.backup ?? {};
-  const overrides = options.overrides ?? {};
+  const configuration = resolveBackupConfiguration(configured, options.overrides);
   const settings = {
-    output: await canonicalBackupPath(
-      resolve(workspaceDir, overrides.output ?? configured.output ?? backupDefaultOutput),
-    ),
-    gitIgnore: overrides.gitIgnore ?? configured.gitIgnore ?? false,
-    openclawState: overrides.openclawState ?? configured.openclawState ?? 'auto',
-    include: overrides.include ?? configured.include ?? [],
-    exclude: overrides.exclude ?? configured.exclude ?? [],
+    ...configuration,
+    output: await canonicalBackupPath(resolve(workspaceDir, configuration.output)),
   };
   for (const pattern of [...settings.include, ...settings.exclude]) {
     if (

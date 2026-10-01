@@ -22,4 +22,7 @@ if "$managed_launcher" worktree list; then exit 1; fi
 if AGENT_SYSTEM_EXEC_CAPABILITY=forged git --version; then exit 1; fi
 if AGENT_SYSTEM_EXEC_CAPABILITY=forged gh --version; then exit 1; fi
 
+if openclaw as doctor --json 2> "$TMPDIR/setup-host-descendant/operator-rejection"; then exit 1; fi
+grep -F 'operator commands are unavailable to agent or setup descendants' "$TMPDIR/setup-host-descendant/operator-rejection"
+
 printf 'verified\n' > "$TMPDIR/setup-host-descendant/verified"

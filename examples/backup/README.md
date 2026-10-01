@@ -56,6 +56,16 @@ printf 'corrupt' > "$TMPDIR/bad-backup.tar.gz"
 if output="$(openclaw as backup verify "$TMPDIR/bad-backup.tar.gz" --json)"; then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "failed" and (.diagnostics | length > 0)'
 
+# should reject a crafted traversal archive without writing outside recovery
+cd "$TMPDIR/backup-workspace"
+archive="$(find .agent-system/backups -name '*.tar.gz' | head -1)"
+tar -xOf "$archive" manifest.json > "$TMPDIR/backup-manifest.json"
+node "$GITHUB_WORKSPACE/examples/backup/traversal-fixture.mjs" "$TMPDIR/backup-manifest.json" "$TMPDIR/traversal-backup.tar.gz"
+if output="$(openclaw as backup restore "$TMPDIR/traversal-backup.tar.gz" --target "$TMPDIR/traversal-recovered" --json)"; then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "failed" and (.diagnostics | any(.code == "backup-path-unsafe"))'
+test ! -e "$TMPDIR/traversal-recovered"
+test ! -e "$TMPDIR/escape"
+
 # should capture committed wal data and compact the selected agent database
 cd "$TMPDIR/backup-workspace"
 node "$GITHUB_WORKSPACE/examples/backup/agent-state-fixture.mjs" seed "$TMPDIR/backup-agent-ready" &
