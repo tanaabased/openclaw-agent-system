@@ -24,7 +24,7 @@ interface PluginRecord {
 }
 interface PluginInspection {
   plugin: PluginRecord;
-  install?: { source?: string; version?: string };
+  install?: { source?: string; version?: string; sourcePath?: string; artifactKind?: string };
   compatibility?: Array<{ severity: string; code: string }>;
 }
 type Finding = Omit<AgentSystemLifecycleFinding, 'component'>;
@@ -186,7 +186,9 @@ export default function createCodexPluginLifecycleContribution(
       plugin.origin !== 'global' ||
       !plugin.rootDir ||
       !report.install ||
-      report.install.source === 'path' ||
+      report.install.source !== 'npm' ||
+      report.install.sourcePath !== undefined ||
+      report.install.artifactKind !== undefined ||
       safeVersion(report.install.version) !== actual
     ) {
       return {

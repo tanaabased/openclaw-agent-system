@@ -167,6 +167,15 @@ describe('agent/codex-plugin-lifecycle', () => {
         f.report.install.source = 'path';
       },
       (f: ReturnType<typeof fixture>) => {
+        f.report.install.source = 'archive';
+      },
+      (f: ReturnType<typeof fixture>) => {
+        Object.assign(f.report.install, {
+          artifactKind: 'tarball',
+          sourcePath: '/local/codex.tgz',
+        });
+      },
+      (f: ReturnType<typeof fixture>) => {
         f.report.install.version = '2026.9.6';
       },
       (f: ReturnType<typeof fixture>) => {
@@ -174,6 +183,9 @@ describe('agent/codex-plugin-lifecycle', () => {
       },
       (f: ReturnType<typeof fixture>) => {
         f.metadata.openclaw.compat.pluginApi = '>=2026.9.8';
+      },
+      (f: ReturnType<typeof fixture>) => {
+        f.metadata.openclaw.compat.pluginApi = '';
       },
       (f: ReturnType<typeof fixture>) => {
         f.report.compatibility.push({ severity: 'error', code: 'incompatible' });
