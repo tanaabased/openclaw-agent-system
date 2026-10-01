@@ -178,17 +178,6 @@ fi
 openclaw-aimock evidence --scenario automations --expected-evidence "$GITHUB_WORKSPACE/examples/automations/expected-evidence.json"
 ```
 
-Only the manual workflow recording switch enables this block. Pull-request runs
-perform acceptance without writing response candidates. Review the separate
-provenance and retained response structure before accepting an artifact.
-
-```bash
-# should record response candidates only when explicitly requested
-if test "$AGENT_SYSTEM_RECORD_AUTOMATIONS" = yes; then
-  bun "$GITHUB_WORKSPACE/scripts/automation-record-task.ts" --record "$TMPDIR/automation-captures"
-fi
-```
-
 ## Cleanup
 
 ```bash

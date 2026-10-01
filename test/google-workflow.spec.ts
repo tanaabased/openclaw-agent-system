@@ -14,11 +14,7 @@ describe('google example workflow', () => {
   it('should run live tasks through the standard example matrix without a model', async () => {
     const workflow = parse(await readFile('.github/workflows/pr-examples-tests.yml', 'utf8'));
     assert.ok(workflow.on.pull_request !== undefined);
-    assert.equal(workflow.on.workflow_dispatch.inputs['record-automation-fixtures'].default, false);
-    assert.equal(
-      workflow.on.workflow_dispatch.inputs['record-automation-fixtures'].type,
-      'boolean',
-    );
+    assert.equal(workflow.on.workflow_dispatch, undefined);
     assert.deepEqual(Object.keys(workflow.jobs), ['examples']);
     assert.ok(workflow.jobs.examples.strategy.matrix.example.includes('google'));
     assert.deepEqual(workflow.jobs.examples.strategy.matrix.os, ['macos-26', 'ubuntu-24.04']);

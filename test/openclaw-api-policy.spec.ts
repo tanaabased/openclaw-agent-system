@@ -41,7 +41,6 @@ const supportedPluginSdkSubpaths = new Set([
   'secret-ref-runtime',
   'session-store-runtime',
   'status-helpers',
-  'state-paths',
 ]);
 const deprecatedPluginSdkSubpaths = new Set([
   'agent-runtime',
