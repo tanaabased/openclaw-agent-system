@@ -189,6 +189,8 @@ describe('agent/lifecycle-approval', () => {
       assert.deepEqual(request.requireApproval.allowedDecisions, ['allow-once', 'deny']);
       assert.ok(request.requireApproval.description.includes(f.root));
       assert.ok(request.requireApproval.description.includes('data'));
+      if (name === 'agent_system_install')
+        assert.match(request.requireApproval.description, /shared Codex prerequisite/);
       assert.deepEqual(f.calls, []);
       request.requireApproval.onResolution('allow-once');
       await native.execute('call', params, f.controller.signal);

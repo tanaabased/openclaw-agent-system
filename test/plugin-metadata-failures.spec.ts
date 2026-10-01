@@ -48,6 +48,7 @@ const packageMetadata: PackageMetadata = {
     'LICENSE',
   ],
   openclaw: {
+    agentSystem: { codexPlugin: '@openclaw/codex@2026.9.7' },
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
     channel: githubNotificationChannelMetadata,
@@ -169,6 +170,22 @@ describe('core/plugin-metadata-failures', () => {
     assert.deepEqual(pluginMetadataFailures(packageMetadata, manifest, codexManifest), []);
   });
 
+  it('should reject missing and non-exact shared codex prerequisite declarations', () => {
+    for (const spec of [undefined, '@openclaw/codex@latest', '@openclaw/codex@^2026.9.7']) {
+      const metadata = structuredClone(packageMetadata);
+      metadata.openclaw!.agentSystem = { codexPlugin: spec };
+      assert.ok(failureCodes(metadata, manifest).has('codex-prerequisite-pin'));
+    }
+  });
+
+  it('should keep the shared codex plugin out of nested runtime dependencies', () => {
+    for (const field of ['dependencies', 'optionalDependencies'] as const) {
+      const metadata = structuredClone(packageMetadata);
+      metadata[field] = { '@openclaw/codex': '2026.9.7' };
+      assert.ok(failureCodes(metadata, manifest).has('codex-prerequisite-ownership'));
+    }
+  });
+
   it('should report every scaffold contract mismatch', () => {
     assert.deepEqual(
       failureCodes({}, {}, {}),
@@ -176,6 +193,7 @@ describe('core/plugin-metadata-failures', () => {
         'package-name',
         'supported-os',
         'codex-plugin-name',
+        'codex-prerequisite-pin',
         'codex-skill-contract',
         'plugin-id',
         'plugin-name',
