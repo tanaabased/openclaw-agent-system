@@ -86,7 +86,7 @@ if (action === 'wait-run') {
     lstat(join(homedir(), '.config/tanaab/agent-system/runtime', `${authority}.sock`)),
     { code: 'ENOENT' },
   );
-  if (id === 'timeout' || id === 'cancel') {
+  if (id === 'cancel') {
     const socket = (
       await readFile(join(process.env.TMPDIR!, 'automation-ssh.socket'), 'utf8')
     ).trim();

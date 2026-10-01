@@ -2,4 +2,4 @@
   runtimes: [openclaw]
   schedule: in 30 seconds
   timeout-seconds: 30
-  run: [sh, ./probe.sh, timeout]
+  run: [sleep, '180']

@@ -1,0 +1,93 @@
+{
+  "issue": 197,
+  "capturedAt": "2026-10-01T13:42:30.493Z",
+  "source": "isolated GitHub Actions opt-in production builders and operator transport",
+  "runtime": "v26.3.0",
+  "workflowRun": "36868057190",
+  "sanitization": "Literal identifiers, scoped markers, executable and workspace/profile paths only; response fields retained.",
+  "boundaries": [
+    "Unchanged sync is the absence of native mutation requests, not a fabricated RPC response.",
+    "Malformed responses and partial failures are constructed negatives.",
+    "Delivery failure uses an explicitly created disabled unmanaged native command with an unreachable loopback webhook. Owned job drift guards are unchanged.",
+    "Script file edits do not declare content drift; the changed schedule does.",
+    "Capture output is a candidate and requires review before acceptance.",
+    "The native webhook guard blocked the loopback address: history reports execution ok, completion failed, and delivery not-delivered. No successful payload replay was used to infer delivery."
+  ],
+  "candidateSha256": "73e81493d64f856bd9810011b513eda9975ba86aca9710857256c266f4c2c48e",
+  "sha256": "bfa2bd7e97d75c3388faa4810231f7cb4cbf921e7ca7258c99b210a6ce456819",
+  "revision": "4b7e2b3",
+  "workflowUrl": "https://github.com/tanaabased/openclaw-agent-system/actions/runs/36868057190",
+  "platform": "ubuntu-24.04",
+  "recorderEngine": "Bun 1.4.2 (runtime reports its Node compatibility version)",
+  "installedNode": "26.10.0",
+  "openclaw": "2026.9.6",
+  "acceptedRpcIndices": [1, 2, 76, 29, 43, 59, 100, 103, 106],
+  "review": "Reviewed the complete capture, including 200 + 18 native jobs and all eight CLI calls. Accepted complete representative transactions for declared and unmanaged creation, native readback, revision-bound update, queued admission, successful execution, execution failure, delivery failure and status. Repetitive readbacks and full pagination rows remain in the hashed workflow artifact; deterministic pagination coverage lives in automation-gateway.spec.ts.",
+  "additionalSanitization": {
+    "runnerHome": "/home/fixture",
+    "profileName": "fixture-profile"
+  },
+  "unchangedSyncObservation": {
+    "sourceRpcIndices": [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+    "methods": [
+      "cron.list",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get",
+      "cron.get"
+    ],
+    "nativeMutations": 0,
+    "cliCaptureIndex": 0
+  },
+  "paginationObservation": [
+    {
+      "request": {
+        "includeDisabled": true,
+        "limit": 200,
+        "offset": 0,
+        "includeDeliveryPreviews": false
+      },
+      "response": {
+        "snapshotRevision": "sha256:zrPKgWRtQ9nvT7AlewkuzeHg-k699dmB0DDZdiIsKio",
+        "total": 218,
+        "offset": 0,
+        "limit": 200,
+        "hasMore": true,
+        "nextOffset": 200
+      },
+      "jobCount": 200
+    },
+    {
+      "request": {
+        "includeDisabled": true,
+        "limit": 200,
+        "offset": 200,
+        "includeDeliveryPreviews": false
+      },
+      "response": {
+        "snapshotRevision": "sha256:zrPKgWRtQ9nvT7AlewkuzeHg-k699dmB0DDZdiIsKio",
+        "total": 218,
+        "offset": 200,
+        "limit": 200,
+        "hasMore": false,
+        "nextOffset": null
+      },
+      "jobCount": 18
+    }
+  ],
+  "completeCandidateArtifact": "https://github.com/tanaabased/openclaw-agent-system/actions/runs/36868057190/artifacts/11167056629",
+  "acceptedCliIndices": [0, 1, 2, 3, 4, 5, 7],
+  "macosCorroboration": {
+    "platform": "macos-26",
+    "candidateSha256": "0c9d6eb58293c80b26dbef5836fd4aa4c9c5d7d7957af383f59192bf9758a93a",
+    "artifact": "https://github.com/tanaabased/openclaw-agent-system/actions/runs/36868057190/artifacts/11167695225",
+    "review": "Same eight CLI commands, stream sizes and exits; same 200 + 18 pagination and execution/delivery outcomes. Automation routes and recording passed; the existing timeout cleanup test failed before SSH fixture startup. Full scenario: 18 passing, 1 failing; timeout scenario subsequently simplified to a sleeping command and native timeout assertion for ordinary PR CI; SSH cleanup remains covered by focused tests and the cancellation scenario."
+  }
+}

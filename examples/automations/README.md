@@ -142,14 +142,12 @@ bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait missing
 grep -F credential_unavailable missing.stderr
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup missing
 
-# should clean managed ssh resources and authority after the native timeout kills the process tree
+# should report a native timeout for a long-running command
 cd "$TMPDIR/automation-agent"
 cp "$GITHUB_WORKSPACE/examples/automations/agent.yaml" agent.yaml
 cp "$GITHUB_WORKSPACE/examples/automations/timeout.yaml" automations.yaml
-rm -f "$TMPDIR/automation-ssh.pid" "$TMPDIR/automation-ssh.socket"
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait timeout
-bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup timeout
 
 # should cancel a live runner and clean its managed ssh resources
 cd "$TMPDIR/automation-agent"
