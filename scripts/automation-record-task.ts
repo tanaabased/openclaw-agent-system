@@ -37,7 +37,24 @@ function ids(value: unknown) {
   }
   if (!value || typeof value !== 'object') return;
   for (const [key, item] of Object.entries(value)) {
-    if (['id', 'runId'].includes(key) && typeof item === 'string' && !replacements.has(item))
+    if (
+      ['id', 'runId'].includes(key) &&
+      typeof item === 'string' &&
+      ![
+        'capture',
+        'identity',
+        'paused-review',
+        'prompt',
+        'stale',
+        'containment',
+        'policy',
+        'missing',
+        'timeout',
+        'cancel',
+        'disabled',
+      ].includes(item) &&
+      !replacements.has(item)
+    )
       replacements.set(item, `${key === 'id' ? 'native' : 'run'}-${++nextId}`);
     else ids(item);
   }
@@ -150,6 +167,12 @@ try {
   assert.equal(cliRun.exitCode, 0);
   await finished(JSON.parse(cliRun.stdout).runId);
   await writeFile(manifestPath, fixture.replace('every 1 hour', 'every 2 hours'));
+  assert.ok(
+    (await service.reconcile(await load(), workspace)).outcomes.some(
+      ({ stepId, status }) => stepId === 'capture' && status === 'updated',
+    ),
+  );
+  await writeFile(manifestPath, fixture.replace('every 1 hour', 'every 3 hours'));
   assert.equal(cli(['as', 'automations', 'sync', '--json']).exitCode, 0);
   await service.reconcile(await load(), workspace);
   // a raw disabled native fixture isolates delivery failure without weakening owned-job drift checks.
