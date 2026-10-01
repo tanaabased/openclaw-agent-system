@@ -66,6 +66,7 @@ cp "$GITHUB_WORKSPACE/examples/automations/operators.yaml" automations.yaml
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw as automations sync --json | jq -e 'all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -e '.jobs | any(.id == "paused-review" and .nativeEnabled == false)'
+openclaw as automations list | grep -F 'paused-review' | grep -F 'automation-disabled'
 run_id=$(openclaw as automations run identity --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId')
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait-run identity "$run_id"
 openclaw agent-system automations runs identity --run-id "$run_id" --limit 1 --offset 0 --json | jq -e '.entries[0].execution == "ok" and .entries[0].delivery != "not-delivered"'

@@ -300,6 +300,40 @@ function createProgram(
 }
 
 describe('cli/automation-commands', () => {
+  it('should expose scheduler-wide inventory blockers in text without duplicating job findings', async () => {
+    const healthy = { stepId: 'review', status: 'healthy', code: 'automation-healthy' };
+    const scheduler = {
+      stepId: 'scheduler',
+      status: 'blocked',
+      code: 'automation-scheduler-disabled',
+    };
+    for (const json of [false, true]) {
+      const result = createProgram(undefined, {
+        automations: {
+          list: async () => ({
+            status: 'attention',
+            jobs: [{ id: 'review', nativeId: 'native', findings: [healthy] }],
+            findings: [healthy, scheduler],
+          }),
+        } as never,
+      });
+      await result.program.parseAsync([
+        'node',
+        'openclaw',
+        'as',
+        'automations',
+        'list',
+        ...(json ? ['--json'] : []),
+      ]);
+      const output = result.output.join('');
+      assert.ok(output.includes(scheduler.code));
+      if (json) assert.deepEqual(JSON.parse(output).findings, [healthy, scheduler]);
+      else assert.equal(output.split(healthy.code).length - 1, 1);
+      assert.deepEqual(result.diagnostics, []);
+      assert.deepEqual(result.exitCodes, [1]);
+    }
+  });
+
   it('should pass both aliases and history flags through the production registration and output boundary', async () => {
     const calls: unknown[] = [];
     const automations = {

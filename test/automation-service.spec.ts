@@ -152,6 +152,26 @@ describe('agent/automation-service', () => {
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
+  it('should keep inventory rows and findings on the same ownership snapshot during concurrent sync', async () => {
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const request = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      const result = await request(method, params);
+      if (method === 'cron.list') {
+        ledger.records[0]!.pending = { kind: 'update', nativeHash: ledger.records[0]!.nativeHash! };
+        await store.write(ledger);
+      }
+      return result;
+    };
+    const result = await service.list(manifest, root);
+    assert.equal(result.status, 'aligned');
+    assert.equal(result.jobs[0]!.nativeId, native[0]!.id);
+    assert.equal(result.jobs[0]!.findings[0]!.code, 'automation-healthy');
+    assert.equal((await store.read()).records[0]!.pending!.kind, 'update');
+  });
+
   it('should list declared and native state and queue an exact owned job with separate history', async () => {
     await service.reconcile(manifest, root);
     calls = [];

@@ -1,6 +1,9 @@
 import type AutomationService from '../agent/automation-service.ts';
 import { AutomationError } from '../agent/automation-gateway.ts';
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import {
+  AgentSystemLifecycleError,
+  type AgentSystemLifecycleFinding,
+} from '../core/lifecycle-registry.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -42,6 +45,10 @@ export default async function automationOperation(
           row.delivery && `delivery=${row.delivery}`,
         ].filter((field) => field !== undefined && field !== false);
         options.output.writeStdout(`${fields.join('  ')}\n`);
+      }
+      for (const finding of (result.findings ?? []) as AgentSystemLifecycleFinding[]) {
+        if (!rows.some(({ id }) => id === finding.stepId))
+          options.output.writeStdout(`${finding.stepId}  ${finding.status}  ${finding.code}\n`);
       }
       if (result.runId)
         options.output.writeStdout(

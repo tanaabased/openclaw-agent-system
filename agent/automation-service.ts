@@ -81,7 +81,12 @@ export default class AutomationService {
     const observed = this.dependencies.request
       ? await listNativeAutomations(this.dependencies.request)
       : [];
-    const findings = await this.inspect(manifest, workspaceDir, observed);
+    const findings = await this.inspect(manifest, workspaceDir, {
+      context,
+      store,
+      ledger,
+      observed,
+    });
     const ids = new Set([
       ...(manifest.automations ?? []).map(({ id }) => id),
       ...ledger.records.map(({ id }) => id),
@@ -213,10 +218,15 @@ export default class AutomationService {
   async inspect(
     manifest: AgentManifest,
     workspaceDir: string,
-    snapshot?: NativeAutomation[],
+    snapshot?: {
+      context: AutomationProjectionContext;
+      store: AutomationStore;
+      ledger: AutomationLedger;
+      observed: NativeAutomation[];
+    },
   ): Promise<AgentSystemLifecycleFinding[]> {
-    const { store, context } = await this.scope(manifest, workspaceDir);
-    const ledger = await store.read();
+    const { store, context } = snapshot ?? (await this.scope(manifest, workspaceDir));
+    const ledger = snapshot?.ledger ?? (await store.read());
     const declarations = (manifest.automations ?? []).filter((job) =>
       job.runtimes.includes('openclaw'),
     );
@@ -240,7 +250,7 @@ export default class AutomationService {
     });
     if (!this.dependencies.request)
       return [finding('operator', 'manual', 'automation-requires-operator-sync')];
-    const observed = snapshot ?? (await listNativeAutomations(this.dependencies.request));
+    const observed = snapshot?.observed ?? (await listNativeAutomations(this.dependencies.request));
     const findings: AgentSystemLifecycleFinding[] = [];
     const status = await this.dependencies.request('cron.status', {});
     if (status.enabled === false)
