@@ -1,5 +1,7 @@
 import { delimiter } from 'node:path';
 
+import { inspectCodexAutomations } from './codex-automations.ts';
+import type { CodexAutomationInputs } from './codex-automation-plan.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
 import {
   inspectCodexWorkspaceBinding,
@@ -22,6 +24,8 @@ interface CodexSetupSnapshot {
 }
 
 export interface CodexSetupDependencies {
+  automationInputs?: CodexAutomationInputs;
+  codexHome?: string;
   baseEnvironment?: Readonly<NodeJS.ProcessEnv>;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
   runCommandWithTimeout?: SetupProcessRunner;
@@ -144,7 +148,7 @@ async function runtime(
   return { context, lifecycle, selected };
 }
 
-/** Inspect only the bound manifest's setup projection for standalone Codex. */
+/** inspect standalone setup and desired/saved automation state without applying repairs. */
 export async function inspectCodexSetup(
   pluginData: string,
   signal?: AbortSignal,
@@ -157,10 +161,15 @@ export async function inspectCodexSetup(
     workspaceDir: selected.workspaceDir,
     manifestDigest: selected.manifestDigest,
     findings: await lifecycle.inspect(context),
+    automations: await inspectCodexAutomations(
+      pluginData,
+      dependencies.automationInputs,
+      dependencies,
+    ),
   };
 }
 
-/** Reconcile only the bound manifest's setup projection for standalone Codex. */
+/** reconcile standalone setup and report automation work requiring native app sync. */
 export async function installCodexSetup(
   pluginData: string,
   signal?: AbortSignal,
@@ -168,11 +177,20 @@ export async function installCodexSetup(
 ) {
   const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
   const result = await lifecycle.reconcile(context);
+  const automations = await inspectCodexAutomations(
+    pluginData,
+    dependencies.automationInputs,
+    dependencies,
+  );
   return {
-    status: 'installed' as const,
+    status:
+      automations.status === 'aligned'
+        ? ('installed' as const)
+        : ('requires-native-app-sync' as const),
     agentId: selected.agentId,
     workspaceDir: selected.workspaceDir,
     manifestDigest: selected.manifestDigest,
     ...result,
+    automations,
   };
 }

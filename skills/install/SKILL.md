@@ -1,6 +1,6 @@
 ---
 name: agent-system-install
-description: Inspect or install one Agent System workspace through the runtime-owned OpenClaw lifecycle or standalone Codex setup projection.
+description: Install one Agent System workspace through OpenClaw or reconcile standalone Codex setup and repository automations.
 license: MIT
 metadata:
   type: workflow
@@ -19,7 +19,7 @@ metadata:
 
 ## Overview
 
-Install the active `agent.yaml` through the owning runtime. OpenClaw reconciles the full Agent System lifecycle after native chat approval. Standalone Codex uses the packaged thin adapter and reconciles only setup steps applicable to `codex`.
+Install the active `agent.yaml` through the owning runtime. OpenClaw reconciles the full Agent System lifecycle after native chat approval. Standalone Codex reconciles applicable setup and plans repository automations for authorized native app writes.
 
 ## When to Use
 
@@ -62,6 +62,18 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 5. Stop on the first failed step. Do not retry it through OpenClaw, direct shell execution, another runtime selection, or an edited command.
 6. Report outcomes in declaration order: `setup-unchanged` as healthy, `setup-applied` as applied, `setup-not-applicable` as skipped, and an error as failed with its stable code and `stepId` when present.
 
+#### Codex automations
+
+1. Require `automationRuntime` from the newest trusted context. Use its exact `argvPrefix` and `pluginData`; never infer a workspace or substitute the current conversation. If the installed context lacks this route, report that a plugin update and fresh task are required.
+2. Discover `automation_update` and call `list_projects`. For explicitly declared thread targets, call `read_thread` for each exact ID. Pass the decoded native result objects as `projects` and `threads` to the internal `plan --plugin-data <pluginData>` command. Deliver one JSON object through standard input, never interpolate prompts into shell arguments. This helper reads saved definitions and profile defaults and computes all desired fields; do not author the diff yourself.
+3. An `aligned` plan needs no writes. A `blocked` plan requires its reported condition to be resolved. A headless session returns `requires-native-app-sync`; do not replace native tools with scheduler-file writes or a fabricated CLI. Report the concrete actions and digest, and apply only within the user's installation authorization. A changed scope or additional action requires renewed authorization.
+4. Before each action, refresh native project/thread lookups and the plan. Require the remaining actions to match the authorized remainder, then pass its fresh `digest` and lookup objects to `prepare --plugin-data <pluginData>`. The helper journals one action and returns the exact native request. Invoke `automation_update` with that request unchanged. No name-based adoption, deletion, or generated substitute prompt is permitted.
+5. Pass the returned native result and prepared digest as `{ "digest": "...", "receipt": <native result> }` to `acknowledge --plugin-data <pluginData>`. The helper verifies saved settings before recording success. Stop on any tool failure, unreadable state, or divergence; retain and report earlier verified actions. Never infer saved settings from a rendered `view` card.
+6. If a response was lost after a possible write, call `acknowledge` with only the pending digest. Recovery requires the unique exact pending marker and expected saved definition. If the write definitively failed without changing saved state, `cancel` with that digest can clear the pending operation. A divergent result remains blocked; never blindly create again or clear the journal by editing files.
+7. Repeat until the final plan is `aligned`. Report saved-configuration convergence separately from scheduled execution. Execution and delivery telemetry are unavailable through this adapter. Removed declarations pause owned jobs and retain their mapping; reintroduced IDs reuse them. Existing notification preferences remain native-owned.
+
+Use the ambient Codex profile and its permissions. Prompt jobs may explicitly run scripts but remain model-backed. Do not convert command declarations, invent timeout guarantees, change profile permissions, or create managed Codex credentials. See [Codex automations](../../CODEX.md#repository-automations) for supported schedules and recovery diagnostics.
+
 ## Checkpoints
 
 - OpenClaw installation has native **Allow once** approval for the complete lifecycle plan.
@@ -84,5 +96,5 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 ## Validation
 
 - Confirm the execution route came from trusted runtime context.
-- Confirm OpenClaw used native chat approval and standalone Codex used only the setup adapter.
+- Confirm OpenClaw used native chat approval and standalone Codex used its setup adapter and authorized native automation operations.
 - Confirm runtime filtering and ordered stop-on-failure behavior are visible in the result.

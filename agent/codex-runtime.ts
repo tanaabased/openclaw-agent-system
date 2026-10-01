@@ -1,5 +1,12 @@
 import process from 'node:process';
 
+import {
+  acknowledgeCodexAutomation,
+  cancelCodexAutomation,
+  inspectCodexAutomations,
+  prepareCodexAutomation,
+} from './codex-automations.ts';
+import { CodexAutomationError } from './codex-automation-state.ts';
 import codexModelRouting from './codex-model-routing.ts';
 import { RoutingError } from './model-routing.ts';
 
@@ -216,7 +223,39 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     return;
   }
   if (command === 'setup') return runSetup(args.slice(1));
-  throw new Error('expected session-start, binding, setup, or model-routing command');
+  if (command === 'automations') {
+    const action = args[1];
+    const pluginData = parsePluginData(args.slice(2));
+    const input: unknown = JSON.parse(await readStandardInput());
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      throw new Error('expected an automation request');
+    const request = input as Record<string, unknown>;
+    if (
+      Object.keys(request).some(
+        (key) => !['projects', 'threads', 'digest', 'receipt'].includes(key),
+      ) ||
+      (request.threads !== undefined && !Array.isArray(request.threads))
+    )
+      throw new Error('invalid automation request');
+    const inputs = {
+      projects: request.projects,
+      threads: request.threads as unknown[] | undefined,
+    };
+    if (action === 'inspect' || action === 'plan') {
+      writeJson(await inspectCodexAutomations(pluginData, inputs));
+      return;
+    }
+    if (typeof request.digest !== 'string') throw new Error('expected an approved plan digest');
+    if (action === 'prepare')
+      writeJson(await prepareCodexAutomation(pluginData, request.digest, inputs));
+    else if (action === 'acknowledge')
+      writeJson(await acknowledgeCodexAutomation(pluginData, request.digest, request.receipt));
+    else if (action === 'cancel')
+      writeJson(await cancelCodexAutomation(pluginData, request.digest));
+    else throw new Error('expected automations inspect, plan, prepare, acknowledge, or cancel');
+    return;
+  }
+  throw new Error('expected session-start, binding, setup, automations, or model-routing command');
 }
 
 runCodexRuntime().catch((error: unknown) => {
@@ -228,7 +267,9 @@ runCodexRuntime().catch((error: unknown) => {
           code: error.code,
           ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
         }
-      : error instanceof CodexSetupError || error instanceof RoutingError
+      : error instanceof CodexSetupError ||
+          error instanceof RoutingError ||
+          error instanceof CodexAutomationError
         ? { code: error.code }
         : {};
   process.stderr.write(`${JSON.stringify({ status: 'error', ...details, message })}\n`);

@@ -1,0 +1,11 @@
+version = 1
+id = "agent-system-196-paused-heartbeat-fixture"
+kind = "heartbeat"
+name = "Agent System #196 paused heartbeat fixture"
+prompt = "Report that this is a paused integration fixture. Do not change files or contact external services."
+status = "PAUSED"
+rrule = "FREQ=HOURLY;INTERVAL=1"
+notification_policy = "failed_runs_only"
+target_thread_id = "fixture-thread"
+created_at = 1790816917989
+updated_at = 1790816917989

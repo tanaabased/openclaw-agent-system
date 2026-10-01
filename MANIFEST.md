@@ -293,7 +293,9 @@ destination restrictions, and sensitive-archive handling.
 Declare an inline list or `{ file: ./automations.yaml }` naming one YAML list;
 omission and `[]` declare no jobs. OpenClaw operator Install reconciles these
 jobs through the running Gateway; Doctor inspects them without running or changing
-jobs. Standalone Codex scheduling remains unavailable in this release.
+jobs. Standalone Codex Install plans recurring prompt jobs and applies authorized
+native app actions; Doctor inspects saved definitions. See the [Codex support
+matrix](./CODEX.md#repository-automations) for schedules, targets, and limitations.
 
 | Field             | Type                                                       | Required         | Default       | Description                                                                    |
 | ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |

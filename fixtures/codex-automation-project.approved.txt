@@ -1,0 +1,15 @@
+version = 1
+id = "agent-system-196-paused-fixture"
+kind = "cron"
+name = "Agent System #196 paused fixture"
+prompt = "Report that this is the edited paused Agent System integration fixture. Do not change files or contact external services.\n\nManaged by Agent System fixture #196."
+status = "PAUSED"
+rrule = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0"
+model = "gpt-6-astra"
+reasoning_effort = "high"
+notification_policy = "failed_runs_only"
+execution_environment = "local"
+target = { type = "project", project_id = "fixture-project" }
+cwds = ["/workspace/fixture"]
+created_at = 1790816849823
+updated_at = 1790816876388

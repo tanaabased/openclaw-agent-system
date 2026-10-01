@@ -1,0 +1,76 @@
+{
+  "create": {
+    "request": {
+      "mode": "create",
+      "kind": "cron",
+      "destination": "local",
+      "executionEnvironment": "local",
+      "projectId": "fixture-project",
+      "name": "Agent System #196 paused fixture",
+      "prompt": "Report that this is a paused Agent System integration fixture. Do not change files or contact external services.\n\nManaged by Agent System fixture #196.",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "high",
+      "rrule": "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      "status": "PAUSED",
+      "notificationPolicy": "failed_runs_only"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Created automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"agent-system-196-paused-fixture\",\"mode\":\"create\",\"status\":\"PAUSED\"}"
+        }
+      ],
+      "isError": false
+    }
+  },
+  "update": {
+    "request": {
+      "mode": "update",
+      "kind": "cron",
+      "destination": "local",
+      "executionEnvironment": "local",
+      "projectId": "fixture-project",
+      "name": "Agent System #196 paused fixture",
+      "prompt": "Report that this is the edited paused Agent System integration fixture. Do not change files or contact external services.\n\nManaged by Agent System fixture #196.",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "high",
+      "rrule": "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      "status": "PAUSED",
+      "notificationPolicy": "failed_runs_only",
+      "id": "agent-system-196-paused-fixture"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Updated automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"agent-system-196-paused-fixture\",\"mode\":\"update\",\"status\":\"PAUSED\"}"
+        }
+      ],
+      "isError": false
+    }
+  },
+  "view": {
+    "request": {
+      "mode": "view",
+      "id": "agent-system-196-paused-fixture"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Rendered automation card in the app."
+        }
+      ],
+      "isError": false
+    }
+  }
+}

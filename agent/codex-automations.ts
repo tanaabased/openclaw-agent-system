@@ -1,0 +1,304 @@
+import { mkdir, realpath, rmdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+import { Type, type Static } from 'typebox';
+import { Value } from 'typebox/value';
+
+import { automationHash } from './automation-hash.ts';
+import planCodexAutomations, {
+  automationRecordSchema,
+  codexAutomationMarker,
+  savedMatches,
+  type CodexAutomationInputs,
+} from './codex-automation-plan.ts';
+import {
+  CodexAutomationError,
+  nativeAutomationSchema,
+  parseAutomationReceipt,
+  readCodexAutomations,
+  readCodexAutomationDefaults,
+} from './codex-automation-state.ts';
+import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
+import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
+
+const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
+const actionSchema = Type.Object(
+  {
+    manifestId: Type.String(),
+    mode: Type.Union([Type.Literal('create'), Type.Literal('update')]),
+    id: Type.Optional(Type.String()),
+    expected: nativeAutomationSchema,
+    removed: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+const ledgerSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    scope: hash,
+    records: Type.Array(automationRecordSchema),
+    pending: Type.Optional(
+      Type.Object(
+        {
+          digest: hash,
+          manifestDigest: Type.String(),
+          action: actionSchema,
+          beforeHash: hash,
+          othersHash: hash,
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+type Ledger = Static<typeof ledgerSchema>;
+export interface CodexAutomationDependencies {
+  codexHome?: string;
+  inspectBinding?: typeof inspectCodexWorkspaceBinding;
+}
+
+async function snapshot(pluginData: string, dependencies: CodexAutomationDependencies) {
+  const inspection = await (dependencies.inspectBinding ?? inspectCodexWorkspaceBinding)(
+    pluginData,
+  );
+  if (
+    inspection.status !== 'bound' ||
+    inspection.preview.status !== 'ready' ||
+    inspection.preview.manifest.status !== 'loaded'
+  ) {
+    throw new CodexAutomationError('automation-binding-unavailable');
+  }
+  const loaded = inspection.preview.manifest;
+  const workspace = inspection.preview.workspaceDir;
+  const requestedHome = resolve(
+    dependencies.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
+  );
+  const codexHome = await realpath(requestedHome).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return requestedHome;
+    throw error;
+  });
+  const scope = automationHash({
+    runtime: 'codex',
+    profile: codexHome,
+    workspaceDir: workspace,
+    agentId: loaded.manifest.agent.id,
+  });
+  const root = resolve(pluginData);
+  const path = join(root, `codex-automations-${scope}.json`);
+  const file = new PrivateStateFile({
+    path,
+    directories: [root],
+    currentUid: process.getuid?.(),
+    label: 'Codex automation ownership',
+    maximumBytes: 1024 * 1024,
+  });
+  let ledger: Ledger;
+  try {
+    const contents = await file.read();
+    const parsed: unknown =
+      contents === undefined ? { version: 1, scope, records: [] } : JSON.parse(contents);
+    if (!Value.Check(ledgerSchema, parsed) || parsed.scope !== scope)
+      throw new Error('invalid ledger');
+    ledger = parsed;
+    for (const record of ledger.records) {
+      if (!record.definition.prompt.endsWith(codexAutomationMarker(scope, record.id)))
+        throw new Error('invalid marker');
+    }
+  } catch {
+    throw new CodexAutomationError('automation-ownership-invalid');
+  }
+  return { loaded, workspace, codexHome, scope, file, ledger, root, path };
+}
+
+async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: CodexAutomationInputs) {
+  const { loaded, workspace, scope, codexHome, ledger } = selected;
+  const jobs = loaded.manifest.automations ?? [];
+  const saved =
+    jobs.some((job) => job.runtimes.includes('codex')) || ledger.records.length || ledger.pending
+      ? await readCodexAutomations(codexHome)
+      : [];
+  const needsDefaults = jobs.some(
+    (job) =>
+      job.runtimes.includes('codex') &&
+      job.payload.kind === 'prompt' &&
+      (job.overrides.codex?.target ?? 'independent') === 'independent' &&
+      (!job.overrides.codex?.model || !job.overrides.codex?.effort),
+  );
+  const defaults = needsDefaults
+    ? await readCodexAutomationDefaults(codexHome).catch(() => undefined)
+    : undefined;
+  const result = await planCodexAutomations({
+    scope,
+    workspace,
+    agentId: loaded.manifest.agent.id,
+    manifestDigest: loaded.digest,
+    jobs,
+    saved,
+    records: ledger.records,
+    inputs,
+    defaults,
+  });
+  if (ledger.pending)
+    return {
+      saved,
+      result: {
+        ...result,
+        status: 'blocked' as const,
+        actions: [],
+        findings: [
+          ...result.findings,
+          { id: ledger.pending.action.manifestId, code: 'automation-pending-readback-required' },
+        ],
+        pendingDigest: ledger.pending.digest,
+      },
+    };
+  return { saved, result };
+}
+
+/** inspect desired and saved settings only; no locks, ledger writes, or scheduled execution. */
+export async function inspectCodexAutomations(
+  pluginData: string,
+  inputs: CodexAutomationInputs = {},
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const selected = await snapshot(pluginData, dependencies);
+  return (await plan(selected, inputs)).result;
+}
+
+/** serialize journal transitions across app-tool calls; a crash leaves an explicit recovery barrier. */
+async function withJournal<T>(
+  selected: Awaited<ReturnType<typeof snapshot>>,
+  run: () => Promise<T>,
+) {
+  await ensurePrivateStateDirectories({
+    directories: [selected.root],
+    currentUid: process.getuid?.(),
+    label: 'Codex automation ownership',
+  });
+  const lock = `${selected.path}.lock`;
+  try {
+    await mkdir(lock, { mode: 0o700 });
+  } catch {
+    throw new CodexAutomationError('automation-journal-busy');
+  }
+  try {
+    return await run();
+  } finally {
+    await rmdir(lock);
+  }
+}
+
+/** persist one exact next action before handing it to the native app. */
+export async function prepareCodexAutomation(
+  pluginData: string,
+  digest: string,
+  inputs: CodexAutomationInputs = {},
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const initial = await snapshot(pluginData, dependencies);
+  return withJournal(initial, async () => {
+    const selected = await snapshot(pluginData, dependencies);
+    if (initial.scope !== selected.scope)
+      throw new CodexAutomationError('automation-binding-changed');
+    const { saved, result } = await plan(selected, inputs);
+    if (
+      result.status !== 'requires-native-app-sync' ||
+      result.digest !== digest ||
+      !result.actions[0]
+    ) {
+      throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    }
+    const action = result.actions[0];
+    const ledger: Ledger = {
+      ...selected.ledger,
+      pending: {
+        digest,
+        manifestDigest: selected.loaded.digest,
+        action,
+        beforeHash: automationHash(saved),
+        othersHash: automationHash(saved.filter((s) => s.id !== action.id)),
+      },
+    };
+    await selected.file.write(JSON.stringify(ledger));
+    return {
+      status: 'prepared',
+      digest,
+      request: { mode: action.mode, ...(action.id ? { id: action.id } : {}), ...action.expected },
+    };
+  });
+}
+
+/** acknowledge only exact saved state; missing receipts can recover solely from the pending marker. */
+export async function acknowledgeCodexAutomation(
+  pluginData: string,
+  digest: string,
+  receipt?: unknown,
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const initial = await snapshot(pluginData, dependencies);
+  return withJournal(initial, async () => {
+    const selected = await snapshot(pluginData, dependencies);
+    const pending = selected.ledger.pending;
+    if (
+      selected.scope !== initial.scope ||
+      !pending ||
+      pending.digest !== digest ||
+      selected.loaded.digest !== pending.manifestDigest
+    )
+      throw new CodexAutomationError('automation-pending-stale');
+    const { action } = pending;
+    const saved = await readCodexAutomations(selected.codexHome);
+    const matches = saved.filter((s) =>
+      s.definition.prompt.endsWith(codexAutomationMarker(selected.scope, action.manifestId)),
+    );
+    const actual = matches.length === 1 ? matches[0] : undefined;
+    const receiptId =
+      receipt === undefined ? undefined : parseAutomationReceipt(receipt, action.mode);
+    if (
+      !actual ||
+      (action.id && actual.id !== action.id) ||
+      (receiptId && receiptId !== actual.id) ||
+      !savedMatches(actual, action.expected, selected.workspace) ||
+      automationHash(saved.filter((s) => s.id !== actual.id)) !== pending.othersHash
+    ) {
+      throw new CodexAutomationError('automation-readback-diverged');
+    }
+    const records = selected.ledger.records.filter((record) => record.id !== action.manifestId);
+    records.push({
+      id: action.manifestId,
+      nativeId: actual.id,
+      definition: action.expected,
+      removed: action.removed,
+    });
+    await selected.file.write(JSON.stringify({ version: 1, scope: selected.scope, records }));
+    return { status: 'verified', manifestId: action.manifestId, nativeId: actual.id, digest };
+  });
+}
+
+/** abandon a failed request only when native state is exactly the pre-write snapshot. */
+export async function cancelCodexAutomation(
+  pluginData: string,
+  digest: string,
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const initial = await snapshot(pluginData, dependencies);
+  return withJournal(initial, async () => {
+    const selected = await snapshot(pluginData, dependencies);
+    const pending = selected.ledger.pending;
+    if (
+      selected.scope !== initial.scope ||
+      !pending ||
+      pending.digest !== digest ||
+      automationHash(await readCodexAutomations(selected.codexHome)) !== pending.beforeHash
+    ) {
+      throw new CodexAutomationError('automation-cancel-recovery-required');
+    }
+    await selected.file.write(
+      JSON.stringify({ version: 1, scope: selected.scope, records: selected.ledger.records }),
+    );
+    return { status: 'cancelled', digest };
+  });
+}

@@ -1,13 +1,15 @@
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { automationHash } from './automation-hash.ts';
 import { AutomationError } from './automation-gateway.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+
+export { automationHash } from './automation-hash.ts';
 
 const hashSchema = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const recordSchema = Type.Object(
@@ -44,20 +46,6 @@ const ledgerSchema = Type.Object(
 );
 export type AutomationRecord = Static<typeof recordSchema>;
 export type AutomationLedger = Static<typeof ledgerSchema>;
-
-export function automationHash(value: unknown): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify(value, (_key, item: unknown) =>
-        item && typeof item === 'object' && !Array.isArray(item)
-          ? Object.fromEntries(
-              Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-            )
-          : item,
-      ),
-    )
-    .digest('hex');
-}
 
 /** non-secret ownership state, separate from native scheduler storage and repository content. */
 export default class AutomationStore {

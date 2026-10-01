@@ -54,6 +54,14 @@ describe('agent/codex-context', () => {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'binding'],
         pluginData,
       },
+      automationRuntime: {
+        argvPrefix: [
+          join(root, 'node'),
+          join(root, 'plugin', 'dist/codex/codex-runtime.js'),
+          'automations',
+        ],
+        pluginData: join(root, 'data'),
+      },
       setupRuntime: {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'setup'],
         pluginData,
@@ -103,7 +111,12 @@ describe('agent/codex-context', () => {
       },
       git: { name: 'Emori Git', policy: { forcePush: 'deny' } },
       github: { host: 'github.com', username: 'emoriwan', policy: { releases: 'deny' } },
-      capabilities: ['agent-system-doctor', 'agent-system-git-cli', 'agent-system-github-cli'],
+      capabilities: [
+        'agent-system-doctor',
+        'agent-system-install',
+        'agent-system-git-cli',
+        'agent-system-github-cli',
+      ],
     });
     for (const secret of [
       'AGENT_NAME_SECRET',
@@ -160,18 +173,23 @@ describe('agent/codex-context', () => {
   it('should advertise only standalone capabilities for configured integrations', () => {
     const base: AgentManifest = { schemaVersion: 1, agent: { id: 'emori' } };
     const cases: Array<[Partial<AgentManifest>, string[]]> = [
-      [{}, ['agent-system-doctor']],
+      [{}, ['agent-system-doctor', 'agent-system-install']],
       [{ setup: { steps: [] } }, ['agent-system-doctor', 'agent-system-install']],
       [{ setupHost: { steps: [] } }, ['agent-system-doctor', 'agent-system-install']],
       [
         { models: { default: { model: 'openai/gpt-6-astra', effort: 'high' } } },
-        ['agent-system-doctor', 'agent-system-model-routing'],
+        ['agent-system-doctor', 'agent-system-install', 'agent-system-model-routing'],
       ],
-      [{ git: {} }, ['agent-system-doctor', 'agent-system-git-cli']],
-      [{ github: {} }, ['agent-system-doctor', 'agent-system-github-cli']],
+      [{ git: {} }, ['agent-system-doctor', 'agent-system-install', 'agent-system-git-cli']],
+      [{ github: {} }, ['agent-system-doctor', 'agent-system-install', 'agent-system-github-cli']],
       [
         { git: {}, github: {} },
-        ['agent-system-doctor', 'agent-system-git-cli', 'agent-system-github-cli'],
+        [
+          'agent-system-doctor',
+          'agent-system-install',
+          'agent-system-git-cli',
+          'agent-system-github-cli',
+        ],
       ],
       [
         { setup: { steps: [] }, git: {}, github: {} },
@@ -194,7 +212,12 @@ describe('agent/codex-context', () => {
             },
           },
         },
-        ['agent-system-doctor', 'agent-system-git-cli', 'agent-system-github-cli'],
+        [
+          'agent-system-doctor',
+          'agent-system-install',
+          'agent-system-git-cli',
+          'agent-system-github-cli',
+        ],
       ],
     ];
 
