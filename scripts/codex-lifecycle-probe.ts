@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 // operational acceptance belongs exclusively to disposable github actions runners.
 if (process.env.GITHUB_ACTIONS !== 'true') {
@@ -15,6 +15,20 @@ function groupExists(pid: number): boolean {
     if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
     throw error;
   }
+}
+
+function appServerPids(): number[] {
+  // codex can detach from its caller's process group. this isolated runner has no gateway turns.
+  // inspect arguments privately; report only the count, never raw process arguments.
+  return execFileSync('/bin/ps', ['-axo', 'pid=,command='], {
+    encoding: 'utf8',
+    maxBuffer: 1_048_576,
+  })
+    .split('\n')
+    .flatMap((line) => {
+      const match = line.match(/^\s*(\d+)\s+(.*)$/);
+      return match && /\bcodex\b.*\bapp-server\b/.test(match[2]!) ? [Number(match[1])] : [];
+    });
 }
 
 async function probe(args: string[]): Promise<void> {
@@ -42,14 +56,23 @@ async function probe(args: string[]): Promise<void> {
     clearTimeout(timer);
   }
   await new Promise((resolve) => setTimeout(resolve, 500));
-  const survivingChild = child.pid !== undefined && groupExists(child.pid);
-  if (survivingChild && child.pid) process.kill(-child.pid, 'SIGKILL');
+  const survivingGroup = child.pid !== undefined && groupExists(child.pid);
+  const survivingAppServers = appServerPids();
+  const survivingChild = survivingGroup || survivingAppServers.length > 0;
+  if (survivingGroup && child.pid) process.kill(-child.pid, 'SIGKILL');
+  for (const pid of survivingAppServers) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+  }
   const disposalError =
     /(?:dispos|retir)[^\n]*(?:error|reject|fail)|(?:error|reject|fail)[^\n]*(?:dispos|retir)/i.test(
       output,
     );
   process.stdout.write(
-    `${JSON.stringify({ command: args.slice(0, 2), code, elapsedMs: Date.now() - started, timedOut, disposalError, survivingChild })}\n`,
+    `${JSON.stringify({ command: args.slice(0, 2), code, elapsedMs: Date.now() - started, timedOut, disposalError, survivingChild, survivingAppServers: survivingAppServers.length })}\n`,
   );
   if (code !== 0 || timedOut || disposalError || survivingChild) {
     throw new Error(
