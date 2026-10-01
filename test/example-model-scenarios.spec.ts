@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mock } from 'node:test';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
@@ -57,7 +58,7 @@ function request(
 
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, ['agent', 'credentials', 'github']);
+    assert.deepEqual(exampleModelScenarioIds, ['agent', 'automations', 'credentials', 'github']);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
@@ -79,6 +80,41 @@ describe('scripts/example-model-scenarios', () => {
       content: 'Ready.',
       id: 'agent-system-example-agent-final-response',
     });
+  });
+
+  it('should keep automation ownership strict and report only failed match booleans', () => {
+    const scenario = resolveExampleModelScenario('automations');
+    const diagnostic = mock.method(console, 'error', () => {});
+    const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
+    valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
+    valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
+    try {
+      assert.equal(matchFixture([...scenario.fixtures], valid), scenario.fixtures[0]);
+      assert.equal(diagnostic.mock.callCount(), 0);
+      for (const field of ['model', 'identity', 'prompt', 'noToolResult'] as const) {
+        const invalid = structuredClone(valid);
+        if (field === 'model') invalid.model = 'private-model';
+        if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
+        if (field === 'prompt') {
+          invalid.messages[1]!.content = 'private-prompt';
+          invalid.messages.push({ role: 'assistant', content: scenario.userPromptSignals![0]! });
+        }
+        if (field === 'noToolResult') {
+          invalid.messages.push({ role: 'tool', content: 'private-result', tool_call_id: 'call' });
+        }
+        assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+        const output = String(diagnostic.mock.calls.at(-1)!.arguments[0]);
+        assert.deepEqual(JSON.parse(output.slice(output.indexOf('{'))), {
+          model: field !== 'model',
+          identity: field !== 'identity',
+          prompt: field !== 'prompt',
+          noToolResult: field !== 'noToolResult',
+        });
+        assert.ok(!output.includes('private-'));
+      }
+    } finally {
+      diagnostic.mock.restore();
+    }
   });
 
   it('should return each login only after validating the real tool result', () => {

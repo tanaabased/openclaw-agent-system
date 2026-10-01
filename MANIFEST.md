@@ -291,8 +291,9 @@ destination restrictions, and sensitive-archive handling.
 ### `automations`
 
 Declare an inline list or `{ file: ./automations.yaml }` naming one YAML list;
-omission and `[]` declare no jobs. Parsing is supported. Native scheduling,
-execution, and runtime capability checks await the adapters.
+omission and `[]` declare no jobs. OpenClaw operator Install reconciles these
+jobs through the running Gateway; Doctor inspects them without running or changing
+jobs. Standalone Codex scheduling remains unavailable in this release.
 
 | Field             | Type                                                       | Required         | Default       | Description                                                                    |
 | ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |
@@ -339,6 +340,51 @@ Files resolve relative to their containing file; execution cwd remains the
 workspace root. References stay within the workspace and follow the [loader's
 size and encoding rules](#discovery). External YAML contains a list, without recursive inclusion.
 Missing or invalid references fail validation rather than declaring no jobs.
+
+#### OpenClaw execution and ownership
+
+The Gateway must be running and the invoking operator must have native cron read
+and administration permissions. The adapter uses the public CLI transport tested
+with OpenClaw 2026.9.6. Unavailable or incompatible RPCs block reconciliation.
+Model-facing Install and Doctor report that operator synchronization is required;
+they do not acquire operator transport authority.
+
+Commands run without a model through a fixed owned-job entrypoint. It rechecks the
+installed workspace, declaration, ownership, enabled state, and synchronized hash
+before issuing temporary agent authority. Plain `git` and `gh` use managed launchers;
+tool policy precedes invocation-scoped credentials. Arbitrary executables remain
+operator-authored host commands, with the same [containment boundary](./CLI.md#trust-boundary)
+as setup. Changes to command declarations require another Install; dependencies
+of an executable script are not recursively hashed.
+
+Prompt jobs use the owning agent in an independent isolated session. Omitted model
+and effort follow native agent defaults; explicit model and supported native
+thinking levels are passed to OpenClaw. Named thread targets currently report
+`automation-target-unsupported`. Output delivery defaults to none; native history
+retains execution results. Command summaries contain bounded status codes, not
+captured script output or credentials.
+
+Timeouts apply to the whole native invocation, including runner startup, and
+range from 1 to 3600 seconds (default 1800). Native same-job serialization,
+retry/backoff, interrupted-run recovery, and DST behavior remain authoritative.
+There is no Agent System retry loop. Normal completion, cancellation, and timeout
+revoke temporary authority and release managed resources. Uncatchable process
+termination cannot guarantee synchronous filesystem cleanup.
+
+Private ownership records live outside the repository, scoped by OpenClaw
+profile, canonical workspace, agent ID, and manifest ID. Unchanged jobs receive
+no native writes. Removal disables a job while retaining its mapping and native
+history; reintroducing its ID reuses that job. Relative one-shot anchors persist
+across payload edits, pause/resume, and removal. Completed one-shots stay consumed;
+only changing the manifest trigger rearms scheduling. Native safety auto-disable
+requires operator recovery.
+
+Native UI edits are drift. Explicit Install restores owned settings using native
+revision checks. Missing jobs, missing ownership, ambiguous recovery, or concurrent
+changes stop reconciliation with bounded diagnostics and partial results. A name
+match never permits adoption or recreation. Doctor distinguishes execution and
+delivery failures without replaying a payload; absent native telemetry is not
+proof of delivery.
 
 #### Schedules
 

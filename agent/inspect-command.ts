@@ -2,7 +2,7 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 
 export interface AgentOperatorInvocation {
   recommendedTool?: string;
-  surface: 'credentials' | 'shim' | 'tool' | 'setup' | 'backup';
+  surface: 'credentials' | 'shim' | 'tool' | 'setup' | 'backup' | 'automation';
   targetAgentDynamic: boolean;
   targetAgentId?: string;
 }
@@ -182,7 +182,17 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
   const namespace = words[index + 1]?.toLowerCase();
   const surface = words[index + 2]?.toLowerCase();
   if (!['agent-system', 'as'].includes(namespace ?? '')) return undefined;
-  if (!['tool', 'credentials', 'install', 'doctor', 'status', 'backup'].includes(surface ?? ''))
+  if (
+    ![
+      'tool',
+      'credentials',
+      'install',
+      'doctor',
+      'status',
+      'backup',
+      'automation-execute',
+    ].includes(surface ?? '')
+  )
     return undefined;
 
   const argumentsAfterSurface = words.slice(index + 3);
@@ -192,7 +202,11 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
       ? { recommendedTool: recommendedTool(readToolCommand(argumentsAfterSurface)) }
       : {}),
     surface:
-      surface === 'tool' || surface === 'credentials' || surface === 'backup' ? surface : 'setup',
+      surface === 'automation-execute'
+        ? 'automation'
+        : surface === 'tool' || surface === 'credentials' || surface === 'backup'
+          ? surface
+          : 'setup',
     targetAgentDynamic: target.dynamic,
     ...(target.targetAgentId ? { targetAgentId: target.targetAgentId } : {}),
   };

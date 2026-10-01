@@ -1,0 +1,23 @@
+schema-version: 1
+agent:
+  id: automation-tanaabot
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+environment:
+  set:
+    AUTOMATION_GITHUB_TOKEN: ${GH_TOKEN_TANAABOT}
+git:
+  ssh:
+    private-keys:
+      path: ~/.ssh/big-test-bucket-ssh
+github:
+  username: tanaabot
+  token: AUTOMATION_GITHUB_TOKEN
+  policy:
+    releases: deny
+automations:
+  file: ./automations.yaml

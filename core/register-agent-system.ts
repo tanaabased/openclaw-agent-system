@@ -14,6 +14,9 @@ import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../agent/resolve-codex-command-id.ts';
 import registerAgentCommandSecurity from '../agent/command-security.ts';
+import AutomationService from '../agent/automation-service.ts';
+import { requestAutomationGateway } from '../agent/automation-gateway.ts';
+import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
@@ -281,6 +284,18 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     runPreAgent: (command, target, signal) => setupCommands.runPreAgent(command, target, signal),
     prepare: (context) => setupCommands.prepare(context),
   });
+  const automationDependencies = {
+    root: join(api.runtime.state.resolveStateDir(), 'agent-system-automations'),
+    profile: api.runtime.state.resolveStateDir(),
+    command: openClawCommand,
+    environment: Object.fromEntries(
+      ['OPENCLAW_PROFILE', 'OPENCLAW_STATE_DIR', 'OPENCLAW_CONFIG_PATH'].flatMap((name) =>
+        process.env[name] ? [[name, process.env[name]!]] : [],
+      ),
+    ),
+    manifestService: lifecycleManifestService,
+  };
+  const automationService = new AutomationService(automationDependencies);
   const lifecycleContributions = [
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
@@ -405,6 +420,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     notificationRuntime.lifecycleContribution,
+    automationService.contribution(),
   ];
   const lifecycleRegistry = new AgentSystemLifecycleRegistry(
     lifecycleContributions,
@@ -521,6 +537,37 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
   api.registerCli(({ program }) => {
+    const automations = new AutomationService({
+      ...automationDependencies,
+      request: requestAutomationGateway,
+    });
+    const operatorRegistry = new AgentSystemLifecycleRegistry(
+      [
+        ...lifecycleContributions.filter(({ id }) => id !== 'automations'),
+        automations.contribution(),
+      ],
+      setupLifecycle,
+    );
+    const operatorInstall = new AgentInstallService({
+      credentialManager,
+      lifecycleRegistry: operatorRegistry,
+    });
+    const operatorDoctor = new AgentDoctorService({
+      lifecycleRegistry: operatorRegistry,
+      toolRegistry,
+      baseEnvironment: process.env,
+      excludedExecutableDirectories: excludedToolExecutableDirectories,
+    });
+    const boundCommands = new BoundCommandService({
+      baseEnvironment: process.env,
+      currentUid,
+      manifestService,
+      packageDir,
+      toolRegistry,
+      toolRuntime,
+      runCommandWithTimeout: (argv, options) =>
+        api.runtime.system.runCommandWithTimeout(argv, options),
+    });
     registerAgentSystemCli(program, {
       backupService: new WorkspaceBackupService(
         async (agentId) => {
@@ -556,10 +603,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       commandAuthority,
       credentialInput: opCredentialInput,
       credentialManager,
-      doctorService,
+      doctorService: operatorDoctor,
       environmentService,
       input: process.stdin,
-      installService,
+      installService: operatorInstall,
+      automations,
+      boundCommands,
       manifestService,
       notificationMonitorService,
       notificationStatusService,

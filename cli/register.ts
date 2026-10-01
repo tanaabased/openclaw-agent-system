@@ -1,6 +1,10 @@
 import type { Readable } from 'node:stream';
 import type { Option } from 'commander';
 
+import executeAutomation from './automation-execute.ts';
+import type AutomationService from '../agent/automation-service.ts';
+import type BoundCommandService from '../agent/bound-command-service.ts';
+
 import envAgentSystem from './env.ts';
 import credentialsCache, { type OpCacheGatewayRequest } from './credentials-cache.ts';
 import doctorAgentSystem from './doctor.ts';
@@ -49,6 +53,8 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
+  automations?: AutomationService;
+  boundCommands?: BoundCommandService;
   backupService?: WorkspaceBackupService;
   commandAuthority?: Pick<AgentCommandAuthority, 'resolve' | 'classify'>;
   cacheGatewayRequest?: OpCacheGatewayRequest;
@@ -113,6 +119,36 @@ export default function registerAgentSystemCli(
     .alias('as')
     .description('Manage reproducible OpenClaw agent workspaces.')
     .action(() => writeHelp(agentSystem, output));
+  if (options.automations && options.boundCommands) {
+    const execute = agentSystem
+      .command('automation-execute')
+      .description('Execute one synchronized owned automation (scheduler entrypoint).')
+      .option('--id <id>', 'Select the owned manifest automation id.')
+      .option('--hash <hash>', 'Require the synchronized effective content hash.')
+      .action(async () => {
+        if (!(await allowOperatorCommand())) return completeOneShot(1);
+        const args = execute.opts();
+        if (
+          typeof args.id !== 'string' ||
+          typeof args.hash !== 'string' ||
+          !/^[a-f0-9]{64}$/u.test(args.hash)
+        ) {
+          output.writeStderr('Automation execution requires an owned id and synchronized hash.\n');
+          return completeOneShot(1);
+        }
+        const code = await executeAutomation({
+          id: args.id,
+          hash: args.hash,
+          workspaceDir: cwd(),
+          manifestService: options.manifestService,
+          automations: options.automations!,
+          commands: options.boundCommands!,
+          output,
+        });
+        setExitCode(code);
+        await completeOneShot(code);
+      });
+  }
   const backupService = options.backupService ?? new WorkspaceBackupService();
   const backup = agentSystem
     .command('backup')

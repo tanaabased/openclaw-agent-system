@@ -25,6 +25,10 @@ The native OpenClaw harness and OpenClaw-hosted Codex use this tool. Standalone
 Codex uses the [setup-only adapter](../../CODEX.md#skills).
 If an existing agent lacks the tool grant, run the operator CLI Install once.
 
+Automation reconciliation requires the operator CLI Install with a running Gateway.
+This model tool reports `automation-requires-operator-sync`; it does not borrow
+operator authority to manage native jobs.
+
 ## Configuration
 
 There is no separate manifest section for this tool. It uses the active agent's

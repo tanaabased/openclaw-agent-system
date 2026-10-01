@@ -1,0 +1,5 @@
+- id: disabled
+  runtimes: [openclaw]
+  schedule: in 30 seconds
+  timeout-seconds: 120
+  run: [touch, disabled-ran]
