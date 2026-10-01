@@ -123,6 +123,28 @@ describe('agent/codex-plugin-lifecycle', () => {
     }
   });
 
+  it('should enable a verified fresh install when the native installer preserves disabled state', async () => {
+    const f = fixture('missing');
+    const previous = f.dependencies.runOpenClawCommand;
+    f.dependencies.runOpenClawCommand = async (args, cwd, signal) => {
+      const result = await previous(args, cwd, signal);
+      if (args[1] === 'install') {
+        f.record.enabled = false;
+        f.record.status = 'disabled';
+      }
+      return result;
+    };
+    assert.equal(
+      (await f.contribution().reconcile!(context)).outcomes[0]?.code,
+      'codex-plugin-installed',
+    );
+    assert.deepEqual(f.mutations(), [
+      ['plugins', 'install', 'npm:@openclaw/codex@2026.9.7', '--pin', '--accept-capabilities'],
+      ['plugins', 'enable', 'codex', '--accept-capabilities'],
+    ]);
+    assert.equal((await f.contribution().inspect!(context))[0]?.code, 'codex-plugin-ready');
+  });
+
   it('should enable only a matching managed installation', async () => {
     const f = fixture('disabled');
     assert.equal(

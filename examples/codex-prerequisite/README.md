@@ -61,6 +61,7 @@ openclaw agent-system install --json | jq -e '.outcomes | any(.code == "codex-pl
 test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
 
 # should diagnose disabled codex without repair and explicitly enable the matching shared installation
+openclaw config set agents.entries.codex-first.models '{"openai/gpt-5.4-nano":{"agentRuntime":{"id":"codex"}}}' --strict-json
 openclaw plugins disable codex
 cd "$GITHUB_WORKSPACE/examples/codex-prerequisite/first"
 if output=$(openclaw agent-system doctor --json); then exit 1; fi
@@ -81,6 +82,7 @@ test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
 # should require explicit operator reconciliation to restore the declared shared version
 openclaw plugins uninstall codex --force
 openclaw plugins install npm:@openclaw/codex@2026.9.7 --pin --accept-capabilities
+openclaw plugins enable codex --accept-capabilities
 cd "$GITHUB_WORKSPACE/examples/codex-prerequisite/second"
 openclaw agent-system doctor --json | jq -e '.findings | any(.code == "codex-plugin-ready")'
 

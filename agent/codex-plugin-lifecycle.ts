@@ -317,7 +317,14 @@ export default function createCodexPluginLifecycleContribution(
         } else {
           await command(context, 'enable', ['plugins', 'enable', 'codex', '--accept-capabilities']);
         }
-        const verified = await inspect(context);
+        let verified = await inspect(context);
+        if (
+          state.code === 'codex-plugin-missing' &&
+          verified.finding.code === 'codex-plugin-disabled'
+        ) {
+          await command(context, 'enable', ['plugins', 'enable', 'codex', '--accept-capabilities']);
+          verified = await inspect(context);
+        }
         if (verified.finding.code !== 'codex-plugin-ready')
           throw new AgentSystemLifecycleError(
             'codex-plugin',
