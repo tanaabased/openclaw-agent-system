@@ -98,7 +98,7 @@ export default function createGoogleTool(store: GoogleStore) {
       name: 'agent_system_google',
       label: 'Agent System Google CLI',
       description:
-        'Run reviewed noninteractive GoG v0.42.0 Google data commands with the active agent account, isolated OAuth store and bounded IO. Use canonical service/subcommand arguments. Auth/config overrides and unreviewed commands/flags are unavailable. File inputs and explicit download paths must stay inside the workspace.',
+        'Run reviewed noninteractive GoG Google data commands with the active agent account, isolated OAuth store and bounded IO. Use canonical service/subcommand arguments. Auth/config overrides and unreviewed commands/flags are unavailable. File inputs and explicit download paths must stay inside the workspace.',
       parameters: googleToolSchema,
       classify: classifyGoogleCommand,
       validate: (input) => {

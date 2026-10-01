@@ -53,7 +53,7 @@ export default function createGoogleCapability(
     if (missing.length)
       throw new AgentSystemToolError(
         'tool_unavailable',
-        'Google requires gog on the host runtime PATH. Install GoG v0.42.0.',
+        'Google requires gog on the host runtime PATH. Install GoG v0.43.0 or a compatible stable 0.x release.',
       );
     const result = await dependencies.environmentService.loadForWorkspace(
       context.workspaceDir,
