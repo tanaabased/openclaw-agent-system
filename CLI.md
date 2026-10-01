@@ -9,6 +9,10 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 **Core commands**
 
 - [`openclaw agent-system automation-execute`](#openclaw-agent-system-automation-execute)
+- [`openclaw agent-system automations list`](#openclaw-agent-system-automations-list)
+- [`openclaw agent-system automations run`](#openclaw-agent-system-automations-run)
+- [`openclaw agent-system automations runs`](#openclaw-agent-system-automations-runs)
+- [`openclaw agent-system automations sync`](#openclaw-agent-system-automations-sync)
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
 - [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune)
 - [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
@@ -52,6 +56,155 @@ openclaw agent-system validate [--agent <id>] [--json]
 # validate the current workspace manifest without changing state.
 openclaw agent-system validate --json
 ```
+
+## `openclaw agent-system automations list`
+
+Inspect declared/native state, retained disabled jobs, and actionable drift without writes. The `openclaw as` alias supports the same options.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                |
+| ------------------ | -------- | ------------------- | ------------------------------------------ |
+| `--agent <id>`     | no       | workspace discovery | Select an installed agent; operators only. |
+| `--json`           | no       | off                 | Write one structured result to stdout.     |
+
+### Usage
+
+```text
+openclaw agent-system automations list [--agent <id>] [--json]
+```
+
+```sh
+# inspect declared/native state, retained disabled jobs, and actionable drift without writes.
+openclaw agent-system automations list --json
+```
+
+An aligned inventory exits zero. Drift, blocked support, or execution/delivery warnings return `attention` and exit 1. Runtime-excluded declarations are listed as inapplicable. Native IDs and enabled state are reported without exposing payloads or provider error text.
+
+## `openclaw agent-system automations run`
+
+Queue one enabled, synchronized owned job by manifest ID through the native scheduler. The `openclaw as` alias supports the same options.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                          |
+| ------------------ | -------- | ------------------- | ---------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Select an installed agent; operators only.           |
+| `--json`           | no       | off                 | Write one structured result to stdout.               |
+| `<id>`             | yes      | none                | Manifest automation ID, never a native scheduler ID. |
+
+### Usage
+
+```text
+openclaw agent-system automations run <id> [--agent <id>] [--json]
+```
+
+```sh
+# queue one enabled, synchronized owned job by manifest id through the native scheduler.
+openclaw agent-system automations run review --json
+```
+
+`queued` exits zero and returns `runId`; it proves admission, not completion. Inspect that exact occurrence with `runs --run-id`. Missing, disabled, consumed, drifted, or unowned jobs fail before admission; native skips exit 1. Run does not silently sync or retry. Native UI changes can race preflight; there is no atomic definition check on the native occurrence interface.
+
+## `openclaw agent-system automations runs`
+
+Read native occurrence history for an owned manifest ID, including retained removed jobs. The `openclaw as` alias supports the same options.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                          |
+| ------------------ | -------- | ------------------- | ---------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Select an installed agent; operators only.           |
+| `--json`           | no       | off                 | Write one structured result to stdout.               |
+| `<id>`             | yes      | none                | Manifest automation ID, never a native scheduler ID. |
+| `--limit <count>`  | no       | `50`                | Maximum entries, from 1 to 200.                      |
+| `--offset <count>` | no       | `0`                 | Nonnegative history offset.                          |
+| `--run-id <id>`    | no       | none                | Filter the exact native occurrence.                  |
+
+### Usage
+
+```text
+openclaw agent-system automations runs <id> [--agent <id>] [--json] [--limit <count>] [--offset <count>] [--run-id <id>]
+```
+
+```sh
+# read native occurrence history for an owned manifest id, including retained removed jobs.
+openclaw agent-system automations runs review --limit 20 --json
+```
+
+Each entry reports execution and delivery independently. Missing telemetry is `unavailable`; raw output and errors are omitted. The result includes `total`, `offset`, `limit`, `hasMore`, and `nextOffset`. Pass `nextOffset` to read another page. Native history clamps an offset beyond the result count to that count.
+
+## `openclaw agent-system automations sync`
+
+Reconcile only owned automations through the same owner used by operator install. The `openclaw as` alias supports the same options.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                |
+| ------------------ | -------- | ------------------- | ------------------------------------------ |
+| `--agent <id>`     | no       | workspace discovery | Select an installed agent; operators only. |
+| `--json`           | no       | off                 | Write one structured result to stdout.     |
+
+### Usage
+
+```text
+openclaw agent-system automations sync [--agent <id>] [--json]
+```
+
+```sh
+# reconcile only owned automations through the same owner used by operator install.
+openclaw agent-system automations sync --json
+```
+
+Unchanged jobs receive no mutation. Pause/removal retains ownership and history; reintroduction reuses the native ID. A failed sync exits 1 and retains verified progress and pending recovery. This command does not run unrelated install or setup steps.
+
+### Repository examples
+
+A prompt review can apply to both runtimes where the schedule is supported:
+
+```yaml
+automations:
+  - id: review
+    schedule: every 24 hours
+    prompt: Review the latest repository changes and report actionable findings.
+```
+
+For a deterministic backup, declare an OpenClaw command:
+
+```yaml
+automations:
+  - id: backup
+    runtimes: [openclaw]
+    schedule: every 24 hours
+    run: [sh, ./backup.sh, tanaabased/big-test-bucket, backups]
+```
+
+The example `backup.sh` requires `jq`, a pre-existing release tag, and managed
+GitHub permissions for its upload. Configure [backup selection](./MANIFEST.md#backup)
+and [GitHub policy](./tools/github/README.md) in the owning manifest. Every failed
+step stops the sequence before local pruning:
+
+```sh
+#!/bin/sh
+set -eu
+repository=$1
+tag=$2
+archive=$(openclaw agent-system backup create --json | jq -er .archive)
+openclaw agent-system backup verify "$archive" --json
+gh release upload "$tag" "$archive" --repo "$repository"
+download=$(mktemp -d)
+trap 'rm -rf "$download"' EXIT HUP INT TERM
+name=$(basename "$archive")
+gh release download "$tag" --repo "$repository" --pattern "$name" --dir "$download"
+cmp "$archive" "$download/$name"
+openclaw agent-system backup verify "$download/$name" --json
+openclaw agent-system backup prune --keep 10 --json
+```
+
+Upload acceptance alone is insufficient: download, byte comparison, and archive
+verification must succeed before pruning. This example does not create a release
+or promise remote retention. Codex can run an explicitly authored prompt invoking
+a script, but that remains model-backed and follows its documented limitations.
 
 ## `openclaw agent-system backup create`
 

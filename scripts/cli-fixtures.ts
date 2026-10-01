@@ -62,7 +62,11 @@ const approvalOptions = {
   reporters: [{ name: 'silent', canReportOn: () => true, report: () => undefined }],
 };
 
-function defaultExecutor(executable: string, argv: readonly string[], stdin?: string): CliCapture {
+export function defaultExecutor(
+  executable: string,
+  argv: readonly string[],
+  stdin?: string,
+): CliCapture {
   const result = spawnSync(executable, [...argv], {
     encoding: 'utf8',
     input: stdin,

@@ -296,6 +296,10 @@ jobs through the running Gateway; Doctor inspects them without running or changi
 jobs. Standalone Codex Install plans recurring prompt jobs and applies authorized
 native app actions; Doctor inspects saved definitions. See the [Codex support
 matrix](./CODEX.md#repository-automations) for schedules, targets, and limitations.
+Operator [list](./CLI.md#openclaw-agent-system-automations-list),
+[sync](./CLI.md#openclaw-agent-system-automations-sync),
+[run](./CLI.md#openclaw-agent-system-automations-run), and
+[history](./CLI.md#openclaw-agent-system-automations-runs) use these same declarations.
 
 | Field             | Type                                                       | Required         | Default       | Description                                                                    |
 | ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |

@@ -5,7 +5,7 @@ function toolOwnsStdout({ argv }: { argv: readonly string[]; stdoutIsTTY: boolea
   return (
     path[1] === 'tool' ||
     path[1] === 'automation-execute' ||
-    (path[1] === 'backup' && argv.includes('--json')) ||
+    (['backup', 'automations'].includes(path[1] ?? '') && argv.includes('--json')) ||
     (path[1] === 'credentials' && path[2] === 'cache')
   );
 }

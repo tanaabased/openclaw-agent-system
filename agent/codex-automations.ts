@@ -178,6 +178,79 @@ export async function inspectCodexAutomations(
   return (await plan(selected, inputs)).result;
 }
 
+/** operator inventory uses the same saved-state planner as doctor and install. */
+export async function listCodexAutomations(
+  pluginData: string,
+  inputs: CodexAutomationInputs = {},
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const selected = await snapshot(pluginData, dependencies);
+  const { saved, result } = await plan(selected, inputs);
+  const jobs = selected.loaded.manifest.automations ?? [];
+  const ids = new Set([
+    ...jobs.map(({ id }) => id),
+    ...selected.ledger.records.map(({ id }) => id),
+  ]);
+  return {
+    runtime: 'codex',
+    workspaceDir: selected.workspace,
+    ...result,
+    jobs: [...ids].map((id) => {
+      const declared = jobs.find((job) => job.id === id);
+      const record = selected.ledger.records.find((entry) => entry.id === id);
+      const actual = record ? saved.find((entry) => entry.id === record.nativeId) : undefined;
+      return {
+        id,
+        declared: Boolean(declared),
+        applicable: declared?.runtimes.includes('codex') ?? true,
+        enabled: declared?.enabled ?? false,
+        nativeId: record?.nativeId ?? null,
+        nativeStatus: actual?.definition.status ?? null,
+        removed: record?.removed ?? false,
+        findings: result.findings.filter((finding) => finding.id === id),
+      };
+    }),
+  };
+}
+
+/** no native occurrence or history API is available; never silently create a manual substitute. */
+export async function codexAutomationRunGap(
+  pluginData: string,
+  id: string,
+  action: 'run' | 'runs',
+  dependencies: CodexAutomationDependencies = {},
+) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id))
+    throw new CodexAutomationError('automation-id-invalid');
+  const selected = await snapshot(pluginData, dependencies);
+  const declared = selected.loaded.manifest.automations?.find((job) => job.id === id);
+  const record = selected.ledger.records.find((entry) => entry.id === id);
+  if (!declared && !(action === 'runs' && record))
+    throw new CodexAutomationError('automation-id-missing');
+  if (declared && !declared.runtimes.includes('codex'))
+    throw new CodexAutomationError('automation-runtime-unsupported');
+  return {
+    runtime: 'codex',
+    status: 'unsupported',
+    id,
+    nativeId: record?.nativeId ?? null,
+    code: action === 'run' ? 'automation-run-now-unsupported' : 'automation-history-unavailable',
+    telemetry: { execution: 'unavailable', delivery: 'unavailable' },
+    ...(action === 'run'
+      ? {
+          manualTask: {
+            requiresExplicitRequest: true,
+            schedulerOccurrence: false,
+            history: 'separate-task',
+            consumesOneShot: false,
+            guidance:
+              'An explicitly requested manual task is separate from the saved scheduler job and does not prove scheduled execution.',
+          },
+        }
+      : {}),
+  };
+}
+
 /** serialize journal transitions across app-tool calls; a crash leaves an explicit recovery barrier. */
 async function withJournal<T>(
   selected: Awaited<ReturnType<typeof snapshot>>,

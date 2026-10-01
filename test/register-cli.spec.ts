@@ -44,6 +44,7 @@ function createProgram(
   input?: Readable,
   dependencies: {
     automationRunner?: boolean;
+    automations?: RegisterAgentSystemCliOptions['automations'];
     backupService?: WorkspaceBackupService;
     manifestResult?: AgentManifestLoadResult;
     environment?: Readonly<NodeJS.ProcessEnv>;
@@ -57,6 +58,7 @@ function createProgram(
   } = {},
 ) {
   const diagnostics: string[] = [];
+  const exitCodes: number[] = [];
   const output: string[] = [];
   const calls = {
     agent: [] as string[],
@@ -104,6 +106,7 @@ function createProgram(
     ...(dependencies.automationRunner
       ? { automations: {} as never, boundCommands: {} as never }
       : {}),
+    ...(dependencies.automations ? { automations: dependencies.automations } : {}),
     backupService: dependencies.backupService,
     environment: dependencies.environment ?? {},
     ...(dependencies.commandAuthority ? { commandAuthority: dependencies.commandAuthority } : {}),
@@ -256,6 +259,7 @@ function createProgram(
         };
       },
     },
+    setExitCode: (code) => exitCodes.push(code),
     output: {
       writeStderr: (message) => diagnostics.push(message),
       writeStdout: (message) => output.push(message),
@@ -292,8 +296,113 @@ function createProgram(
     styles: createCliStyles({ NO_COLOR: '1' }),
     terminalColumns: dependencies.terminalColumns,
   });
-  return { calls, diagnostics, output, program };
+  return { calls, diagnostics, output, program, exitCodes };
 }
+
+describe('cli/automation-commands', () => {
+  it('should pass both aliases and history flags through the production registration and output boundary', async () => {
+    const calls: unknown[] = [];
+    const automations = {
+      list: async (...args: unknown[]) => {
+        calls.push(['list', ...args]);
+        return { status: 'aligned', jobs: [] };
+      },
+      reconcile: async (...args: unknown[]) => {
+        calls.push(['sync', ...args]);
+        return { outcomes: [], warnings: [] };
+      },
+      run: async (...args: unknown[]) => {
+        calls.push(['run', ...args]);
+        return {
+          status: 'queued',
+          runId: 'occurrence',
+          execution: 'unavailable',
+          delivery: 'unavailable',
+        };
+      },
+      runs: async (...args: unknown[]) => {
+        calls.push(['runs', ...args]);
+        return { status: 'ok', entries: [], hasMore: false };
+      },
+    } as never;
+    for (const alias of ['agent-system', 'as']) {
+      for (const action of ['list', 'sync', 'run', 'runs']) {
+        const result = createProgram(undefined, { automations });
+        const args = [
+          'node',
+          'openclaw',
+          alias,
+          'automations',
+          action,
+          '--agent',
+          'tanaabot',
+          '--json',
+        ];
+        if (action === 'run' || action === 'runs') args.push('review');
+        if (action === 'runs') args.push('--limit', '7', '--offset', '2', '--run-id', 'occurrence');
+        await result.program.parseAsync(args);
+        assert.equal(
+          JSON.parse(result.output.join('')).status,
+          { list: 'aligned', sync: 'synchronized', run: 'queued', runs: 'ok' }[action],
+        );
+        assert.deepEqual(result.diagnostics, []);
+        assert.deepEqual(result.exitCodes, []);
+        assert.deepEqual(result.calls.agent, ['tanaabot']);
+      }
+    }
+    assert.deepEqual((calls[3] as unknown[]).slice(2), [
+      '/workspace',
+      'review',
+      { limit: 7, offset: 2, runId: 'occurrence' },
+    ]);
+  });
+  it('should block every operator route for descendants before reading a manifest or calling native transport', async () => {
+    for (const action of ['list', 'sync', 'run', 'runs']) {
+      const result = createProgram(undefined, {
+        automations: {} as never,
+        environment: { AGENT_SYSTEM_EXEC_AUTHORITY: 'invalid' },
+      });
+      await result.program.parseAsync([
+        'node',
+        'openclaw',
+        'as',
+        'automations',
+        action,
+        ...(['run', 'runs'].includes(action) ? ['review'] : []),
+        '--json',
+      ]);
+      assert.ok(result.diagnostics.join('').includes('operator commands are unavailable'));
+      assert.deepEqual(result.calls.workspace, []);
+      assert.deepEqual(result.output, []);
+      assert.deepEqual(result.exitCodes, [1]);
+    }
+  });
+  it('should print queued text and expose bounded partial failures on stdout and stderr', async () => {
+    const result = createProgram(undefined, {
+      automations: {
+        run: async () => ({
+          status: 'queued',
+          runId: 'occurrence',
+          execution: 'unavailable',
+          delivery: 'unavailable',
+        }),
+      } as never,
+    });
+    await result.program.parseAsync(['node', 'openclaw', 'as', 'automations', 'run', 'review']);
+    assert.match(result.output.join(''), /queued.*run=occurrence/su);
+    const failed = createProgram(undefined, {
+      automations: {
+        reconcile: async () => {
+          throw new Error('secret transport text');
+        },
+      } as never,
+    });
+    await failed.program.parseAsync(['node', 'openclaw', 'as', 'automations', 'sync', '--json']);
+    assert.equal(JSON.parse(failed.output.join('')).code, 'automation-operation-failed');
+    assert.deepEqual(failed.exitCodes, [1]);
+    assert.ok(![...failed.diagnostics, ...failed.output].join('').includes('secret'));
+  });
+});
 
 describe('cli/register', () => {
   it('should report loaded manifest warnings consistently without corrupting command output', async () => {

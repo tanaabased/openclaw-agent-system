@@ -1,0 +1,11 @@
+- id: identity
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 180
+  run: [sh, ./probe.sh, identity]
+- id: paused-review
+  runtimes: [openclaw]
+  enabled: false
+  schedule: every 1 hour
+  prompt:
+    file: ./prompt.md

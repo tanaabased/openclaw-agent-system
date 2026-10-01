@@ -82,6 +82,25 @@ describe('agent/command-security', () => {
     assert.ok(!result?.blockReason?.includes('secret'));
   });
 
+  it('should block automation operator routes before model execution without logging inspected commands', async () => {
+    for (const alias of ['agent-system', 'as'])
+      for (const action of ['list', 'sync', 'run review', 'runs review']) {
+        const { handler, logs } = setup();
+        const result = (await handler(
+          {
+            toolName: 'exec',
+            params: { command: `openclaw ${alias} automations ${action} --json secret-marker` },
+          } as never,
+          context() as never,
+        )) as { block?: boolean; blockReason?: string };
+        assert.equal(result.block, true);
+        assert.match(result.blockReason!, /operator-only/u);
+        assert.ok(
+          ![...logs.error, ...logs.warn, result.blockReason].join('').includes('secret-marker'),
+        );
+      }
+  });
+
   it('should register a high-priority before-tool-call gate', () => {
     const { registrations } = setup();
 

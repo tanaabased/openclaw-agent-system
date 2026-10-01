@@ -64,6 +64,12 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 
 #### Codex automations
 
+For an explicit automation-only sync, use this sequence without running setup
+install. The `sync` route aliases the same deterministic inventory/plan used
+below; native writes still require prepare/acknowledge and exact saved readback.
+A request to run a job now must report `automation-run-now-unsupported`; do not
+create an equivalent manual task unless the user explicitly requests one.
+
 1. Require `automationRuntime` from the newest trusted context. Use its exact `argvPrefix` and `pluginData`; never infer a workspace or substitute the current conversation. If the installed context lacks this route, report that a plugin update and fresh task are required.
 2. Discover `automation_update` and call `list_projects`. For explicitly declared thread targets, call `read_thread` for each exact ID. Pass the decoded native result objects as `projects` and `threads` to the internal `plan --plugin-data <pluginData>` command. Deliver one JSON object through standard input, never interpolate prompts into shell arguments. This helper reads saved definitions and profile defaults and computes all desired fields; do not author the diff yourself.
 3. An `aligned` plan needs no writes. A `blocked` plan requires its reported condition to be resolved. A headless session returns `requires-native-app-sync`; do not replace native tools with scheduler-file writes or a fabricated CLI. Report the concrete actions and digest, and apply only within the user's installation authorization. A changed scope or additional action requires renewed authorization.

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { AutomationGateway, NativeAutomation } from '../agent/automation-gateway.ts';
 import { automationPatch, nativeAutomationHash } from '../agent/automation-projection.ts';
 import AutomationService from '../agent/automation-service.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
@@ -42,7 +43,11 @@ describe('agent/automation-service', () => {
     afterWriteFailure = false;
     const request: AutomationGateway = async (method, params) => {
       calls.push({ method, params: structuredClone(params) });
-      if (fail === method) throw new Error('secret provider text must not escape');
+      if (
+        fail === method ||
+        (fail === 'second-add' && method === 'cron.add' && native.length === 1)
+      )
+        throw new Error('secret provider text must not escape');
       if (method === 'cron.status') return { enabled: true };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
       if (method === 'cron.get') {
@@ -50,6 +55,26 @@ describe('agent/automation-service', () => {
         if (!job) throw new Error('missing');
         return structuredClone(job);
       }
+      if (method === 'cron.run') return { ok: true, enqueued: true, runId: 'run-1' };
+      if (method === 'cron.runs')
+        return {
+          entries: [
+            {
+              ts: now,
+              jobId: params.id,
+              runId: 'run-1',
+              action: 'finished',
+              status: 'ok',
+              deliveryStatus: 'not-delivered',
+              deliveryError: 'secret',
+            },
+          ],
+          total: 1,
+          offset: 0,
+          limit: params.limit,
+          hasMore: false,
+          nextOffset: null,
+        };
       if (method === 'cron.add') {
         const job = {
           ...structuredClone(params),
@@ -120,6 +145,76 @@ describe('agent/automation-service', () => {
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
+  it('should list declared and native state and queue an exact owned job with separate history', async () => {
+    await service.reconcile(manifest, root);
+    calls = [];
+    const listed = await service.list(manifest, root);
+    assert.equal(listed.jobs[0]!.nativeId, native[0]!.id);
+    assert.equal(listed.jobs[0]!.nativeEnabled, true);
+    assert.equal(calls.filter(({ method }) => method === 'cron.list').length, 1);
+    assert.equal(mutations().length, 0);
+    const run = await service.run(manifest, root, 'check');
+    assert.equal(run.status, 'queued');
+    assert.equal(run.runId, 'run-1');
+    assert.equal(run.execution, 'unavailable');
+    assert.deepEqual(calls.find(({ method }) => method === 'cron.run')!.params, {
+      id: native[0]!.id,
+      mode: 'if-enabled',
+    });
+    const history = await service.runs(manifest, root, 'check', {
+      limit: 10,
+      offset: 0,
+      runId: 'run-1',
+    });
+    assert.equal(history.entries[0]!.execution, 'ok');
+    assert.equal(history.entries[0]!.delivery, 'not-delivered');
+    assert.ok(!JSON.stringify(history).includes('secret'));
+    assert.deepEqual(calls.find(({ method }) => method === 'cron.runs')!.params, {
+      id: native[0]!.id,
+      limit: 10,
+      offset: 0,
+      runId: 'run-1',
+    });
+    manifest.automations = [];
+    await service.reconcile(manifest, root);
+    assert.equal((await service.list(manifest, root)).jobs[0]!.removed, true);
+    assert.equal(
+      (await service.runs(manifest, root, 'check', { limit: 10, offset: 0 })).entries.length,
+      1,
+    );
+  });
+  it('should reject missing disabled drifted consumed and cross-owner runs before admission', async () => {
+    await service.reconcile(manifest, root);
+    await assert.rejects(service.run(manifest, root, 'missing'), /id-missing/u);
+    const original = structuredClone(manifest);
+    manifest.automations![0]!.enabled = false;
+    await assert.rejects(service.run(manifest, root, 'check'), /run-disabled/u);
+    manifest = structuredClone(original);
+    manifest.automations![0]!.payload = { kind: 'prompt', prompt: 'changed' };
+    await assert.rejects(service.run(manifest, root, 'check'), /execution-drift/u);
+    manifest = structuredClone(original);
+    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    await assert.rejects(service.run(manifest, root, 'check'), /run-disabled/u);
+    native[0]!.state = {};
+    native[0]!.agentId = 'another-agent';
+    await assert.rejects(service.run(manifest, root, 'check'), /ownership-conflict/u);
+    assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 0);
+  });
+  it('should reject invalid history options and report transport failure without replay', async () => {
+    await service.reconcile(manifest, root);
+    for (const options of [
+      { limit: 201, offset: 0 },
+      { limit: 1, offset: -1 },
+      { limit: 1, offset: 0, runId: '' },
+    ])
+      await assert.rejects(
+        service.runs(manifest, root, 'check', options),
+        /history-options-invalid/u,
+      );
+    fail = 'cron.run';
+    await assert.rejects(service.run(manifest, root, 'check'));
+    assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 1);
+  });
   it('should create disabled, acknowledge ownership, activate and leave unchanged sync write-free', async () => {
     await service.reconcile(manifest, root);
     assert.equal(native.length, 1);
@@ -303,6 +398,28 @@ describe('agent/automation-service', () => {
     const { store } = await service.scope(manifest, root);
     await assert.rejects(stat(store.path));
   });
+  it('should preserve verified partial sync progress and recover without replaying earlier writes', async () => {
+    manifest.automations = jobs([
+      { id: 'first', schedule: 'every 1 hour', run: ['true'] },
+      { id: 'second', schedule: 'every 1 hour', run: ['true'] },
+    ]);
+    fail = 'second-add';
+    await assert.rejects(service.reconcile(manifest, root), (error: unknown) => {
+      assert.ok(error instanceof AgentSystemLifecycleError);
+      assert.equal(error.progress!.outcomes[0]!.stepId, 'first');
+      assert.equal(error.progress!.outcomes[0]!.status, 'created');
+      assert.ok(!JSON.stringify(error.progress).includes('secret'));
+      return true;
+    });
+    assert.equal(native.length, 1);
+    const id = native[0]!.id;
+    fail = undefined;
+    const result = await service.reconcile(manifest, root);
+    assert.equal(native.length, 2);
+    assert.equal(native[0]!.id, id);
+    assert.equal(result.outcomes[0]!.status, 'unchanged');
+  });
+
   it('should require installed identity and report bounded partial results on gateway failure', async () => {
     loaded = false;
     await assert.rejects(service.reconcile(manifest, root), /automation-manifest-changed/u);

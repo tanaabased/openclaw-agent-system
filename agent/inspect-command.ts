@@ -191,6 +191,7 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
       'status',
       'backup',
       'automation-execute',
+      'automations',
     ].includes(surface ?? '')
   )
     return undefined;
@@ -202,7 +203,7 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
       ? { recommendedTool: recommendedTool(readToolCommand(argumentsAfterSurface)) }
       : {}),
     surface:
-      surface === 'automation-execute'
+      surface === 'automation-execute' || surface === 'automations'
         ? 'automation'
         : surface === 'tool' || surface === 'credentials' || surface === 'backup'
           ? surface

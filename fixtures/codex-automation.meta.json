@@ -43,8 +43,12 @@
     "fixture jobs were deleted through the native tool after capture; no scheduled execution occurred"
   ],
   "remainingProof": [
-    "full installed planner/native-tool/readback lifecycle awaits registration of a disposable local Codex project",
     "saved definitions and accepted recurrence updates do not prove scheduled execution or execution/delivery telemetry",
     "GitHub Actions-only Leia additions were not executed locally"
-  ]
+  ],
+  "subsequentEvidence": {
+    "url": "https://github.com/tanaabased/openclaw-agent-system/issues/196#issuecomment-5930850960",
+    "revision": "8112d55",
+    "scope": "Installed paused lifecycle, unchanged sync, prompt edit, removal/reintroduction, Doctor read-only, unmanaged preservation and cleanup completed. This later proof does not alter the capture provenance or establish scheduled execution."
+  }
 }

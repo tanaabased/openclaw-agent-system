@@ -10,6 +10,8 @@ import {
   acknowledgeCodexAutomation,
   cancelCodexAutomation,
   inspectCodexAutomations,
+  listCodexAutomations,
+  codexAutomationRunGap,
   prepareCodexAutomation,
 } from '../agent/codex-automations.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
@@ -179,6 +181,30 @@ describe('agent/codex-automations', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should list owned state through the planner and report native occurrence gaps without writes', async () => {
+    const before = await readdir(pluginData);
+    const initial = await listCodexAutomations(pluginData, inputs(), deps());
+    assert.equal(initial.jobs[0]!.nativeId, null);
+    assert.equal(initial.status, 'requires-native-app-sync');
+    const gap = await codexAutomationRunGap(pluginData, 'review', 'run', deps());
+    assert.equal(gap.code, 'automation-run-now-unsupported');
+    assert.equal(gap.manualTask!.schedulerOccurrence, false);
+    assert.equal(gap.manualTask!.consumesOneShot, false);
+    assert.deepEqual(await readdir(pluginData), before);
+    await assert.rejects(
+      codexAutomationRunGap(pluginData, 'missing', 'run', deps()),
+      rejectsCode('automation-id-missing'),
+    );
+    await syncOne();
+    const listed = await listCodexAutomations(pluginData, inputs(), deps());
+    assert.equal(listed.jobs[0]!.nativeId, 'fixture-native');
+    assert.equal(listed.jobs[0]!.nativeStatus, 'ACTIVE');
+    assert.equal(
+      (await codexAutomationRunGap(pluginData, 'review', 'runs', deps())).code,
+      'automation-history-unavailable',
+    );
   });
 
   it('should create, stay unchanged, update, pause, remove and reintroduce the same owned job', async () => {
