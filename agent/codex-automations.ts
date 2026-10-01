@@ -10,6 +10,7 @@ import planCodexAutomations, {
   automationRecordSchema,
   codexAutomationMarker,
   savedMatches,
+  type CodexAutomationAction,
   type CodexAutomationInputs,
 } from './codex-automation-plan.ts';
 import {
@@ -18,6 +19,7 @@ import {
   parseAutomationReceipt,
   readCodexAutomations,
   readCodexAutomationDefaults,
+  type SavedAutomation,
 } from './codex-automation-state.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
@@ -45,8 +47,14 @@ const ledgerSchema = Type.Object(
           digest: hash,
           manifestDigest: Type.String(),
           action: actionSchema,
-          beforeHash: hash,
-          othersHash: hash,
+          beforeHash: Type.Optional(hash),
+          othersHash: Type.Optional(hash),
+          targetBefore: Type.Optional(
+            Type.Object(
+              { hash, nativeIds: Type.Array(Type.String()) },
+              { additionalProperties: false },
+            ),
+          ),
         },
         { additionalProperties: false },
       ),
@@ -103,6 +111,8 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
     if (!Value.Check(ledgerSchema, parsed) || parsed.scope !== scope)
       throw new Error('invalid ledger');
     ledger = parsed;
+    if (ledger.pending && !ledger.pending.targetBefore && !ledger.pending.beforeHash)
+      throw new Error('missing pending snapshot');
     for (const record of ledger.records) {
       if (!record.definition.prompt.endsWith(codexAutomationMarker(scope, record.id)))
         throw new Error('invalid marker');
@@ -191,6 +201,11 @@ async function withJournal<T>(
   }
 }
 
+function pendingTargets(saved: SavedAutomation[], scope: string, action: CodexAutomationAction) {
+  const marker = codexAutomationMarker(scope, action.manifestId);
+  return saved.filter((item) => item.id === action.id || item.definition.prompt.includes(marker));
+}
+
 /** persist one exact next action before handing it to the native app. */
 export async function prepareCodexAutomation(
   pluginData: string,
@@ -218,8 +233,10 @@ export async function prepareCodexAutomation(
         digest,
         manifestDigest: selected.loaded.digest,
         action,
-        beforeHash: automationHash(saved),
-        othersHash: automationHash(saved.filter((s) => s.id !== action.id)),
+        targetBefore: {
+          hash: automationHash(pendingTargets(saved, selected.scope, action)),
+          nativeIds: saved.map((item) => item.id),
+        },
       },
     };
     await selected.file.write(JSON.stringify(ledger));
@@ -242,18 +259,11 @@ export async function acknowledgeCodexAutomation(
   return withJournal(initial, async () => {
     const selected = await snapshot(pluginData, dependencies);
     const pending = selected.ledger.pending;
-    if (
-      selected.scope !== initial.scope ||
-      !pending ||
-      pending.digest !== digest ||
-      selected.loaded.digest !== pending.manifestDigest
-    )
+    if (selected.scope !== initial.scope || !pending || pending.digest !== digest)
       throw new CodexAutomationError('automation-pending-stale');
     const { action } = pending;
     const saved = await readCodexAutomations(selected.codexHome);
-    const matches = saved.filter((s) =>
-      s.definition.prompt.endsWith(codexAutomationMarker(selected.scope, action.manifestId)),
-    );
+    const matches = pendingTargets(saved, selected.scope, action);
     const actual = matches.length === 1 ? matches[0] : undefined;
     const receiptId =
       receipt === undefined ? undefined : parseAutomationReceipt(receipt, action.mode);
@@ -261,8 +271,7 @@ export async function acknowledgeCodexAutomation(
       !actual ||
       (action.id && actual.id !== action.id) ||
       (receiptId && receiptId !== actual.id) ||
-      !savedMatches(actual, action.expected, selected.workspace) ||
-      automationHash(saved.filter((s) => s.id !== actual.id)) !== pending.othersHash
+      !savedMatches(actual, action.expected, selected.workspace)
     ) {
       throw new CodexAutomationError('automation-readback-diverged');
     }
@@ -278,7 +287,7 @@ export async function acknowledgeCodexAutomation(
   });
 }
 
-/** abandon a failed request only when native state is exactly the pre-write snapshot. */
+/** abandon a failed request only when its target is unchanged and no create is unaccounted for. */
 export async function cancelCodexAutomation(
   pluginData: string,
   digest: string,
@@ -288,14 +297,17 @@ export async function cancelCodexAutomation(
   return withJournal(initial, async () => {
     const selected = await snapshot(pluginData, dependencies);
     const pending = selected.ledger.pending;
-    if (
-      selected.scope !== initial.scope ||
-      !pending ||
-      pending.digest !== digest ||
-      automationHash(await readCodexAutomations(selected.codexHome)) !== pending.beforeHash
-    ) {
+    if (selected.scope !== initial.scope || !pending || pending.digest !== digest) {
       throw new CodexAutomationError('automation-cancel-recovery-required');
     }
+    const saved = await readCodexAutomations(selected.codexHome);
+    const before = pending.targetBefore;
+    const unchanged = before
+      ? automationHash(pendingTargets(saved, selected.scope, pending.action)) === before.hash &&
+        (pending.action.mode !== 'create' ||
+          saved.every((item) => before.nativeIds.includes(item.id)))
+      : automationHash(saved) === pending.beforeHash;
+    if (!unchanged) throw new CodexAutomationError('automation-cancel-recovery-required');
     await selected.file.write(
       JSON.stringify({ version: 1, scope: selected.scope, records: selected.ledger.records }),
     );

@@ -107,9 +107,13 @@ and Me jobs are never adopted by name. Unknown saved schemas stop inspection.
 The install skill owns the internal plan/prepare/acknowledge sequence through the
 trusted `automationRuntime` context. Prepared writes retain a pending journal until
 saved-state verification succeeds. If a native response is lost, acknowledgment
-can recover the exact pending marker and definition without another create. A
-failed write can be cancelled only while saved state still matches its pre-write
-snapshot. Divergence or missing owned jobs requires operator investigation. There
+can recover the exact pending marker and definition without another create, even
+after unrelated jobs or the valid manifest change. Recovery records the prepared
+effect; further writes require a fresh plan. A failed write can be cancelled only
+while its target matches the pre-write snapshot. A pending create also requires
+no new native IDs, because an unmarked new job could be a partially saved create.
+Older pending journals retain their whole-scheduler cancellation check.
+Divergence or missing owned jobs requires operator investigation. There
 is no rollback of earlier verified actions and no atomic compare-and-swap guarantee
 against concurrent native UI edits. A process crash during a journal transition
 may leave `automation-journal-busy`; first confirm no reconciliation is running,

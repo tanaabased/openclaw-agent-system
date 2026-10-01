@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 
 import { parse, stringify } from 'smol-toml';
 
+import { automationHash } from '../agent/automation-hash.ts';
 import {
   acknowledgeCodexAutomation,
   cancelCodexAutomation,
@@ -345,7 +346,7 @@ describe('agent/codex-automations', () => {
     assert.deepEqual(await readCodexAutomations(codexHome), []);
   });
 
-  it('should reject changed manifests and wrong native receipts after a write without losing pending state', async () => {
+  it('should reject wrong receipts and acknowledge the prepared write after valid manifest edits', async () => {
     const plan = await inspect();
     await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
     await nativeWrite(plan.actions[0]!.expected);
@@ -355,10 +356,113 @@ describe('agent/codex-automations', () => {
       rejectsCode('automation-readback-diverged'),
     );
     await manifest(job().replace('Review this workspace.', 'Changed prompt.'));
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    const next = await inspect();
+    assert.equal(next.status, 'requires-native-app-sync');
+    assert.equal(next.actions[0]?.mode, 'update');
+    assert.equal(next.actions[0]?.id, 'fixture-native');
+    assert.match(next.actions[0]!.expected.prompt, /Changed prompt/u);
+  });
+
+  it('should recover successful writes despite unrelated edits and manifest comments', async () => {
+    const unrelated = parseSavedAutomation(
+      await capture('project'),
+      'agent-system-196-paused-fixture',
+    ).definition;
+    await nativeWrite(unrelated, 'personal');
+    const plan = await inspect();
+    await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    await nativeWrite(plan.actions[0]!.expected);
+    await nativeWrite({ ...unrelated, prompt: 'An edited personal task.' }, 'personal');
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      (await readFile(join(workspace, 'agent.yaml'), 'utf8')) + '\n# unrelated comment\n',
+    );
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    assert.equal((await inspect()).status, 'aligned');
+    assert.equal(
+      (await readCodexAutomations(codexHome)).find((item) => item.id === 'personal')?.definition
+        .prompt,
+      'An edited personal task.',
+    );
+  });
+
+  it('should cancel failed creates and updates despite unrelated edits', async () => {
+    const unrelated = parseSavedAutomation(
+      await capture('project'),
+      'agent-system-196-paused-fixture',
+    ).definition;
+    await nativeWrite(unrelated, 'personal');
+    for (const mode of ['create', 'update']) {
+      const plan = await inspect();
+      assert.equal(plan.actions[0]?.mode, mode);
+      await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+      await nativeWrite({ ...unrelated, prompt: `Personal edit during ${mode}.` }, 'personal');
+      await cancelCodexAutomation(pluginData, plan.digest, deps());
+      assert.equal((await inspect()).status, 'requires-native-app-sync');
+      await syncOne();
+      await manifest(job().replace('Review this workspace.', 'Updated review.'));
+    }
+  });
+
+  it('should retain pending creates when an unattributed native job appears', async () => {
+    const plan = await inspect();
+    await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    await nativeWrite({
+      ...plan.actions[0]!.expected,
+      prompt: 'A truncated prompt without its marker.',
+    });
     await assert.rejects(
-      acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps()),
-      rejectsCode('automation-pending-stale'),
+      cancelCodexAutomation(pluginData, plan.digest, deps()),
+      rejectsCode('automation-cancel-recovery-required'),
     );
     assert.equal((await inspect()).status, 'blocked');
+  });
+
+  it('should recover older pending journals without discarding their ownership state', async () => {
+    for (const completed of [false, true]) {
+      const plan = await inspect();
+      const before = await readCodexAutomations(codexHome);
+      await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+      const name = (await readdir(pluginData)).find((name) =>
+        name.startsWith('codex-automations-'),
+      )!;
+      const path = join(pluginData, name);
+      const ledger = JSON.parse(await readFile(path, 'utf8'));
+      delete ledger.pending.targetBefore;
+      ledger.pending.beforeHash = automationHash(before);
+      ledger.pending.othersHash = automationHash(before);
+      await writeFile(path, JSON.stringify(ledger));
+      if (completed) {
+        await nativeWrite(plan.actions[0]!.expected);
+        await manifest(job().replace('Review this workspace.', 'Updated review.'));
+        await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+      } else await cancelCodexAutomation(pluginData, plan.digest, deps());
+      assert.equal((await inspect()).status, 'requires-native-app-sync');
+    }
+  });
+
+  it('should retain pending updates when their target changes or its marker is duplicated', async () => {
+    await syncOne();
+    await manifest(job().replace('Review this workspace.', 'Updated review.'));
+    const plan = await inspect();
+    await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    await nativeWrite({ ...plan.actions[0]!.expected, prompt: 'A divergent target.' });
+    await assert.rejects(
+      cancelCodexAutomation(pluginData, plan.digest, deps()),
+      rejectsCode('automation-cancel-recovery-required'),
+    );
+    await nativeWrite(plan.actions[0]!.expected);
+    await nativeWrite(
+      {
+        ...plan.actions[0]!.expected,
+        prompt: `${plan.actions[0]!.expected.prompt}\nCopied marker.`,
+      },
+      'duplicate',
+    );
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps()),
+      rejectsCode('automation-readback-diverged'),
+    );
   });
 });
