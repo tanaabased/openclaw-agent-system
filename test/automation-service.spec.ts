@@ -94,6 +94,13 @@ describe('agent/automation-service', () => {
       const job = native.find(({ id }) => id === params.id)!;
       assert.equal(params.expectedConfigRevision, job.configRevision);
       const patch = structuredClone(params.patch) as Record<string, unknown>;
+      // native at/recurring transitions reset retention when it is omitted.
+      const schedule = patch.schedule as Record<string, unknown> | undefined;
+      if (patch.deleteAfterRun === undefined && schedule?.kind !== job.schedule.kind) {
+        if (schedule?.kind === 'at') job.deleteAfterRun = true;
+        else if (job.schedule.kind === 'at' && ['every', 'cron'].includes(String(schedule?.kind)))
+          delete job.deleteAfterRun;
+      }
       if (patch.payload) {
         patch.payload = { ...job.payload, ...(patch.payload as object) };
         for (const [key, value] of Object.entries(patch.payload as object))
@@ -263,6 +270,23 @@ describe('agent/automation-service', () => {
     assert.notEqual(native[0]!.schedule.at, at);
     assert.equal(native[0]!.enabled, true);
   });
+  it('should retain history when a consumed one-shot becomes recurring and then one-shot again', async () => {
+    await service.reconcile(manifest, root);
+    const id = native[0]!.id;
+    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    native[0]!.enabled = false;
+    manifest.automations![0]!.schedule = { kind: 'every', seconds: 3600, missedRun: 'native' };
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.id, id);
+    assert.equal(native[0]!.enabled, true);
+    assert.equal(native[0]!.deleteAfterRun, false);
+    assert.equal(native[0]!.state.lastRunStatus, 'ok');
+    manifest.automations![0]!.schedule = { kind: 'in', seconds: 7200, missedRun: 'native' };
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.id, id);
+    assert.equal(native[0]!.deleteAfterRun, false);
+  });
+
   it('should recover a successful create with a lost acknowledgement without duplication', async () => {
     afterWriteFailure = true;
     await assert.rejects(service.reconcile(manifest, root));

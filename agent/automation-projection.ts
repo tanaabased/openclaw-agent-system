@@ -156,6 +156,9 @@ export function automationPatch(
   for (const [key, value] of Object.entries(desired)) {
     if (automationHash(current[key] ?? null) !== automationHash(value)) patch[key] = value;
   }
+  // native schedule-kind transitions reset retention unless the patch explicitly pins it.
+  if (patch.schedule && current.schedule.kind !== desired.schedule.kind)
+    patch.deleteAfterRun = desired.deleteAfterRun;
   if (patch.payload && desired.payload.kind === 'agentTurn') {
     patch.payload = {
       ...desired.payload,

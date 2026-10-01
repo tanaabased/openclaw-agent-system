@@ -1,0 +1,157 @@
+{
+  "create": {
+    "request": {
+      "mode": "create",
+      "name": "automation-197-proof: scheduled-proof",
+      "prompt": "This is a disposable scheduled-execution acceptance test. Write exactly\nscheduled-197-proof to executed.txt in this workspace, then report completion.\nDo not edit any other file or access any external service.\n\n\nManaged by Agent System (codex:fixture-scope:scheduled-proof).",
+      "rrule": "FREQ=MINUTELY;INTERVAL=1",
+      "status": "ACTIVE",
+      "notificationPolicy": null,
+      "kind": "cron",
+      "destination": "local",
+      "executionEnvironment": "local",
+      "projectId": "fixture-project",
+      "model": "gpt-6.1-sol",
+      "reasoningEffort": "high"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Created automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"automation-197-proof-scheduled-proof\",\"mode\":\"create\",\"status\":\"ACTIVE\"}"
+        }
+      ],
+      "isError": false
+    },
+    "saved": "version = 1\nid = \"automation-197-proof-scheduled-proof\"\nkind = \"cron\"\nname = \"automation-197-proof: scheduled-proof\"\nprompt = \"This is a disposable scheduled-execution acceptance test. Write exactly\\nscheduled-197-proof to executed.txt in this workspace, then report completion.\\nDo not edit any other file or access any external service.\\n\\n\\nManaged by Agent System (codex:fixture-scope:scheduled-proof).\"\nstatus = \"ACTIVE\"\nrrule = \"FREQ=MINUTELY;INTERVAL=1\"\nmodel = \"gpt-6.1-sol\"\nreasoning_effort = \"high\"\nexecution_environment = \"local\"\ntarget = { type = \"project\", project_id = \"fixture-project\" }\ncwds = [\"/workspace/fixture\"]\ncreated_at = 1790859009526\nupdated_at = 1790859009526\n"
+  },
+  "unchangedSync": {
+    "runtime": "codex",
+    "workspaceDir": "/workspace/fixture",
+    "status": "aligned",
+    "digest": "f9c85ab7ca191bb2f5a17f059a12f5f0f273d0211419abf7ba4a9102e1b30d02",
+    "actions": [],
+    "findings": [
+      {
+        "id": "scheduled-proof",
+        "code": "automation-healthy"
+      }
+    ],
+    "unmanagedCount": 2,
+    "telemetry": {
+      "execution": "unavailable",
+      "delivery": "unavailable"
+    },
+    "jobs": [
+      {
+        "id": "scheduled-proof",
+        "declared": true,
+        "applicable": true,
+        "enabled": true,
+        "nativeId": "automation-197-proof-scheduled-proof",
+        "nativeStatus": "ACTIVE",
+        "removed": false,
+        "findings": [
+          {
+            "id": "scheduled-proof",
+            "code": "automation-healthy"
+          }
+        ]
+      }
+    ]
+  },
+  "scheduledOccurrence": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"schemaVersion\":1,\"thread\":{\"id\":\"fixture-thread\",\"kind\":\"codex\",\"hostId\":\"local\",\"title\":\"automation-197-proof: scheduled-proof\",\"preview\":\"Automation: automation-197-proof: scheduled-proof\\nAutomation ID: automation-197-proof-scheduled-proof\\nAutomation memory: $CODEX_HOME/automations/automation-197-proof-scheduled-proof/memory.md\\nLast run: never\\n\\nThis is a disposable scheduled-execution acceptance test. Write exactly\\nscheduled-197-proof to executed.txt in this workspace, then report completion.\\nDo not edit any other file or access any external service.\\n\\n\\nManaged by Agent System (codex:fixture-scope:scheduled-proof).\",\"status\":{\"type\":\"idle\"},\"cwd\":\"/workspace/fixture\",\"createdAt\":1790859088,\"updatedAt\":1790859105},\"page\":{\"order\":\"newest_first\",\"limit\":2,\"nextCursor\":null,\"hasMore\":false},\"turns\":[{\"id\":\"01a0f785-12e2-7ac1-b9b2-47c80fac5e3f\",\"status\":\"completed\",\"error\":null,\"startedAt\":1790859088,\"completedAt\":1790859105,\"durationMs\":16713,\"items\":[{\"type\":\"userMessage\",\"id\":\"01a0f785-16d5-7191-a869-83c3ac30462c\",\"content\":[{\"type\":\"text\",\"text\":\"Automation: automation-197-proof: scheduled-proof\\nAutomation ID: automation-197-proof-scheduled-proof\\nAutomation memory: $CODEX_HOME/automations/automation-197-proof-scheduled-proof/memory.md\\nLast run: never\\n\\nThis is a disposable scheduled-execution acceptance test. Write exactly\\nscheduled-197-proof to executed.txt in this workspace, then report completion.\\nDo not edit any other file or access any external service.\\n\\n\\nManaged by Agent System (codex:fixture-scope:scheduled-proof).\"}]},{\"type\":\"agentMessage\",\"id\":\"msg_0374b93c9f7f30f5016abe5754693887d2906b9ee2e5fbc4d2\",\"text\":\"I\u2019ll write the exact text to `executed.txt` and verify it.\\n\",\"phase\":\"commentary\"},{\"type\":\"commandExecution\",\"id\":\"exec-81fd0b55-f9ee-4172-8bf8-5a8a43511000\",\"command\":\"/opt/homebrew/bin/zsh -lc 'if [[ -f /codex/fixture/automations/automation-197-proof-scheduled-proof/memory.md ]]; then cat /codex/fixture/automations/automation-197-proof-scheduled-proof/memory.md; fi'\",\"cwd\":\"/workspace/fixture\",\"status\":\"completed\",\"exitCode\":0,\"durationMs\":0},{\"type\":\"commandExecution\",\"id\":\"exec-13e89b5b-ece1-40a0-9f52-b06a17639392\",\"command\":\"/opt/homebrew/bin/zsh -lc 'printf %s scheduled-197-proof > executed.txt\\n[[ \\\"$(cat executed.txt)\\\" == scheduled-197-proof ]] && [[ \\\"$(wc -c < executed.txt | tr -d '\\\"' ')\\\\\\\" == 19 ]]\\\"\",\"cwd\":\"/workspace/fixture\",\"status\":\"completed\",\"exitCode\":0,\"durationMs\":0},{\"type\":\"commandExecution\",\"id\":\"exec-a01b13a0-967d-4849-bd88-8c10402a40a8\",\"command\":\"/opt/homebrew/bin/zsh -lc 'run_time=$(date -u '\\\"'+%Y-%m-%dT%H:%M:%SZ')\\nprintf 'Run time: %s\\\\\\\\nWrote executed.txt with exactly scheduled-197-proof (19 bytes, no newline) and verified its contents. No external services accessed.\\\\\\\\n' \\\\\\\"\\\"'$run_time\\\" > /codex/fixture/automations/automation-197-proof-scheduled-proof/memory.md'\",\"cwd\":\"/workspace/fixture\",\"status\":\"completed\",\"exitCode\":0,\"durationMs\":0},{\"type\":\"agentMessage\",\"id\":\"msg_0374b93c9f7f30f5016abe575f253487d2a94b3131cb00cb86\",\"text\":\"Created [executed.txt](/workspace/fixture/executed.txt) containing exactly `scheduled-197-proof`, with no newline. Verified completion.\\n\\n::inbox-item{title=\\\"Scheduled execution proof completed\\\" summary=\\\"executed.txt contains the exact required text; verification passed\\\"}\",\"phase\":\"final_answer\"}]}]}"
+      }
+    ],
+    "isError": false
+  },
+  "sideEffect": {
+    "file": "/workspace/fixture/executed.txt",
+    "bytes": "scheduled-197-proof"
+  },
+  "runGap": {
+    "runtime": "codex",
+    "status": "unsupported",
+    "id": "scheduled-proof",
+    "nativeId": "automation-197-proof-scheduled-proof",
+    "code": "automation-run-now-unsupported",
+    "telemetry": {
+      "execution": "unavailable",
+      "delivery": "unavailable"
+    },
+    "manualTask": {
+      "requiresExplicitRequest": true,
+      "schedulerOccurrence": false,
+      "history": "separate-task",
+      "consumesOneShot": false,
+      "guidance": "An explicitly requested manual task is separate from the saved scheduler job and does not prove scheduled execution."
+    }
+  },
+  "historyGap": {
+    "runtime": "codex",
+    "status": "unsupported",
+    "id": "scheduled-proof",
+    "nativeId": "automation-197-proof-scheduled-proof",
+    "code": "automation-history-unavailable",
+    "telemetry": {
+      "execution": "unavailable",
+      "delivery": "unavailable"
+    }
+  },
+  "pause": {
+    "request": {
+      "mode": "update",
+      "id": "automation-197-proof-scheduled-proof",
+      "name": "automation-197-proof: scheduled-proof",
+      "prompt": "This is a disposable scheduled-execution acceptance test. Write exactly\nscheduled-197-proof to executed.txt in this workspace, then report completion.\nDo not edit any other file or access any external service.\n\n\nManaged by Agent System (codex:fixture-scope:scheduled-proof).",
+      "rrule": "FREQ=MINUTELY;INTERVAL=1",
+      "status": "PAUSED",
+      "notificationPolicy": null,
+      "kind": "cron",
+      "destination": "local",
+      "executionEnvironment": "local",
+      "projectId": "fixture-project",
+      "model": "gpt-6.1-sol",
+      "reasoningEffort": "high"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Updated automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"automation-197-proof-scheduled-proof\",\"mode\":\"update\",\"status\":\"PAUSED\"}"
+        }
+      ],
+      "isError": false
+    },
+    "saved": "version = 1\nid = \"automation-197-proof-scheduled-proof\"\nkind = \"cron\"\nname = \"automation-197-proof: scheduled-proof\"\nprompt = \"This is a disposable scheduled-execution acceptance test. Write exactly\\nscheduled-197-proof to executed.txt in this workspace, then report completion.\\nDo not edit any other file or access any external service.\\n\\n\\nManaged by Agent System (codex:fixture-scope:scheduled-proof).\"\nstatus = \"PAUSED\"\nrrule = \"FREQ=MINUTELY;INTERVAL=1\"\nmodel = \"gpt-6.1-sol\"\nreasoning_effort = \"high\"\nexecution_environment = \"local\"\ntarget = { type = \"project\", project_id = \"fixture-project\" }\ncwds = [\"/workspace/fixture\"]\ncreated_at = 1790859009526\nupdated_at = 1790859152696\n"
+  },
+  "cleanup": {
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Deleted automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"automation-197-proof-scheduled-proof\",\"mode\":\"delete\",\"deleteStatus\":\"deleted\",\"snapshot\":{\"kind\":\"cron\",\"name\":\"automation-197-proof: scheduled-proof\",\"rrule\":\"FREQ=MINUTELY;INTERVAL=1\"}}"
+        }
+      ],
+      "isError": false
+    },
+    "testDefinitionRemoved": true,
+    "unmanagedDefinitionsByteIdentical": 2
+  }
+}
