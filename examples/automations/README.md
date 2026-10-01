@@ -73,7 +73,7 @@ bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup identity
 
 # should report markdown drift and preserve unmanaged disabled jobs during sync
 cd "$TMPDIR/automation-agent"
-unmanaged_id=$(openclaw gateway call cron.add --params '{"name":"unmanaged-197","enabled":false,"schedule":{"kind":"every","everyMs":3600000},"sessionTarget":"isolated","wakeMode":"now","payload":{"kind":"agentTurn","message":"never run this unmanaged fixture"},"delivery":{"mode":"none"}}' --json | jq -er '.job.id')
+unmanaged_id=$(openclaw gateway call cron.add --params '{"name":"unmanaged-197","enabled":false,"schedule":{"kind":"every","everyMs":3600000},"sessionTarget":"isolated","wakeMode":"now","payload":{"kind":"agentTurn","message":"never run this unmanaged fixture"},"delivery":{"mode":"none"}}' --json | jq -er '.job.id // .id')
 openclaw gateway call cron.get --params "{\"id\":\"$unmanaged_id\"}" --json > unmanaged-before.json
 printf 'Review the latest repository changes.\n' >> prompt.md
 if openclaw agent-system automations list --json > drift.json; then exit 1; fi

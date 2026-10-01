@@ -9,6 +9,7 @@ import { resolveStateDir } from 'openclaw/plugin-sdk/state-paths';
 import { defaultExecutor } from './cli-fixtures.ts';
 import {
   requestAutomationGateway,
+  nativeAutomation,
   nativeAutomationHistory,
   nativeAutomationRun,
   type AutomationGateway,
@@ -199,7 +200,7 @@ try {
       bestEffort: false,
     },
   });
-  const deliveryId = (deliveryJob.job as { id: string }).id;
+  const deliveryId = nativeAutomation(deliveryJob.job ?? deliveryJob).id;
   created.push(deliveryId);
   const deliveryRun = nativeAutomationRun(
     await request('cron.run', { id: deliveryId, mode: 'force' }),
@@ -233,7 +234,7 @@ try {
       payload: { kind: 'agentTurn', message: 'disabled capture fixture' },
       delivery: { mode: 'none' },
     });
-    const id = (added.job as { id: string }).id;
+    const id = nativeAutomation(added.job ?? added).id;
     created.push(id);
   }
   await service.list(await load(), workspace);
