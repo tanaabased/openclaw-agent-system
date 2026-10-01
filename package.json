@@ -85,12 +85,15 @@
       "forceAccountBinding": true
     },
     "compat": {
-      "pluginApi": ">=2026.9.5",
-      "minGatewayVersion": "2026.9.5"
+      "pluginApi": ">=2026.9.7",
+      "minGatewayVersion": "2026.9.7"
     },
     "build": {
-      "openclawVersion": "2026.9.6",
-      "pluginSdkVersion": "2026.9.6"
+      "openclawVersion": "2026.9.7",
+      "pluginSdkVersion": "2026.9.7"
+    },
+    "agentSystem": {
+      "codexPlugin": "@openclaw/codex@2026.9.7"
     }
   },
   "scripts": {
@@ -125,7 +128,7 @@
     ]
   },
   "peerDependencies": {
-    "openclaw": ">=2026.9.5"
+    "openclaw": ">=2026.9.7"
   },
   "dependencies": {
     "@1password/sdk": "0.5.0",
@@ -159,7 +162,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.7.0",
     "mocha": "^11.7.6",
-    "openclaw": "2026.9.6",
+    "openclaw": "2026.9.7",
     "prettier": "^3.9.6",
     "shellcheck": "^4.1.0",
     "tsx": "^4.22.4",
