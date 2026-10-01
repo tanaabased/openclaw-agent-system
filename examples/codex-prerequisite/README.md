@@ -25,7 +25,7 @@ openclaw agents add codex-probe --workspace "$TMPDIR/codex-probe" --non-interact
 node --import tsx "$GITHUB_WORKSPACE/scripts/codex-lifecycle-probe.ts" codex-probe
 
 # should remove the probe route and plugin to establish a genuinely missing prerequisite
-openclaw config unset agents.entries.codex-probe
+openclaw agents delete codex-probe --force
 openclaw plugins uninstall codex --force
 openclaw plugins list --json | jq -e 'all(.plugins[]; .id != "codex")'
 
@@ -39,11 +39,13 @@ openclaw plugins list --json | jq -e 'all(.plugins[]; .id != "codex")'
 
 # should retain sanitized failure details when openclaw install policy blocks provisioning
 openclaw config set security.installPolicy '{"enabled":true,"targets":["plugin"]}' --strict-json
+trap 'openclaw config unset security.installPolicy >/dev/null' EXIT
 cd "$GITHUB_WORKSPACE/examples/codex-prerequisite/first"
 if output=$(openclaw agent-system install --skip-setup --json); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.blocked.component == "codex-plugin" and .blocked.code == "codex-plugin-install-failed" and (.blocked.message | contains("category=policy")) and (.unattempted | any(.component == "models"))'
 openclaw plugins list --json | jq -e 'all(.plugins[]; .id != "codex")'
 openclaw config unset security.installPolicy
+trap - EXIT
 
 # should provision the exact shared plugin before fresh agent and model reconciliation
 cd "$GITHUB_WORKSPACE/examples/codex-prerequisite/first"
