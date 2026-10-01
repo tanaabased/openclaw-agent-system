@@ -1,0 +1,33 @@
+{
+  "projects": {
+    "schemaVersion": 2,
+    "projects": [
+      {
+        "projectId": "fixture-project",
+        "projectKind": "local",
+        "label": "fixture",
+        "path": "/workspace/fixture",
+        "hostId": "local",
+        "hostDisplayName": null,
+        "isGitRepository": true
+      }
+    ]
+  },
+  "thread": {
+    "schemaVersion": 1,
+    "thread": {
+      "id": "fixture-thread",
+      "kind": "codex",
+      "hostId": "local",
+      "title": "Fixture task",
+      "preview": "Fixture preview",
+      "status": {
+        "type": "active",
+        "activeFlags": []
+      },
+      "cwd": "/workspace/fixture",
+      "createdAt": 1790816344,
+      "updatedAt": 1790817929
+    }
+  }
+}

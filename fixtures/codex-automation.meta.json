@@ -1,0 +1,50 @@
+{
+  "issue": 196,
+  "capturedAt": "2026-10-01T01:21:55.940360+00:00",
+  "surface": "codex-app-tools automation_update and read-only saved automation.toml",
+  "appVersion": "26.623.141536",
+  "appBuild": "4753",
+  "review": "Reviewed requests, native responses and saved records against original tool output before acceptance. Only explicit ID/path substitutions; no optional fields removed from saved records or mutation responses.",
+  "sanitization": {
+    "projectId": "fixture-project",
+    "workspacePath": "/workspace/fixture",
+    "targetThreadId": "fixture-thread"
+  },
+  "captures": [
+    {
+      "file": "codex-automation-heartbeat.approved.txt",
+      "sha256": "d9670cfc0b40b52987d4de5838ed731fbec6da435bb7c2416bda24e530bd61f1"
+    },
+    {
+      "file": "codex-automation-lookups.approved.txt",
+      "sha256": "4b26145b35aabf5d0714422ba90bd1c68961363f8796574024fbdd16154785d4"
+    },
+    {
+      "file": "codex-automation-native.approved.txt",
+      "sha256": "167d0490b77c007a2aab8b211541d73713bc6c76249a9e00619bcf78b8099c7f"
+    },
+    {
+      "file": "codex-automation-project.approved.txt",
+      "sha256": "c14b7968dc8e43943ed2a6047dfac87e2a940309fffc258cc6f18a0f9fa024d0"
+    },
+    {
+      "file": "codex-automation-schedules.approved.txt",
+      "sha256": "1b6fc284dfc519c80fefdd42e152eeaec2861c575266e9b51f74e575c96d610e"
+    }
+  ],
+  "boundaries": [
+    "create and update receipts are recorded; view is a rendered acknowledgment",
+    "daily project and hourly heartbeat saved records are recorded",
+    "weekly, monthly and minutely entries record accepted native update requests/responses; they do not prove scheduling execution",
+    "all live jobs remained paused",
+    "negative schemas, receipts and write/readback failures in tests are explicitly constructed from these captures",
+    "no CLI command substitutes for a native tool; no automatic recording or live comparison in CI",
+    "lookup capture retains the selected project row and exact thread metadata; unrelated project rows and thread conversation/history were omitted because the adapter does not consume them",
+    "fixture jobs were deleted through the native tool after capture; no scheduled execution occurred"
+  ],
+  "remainingProof": [
+    "full installed planner/native-tool/readback lifecycle awaits registration of a disposable local Codex project",
+    "saved definitions and accepted recurrence updates do not prove scheduled execution or execution/delivery telemetry",
+    "GitHub Actions-only Leia additions were not executed locally"
+  ]
+}

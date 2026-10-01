@@ -18,7 +18,7 @@ metadata:
 
 ## Overview
 
-Inspect the active `agent.yaml` through its owning runtime without applying repairs. OpenClaw checks the full Agent System lifecycle after native chat approval. Standalone Codex checks only the bound manifest and setup steps applicable to `codex` through the packaged thin adapter.
+Inspect the active `agent.yaml` through its owning runtime without applying repairs. OpenClaw checks the full Agent System lifecycle after native chat approval. Standalone Codex checks the bound manifest, applicable setup steps, and desired/saved repository automations through the packaged thin adapter.
 
 ## When to Use
 
@@ -59,7 +59,8 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 3. Form the internal command from `setupRuntime.argvPrefix`. Append every argument as a distinct shell-safe argument; do not evaluate shell text or choose a runtime.
 4. Append `inspect --plugin-data <pluginData>` and run the command under the host's normal Codex authorization. Never append `install` or invoke an apply path.
 5. Report findings in declaration order. Treat blocked findings as blocked overall, otherwise drift findings as drift overall, and manual or skipped findings as healthy overall.
-6. State that standalone Codex inspected only its binding, manifest, and applicable setup checks. OpenClaw-owned lifecycle state is unsupported in this runtime and remains unassessed.
+6. If the newest context exposes `automationRuntime`, discover the native automation tools, call `list_projects`, and read any explicitly declared thread targets with `read_thread`. Invoke that trusted prefix with `inspect --plugin-data <pluginData>` and deliver the decoded lookup results as `{ "projects": <result>, "threads": [<exact thread results>] }` through standard input. Report the deterministic findings, pending recovery, and unsupported settings. Never call prepare, acknowledge, cancel, Install, or a native mutation from Doctor. A saved-state read/schema failure is an inspection error, not an empty scheduler.
+7. State that standalone Codex inspected its binding, manifest, applicable setup checks, and supported saved automation definitions. Saved settings do not prove execution; execution and delivery telemetry remain unavailable. OpenClaw-owned lifecycle state remains unassessed. Missing native lookups are actionable inspection blockers, not proof that jobs are absent.
 
 ## Checkpoints
 

@@ -1,0 +1,13 @@
+schema-version: 1
+agent:
+  id: codex-automation-example
+automations:
+  - id: review
+    enabled: false
+    runtimes: [codex]
+    schedule: every 1 hour
+    prompt: Review this workspace and report findings.
+    overrides:
+      codex:
+        model: gpt-6-astra
+        effort: high

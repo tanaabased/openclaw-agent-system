@@ -1,6 +1,6 @@
 # Codex Example
 
-This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, runtime-aware setup, session context, transfer, and removal on a disposable GitHub Actions runner.
+This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, runtime-aware setup, automation planning, session context, transfer, and removal on a disposable GitHub Actions runner. Automation lookup inputs below are explicit fixtures; native desktop-tool writes require separate installed proof.
 
 ## Setup
 
@@ -93,6 +93,37 @@ test -f "$root/workspace/.codex-shared"
 test -f "$root/workspace/.codex-only"
 test ! -e "$root/workspace/.openclaw-checked"
 test ! -e "$root/workspace/.openclaw-only"
+
+# should plan automation sync through the packed runtime without native scheduler writes
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+mkdir -p "$root/automation-workspace"
+cp "$GITHUB_WORKSPACE/examples/codex/automation-agent.yaml" "$root/automation-workspace/agent.yaml"
+workspace=$(cd "$root/automation-workspace" && pwd -P)
+node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "$workspace" --confirm
+jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
+node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
+  | tee "$root/automation-plan.json" \
+  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
+node "$runtime" setup install --plugin-data "$root/automation-data" \
+  | jq -e '.status == "requires-native-app-sync"'
+test ! -d "$CODEX_HOME/automations"
+
+# should retain a pending native action and cancel only an unchanged failed write
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+digest=$(jq -r .digest "$root/automation-plan.json")
+jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" \
+  | node "$runtime" automations prepare --plugin-data "$root/automation-data" \
+  | jq -e '.status == "prepared" and .request.mode == "create"'
+node "$runtime" automations inspect --plugin-data "$root/automation-data" < "$root/automation-input.json" \
+  | jq -e '.status == "blocked" and ([.findings[].code] | index("automation-pending-readback-required") != null)'
+jq -n --arg digest "$digest" '{digest:$digest}' \
+  | node "$runtime" automations cancel --plugin-data "$root/automation-data" \
+  | jq -e '.status == "cancelled"'
+test ! -d "$CODEX_HOME/automations"
 
 # should report a blocked setup check when an exited parent leaves inherited pipes open
 root="$TMPDIR/agent-system-codex-example"

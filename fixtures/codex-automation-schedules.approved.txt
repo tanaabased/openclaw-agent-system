@@ -1,0 +1,92 @@
+[
+  {
+    "request": {
+      "mode": "update",
+      "kind": "cron",
+      "destination": "local",
+      "executionEnvironment": "local",
+      "projectId": "fixture-project",
+      "name": "Agent System #196 paused fixture",
+      "prompt": "Report that this is the edited paused Agent System integration fixture. Do not change files or contact external services.\n\nManaged by Agent System fixture #196.",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "high",
+      "rrule": "FREQ=WEEKLY;BYHOUR=9;BYMINUTE=0;BYDAY=MO,TU,WE,TH,FR",
+      "status": "PAUSED",
+      "notificationPolicy": "failed_runs_only",
+      "id": "agent-system-196-paused-fixture"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Updated automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"agent-system-196-paused-fixture\",\"mode\":\"update\",\"status\":\"PAUSED\"}"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "request": {
+      "mode": "update",
+      "kind": "cron",
+      "destination": "local",
+      "executionEnvironment": "local",
+      "projectId": "fixture-project",
+      "name": "Agent System #196 paused fixture",
+      "prompt": "Report that this is the edited paused Agent System integration fixture. Do not change files or contact external services.\n\nManaged by Agent System fixture #196.",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "high",
+      "rrule": "FREQ=MONTHLY;BYHOUR=9;BYMINUTE=0;BYMONTHDAY=1",
+      "status": "PAUSED",
+      "notificationPolicy": "failed_runs_only",
+      "id": "agent-system-196-paused-fixture"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Updated automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"agent-system-196-paused-fixture\",\"mode\":\"update\",\"status\":\"PAUSED\"}"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "request": {
+      "mode": "update",
+      "kind": "cron",
+      "destination": "local",
+      "executionEnvironment": "local",
+      "projectId": "fixture-project",
+      "name": "Agent System #196 paused fixture",
+      "prompt": "Report that this is the edited paused Agent System integration fixture. Do not change files or contact external services.\n\nManaged by Agent System fixture #196.",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "high",
+      "rrule": "FREQ=MINUTELY;INTERVAL=15",
+      "status": "PAUSED",
+      "notificationPolicy": "failed_runs_only",
+      "id": "agent-system-196-paused-fixture"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Updated automation in the app."
+        },
+        {
+          "type": "text",
+          "text": "{\"automationId\":\"agent-system-196-paused-fixture\",\"mode\":\"update\",\"status\":\"PAUSED\"}"
+        }
+      ],
+      "isError": false
+    }
+  }
+]
