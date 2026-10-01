@@ -458,20 +458,6 @@ disable remain protected; failed synchronization reports partial results.
 
 Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
 
-Before setup or agent reconciliation, install checks the actual OpenClaw host and
-the shared Codex prerequisite pinned in Agent System's
-`package.json#openclaw.agentSystem.codexPlugin`. It provisions a missing plugin,
-enables a matching disabled installation, and reuses a converged installation
-across agents in the same profile. Codex remains a separate OpenClaw-managed
-package and owns its app-server dependency. Setup-skip flags do not skip this
-prerequisite. Standalone Codex installation does not provision it.
-
-Conflicting shared versions or sources block installation with expected and actual
-versions. Review `openclaw plugins inspect codex --json`, then explicitly reconcile
-the shared plugin through OpenClaw before retrying; installing another agent never
-silently upgrades, downgrades, or replaces it. Installation failures retain bounded,
-sanitized exit and failure-category details, without raw upstream output.
-
 ### Options
 
 | Option or argument     | Required | Default | Description                                                                                          |
@@ -497,6 +483,20 @@ openclaw agent-system install
 # explicitly consent to setup for an unattended installation.
 openclaw agent-system install --yes --json
 ```
+
+Before setup or agent reconciliation, install checks the actual OpenClaw host and
+the shared Codex prerequisite pinned in Agent System's
+`package.json#openclaw.agentSystem.codexPlugin`. It provisions a missing plugin,
+enables a matching disabled installation, and reuses a converged installation
+across agents in the same profile. Codex remains a separate OpenClaw-managed
+package and owns its app-server dependency. Setup-skip flags do not skip this
+prerequisite. Standalone Codex installation does not provision it.
+
+Conflicting shared versions or sources block installation with expected and actual
+versions. Review `openclaw plugins inspect codex --json`, then explicitly reconcile
+the shared plugin through OpenClaw before retrying; installing another agent never
+silently upgrades, downgrades, or replaces it. Installation failures retain bounded,
+sanitized exit and failure-category details, without raw upstream output.
 
 `--skip-setup` skips both phases regardless of consent; combining the two phase
 flags has the same effect. Other components still reconcile and enforce their
