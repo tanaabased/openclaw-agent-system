@@ -72,9 +72,9 @@ cd "$TMPDIR/codex-first"
 if output=$(openclaw agent-system doctor --json); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.findings | any(.code == "codex-plugin-disabled" and .status == "drift")'
 openclaw plugins inspect codex --json | jq -e '.plugin.enabled == false'
-sed 's/effort: medium/effort: low/' "$GITHUB_WORKSPACE/examples/codex-prerequisite/first/agent.yaml" > agent.yaml
+sed 's/effort: medium/effort: high/' "$GITHUB_WORKSPACE/examples/codex-prerequisite/first/agent.yaml" > agent.yaml
 openclaw agent-system install --json | jq -e '.outcomes | any(.code == "codex-plugin-enabled" and .status == "updated") and any(.component == "models" and .code == "set-agent-models" and .status == "updated")'
-openclaw config get agents.entries.codex-first --json | jq -e '.thinkingDefault == "low" and .models["openai/gpt-5.4-nano"].agentRuntime.id == "codex"'
+openclaw config get agents.entries.codex-first --json | jq -e '.thinkingDefault == "high" and .models["openai/gpt-5.4-nano"].agentRuntime.id == "codex"'
 openclaw agent-system doctor --json | jq -e '.findings | any(.code == "codex-plugin-ready" and .status == "healthy")'
 
 # should reject a conflicting shared plugin without silently upgrading it
