@@ -19,7 +19,7 @@ cd "$GITHUB_WORKSPACE/examples/path/openclaw"
 openclaw agent-system install
 
 # should route one agent through codex and one through the openclaw runtime
-# temporary codex configuration cleanup workaround: https://github.com/tanaabased/openclaw-agent-system/issues/135
+# temporary openclaw 9.5 cleanup workaround: https://github.com/tanaabased/openclaw-agent-system/issues/135
 openclaw plugins disable codex
 openclaw config set 'agents.entries.path-codex.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.path-codex.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json

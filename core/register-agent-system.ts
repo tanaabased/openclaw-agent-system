@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
@@ -31,10 +30,6 @@ import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
-import createCodexPluginLifecycleContribution from '../agent/codex-plugin-lifecycle.ts';
-import codexPluginRequirement from './codex-plugin-metadata.ts';
-import ensurePrivateStateDirectories from './ensure-private-state-directories.ts';
-import acquirePrivateStateFileLock from './private-state-file-lock.ts';
 import parseModelCatalogRows from '../agent/model-catalog.ts';
 import createMemoryLifecycleContribution from '../agent/memory-lifecycle.ts';
 import {
@@ -302,44 +297,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   };
   const automationService = new AutomationService(automationDependencies);
   const lifecycleContributions = [
-    createCodexPluginLifecycleContribution({
-      async readRequirement() {
-        return codexPluginRequirement(
-          JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')),
-        );
-      },
-      async readPluginPackage(rootDir) {
-        return JSON.parse(await readFile(join(rootDir, 'package.json'), 'utf8'));
-      },
-      async runOpenClawCommand(args, cwd, signal) {
-        return api.runtime.system.runCommandWithTimeout([...openClawCommand, ...args], {
-          cwd,
-          timeoutMs: 120_000,
-          killGraceMs: 100,
-          killProcessTree: true,
-          maxCombinedOutputBytes: 1_048_576,
-          outputCapture: 'head',
-          ...(signal ? { signal } : {}),
-        });
-      },
-      async withLock(run) {
-        const root = join(api.runtime.state.resolveStateDir(), 'agent-system-prerequisites');
-        await ensurePrivateStateDirectories({
-          directories: [root],
-          currentUid,
-          label: 'Shared Codex prerequisite',
-        });
-        const lock = await acquirePrivateStateFileLock(join(root, 'codex'), {
-          retries: { factor: 1, minTimeout: 100, maxTimeout: 100, retries: 300 },
-          staleMs: 30_000,
-        });
-        try {
-          return await run();
-        } finally {
-          await lock.release();
-        }
-      },
-    }),
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
       readConfig,

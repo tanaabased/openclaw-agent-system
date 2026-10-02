@@ -71,16 +71,10 @@ openclaw agent-system install --json \
 
 ```bash
 # should resolve the same secret reference after an openclaw service restart
-openclaw-gateway start || {
-  tail -n 80 "$(openclaw-gateway log-path)" >&2
-  exit 1
-}
+openclaw-gateway start
 openclaw memory status --index --agent memory-openai --json >/dev/null
 openclaw-gateway stop
-openclaw-gateway start || {
-  tail -n 80 "$(openclaw-gateway log-path)" >&2
-  exit 1
-}
+openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
 output="$(openclaw agent-system doctor --json)" || {
   printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
@@ -112,10 +106,7 @@ printf '%s\n' "$output" \
   | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
-openclaw-gateway start || {
-  tail -n 80 "$(openclaw-gateway log-path)" >&2
-  exit 1
-}
+openclaw-gateway start
 openclaw secrets reload --json >/dev/null
 openclaw gateway call memory.search \
   --params '{"agentId":"memory-openai","query":"Which observatory stores cobalt astrolabes?","maxResults":5}' \

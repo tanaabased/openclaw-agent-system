@@ -21,7 +21,7 @@ cd "$GITHUB_WORKSPACE/examples/containment/emori"
 openclaw agent-system install --skip-setup
 
 # should route tanaabot through codex and emori through native openclaw
-# temporary codex configuration cleanup workaround: https://github.com/tanaabased/openclaw-agent-system/issues/135
+# temporary openclaw 9.5 cleanup workaround: https://github.com/tanaabased/openclaw-agent-system/issues/135
 openclaw plugins disable codex
 openclaw config set skills.workshop.autonomous.mode off
 openclaw config set 'agents.entries.tanaabot.model' "openai/$OPENAI_MODEL"

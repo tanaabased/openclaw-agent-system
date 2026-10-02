@@ -279,12 +279,10 @@ export default class AgentSystemLifecycleRegistry {
     options: InstallSetupOptions = {},
   ): OrderedContribution[] {
     const configured = this.#configured(context.manifest);
-    const sharedPrerequisites = configured.filter(({ id }) => id === 'codex-plugin');
-    const agentContributions = configured.filter(({ id }) => id !== 'codex-plugin');
     const { skipSetupHost, skipSetupAgent } = selectedSetupPhases(options);
     const hostSteps = !skipSetupHost && (context.manifest.setupHost?.steps.length ?? 0) > 0;
     const agentSteps = !skipSetupAgent && (context.manifest.setup?.steps.length ?? 0) > 0;
-    if (!hostSteps && !agentSteps) return [...sharedPrerequisites, ...agentContributions];
+    if (!hostSteps && !agentSteps) return configured;
     const setupLifecycle = this.setupLifecycle;
     if (!setupLifecycle) {
       throw new AgentSystemLifecycleError(
@@ -300,11 +298,10 @@ export default class AgentSystemLifecycleRegistry {
         ? ['agent', 'path', 'git', 'github', 'google']
         : [];
     const prerequisites = prerequisiteIds.flatMap((id) =>
-      agentContributions.filter((entry) => entry.id === id),
+      configured.filter((entry) => entry.id === id),
     );
-    const dependent = agentContributions.filter((entry) => !prerequisiteIds.includes(entry.id));
+    const dependent = configured.filter((entry) => !prerequisiteIds.includes(entry.id));
     return [
-      ...sharedPrerequisites,
       ...(hostSteps
         ? [
             {
