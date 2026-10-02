@@ -2,6 +2,8 @@
 
 This GitHub Actions-only scenario first probes model configuration with Codex enabled on the pinned host/plugin pair, including clean command exits and child-process cleanup for [#135](https://github.com/tanaabased/openclaw-agent-system/issues/135).
 
+Each probe command has a two-minute limit and reports whether it is still running after 30 seconds. A successful probe requires a normal exit and no surviving child processes.
+
 It then verifies the packed Agent System plugin's fresh prerequisite installation,
 repeat convergence, second-agent reuse, disabled repair, conflicts, and sanitized
 provider failures. Every installation and configuration change is disposable.

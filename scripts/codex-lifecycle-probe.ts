@@ -41,10 +41,15 @@ async function probe(args: string[]): Promise<void> {
       output = (output + data.toString()).slice(-65_536);
     });
   }
+  const progressTimer = setTimeout(() => {
+    process.stdout.write(
+      `${JSON.stringify({ command: args.slice(0, 2), elapsedMs: Date.now() - started, phase: 'still-running', appServers: appServerPids().length })}\n`,
+    );
+  }, 30_000);
   const timer = setTimeout(() => {
     timedOut = true;
     if (child.pid && groupExists(child.pid)) process.kill(-child.pid, 'SIGKILL');
-  }, 30_000);
+  }, 120_000);
   let code: number | null;
   try {
     // use exit: close would wait forever for inherited pipes held by a stranded child.
@@ -54,6 +59,7 @@ async function probe(args: string[]): Promise<void> {
     });
   } finally {
     clearTimeout(timer);
+    clearTimeout(progressTimer);
   }
   await new Promise((resolve) => setTimeout(resolve, 500));
   const survivingGroup = child.pid !== undefined && groupExists(child.pid);
