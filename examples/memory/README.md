@@ -1,8 +1,8 @@
 # Memory Example
 
 This scenario verifies manifest-managed built-in memory search for keyword-only,
-local, and OpenAI providers through a source checkout whose built entry is loaded
-from configuration.
+local, and OpenAI providers through a source checkout registered with OpenClaw's
+native source-link installation.
 It proves that the OpenAI credential remains a secret reference, resolves after
 service restart, and supports search without rebuilding an existing index.
 Provider migration is covered by unit tests; the other examples exercise the
@@ -14,12 +14,11 @@ packed plugin.
 # should configure an isolated openclaw profile with the source checkout
 openclaw-setup \
   --workspace "$TMPDIR/main"
-plugin_paths="$(jq -cn --arg path "$GITHUB_WORKSPACE" '[$path + "/dist/index.js"]')"
-openclaw config set plugins.load.paths "$plugin_paths" --strict-json
-openclaw config set plugins.entries.agent-system.enabled true --strict-json
+openclaw plugins install "$GITHUB_WORKSPACE" --link --force --accept-capabilities
+openclaw plugins enable agent-system --accept-capabilities
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 openclaw plugins inspect agent-system --runtime --json \
-  | jq -e '.plugin.id == "agent-system" and .plugin.origin == "config" and .plugin.status == "loaded" and (.plugin.source | endswith("/dist/index.js"))'
+  | jq -e --arg root "$GITHUB_WORKSPACE" '.plugin.id == "agent-system" and .plugin.origin == "global" and .plugin.status == "loaded" and .install.source == "path" and .install.sourcePath == $root and .install.installPath == $root'
 ```
 
 ## Testing
@@ -72,10 +71,16 @@ openclaw agent-system install --json \
 
 ```bash
 # should resolve the same secret reference after an openclaw service restart
-openclaw-gateway start
+openclaw-gateway start || {
+  tail -n 80 "$(openclaw-gateway log-path)" >&2
+  exit 1
+}
 openclaw memory status --index --agent memory-openai --json >/dev/null
 openclaw-gateway stop
-openclaw-gateway start
+openclaw-gateway start || {
+  tail -n 80 "$(openclaw-gateway log-path)" >&2
+  exit 1
+}
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
 output="$(openclaw agent-system doctor --json)" || {
   printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
@@ -107,7 +112,10 @@ printf '%s\n' "$output" \
   | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
-openclaw-gateway start
+openclaw-gateway start || {
+  tail -n 80 "$(openclaw-gateway log-path)" >&2
+  exit 1
+}
 openclaw secrets reload --json >/dev/null
 openclaw gateway call memory.search \
   --params '{"agentId":"memory-openai","query":"Which observatory stores cobalt astrolabes?","maxResults":5}' \
