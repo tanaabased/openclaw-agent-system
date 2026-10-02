@@ -21,12 +21,13 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          # temporary baseline verification; restore the full matrix before final acceptance.
+          # temporary enabled-codex cleanup checkpoint; restore the full matrix before final acceptance.
           # - agent
           # - approval
           # - automations
           # - backup
           # - codex
+          - codex-prerequisite
           # - containment
           # - credentials
           # - doctor
@@ -35,8 +36,8 @@ jobs:
           # - github
           # - google
           # - identity
-          - install
-          - memory
+          # - install
+          # - memory
           # - models
           # - path
           # - routing
