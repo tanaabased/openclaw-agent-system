@@ -71,7 +71,7 @@ openclaw agent-system install --json \
 
 ```bash
 # should resolve the same secret reference after an openclaw service restart
-openclaw-gateway start || {
+NODE_OPTIONS='--stack-trace-limit=50' openclaw-gateway start || {
   tail -n 80 "$(openclaw-gateway log-path)" >&2
   for bundle in "$OPENCLAW_STATE_DIR"/logs/stability/*.json; do
     if test -f "$bundle"; then jq -c '{reason,error}' "$bundle" >&2; fi
@@ -80,7 +80,7 @@ openclaw-gateway start || {
 }
 openclaw memory status --index --agent memory-openai --json >/dev/null
 openclaw-gateway stop
-openclaw-gateway start || {
+NODE_OPTIONS='--stack-trace-limit=50' openclaw-gateway start || {
   tail -n 80 "$(openclaw-gateway log-path)" >&2
   for bundle in "$OPENCLAW_STATE_DIR"/logs/stability/*.json; do
     if test -f "$bundle"; then jq -c '{reason,error}' "$bundle" >&2; fi
@@ -118,7 +118,7 @@ printf '%s\n' "$output" \
   | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
-openclaw-gateway start || {
+NODE_OPTIONS='--stack-trace-limit=50' openclaw-gateway start || {
   tail -n 80 "$(openclaw-gateway log-path)" >&2
   for bundle in "$OPENCLAW_STATE_DIR"/logs/stability/*.json; do
     if test -f "$bundle"; then jq -c '{reason,error}' "$bundle" >&2; fi
