@@ -16,6 +16,7 @@ cd "$GITHUB_WORKSPACE/examples/agent/data"
 openclaw agent-system install
 
 # should start the default gateway as a supervised background process
+openclaw config set logging.file "$TMPDIR/agent-file.jsonl"
 openclaw-gateway start --debug
 ```
 
@@ -32,7 +33,8 @@ openclaw agent \
 # should load the data manifest through a passive gateway lifecycle
 gateway_log_path="$(openclaw-gateway log-path)"
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  openclaw logs --plain --limit 1000 --max-bytes 1000000 > "$TMPDIR/agent-lifecycle.log"
+  # inspect the complete test-owned file; a busy debug tail can displace the lifecycle event.
+  jq -Rr 'fromjson? | .. | strings' "$TMPDIR/agent-file.jsonl" > "$TMPDIR/agent-lifecycle.log"
   if grep -Eq \
     '\[agent-system\] manifest_loaded trigger="(service|session_start|before_prompt_build)" agentId="data"' \
     "$TMPDIR/agent-lifecycle.log"; then
@@ -48,7 +50,9 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 # should keep manifest values out of lifecycle and gateway logs
+gateway_log_path="$(openclaw-gateway log-path)"
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-lifecycle.log"; then exit 1; fi
+if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-file.jsonl"; then exit 1; fi
 if grep -Fq 'leia-initial-manifest-value' "$gateway_log_path"; then exit 1; fi
 
 # should inspect and resolve routing through the active agent without changing its session selection
