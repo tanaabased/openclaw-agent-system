@@ -1,7 +1,8 @@
 # Memory Example
 
 This scenario verifies manifest-managed built-in memory search for keyword-only,
-local, and OpenAI providers through a source checkout loaded from configuration.
+local, and OpenAI providers through a source checkout whose built entry is loaded
+from configuration.
 It proves that the OpenAI credential remains a secret reference, resolves after
 service restart, and supports search without rebuilding an existing index.
 Provider migration is covered by unit tests; the other examples exercise the
@@ -13,12 +14,12 @@ packed plugin.
 # should configure an isolated openclaw profile with the source checkout
 openclaw-setup \
   --workspace "$TMPDIR/main"
-plugin_paths="$(jq -cn --arg path "$GITHUB_WORKSPACE" '[$path]')"
+plugin_paths="$(jq -cn --arg path "$GITHUB_WORKSPACE" '[$path + "/dist/index.js"]')"
 openclaw config set plugins.load.paths "$plugin_paths" --strict-json
 openclaw config set plugins.entries.agent-system.enabled true --strict-json
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 openclaw plugins inspect agent-system --runtime --json \
-  | jq -e '.plugin.id == "agent-system" and .plugin.origin == "config" and .plugin.status == "loaded"'
+  | jq -e '.plugin.id == "agent-system" and .plugin.origin == "config" and .plugin.status == "loaded" and (.plugin.source | endswith("/dist/index.js"))'
 ```
 
 ## Testing
