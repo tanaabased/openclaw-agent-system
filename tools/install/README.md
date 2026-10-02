@@ -7,6 +7,10 @@
 Install applies the active agent's configuration and setup after native chat
 approval, using the same service as the operator CLI.
 
+Approval also covers provisioning or enabling the release-pinned shared Codex
+prerequisite in this OpenClaw profile. Conflicting shared versions require explicit
+operator reconciliation; see [Install behavior](../../CLI.md#openclaw-agent-system-install).
+
 ## Overview
 
 | Interface                                                                     | Purpose                                          |

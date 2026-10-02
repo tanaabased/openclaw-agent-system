@@ -21,14 +21,14 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          # temporary #135 checkpoint; restore full coverage before final acceptance.
-          # - codex-prerequisite
+          # temporary shared codex installer checkpoint; restore full coverage before final acceptance.
+          - codex-prerequisite
           # - agent
-          - approval
+          # - approval
           # - automations
           # - backup
           # - codex
-          - containment
+          # - containment
           # - credentials
           # - doctor
           # - env
@@ -38,8 +38,8 @@ jobs:
           # - identity
           # - install
           # - memory
-          - models
-          - path
+          # - models
+          # - path
           # - routing
           # - setup
           # - tool

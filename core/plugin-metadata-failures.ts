@@ -2,8 +2,11 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { githubNotificationChannelMetadata } from '../channels/github/metadata.ts';
 import { agentSystemPluginIdentity } from './plugin-identity.ts';
+import codexPluginRequirement from './codex-plugin-metadata.ts';
 
 export interface PackageMetadata {
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
   description?: string;
   devDependencies?: {
     '@types/node'?: string;
@@ -15,6 +18,7 @@ export interface PackageMetadata {
   files?: string[];
   name?: string;
   openclaw?: {
+    agentSystem?: { codexPlugin?: string };
     channel?: Record<string, unknown>;
     build?: {
       openclawVersion?: string;
@@ -74,6 +78,8 @@ export interface PluginManifest {
 }
 
 export type PluginMetadataFailureCode =
+  | 'codex-prerequisite-pin'
+  | 'codex-prerequisite-ownership'
   | 'package-name'
   | 'supported-os'
   | 'codex-plugin-name'
@@ -213,6 +219,18 @@ export default function pluginMetadataFailures(
   const expectedCompatibilityRange = hasExactMinimumGatewayVersion
     ? `>=${minimumGatewayVersion}`
     : undefined;
+
+  check(
+    codexPluginRequirement(packageMetadata) !== undefined,
+    'codex-prerequisite-pin',
+    'Agent System must declare one exact @openclaw/codex pin under openclaw.agentSystem.codexPlugin',
+  );
+  check(
+    packageMetadata.dependencies?.['@openclaw/codex'] === undefined &&
+      packageMetadata.optionalDependencies?.['@openclaw/codex'] === undefined,
+    'codex-prerequisite-ownership',
+    'Codex must remain a separate OpenClaw-managed plugin, not a nested runtime dependency',
+  );
 
   check(
     manifest.activation?.onStartup === true,

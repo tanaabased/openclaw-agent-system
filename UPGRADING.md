@@ -23,6 +23,10 @@ host; re-enabling the old package does not upgrade it. Plugin updates reuse the
 recorded source and retain explicit version pins. For a pinned or linked install,
 select the intended release or update the checkout using
 [OpenClaw's plugin update guidance](https://docs.openclaw.ai/cli/plugins/uninstall-and-update#update).
+If a shared Codex plugin is already installed, review its version and follow the
+[shared prerequisite instructions](./CLI.md#openclaw-agent-system-install) to
+select the required release. Agent installation provisions a missing plugin but
+leaves conflicting existing versions for explicit operator reconciliation.
 Then run `openclaw agent-system install` and `openclaw agent-system doctor` from
 each managed workspace to reconcile and verify its desired state before restarting:
 
