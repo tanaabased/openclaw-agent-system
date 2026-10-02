@@ -21,30 +21,29 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          # temporary shared codex installer checkpoint; restore full coverage before final acceptance.
-          - codex-prerequisite
-          # - agent
-          # - approval
-          # - automations
-          # - backup
-          # - codex
-          # - containment
-          # - credentials
-          # - doctor
-          # - env
-          # - git
-          # - github
-          # - google
-          # - identity
-          # - install
-          # - memory
-          # - models
-          # - path
-          # - routing
-          # - setup
-          # - tool
-          # - validate
-          # - worktree
+          - agent
+          - approval
+          - automations
+          - backup
+          - codex
+          - containment
+          - credentials
+          - doctor
+          - env
+          - git
+          - github
+          - google
+          - identity
+          - install
+          - memory
+          - models
+          - path
+          - prerequisite
+          - routing
+          - setup
+          - tool
+          - validate
+          - worktree
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
