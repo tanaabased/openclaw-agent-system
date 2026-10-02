@@ -18,9 +18,9 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - macos-26
+          # - macos-26
           - ubuntu-24.04
-        # temporary baseline checkpoint; restore the full matrix before final acceptance.
+        # temporary linux memory diagnosis; restore both platforms and the full matrix before final acceptance.
         example:
           # - agent
           # - approval
@@ -35,7 +35,7 @@ jobs:
           # - github
           # - google
           # - identity
-          - install
+          # - install
           - memory
           # - models
           # - path
