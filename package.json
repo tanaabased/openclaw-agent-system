@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "bun@1.4.2",
   "engines": {
-    "node": ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
+    "node": ">=24.16.0 <25 || >=26.1.0"
   },
   "os": [
     "darwin",
