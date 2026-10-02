@@ -523,7 +523,7 @@ describe('github notification workflows', () => {
     assert.equal(example?.env?.OPENAI_MODEL, 'gpt-5.4-nano');
     assert.equal(
       example?.run,
-      'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
+      'node node_modules/.bin/leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
     );
     assert.equal(diagnostics?.if, 'failure()');
 

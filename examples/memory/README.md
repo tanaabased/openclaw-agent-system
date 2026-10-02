@@ -11,6 +11,7 @@ packed plugin.
 
 ```bash
 # should configure an isolated openclaw profile with the source checkout
+command -v openclaw
 openclaw-setup \
   --workspace "$TMPDIR/main"
 plugin_paths="$(jq -cn --arg path "$GITHUB_WORKSPACE" '[$path]')"
