@@ -21,30 +21,28 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          # temporary enabled-codex cleanup checkpoint; restore the full matrix before final acceptance.
-          # - agent
-          # - approval
-          # - automations
-          # - backup
-          # - codex
-          - codex-prerequisite
-          # - containment
-          # - credentials
-          # - doctor
-          # - env
-          # - git
-          # - github
-          # - google
-          # - identity
-          # - install
-          # - memory
-          # - models
-          # - path
-          # - routing
-          # - setup
-          # - tool
-          # - validate
-          # - worktree
+          - agent
+          - approval
+          - automations
+          - backup
+          - codex
+          - containment
+          - credentials
+          - doctor
+          - env
+          - git
+          - github
+          - google
+          - identity
+          - install
+          - memory
+          - models
+          - path
+          - routing
+          - setup
+          - tool
+          - validate
+          - worktree
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

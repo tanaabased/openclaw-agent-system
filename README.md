@@ -121,6 +121,39 @@ Compatibility metadata declares the minimum supported OpenClaw version. Build
 metadata and development dependencies pin the newest version tested for the
 release.
 
+### Upgrading Across a Minimum-Version Change
+
+Upgrade OpenClaw before installing an Agent System release that requires a newer
+host. Use a supported Node.js version, then run these commands from an operator
+terminal in the same OpenClaw profile:
+
+```sh
+openclaw gateway stop
+openclaw plugins disable agent-system
+openclaw update --tag 2026.9.7 --no-restart
+openclaw plugins update agent-system --accept-capabilities
+openclaw plugins enable agent-system --accept-capabilities
+openclaw plugins inspect agent-system --runtime --json
+```
+
+The Agent System update must select a published release compatible with the new
+host; re-enabling the old package does not upgrade it. Plugin updates reuse the
+recorded source and retain explicit version pins. For a pinned or linked install,
+select the intended release or update the checkout using
+[OpenClaw's plugin update guidance](https://docs.openclaw.ai/cli/plugins/uninstall-and-update#update).
+Then run `openclaw agent-system install` and `openclaw agent-system doctor` from
+each managed workspace to reconcile and verify its desired state before restarting:
+
+```sh
+openclaw gateway restart
+openclaw gateway status --deep --require-rpc
+```
+
+If Node's executable path changed, also align the managed service's runtime;
+`--no-restart` does not rebind it. See
+[OpenClaw updates](https://docs.openclaw.ai/cli/update) for installation-method
+and service-runtime details.
+
 ## Usage
 
 Add `.agent-system/agent.yaml` to the workspace you want Agent System to manage. A root-level `agent.yaml` is also supported as a shorthand. The optional setup script below assumes Homebrew is already installed.
