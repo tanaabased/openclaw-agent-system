@@ -102,9 +102,35 @@ describe('scripts/example-model-scenarios', () => {
         'utf8',
       );
       assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
+      input.messages.push({
+        role: 'user',
+        content:
+          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nRuntime facts.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+      });
+      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
       input.messages[0]!.content = 'Name: Someone Else';
       assert.equal(matchFixture([...scenario.fixtures], input), null);
     }
+  });
+
+  it('should match the current collaboration turn without replaying readiness from history', () => {
+    const scenario = resolveExampleModelScenario('collaboration');
+    const input = request('beta', 'collaboration-ready', []);
+    input.messages[0]!.content = 'Name: Beta';
+    input.messages.push(
+      { role: 'assistant', content: 'collaboration-ready' },
+      { role: 'user', content: 'collaboration-ping' },
+      {
+        role: 'user',
+        content:
+          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nRuntime facts.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+      },
+    );
+    assert.deepEqual(matchFixture([...scenario.fixtures], input)?.response, {
+      content: 'collaboration-pong',
+    });
+    input.messages.push({ role: 'user', content: 'An unrelated request.' });
+    assert.equal(matchFixture([...scenario.fixtures], input), null);
   });
 
   it('should accept collaboration completion only after a successful peer reply', () => {

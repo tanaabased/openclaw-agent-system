@@ -5,8 +5,13 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const callId = 'call_collaboration_send';
 function userContains(request: ChatCompletionRequest, text: string): boolean {
-  const message = request.messages.filter((entry) => entry.role === 'user').at(-1);
-  return (getTextContent(message?.content ?? '') ?? '').includes(text);
+  const prompt = request.messages
+    .filter((entry) => entry.role === 'user')
+    .map((entry) => getTextContent(entry.content) ?? '')
+    .findLast(
+      (content) => !content.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+    );
+  return prompt?.includes(text) ?? false;
 }
 function receivedPeerReply(request: ChatCompletionRequest): boolean {
   try {
