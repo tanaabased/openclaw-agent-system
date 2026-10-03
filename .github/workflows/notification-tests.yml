@@ -26,6 +26,14 @@ on:
         options:
           - ubuntu-24.04
           - macos-26
+      provider:
+        description: Model provider
+        required: true
+        type: choice
+        default: live
+        options:
+          - live
+          - mock
 
 permissions:
   contents: read
@@ -43,7 +51,7 @@ jobs:
         scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","guided-assignment","implementation","pr-lifecycle","comment","retirement","operator-access"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
-      provider: ${{ matrix.scenario == 'operator-access' && 'mock' || 'live' }}
+      provider: ${{ matrix.scenario == 'operator-access' && 'mock' || inputs.provider }}
       runner: ${{ inputs.runner }}
       scenario: ${{ matrix.scenario }}
     secrets:

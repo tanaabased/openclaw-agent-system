@@ -59,6 +59,14 @@ describe('core/github-account-client', () => {
     assert.equal(evidence.durationMs, 30_000);
     assert.equal(line.includes('private-token'), false);
     assert.equal(line.includes('private-provider-response'), false);
+    const successful = formatGitHubIdentityProbe(
+      { exitCode: 0, stderr: '', stdout: '{}', timedOut: false, truncated: false },
+      214,
+    );
+    assert.equal(
+      JSON.parse(successful.slice('github-account-identity-probe '.length)).providerDiagnostic,
+      null,
+    );
   });
 
   it('should fail identity checks without eviction or replay when credentials were not rejected', async () => {

@@ -169,7 +169,10 @@ export function formatGitHubIdentityProbe(
     exitCode: result.exitCode,
     timedOut: result.timedOut,
     truncated: result.truncated,
-    providerDiagnostic: githubCliDiagnostic(result, 'identity-check'),
+    providerDiagnostic:
+      result.exitCode === 0 && !result.timedOut && !result.truncated
+        ? null
+        : githubCliDiagnostic(result, 'identity-check'),
   })}\n`;
 }
 
