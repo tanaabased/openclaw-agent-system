@@ -107,11 +107,11 @@ export default function planCollaboration(
   }
   const next = structuredClone(config);
   const membershipChanged = !isDeepStrictEqual(allow, nextAllow);
-  const emptiedOwnedList = membershipChanged && nextAllow.length === 0;
-  if (members.length || membershipChanged) {
+  const emptiedOwnedList = removed.length > 0 && nextAllow.length === 0;
+  if (members.length || membershipChanged || emptiedOwnedList) {
     next.tools ??= {};
     next.tools.agentToAgent ??= {};
-    if (membershipChanged) next.tools.agentToAgent.allow = nextAllow;
+    if (membershipChanged || emptiedOwnedList) next.tools.agentToAgent.allow = nextAllow;
     if (members.length) {
       next.tools.agentToAgent.enabled = true;
       next.tools.sessions = { ...next.tools.sessions, visibility: 'all' };

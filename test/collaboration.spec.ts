@@ -54,6 +54,20 @@ describe('managed collaboration', () => {
     assert.deepEqual(rejoined.config.tools?.agentToAgent, { allow: ['beta'], enabled: true });
   });
 
+  it('should disable access when native deletion has already pruned the final owned grant', () => {
+    for (const allow of [undefined, []]) {
+      const installed = planCollaboration({}, ['alpha']).config;
+      if (allow === undefined) delete installed.tools!.agentToAgent!.allow;
+      else installed.tools!.agentToAgent!.allow = allow;
+      const removed = planCollaboration(installed, []);
+      assert.deepEqual(removed.config.tools?.agentToAgent, { allow: [], enabled: false });
+      assert.deepEqual(removed.ownedAgentIds, []);
+      assert.equal(planCollaboration(removed.config, []).changed, false);
+      const rejoined = planCollaboration(removed.config, ['beta']);
+      assert.deepEqual(rejoined.config.tools?.agentToAgent, { allow: ['beta'], enabled: true });
+    }
+  });
+
   it('should require explicit configuration to migrate initial restrictive host settings', () => {
     for (const tools of [
       { sessions: { visibility: 'agent' as const } },

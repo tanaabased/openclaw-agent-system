@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { mock } from 'node:test';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
@@ -86,6 +87,24 @@ describe('scripts/example-model-scenarios', () => {
       content: 'Ready.',
       id: 'agent-system-example-agent-final-response',
     });
+  });
+
+  it('should match collaboration requests against the scenario workspace identities', async () => {
+    const scenario = resolveExampleModelScenario('collaboration');
+    for (const [agentId, prompt, fixtureIndex] of [
+      ['beta', 'collaboration-ready', 0],
+      ['beta', 'collaboration-ping', 1],
+      ['alpha', 'collaboration-send', 2],
+    ] as const) {
+      const input = request(agentId, prompt, ['sessions_send']);
+      input.messages[0]!.content = await readFile(
+        new URL(`../examples/collaboration/${agentId}/IDENTITY.md`, import.meta.url),
+        'utf8',
+      );
+      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
+      input.messages[0]!.content = 'Name: Someone Else';
+      assert.equal(matchFixture([...scenario.fixtures], input), null);
+    }
   });
 
   it('should accept collaboration completion only after a successful peer reply', () => {
