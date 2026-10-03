@@ -86,6 +86,17 @@ openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active 
 cd "$TMPDIR/agent-system-notifications"
 routing_default_model="$(openclaw config get agents.defaults.model --json | jq -er 'if type == "string" then . else .primary end')"
 output="$(openclaw agent-system install --json)"
+if jq -e '.warnings[]? | select(.code == "github-operator-loaded-access-unverified")' <<< "$output"; then
+  printf '%s\n' 'Operator recognition was unverified immediately after install; checking one controlled Gateway restart.' >&2
+  OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
+  reloaded="$(openclaw agent-system doctor --json || true)"
+  if jq -e '.findings[]? | select(.code == "github-operator-owner-configured" and .status == "healthy")' <<< "$reloaded"; then
+    printf '%s\n' 'Operator recognition became healthy after Gateway restart; install reload remains unverified.' >&2
+  else
+    printf '%s\n' 'Operator recognition remains unverified after Gateway restart.' >&2
+  fi
+  exit 1
+fi
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "updated")'

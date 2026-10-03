@@ -83,6 +83,7 @@ jobs:
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           GH_TOKEN_EMORI: ${{ secrets.gh_token_emori }}
           GH_TOKEN_TANAABOT: ${{ secrets.gh_token_tanaabot }}
+          AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
           NOTIFICATION_MODEL: ${{ inputs.provider == 'live' && format('openai/{0}', env.OPENAI_MODEL) || 'aimock/gpt-5.5' }}
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}

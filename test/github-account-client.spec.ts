@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { describe, it, spyOn } from 'bun:test';
 
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
 import GitHubAccountClient, { GitHubAccountClientError } from '../core/github-account-client.ts';
@@ -37,6 +38,43 @@ function loadedEnvironment() {
 }
 
 describe('core/github-account-client', () => {
+  it('should emit only bounded identity process evidence when CI diagnostics are enabled', async () => {
+    const previous = process.env.AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS;
+    const output = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    process.env.AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS = '1';
+    try {
+      const client = new GitHubAccountClient({
+        baseEnvironment: {},
+        configStore: { configDirectory: () => '/private/gh' },
+        environmentService: { loadForWorkspace: async () => loadedEnvironment() },
+        runCli: async () => ({
+          exitCode: null,
+          stderr: 'private-provider-response private-token',
+          stdout: 'private-token',
+          timedOut: true,
+          truncated: false,
+        }),
+      });
+      await assert.rejects(client.connect({ manifest, workspaceDir }));
+      const lines = output.mock.calls
+        .map(([value]) => String(value))
+        .filter((value) => value.startsWith('github-account-identity-probe '));
+      assert.equal(lines.length, 1);
+      const evidence = JSON.parse(lines[0]!.slice('github-account-identity-probe '.length));
+      assert.equal(evidence.exitCode, null);
+      assert.equal(evidence.timedOut, true);
+      assert.equal(evidence.providerDiagnostic.classification, 'transport');
+      assert.equal(evidence.providerDiagnostic.httpStatus, null);
+      assert.equal(typeof evidence.durationMs, 'number');
+      assert.equal(lines[0]!.includes('private-token'), false);
+      assert.equal(lines[0]!.includes('private-provider-response'), false);
+    } finally {
+      output.mockRestore();
+      if (previous === undefined) delete process.env.AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS;
+      else process.env.AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS = previous;
+    }
+  });
+
   it('should fail identity checks without eviction or replay when credentials were not rejected', async () => {
     for (const failure of [
       { exitCode: 1, stderr: '', stdout: '', timedOut: true, truncated: false },

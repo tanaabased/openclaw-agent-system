@@ -308,9 +308,34 @@ export default class GitHubAccountClient {
       }
     };
 
-    const identity = parseIdentity(
-      await execute(['api', 'user', '--jq', '{login:.login,nodeId:.node_id}']),
-    );
+    const identityStartedAt = performance.now();
+    let identityResult: AgentSystemCliResult;
+    try {
+      identityResult = await execute(['api', 'user', '--jq', '{login:.login,nodeId:.node_id}']);
+    } catch (error) {
+      if (process.env.AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS === '1') {
+        process.stderr.write(
+          `github-account-identity-probe ${JSON.stringify({
+            durationMs: Math.round(performance.now() - identityStartedAt),
+            result: 'process-unavailable',
+            code: error instanceof GitHubAccountClientError ? error.code : 'unknown',
+          })}\n`,
+        );
+      }
+      throw error;
+    }
+    if (process.env.AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS === '1') {
+      process.stderr.write(
+        `github-account-identity-probe ${JSON.stringify({
+          durationMs: Math.round(performance.now() - identityStartedAt),
+          exitCode: identityResult.exitCode,
+          timedOut: identityResult.timedOut,
+          truncated: identityResult.truncated,
+          providerDiagnostic: githubCliDiagnostic(identityResult, 'identity-check'),
+        })}\n`,
+      );
+    }
+    const identity = parseIdentity(identityResult);
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
       this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
       throw new GitHubAccountClientError(
