@@ -125,6 +125,7 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 | `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
 | `id`          | string                             | yes           | none                     | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
 | `name`        | string or `from-environment` value | for `install` | none                     | Agent display name applied to OpenClaw by `install`.             |
+| `runtime`     | `codex`                            | no            | none                     | Declares Codex intent before fresh setup establishes a binding.  |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:
@@ -140,6 +141,14 @@ dollar-prefixed scalar in these fields remains literal.
 
 Identity fields do not configure tools by themselves; a tool may explicitly use
 them as defaults.
+
+Set `agent.runtime: codex` when a fresh OpenClaw installation's setup will bind
+the agent to Codex. This declaration selects the shared prerequisite; it does
+not install a model binding or pin a plugin version. Existing agent-specific or
+inherited `agentRuntime` bindings also select the prerequisite. An `openai/*`
+model name alone does not. EMORI and smutlord consumer migrations that establish
+Codex bindings during setup need this declaration before their first install;
+those workspace changes remain with their owning tasks.
 
 ### `models`
 

@@ -2,3 +2,4 @@ schema-version: 1
 agent:
   id: codex-second
   name: Codex Second
+  runtime: codex

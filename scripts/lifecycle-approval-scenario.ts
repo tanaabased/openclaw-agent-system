@@ -8,6 +8,8 @@ import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
 import { GatewayClient } from 'openclaw/plugin-sdk/gateway-runtime';
 import type { PluginApprovalRequest } from 'openclaw/plugin-sdk/approval-runtime';
 
+import { assertLifecycleChatPending } from './lifecycle-approval-events.ts';
+
 // This exercises an installed Gateway and must never run against a developer profile.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions-only acceptance scenario');
 const agentId = process.argv[2];
@@ -155,7 +157,12 @@ try {
     idempotencyKey: randomUUID(),
   });
   activeRunId = accepted.runId;
-  const approval = await waitFor(() => approvalFor(sessionKey)[0], 'originating chat approval');
+  const approval = await waitFor(() => {
+    const requested = approvalFor(sessionKey)[0];
+    if (requested) return requested;
+    assertLifecycleChatPending(events, accepted.runId);
+    return undefined;
+  }, 'originating chat approval');
   assert.equal(approval.request.toolName, testCase.toolName);
   assert.equal(approval.request.agentId, agentId);
   assert.deepEqual(approval.request.allowedDecisions, ['allow-once', 'deny']);

@@ -8,6 +8,20 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('manifest/parse', () => {
+  it('should accept only the explicit codex bootstrap runtime declaration', () => {
+    const declared = parseAgentManifest(
+      'schema-version: 1\nagent:\n  id: emori\n  runtime: codex\n',
+    );
+    assert.equal(declared.status, 'valid');
+    if (declared.status === 'valid') assert.equal(declared.manifest.agent.runtime, 'codex');
+    assert.equal(
+      diagnosticCodes('schema-version: 1\nagent:\n  id: emori\n  runtime: openclaw\n').has(
+        'manifest-schema',
+      ),
+      true,
+    );
+  });
+
   it('should parse identity and environment data without converting variable names', () => {
     const result = parseAgentManifest(`
 schema-version: 1
