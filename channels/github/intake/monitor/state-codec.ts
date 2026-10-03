@@ -19,6 +19,7 @@ const stateKeys = new Set([
   'diagnosticCode',
   'failureCount',
   'items',
+  'itemFailures',
   'lastPollAt',
   'lastSuccessfulPollAt',
   'nextPollAt',
@@ -26,6 +27,7 @@ const stateKeys = new Set([
   'processedEventNodeIds',
   'schemaVersion',
   'searchBoundary',
+  'throttleUntil',
   'workspaceDir',
 ]);
 
@@ -149,6 +151,34 @@ function validDiagnosticCode(value: unknown): boolean {
   return (
     value === undefined ||
     (optionalBoundedString(value, 255) && /^[a-z0-9][a-z0-9-]*$/u.test(String(value)))
+  );
+}
+
+function validItemFailures(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.length <= 1_000 &&
+      value.every(
+        (failure) =>
+          record(failure) &&
+          hasOnlyKeys(
+            failure,
+            new Set(['cause', 'itemType', 'number', 'repository', 'stage', 'updatedAt']),
+          ) &&
+          failure.cause === 'repository-permission-denied' &&
+          (failure.itemType === 'issue' || failure.itemType === 'pull-request') &&
+          Number.isSafeInteger(failure.number) &&
+          Number(failure.number) > 0 &&
+          typeof failure.repository === 'string' &&
+          /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/u.test(failure.repository) &&
+          failure.stage === 'permission-check' &&
+          (failure.updatedAt === undefined ||
+            (typeof failure.updatedAt === 'string' &&
+              !Number.isNaN(Date.parse(failure.updatedAt)))),
+      ) &&
+      new Set(value.map((failure) => `${failure.repository}#${failure.number}:${failure.itemType}`))
+        .size === value.length)
   );
 }
 
@@ -332,6 +362,7 @@ function validStateFields(
     optionalFiniteNumber(value.lastPollAt) &&
     optionalFiniteNumber(value.lastSuccessfulPollAt) &&
     optionalFiniteNumber(value.nextPollAt) &&
+    optionalFiniteNumber(value.throttleUntil) &&
     (value.diagnosticCode === undefined || typeof value.diagnosticCode === 'string') &&
     (value.searchBoundary === undefined ||
       (typeof value.searchBoundary === 'string' &&
@@ -340,7 +371,8 @@ function validStateFields(
     value.processedEventNodeIds.length <= 2_000 &&
     value.processedEventNodeIds.every(validNodeId) &&
     new Set(value.processedEventNodeIds).size === value.processedEventNodeIds.length &&
-    record(value.items)
+    record(value.items) &&
+    validItemFailures(value.itemFailures)
   );
 }
 

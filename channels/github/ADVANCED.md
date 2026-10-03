@@ -234,6 +234,9 @@ A selector limits the cycle to one exact item. A completed cycle may establish
 the baseline, prepare an issue, continue one pending Work implementation,
 process a bounded pair of admitted comments, or retire work. Deferred and failed
 cycles return nonzero.
+Manual refresh bypasses the normal interval and local permission/configuration
+backoff for one bounded attempt. Confirmed GitHub throttling still defers retry
+and reports its reason and retry time.
 
 The CLI first polls and saves intake, then waits for execution within the refresh
 timeout. If execution is busy or the wait ends, newly admitted items remain visible
@@ -269,6 +272,9 @@ The result reports a redacted baseline and item projection, including lifecycle,
 worktree, cleanup, scheduling state, and aggregate active, queued, and limit
 counts when available. Waiting items include a stable reason code. A durable
 monitor diagnostic returns `degraded` and a nonzero exit code.
+Permission-check failures list the affected repository and item with a safe
+cause; unrelated admitted items remain available, and later polls retry the
+failed items after access is corrected.
 
 ### `openclaw agent-system notifications wait`
 

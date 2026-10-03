@@ -98,6 +98,152 @@ function monitorService(
 }
 
 describe('channels/github/intake/monitor/service', () => {
+  it('should process a later issue after a real-shaped permission 403 and report the failed issue', async () => {
+    let state = notificationMonitorState();
+    state.workspaceDir = workspaceDir;
+    state.items = {};
+    state.nextSchedulingSequence = 1;
+    state.processedEventNodeIds = [];
+    let allowed = false;
+    let now = Date.parse('2026-10-01T15:08:00.000Z');
+    const reconciled: string[] = [];
+    const warnings: string[] = [];
+    const permissionDenied = {
+      exitCode: 1,
+      stderr: 'private upstream detail',
+      stdout: [
+        'HTTP/2 403 Forbidden',
+        'x-ratelimit-remaining: 4728',
+        'x-ratelimit-reset: 1790870273',
+        '',
+        '{"message":"Must have push access to view collaborator permission."}',
+      ].join('\n'),
+      timedOut: false,
+      truncated: false,
+    };
+    const service = monitorService({
+      accountClient: {
+        async connect() {
+          return {
+            identity: { login: 'tanaabot', nodeId: 'U_agent' },
+            async execute(argv) {
+              const endpoint = argv.find((entry) => entry.startsWith('/repos/'));
+              if (argv.includes('/search/issues'))
+                return githubResponse({
+                  incomplete: false,
+                  totalCount: 2,
+                  items: [
+                    {
+                      databaseId: 7,
+                      nodeId: 'I_denied',
+                      number: 12,
+                      repositoryPath: '/repos/tanaabased/denied',
+                      updatedAt: '2026-10-01T15:00:00.000Z',
+                      isPullRequest: false,
+                    },
+                    {
+                      databaseId: 8,
+                      nodeId: 'I_healthy',
+                      number: 13,
+                      repositoryPath: '/repos/tanaabased/healthy',
+                      updatedAt: '2026-10-01T15:01:00.000Z',
+                      isPullRequest: false,
+                    },
+                  ],
+                });
+              if (endpoint?.endsWith('/permission')) {
+                return endpoint.includes('/denied/') && !allowed
+                  ? permissionDenied
+                  : githubResponse({ permission: 'write' });
+              }
+              const name = endpoint?.includes('/denied') ? 'denied' : 'healthy';
+              if (endpoint?.endsWith('/events'))
+                return githubResponse([
+                  {
+                    actor: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
+                    assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+                    createdAt: '2026-10-01T15:00:00.000Z',
+                    databaseId: name === 'denied' ? 11 : 12,
+                    event: 'assigned',
+                    nodeId: name === 'denied' ? 'EV_denied' : 'EV_healthy',
+                  },
+                ]);
+              if (endpoint?.includes('/issues/'))
+                return githubResponse({
+                  assignees: [{ login: 'tanaabot', nodeId: 'U_agent', type: 'User' }],
+                  databaseId: name === 'denied' ? 7 : 8,
+                  isPullRequest: false,
+                  nodeId: name === 'denied' ? 'I_denied' : 'I_healthy',
+                  number: name === 'denied' ? 12 : 13,
+                  state: 'open',
+                  title: 'issue',
+                  updatedAt: '2026-10-01T15:01:00.000Z',
+                });
+              return githubResponse({
+                archived: false,
+                cloneUrl: `https://github.com/tanaabased/${name}.git`,
+                databaseId: name === 'denied' ? 3 : 4,
+                defaultBranch: 'main',
+                disabled: false,
+                name,
+                nodeId: name === 'denied' ? 'R_denied' : 'R_healthy',
+                owner: { login: 'tanaabased', nodeId: 'O_owner', type: 'Organization' },
+              });
+            },
+          };
+        },
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, key) {
+          reconciled.push(key);
+        },
+        async respond() {
+          return undefined;
+        },
+      },
+      clock: () => now,
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
+      stateStore: {
+        read: async () => structuredClone(state),
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
+        },
+      },
+    });
+    const [partial] = await service.runOnce({
+      agentId: 'tanaabot',
+      bypassInterval: true,
+      executionSurface: 'cli-one-shot',
+    });
+    assert.equal(partial?.status, 'completed');
+    assert.equal(partial?.itemFailures?.[0]?.repository, 'tanaabased/denied');
+    assert.deepEqual(reconciled, ['github:R_healthy:13']);
+    assert.ok(
+      warnings.some((message) =>
+        message.includes(
+          'repository=tanaabased/denied issue=12 stage=permission-check cause=repository-permission-denied',
+        ),
+      ),
+    );
+    assert.ok(
+      warnings.every(
+        (message) =>
+          !message.includes('Must have push access') &&
+          !message.includes('private upstream detail'),
+      ),
+    );
+    allowed = true;
+    now += 1_000;
+    const [recovered] = await service.runOnce({
+      agentId: 'tanaabot',
+      bypassInterval: true,
+      executionSurface: 'cli-one-shot',
+    });
+    assert.equal(recovered?.itemFailures, undefined);
+    assert.equal(reconciled.filter((key) => key === 'github:R_denied:12').length, 1);
+    assert.equal(Object.keys(state.items).length, 2);
+  });
   it('should block hookless gateway work before provider access and recover after repair', async () => {
     let ready = false;
     let providerCalls = 0;
@@ -950,6 +1096,61 @@ describe('channels/github/intake/monitor/service', () => {
       retryAt: 10_000,
       status: 'skipped',
     });
+  });
+
+  it('should retry corrected local permission failure before its old reset header', async () => {
+    let connected = 0;
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.items = {};
+    state.diagnosticCode = 'github-notification-request-failed';
+    state.failureCount = 1;
+    state.nextPollAt = 3_600_000;
+    const service = monitorService({
+      accountClient: {
+        async connect() {
+          connected += 1;
+          throw new GitHubAccountClientError('github-account-identity-failed', 'checked');
+        },
+      },
+      clock: () => 1_000,
+      stateStore: {
+        read: async () => structuredClone(state),
+        update: async (_agentId, patch) => patch(structuredClone(state)),
+      },
+    });
+    const [result] = await service.runOnce({ agentId: 'tanaabot', bypassInterval: true });
+    assert.equal(connected, 1);
+    assert.equal(result?.code, 'github-account-identity-failed');
+  });
+
+  it('should preserve confirmed provider throttling with a retry time on manual refresh', async () => {
+    let connected = 0;
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.diagnosticCode = 'github-notification-rate-limited';
+    state.failureCount = 1;
+    state.nextPollAt = 10_000;
+    state.throttleUntil = 10_000;
+    const service = monitorService({
+      accountClient: {
+        async connect() {
+          connected += 1;
+          throw new Error('unexpected');
+        },
+      },
+      clock: () => 1_000,
+      stateStore: {
+        read: async () => structuredClone(state),
+        update: async (_agentId, patch) => patch(structuredClone(state)),
+      },
+    });
+    const [result] = await service.runOnce({ agentId: 'tanaabot', bypassInterval: true });
+    assert.equal(connected, 0);
+    assert.equal(result?.code, 'github-notification-provider-throttle-active');
+    assert.equal(result?.retryAt, 10_000);
   });
 
   it('should release a routing backoff after install repairs the route', async () => {

@@ -92,6 +92,12 @@ export default async function statusNotificationsAgentSystem(
                 ]),
           ].join(' '),
         })),
+        ...(result.itemFailures ?? []).map((failure) => ({
+          component: `${failure.repository}#${failure.number}`,
+          label: 'failure',
+          style: 'error' as const,
+          value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause} check repository write access and retry refresh`,
+        })),
       ],
       options.styles,
     );
