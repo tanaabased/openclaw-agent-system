@@ -19,6 +19,7 @@ export interface AgentManifest {
     description?: string;
     avatar?: string;
     emoji?: string;
+    runtime?: 'codex';
   };
   environment?: {
     dotenv?: string[];

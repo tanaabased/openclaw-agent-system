@@ -485,7 +485,9 @@ openclaw agent-system install --yes --json
 ```
 
 Before setup or agent reconciliation, install checks the actual OpenClaw host and
-the shared Codex prerequisite pinned in Agent System's
+the shared Codex prerequisite only when the workspace declares
+[`agent.runtime: codex`](./MANIFEST.md#agent) or this agent has an effective
+Codex runtime binding. The plugin version is pinned in Agent System's
 `package.json#openclaw.agentSystem.codexPlugin`. It provisions a missing plugin,
 enables a matching disabled installation, and reuses a converged installation
 across agents in the same profile. Codex remains a separate OpenClaw-managed
@@ -547,9 +549,11 @@ jobs. Scheduler inspection requires the operator's native read permission.
 
 Inspect registration, identity, models, memory, paths, and configured capabilities for drift without repairs. `openclaw agent-system status` is an alias.
 
-The `codex-plugin` component reports the shared prerequisite as ready, missing,
-disabled, incompatible, or conflicting. It uses metadata-only OpenClaw inspection
-without installing, enabling, or loading the Codex runtime.
+When Codex is required, the `codex-plugin` component reports the shared
+prerequisite as ready, missing, disabled, incompatible, or conflicting. It uses
+metadata-only OpenClaw inspection without installing, enabling, or loading the
+Codex runtime. Otherwise Doctor omits the component and leaves an unrelated
+shared installation untouched.
 
 ### Options
 

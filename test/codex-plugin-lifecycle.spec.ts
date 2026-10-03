@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createCodexPluginLifecycleContribution, {
   type CodexPluginLifecycleDependencies,
@@ -12,7 +13,7 @@ const requirement = {
   minimumHostVersion: '2026.9.7',
 };
 const context = {
-  manifest: { schemaVersion: 1 as const, agent: { id: 'first' } },
+  manifest: { schemaVersion: 1 as const, agent: { id: 'first', runtime: 'codex' as const } },
   workspaceDir: '/workspace/first',
   runtime: 'openclaw' as const,
 };
@@ -43,6 +44,7 @@ function fixture(initial: 'missing' | 'enabled' | 'disabled' = 'enabled') {
     },
   };
   const dependencies: CodexPluginLifecycleDependencies = {
+    readConfig: () => ({}),
     async readRequirement() {
       return requirement;
     },
@@ -90,6 +92,100 @@ function fixture(initial: 'missing' | 'enabled' | 'disabled' = 'enabled') {
 }
 
 describe('agent/codex-plugin-lifecycle', () => {
+  it('should skip openai models on the openclaw runtime without inspecting a missing plugin', async () => {
+    const f = fixture('missing');
+    f.dependencies.readConfig = () => ({
+      agents: { entries: { first: { model: 'openai/gpt-6-sol' } } },
+    });
+    const native = {
+      ...context,
+      manifest: {
+        ...context.manifest,
+        agent: { id: 'first' },
+        models: { default: { model: 'openai/gpt-6-sol', effort: 'high' as const } },
+      },
+    };
+    assert.deepEqual(await f.contribution().inspect!(native), []);
+    assert.deepEqual(await f.contribution().reconcile!(native), { outcomes: [] });
+    assert.deepEqual(f.calls, []);
+    assert.equal(f.locks(), 0);
+  });
+
+  it('should require explicit and inherited codex runtime bindings', async () => {
+    const configurations: OpenClawConfig[] = [
+      {
+        agents: {
+          entries: { first: { models: { 'openai/gpt-6-sol': { agentRuntime: { id: 'codex' } } } } },
+        },
+      },
+      {
+        agents: { defaults: { models: { 'openai/gpt-6-sol': { agentRuntime: { id: 'codex' } } } } },
+      },
+      {
+        models: {
+          providers: {
+            openai: {
+              baseUrl: 'https://example.invalid',
+              agentRuntime: { id: 'codex' },
+              models: [],
+            },
+          },
+        },
+      },
+    ];
+    for (const config of configurations) {
+      const f = fixture('missing');
+      f.dependencies.readConfig = () => config;
+      const inherited = {
+        ...context,
+        manifest: {
+          ...context.manifest,
+          agent: { id: 'first' },
+          models: { default: { model: 'openai/gpt-6-sol', effort: 'high' as const } },
+        },
+      };
+      assert.equal((await f.contribution().inspect!(inherited))[0]?.code, 'codex-plugin-missing');
+      assert.equal(
+        (await f.contribution().reconcile!(inherited)).outcomes[0]?.code,
+        'codex-plugin-installed',
+      );
+    }
+  });
+
+  it('should honor the bootstrap declaration and ignore unrelated shared installations', async () => {
+    const f = fixture('disabled');
+    f.record.version = '2026.9.6';
+    f.report.install.version = '2026.9.6';
+    const native = { ...context, manifest: { ...context.manifest, agent: { id: 'first' } } };
+    assert.deepEqual(await f.contribution().inspect!(native), []);
+    assert.deepEqual(await f.contribution().reconcile!(native), { outcomes: [] });
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.mutations(), []);
+    f.dependencies.readConfig = () => {
+      throw new Error('fresh workspace has no runtime configuration');
+    };
+    assert.equal((await f.contribution().inspect!(context))[0]?.code, 'codex-plugin-conflict');
+  });
+
+  it('should respect an agent override of an inherited codex binding', async () => {
+    const f = fixture('missing');
+    f.dependencies.readConfig = () => ({
+      agents: {
+        defaults: { models: { 'openai/gpt-6-sol': { agentRuntime: { id: 'codex' } } } },
+        entries: {
+          first: { models: { 'openai/gpt-6-sol': { agentRuntime: { id: 'openclaw' } } } },
+        },
+      },
+    });
+    const native = {
+      ...context,
+      manifest: { ...context.manifest, agent: { id: 'first' } },
+    };
+    assert.deepEqual(await f.contribution().inspect!(native), []);
+    assert.deepEqual(await f.contribution().reconcile!(native), { outcomes: [] });
+    assert.deepEqual(f.calls, []);
+  });
+
   it('should install the exact missing prerequisite and reuse it across repeated and second agent installs', async () => {
     const f = fixture('missing');
     const contribution = f.contribution();
@@ -102,7 +198,7 @@ describe('agent/codex-plugin-lifecycle', () => {
       (
         await contribution.reconcile!({
           ...context,
-          manifest: { ...context.manifest, agent: { id: 'second' } },
+          manifest: { ...context.manifest, agent: { id: 'second', runtime: 'codex' } },
           workspaceDir: '/workspace/second',
         })
       ).outcomes[0]?.status,

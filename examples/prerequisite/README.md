@@ -6,7 +6,10 @@ Each probe command has a two-minute limit and reports whether it is still runnin
 
 It then verifies the packed Agent System plugin's fresh prerequisite installation,
 repeat convergence, second-agent reuse, disabled repair, conflicts, and sanitized
-provider failures. Every installation and configuration change is disposable. The model test changes declared effort while Codex is enabled and verifies that the native runtime binding survives reconciliation.
+provider failures. It also verifies that a native agent installs without the plugin
+and ignores an unrelated conflicting shared installation. Every installation and
+configuration change is disposable. The model test changes declared effort while
+Codex is enabled and verifies that the native runtime binding survives reconciliation.
 
 ## Setup
 
@@ -18,9 +21,10 @@ openclaw plugins enable codex --accept-capabilities
 openclaw --version | grep -F '2026.9.7'
 openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.9.7" and .plugin.enabled == true and .install.version == "2026.9.7"'
 openclaw agents add codex-probe --workspace "$TMPDIR/codex-probe" --non-interactive
-mkdir -p "$TMPDIR/codex-first" "$TMPDIR/codex-second"
+mkdir -p "$TMPDIR/codex-first" "$TMPDIR/codex-second" "$TMPDIR/native-agent"
 cp "$GITHUB_WORKSPACE/examples/prerequisite/first/agent.yaml" "$TMPDIR/codex-first/agent.yaml"
 cp "$GITHUB_WORKSPACE/examples/prerequisite/second/agent.yaml" "$TMPDIR/codex-second/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/prerequisite/native/agent.yaml" "$TMPDIR/native-agent/agent.yaml"
 ```
 
 ## Testing
@@ -32,6 +36,13 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/codex-lifecycle-probe.ts" codex-pro
 # should remove the probe route and plugin to establish a missing prerequisite
 openclaw agents delete codex-probe --force
 openclaw plugins uninstall codex --force
+openclaw plugins list --json | jq -e 'all(.plugins[]; .id != "codex")'
+
+# should install a native agent without inspecting or provisioning the missing codex plugin
+cd "$TMPDIR/native-agent"
+output="$(openclaw agent-system doctor --json || true)"
+printf '%s\n' "$output" | jq -e '.findings | all(.component != "codex-plugin")'
+openclaw agent-system install --json | jq -e '.outcomes | all(.component != "codex-plugin")'
 openclaw plugins list --json | jq -e 'all(.plugins[]; .id != "codex")'
 
 # should diagnose a missing prerequisite without changing configuration or installation state
@@ -84,6 +95,12 @@ receipt="$(openclaw plugins inspect codex --json | jq -cS .install)"
 cd "$TMPDIR/codex-second"
 if output=$(openclaw agent-system install --json); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.blocked.code == "codex-plugin-conflict" and (.blocked.message | contains("2026.9.7")) and (.blocked.message | contains("2026.9.6"))'
+test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
+
+# should leave an unrelated conflicting shared installation untouched for a native agent
+cd "$TMPDIR/native-agent"
+openclaw agent-system doctor --json | jq -e '.status == "healthy" and (.findings | all(.component != "codex-plugin"))'
+openclaw agent-system install --json | jq -e '.outcomes | all(.component != "codex-plugin")'
 test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
 
 # should require explicit operator reconciliation to restore the declared shared version
