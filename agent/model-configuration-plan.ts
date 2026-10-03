@@ -323,8 +323,7 @@ export default function createConfigurationPlan(
     };
   }
 
-  let modelConfigurationChanged = false;
-  modelConfigurationChanged = configureAgentModel(nextAgent, models.default.model);
+  let modelConfigurationChanged = configureAgentModel(nextAgent, models.default.model);
   if (agent.thinkingDefault !== models.default.effort) {
     nextAgent.thinkingDefault = models.default.effort;
     modelConfigurationChanged = true;
