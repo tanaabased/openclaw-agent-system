@@ -6,6 +6,7 @@ import {
   readReviewFeedback,
   reviewFeedback,
   reviewFeedbackContext,
+  reviewFeedbackPresentation,
   reviewFeedbackRevision,
   reviewReplyFeedback,
 } from '../channels/github/conversation/review-feedback.ts';
@@ -160,5 +161,48 @@ describe('channels/github/conversation/review-feedback', () => {
     assert.equal(context.findings[0]?.originalLine, 1);
     assert.equal(context.findings[0]?.originalCommitId, 'a'.repeat(40));
     assert.match(context.locationNotice, /historical/u);
+  });
+
+  it('should present grouped review prose with source links and honest compact locations', () => {
+    const review = reviewFixture({ body: '## Summary\n\nKeep **Markdown** intact.' });
+    const outdated = reviewCommentFixture({ body: 'Check `empty` values.\n\n- Keep the list.' });
+    const current = reviewCommentFixture({
+      body: 'Also handle missing input.',
+      databaseId: 84,
+      line: 10,
+      nodeId: 'PRRC_other',
+      url: 'https://github.com/tanaabased/example/pull/45#discussion_r84',
+    });
+    const card = reviewFeedbackPresentation(reviewFeedback(review, [outdated, current]));
+    assert.match(card, /^## 💬 Review feedback\n/u);
+    assert.ok(
+      card.includes(
+        '[the pull request](https://github.com/tanaabased/example/pull/45#pullrequestreview-81)',
+      ),
+    );
+    assert.ok(card.includes('## Summary\n\nKeep **Markdown** intact.'));
+    assert.ok(card.includes('Check `empty` values.\n\n- Keep the list.'));
+    assert.ok(
+      card.includes(
+        `[Finding](${outdated.url}) · api/example.ts · original line 1 (historical; review line unavailable or outdated)`,
+      ),
+    );
+    assert.ok(card.includes(`[Finding](${current.url}) · api/example.ts · review line 10`));
+    assert.doesNotMatch(card, /current line|diffHunk|@@ -1|reviewed commit/u);
+  });
+
+  it('should link a later inline reply without presenting parent context as new feedback', () => {
+    const parent = reviewCommentFixture({ body: 'Older parent finding.' });
+    const reply = reviewCommentFixture({
+      body: '@tanaabot Please continue.\n\n**New** detail.',
+      databaseId: 83,
+      nodeId: 'PRRC_reply',
+      replyToId: 82,
+    });
+    const card = reviewFeedbackPresentation(reviewReplyFeedback(reviewFixture(), reply, parent));
+    assert.match(card, /^## 💬 Review reply\n/u);
+    assert.ok(card.includes(`[this discussion](${reply.url})`));
+    assert.ok(card.includes(reply.body));
+    assert.doesNotMatch(card, /Older parent finding|Review summary|diffHunk/u);
   });
 });
