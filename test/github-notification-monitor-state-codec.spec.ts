@@ -9,6 +9,23 @@ import {
 } from './github-notification-fixtures.ts';
 
 describe('channels/github/intake/monitor/state-codec', () => {
+  it('should persist bounded permission failures and provider throttle deadlines', () => {
+    const state = notificationMonitorState();
+    state.itemFailures = [
+      {
+        cause: 'repository-permission-denied',
+        itemType: 'issue',
+        number: 14,
+        repository: 'tanaabased/denied',
+        stage: 'permission-check',
+        updatedAt: '2026-10-01T15:00:00.000Z',
+      },
+    ];
+    state.throttleUntil = 1_000;
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    state.itemFailures[0]!.repository = 'tanaabased/denied\nsecret';
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+  });
   it('should accept strict schema-six intake state', () => {
     const state = notificationMonitorState();
 

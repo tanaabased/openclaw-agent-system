@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { GitHubNotificationModelTurnCoordinatorError } from '../channels/github/conversation/model-turn-coordinator.ts';
 
 import { githubNotificationMonitorStatus } from '../channels/github/intake/monitor/status.ts';
+import { claimGitHubNotificationIssueWork } from '../channels/github/intake/monitor/scheduler.ts';
 import { patchGitHubNotificationItem } from '../channels/github/intake/monitor/state-checkpoint.ts';
 import { githubWorkItemKey } from '../channels/github/provider/work-item.ts';
 import createGitHubNotificationSchedulingFixture, {
@@ -9,11 +10,36 @@ import createGitHubNotificationSchedulingFixture, {
   schedulingIssueB,
   schedulingSelector,
 } from './github-notification-scheduling-fixture.ts';
+import { notificationMonitorState } from './github-notification-fixtures.ts';
 
 const itemKeyA = githubWorkItemKey(schedulingIssueA.repositoryNodeId, schedulingIssueA.number);
 const itemKeyB = githubWorkItemKey(schedulingIssueB.repositoryNodeId, schedulingIssueB.number);
 
 describe('channels/github/intake/monitor/service scheduling', () => {
+  it('should not reclaim a permission-failed active issue or free its running capacity', () => {
+    const state = notificationMonitorState();
+    const first = state.items['github:R_repo:12']!;
+    first.intake!.scheduling!.status = 'active';
+    state.items['github:R_repo:13'] = {
+      ...structuredClone(first),
+      itemDatabaseId: 8,
+      itemNodeId: 'I_second',
+      number: 13,
+      intake: { ...first.intake!, scheduling: { sequence: 2, status: 'queued' } },
+    };
+    state.nextSchedulingSequence = 3;
+    state.itemFailures = [
+      {
+        cause: 'repository-permission-denied',
+        itemType: 'issue',
+        number: 12,
+        repository: 'tanaabased/example',
+        stage: 'permission-check',
+      },
+    ];
+    assert.deepEqual(claimGitHubNotificationIssueWork(state, 1).itemKeys, []);
+    assert.deepEqual(claimGitHubNotificationIssueWork(state, 2).itemKeys, ['github:R_repo:13']);
+  });
   it('should retain a reply-turn conflict in refresh status and execution diagnostics', async () => {
     const fixture = await createGitHubNotificationSchedulingFixture();
     const running = fixture.createMonitor().runOnce({ agentId: fixture.agentId });

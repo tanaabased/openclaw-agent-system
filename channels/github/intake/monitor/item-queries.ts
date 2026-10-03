@@ -24,6 +24,13 @@ export function pendingGitHubNotificationItemKeys(
     .filter(
       ([, item]) =>
         (selector === undefined || matchesSelector(item, selector)) &&
+        (item.disposition !== 'approved' ||
+          !(state.itemFailures ?? []).some(
+            (failure) =>
+              failure.repository === `${item.repositoryOwner}/${item.repositoryName}` &&
+              failure.number === item.number &&
+              failure.itemType === item.itemType,
+          )) &&
         item.intake !== undefined &&
         ((item.disposition === 'approved' && item.intake.stage === 'admitted') ||
           (item.disposition === 'retired' &&

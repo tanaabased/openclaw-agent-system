@@ -3,6 +3,7 @@ import type {
   GitHubNotificationItemDisposition,
   GitHubNotificationMonitorState,
   GitHubNotificationCleanupState,
+  GitHubNotificationItemFailure,
 } from './state.ts';
 import {
   githubNotificationItemMatchesSelector,
@@ -50,6 +51,7 @@ export interface GitHubNotificationStatusResult {
   code: string;
   diagnosticCode?: string;
   items: GitHubNotificationStatusItem[];
+  itemFailures?: GitHubNotificationItemFailure[];
   schemaVersion: 2;
   status: 'degraded' | 'pending' | 'ready';
 }
@@ -128,6 +130,13 @@ export function githubNotificationMonitorStatus(
         left.itemType.localeCompare(right.itemType),
     );
   const pending = state.baselineAt === undefined || state.lastSuccessfulPollAt === undefined;
+  const itemFailures = (state.itemFailures ?? []).filter(
+    (failure) =>
+      selector === undefined ||
+      (failure.repository.toLowerCase() === selector.repository.toLowerCase() &&
+        failure.number === selector.number &&
+        failure.itemType === selector.itemType),
+  );
   const scheduling = Object.values(state.items)
     .filter(
       (item) =>
@@ -150,13 +159,17 @@ export function githubNotificationMonitorStatus(
     },
     code: state.diagnosticCode
       ? state.diagnosticCode
-      : pending
-        ? 'github-notification-status-pending'
-        : 'github-notification-status-ready',
+      : itemFailures.length
+        ? 'github-notification-item-permission-denied'
+        : pending
+          ? 'github-notification-status-pending'
+          : 'github-notification-status-ready',
     ...(state.diagnosticCode === undefined ? {} : { diagnosticCode: state.diagnosticCode }),
+    ...(itemFailures.length ? { itemFailures } : {}),
     items,
     schemaVersion: 2,
-    status: state.diagnosticCode ? 'degraded' : pending ? 'pending' : 'ready',
+    status:
+      state.diagnosticCode || itemFailures.length ? 'degraded' : pending ? 'pending' : 'ready',
   };
 }
 
@@ -172,6 +185,11 @@ export function evaluateGitHubNotificationWait(
       ? { code: 'github-notification-baseline-ready', status: 'reached' }
       : { code: 'github-notification-wait-pending', status: 'pending' };
   }
+  if (selector && result.itemFailures?.length)
+    return {
+      code: 'github-notification-item-permission-denied',
+      status: 'failed',
+    };
   const item = selector
     ? result.items.find((candidate) => matchesSelector(candidate, selector))
     : undefined;

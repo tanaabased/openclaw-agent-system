@@ -35,6 +35,18 @@ function schedulableIssue(
   );
 }
 
+function permissionFailed(
+  state: GitHubNotificationMonitorState,
+  item: GitHubNotificationItemState,
+) {
+  return (state.itemFailures ?? []).some(
+    (failure) =>
+      failure.repository === `${item.repositoryOwner}/${item.repositoryName}` &&
+      failure.number === item.number &&
+      failure.itemType === item.itemType,
+  );
+}
+
 function orderedEntries(state: GitHubNotificationMonitorState) {
   return Object.entries(state.items)
     .filter(([, item]) => schedulableIssue(item))
@@ -57,11 +69,13 @@ export function claimGitHubNotificationIssueWork(
   const active = entries.filter(([, item]) => item.intake!.scheduling!.status === 'active');
   const available = Math.max(0, maximum - active.length);
   const selected = active
-    .filter(([, item]) => matchesSelector(item, selector))
+    .filter(([, item]) => matchesSelector(item, selector) && !permissionFailed(state, item))
     .map(([itemKey]) => itemKey);
 
   const eligible = entries
-    .filter(([, item]) => item.intake!.scheduling!.status === 'queued')
+    .filter(
+      ([, item]) => item.intake!.scheduling!.status === 'queued' && !permissionFailed(state, item),
+    )
     .slice(0, available);
   for (const [itemKey, item] of eligible) {
     const scheduling = item.intake!.scheduling!;

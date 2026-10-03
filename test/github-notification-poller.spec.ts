@@ -5,6 +5,7 @@ import {
   pollGitHubNotifications,
 } from '../channels/github/intake/monitor/poller.ts';
 import decodeGitHubNotificationMonitorState from '../channels/github/intake/monitor/state-codec.ts';
+import githubDiagnostic from '../credentials/github-diagnostic.ts';
 import {
   type GitHubNotificationIntakeClient,
   GitHubWorkEventClientError,
@@ -137,6 +138,163 @@ function client(
 }
 
 describe('channels/github/intake/monitor/poller', () => {
+  it('should continue past a permission endpoint 403 and recover it after access changes', async () => {
+    const first = { ...candidate, repositoryPath: '/repos/tanaabased/denied' };
+    const second = {
+      ...candidate,
+      databaseId: 8,
+      nodeId: 'I_second',
+      number: 13,
+      repositoryPath: '/repos/tanaabased/healthy',
+    };
+    const baseline = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client(),
+      configuration,
+      now: baselineAt,
+      workspaceDir: '/workspace',
+    });
+    let allowed = false;
+    const observed: string[] = [];
+    const base = client();
+    const intake: GitHubNotificationIntakeClient = {
+      ...base,
+      async discoverAssigned() {
+        return { candidates: [first, second], incomplete: false, totalCount: 2, truncated: false };
+      },
+      async getRepository(_owner, name) {
+        return {
+          ...repository,
+          name,
+          nodeId: `R_${name}`,
+          cloneUrl: `https://github.com/tanaabased/${name}.git`,
+        };
+      },
+      async getPermission(_owner, name) {
+        observed.push(`permission:${name}`);
+        if (name === 'denied' && !allowed) {
+          throw new GitHubWorkEventClientError(
+            'github-notification-request-failed',
+            'GitHub could not provide repository permission control facts.',
+            { remaining: 4728, resetAt: baselineAt + 60 * 60 * 1000 },
+            undefined,
+            githubDiagnostic({
+              status: 403,
+              remaining: 4728,
+              resetAt: baselineAt + 60 * 60 * 1000,
+            }),
+          );
+        }
+        return 'write';
+      },
+      async getItem(_owner, name, number) {
+        const selected = name === 'denied' ? first : second;
+        return { ...item, databaseId: selected.databaseId, nodeId: selected.nodeId, number };
+      },
+      async listAssignmentEvents(_owner, _name, number) {
+        return { events: [{ ...assignment, nodeId: `EV_${number}` }], truncated: false };
+      },
+    };
+    const failed = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: intake,
+      configuration,
+      now: baselineAt + 300_000,
+      state: baseline.state,
+      workspaceDir: '/workspace',
+    });
+    assert.equal(failed.approved, 1);
+    assert.deepEqual(observed, ['permission:denied', 'permission:healthy']);
+    assert.equal(failed.state.itemFailures?.[0]?.repository, 'tanaabased/denied');
+    assert.equal(failed.state.itemFailures?.[0]?.stage, 'permission-check');
+    assert.equal(failed.state.itemFailures?.[0]?.number, 12);
+    allowed = true;
+    const recovered = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: intake,
+      configuration,
+      now: baselineAt + 600_000,
+      state: failed.state,
+      workspaceDir: '/workspace',
+    });
+    assert.equal(recovered.approved, 1);
+    assert.deepEqual(recovered.state.itemFailures, []);
+    assert.equal(
+      Object.values(recovered.state.items).filter((entry) => entry.disposition === 'approved')
+        .length,
+      2,
+    );
+  });
+
+  it('should distinguish ordinary reset headers from provider throttling and authentication', async () => {
+    const baseline = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client(),
+      configuration,
+      now: baselineAt,
+      workspaceDir: '/workspace',
+    });
+    for (const evidence of [
+      {
+        status: 403,
+        remaining: 4728,
+        resetAt: baselineAt + 3_600_000,
+        code: 'github-notification-request-failed',
+        retryAt: undefined,
+      },
+      {
+        status: 403,
+        remaining: 0,
+        resetAt: baselineAt + 3_600_000,
+        code: 'github-notification-rate-limited',
+        retryAt: baselineAt + 3_600_000,
+      },
+      {
+        status: 429,
+        remaining: 4728,
+        retryAfterMs: 60_000,
+        code: 'github-notification-rate-limited',
+        retryAt: baselineAt + 360_000,
+      },
+      {
+        status: 401,
+        remaining: 4728,
+        code: 'github-notification-authentication-failed',
+        retryAt: undefined,
+      },
+      {
+        status: 503,
+        remaining: 4728,
+        code: 'github-notification-transport-failed',
+        retryAt: undefined,
+      },
+    ]) {
+      const intake = client({ candidates: [candidate] });
+      intake.getRepository = async () => {
+        throw new GitHubWorkEventClientError(
+          'github-notification-request-failed',
+          'safe failure',
+          evidence,
+          undefined,
+          githubDiagnostic(evidence),
+        );
+      };
+      await assert.rejects(
+        pollGitHubNotifications({
+          agentId: 'tanaabot',
+          client: intake,
+          configuration,
+          now: baselineAt + 300_000,
+          state: baseline.state,
+          workspaceDir: '/workspace',
+        }),
+        (error: unknown) =>
+          error instanceof GitHubNotificationPollError &&
+          error.code === evidence.code &&
+          error.retryAt === evidence.retryAt,
+      );
+    }
+  });
   it('should establish a first baseline without approving existing assignments', async () => {
     const result = await pollGitHubNotifications({
       agentId: 'tanaabot',

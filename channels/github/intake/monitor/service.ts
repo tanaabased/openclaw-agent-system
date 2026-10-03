@@ -9,6 +9,7 @@ import abortableDelay from '../../../../utils/abortable-delay.ts';
 import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
+  type GitHubNotificationItemFailure,
 } from './state.ts';
 import type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
@@ -69,6 +70,7 @@ export interface GitHubNotificationMonitorRunResult {
   code: string;
   diagnosticCode?: string;
   duplicates?: number;
+  itemFailures?: GitHubNotificationItemFailure[];
   lastSuccessfulPollAt?: number;
   nextPollAt?: number;
   rejected?: number;
@@ -392,9 +394,21 @@ export default class GitHubNotificationMonitorService {
         }
       }
       const pendingItemKeys = pendingGitHubNotificationItemKeys(current, options.selector);
+      if ((current?.throttleUntil ?? 0) > now) {
+        return {
+          agentId,
+          code: 'github-notification-provider-throttle-active',
+          ...monitorStateMetadata(current),
+          retryAt: current!.throttleUntil,
+          status: 'skipped',
+        };
+      }
       const intervalDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
+      const manualLocalRetry =
+        bypassInterval && current?.diagnosticCode === 'github-notification-request-failed';
       const pollDeferred =
-        intervalDeferred && (!bypassInterval || (current?.failureCount ?? 0) > 0);
+        intervalDeferred &&
+        (!bypassInterval || ((current?.failureCount ?? 0) > 0 && !manualLocalRetry));
       const routingBackoff =
         pollDeferred &&
         (current?.failureCount ?? 0) > 0 &&
@@ -402,7 +416,10 @@ export default class GitHubNotificationMonitorService {
       if (pollDeferred && (current?.failureCount ?? 0) > 0 && !routingBackoff) {
         return {
           agentId,
-          code: 'github-notification-backoff-active',
+          code:
+            current?.diagnosticCode === 'github-notification-rate-limited'
+              ? 'github-notification-provider-throttle-active'
+              : 'github-notification-backoff-active',
           ...monitorStateMetadata(current),
           retryAt: current?.nextPollAt,
           status: 'skipped',
@@ -479,6 +496,7 @@ export default class GitHubNotificationMonitorService {
       const rateReset = client.rateLimit.remaining === 0 ? (client.rateLimit.resetAt ?? 0) : 0;
       result.state.diagnosticCode = undefined;
       result.state.failureCount = 0;
+      result.state.throttleUntil = rateReset > now ? rateReset + 1_000 : undefined;
       result.state.lastPollAt = now;
       result.state.lastSuccessfulPollAt = now;
       result.state.nextPollAt = Math.max(now + Math.floor(intervalMs * jitter), rateReset + 1_000);
@@ -487,7 +505,14 @@ export default class GitHubNotificationMonitorService {
       );
       const code = result.baselineEstablished
         ? 'github-notification-baseline-established'
-        : 'github-notification-poll-complete';
+        : result.state.itemFailures?.length
+          ? 'github-notification-poll-partial'
+          : 'github-notification-poll-complete';
+      for (const failure of result.state.itemFailures ?? []) {
+        this.#dependencies.logger.warn(
+          `github-notifications: item deferred agent=${agentId} repository=${failure.repository} issue=${failure.number} stage=${failure.stage} cause=${failure.cause}`,
+        );
+      }
       this.#dependencies.logger.info(
         `github-notifications: poll complete agent=${agentId} code=${code} baselineEstablished=${result.baselineEstablished} baselineItems=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired}`,
       );
@@ -499,6 +524,7 @@ export default class GitHubNotificationMonitorService {
         baselineEstablished: result.baselineEstablished,
         code,
         duplicates: result.duplicates,
+        ...(result.state.itemFailures?.length ? { itemFailures: result.state.itemFailures } : {}),
         lastSuccessfulPollAt: result.state.lastSuccessfulPollAt,
         nextPollAt: result.state.nextPollAt,
         rejected: result.rejected,
