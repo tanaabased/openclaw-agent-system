@@ -99,6 +99,7 @@ test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
 
 # should leave an unrelated conflicting shared installation untouched for a native agent
 cd "$TMPDIR/native-agent"
+receipt="$(openclaw plugins inspect codex --json | jq -cS .install)"
 openclaw agent-system doctor --json | jq -e '.status == "healthy" and (.findings | all(.component != "codex-plugin"))'
 openclaw agent-system install --json | jq -e '.outcomes | all(.component != "codex-plugin")'
 test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
