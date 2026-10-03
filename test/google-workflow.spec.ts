@@ -37,10 +37,7 @@ describe('google example workflow', () => {
       'unix:path=${{ runner.temp }}/secret-service-bus',
     );
     assert.equal(run?.env?.GOG_HOME, '${{ runner.temp }}/google-gog');
-    assert.equal(
-      run?.run,
-      'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
-    );
+    assert.equal(run?.run, 'leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0');
     const fixture = parseAgentManifest(await readFile('examples/google/agent.yaml', 'utf8'));
     assert.equal(fixture.status, 'valid');
     if (fixture.status !== 'valid') throw new Error();

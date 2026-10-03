@@ -38,6 +38,7 @@ jobs:
           - memory
           - models
           - path
+          - prerequisite
           - routing
           - setup
           - tool
@@ -105,7 +106,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
           OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
-        run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+        # invoke leia directly to preserve the installed openclaw host's position on path.
+        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash

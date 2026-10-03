@@ -12,8 +12,6 @@ openclaw-setup \
   --model "openai/gpt-5.4-nano"
 
 # should establish the existing api key backed codex route
-# temporary openclaw 9.5 cleanup workaround: https://github.com/tanaabased/openclaw-agent-system/issues/135
-openclaw plugins disable codex
 openclaw agents add models-data \
   --workspace "$GITHUB_WORKSPACE/examples/models/data" \
   --non-interactive \
@@ -23,7 +21,6 @@ openclaw config set 'agents.entries.models-data.models' '{"openai/gpt-5.4-nano":
 
 # should inherit a restrictive model policy that excludes the declared model
 openclaw config set 'agents.defaults.modelPolicy.allow' '["openai/gpt-5.5"]' --strict-json
-openclaw plugins enable codex
 ```
 
 ## Testing

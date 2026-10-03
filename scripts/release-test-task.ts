@@ -36,6 +36,7 @@ interface PackageMetadata {
   optionalDependencies?: Record<string, string>;
   version?: string;
   openclaw?: {
+    agentSystem?: { codexPlugin?: string };
     runtimeExtensions?: string[];
   };
 }
@@ -286,6 +287,9 @@ try {
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
     assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
+    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.7');
+    assert.equal(packageMetadata.dependencies?.['@openclaw/codex'], undefined);
+    assert.equal(packageMetadata.optionalDependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.version, manifest.version);
     assert.equal(packageMetadata.version, codexManifest.version);
     assert.equal(manifest.id, 'agent-system');

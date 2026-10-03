@@ -120,6 +120,8 @@ run_refresh() {
   local output_path="$1"
   local diagnostics_path="$2"
   local guard_seconds=$((timeout_seconds + 15))
+  # keep informational host logs out of the json result.
+  local -x OPENCLAW_LOG_LEVEL=error
   local -a refresh_command=(
     openclaw agent-system notifications refresh
     --agent "$agent_id"

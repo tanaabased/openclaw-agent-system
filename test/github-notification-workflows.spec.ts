@@ -520,10 +520,7 @@ describe('github notification workflows', () => {
     assert.equal(example?.env?.CODEX_TOOLS_CODEX_HOME, '${{ runner.temp }}/codex-home');
     assert.equal(example?.env?.OPENAI_API_KEY, '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}');
     assert.equal(example?.env?.OPENAI_MODEL, 'gpt-5.4-nano');
-    assert.equal(
-      example?.run,
-      'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
-    );
+    assert.equal(example?.run, 'leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0');
     assert.equal(diagnostics?.if, 'failure()');
 
     const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
