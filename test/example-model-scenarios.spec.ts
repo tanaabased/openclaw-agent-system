@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { mock } from 'node:test';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
@@ -58,7 +59,13 @@ function request(
 
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, ['agent', 'automations', 'credentials', 'github']);
+    assert.deepEqual(exampleModelScenarioIds, [
+      'agent',
+      'collaboration',
+      'automations',
+      'credentials',
+      'github',
+    ]);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
@@ -80,6 +87,66 @@ describe('scripts/example-model-scenarios', () => {
       content: 'Ready.',
       id: 'agent-system-example-agent-final-response',
     });
+  });
+
+  it('should match collaboration requests against the scenario workspace identities', async () => {
+    const scenario = resolveExampleModelScenario('collaboration');
+    for (const [agentId, prompt, fixtureIndex] of [
+      ['beta', 'collaboration-ready', 0],
+      ['beta', 'collaboration-ping', 1],
+      ['alpha', 'collaboration-send', 2],
+    ] as const) {
+      const input = request(agentId, prompt, ['sessions_send']);
+      input.messages[0]!.content = await readFile(
+        new URL(`../examples/collaboration/${agentId}/IDENTITY.md`, import.meta.url),
+        'utf8',
+      );
+      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
+      input.messages.push({
+        role: 'user',
+        content:
+          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nRuntime facts.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+      });
+      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
+      input.messages[0]!.content = 'Name: Someone Else';
+      assert.equal(matchFixture([...scenario.fixtures], input), null);
+    }
+  });
+
+  it('should match the current collaboration turn without replaying readiness from history', () => {
+    const scenario = resolveExampleModelScenario('collaboration');
+    const input = request('beta', 'collaboration-ready', []);
+    input.messages[0]!.content = 'Name: Beta';
+    input.messages.push(
+      { role: 'assistant', content: 'collaboration-ready' },
+      { role: 'user', content: 'collaboration-ping' },
+      {
+        role: 'user',
+        content:
+          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nRuntime facts.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+      },
+    );
+    assert.deepEqual(matchFixture([...scenario.fixtures], input)?.response, {
+      content: 'collaboration-pong',
+    });
+    input.messages.push({ role: 'user', content: 'An unrelated request.' });
+    assert.equal(matchFixture([...scenario.fixtures], input), null);
+  });
+
+  it('should accept collaboration completion only after a successful peer reply', () => {
+    const scenario = resolveExampleModelScenario('collaboration');
+    const result = (status: string, reply: string) =>
+      request('alpha', 'collaboration-send', ['sessions_send'], {
+        callId: 'call_collaboration_send',
+        content: JSON.stringify({ status, reply }),
+      });
+    const success = matchFixture([...scenario.fixtures], result('ok', 'collaboration-pong'));
+    assert.deepEqual(success?.response, { content: 'collaboration-exchange-complete' });
+    assert.equal(
+      matchFixture([...scenario.fixtures], result('forbidden', 'collaboration-pong')),
+      null,
+    );
+    assert.equal(matchFixture([...scenario.fixtures], result('ok', 'wrong peer')), null);
   });
 
   it('should keep automation ownership strict and report only failed match booleans', () => {

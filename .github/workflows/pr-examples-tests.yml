@@ -26,6 +26,7 @@ jobs:
           - automations
           - backup
           - codex
+          - collaboration
           - containment
           - credentials
           - doctor

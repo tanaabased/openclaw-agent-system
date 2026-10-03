@@ -117,7 +117,7 @@ export default class AgentLifecycleApproval {
           : selection.skipSetupAgent
             ? 'run host setup; skip agent setup'
             : 'run host and agent setup';
-    const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : `Reconcile agent state and shared Codex prerequisite; ${setupScope}.`}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
+    const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : `Reconcile agent state, shared Codex prerequisite, and host collaboration (session reading/messaging); ${setupScope}.`}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
     // Do not let the host's display bound silently omit the target or selected operation.
     if (description.length > 512) denied();
     const timeoutMs = 120_000;
