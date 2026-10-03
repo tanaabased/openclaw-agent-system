@@ -159,6 +159,20 @@ function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
   return { login: identity.login.trim(), nodeId: identity.nodeId.trim() };
 }
 
+/** Format only credential-safe process and provider evidence for a CI identity probe. */
+export function formatGitHubIdentityProbe(
+  result: AgentSystemCliResult,
+  durationMs: number,
+): string {
+  return `github-account-identity-probe ${JSON.stringify({
+    durationMs: Math.round(durationMs),
+    exitCode: result.exitCode,
+    timedOut: result.timedOut,
+    truncated: result.truncated,
+    providerDiagnostic: githubCliDiagnostic(result, 'identity-check'),
+  })}\n`;
+}
+
 function normalizedExecutionOptions(options: GitHubAccountExecutionOptions | undefined): {
   maxOutputBytes: number;
   timeoutMs: number;
@@ -326,13 +340,7 @@ export default class GitHubAccountClient {
     }
     if (process.env.AGENT_SYSTEM_GITHUB_IDENTITY_DIAGNOSTICS === '1') {
       process.stderr.write(
-        `github-account-identity-probe ${JSON.stringify({
-          durationMs: Math.round(performance.now() - identityStartedAt),
-          exitCode: identityResult.exitCode,
-          timedOut: identityResult.timedOut,
-          truncated: identityResult.truncated,
-          providerDiagnostic: githubCliDiagnostic(identityResult, 'identity-check'),
-        })}\n`,
+        formatGitHubIdentityProbe(identityResult, performance.now() - identityStartedAt),
       );
     }
     const identity = parseIdentity(identityResult);
