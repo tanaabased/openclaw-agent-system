@@ -155,6 +155,68 @@
             }
           }
         ]
+      },
+      "collaboration": {
+        "oneOf": [
+          {
+            "const": "all"
+          },
+          {
+            "const": false
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            },
+            "uniqueItems": true
+          }
+        ],
+        "description": "Managed participants: all (default), false, or exact agent IDs. Explicit selection authorizes migration of initial host restrictions."
+      },
+      "collaborationState": {
+        "type": "object",
+        "description": "Install-owned collaboration receipt. Do not edit or delete: it records entry ownership.",
+        "additionalProperties": false,
+        "required": ["version", "selection", "ownedAgentIds", "explicit", "disabledEmpty"],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "selection": {
+            "oneOf": [
+              {
+                "const": "all"
+              },
+              {
+                "const": false
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]*$"
+                },
+                "uniqueItems": true
+              }
+            ]
+          },
+          "ownedAgentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            },
+            "uniqueItems": true
+          },
+          "explicit": {
+            "type": "boolean"
+          },
+          "disabledEmpty": {
+            "type": "boolean"
+          }
+        }
       }
     }
   }

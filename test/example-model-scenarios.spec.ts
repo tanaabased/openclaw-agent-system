@@ -58,7 +58,13 @@ function request(
 
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, ['agent', 'automations', 'credentials', 'github']);
+    assert.deepEqual(exampleModelScenarioIds, [
+      'agent',
+      'collaboration',
+      'automations',
+      'credentials',
+      'github',
+    ]);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
@@ -80,6 +86,22 @@ describe('scripts/example-model-scenarios', () => {
       content: 'Ready.',
       id: 'agent-system-example-agent-final-response',
     });
+  });
+
+  it('should accept collaboration completion only after a successful peer reply', () => {
+    const scenario = resolveExampleModelScenario('collaboration');
+    const result = (status: string, reply: string) =>
+      request('alpha', 'collaboration-send', ['sessions_send'], {
+        callId: 'call_collaboration_send',
+        content: JSON.stringify({ status, reply }),
+      });
+    const success = matchFixture([...scenario.fixtures], result('ok', 'collaboration-pong'));
+    assert.deepEqual(success?.response, { content: 'collaboration-exchange-complete' });
+    assert.equal(
+      matchFixture([...scenario.fixtures], result('forbidden', 'collaboration-pong')),
+      null,
+    );
+    assert.equal(matchFixture([...scenario.fixtures], result('ok', 'wrong peer')), null);
   });
 
   it('should keep automation ownership strict and report only failed match booleans', () => {
