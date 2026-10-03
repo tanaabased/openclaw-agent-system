@@ -151,20 +151,22 @@ function resolveSourceRuntime(
   return { runtime: 'openclaw', status: 'ready' };
 }
 
-function configuredPrimaryModel(
-  model: NonNullable<ReturnType<typeof configuredAgentValue>>['model'],
-): string | undefined {
-  return typeof model === 'string' ? model : model?.primary;
-}
-
-function configurePrimaryModel(
+function configureAgentModel(
   agent: NonNullable<ReturnType<typeof configuredAgentValue>>,
-  model: string,
-): void {
-  agent.model =
-    agent.model !== null && typeof agent.model === 'object'
-      ? { ...agent.model, primary: model }
-      : model;
+  primary: string,
+): boolean {
+  const current = agent.model;
+  if (current !== null && typeof current === 'object') {
+    if (current.primary === primary && current.fallbacks !== undefined) return false;
+    agent.model = {
+      ...current,
+      primary,
+      fallbacks: current.fallbacks === undefined ? [] : current.fallbacks,
+    };
+    return true;
+  }
+  agent.model = { primary, fallbacks: [] };
+  return true;
 }
 
 function selectionPolicySource(
@@ -322,10 +324,7 @@ export default function createConfigurationPlan(
   }
 
   let modelConfigurationChanged = false;
-  if (configuredPrimaryModel(agent.model) !== models.default.model) {
-    configurePrimaryModel(nextAgent, models.default.model);
-    modelConfigurationChanged = true;
-  }
+  modelConfigurationChanged = configureAgentModel(nextAgent, models.default.model);
   if (agent.thinkingDefault !== models.default.effort) {
     nextAgent.thinkingDefault = models.default.effort;
     modelConfigurationChanged = true;
