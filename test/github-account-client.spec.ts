@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
-import GitHubAccountClient, { GitHubAccountClientError } from '../core/github-account-client.ts';
+import GitHubAccountClient, {
+  formatGitHubIdentityProbe,
+  GitHubAccountClientError,
+} from '../core/github-account-client.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
@@ -37,6 +40,35 @@ function loadedEnvironment() {
 }
 
 describe('core/github-account-client', () => {
+  it('should format only bounded identity process evidence', () => {
+    const line = formatGitHubIdentityProbe(
+      {
+        exitCode: null,
+        stderr: 'private-provider-response private-token',
+        stdout: 'private-token',
+        timedOut: true,
+        truncated: false,
+      },
+      29_999.6,
+    );
+    const evidence = JSON.parse(line.slice('github-account-identity-probe '.length));
+    assert.equal(evidence.exitCode, null);
+    assert.equal(evidence.timedOut, true);
+    assert.equal(evidence.providerDiagnostic.classification, 'transport');
+    assert.equal(evidence.providerDiagnostic.httpStatus, null);
+    assert.equal(evidence.durationMs, 30_000);
+    assert.equal(line.includes('private-token'), false);
+    assert.equal(line.includes('private-provider-response'), false);
+    const successful = formatGitHubIdentityProbe(
+      { exitCode: 0, stderr: '', stdout: '{}', timedOut: false, truncated: false },
+      214,
+    );
+    assert.equal(
+      JSON.parse(successful.slice('github-account-identity-probe '.length)).providerDiagnostic,
+      null,
+    );
+  });
+
   it('should fail identity checks without eviction or replay when credentials were not rejected', async () => {
     for (const failure of [
       { exitCode: 1, stderr: '', stdout: '', timedOut: true, truncated: false },

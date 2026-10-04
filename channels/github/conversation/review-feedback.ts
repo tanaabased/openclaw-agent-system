@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
+import { githubNotificationMarkdownText } from './presentation/card.ts';
 import {
   admitGitHubComment,
   type GitHubCanonicalIssueComment,
@@ -230,17 +231,37 @@ export function reviewFeedbackContext(comment: GitHubReviewFeedback) {
 export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): string {
   const { review, receipt } = comment.feedback;
   const context = reviewFeedbackContext(comment);
+  const author = githubNotificationMarkdownText(comment.author!.login);
   const lines = [
-    `Review feedback from @${comment.author!.login}: ${receipt.kind === 'review' ? review.url : context.findings[0]!.url}`,
+    `## 💬 ${receipt.kind === 'review' ? 'Review feedback' : 'Review reply'}`,
+    '',
+    `[@${author}](https://github.com/${comment.author!.login}) ${
+      receipt.kind === 'review'
+        ? `reviewed [the pull request](${review.url})`
+        : `replied in [this discussion](${context.findings[0]!.url})`
+    }.`,
   ];
-  if (receipt.kind === 'review')
+  if (receipt.kind === 'review') {
     lines.push(
-      `Review summary${receipt.summarySelected ? '' : ' (unchanged context)'}:\n${review.body || '(empty summary)'}`,
-    );
-  for (const finding of context.findings) {
-    lines.push(
-      `Finding ${finding.url}\nPath: ${JSON.stringify(finding.path)}; reviewed commit: ${finding.originalCommitId}; current line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n${finding.body}`,
+      '',
+      `**Summary${receipt.summarySelected ? '' : ' (unchanged context)'}**`,
+      '',
+      review.body || '(empty summary)',
     );
   }
-  return lines.join('\n\n');
+  for (const finding of context.findings) {
+    const location =
+      finding.line !== null
+        ? `review line ${finding.line}`
+        : finding.originalLine !== null
+          ? `original line ${finding.originalLine} (historical; review line unavailable or outdated)`
+          : 'review location unavailable or outdated';
+    lines.push(
+      '',
+      `**[Finding](${finding.url}) · ${githubNotificationMarkdownText(finding.path)} · ${location}**`,
+      '',
+      finding.body,
+    );
+  }
+  return lines.join('\n');
 }

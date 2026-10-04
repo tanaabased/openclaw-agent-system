@@ -171,7 +171,7 @@ describe('github notification workflows', () => {
     assert.match(source, /agent-system install/u);
     assert.doesNotMatch(source, /notifications refresh|OPENAI_API_KEY|credentials set/u);
   });
-  it('should select deterministic concurrency and live lifecycle scenarios in the manual matrix', async () => {
+  it('should select focused mock or live lifecycle scenarios in the manual matrix', async () => {
     const source = await readFile('.github/workflows/notification-tests.yml', 'utf8');
     const workflow = parse(source) as CallerWorkflow;
     const notifications = workflow.jobs?.notifications;
@@ -179,7 +179,7 @@ describe('github notification workflows', () => {
 
     assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
-    assert.deepEqual(Object.keys(inputs), ['scenario', 'runner']);
+    assert.deepEqual(Object.keys(inputs), ['scenario', 'runner', 'provider']);
     assert.deepEqual(Object.keys(workflow.jobs ?? {}), ['notifications', 'concurrency']);
     assert.deepEqual(workflow.concurrency, {
       group: 'notification-test-account',
@@ -198,6 +198,8 @@ describe('github notification workflows', () => {
     ]);
     assert.equal(inputs.runner?.default, 'ubuntu-24.04');
     assert.deepEqual(inputs.runner?.options, ['ubuntu-24.04', 'macos-26']);
+    assert.equal(inputs.provider?.default, 'live');
+    assert.deepEqual(inputs.provider?.options, ['live', 'mock']);
     assert.equal(notifications?.uses, './.github/workflows/reusable-notification-test.yml');
     assert.equal(notifications?.name, undefined);
     assert.equal(notifications?.if, "${{ inputs.scenario != 'concurrency' }}");
@@ -207,7 +209,7 @@ describe('github notification workflows', () => {
     assert.deepEqual(Object.keys(notifications?.strategy?.matrix ?? {}), ['scenario']);
     assert.equal(
       notifications?.with?.provider,
-      "${{ matrix.scenario == 'operator-access' && 'mock' || 'live' }}",
+      "${{ matrix.scenario == 'operator-access' && 'mock' || inputs.provider }}",
     );
     assert.equal(notifications?.with?.runner, '${{ inputs.runner }}');
     assert.equal(notifications?.with?.scenario, '${{ matrix.scenario }}');

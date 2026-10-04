@@ -77,10 +77,24 @@ Use the agent's configured emoji and fall back to `🤖` when it has none.
 
 A review feedback message groups its summary and selected findings under the
 verified reviewer identity and review link. Each finding retains its own permalink,
-body, file path, reviewed commit, and available current or original location. Mark
-an unchanged summary as context. Later inline replies link to their exact source;
-parent text and diff hunks belong in bounded structured context. Never label an
-original location as current code.
+body, file path, and available review or original location. Mark an unchanged
+summary as context. Later inline replies link to their exact source; parent text,
+reviewed commits, and diff hunks belong in bounded structured context. Never
+label a review or original location as current code.
+
+```markdown
+## 💬 Review feedback
+
+[@pirog](https://github.com/pirog) reviewed [the pull request](https://github.com/tanaabased/example/pull/18#pullrequestreview-81).
+
+**Summary**
+
+Please check both findings.
+
+**[Finding](https://github.com/tanaabased/example/pull/18#discussion_r82) · api/example.ts · original line 1 (historical; review line unavailable or outdated)**
+
+Handle the empty list.
+```
 
 ## Pull Request Opened Card
 
@@ -101,12 +115,17 @@ session ownership, and publication.
 ```markdown
 ## 🛠️ Implementation started
 
-The public plan is published. Carry it out now in `work` mode.
+The public plan for issue #7 is published. Carry it out now in `work` mode, ending with one local commit. Lifecycle delivery follows.
 ```
 
 Keep the following private result report-like with stable implementation and
 validation sections. Do not add a second GitHub-facing response merely because
 implementation began.
+
+The implementation card stays concise, but the model body currently retains the
+legacy lifecycle JSON fallback. Structured-context delivery through the supported
+hosted harness paths has not yet been proven by a model-use acceptance case; do
+not remove that fallback based only on dispatch-payload inspection.
 
 ## Response
 
