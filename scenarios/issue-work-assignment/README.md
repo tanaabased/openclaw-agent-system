@@ -93,12 +93,7 @@ printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-noti
 openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$routing_default_model" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
-openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
-openclaw-github-notifications wait-route \
-  --route-state present \
-  --account-id notification-data
-
-# should prove the Gateway applied the saved operator grant, not just that a CLI saw it on disk
+# A saved-config check cannot prove the running Gateway loaded the grant.
 gateway_owner_ready() {
   openclaw gateway call config.get --json |
     jq -e --arg owner 'agent-system-github:U_kgDOEUqvpg' '.valid == true and .configRevisionHash != null and .appliedConfigHash == .configRevisionHash and ((.runtimeConfig.commands.ownerAllowFrom // []) | index($owner) != null)' >/dev/null
@@ -120,6 +115,9 @@ if test "$operator_warning" -gt 0; then
   reloaded="$(openclaw agent-system doctor --json || true)"
   jq -c '[.findings[]? | select(.code | startswith("github-operator-")) | {code, status}]' <<< "$reloaded" >&2
 fi
+openclaw-github-notifications wait-route \
+  --route-state present \
+  --account-id notification-data
 
 # should remove only classifier access to reproduce installed configuration drift
 openclaw config unset plugins.entries.agent-system.llm.allowAgentIdOverride
