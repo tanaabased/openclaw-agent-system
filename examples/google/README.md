@@ -19,14 +19,14 @@ needs the appropriate test-user/publishing setup described upstream.
 In an operator shell, authorize only Tasks read-only plus the identity scopes GoG
 includes. These are one-time provisioning commands, not executable scenario steps:
 
-```text
-# use the native binary and a separate private staging home for the test app.
-export GOG_HOME="$HOME/.config/tanaab/agent-system/google-live/tools/gog/onboarding"
-mkdir -p "$GOG_HOME"
-"$GOG_BIN" --client agent-system auth credentials set "$CLIENT_JSON" --no-input
-"$GOG_BIN" --client agent-system auth add "$GOOGLE_EMAIL" --services tasks --readonly --force-consent
-"$GOG_BIN" --client agent-system auth tokens export "$GOOGLE_EMAIL" --out "$GOG_HOME/authorization.json"
-```
+> ```sh
+> # use the native binary and a separate private staging home for the test app.
+> export GOG_HOME="$HOME/.config/tanaab/agent-system/google-live/tools/gog/onboarding"
+> mkdir -p "$GOG_HOME"
+> "$GOG_BIN" --client agent-system auth credentials set "$CLIENT_JSON" --no-input
+> "$GOG_BIN" --client agent-system auth add "$GOOGLE_EMAIL" --services tasks --readonly --force-consent
+> "$GOG_BIN" --client agent-system auth tokens export "$GOOGLE_EMAIL" --out "$GOG_HOME/authorization.json"
+> ```
 
 Use the test client's JSON and a separate password, following the private-shell
 [onboarding steps](../../tools/google/README.md#per-agent-onboarding). Verify that consent requests Tasks read access and identity, with no
