@@ -1,0 +1,12 @@
+schema-version: 1
+agent:
+  id: setup-consent
+setup-host:
+  steps:
+    - id: brew-dependencies
+      check: [test, -f, consent-host-applied]
+      apply: [touch, consent-host-applied]
+setup:
+  steps:
+    - id: agent-task
+      apply: [touch, consent-agent-applied]

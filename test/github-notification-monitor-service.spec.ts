@@ -17,6 +17,8 @@ import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
+import { privateStateFileLockLostErrorCode } from '../core/private-state-file-lock.ts';
+import { controlledFileLock } from './private-state-file-lock-fixture.ts';
 
 const workspaceDir = '/workspace/tanaabot';
 const manifest: AgentManifest = {
@@ -49,7 +51,10 @@ function loadedManifest(loaded: AgentManifest = manifest) {
 function availableCycleLeaseStore(release = async () => undefined) {
   return {
     async acquire() {
-      return { lease: { release }, status: 'acquired' as const };
+      return {
+        lease: { assertHeld() {}, signal: new AbortController().signal, release },
+        status: 'acquired' as const,
+      };
     },
   };
 }
@@ -98,6 +103,35 @@ function monitorService(
 }
 
 describe('channels/github/intake/monitor/service', () => {
+  it('should cancel a lost poll lease without recording provider failure or reporting success', async () => {
+    const fixture = await controlledFileLock();
+    let writes = 0;
+    const service = monitorService({
+      cycleLeaseStore: {
+        acquire: async () => ({ status: 'acquired', lease: fixture.handle }),
+      },
+      accountClient: {
+        async connect(_context, _trigger, signal) {
+          assert.ok(signal);
+          assert.equal(signal.aborted, false);
+          fixture.compromise();
+          assert.equal(signal.aborted, true);
+          throw new GitHubAccountClientError('github-account-tool-unavailable', 'aborted');
+        },
+      },
+      stateStore: {
+        read: async () => undefined,
+        update: async (_agentId, patch) => {
+          writes += 1;
+          return patch(undefined);
+        },
+      },
+    });
+    await assert.rejects(service.runOnce(), { code: privateStateFileLockLostErrorCode });
+    assert.equal(writes, 0);
+    assert.equal(fixture.releases(), 0);
+  });
+
   it('should process a later issue after a real-shaped permission 403 and report the failed issue', async () => {
     let state = notificationMonitorState();
     state.workspaceDir = workspaceDir;
@@ -533,6 +567,8 @@ describe('channels/github/intake/monitor/service', () => {
             return {
               status: 'acquired',
               lease: {
+                assertHeld() {},
+                signal: new AbortController().signal,
                 async release() {
                   released.push(scope);
                 },
@@ -593,6 +629,8 @@ describe('channels/github/intake/monitor/service', () => {
           return {
             status: 'acquired',
             lease: {
+              assertHeld() {},
+              signal: new AbortController().signal,
               async release() {
                 released.push(options?.scope ?? 'poll');
               },

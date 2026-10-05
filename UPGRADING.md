@@ -44,15 +44,8 @@ and service-runtime details.
 
 ## Managed collaboration
 
-OpenClaw Agent System installs now default to collaboration among registered
-managed agents. This enables session reading and messaging, subject to native
-policy. Review [the global setting](./CONFIG.md#collaboration) before the next
-install; choose `false` to withdraw managed grants or a list of exact agent IDs
-to select a group. Existing operator entries remain intact.
-
-An omitted setting preserves explicit restrictive host choices. An explicit
-selection supplies the initial migration decision; later restrictive host edits
-are reported as drift. Use `openclaw agent-system doctor --collaboration --json`
-for read-only inspection. After native agent deletion, run
-`openclaw agent-system install --collaboration`, even when no managed workspace
-remains. Never delete the install-owned `collaborationState` receipt.
+Ordinary install defaults to `auto` (registered managed agents). `all` now includes
+unmanaged agents and future registrations. Operator grants are preserved; see
+[collaboration configuration](./CONFIG.md#collaboration) for global access effects
+and cleanup before deleting the final managed agent. Use ordinary install and
+Doctor; the collaboration-only flags and explicit migration gate are removed.

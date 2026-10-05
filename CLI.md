@@ -462,7 +462,6 @@ Reconcile the workspace agent's identity, models, memory, paths, capabilities, a
 
 | Option or argument     | Required | Default | Description                                                                                          |
 | ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `--collaboration`      | no       | off     | Reconcile only host collaboration; no workspace or setup required.                                   |
 | `--json`               | no       | off     | Write one undecorated structured result to stdout.                                                   |
 | `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
 | `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
@@ -474,7 +473,7 @@ Reconcile the workspace agent's identity, models, memory, paths, capabilities, a
 ### Usage
 
 ```text
-openclaw agent-system install [--collaboration] [--yes] [--non-interactive] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
+openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
 ```
 
 ```sh
@@ -485,12 +484,10 @@ openclaw agent-system install
 openclaw agent-system install --yes --json
 ```
 
-Ordinary installs reconcile [managed collaboration](./CONFIG.md#collaboration)
-by default. Use `openclaw agent-system install --collaboration` to reconcile only
-that host capability, including after native agent removal. This mode needs no
-workspace, credentials, setup, or Codex prerequisite installation; other install
-phase flags do not apply. Setup consent does not authorize migration of explicit
-host restrictions.
+Ordinary installs reconcile [collaboration](./CONFIG.md#collaboration), preserving
+operator grants while enabling selected participants as needed. Re-run install
+from a managed workspace after selection or registration changes. See the
+configuration reference for cleanup before deleting the final managed agent.
 
 Before setup or agent reconciliation, install checks the actual OpenClaw host and
 the shared Codex prerequisite only when the workspace declares
@@ -565,16 +562,15 @@ shared installation untouched.
 
 ### Options
 
-| Option or argument | Required | Default             | Description                                                                       |
-| ------------------ | -------- | ------------------- | --------------------------------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent.               |
-| `--collaboration`  | no       | off                 | Inspect only host collaboration without a workspace; incompatible with `--agent`. |
-| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                                |
+| Option or argument | Required | Default             | Description                                                         |
+| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
+| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                  |
 
 ### Usage
 
 ```text
-openclaw agent-system doctor [--agent <id> | --collaboration] [--json]
+openclaw agent-system doctor [--agent <id>] [--json]
 ```
 
 ```sh
@@ -582,8 +578,8 @@ openclaw agent-system doctor [--agent <id> | --collaboration] [--json]
 openclaw agent-system doctor --agent tanaabot --json
 ```
 
-Use `doctor --collaboration` to inspect membership, retained operator entries,
-and configuration drift without loading a workspace or repairing state.
+Ordinary Doctor also inspects collaboration membership, effective entries, and
+configuration drift without repairing state.
 
 Doctor reports all findings and returns nonzero for failing drift. It recommends
 `install` for owned-state repairs; manual state remains the operator's responsibility.

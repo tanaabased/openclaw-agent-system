@@ -1,5 +1,9 @@
 import { satisfies, valid, validRange } from 'semver';
 
+import {
+  assertPrivateStateLocksHeld,
+  privateStateLockSignal,
+} from '../core/private-state-lock-context.ts';
 import type { CodexPluginRequirement } from '../core/codex-plugin-metadata.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import codexPluginApplies from './codex-plugin-applicability.ts';
@@ -99,13 +103,18 @@ export default function createCodexPluginLifecycleContribution(
     await context.assertCurrent?.();
     let result: CommandResult;
     try {
-      result = await dependencies.runOpenClawCommand(args, context.workspaceDir, context.signal);
+      result = await dependencies.runOpenClawCommand(
+        args,
+        context.workspaceDir,
+        privateStateLockSignal(context.signal),
+      );
     } catch {
       context.signal?.throwIfAborted();
       throw commandFailure(operation);
     }
     context.signal?.throwIfAborted();
     await context.assertCurrent?.();
+    assertPrivateStateLocksHeld();
     if (result.code !== 0) throw commandFailure(operation, result);
     return result;
   }

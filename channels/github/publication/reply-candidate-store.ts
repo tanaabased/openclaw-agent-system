@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
+import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 import acquirePrivateStateFileLock, {
   type PrivateStateFileLockHandle,
 } from '../../../core/private-state-file-lock.ts';
@@ -388,7 +389,7 @@ export default class GitHubNotificationReplyCandidateStore {
         retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
         staleMs: defaultTtlMs,
       });
-      return await run(resources.file);
+      return await withPrivateStateLock(handle, () => run(resources.file));
     } finally {
       await handle?.release();
     }
@@ -403,29 +404,33 @@ export default class GitHubNotificationReplyCandidateStore {
       staleMs: defaultTtlMs,
     });
     try {
-      const active = await this.#read(legacy.file, input.agentId);
-      if (!active) return;
-      if (this.#expired(active)) {
-        await legacy.file.remove();
-        return;
-      }
-      if (active.conversationId !== input.conversationId) return;
-      const target = await this.#resources(input.agentId, input.conversationId);
-      const targetLock = await this.#acquireFileLock(target.lockPath, {
-        retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
-        staleMs: defaultTtlMs,
-      });
-      try {
-        const existing = await this.#read(target.file, input.agentId);
-        if (existing && (existing.turnId !== active.turnId || !sameTurn(existing, active))) {
-          fail('reply-turn-already-active');
+      return await withPrivateStateLock(lock, async () => {
+        const active = await this.#read(legacy.file, input.agentId);
+        if (!active) return;
+        if (this.#expired(active)) {
+          await legacy.file.remove();
+          return;
         }
-        // a completed copy may already contain newer candidates after an interrupted migration.
-        if (!existing) await target.file.write(`${JSON.stringify(active, undefined, 2)}\n`);
-        await legacy.file.remove();
-      } finally {
-        await targetLock.release();
-      }
+        if (active.conversationId !== input.conversationId) return;
+        const target = await this.#resources(input.agentId, input.conversationId);
+        const targetLock = await this.#acquireFileLock(target.lockPath, {
+          retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
+          staleMs: defaultTtlMs,
+        });
+        try {
+          return await withPrivateStateLock(targetLock, async () => {
+            const existing = await this.#read(target.file, input.agentId);
+            if (existing && (existing.turnId !== active.turnId || !sameTurn(existing, active))) {
+              fail('reply-turn-already-active');
+            }
+            // a completed copy may already contain newer candidates after an interrupted migration.
+            if (!existing) await target.file.write(`${JSON.stringify(active, undefined, 2)}\n`);
+            await legacy.file.remove();
+          });
+        } finally {
+          await targetLock.release();
+        }
+      });
     } finally {
       await lock.release();
     }

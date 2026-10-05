@@ -75,6 +75,8 @@ describe('channels/github/intake/monitor/cycle-lease', () => {
           if (attempts === 1) throw lockTimeout();
           return {
             lockPath: `${targetPath}.lock`,
+            assertHeld() {},
+            signal: new AbortController().signal,
             async release() {},
           };
         },
@@ -125,7 +127,11 @@ describe('channels/github/intake/monitor/cycle-lease', () => {
       rootDir,
       async acquireFileLock(path) {
         target = path;
-        return { release: async () => undefined };
+        return {
+          assertHeld() {},
+          signal: new AbortController().signal,
+          release: async () => undefined,
+        };
       },
     });
     try {

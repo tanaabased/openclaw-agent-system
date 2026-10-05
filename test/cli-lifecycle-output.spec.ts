@@ -9,6 +9,7 @@ import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtur
 
 const plainStyles = createCliStyles({ NO_COLOR: '1' });
 const markerStyles: CliStyles = {
+  accent: (value) => `<accent>${value}</accent>`,
   action: (value) => `<action>${value}</action>`,
   bold: (value) => `<bold>${value}</bold>`,
   error: (value) => `<error>${value}</error>`,

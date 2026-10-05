@@ -1,3 +1,4 @@
+import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 
 export type AutomationGateway = (
@@ -110,6 +111,7 @@ export type AutomationGatewayCaller = typeof callGatewayFromCli;
 /** operator transport; only the admitted cli composition supplies this dependency. */
 export function createAutomationGateway(call: AutomationGatewayCaller): AutomationGateway {
   return async (method, params) => {
+    assertPrivateStateLocksHeld();
     const readOnly = !['cron.add', 'cron.update', 'cron.run'].includes(method);
     try {
       return await call(method, { timeout: '10000' }, params, {

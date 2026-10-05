@@ -1,5 +1,6 @@
 import { isAbsolute, join, resolve } from 'node:path';
 
+import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
@@ -110,7 +111,7 @@ export default class OperatorGrantStore {
       },
     );
     try {
-      return await run();
+      return await withPrivateStateLock(lock, run);
     } finally {
       await lock.release();
     }

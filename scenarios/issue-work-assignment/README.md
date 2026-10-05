@@ -93,6 +93,9 @@ openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model 
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
+
+# should activate the repaired hook policy before checking the running route
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data

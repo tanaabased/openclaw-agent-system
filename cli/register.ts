@@ -12,7 +12,6 @@ import type BoundCommandService from '../agent/bound-command-service.ts';
 import envAgentSystem from './env.ts';
 import credentialsCache, { type OpCacheGatewayRequest } from './credentials-cache.ts';
 import doctorAgentSystem from './doctor.ts';
-import collaborationCommand, { type CollaborationLifecycle } from './collaboration.ts';
 import runAgentSystemTool from './tool.ts';
 import setCredentialsAgentSystem from './credentials-set.ts';
 import unsetCredentialsAgentSystem from './credentials-unset.ts';
@@ -58,7 +57,6 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
-  collaboration?: CollaborationLifecycle;
   automations?: AutomationService;
   boundCommands?: BoundCommandService;
   backupService?: WorkspaceBackupService;
@@ -381,7 +379,6 @@ export default function registerAgentSystemCli(
     });
   const doctor = agentSystem
     .command('doctor')
-    .option('--collaboration', 'Inspect host collaboration without a workspace.')
     .alias('status')
     .description('Inspect Agent System agent, path, and configured capability drift.')
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
@@ -389,22 +386,6 @@ export default function registerAgentSystemCli(
     .action(async () => {
       if (!(await allowOperatorCommand())) return;
       const commandOptions = doctor.opts();
-      if (commandOptions.collaboration === true) {
-        if (!options.collaboration || commandOptions.agent !== undefined) {
-          output.writeStderr(
-            'Host collaboration inspection requires the OpenClaw runtime and no --agent.\n',
-          );
-          setExitCode(1);
-          return;
-        }
-        return collaborationCommand({
-          operation: 'inspect',
-          lifecycle: options.collaboration,
-          json: commandOptions.json === true,
-          output,
-          setExitCode,
-        });
-      }
       const agentId = commandOptions.agent;
       await doctorAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
@@ -576,7 +557,6 @@ export default function registerAgentSystemCli(
     });
   const install = agentSystem
     .command('install')
-    .option('--collaboration', 'Reconcile only host collaboration, without a workspace.')
     .description('Install the workspace agent and reconcile configured lifecycle state.')
     .option('--yes', 'Confirm setup without prompting.')
     .option('--non-interactive', 'Run without interactive prompts.')
@@ -590,20 +570,6 @@ export default function registerAgentSystemCli(
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
       if (!(await allowOperatorCommand())) return;
-      if (install.opts().collaboration === true) {
-        if (!options.collaboration) {
-          output.writeStderr('Host collaboration requires the OpenClaw runtime.\n');
-          setExitCode(1);
-          return;
-        }
-        return collaborationCommand({
-          operation: 'install',
-          lifecycle: options.collaboration,
-          json: install.opts().json === true,
-          output,
-          setExitCode,
-        });
-      }
       await installAgentSystem({
         installService: options.installService,
         json: install.opts().json === true,
