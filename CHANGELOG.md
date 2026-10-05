@@ -1,5 +1,34 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### Compatibility
+
+- Raised the minimum OpenClaw version to `2026.9.7`. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214)
+- Updated supported Node.js versions to `>=24.16.0 <25 || >=26.1.0`. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214)
+
+### New Features
+
+- Added admitted pull request reviews and inline findings to issue-owned conversations, with source links and code context. [#205](https://github.com/tanaabased/openclaw-agent-system/issues/205)
+- Added `agent.yaml` automations with native OpenClaw scheduling and app-assisted Codex prompt scheduling. [#194](https://github.com/tanaabased/openclaw-agent-system/issues/194) [#195](https://github.com/tanaabased/openclaw-agent-system/issues/195) [#196](https://github.com/tanaabased/openclaw-agent-system/issues/196)
+- Added `openclaw agent-system automations` commands to inspect, sync, run, and read native job history. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
+- Added `openclaw agent-system backup prune` to retain the latest local backups. [#198](https://github.com/tanaabased/openclaw-agent-system/issues/198)
+
+### Improvements
+
+- Enabled collaboration among managed agents by default, with explicit host restrictions preserved. [#220](https://github.com/tanaabased/openclaw-agent-system/issues/220)
+- Limited shared `@openclaw/codex` installation and readiness requirements to agents using the Codex runtime. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214) [#217](https://github.com/tanaabased/openclaw-agent-system/issues/217)
+- Supported stable GoG versions `>=0.42.0 <1.0.0` while retaining the reviewed command and flag surface. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
+
+### Bug Fixes
+
+- Fixed Codex session hooks failing when the plugin path contains spaces.
+- Fixed GitHub notification permission failures blocking unrelated work and losing retryable state. [#213](https://github.com/tanaabased/openclaw-agent-system/issues/213)
+- Fixed implicit model fallback inheritance while preserving configured fallback lists. [#222](https://github.com/tanaabased/openclaw-agent-system/issues/222)
+- Rejected notification timeouts above `2147483` seconds before they overflow the native timer.
+
+### Developer Notes
+
+- Added recorded CLI responses and provenance checks for deterministic mock-model fixtures. [#199](https://github.com/tanaabased/openclaw-agent-system/issues/199)
+
 ## v0.8.0 - [September 29, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.8.0)
 
 ### New Features
