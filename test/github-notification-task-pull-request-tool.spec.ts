@@ -10,7 +10,10 @@ import {
   GitHubIssueDeliveryError,
   type default as GitHubNotificationIssueDeliveryService,
 } from '../channels/github/conversation/issue-delivery-service.ts';
-import type GitHubNotificationPullRequestHandoffService from '../channels/github/conversation/pull-request-handoff-service.ts';
+import {
+  GitHubNotificationPullRequestHandoffError,
+  type default as GitHubNotificationPullRequestHandoffService,
+} from '../channels/github/conversation/pull-request-handoff-service.ts';
 import createGitHubNotificationTaskPullRequestTool from '../channels/github/publication/task-pull-request-tool.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
@@ -48,7 +51,9 @@ describe('channels/github/publication/task-pull-request-tool', () => {
     let authorized = true;
     let failPublication = false;
     let failCheckpoint = false;
-    let handoffStatus: 'awaiting-reconciliation' | 'published' = 'awaiting-reconciliation';
+    let checkpointFailure: Error = new Error('raw private checkpoint data');
+    let handoffStatus: 'awaiting-reconciliation' | 'published' | 'recovery-required' =
+      'awaiting-reconciliation';
     const dependencies: Parameters<typeof createGitHubNotificationTaskPullRequestTool>[0] = {
       conversations: {
         async readRouted() {
@@ -79,6 +84,12 @@ describe('channels/github/publication/task-pull-request-tool', () => {
                 throw new GitHubIssueDeliveryError('invalid-response', 'raw private response');
               assert.equal(input.worktree.branch, 'issue-12');
               assert.equal(input.title, 'Ready for review');
+              assert.deepEqual(
+                input.expectedPullRequest,
+                snapshot.conversation?.deliveryPullRequest
+                  ? { pullRequestNodeId: 'PR_task', pullRequestNumber: 45 }
+                  : undefined,
+              );
               return { pullRequestNodeId: 'PR_task', pullRequestNumber: 45 };
             },
           },
@@ -87,7 +98,7 @@ describe('channels/github/publication/task-pull-request-tool', () => {
               input: Parameters<GitHubNotificationPullRequestHandoffService['checkpointTask']>[0],
             ) {
               calls.push('checkpoint');
-              if (failCheckpoint) throw new Error('raw private checkpoint data');
+              if (failCheckpoint) throw checkpointFailure;
               assert.deepEqual(input.pullRequest, {
                 pullRequestNodeId: 'PR_task',
                 pullRequestNumber: 45,
@@ -162,6 +173,29 @@ describe('channels/github/publication/task-pull-request-tool', () => {
     });
     assert.deepEqual(calls, ['authorize', 'publish', 'authorize', 'checkpoint']);
 
+    snapshot.conversation.deliveryPullRequest = {
+      baselineEstablished: true,
+      eventRecorded: false,
+      nodeId: 'PR_task',
+      number: 45,
+      status: 'open',
+    };
+    snapshot.conversation.implementation = { status: 'completed' };
+    snapshot.conversation.activeTurn = { eventId: 'pull-request-opened', sourceId: 'PR_task' };
+    calls.length = 0;
+    handoffStatus = 'recovery-required';
+    const concurrent = await tool.execute('call-concurrent', { title: 'Ready for review' });
+    assert.equal(
+      (concurrent.details as { output: { handoffStatus: string } }).output.handoffStatus,
+      'recovery-required',
+    );
+    assert.deepEqual(calls, ['authorize', 'publish', 'authorize', 'checkpoint']);
+    calls.length = 0;
+    snapshot.conversation.activeTurn.sourceId = 'PR_other';
+    await assert.rejects(tool.execute('call-unrelated', { title: 'Ready for review' }));
+    assert.deepEqual(calls, []);
+    snapshot.conversation.activeTurn.sourceId = 'PR_task';
+
     calls.length = 0;
     failPublication = true;
     await assert.rejects(
@@ -183,9 +217,24 @@ describe('channels/github/publication/task-pull-request-tool', () => {
         error instanceof AgentSystemToolError &&
         error.failureDiagnostic?.stage === 'checkpoint' &&
         error.failureDiagnostic.category === 'checkpoint-failed' &&
+        error.failureDiagnostic.reasonCode ===
+          'github-notification-pull-request-handoff-checkpoint-unknown' &&
+        error.failureDiagnostic.publication?.status === 'published' &&
+        error.failureDiagnostic.publication.number === 45 &&
         !error.message.includes('raw private'),
     );
     assert.deepEqual(calls, ['authorize', 'publish', 'authorize', 'checkpoint']);
+    checkpointFailure = new GitHubNotificationPullRequestHandoffError(
+      'github-notification-pull-request-handoff-identity-mismatch',
+    );
+    await assert.rejects(
+      tool.execute('call-known-checkpoint', { title: 'Ready for review' }),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.failureDiagnostic?.reasonCode ===
+          'github-notification-pull-request-handoff-identity-mismatch' &&
+        error.failureDiagnostic.publication?.number === 45,
+    );
     failCheckpoint = false;
 
     calls.length = 0;

@@ -257,7 +257,12 @@ describe('api/runtime', () => {
           'Task PR handoff failed at publication (invalid-response).',
           false,
           undefined,
-          { stage: 'publication', category: 'invalid-response' },
+          {
+            stage: 'publication',
+            category: 'invalid-response',
+            reasonCode: 'github-notification-pull-request-handoff-session-ineligible',
+            publication: { status: 'published', number: 45 },
+          },
         );
       },
     });
@@ -272,6 +277,14 @@ describe('api/runtime', () => {
         error.failureDiagnostic?.category === 'invalid-response',
     );
     assert.ok(logs.some((log) => log.includes('stage="publication" category="invalid-response"')));
+    assert.ok(
+      logs.some(
+        (log) =>
+          log.includes(
+            'reasonCode="github-notification-pull-request-handoff-session-ineligible"',
+          ) && log.includes('publication=published pr=45'),
+      ),
+    );
     assert.ok(logs.every((log) => !log.includes('raw private')));
   });
 

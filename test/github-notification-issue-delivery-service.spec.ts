@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 
 import type { AgentSystemCliResult } from '../api/types.ts';
-import GitHubNotificationIssueDeliveryService from '../channels/github/conversation/issue-delivery-service.ts';
+import GitHubNotificationIssueDeliveryService, {
+  GitHubIssueDeliveryError,
+} from '../channels/github/conversation/issue-delivery-service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { GitHubIdentityPin } from '../channels/github/config-schema.ts';
 import type { GitToolConfiguration } from '../tools/git/config-schema.ts';
@@ -520,7 +522,10 @@ describe('channels/github/conversation/issue-delivery-service', () => {
     });
     const input = { agentId, item: approvedNotificationItem(), workspaceDir, worktree };
     const first = await scenario.delivery.publishTaskPullRequest(input);
-    const second = await scenario.delivery.publishTaskPullRequest(input);
+    const second = await scenario.delivery.publishTaskPullRequest({
+      ...input,
+      expectedPullRequest: first,
+    });
     assert.deepEqual(first, { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 });
     assert.deepEqual(second, first);
     assert.equal(
@@ -554,6 +559,31 @@ describe('channels/github/conversation/issue-delivery-service', () => {
       ).length,
       1,
     );
+  });
+
+  it('should reject a missing or changed linked task pull request before provider writes', async () => {
+    for (const existingPullRequest of [
+      undefined,
+      pullRequest({ itemNodeId: 'PR_other' }),
+      pullRequest({ number: 46 }),
+    ]) {
+      const scenario = serviceHarness({ existingPullRequest, remoteSha: originalSha });
+      await assert.rejects(
+        scenario.delivery.publishTaskPullRequest({
+          agentId,
+          item: approvedNotificationItem(),
+          workspaceDir,
+          worktree,
+          expectedPullRequest: { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 },
+        }),
+        (error: unknown) =>
+          error instanceof GitHubIssueDeliveryError && error.category === 'identity-mismatch',
+      );
+      assert.equal(
+        scenario.githubRequests.some(({ argv }) => argv.includes('POST') || argv.includes('PATCH')),
+        false,
+      );
+    }
   });
 
   it('should reject an unrelated PR or divergent branch before recipient reconciliation', async () => {

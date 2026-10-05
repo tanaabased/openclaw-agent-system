@@ -20,6 +20,48 @@ const route = {
 const ctxPayload = {} as ChannelInboundTurnPlan['ctxPayload'];
 
 describe('channels/github/conversation/model-turn-dispatcher', () => {
+  it('should require successful terminal evidence for a pull request opened turn', async () => {
+    for (const deferred of [false, true]) {
+      for (const outcomes of [[], ['failed'], ['completed'], ['failed', 'completed']] as const) {
+        const dispatcher = new GitHubNotificationModelTurnDispatcher({
+          async dispatchChannelInboundTurn(input) {
+            for (const outcome of outcomes)
+              input.replyOptions?.onAgentRunTerminalOutcome?.(outcome);
+            return {
+              dispatched: true,
+              routeSessionKey: route.sessionKey,
+              dispatchResult: {
+                counts: { final: 0, block: 0, tool: 0 },
+                queuedFinal: false,
+                ...(deferred ? { deferredToActiveRun: 'followup' } : {}),
+              },
+            } as never;
+          },
+        });
+        const attempt = dispatcher.dispatch({
+          config: {},
+          ctxPayload,
+          executionSurface: 'gateway',
+          messageId: 'pull-request-opened:PR_task',
+          route,
+          contract: {
+            instructions: 'handoff',
+            mode: { id: 'guided', disableTools: false },
+            identity: { lifecycleId: 'issue', modeId: 'guided', eventId: 'pull-request-opened' },
+          },
+        });
+        if (outcomes.length === 1 && outcomes[0] === 'completed' && !deferred) await attempt;
+        else
+          await assert.rejects(
+            attempt,
+            (error: unknown) =>
+              error instanceof GitHubNotificationModelTurnDispatcherError &&
+              error.code === 'github-notification-model-turn-recovery-required',
+          );
+      }
+    }
+  });
+
   it('should apply routing after recording and verify both native selections before publication', async () => {
     for (const [actual, status] of [
       [{ provider: 'openai', model: 'selected', thinkLevel: 'medium' }, 'verified'],

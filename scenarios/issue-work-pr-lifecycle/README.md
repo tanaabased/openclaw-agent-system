@@ -111,6 +111,20 @@ jq -e --arg issue "[tanaabased/big-test-bucket#$issue_number](https://github.com
 ```
 
 ```bash
+# should keep the completed handoff idempotent on another reconciliation
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+openclaw-github-notifications refresh-completed \
+  --agent notification-data \
+  --repository tanaabased/big-test-bucket \
+  --kind issue \
+  --number "$issue_number" \
+  --timeout 180
+cd "$TMPDIR/agent-system-notification-actor"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff"))) | .id' | jq -se 'length == 1'
+```
+
+```bash
 # should answer an approved pull request comment on its exact source item
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"

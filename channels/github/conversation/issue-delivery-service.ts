@@ -52,6 +52,7 @@ export interface GitHubNotificationIssueDeliveryInput {
 
 export interface GitHubNotificationTaskPullRequestInput extends GitHubNotificationIssueDeliveryInput {
   body?: string;
+  expectedPullRequest?: GitHubNotificationIssueDeliveryReceipt;
   title?: string;
 }
 
@@ -326,6 +327,19 @@ export default class GitHubNotificationIssueDeliveryService {
     );
     if (!Array.isArray(pullRequests) || pullRequests.length > 1) {
       throw new Error('GitHub returned an ambiguous pull request for the managed branch.');
+    }
+    if (input.expectedPullRequest) {
+      const existing = pullRequests.length === 1 ? parsePullRequest(pullRequests[0]) : undefined;
+      if (
+        !existing ||
+        existing.itemNodeId !== input.expectedPullRequest.pullRequestNodeId ||
+        existing.number !== input.expectedPullRequest.pullRequestNumber
+      ) {
+        throw new GitHubIssueDeliveryError(
+          'identity-mismatch',
+          'The managed branch no longer matches the linked task pull request.',
+        );
+      }
     }
     let pullRequest =
       pullRequests.length === 0

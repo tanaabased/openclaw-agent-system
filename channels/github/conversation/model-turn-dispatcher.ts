@@ -27,6 +27,7 @@ export type GitHubNotificationHostDispatchResult = Extract<
 >['dispatchResult'];
 
 export type GitHubNotificationModelTurnDispatcherErrorCode =
+  | 'github-notification-model-turn-recovery-required'
   | 'github-notification-model-turn-dispatch-failed'
   | 'github-notification-model-turn-dispatch-unconfirmed'
   | 'github-notification-model-turn-session-missing'
@@ -102,6 +103,7 @@ export default class GitHubNotificationModelTurnDispatcher {
     let observed: ModelRoutingObservation | undefined;
     let routingFailure: ModelRoutingError | undefined;
     let sessionRecordTask: Promise<unknown> | undefined;
+    let terminalOutcome: 'completed' | 'failed' | undefined;
     let result;
     try {
       result = await this.#dependencies.dispatchChannelInboundTurn({
@@ -156,6 +158,9 @@ export default class GitHubNotificationModelTurnDispatcher {
         },
         replyOptions: {
           abortSignal: signal,
+          onAgentRunTerminalOutcome(outcome) {
+            if (outcome === 'failed' || terminalOutcome === undefined) terminalOutcome = outcome;
+          },
           onModelSelected(actual) {
             if (!routing) return;
             observed = {
@@ -205,6 +210,16 @@ export default class GitHubNotificationModelTurnDispatcher {
     if (!result.dispatched || result.routeSessionKey !== input.route.sessionKey) {
       throw new GitHubNotificationModelTurnDispatcherError(
         'github-notification-model-turn-dispatch-unconfirmed',
+      );
+    }
+    if (
+      input.contract.identity?.eventId === 'pull-request-opened' &&
+      (terminalOutcome !== 'completed' ||
+        result.dispatchResult.deferredToActiveRun ||
+        signal.aborted)
+    ) {
+      throw new GitHubNotificationModelTurnDispatcherError(
+        'github-notification-model-turn-recovery-required',
       );
     }
     let execution: ModelRoutingExecution | undefined;
