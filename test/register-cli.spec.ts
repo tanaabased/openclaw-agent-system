@@ -549,6 +549,28 @@ describe('cli/register', () => {
     );
   });
 
+  it('should hide the scheduler callback from public help while retaining explicit invocation', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      const root = createProgram(undefined, { automationRunner: true });
+      root.program.commands[0]!.configureOutput({ writeOut: (value) => root.output.push(value) });
+      await assert.rejects(root.program.parseAsync(['node', 'openclaw', alias, '--help']), {
+        code: 'commander.helpDisplayed',
+      });
+      assert.match(root.output.join(''), /automations/u);
+      assert.doesNotMatch(root.output.join(''), /automation-execute/u);
+
+      const callback = createProgram(undefined, { automationRunner: true });
+      callback.program.commands[0]!.commands.find(
+        (command) => command.name() === 'automation-execute',
+      )!.configureOutput({ writeOut: (value) => callback.output.push(value) });
+      await assert.rejects(
+        callback.program.parseAsync(['node', 'openclaw', alias, 'automation-execute', '--help']),
+        { code: 'commander.helpDisplayed' },
+      );
+      assert.match(callback.output.join(''), /--hash/u);
+    }
+  });
+
   it('should hide launcher options from help and typo suggestions through both aliases', async () => {
     for (const alias of ['agent-system', 'as']) {
       const { program } = createProgram();

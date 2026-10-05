@@ -49,7 +49,7 @@ export interface CommandLike {
   action(handler: Action): CommandLike;
   addOption(option: Option): CommandLike;
   alias(name: string): CommandLike;
-  command(specification: string): CommandLike;
+  command(specification: string, options?: { hidden?: boolean }): CommandLike;
   createOption(flags: string, description?: string): Option;
   description(text: string): CommandLike;
   helpInformation(): string;
@@ -180,7 +180,7 @@ export default function registerAgentSystemCli(
   }
   if (options.automations && options.boundCommands) {
     const execute = agentSystem
-      .command('automation-execute')
+      .command('automation-execute', { hidden: true })
       .description('Execute one synchronized owned automation (scheduler entrypoint).')
       .option('--id <id>', 'Select the owned manifest automation id.')
       .option('--hash <hash>', 'Require the synchronized effective content hash.')

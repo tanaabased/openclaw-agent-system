@@ -60,6 +60,14 @@ jq -e '.code == "automation-run-disabled"' consumed.json
 openclaw agent-system automations --help | grep -F 'sync'
 openclaw as automations run --help | grep -F '<id>'
 
+# should hide the scheduler callback from public help while retaining explicit invocation
+for alias in agent-system as; do
+  openclaw "$alias" --help > "$TMPDIR/automation-public-help.txt"
+  grep -F 'automations' "$TMPDIR/automation-public-help.txt"
+  if grep -F 'automation-execute' "$TMPDIR/automation-public-help.txt"; then exit 1; fi
+  openclaw "$alias" automation-execute --help | grep -F -- '--hash'
+done
+
 # should reconcile list and run exact manifest ids with native history
 cd "$TMPDIR/automation-agent"
 cp "$GITHUB_WORKSPACE/examples/automations/operators.yaml" automations.yaml
