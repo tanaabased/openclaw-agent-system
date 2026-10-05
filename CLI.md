@@ -583,8 +583,10 @@ Output lists variable names, sources, required state, and override counts; value
 
 ## `openclaw agent-system install`
 
-Repository [automations](./MANIFEST.md#automations) reconcile only through this
-operator path and require a running Gateway. Completed one-shots and native safety
+Install reconciles repository [automations](./MANIFEST.md#automations) alongside
+the rest of the workspace. Use [`automations sync`](#openclaw-agent-system-automations-sync)
+to reconcile automation jobs alone. Both require a running Gateway for automation
+reconciliation. Completed one-shots and native safety
 disable remain protected; failed synchronization reports partial results.
 
 Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
