@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { AutomationGateway, NativeAutomation } from '../agent/automation-gateway.ts';
+import {
+  AutomationError,
+  createAutomationGateway,
+  type AutomationGateway,
+  type NativeAutomation,
+} from '../agent/automation-gateway.ts';
 import { automationPatch, nativeAutomationHash } from '../agent/automation-projection.ts';
 import AutomationService from '../agent/automation-service.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
@@ -220,6 +225,26 @@ describe('agent/automation-service', () => {
     delete manifest.automations[0]!.overrides.openclaw;
     await service.reconcile(manifest, root);
     assert.equal(native[0]?.sessionTarget, native[1]?.sessionTarget);
+  });
+
+  it('should preserve safe gateway evidence through reconciliation failure wrapping', async () => {
+    service.dependencies.request = createAutomationGateway(async () => {
+      throw Object.assign(new Error('secret payload'), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'FORBIDDEN',
+        retryable: false,
+        details: 'secret',
+      });
+    });
+    await assert.rejects(service.reconcile(manifest, root), (error: unknown) => {
+      assert.ok(error instanceof AgentSystemLifecycleError);
+      assert.ok(error.cause instanceof AutomationError);
+      assert.equal(error.cause.diagnostic?.category, 'rejected');
+      assert.equal(error.cause.diagnostic.gatewayCode, 'FORBIDDEN');
+      assert.deepEqual(error.progress?.unattempted, [{ component: 'automations' }]);
+      assert.ok(!JSON.stringify(error).includes('secret'));
+      return true;
+    });
   });
 
   it('should keep inventory rows and findings on the same ownership snapshot during concurrent sync', async () => {

@@ -1,5 +1,7 @@
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 
+import type { AutomationGatewayDiagnostic } from './automation-gateway-diagnostic.ts';
+
 export type AutomationGateway = (
   method:
     | 'sessions.resolve'
@@ -17,7 +19,10 @@ export type AutomationGateway = (
 ) => Promise<Record<string, unknown>>;
 
 export class AutomationError extends Error {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly diagnostic?: AutomationGatewayDiagnostic,
+  ) {
     super(`Automation operation failed (${code}).`);
   }
 }
@@ -127,8 +132,13 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
         scopes: [readOnly ? 'operator.read' : 'operator.admin'],
         ...(readOnly ? { sharedStateMode: 'read-only' as const } : {}),
       });
-    } catch {
-      throw new AutomationError('automation-gateway-unavailable');
+    } catch (error) {
+      const { default: automationGatewayDiagnostic } =
+        await import('./automation-gateway-diagnostic.ts');
+      throw new AutomationError(
+        'automation-gateway-unavailable',
+        automationGatewayDiagnostic(method, error),
+      );
     }
   };
 }

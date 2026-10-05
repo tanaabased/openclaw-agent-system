@@ -3,6 +3,8 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
+import { createAutomationGateway } from '../agent/automation-gateway.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
 import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
@@ -413,6 +415,57 @@ describe('cli/automation-commands', () => {
       assert.deepEqual(result.exitCodes, [1]);
     }
   });
+  it('should report safe gateway diagnostics in json and text through lifecycle wrappers', async () => {
+    const request = createAutomationGateway(async () => {
+      throw Object.assign(new Error('secret token and payload'), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+        details: { token: 'secret' },
+      });
+    });
+    for (const json of [true, false]) {
+      for (const wrapped of [true, false]) {
+        const result = createProgram(undefined, {
+          automations: {
+            reconcile: async () => {
+              try {
+                return await request('sessions.create', { token: 'secret' });
+              } catch (error) {
+                if (!wrapped) throw error;
+                throw new AgentSystemLifecycleError(
+                  'automations',
+                  'automation-gateway-unavailable',
+                  'stopped',
+                  { cause: error },
+                );
+              }
+            },
+          } as never,
+        });
+        await result.program.parseAsync([
+          'node',
+          'openclaw',
+          'as',
+          'automations',
+          'sync',
+          ...(json ? ['--json'] : []),
+        ]);
+        if (json) {
+          const output = JSON.parse(result.output.join(''));
+          assert.equal(output.status, 'failed');
+          assert.equal(output.diagnostic.method, 'sessions.create');
+          assert.equal(output.diagnostic.category, 'rejected');
+          assert.equal(output.diagnostic.gatewayCode, 'INVALID_REQUEST');
+        } else assert.deepEqual(result.output, []);
+        assert.match(result.diagnostics.join(''), /sessions\.create/u);
+        assert.match(result.diagnostics.join(''), /INVALID_REQUEST/u);
+        assert.ok(![...result.output, ...result.diagnostics].join('').includes('secret'));
+        assert.deepEqual(result.exitCodes, [1]);
+      }
+    }
+  });
+
   it('should print queued text and expose bounded partial failures on stdout and stderr', async () => {
     const result = createProgram(undefined, {
       automations: {

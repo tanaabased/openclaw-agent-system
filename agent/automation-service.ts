@@ -634,7 +634,7 @@ export default class AutomationService {
         'automations',
         code,
         `Automation reconciliation stopped (${code}).`,
-        undefined,
+        error instanceof AutomationError ? { cause: error } : undefined,
         undefined,
         undefined,
         { outcomes, warnings: [], unattempted: [{ component: 'automations' }] },

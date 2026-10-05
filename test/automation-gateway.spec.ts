@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import {
+  AutomationError,
   createAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
@@ -33,9 +34,20 @@ describe('agent/automation-gateway', () => {
       'cron.add',
       'cron.update',
       'cron.run',
+      'sessions.resolve',
+      'sessions.list',
+      'sessions.create',
+      'sessions.patch',
     ] as const) {
       await request(method, { id: 'fixture' });
-      const readOnly = ['cron.list', 'cron.get', 'cron.status', 'cron.runs'].includes(method);
+      const readOnly = [
+        'cron.list',
+        'cron.get',
+        'cron.status',
+        'cron.runs',
+        'sessions.resolve',
+        'sessions.list',
+      ].includes(method);
       assert.deepEqual(calls.at(-1), [
         method,
         { timeout: '10000' },
@@ -52,7 +64,9 @@ describe('agent/automation-gateway', () => {
         throw new Error('secret');
       })('cron.run', {}),
       (error: unknown) =>
-        error instanceof Error &&
+        error instanceof AutomationError &&
+        error.diagnostic?.method === 'cron.run' &&
+        error.diagnostic.category === 'unknown' &&
         error.message.includes('automation-gateway-unavailable') &&
         !error.message.includes('secret'),
     );
