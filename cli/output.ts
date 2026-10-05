@@ -8,6 +8,7 @@ export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
 };
 
 export interface CliStyles {
+  accent(value: string): string;
   action(value: string): string;
   bold(value: string): string;
   error(value: string): string;
@@ -45,9 +46,11 @@ export function createCliStyles(environment: NodeJS.ProcessEnv = process.env): C
   const color = new Ansis(colorLevel(environment)).extend({
     tp: '#00c88a',
     ts: '#db2777',
+    brightPink: '#e25292',
   });
 
   return {
+    accent: (value) => color.brightPink(value),
     action: (value) => color.tp(value),
     bold: (value) => color.bold(value),
     error: (value) => color.bold(color.red(value)),

@@ -35,6 +35,12 @@ sed \
 ## Testing
 
 ```bash
+# should style the narrow consent preview and decline on enter without mutations
+mkdir -p "$TMPDIR/setup-consent"
+cp "$GITHUB_WORKSPACE/examples/setup/consent/agent.yaml" "$TMPDIR/setup-consent/agent.yaml"
+cd "$TMPDIR/setup-consent"
+python3 "$GITHUB_WORKSPACE/examples/setup/consent.py"
+
 # should validate setup without executing its commands
 cd "$TMPDIR/setup-tanaabot"
 openclaw agent-system validate --json | jq -e '.checks | any(.component == "setup" and .status == "valid")'
