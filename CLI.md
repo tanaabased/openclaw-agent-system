@@ -32,7 +32,7 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 - [`openclaw agent-system notifications`](#openclaw-agent-system-notifications) — GitHub notifications.
 - [`openclaw agent-system tool gh`](./tools/github/README.md#cli) — GitHub CLI commands.
 - [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Git commands and managed worktrees.
-- [`openclaw agent-system tool gog`](./tools/google/README.md#agent_system_google) — Google commands.
+- [`openclaw agent-system tool gog`](./tools/google/README.md#openclaw-agent-system-tool-gog) — Google commands.
 
 **Execution reference**
 

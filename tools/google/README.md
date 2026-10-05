@@ -266,6 +266,32 @@ attachment flags separately. `--values-json` accepts inline JSON; `@file` input 
 not admitted. Plain text file/stdin input works for Docs; Markdown processing is
 excluded because it can introduce additional file and process effects.
 
+## `openclaw agent-system tool gog`
+
+Run the [supported Google commands](#supported-commands) from an operator terminal
+using the selected agent's account and workspace.
+
+### Options
+
+| Option or argument   | Required | Default             | Description                                 |
+| -------------------- | -------- | ------------------- | ------------------------------------------- |
+| `--agent <id>`       | no       | workspace discovery | Select an installed agent's workspace.      |
+| `-- <GoG arguments>` | yes      | none                | Forward canonical GoG arguments after `--`. |
+
+### Usage
+
+```text
+openclaw agent-system tool gog [--agent <id>] -- <GoG arguments>
+```
+
+```sh
+# list task lists using the current workspace's configured account.
+openclaw agent-system tool gog -- tasks lists list --max 1 --readonly
+```
+
+The same command admission and filesystem boundaries apply as for
+[`agent_system_google`](#agent_system_google).
+
 ## `gog` and `AGENT_SYSTEM_GOG`
 
 The contextual `gog` shim uses the managed runtime inside an agent context and the
@@ -291,7 +317,7 @@ gog --agent-system
 "$AGENT_SYSTEM_GOG" gmail search 'is:unread' --max 10
 ```
 
-The [generic tool CLI](../../CLI.md) remains operator-only when invoked unbound.
+The [operator CLI](#openclaw-agent-system-tool-gog) remains operator-only when invoked unbound.
 Private GoG state follows the [per-agent home contract](#environment-and-state).
 The agents still share an OS user; these are practical context and identity
 boundaries, not complete operating-system isolation.
