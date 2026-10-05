@@ -3,6 +3,7 @@ import { constants, type Stats } from 'node:fs';
 import { lstat, open, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
+import { assertPrivateStateLocksHeld } from './private-state-lock-context.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
 import ensurePrivateStateDirectories from './ensure-private-state-directories.ts';
 
@@ -65,6 +66,7 @@ export default class PrivateStateFile {
   }
 
   async write(contents: string): Promise<void> {
+    assertPrivateStateLocksHeld();
     if (Buffer.byteLength(contents) > this.#maximumBytes) this.#sizeError();
     await ensurePrivateStateDirectories({
       currentUid: this.#currentUid,
@@ -89,6 +91,7 @@ export default class PrivateStateFile {
       await handle.sync();
       await handle.close();
       handle = undefined;
+      assertPrivateStateLocksHeld();
       await rename(temporaryPath, this.#path);
     } finally {
       await handle?.close().catch(() => undefined);
@@ -97,11 +100,13 @@ export default class PrivateStateFile {
   }
 
   async remove(): Promise<boolean> {
+    assertPrivateStateLocksHeld();
     for (const directory of this.#directories) {
       if ((await this.#inspectDirectory(directory)) === 'missing') return false;
     }
     try {
       this.#assertPrivateFile(await lstat(this.#path));
+      assertPrivateStateLocksHeld();
       await unlink(this.#path);
       return true;
     } catch (error) {

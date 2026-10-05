@@ -13,9 +13,7 @@ import nodeErrorCode from '../../../../utils/node-error-code.ts';
 const defaultRetryMs = 250;
 const defaultStaleMs = 30 * 60 * 1000;
 
-export interface GitHubNotificationMonitorCycleLease {
-  release(): Promise<void>;
-}
+export type GitHubNotificationMonitorCycleLease = PrivateStateFileLockHandle;
 
 export type GitHubNotificationMonitorCycleLeaseAcquireResult =
   | { lease: GitHubNotificationMonitorCycleLease; status: 'acquired' }
@@ -107,7 +105,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
       if (nodeErrorCode(error) === privateStateFileLockBusyErrorCode) return undefined;
       throw error;
     }
-    return { release: handle.release };
+    return handle;
   }
 
   async #targetPath(

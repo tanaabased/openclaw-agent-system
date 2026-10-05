@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
+import {
+  assertPrivateStateLocksHeld,
+  withPrivateStateLock,
+  privateStateLockSignal,
+} from '../../core/private-state-lock-context.ts';
 import acquirePrivateStateFileLock, {
   privateStateFileLockBusyErrorCode,
   type PrivateStateFileLockHandle,
@@ -146,7 +151,13 @@ export default class GitWorktreeService {
     const lease = await this.#acquirePreparationLock(context, layout, input.repositoryId);
     try {
       context.signal?.throwIfAborted();
-      return await this.#prepare(context, input, layout);
+      return await withPrivateStateLock(lease, () =>
+        this.#prepare(
+          { ...context, signal: privateStateLockSignal(context.signal) },
+          input,
+          layout,
+        ),
+      );
     } finally {
       await lease.release();
     }
@@ -266,6 +277,7 @@ export default class GitWorktreeService {
         'The readable GitHub issue branch already exists outside its owned worktree.',
       );
     }
+    assertPrivateStateLocksHeld();
     await mkdir(dirname(path), { mode: 0o700, recursive: true });
     requireGitSuccess(
       'worktree preparation',
@@ -528,6 +540,7 @@ export default class GitWorktreeService {
           repositoryId,
         ]),
       );
+      assertPrivateStateLocksHeld();
       await rename(temporaryPath, path);
       return { path, refreshBeforeCreate: false, repositoryId };
     } catch (error) {
@@ -584,11 +597,14 @@ export default class GitWorktreeService {
     );
   }
 
-  #run(context: GitWorktreeServiceContext, cwd: string, argv: string[]) {
-    return context.git.run({
+  async #run(context: GitWorktreeServiceContext, cwd: string, argv: string[]) {
+    assertPrivateStateLocksHeld();
+    const result = await context.git.run({
       argv,
       cwd,
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     });
+    assertPrivateStateLocksHeld();
+    return result;
   }
 }
