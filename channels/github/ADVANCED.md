@@ -1,7 +1,7 @@
 # GitHub Notifications Advanced Guide
 
 Configuration, commands, and operations for the GitHub notification channel.
-Start with the [README](./README.md) for setup. [Design](./DESIGN.md) describes the target lifecycle.
+Start with the [README](./README.md) for setup.
 
 - [Configuration reference](#configuration-reference)
 - [CLI reference](#cli)

@@ -202,7 +202,6 @@ try {
     'bin/gog',
     'bin/agent-system-gog',
     'channels/github/ADVANCED.md',
-    'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',
     'skills/git-cli/agents/openai.yaml',
