@@ -287,7 +287,7 @@ try {
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
     assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
-    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.7');
+    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.8');
     assert.equal(packageMetadata.dependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.optionalDependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.version, manifest.version);
@@ -649,6 +649,8 @@ try {
       'package',
       'validate',
       packageRoot,
+      '--openclaw',
+      resolve('node_modules/openclaw'),
       '--out',
       clawHubReports,
     ]);

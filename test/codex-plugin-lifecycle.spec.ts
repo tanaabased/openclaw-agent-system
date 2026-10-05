@@ -8,9 +8,9 @@ import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import codexPluginRequirement from '../core/codex-plugin-metadata.ts';
 
 const requirement = {
-  spec: '@openclaw/codex@2026.9.7',
-  version: '2026.9.7',
-  minimumHostVersion: '2026.9.7',
+  spec: '@openclaw/codex@2026.9.8',
+  version: '2026.9.8',
+  minimumHostVersion: '2026.9.8',
 };
 const context = {
   manifest: { schemaVersion: 1 as const, agent: { id: 'first', runtime: 'codex' as const } },
@@ -39,7 +39,7 @@ function fixture(initial: 'missing' | 'enabled' | 'disabled' = 'enabled') {
     name: '@openclaw/codex',
     version: requirement.version,
     openclaw: {
-      compat: { pluginApi: '>=2026.9.7' },
+      compat: { pluginApi: '>=2026.9.8' },
       install: { minHostVersion: '>=2026.5.1-beta.1' },
     },
   };
@@ -59,7 +59,7 @@ function fixture(initial: 'missing' | 'enabled' | 'disabled' = 'enabled') {
     async runOpenClawCommand(args) {
       calls.push(args);
       if (args[0] === '--version')
-        return { code: 0, stdout: 'OpenClaw 2026.9.7 (release)', stderr: '' };
+        return { code: 0, stdout: 'OpenClaw 2026.9.8 (release)', stderr: '' };
       if (args[1] === 'list')
         return {
           code: 0,
@@ -205,7 +205,7 @@ describe('agent/codex-plugin-lifecycle', () => {
       'unchanged',
     );
     assert.deepEqual(f.mutations(), [
-      ['plugins', 'install', 'npm:@openclaw/codex@2026.9.7', '--pin', '--accept-capabilities'],
+      ['plugins', 'install', 'npm:@openclaw/codex@2026.9.8', '--pin', '--accept-capabilities'],
     ]);
     assert.equal((await contribution.inspect!(context))[0]?.code, 'codex-plugin-ready');
   });
@@ -235,7 +235,7 @@ describe('agent/codex-plugin-lifecycle', () => {
       'codex-plugin-installed',
     );
     assert.deepEqual(f.mutations(), [
-      ['plugins', 'install', 'npm:@openclaw/codex@2026.9.7', '--pin', '--accept-capabilities'],
+      ['plugins', 'install', 'npm:@openclaw/codex@2026.9.8', '--pin', '--accept-capabilities'],
       ['plugins', 'enable', 'codex', '--accept-capabilities'],
     ]);
     assert.equal((await f.contribution().inspect!(context))[0]?.code, 'codex-plugin-ready');
@@ -251,7 +251,7 @@ describe('agent/codex-plugin-lifecycle', () => {
   });
 
   it('should reject incompatible and unknown hosts before locking or changing shared state', async () => {
-    for (const host of ['2026.9.6', 'unknown', '2026.9.7-beta.1']) {
+    for (const host of ['2026.9.6', '2026.9.7', 'unknown', '2026.9.8-beta.1']) {
       const f = fixture('missing');
       f.dependencies.runOpenClawCommand = async () => ({ code: 0, stdout: host, stderr: '' });
       await assert.rejects(f.contribution().reconcile!(context), {
@@ -263,7 +263,7 @@ describe('agent/codex-plugin-lifecycle', () => {
   });
 
   it('should block conflicting lower and higher shared versions without replacement', async () => {
-    for (const version of ['2026.9.6', '2026.9.8']) {
+    for (const version of ['2026.9.7', '2026.9.9']) {
       const f = fixture('disabled');
       f.record.version = version;
       f.report.install.version = version;
@@ -300,7 +300,7 @@ describe('agent/codex-plugin-lifecycle', () => {
         f.metadata.name = '@other/codex';
       },
       (f: ReturnType<typeof fixture>) => {
-        f.metadata.openclaw.compat.pluginApi = '>=2026.9.8';
+        f.metadata.openclaw.compat.pluginApi = '>=2026.9.9';
       },
       (f: ReturnType<typeof fixture>) => {
         f.metadata.openclaw.compat.pluginApi = '';
@@ -320,8 +320,8 @@ describe('agent/codex-plugin-lifecycle', () => {
   it('should preserve a concurrent installation discovered after acquiring the profile lock', async () => {
     const f = fixture('missing');
     f.dependencies.withLock = async (run) => {
-      f.record.version = '2026.9.8';
-      f.report.install.version = '2026.9.8';
+      f.record.version = '2026.9.9';
+      f.report.install.version = '2026.9.9';
       const previous = f.dependencies.runOpenClawCommand;
       f.dependencies.runOpenClawCommand = async (args, cwd, signal) =>
         args[1] === 'list'

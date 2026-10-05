@@ -16,10 +16,10 @@ Codex is enabled and verifies that the native runtime binding survives reconcili
 ```bash
 # should prepare an isolated profile and install the exact codex prerequisite
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw plugins install npm:@openclaw/codex@2026.9.7 --pin --accept-capabilities
+openclaw plugins install npm:@openclaw/codex@2026.9.8 --pin --accept-capabilities
 openclaw plugins enable codex --accept-capabilities
-openclaw --version | grep -F '2026.9.7'
-openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.9.7" and .plugin.enabled == true and .install.version == "2026.9.7"'
+openclaw --version | grep -F '2026.9.8'
+openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.9.8" and .plugin.enabled == true and .install.version == "2026.9.8"'
 openclaw agents add codex-probe --workspace "$TMPDIR/codex-probe" --non-interactive
 mkdir -p "$TMPDIR/codex-first" "$TMPDIR/codex-second" "$TMPDIR/native-agent"
 cp "$GITHUB_WORKSPACE/examples/prerequisite/first/agent.yaml" "$TMPDIR/codex-first/agent.yaml"
@@ -66,7 +66,7 @@ trap - EXIT
 # should provision the exact shared plugin before fresh agent and model reconciliation
 cd "$TMPDIR/codex-first"
 openclaw agent-system install --skip-setup --json | jq -e '.outcomes[0].component == "codex-plugin" and .outcomes[0].code == "codex-plugin-installed" and (.outcomes | any(.component == "models" and .status == "updated"))'
-openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.9.7" and .plugin.enabled == true and .install.version == "2026.9.7"'
+openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.9.8" and .plugin.enabled == true and .install.version == "2026.9.8"'
 
 # should reuse the shared install without changing its receipt across repeat and second agent installation
 receipt="$(openclaw plugins inspect codex --json | jq -cS .install)"
@@ -90,11 +90,11 @@ openclaw agent-system doctor --json | jq -e '.findings | any(.code == "codex-plu
 
 # should reject a conflicting shared plugin without silently upgrading it
 openclaw plugins uninstall codex --force
-openclaw plugins install npm:@openclaw/codex@2026.9.6 --pin --accept-capabilities
+openclaw plugins install npm:@openclaw/codex@2026.9.7 --pin --accept-capabilities
 receipt="$(openclaw plugins inspect codex --json | jq -cS .install)"
 cd "$TMPDIR/codex-second"
 if output=$(openclaw agent-system install --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.blocked.code == "codex-plugin-conflict" and (.blocked.message | contains("2026.9.7")) and (.blocked.message | contains("2026.9.6"))'
+printf '%s\n' "$output" | jq -e '.blocked.code == "codex-plugin-conflict" and (.blocked.message | contains("2026.9.8")) and (.blocked.message | contains("2026.9.7"))'
 test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
 
 # should leave an unrelated conflicting shared installation untouched for a native agent
@@ -106,14 +106,14 @@ test "$(openclaw plugins inspect codex --json | jq -cS .install)" = "$receipt"
 
 # should require explicit operator reconciliation to restore the declared shared version
 openclaw plugins uninstall codex --force
-openclaw plugins install npm:@openclaw/codex@2026.9.7 --pin --accept-capabilities
+openclaw plugins install npm:@openclaw/codex@2026.9.8 --pin --accept-capabilities
 openclaw plugins enable codex --accept-capabilities
 cd "$TMPDIR/codex-second"
 openclaw agent-system doctor --json | jq -e '.findings | any(.code == "codex-plugin-ready")'
 
 # should reject the packed plugin on a real incompatible host before agent installation
-npm install --prefix "$TMPDIR/incompatible-host" --ignore-scripts --no-audit --no-fund --package-lock=false openclaw@2026.9.6
-"$TMPDIR/incompatible-host/node_modules/.bin/openclaw" --version | grep -F '2026.9.6'
+npm install --prefix "$TMPDIR/incompatible-host" --ignore-scripts --no-audit --no-fund --package-lock=false openclaw@2026.9.7
+"$TMPDIR/incompatible-host/node_modules/.bin/openclaw" --version | grep -F '2026.9.7'
 if output=$(OPENCLAW_STATE_DIR="$TMPDIR/incompatible-state" OPENCLAW_CONFIG_PATH="$TMPDIR/incompatible-state/openclaw.json" "$TMPDIR/incompatible-host/node_modules/.bin/openclaw" plugins install "$AGENT_SYSTEM_PACKAGE" --force --accept-capabilities 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F '2026.9.7'
+printf '%s\n' "$output" | grep -F '2026.9.8'
 ```
