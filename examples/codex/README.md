@@ -67,7 +67,13 @@ root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-diagnostics=$(node "$runtime" setup inspect --plugin-data "$plugin_data" 2>&1 >/dev/null)
+if diagnostics=$(node "$runtime" setup inspect --plugin-data "$plugin_data" 2>&1 >/dev/null); then
+  :
+else
+  status=$?
+  printf '%s\n' "$diagnostics" >&2
+  exit "$status"
+fi
 test -z "$diagnostics"
 
 # should expose codex tools diagnostics through standalone setup with runner debug
@@ -75,7 +81,13 @@ root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-diagnostics=$(RUNNER_DEBUG=1 node "$runtime" setup inspect --plugin-data "$plugin_data" 2>&1 >/dev/null)
+if diagnostics=$(RUNNER_DEBUG=1 node "$runtime" setup inspect --plugin-data "$plugin_data" 2>&1 >/dev/null); then
+  :
+else
+  status=$?
+  printf '%s\n' "$diagnostics" >&2
+  exit "$status"
+fi
 printf '%s\n' "$diagnostics" | grep -F 'debug: {"command":"status"'
 
 # should inspect and install only setup applicable to standalone codex
