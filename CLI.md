@@ -97,10 +97,10 @@ Read native occurrence history for an owned manifest ID, including retained remo
 | ------------------ | -------- | ------------------- | ---------------------------------------------------- |
 | `--agent <id>`     | no       | workspace discovery | Select an installed agent; operators only.           |
 | `--json`           | no       | off                 | Write one structured result to stdout.               |
-| `<id>`             | yes      | none                | Manifest automation ID, never a native scheduler ID. |
 | `--limit <count>`  | no       | `50`                | Maximum entries, from 1 to 200.                      |
 | `--offset <count>` | no       | `0`                 | Nonnegative history offset.                          |
 | `--run-id <id>`    | no       | none                | Filter the exact native occurrence.                  |
+| `<id>`             | yes      | none                | Manifest automation ID, never a native scheduler ID. |
 
 ### Usage
 

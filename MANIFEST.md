@@ -248,10 +248,10 @@ proof of delivery.
 
 | Form               | Example                                                           | Meaning                                |
 | ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
-| Recurring interval | `every 1 hour` or `{ every: 60 minutes }`                         | Elapsed-time recurrence.               |
-| Relative one-shot  | `in 1 hour` or `{ in: 60 minutes }`                               | Delay from initial activation.         |
 | Absolute one-shot  | `'2026-10-01T09:00:00-04:00'` or `{ at: '2026-10-01T13:00:00Z' }` | RFC 3339 timestamp, normalized to UTC. |
 | Cron               | `'0 9 * * 1-5'` or `{ cron: '0 9 * * 1-5' }`                      | Numeric five-field calendar schedule.  |
+| Recurring interval | `every 1 hour` or `{ every: 60 minutes }`                         | Elapsed-time recurrence.               |
+| Relative one-shot  | `in 1 hour` or `{ in: 60 minutes }`                               | Delay from initial activation.         |
 
 Durations use positive integers with matching singular/plural seconds, minutes,
 hours, or days (86,400 seconds). Timestamps require seconds and an explicit offset,
