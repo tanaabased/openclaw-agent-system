@@ -107,8 +107,11 @@ const environment = {
 };
 
 try {
-  await check('build the plugin runtime', () => run('bun', ['run', 'build']));
-  await check('validate plugin metadata', () => run('bun', ['run', 'plugin:check']));
+  // supplied archives must match the checkout already built and validated by the caller.
+  if (!suppliedArchivePath) {
+    await check('build the plugin runtime', () => run('bun', ['run', 'build']));
+    await check('validate plugin metadata', () => run('bun', ['run', 'plugin:check']));
+  }
 
   const { archivePath, packageResult } = await check(
     suppliedArchivePath
