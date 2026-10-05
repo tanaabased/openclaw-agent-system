@@ -59,7 +59,7 @@ openclaw agent-system validate --json
 
 ## `openclaw agent-system automations list`
 
-Inspect declared/native state, retained disabled jobs, and actionable drift without writes. The `openclaw as` alias supports the same options.
+Inspect declared/native state, retained disabled jobs, and actionable drift without writes.
 
 ### Options
 
@@ -75,7 +75,6 @@ openclaw agent-system automations list [--agent <id>] [--json]
 ```
 
 ```sh
-# inspect declared/native state, retained disabled jobs, and actionable drift without writes.
 openclaw agent-system automations list --json
 ```
 
@@ -83,7 +82,7 @@ An aligned inventory exits zero. Drift, blocked support, or execution/delivery w
 
 ## `openclaw agent-system automations run`
 
-Queue one enabled, synchronized owned job by manifest ID through the native scheduler. The `openclaw as` alias supports the same options.
+Queue one enabled, synchronized owned job by manifest ID through the native scheduler.
 
 ### Options
 
@@ -100,7 +99,6 @@ openclaw agent-system automations run <id> [--agent <id>] [--json]
 ```
 
 ```sh
-# queue one enabled, synchronized owned job by manifest id through the native scheduler.
 openclaw agent-system automations run review --json
 ```
 
@@ -108,7 +106,7 @@ openclaw agent-system automations run review --json
 
 ## `openclaw agent-system automations runs`
 
-Read native occurrence history for an owned manifest ID, including retained removed jobs. The `openclaw as` alias supports the same options.
+Read native occurrence history for an owned manifest ID, including retained removed jobs.
 
 ### Options
 
@@ -128,7 +126,6 @@ openclaw agent-system automations runs <id> [--agent <id>] [--json] [--limit <co
 ```
 
 ```sh
-# read native occurrence history for an owned manifest id, including retained removed jobs.
 openclaw agent-system automations runs review --limit 20 --json
 ```
 
@@ -136,7 +133,7 @@ Each entry reports execution and delivery independently. Missing telemetry is `u
 
 ## `openclaw agent-system automations sync`
 
-Reconcile only owned automations through the same owner used by operator install. The `openclaw as` alias supports the same options.
+Reconcile only owned automations through the same owner used by operator install.
 
 ### Options
 
@@ -152,7 +149,6 @@ openclaw agent-system automations sync [--agent <id>] [--json]
 ```
 
 ```sh
-# reconcile only owned automations through the same owner used by operator install.
 openclaw agent-system automations sync --json
 ```
 
@@ -842,6 +838,6 @@ approval route execute nothing. Nested lifecycle consumers cannot reload a
 different manifest under the approved operation.
 
 The native OpenClaw harness and OpenClaw-hosted Codex use this route; standalone
-Codex uses its [setup-only adapter](./CODEX.md#skills).
+Codex uses its [standalone adapter](./CODEX.md#skills).
 Control UI chat is the tested approval surface; other chat channels depend on
 their OpenClaw plugin approval support. See [approval validation](./DEVELOPMENT.md#lifecycle-approval).

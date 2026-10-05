@@ -26,7 +26,7 @@ operator reconciliation; see [Install behavior](../../CLI.md#openclaw-agent-syst
 - A chat surface supporting OpenClaw plugin approval
 
 The native OpenClaw harness and OpenClaw-hosted Codex use this tool. Standalone
-Codex uses the [setup-only adapter](../../CODEX.md#skills).
+Codex uses the [standalone adapter](../../CODEX.md#skills).
 If an existing agent lacks the tool grant, run the operator CLI Install once.
 
 Automation reconciliation requires the operator CLI Install with a running Gateway.

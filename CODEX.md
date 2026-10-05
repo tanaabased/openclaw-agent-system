@@ -104,15 +104,8 @@ Unchanged jobs receive no native writes. Removed declarations pause their jobs a
 retain mappings and history; reintroduced IDs reuse the same native job. Personal
 and Me jobs are never adopted by name. Unknown saved schemas stop inspection.
 
-The install skill owns the internal plan/prepare/acknowledge sequence through the
-trusted `automationRuntime` context. Prepared writes retain a pending journal until
-saved-state verification succeeds. If a native response is lost, acknowledgment
-can recover the exact pending marker and definition without another create, even
-after unrelated jobs or the valid manifest change. Recovery records the prepared
-effect; further writes require a fresh plan. A failed write can be cancelled only
-while its target matches the pre-write snapshot. A pending create also requires
-no new native IDs, because an unmarked new job could be a partially saved create.
-Older pending journals retain their whole-scheduler cancellation check.
+Install retains a pending action until saved-state verification succeeds. An
+interrupted write requires readback before retry; the install skill guides recovery.
 Divergence or missing owned jobs requires operator investigation. There
 is no rollback of earlier verified actions and no atomic compare-and-swap guarantee
 against concurrent native UI edits. A process crash during a journal transition
@@ -120,21 +113,10 @@ may leave `automation-journal-busy`; first confirm no reconciliation is running,
 then remove only that stale Agent System `.lock` directory. Never repair native
 scheduler files or delete the ownership ledger to force a sync.
 
-The trusted `automationRuntime` also accepts `list` and `sync` with the same
-project/thread JSON inputs as `plan`. Both inspect desired/native inventory; `sync`
-returns the plan for Install's authorized native write sequence. It does not apply
-headless scheduler writes. `automations --help` documents the internal routes.
-`run` and `runs` accept `{ "id": "manifest-id" }` and exit 1 with respectively
-`automation-run-now-unsupported` and `automation-history-unavailable`. Neither
-creates a task, changes a job, or claims a scheduler occurrence. An explicitly
-requested manual task has separate task history and does not consume a saved
-one-shot or prove native scheduling.
-
-Native request/response and saved-state captures live in `fixtures/` with separate
-provenance. Capture, comparison, and acceptance are explicit development work;
-ordinary tests consume reviewed captures without contacting the app. Constructed
-failure cases are identified in the tests. Installed desktop-tool verification is
-separate from the GitHub Actions-only packed/headless Codex example.
+Codex cannot run saved jobs on demand or inspect native occurrence history.
+An explicitly requested manual task has separate history and does not prove native
+scheduling. See the [Codex example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex/README.md#automation-checks)
+for headless planning and recovery checks.
 
 ## Development
 

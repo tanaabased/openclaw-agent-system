@@ -1,6 +1,25 @@
 # Codex Example
 
-This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, runtime-aware setup, automation planning, session context, transfer, and removal on a disposable GitHub Actions runner. Automation lookup inputs below are explicit fixtures; native desktop-tool writes require separate installed proof.
+This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, runtime-aware setup, automation planning, session context, transfer, and removal on a disposable GitHub Actions runner.
+
+## Automation Checks
+
+Automation lookup inputs below are explicit fixtures. The installed runtime's
+`list` and `sync` routes inspect inventory and plan authorized native app actions;
+they do not write scheduler files. The `run` and `runs` checks assert the explicit
+`automation-run-now-unsupported` and `automation-history-unavailable` results.
+
+The prepare/cancel check retains a pending journal until saved-state verification
+and permits cancellation only while the failed write's target remains unchanged.
+Pending creates also require no new native IDs: an unmarked job could be a partial
+create. Lost-response recovery may acknowledge the exact saved pending definition
+without another create; further writes require a fresh plan. Older journals retain
+the whole-scheduler cancellation check.
+
+Native request/response and saved-state captures live in `fixtures/` with separate
+provenance. Ordinary tests consume reviewed captures without contacting the app;
+constructed failure cases are identified in the tests. This packed/headless
+scenario does not replace separate installed desktop-tool verification.
 
 ## Setup
 
