@@ -48,7 +48,7 @@ const packageMetadata: PackageMetadata = {
     'LICENSE',
   ],
   openclaw: {
-    agentSystem: { codexPlugin: '@openclaw/codex@2026.9.7' },
+    agentSystem: { codexPlugin: '@openclaw/codex@2026.9.8' },
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
     channel: githubNotificationChannelMetadata,

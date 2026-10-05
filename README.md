@@ -23,7 +23,7 @@ an issue to the agent, and watch it work toward a delivery pull request.
 Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 > [!NOTE]
-> The OpenClaw integration requires 2026.9.7 or newer and is developed against 2026.9.7. See
+> The OpenClaw integration requires 2026.9.8 or newer and is developed against 2026.9.8. See
 > [version compatibility](#version-compatibility).
 
 > [!WARNING]
@@ -116,7 +116,7 @@ For a development checkout, follow [Install from source](./DEVELOPMENT.md#instal
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| 0.9.0                | 2026.9.7         | 2026.9.7           |
+| 0.9.0                | 2026.9.8         | 2026.9.8           |
 | 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |
 | 0.6.0                | 2026.9.2         | 2026.9.3           |

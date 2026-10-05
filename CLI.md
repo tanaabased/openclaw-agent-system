@@ -644,7 +644,7 @@ declared release through OpenClaw:
 
 ```sh
 openclaw plugins inspect codex --json
-openclaw plugins install npm:@openclaw/codex@2026.9.7 --force --pin --accept-capabilities
+openclaw plugins install npm:@openclaw/codex@2026.9.8 --force --pin --accept-capabilities
 ```
 
 `--skip-setup` skips both phases regardless of consent; combining the two phase
