@@ -57,10 +57,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Prepare release-shaped build
-        uses: tanaabased/prepare-release-action@v1
+        uses: tanaabased/actions/prepare-release@v1
         with:
-          version: dev
-          sync: false
+          version: v9.9.9-ci.${{ github.event.pull_request.head.sha || github.sha }}
+          release-date: '2026-01-01T00:00:00Z'
+          release-url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           commands: |
             version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
