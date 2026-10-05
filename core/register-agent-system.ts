@@ -303,6 +303,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const automationService = new AutomationService(automationDependencies);
   const lifecycleContributions = [
     createCodexPluginLifecycleContribution({
+      readConfig,
       async readRequirement() {
         return codexPluginRequirement(
           JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')),

@@ -11,6 +11,7 @@ export const externalAgentSectionSchema = Type.Object(
     description: Type.Optional(Type.String({ minLength: 1 })),
     avatar: Type.Optional(Type.String({ minLength: 1 })),
     emoji: Type.Optional(Type.String({ minLength: 1 })),
+    runtime: Type.Optional(Type.Literal('codex')),
   },
   { additionalProperties: false },
 );
@@ -26,5 +27,6 @@ export function decodeAgentSection(value: ExternalAgentSection): AgentManifest['
     ...(value.description === undefined ? {} : { description: value.description }),
     ...(value.avatar === undefined ? {} : { avatar: value.avatar }),
     ...(value.emoji === undefined ? {} : { emoji: value.emoji }),
+    ...(value.runtime === undefined ? {} : { runtime: value.runtime }),
   };
 }

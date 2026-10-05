@@ -1,6 +1,8 @@
 import { satisfies, valid, validRange } from 'semver';
 
 import type { CodexPluginRequirement } from '../core/codex-plugin-metadata.ts';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import codexPluginApplies from './codex-plugin-applicability.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
@@ -30,6 +32,7 @@ interface PluginInspection {
 type Finding = Omit<AgentSystemLifecycleFinding, 'component'>;
 
 export interface CodexPluginLifecycleDependencies {
+  readConfig(): OpenClawConfig;
   readRequirement(): Promise<CodexPluginRequirement | undefined>;
   readPluginPackage(rootDir: string): Promise<{
     name?: string;
@@ -258,6 +261,7 @@ export default function createCodexPluginLifecycleContribution(
       const context = executionContext(input);
       if (!context) return [];
       try {
+        if (!codexPluginApplies(context.manifest, dependencies.readConfig)) return [];
         return [(await inspect(context)).finding];
       } catch (error) {
         context.signal?.throwIfAborted();
@@ -277,6 +281,7 @@ export default function createCodexPluginLifecycleContribution(
     async reconcile(input) {
       const context = executionContext(input);
       if (!context) return { outcomes: [] };
+      if (!codexPluginApplies(context.manifest, dependencies.readConfig)) return { outcomes: [] };
       const preflight = await inspect(context);
       if (preflight.finding.status === 'blocked') {
         throw new AgentSystemLifecycleError(
