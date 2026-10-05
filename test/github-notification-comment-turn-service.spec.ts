@@ -243,6 +243,10 @@ describe('channels/github/conversation/comment-turn-service', () => {
           assert.ok(serialized.includes('"line":null'));
           assert.ok(serialized.includes('"originalLine":1'));
           assert.match(String(context.BodyForAgent), /empty arrays/u);
+          assert.doesNotMatch(
+            String(context.BodyForAgent),
+            /diffHunk|originalCommitId|@@ -1|PRRC_finding/u,
+          );
           assert.ok(String(context.RawBody).includes(finding.nodeId));
           assert.match(String(context.SessionKey), /github:issue:r_repo:12/u);
         },

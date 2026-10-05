@@ -86,13 +86,35 @@ openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active 
 cd "$TMPDIR/agent-system-notifications"
 routing_default_model="$(openclaw config get agents.defaults.model --json | jq -er 'if type == "string" then . else .primary end')"
 output="$(openclaw agent-system install --json)"
+operator_warning="$(jq -r '[.warnings[]? | select(.code == "github-operator-loaded-access-unverified")] | length' <<< "$output")"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "updated")'
 openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$routing_default_model" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
-openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
+# A saved-config check cannot prove the running Gateway loaded the grant.
+gateway_owner_ready() {
+  openclaw gateway call config.get --json |
+    jq -e --arg owner 'agent-system-github:U_kgDOEUqvpg' '.valid == true and .configRevisionHash != null and .appliedConfigHash == .configRevisionHash and ((.runtimeConfig.commands.ownerAllowFrom // []) | index($owner) != null)' >/dev/null
+}
+if ! gateway_owner_ready; then
+  printf '%s\n' 'Install did not prove the active Gateway operator grant; checking one controlled restart.' >&2
+  OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
+  if gateway_owner_ready; then
+    printf '%s\n' 'The operator grant loaded only after a controlled restart.' >&2
+  else
+    printf '%s\n' 'The active Gateway operator grant remains unverified after restart.' >&2
+  fi
+  exit 1
+fi
+if test "$operator_warning" -gt 0; then
+  printf '%s\n' 'Install warned, but the active Gateway revision contains the operator grant; verifying after restart.' >&2
+  OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
+  gateway_owner_ready
+  reloaded="$(openclaw agent-system doctor --json || true)"
+  jq -c '[.findings[]? | select(.code | startswith("github-operator-")) | {code, status}]' <<< "$reloaded" >&2
+fi
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data
