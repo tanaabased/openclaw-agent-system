@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### Compatibility
+
+- Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.9.8`. [#218](https://github.com/tanaabased/openclaw-agent-system/issues/218)
+
 ## v0.8.0 - [September 29, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.8.0)
 
 ### New Features

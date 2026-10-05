@@ -38,7 +38,7 @@
         "eslint-config-prettier": "^10.1.8",
         "globals": "^17.7.0",
         "mocha": "^11.7.6",
-        "openclaw": "2026.9.7",
+        "openclaw": "2026.9.8",
         "prettier": "^3.9.6",
         "shellcheck": "^4.1.0",
         "tsx": "^4.22.4",
@@ -49,7 +49,7 @@
         "@napi-rs/keyring": "1.3.0",
       },
       "peerDependencies": {
-        "openclaw": ">=2026.9.7",
+        "openclaw": ">=2026.9.8",
       },
     },
   },
@@ -421,7 +421,7 @@
 
     "@openai/codex-win32-x64": ["@openai/codex@0.154.0-win32-x64", "", { "os": "win32", "cpu": "x64" }, "sha512-Stg2KEJPIKVqPPR1wCverGOR4ey3RR3cvakR07w7FNKQUMzmHaOZomRsP2bR1qOT/67yHsks9rB+MCMfIWXcRA=="],
 
-    "@openclaw/ai": ["@openclaw/ai@2026.9.7", "", { "dependencies": { "@anthropic-ai/sdk": "0.127.0", "@google/genai": "2.23.0", "@mistralai/mistralai": "2.7.0", "openai": "7.20.0", "partial-json": "0.1.7", "typebox": "1.3.34" } }, "sha512-WHNjSzPTEprBsXGz9O1p5AEm6zodRisUUsZ0Q1GA16UUj0tgp9ovX6PeLNDszwOw0M7RYe+lFDLHjOmvrjjzYQ=="],
+    "@openclaw/ai": ["@openclaw/ai@2026.9.8", "", { "dependencies": { "@anthropic-ai/sdk": "0.127.0", "@google/genai": "2.23.0", "@mistralai/mistralai": "2.7.0", "openai": "7.20.0", "partial-json": "0.1.7", "typebox": "1.3.34" } }, "sha512-pvOpIaBu8kswh7MMNBkloUqlI455jr+OH7rP/KFrdfybIKSA8NVLvitKkljoApYJFTCU+iVYPK7Fg3QB/4rPbA=="],
 
     "@openclaw/fs-safe": ["@openclaw/fs-safe@0.21.1", "", { "optionalDependencies": { "@openclaw/fs-safe-darwin-arm64": "0.21.1", "@openclaw/fs-safe-darwin-x64": "0.21.1", "@openclaw/fs-safe-linux-arm64-gnu": "0.21.1", "@openclaw/fs-safe-linux-arm64-musl": "0.21.1", "@openclaw/fs-safe-linux-x64-gnu": "0.21.1", "@openclaw/fs-safe-linux-x64-musl": "0.21.1", "@openclaw/fs-safe-win32-x64-msvc": "0.21.1", "jszip": "^3.10.2" } }, "sha512-jkowVEniLZBi203tncmZTvh0Cbby0rhKaPIaWFo7F+qiABOsE/6lsPATVyyqzrcj/t+FqFADhwXKsrlw5UJL1Q=="],
 
@@ -1445,7 +1445,7 @@
 
     "openai": ["openai@7.20.0", "", { "peerDependencies": { "@aws-sdk/credential-provider-node": ">=3.972.0 <4", "@smithy/hash-node": ">=4.3.0 <5", "@smithy/signature-v4": ">=5.4.0 <6", "undici": ">=5 <9", "ws": "^8.21.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["@aws-sdk/credential-provider-node", "@smithy/hash-node", "@smithy/signature-v4", "undici", "ws", "zod"] }, "sha512-5x5ru4cKEvEqHqYZbdIbT57OE7KqmP9YYxZiUKuKng016grOHXqom1vmu34MTPPW30q+lcP9RhxAbaRse+Xlcw=="],
 
-    "openclaw": ["openclaw@2026.9.7", "", { "dependencies": { "@agentclientprotocol/sdk": "1.4.0", "@anthropic-ai/sdk": "0.127.0", "@babel/generator": "8.0.6", "@babel/parser": "8.0.6", "@babel/traverse": "8.0.6", "@clack/core": "1.5.1", "@clack/prompts": "1.8.1", "@earendil-works/pi-tui": "0.86.1", "@google/genai": "2.23.0", "@grammyjs/transformer-throttler": "1.2.1", "@homebridge/ciao": "1.3.12", "@lydell/node-pty": "1.2.0-beta.15", "@mistralai/mistralai": "2.7.0", "@modelcontextprotocol/sdk": "1.30.0", "@mozilla/readability": "0.6.0", "@openclaw/ai": "2026.9.7", "@openclaw/fs-safe": "0.21.1", "@openclaw/proxyline": "0.3.12", "@silvia-odwyer/photon-node": "0.3.4", "@trycua/cua-driver": "0.28.2", "acorn": "8.18.0", "chalk": "6.0.0", "chokidar": "5.0.0", "chrome-devtools-mcp": "1.9.0", "clawpdf": "0.3.2", "commander": "15.0.0", "croner": "10.0.1", "diff": "9.0.0", "dotenv": "18.0.1", "entities": "8.1.0", "esbuild": "0.28.2", "execa": "10.0.1", "express": "5.2.1", "file-type": "22.1.1", "grammy": "1.46.0", "highlight.js": "11.12.0", "hosted-git-info": "10.1.1", "iconv-lite": "0.7.3", "ignore": "7.0.9", "import-meta-resolve": "4.2.0", "jiti": "2.7.0", "json5": "2.2.3", "jszip": "3.10.2", "koffi": "3.3.1", "kysely": "0.29.6", "linkedom": "0.18.13", "minimatch": "10.2.6", "node-edge-tts": "1.2.10", "npm": "11.20.0", "openai": "7.20.0", "p-limit": "7.3.3", "p-map": "7.0.8", "partial-json": "0.1.7", "playwright-core": "1.63.0", "qrcode": "1.5.4", "rastermill": "0.3.3", "semver": "7.8.5", "tar": "7.5.22", "tslog": "5.2.0", "typebox": "1.3.34", "undici": "8.10.2", "web-push": "3.6.7", "web-tree-sitter": "0.27.0", "ws": "8.21.3", "yaml": "2.9.1", "zod": "4.6.5" }, "optionalDependencies": { "sqlite-vec": "0.1.9" }, "bin": { "openclaw": "openclaw.mjs" } }, "sha512-/8N2LnfTFQPvnZizi8qKSFfnLQaPvSG3Cb4xo1YV7b4JhYiUc43ZNRpXJ01bWghLK0Ezk3HVeo/DGHcIRQwRWA=="],
+    "openclaw": ["openclaw@2026.9.8", "", { "dependencies": { "@agentclientprotocol/sdk": "1.4.0", "@anthropic-ai/sdk": "0.127.0", "@babel/generator": "8.0.6", "@babel/parser": "8.0.6", "@babel/traverse": "8.0.6", "@clack/core": "1.5.1", "@clack/prompts": "1.8.1", "@earendil-works/pi-tui": "0.86.1", "@google/genai": "2.23.0", "@grammyjs/transformer-throttler": "1.2.1", "@homebridge/ciao": "1.3.12", "@lydell/node-pty": "1.2.0-beta.15", "@mistralai/mistralai": "2.7.0", "@modelcontextprotocol/sdk": "1.30.0", "@mozilla/readability": "0.6.0", "@openclaw/ai": "2026.9.8", "@openclaw/fs-safe": "0.21.1", "@openclaw/proxyline": "0.3.12", "@silvia-odwyer/photon-node": "0.3.4", "@trycua/cua-driver": "0.28.2", "acorn": "8.18.0", "chalk": "6.0.0", "chokidar": "5.0.0", "chrome-devtools-mcp": "1.9.0", "clawpdf": "0.3.2", "commander": "15.0.0", "croner": "10.0.1", "diff": "9.0.0", "dotenv": "18.0.1", "entities": "8.1.0", "esbuild": "0.28.2", "execa": "10.0.1", "express": "5.2.1", "file-type": "22.1.1", "grammy": "1.46.0", "highlight.js": "11.12.0", "hosted-git-info": "10.1.1", "iconv-lite": "0.7.3", "ignore": "7.0.9", "import-meta-resolve": "4.2.0", "jiti": "2.7.0", "json5": "2.2.3", "jszip": "3.10.2", "koffi": "3.3.1", "kysely": "0.29.6", "linkedom": "0.18.13", "minimatch": "10.2.6", "node-edge-tts": "1.2.10", "npm": "11.20.0", "openai": "7.20.0", "p-limit": "7.3.3", "p-map": "7.0.8", "partial-json": "0.1.7", "playwright-core": "1.63.0", "qrcode": "1.5.4", "rastermill": "0.3.3", "semver": "7.8.5", "tar": "7.5.22", "tslog": "5.2.0", "typebox": "1.3.34", "undici": "8.10.2", "web-push": "3.6.7", "web-tree-sitter": "0.27.0", "ws": "8.21.3", "yaml": "2.9.1", "zod": "4.6.5" }, "optionalDependencies": { "sqlite-vec": "0.1.9" }, "bin": { "openclaw": "openclaw.mjs" } }, "sha512-G+JkNUhtpDE3cXR4AEi2NyyG9fqI/T2WUSl8ZnR8AATH8Dh1kC3qYFL7wwPoZtgHiP/cszA86PEiE0PDysxb9Q=="],
 
     "optionator": ["optionator@0.9.4", "", { "dependencies": { "deep-is": "^0.1.3", "fast-levenshtein": "^2.0.6", "levn": "^0.4.1", "prelude-ls": "^1.2.1", "type-check": "^0.4.0", "word-wrap": "^1.2.5" } }, "sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g=="],
 
