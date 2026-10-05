@@ -84,10 +84,16 @@ host override applies only to the home location; it does not import host secrets
 or replace the normal environment-source precedence. Individual GoG directory,
 access-token, and ADC overrides cannot bypass the managed store.
 
-Install stores encrypted generations under that root and activates one with
-`current.json`. Routine calls and Doctor use disposable private copies, so the
-child's `GOG_HOME`, `HOME`, and directory variables point at that copy; they do
-not change the host process's environment or runner home. The OAuth app/client
+Only explicit Install changes durable authentication state. It stores encrypted
+generations under the managed home and activates one with `current.json`.
+Unchanged installs verify through a copy without reimporting; changed credentials
+create a new generation. Failed import or identity verification preserves the
+active generation. Competing installs report a busy diagnostic; retry after the
+current install finishes.
+
+Routine calls and Doctor use disposable private copies and never repair missing
+state. Their `GOG_HOME`, `HOME`, and directory variables point at that copy without
+changing the host environment. The OAuth app/client
 can be shared across production agents. Each Google user needs their own consent
 and token export; each agent gets separate state and should get a separate keyring
 password. Client ID, client secret, and project ID need no additional bindings
@@ -159,14 +165,6 @@ Choose a read command for a service the agent authorized. A healthy Google findi
 reports a live authenticated email check. The harmless service read also proves
 that the grant has the service permission. Calls need no interactive login after
 setup. GoG performs access-token refresh; Agent System does not implement OAuth.
-
-Only explicit Install reconciles durable state. An unchanged install verifies
-through a copy without reimporting; changed account/client/token/password imports
-into a new generation. Failed import or identity verification leaves the active
-generation intact. Competing installs for the same home fail with an actionable
-busy diagnostic; retry once the current install finishes. Ordinary calls never
-repair missing state. Credential consumers resolve the declared values explicitly;
-the existing secret resolver may cache them in process memory.
 
 After managed verification succeeds, remove the identified plaintext download and
 export and any no-longer-needed onboarding keyring. Retain the three secrets in
@@ -294,7 +292,6 @@ gog --agent-system
 ```
 
 The [generic tool CLI](../../CLI.md) remains operator-only when invoked unbound.
-Private GoG state follows the [per-agent home contract](#environment-and-state). Routine calls use disposable private copies so GoG
-refresh, cache, and migration effects do not change durable authentication state.
+Private GoG state follows the [per-agent home contract](#environment-and-state).
 The agents still share an OS user; these are practical context and identity
 boundaries, not complete operating-system isolation.

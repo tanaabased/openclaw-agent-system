@@ -410,6 +410,27 @@ can proceed concurrently up to the agent's durable issue-work limit; shared
 repository preparation is serialized. Assignment acknowledgments wait for
 durable session recording.
 
+### Managed Worktrees
+
+The channel uses [managed Git worktrees](../../tools/git/README.md#gitworktrees).
+New GitHub issue worktrees keep the immutable-id directory but name the branch
+`<issue-number>-<title-slug>-<five-character-hash>`. The title slug is limited to
+48 characters and falls back to `issue` when the title cannot be slugged. The
+hash separates agent-scoped worktrees for the same issue. Existing GitHub issue
+branches keep their original names through retries, title edits, and cleanup.
+
+When GitHub reports new canonical coordinates for the same immutable repository
+and owner identities, the channel may update the managed origin. It verifies and
+fetches the new origin before continuing and restores the prior origin on failure.
+This retargeting is unavailable through the model-facing worktree tool and
+operator command.
+
+Completed assignment retirement removes only the exact clean managed checkout,
+using non-forced Git removal. Missing worktrees complete idempotently; dirty,
+unsafe, or unreadable checkouts, local branches, and remote refs remain untouched.
+See the [retirement scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-retirement/README.md)
+for incomplete-work retention and completed-work cleanup.
+
 ### Pull Request Review Feedback
 
 Submitted reviews on an issue's linked delivery PR enter the same conversation as

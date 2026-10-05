@@ -189,6 +189,34 @@ agent-scoped OpenClaw identity, and missing account keys, and report drift. See 
 [GitHub notifications channel](../../channels/github/README.md) for its separate
 configuration, routing, lifecycle, and security contract.
 
+## Native Tool
+
+### `agent_system_github`
+
+Run ordinary GitHub CLI commands with the trusted active agent. The same
+[configuration](#configuration-reference) and [policy](#githubpolicy) apply to
+native and operator calls.
+
+#### Parameters
+
+| Parameter | Type         | Required | Default | Description                                                                         |
+| --------- | ------------ | -------- | ------- | ----------------------------------------------------------------------------------- |
+| `argv`    | string array | yes      | none    | 1–128 GitHub CLI arguments, without `gh`; each argument is at most 8192 characters. |
+| `stdin`   | string       | no       | none    | Ordinary command input, at most 64 KiB; never tokens.                               |
+
+Callers cannot select an agent, workspace, or credential. Unknown parameters are
+rejected.
+
+#### Usage
+
+Inspect the configured GitHub identity:
+
+```json
+{ "argv": ["api", "user", "--jq", ".login"] }
+```
+
+Results include `exitCode`, `stdout`, `stderr`, and `truncated`.
+
 ## CLI
 
 These are operator commands; agents use `agent_system_github`. See the

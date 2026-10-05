@@ -195,22 +195,11 @@ different repositories can prepare independently. Declared local repository
 aliases share the lock in Git's common metadata directory. Waiting callers honor
 cancellation and stop after ten minutes if the repository remains busy.
 
-The GitHub notifications channel uses this same managed-worktree service.
-Without `git.ssh`, canonical HTTPS supports public repositories. When `git.ssh`
-is configured, model-facing, operator-command, and notification preparation all
-derive the equivalent `git@github.com:<owner>/<repository>.git` remote from a
-canonical GitHub HTTPS clone URL and use the isolated SSH resource. Configure
-`git.ssh` before enabling automatic notification delivery for private
-repositories. The trusted channel path may reconcile a managed origin after
-GitHub reports new canonical coordinates for the same immutable repository and
-owner identities. It verifies and fetches the new origin before continuing,
-restores the prior origin on failure, and never exposes this retargeting
-behavior through the model-facing worktree tool or operator command.
-On provider-verified completed assignment retirement, the same trusted path
-inspects the exact deterministic checkout, runs a full porcelain status check,
-and uses ordinary non-forced Git worktree removal only when it is clean.
-Missing worktrees complete idempotently; dirty, unsafe, or failed inspections
-leave the checkout, local branch, and every remote ref untouched.
+Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
+all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
+from canonical GitHub HTTPS URLs and use isolated SSH credentials. Configure SSH
+before enabling private-repository notification delivery. Channel-specific origin
+changes and retirement follow the [notification worktree lifecycle](../../channels/github/ADVANCED.md#managed-worktrees).
 
 `install` creates workspace-local roots with owner-only permissions and adds
 them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored
@@ -258,6 +247,71 @@ and working-directory escape paths. Repository configuration can still name
 helpers, filters, aliases, and diff programs, so the wrapper does not make an
 untrusted checkout safe. Raw `git worktree` access permits only read-only
 `list`; use the managed worktree tool for lifecycle changes.
+
+## Native Tools
+
+### `agent_system_git`
+
+Run ordinary Git commands using the trusted active agent. Configuration and
+[policy](#gitpolicy) apply to native and CLI calls alike.
+
+#### Parameters
+
+| Parameter | Type         | Required | Default         | Description                                                                            |
+| --------- | ------------ | -------- | --------------- | -------------------------------------------------------------------------------------- |
+| `argv`    | string array | yes      | none            | 1–256 Git arguments, without the `git` executable.                                     |
+| `cwd`     | string       | no       | agent workspace | Working directory within the workspace or configured worktree root; 1–4096 characters. |
+| `stdin`   | string       | no       | none            | Ordinary command input, at most 64 KiB; never credentials.                             |
+
+#### Usage
+
+Inspect the active workspace:
+
+```json
+{ "argv": ["status", "--short"] }
+```
+
+For a managed checkout, pass its returned canonical path as `cwd`. Results include
+`exitCode`, `stdout`, `stderr`, and `truncated`.
+
+### `agent_system_git_worktree`
+
+Prepare, list, or remove managed worktrees when [`git.worktrees`](#gitworktrees)
+is enabled. The trusted tool context supplies the agent and workspace.
+
+#### Parameters
+
+| Parameter      | Type                        | Required                          | Default                     | Description                                                                                    |
+| -------------- | --------------------------- | --------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------- |
+| `action`       | `list`, `prepare`, `remove` | yes                               | none                        | Worktree operation.                                                                            |
+| `baseRef`      | string                      | for `prepare`                     | none                        | Git base ref, such as `origin/main`.                                                           |
+| `repository`   | object                      | for `prepare`                     | none                        | `{ id, cloneUrl? }`; the URL may be omitted for an already known or declared local repository. |
+| `repositoryId` | string                      | for `remove`; optional for `list` | all repositories for `list` | Stable managed repository ID.                                                                  |
+| `workId`       | string                      | for `prepare` and `remove`        | none                        | Stable work ID; see [naming](#openclaw-agent-system-tool-worktree----prepare).                 |
+
+Identifiers and refs are 1–256 characters, cannot start with `-`, and cannot have
+surrounding whitespace or control characters. `cloneUrl` is at most 4096 characters.
+Each action accepts only its own parameters; unknown fields are rejected.
+
+#### Usage
+
+Prepare a checkout, then use its returned path with `agent_system_git`:
+
+```json
+{
+  "action": "prepare",
+  "repository": {
+    "id": "agent-system",
+    "cloneUrl": "https://github.com/tanaabased/openclaw-agent-system.git"
+  },
+  "workId": "123-fix-agent-path-resolution",
+  "baseRef": "origin/main"
+}
+```
+
+Use `{"action":"list"}` to inspect managed worktrees. Removal requires
+`action: remove`, `repositoryId`, and `workId`; dirty checkouts, branches, and refs
+remain intact.
 
 ## CLI
 
@@ -326,11 +380,8 @@ Preparation is idempotent.
 For ordinary managed work, Agent System names both the branch and directory
 `<work-id-slug>-<digest>`. Prefer `<task-id>-<brief-kebab-case-description>` for
 the work id when a description is available; otherwise use `<task-id>`.
-New GitHub issue worktrees keep the immutable-id directory but name the branch
-`<issue-number>-<title-slug>-<five-character-hash>`. The title slug is limited to
-48 characters and falls back to `issue` when the title cannot be slugged. The
-hash separates agent-scoped worktrees for the same issue. Existing GitHub issue
-branches keep their original names through retries, title edits, and cleanup.
+See [notification worktrees](../../channels/github/ADVANCED.md#managed-worktrees)
+for issue branch naming and retirement.
 
 ### `openclaw agent-system tool worktree -- list`
 
