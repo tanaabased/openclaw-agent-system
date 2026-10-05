@@ -180,6 +180,22 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         coordinator: {
           async run(input) {
             eventTurns += 1;
+            if (checkpointMode === 'task') {
+              const before = structuredClone(state);
+              assert.equal(
+                await service.checkpointTask({ agentId, item, pullRequest, workspaceDir }),
+                'awaiting-reconciliation',
+              );
+              assert.deepEqual(state, before);
+              await assert.rejects(
+                service.checkpointTask({
+                  agentId,
+                  item,
+                  pullRequest: { ...pullRequest, pullRequestNodeId: 'PR_other' },
+                  workspaceDir,
+                }),
+              );
+            }
             assert.equal(input.contract, contract);
             assert.equal(input.createIfMissing, false);
             assert.equal(input.executionSurface, 'cli-one-shot');
@@ -243,7 +259,9 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         await service.checkpoint(checkpointInput);
         await assert.rejects(
           service.checkpointTask(checkpointInput),
-          /Automatic Work delivery still owns/u,
+          (error: unknown) =>
+            error instanceof GitHubNotificationPullRequestHandoffError &&
+            error.code === 'github-notification-pull-request-handoff-work-owned',
         );
         state.conversations[conversationId]!.implementation = { status: 'completed' };
       } else {
@@ -289,6 +307,120 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         source: { itemType: 'pull-request', number: 45 },
         status: 'baseline',
       });
+    });
+  }
+
+  for (const interrupted of [false, true]) {
+    it(`should retain ${interrupted ? 'interrupted' : 'uncertain'} handoff state without replay after restart`, async () => {
+      const item = approvedNotificationItem();
+      const conversationId = githubNotificationConversationId({
+        itemNumber: item.number,
+        lifecycleId: item.lifecycleId,
+        repositoryId: item.repositoryNodeId,
+      });
+      let state = createGitHubNotificationConversationState(agentId, workspaceDir);
+      state.conversations[conversationId] = {
+        assignmentResponse: {
+          status: 'withheld',
+          reasonCode: 'github-notification-guided-waiting',
+        },
+        baselineEstablished: true,
+        implementation: { status: 'completed' },
+        deliveryPullRequest: {
+          baselineEstablished: true,
+          eventRecorded: false,
+          nodeId: pullRequest.pullRequestNodeId,
+          number: pullRequest.pullRequestNumber,
+          status: 'open',
+        },
+        itemKey: `github:${item.repositoryNodeId}:${item.number}`,
+        lifecycleId: 'issue',
+        mode: 'guided',
+        revisions: {},
+        ...(interrupted
+          ? {
+              activeTurn: {
+                eventId: 'pull-request-opened' as const,
+                sourceId: pullRequest.pullRequestNodeId,
+              },
+            }
+          : {}),
+      };
+      let dispatches = 0;
+      const makeService = () =>
+        new GitHubNotificationPullRequestHandoffService({
+          assignmentAuthority: {
+            async open() {
+              assert.fail('baseline already established');
+            },
+          },
+          conversationStateStore: {
+            async read() {
+              return conversationSnapshot(state, conversationId);
+            },
+            async write(next) {
+              state = replaceConversationSnapshot(state, next);
+            },
+          },
+          coordinator: {
+            async run() {
+              dispatches++;
+              throw new Error('completion unavailable');
+            },
+          },
+          logger: { error() {}, info() {}, warn() {} },
+          publications: {
+            async publish() {
+              assert.fail('must not invent handoff completion');
+            },
+          },
+          readConfig: () => config,
+          resolveNotificationRoute: resolveTestNotificationRoute,
+          turnContracts: {
+            resolve: () =>
+              ({
+                identity: {
+                  eventId: 'pull-request-opened',
+                  lifecycleId: 'issue',
+                  modeId: 'guided',
+                },
+              }) as GitHubNotificationTurnContract,
+          },
+        });
+      const input = {
+        agentId,
+        executionSurface: 'gateway' as const,
+        item,
+        lifecycle: issueLifecycle(),
+        workspaceDir,
+      };
+      await assert.rejects(
+        makeService().reconcile(input),
+        (error: unknown) =>
+          error instanceof GitHubNotificationPullRequestHandoffError &&
+          error.code === 'github-notification-pull-request-handoff-recovery-required',
+      );
+      const saved = structuredClone(state);
+      await makeService().reconcile(input);
+      await makeService().reconcile(input);
+      assert.deepEqual(state, saved);
+      assert.equal(dispatches, interrupted ? 0 : 1);
+      const conversation = state.conversations[conversationId]!;
+      assert.equal(conversation.deliveryPullRequest?.eventStatus, 'recovery-required');
+      assert.equal(conversation.deliveryPullRequest?.eventRecorded, false);
+      assert.equal(conversation.deliveryPullRequest?.handoff, undefined);
+      assert.deepEqual(conversation.activeTurn, {
+        eventId: 'pull-request-opened',
+        sourceId: pullRequest.pullRequestNodeId,
+      });
+      assert.equal(
+        await makeService().checkpointTask({ agentId, item, pullRequest, workspaceDir }),
+        'recovery-required',
+      );
+      conversation.activeTurn = { eventId: 'assignment', sourceId: 'unrelated' };
+      await assert.rejects(
+        makeService().checkpointTask({ agentId, item, pullRequest, workspaceDir }),
+      );
     });
   }
 

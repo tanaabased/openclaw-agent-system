@@ -33,7 +33,11 @@ export type GitHubNotificationPullRequestHandoffErrorCode =
   | 'github-notification-pull-request-handoff-baseline-failed'
   | 'github-notification-pull-request-handoff-event-failed'
   | 'github-notification-pull-request-handoff-publication-failed'
-  | 'github-notification-pull-request-handoff-source-failed';
+  | 'github-notification-pull-request-handoff-source-failed'
+  | 'github-notification-pull-request-handoff-recovery-required'
+  | 'github-notification-pull-request-handoff-session-ineligible'
+  | 'github-notification-pull-request-handoff-identity-mismatch'
+  | 'github-notification-pull-request-handoff-work-owned';
 
 export class GitHubNotificationPullRequestHandoffError extends Error {
   override name = 'GitHubNotificationPullRequestHandoffError';
@@ -125,7 +129,7 @@ export default class GitHubNotificationPullRequestHandoffService {
       GitHubNotificationPullRequestHandoffCheckpointInput,
       'executionSurface' | 'lifecycle'
     >,
-  ): Promise<'awaiting-reconciliation' | 'published'> {
+  ): Promise<'awaiting-reconciliation' | 'published' | 'recovery-required'> {
     this.#validateInput(input);
     const current = await this.#dependencies.conversationStateStore.read(
       input.agentId,
@@ -139,9 +143,17 @@ export default class GitHubNotificationPullRequestHandoffService {
       conversation.itemKey !== githubWorkItemKey(input.item.repositoryNodeId, input.item.number) ||
       conversation.lifecycleId !== 'issue' ||
       !conversation.assignmentResponse ||
-      (conversation.activeTurn && conversation.activeTurn.eventId !== 'comment')
+      (conversation.activeTurn &&
+        conversation.activeTurn.eventId !== 'comment' &&
+        !(
+          conversation.activeTurn.eventId === 'pull-request-opened' &&
+          conversation.activeTurn.sourceId === input.pullRequest.pullRequestNodeId &&
+          conversation.deliveryPullRequest?.nodeId === input.pullRequest.pullRequestNodeId
+        ))
     ) {
-      throw new Error('The task pull request has no eligible issue-owned session.');
+      throw new GitHubNotificationPullRequestHandoffError(
+        'github-notification-pull-request-handoff-session-ineligible',
+      );
     }
     const existing = conversation.deliveryPullRequest;
     if (existing) {
@@ -150,11 +162,16 @@ export default class GitHubNotificationPullRequestHandoffService {
         existing.number !== input.pullRequest.pullRequestNumber ||
         existing.status !== 'open'
       ) {
-        throw new Error('The issue-owned session is linked to a different pull request.');
+        throw new GitHubNotificationPullRequestHandoffError(
+          'github-notification-pull-request-handoff-identity-mismatch',
+        );
       }
       if (conversation.implementation?.status !== 'completed') {
-        throw new Error('Automatic Work delivery still owns this pull request handoff.');
+        throw new GitHubNotificationPullRequestHandoffError(
+          'github-notification-pull-request-handoff-work-owned',
+        );
       }
+      if (existing.eventStatus === 'recovery-required') return 'recovery-required';
       return existing.handoff?.status === 'published' ? 'published' : 'awaiting-reconciliation';
     }
     const next = structuredClone(current);
@@ -173,6 +190,7 @@ export default class GitHubNotificationPullRequestHandoffService {
   async reconcile(input: GitHubNotificationPullRequestHandoffReconcileInput): Promise<void> {
     this.#validateInput(input);
     resolveGitHubNotificationLifecycleEventSupport(input.lifecycle, 'pull-request-opened');
+    if ((await this.#conversation(input)).source.eventStatus === 'recovery-required') return;
     await this.#phase('github-notification-pull-request-handoff-baseline-failed', () =>
       this.#baselineSource(input),
     );
@@ -332,8 +350,16 @@ export default class GitHubNotificationPullRequestHandoffService {
     ) {
       throw new Error('Another GitHub notification model turn is active.');
     }
+    // an existing attempt may have reached the host before interruption; never replay it.
+    if (checkpoint.conversation.activeTurn || checkpoint.source.eventStatus) {
+      await this.#requireRecovery(input, checkpoint.source.nodeId);
+      throw new GitHubNotificationPullRequestHandoffError(
+        'github-notification-pull-request-handoff-recovery-required',
+      );
+    }
     if (!checkpoint.conversation.activeTurn) {
       const next = structuredClone(checkpoint.state);
+      next.conversation!.deliveryPullRequest!.eventStatus = 'dispatching';
       next.conversation!.activeTurn = {
         eventId: 'pull-request-opened',
         sourceId: checkpoint.source.nodeId,
@@ -365,56 +391,65 @@ export default class GitHubNotificationPullRequestHandoffService {
       config,
       route.agentId,
     );
-    const turn = await this.#dependencies.coordinator.run({
-      config,
-      contract,
-      createIfMissing: false,
-      ctxPayload: buildChannelInboundEventContext({
-        accountId: route.accountId,
-        channel: githubNotificationChannelId,
-        channelContext: {
-          chat: { id: route.conversationId },
-          sender: { id: 'agent-system' },
-        },
-        conversation: {
-          id: route.conversationId,
-          kind: 'direct',
-          label: `${repository}#${input.item.number}`,
-          routePeer: { id: route.conversationId, kind: 'direct' },
-        },
-        from: 'agent-system:github-notifications',
-        message: {
-          body,
-          bodyForAgent: body,
-          commandBody: '',
-          inboundEventKind: 'user_request',
-          rawBody: body,
-        },
-        messageId,
-        reply: { sourceReplyDeliveryMode: 'none', to: route.conversationId },
-        route: {
+    let turn;
+    try {
+      turn = await this.#dependencies.coordinator.run({
+        config,
+        contract,
+        createIfMissing: false,
+        ctxPayload: buildChannelInboundEventContext({
           accountId: route.accountId,
-          agentId: route.agentId,
-          createIfMissing: false,
-          routeSessionKey: route.sessionKey,
-        },
-        sender: {
-          displayLabel: 'Agent System',
-          id: 'agent-system',
-          isBot: true,
-          isSelf: false,
-          name: 'Agent System',
-          username: 'agent-system',
-        },
-        surface: githubNotificationChannelId,
-        timestamp: this.#clock(),
-      }),
-      executionSurface: input.executionSurface,
-      messageId,
-      route,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      sourceId: checkpoint.source.nodeId,
-    });
+          channel: githubNotificationChannelId,
+          channelContext: {
+            chat: { id: route.conversationId },
+            sender: { id: 'agent-system' },
+          },
+          conversation: {
+            id: route.conversationId,
+            kind: 'direct',
+            label: `${repository}#${input.item.number}`,
+            routePeer: { id: route.conversationId, kind: 'direct' },
+          },
+          from: 'agent-system:github-notifications',
+          message: {
+            body,
+            bodyForAgent: body,
+            commandBody: '',
+            inboundEventKind: 'user_request',
+            rawBody: body,
+          },
+          messageId,
+          reply: { sourceReplyDeliveryMode: 'none', to: route.conversationId },
+          route: {
+            accountId: route.accountId,
+            agentId: route.agentId,
+            createIfMissing: false,
+            routeSessionKey: route.sessionKey,
+          },
+          sender: {
+            displayLabel: 'Agent System',
+            id: 'agent-system',
+            isBot: true,
+            isSelf: false,
+            name: 'Agent System',
+            username: 'agent-system',
+          },
+          surface: githubNotificationChannelId,
+          timestamp: this.#clock(),
+        }),
+        executionSurface: input.executionSurface,
+        messageId,
+        route,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        sourceId: checkpoint.source.nodeId,
+      });
+    } catch (error) {
+      await this.#requireRecovery(input, checkpoint.source.nodeId);
+      throw new GitHubNotificationPullRequestHandoffError(
+        'github-notification-pull-request-handoff-recovery-required',
+        { cause: error },
+      );
+    }
     if (turn.publication.status !== 'none') {
       throw new Error('The pull request opened event produced an unexpected publication intent.');
     }
@@ -431,7 +466,22 @@ export default class GitHubNotificationPullRequestHandoffService {
     const conversation = next.conversation!;
     delete conversation.activeTurn;
     conversation.deliveryPullRequest!.eventRecorded = true;
+    delete conversation.deliveryPullRequest!.eventStatus;
     await this.#dependencies.conversationStateStore.write(next);
+  }
+
+  async #requireRecovery(
+    input: GitHubNotificationPullRequestHandoffReconcileInput,
+    nodeId: string,
+  ): Promise<void> {
+    const current = await this.#conversation(input);
+    if (current.source.nodeId !== nodeId || current.source.eventRecorded) return;
+    const next = structuredClone(current.state);
+    next.conversation!.deliveryPullRequest!.eventStatus = 'recovery-required';
+    await this.#dependencies.conversationStateStore.write(next);
+    this.#dependencies.logger.warn(
+      'github-notifications: pull request handoff stopped code=github-notification-pull-request-handoff-recovery-required',
+    );
   }
 
   async #publishHandoff(input: GitHubNotificationPullRequestHandoffReconcileInput): Promise<void> {

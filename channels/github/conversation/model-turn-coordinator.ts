@@ -296,9 +296,10 @@ export default class GitHubNotificationModelTurnCoordinator {
             )
           : await dispatch();
     } catch (error) {
-      await this.#dependencies.candidates
-        .cancel({ ...candidateIdentity, turnId: candidateTurn })
-        .catch(() => undefined);
+      if (input.contract.identity.eventId !== 'pull-request-opened')
+        await this.#dependencies.candidates
+          .cancel({ ...candidateIdentity, turnId: candidateTurn })
+          .catch(() => undefined);
       this.#dependencies.logger.warn(
         [
           'github-notifications: model turn failed',

@@ -222,6 +222,41 @@ describe('channels/github/publication/reply-candidate-store', () => {
     }
   });
 
+  it('should retain an unattested pull request receipt through restart and expiry', async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-pr-unattested-'));
+    const rootDir = join(temporaryDirectory, 'state');
+    let now = Date.parse('2026-08-15T12:00:00.000Z');
+    const handoff = {
+      ...identity,
+      identity: { ...identity.identity, eventId: 'pull-request-opened' as const },
+    };
+    try {
+      const store = new GitHubNotificationReplyCandidateStore({
+        rootDir,
+        now: () => now,
+        ttlMs: 100,
+      });
+      const turnId = await store.begin(handoff);
+      await assert.rejects(
+        store.finish({ ...handoff, turnId }),
+        hasCode('reply-turn-prompt-selection-missing'),
+      );
+      const resumed = new GitHubNotificationReplyCandidateStore({
+        rootDir,
+        now: () => now,
+        ttlMs: 100,
+      });
+      await assert.rejects(resumed.begin(handoff), hasCode('reply-turn-already-active'));
+      now += 101;
+      await assert.rejects(resumed.finish({ ...handoff, turnId }), hasCode('reply-turn-expired'));
+      await assert.rejects(resumed.begin(handoff), hasCode('reply-turn-already-active'));
+      await resumed.cancel({ ...handoff, turnId: 'unrelated' });
+      await assert.rejects(resumed.begin(handoff), hasCode('reply-turn-already-active'));
+    } finally {
+      await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  });
+
   it('should release a turn that finishes without attested prompt selection', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-reply-unattested-'));
     const rootDir = join(temporaryDirectory, 'state');
