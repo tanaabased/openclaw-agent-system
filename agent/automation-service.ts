@@ -18,6 +18,11 @@ import {
   retainedOneShot,
   type AutomationProjectionContext,
 } from './automation-projection.ts';
+import automationThreadGateway from './automation-thread-gateway.ts';
+import AutomationThreads, {
+  automationThreadNames,
+  automationThreadSelection,
+} from './automation-threads.ts';
 import AutomationStore, {
   automationHash,
   type AutomationLedger,
@@ -66,6 +71,13 @@ export default class AutomationService {
     return { context, store };
   }
 
+  private threads(context: AutomationProjectionContext, store: AutomationStore) {
+    return new AutomationThreads(
+      { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
+      automationThreadGateway(this.dependencies.request!, { ...context, scope: store.scope }),
+    );
+  }
+
   contribution(): AgentSystemLifecycleContribution {
     return {
       id: 'automations',
@@ -108,6 +120,11 @@ export default class AutomationService {
           applicable: declared?.runtimes.includes('openclaw') ?? true,
           nativeId: record?.nativeId ?? null,
           nativeEnabled: native?.enabled ?? null,
+          routing:
+            native?.sessionTarget ??
+            (declared && automationThreadSelection(declared, 'openclaw')
+              ? 'persistent-pending'
+              : 'independent'),
           execution: ['ok', 'error', 'skipped'].includes(String(native?.state.lastRunStatus))
             ? native!.state.lastRunStatus
             : 'unavailable',
@@ -146,6 +163,10 @@ export default class AutomationService {
     if (!job.runtimes.includes('openclaw'))
       throw new AutomationError('automation-runtime-unsupported');
     const { context, record, native } = await this.resolveOwned(manifest, workspaceDir, id);
+    if (automationThreadSelection(job, 'openclaw')) {
+      const { store } = await this.scope(manifest, workspaceDir);
+      context.threads = await this.threads(context, store).resolve([job]);
+    }
     if (
       !job.enabled ||
       record.removed ||
@@ -240,7 +261,7 @@ export default class AutomationService {
       stepId: id,
       status,
       code,
-      message: `Automation ${id}: ${code.replace(/^automation-/u, '')}.`,
+      message: `Automation ${id}: ${code.replace(/^automation-/u, '')}${context.threads?.has(id) ? ` (persistent, ${context.threads.get(id)!.outcome}: ${context.threads.get(id)!.id})` : ''}.`,
       ...(status === 'healthy'
         ? {}
         : {
@@ -257,6 +278,18 @@ export default class AutomationService {
       findings.push(finding('scheduler', 'blocked', 'automation-scheduler-disabled'));
     else if (status.enabled !== true)
       findings.push(finding('scheduler', 'blocked', 'automation-scheduler-status-unavailable'));
+    try {
+      context.threads = await this.threads(context, store).resolve(declarations);
+    } catch (error) {
+      return [
+        ...findings,
+        finding(
+          'threads',
+          'blocked',
+          error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed',
+        ),
+      ];
+    }
     for (const job of declarations) {
       try {
         effectiveAutomation(job, context);
@@ -395,6 +428,7 @@ export default class AutomationService {
         const observed = await listNativeAutomations(request);
         // validate the complete plan before changing any native job.
         for (const job of declarations) effectiveAutomation(job, context);
+        automationThreadNames(declarations, 'openclaw');
         for (const record of ledger.records) {
           const native = this.owned(record, observed, context.agentId);
           if (!native && record.nativeId)
@@ -445,6 +479,8 @@ export default class AutomationService {
           )
             throw new AutomationError('automation-manifest-changed');
         };
+        await assertCurrent();
+        context.threads = await this.threads(context, store).resolve(declarations, true);
         await assertCurrent();
         for (const job of declarations) {
           const effective = effectiveAutomation(job, context);
@@ -553,7 +589,7 @@ export default class AutomationService {
             stepId: job.id,
             code: 'automation-synchronized',
             status: created ? 'created' : changed ? 'updated' : 'unchanged',
-            message: `Automation ${job.id} is synchronized.`,
+            message: `Automation ${job.id} is synchronized (${context.threads?.get(job.id)?.outcome ?? 'independent'}${context.threads?.has(job.id) ? ': ' + context.threads.get(job.id)!.id : ''}).`,
           });
         }
         for (const record of ledger.records.filter(

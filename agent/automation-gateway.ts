@@ -2,6 +2,10 @@ import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 
 export type AutomationGateway = (
   method:
+    | 'sessions.resolve'
+    | 'sessions.list'
+    | 'sessions.create'
+    | 'sessions.patch'
     | 'cron.list'
     | 'cron.get'
     | 'cron.add'
@@ -110,7 +114,13 @@ export type AutomationGatewayCaller = typeof callGatewayFromCli;
 /** operator transport; only the admitted cli composition supplies this dependency. */
 export function createAutomationGateway(call: AutomationGatewayCaller): AutomationGateway {
   return async (method, params) => {
-    const readOnly = !['cron.add', 'cron.update', 'cron.run'].includes(method);
+    const readOnly = ![
+      'cron.add',
+      'cron.update',
+      'cron.run',
+      'sessions.create',
+      'sessions.patch',
+    ].includes(method);
     try {
       return await call(method, { timeout: '10000' }, params, {
         progress: false,

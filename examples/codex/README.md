@@ -187,6 +187,26 @@ jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
+# should create separate durable native conversations for a shared declaration id
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+mkdir -p "$root/threads-workspace"
+cp "$GITHUB_WORKSPACE/examples/codex/threads-agent.yaml" "$root/threads-workspace/agent.yaml"
+node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$root/threads-workspace" --confirm
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" > "$root/threads-plan.json"
+jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
+
+# should reuse native conversations after the creating process has exited
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" > "$root/threads-reused.json"
+jq -S '.threads | map_values(.id)' "$root/threads-created.json" > "$root/threads-ids.json"
+jq -S '.threads | map_values(.id)' "$root/threads-reused.json" | diff - "$root/threads-ids.json"
+test ! -d "$CODEX_HOME/automations"
+
 # should preserve the active binding when a workspace has no agent manifest
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

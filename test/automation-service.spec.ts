@@ -48,6 +48,7 @@ describe('agent/automation-service', () => {
         (fail === 'second-add' && method === 'cron.add' && native.length === 1)
       )
         throw new Error('secret provider text must not escape');
+      if (method === 'sessions.resolve') return { ok: false };
       if (method === 'cron.status') return { enabled: true };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
       if (method === 'cron.get') {
@@ -151,6 +152,75 @@ describe('agent/automation-service', () => {
   });
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
+
+  it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {
+    const sessions = new Map<string, Record<string, unknown>>();
+    const original = service.dependencies.request!;
+    let loseResponse = true;
+    service.dependencies.request = async (method, params) => {
+      if (!method.startsWith('sessions.')) return original(method, params);
+      calls.push({ method, params: structuredClone(params) });
+      const key = String(params.key ?? params.sessionId);
+      if (method === 'sessions.resolve')
+        return sessions.has(key) ? { ok: true, key, agentId: 'tanaabot' } : { ok: false };
+      if (method === 'sessions.list') return { sessions: [...sessions.values()] };
+      if (method === 'sessions.create') {
+        sessions.set(key, { key, sessionId: 'durable-id', workspaceDir: root });
+        if (loseResponse) {
+          loseResponse = false;
+          throw new Error('lost create response');
+        }
+        return { ok: true };
+      }
+      if (method === 'sessions.patch') {
+        assert.equal(params.expectedSessionId, 'durable-id');
+        Object.assign(sessions.get(key)!, {
+          autoLabel: params.autoLabel,
+          displayName: params.autoLabel,
+        });
+        return { ok: true };
+      }
+      throw new Error('unexpected session call');
+    };
+    manifest.automations = jobs(
+      ['builds', 'reviews'].map((id) => ({
+        id,
+        prompt: 'Check.',
+        schedule: 'every 1 hour',
+        thread: { id: 'activity', name: 'Activity' },
+      })),
+    );
+    await assert.rejects(service.reconcile(manifest, root));
+    assert.equal(native.length, 0);
+    await service.reconcile(manifest, root);
+    assert.equal(sessions.size, 1);
+    assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
+    assert.equal(native.length, 2);
+    assert.equal(native[0]?.sessionTarget, native[1]?.sessionTarget);
+    assert.match(String(native[0]?.sessionTarget), /^session:agent:tanaabot:/);
+    const nativeIds = native.map((job) => job.id);
+    const before = calls.length;
+    await service.reconcile(manifest, root);
+    assert.equal(
+      calls
+        .slice(before)
+        .filter((call) =>
+          ['sessions.create', 'sessions.patch', 'cron.add', 'cron.update'].includes(call.method),
+        ).length,
+      0,
+    );
+    manifest.automations[0]!.overrides.openclaw = { target: 'independent' };
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]?.sessionTarget, 'isolated');
+    assert.deepEqual(
+      native.map((job) => job.id),
+      nativeIds,
+    );
+    assert.equal(sessions.size, 1);
+    delete manifest.automations[0]!.overrides.openclaw;
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]?.sessionTarget, native[1]?.sessionTarget);
+  });
 
   it('should keep inventory rows and findings on the same ownership snapshot during concurrent sync', async () => {
     await service.reconcile(manifest, root);
@@ -410,7 +480,7 @@ describe('agent/automation-service', () => {
         },
       ]),
     );
-    await assert.rejects(service.reconcile(manifest, root), /automation-target-unsupported/u);
+    await assert.rejects(service.reconcile(manifest, root), /automation-thread-missing/u);
     assert.equal(mutations().length, 0);
     manifest.automations!.pop();
     await service.reconcile(manifest, root);

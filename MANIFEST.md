@@ -321,17 +321,18 @@ Operator [list](./CLI.md#openclaw-agent-system-automations-list),
 | `runtimes`        | unique nonempty list of `openclaw` / `codex`               | no               | both          | Runtime applicability.                                                         |
 | `schedule`        | string or object                                           | yes              | none          | Schedule forms below.                                                          |
 | `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`          | Shell strings only; place inside `payload` for long-form commands.             |
+| `thread`          | null, nonblank string, or `{ id?: string, name?: string }` | no               | independent   | Persistent prompt conversation; at least one object field is required.         |
 | `timeout-seconds` | integer, 1–3600                                            | no               | runtime-owned | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
 
 Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
 [setup command syntax](#syntax), without setup checks, steps, or timeout defaults.
 Each `overrides.openclaw` or `overrides.codex` object accepts only:
 
-| Field    | Type                                              | Required | Default          |
-| -------- | ------------------------------------------------- | -------- | ---------------- |
-| `effort` | nonblank string                                   | no       | adapter-resolved |
-| `model`  | nonblank string                                   | no       | adapter-resolved |
-| `target` | `independent` or `{ thread: existing-native-id }` | no       | `independent`    |
+| Field    | Type                                              | Required | Default                                |
+| -------- | ------------------------------------------------- | -------- | -------------------------------------- |
+| `effort` | nonblank string                                   | no       | adapter-resolved                       |
+| `model`  | nonblank string                                   | no       | adapter-resolved                       |
+| `target` | `independent` or `{ thread: existing-native-id }` | no       | shared `thread`, otherwise independent |
 
 ```yaml
 # .agent-system/agent.yaml
@@ -356,6 +357,59 @@ workspace root. References stay within the workspace and follow the [loader's
 size and encoding rules](#discovery). External YAML contains a list, without recursive inclusion.
 Missing or invalid references fail validation rather than declaring no jobs.
 
+#### Persistent conversations
+
+Omit `thread` or use `null` for independent runs. A string or `{ name: "Activity" }`
+keeps one named conversation per automation. Matching names never combine jobs.
+
+```yaml
+automations:
+  - id: check-builds
+    schedule: every 1 hour
+    prompt: Review failed builds.
+    thread: { id: project-activity, name: Project activity }
+  - id: review-prs
+    schedule: every 2 hours
+    prompt: Review open pull requests.
+    thread: { id: project-activity, name: Project activity }
+```
+
+| Runtime  | Result for these two jobs                                                                                                                       |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenClaw | Two native schedules in one persistent conversation, with shared history.                                                                       |
+| Codex    | Two native schedules in two persistent conversations, each retaining its own history. Codex permits only one active heartbeat per conversation. |
+
+Bindings are private and scoped to the runtime profile, canonical workspace, and
+owning agent. OpenClaw shares an explicit `thread.id`; Codex additionally scopes it
+by automation ID. Names and YAML order do not determine identity. Removing a job
+retains its binding; reintroducing its ID reuses the conversation.
+
+An explicit ID first reuses its saved binding, otherwise adopts an exact available
+native conversation in the same workspace, otherwise creates one. Unknown IDs are
+managed identifiers—even a mistyped native ID creates a new conversation. OpenClaw
+resolves native IDs to persistent session keys, not interchangeable transcript IDs.
+Permission or lookup failures never count as absence. Missing or archived saved
+conversations require recovery; synchronization will not silently replace them.
+
+An explicit name sets the title; omission preserves it. Conflicting explicit names
+for one resolved conversation are rejected. OpenClaw uses nonunique automatic titles
+for managed conversations; adopting and renaming an existing explicitly titled chat
+retains native label-uniqueness restrictions. Automation names remain separate.
+
+An explicit runtime `target` overrides the **entire** shared declaration for that
+runtime. `independent` stays independent; `{ thread: existing-native-id }` requires
+an exact existing target and never creates a replacement. Multiple active Codex jobs
+explicitly targeting the same native conversation fail with a conflict.
+
+Conversation creation is journaled before native writes. An interrupted OpenClaw
+creation can recover by its persisted session key. Codex saves the returned ID before
+materialization; loss of that response leaves an ambiguous-create recovery barrier,
+not another create. Keep the journal and resolve the native identity before retrying.
+
+OpenClaw changes routing on its existing native job. Codex changes between independent
+and persistent routing by first pausing and retaining the old native schedule, then
+creating its replacement. Old schedule history and conversation bindings remain.
+
 #### OpenClaw execution and ownership
 
 The Gateway must be running and the invoking operator must have native cron read
@@ -372,10 +426,10 @@ operator-authored host commands, with the same [containment boundary](./CLI.md#t
 as setup. Changes to command declarations require another Install; dependencies
 of an executable script are not recursively hashed.
 
-Prompt jobs use the owning agent in an independent isolated session. Omitted model
+Prompt jobs default to the owning agent in an independent isolated session. Omitted model
 and effort follow native agent defaults; explicit model and supported native
-thinking levels are passed to OpenClaw. Named thread targets currently report
-`automation-target-unsupported`. Output delivery defaults to none; native history
+thinking levels are passed to OpenClaw. Persistent prompt jobs instead use their
+verified session key and retain conversation history. Output delivery defaults to none; native history
 retains execution results. Command summaries contain bounded status codes, not
 captured script output or credentials.
 

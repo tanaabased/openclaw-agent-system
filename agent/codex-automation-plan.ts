@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { automationThreadSelection } from './automation-threads.ts';
 import { automationHash } from './automation-hash.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
 import {
@@ -32,6 +33,7 @@ export interface CodexAutomationAction {
   id?: string;
   expected: NativeAutomation;
   removed: boolean;
+  retire?: boolean;
 }
 export interface CodexAutomationInputs {
   projects?: unknown;
@@ -43,6 +45,12 @@ export interface CodexAutomationPlan {
   actions: CodexAutomationAction[];
   findings: { id: string; code: string }[];
   unmanagedCount: number;
+  conversations?: {
+    id: string;
+    routing: 'per-automation' | 'exact-native';
+    nativeId: string | null;
+    name?: string;
+  }[];
   telemetry: { execution: 'unavailable'; delivery: 'unavailable' };
 }
 
@@ -122,6 +130,7 @@ export default async function planCodexAutomations(options: {
   records: CodexAutomationRecord[];
   inputs: CodexAutomationInputs;
   defaults?: { model: string; effort: string };
+  bindings?: Map<string, { id: string }>;
 }): Promise<CodexAutomationPlan> {
   const { scope, workspace, jobs, records, saved, inputs } = options;
   const findings: CodexAutomationPlan['findings'] = [];
@@ -167,7 +176,11 @@ export default async function planCodexAutomations(options: {
       }
       const rrule = codexAutomationSchedule(job.schedule);
       const override = job.overrides.codex;
-      const target = override?.target ?? 'independent';
+      const selection = automationThreadSelection(job, 'codex');
+      const binding = options.bindings?.get(job.id);
+      if (selection?.managed && !binding)
+        throw new CodexAutomationError('automation-thread-sync-required');
+      const target = override?.target ?? (binding ? { thread: binding.id } : 'independent');
       const record = records.find((r) => r.id === job.id);
       const actual = owned.get(job.id);
       if (record && (!actual || actual.id !== record.nativeId)) {
@@ -186,7 +199,18 @@ export default async function planCodexAutomations(options: {
         if (override?.model !== undefined || override?.effort !== undefined) {
           throw new CodexAutomationError('automation-thread-overrides-unsupported');
         }
-        await verifyThread(inputs.threads ?? [], target.thread, workspace);
+        if (!selection?.managed) await verifyThread(inputs.threads ?? [], target.thread, workspace);
+        if (
+          job.enabled &&
+          saved.some(
+            (item) =>
+              item.id !== actual?.id &&
+              item.definition.kind === 'heartbeat' &&
+              item.definition.status === 'ACTIVE' &&
+              item.definition.targetThreadId === target.thread,
+          )
+        )
+          throw new CodexAutomationError('automation-thread-schedule-conflict');
         expected = {
           ...common,
           kind: 'heartbeat',
@@ -209,7 +233,23 @@ export default async function planCodexAutomations(options: {
         };
       }
       if (actual && actual.definition.kind !== expected.kind) {
-        throw new CodexAutomationError('automation-target-migration-required');
+        actions.push({
+          manifestId: job.id,
+          mode: 'update',
+          id: actual.id,
+          expected: {
+            ...actual.definition,
+            status: 'PAUSED',
+            prompt: actual.definition.prompt.replace(
+              codexAutomationMarker(scope, job.id),
+              `Retired by Agent System (codex:${scope}:${job.id}).`,
+            ),
+          },
+          removed: false,
+          retire: true,
+        });
+        findings.push({ id: job.id, code: 'automation-target-migration-pending' });
+        continue;
       }
       if (!actual || !savedMatches(actual, expected, workspace) || record?.removed) {
         actions.push({
@@ -250,6 +290,13 @@ export default async function planCodexAutomations(options: {
       findings.push({ id: record.id, code: 'automation-removal-pending' });
     } else findings.push({ id: record.id, code: 'automation-disabled-retained' });
   }
+  const activeTargets = new Set<string>();
+  for (const action of actions) {
+    if (action.expected.kind !== 'heartbeat' || action.expected.status !== 'ACTIVE') continue;
+    if (activeTargets.has(action.expected.targetThreadId))
+      findings.push({ id: action.manifestId, code: 'automation-thread-schedule-conflict' });
+    activeTargets.add(action.expected.targetThreadId);
+  }
   const ordinary = new Set([
     'automation-healthy',
     'automation-disabled',
@@ -257,6 +304,7 @@ export default async function planCodexAutomations(options: {
     'automation-missing',
     'automation-drift',
     'automation-removal-pending',
+    'automation-target-migration-pending',
   ]);
   const blocked = findings.some((finding) => !ordinary.has(finding.code));
   const digest = automationHash({
@@ -276,6 +324,27 @@ export default async function planCodexAutomations(options: {
     actions: blocked ? [] : actions,
     findings,
     unmanagedCount: saved.length - owned.size,
+    ...(applicable.some((job) => automationThreadSelection(job, 'codex'))
+      ? {
+          conversations: applicable.flatMap((job) => {
+            const selection = automationThreadSelection(job, 'codex');
+            return selection
+              ? [
+                  {
+                    id: job.id,
+                    routing: selection.managed
+                      ? ('per-automation' as const)
+                      : ('exact-native' as const),
+                    nativeId:
+                      options.bindings?.get(job.id)?.id ??
+                      (selection.managed ? null : selection.exact!),
+                    ...(selection.name ? { name: selection.name } : {}),
+                  },
+                ]
+              : [];
+          }),
+        }
+      : {}),
     telemetry: { execution: 'unavailable', delivery: 'unavailable' },
   };
 }

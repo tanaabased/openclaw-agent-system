@@ -178,6 +178,28 @@ fi
 openclaw-aimock evidence --scenario automations --expected-evidence "$GITHUB_WORKSPACE/examples/automations/expected-evidence.json"
 ```
 
+The following paused jobs verify native persistent routing and duplicate-title
+separation without extra model calls.
+
+```bash
+# should share explicit ids while keeping matching titles separate
+cd "$TMPDIR/automation-agent"
+cp "$GITHUB_WORKSPACE/examples/automations/threads.yaml" automations.yaml
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+openclaw agent-system automations list --json | tee threads-before.json | jq -e '[.jobs[] | select(.id | startswith("shared-")) | .routing] | length == 2 and .[0] == .[1] and (.[0] | startswith("session:agent:"))'
+jq -e '([.jobs[] | select(.id == "shared-builds" or .id == "separate-review") | .routing] | unique | length) == 2' threads-before.json
+openclaw agent-system automations sync --json | jq -e 'all(.outcomes[]; .status == "unchanged")'
+openclaw gateway call sessions.list --params '{"agentId":"automation-tanaabot","archived":"all"}' --json | jq -e '[.sessions[] | select(.displayName == "Project activity")] | length == 2'
+
+# should preserve persistent routing through a gateway restart
+openclaw-gateway stop
+OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
+cd "$TMPDIR/automation-agent"
+openclaw agent-system automations sync --json | jq -e 'all(.outcomes[]; .status == "unchanged")'
+openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, routing}]' > threads-after.json
+jq -S '[.jobs[] | {id, routing}]' threads-before.json | diff - threads-after.json
+```
+
 ## Cleanup
 
 ```bash
