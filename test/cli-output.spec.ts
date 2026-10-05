@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import ansis from 'ansis';
+import stringWidth from 'fast-string-width';
 
 import {
   createCliStyles,
@@ -167,5 +168,40 @@ describe('cli/output', () => {
     assert.equal(ansis.strip(lines[3] ?? ''), 'ℹ Notice');
     assert.equal(lines[4], '  Information remains readable.');
     assert.notEqual(lines[3], ansis.strip(lines[3] ?? ''));
+  });
+  it('should render red errors with neutral guidance at narrow widths and honor no-color', () => {
+    const notices = [
+      { severity: 'warning' as const, message: 'Keep accumulated warning.' },
+      {
+        severity: 'error' as const,
+        message: 'collaboration: Cannot reconcile. code=collaboration-failed',
+      },
+      {
+        severity: 'notice' as const,
+        message: 'Unattempted work: models. Fix configuration then rerun install.',
+      },
+    ];
+    for (const columns of [1, 12, 32, 80]) {
+      const colored = renderCliNotices(notices, createCliStyles({ FORCE_COLOR: '3' }), columns);
+      const plain = renderCliNotices(
+        notices,
+        createCliStyles({ NO_COLOR: '', FORCE_COLOR: '3' }),
+        columns,
+      );
+      assert.deepEqual(
+        colored.map((line) => ansis.strip(line)),
+        plain,
+      );
+      assert.ok(plain.every((line) => stringWidth(line) <= columns && !line.includes('\u001b')));
+      assert.match(plain.join('').replace(/\s+/gu, ''), /Cannotreconcile/u);
+    }
+    const colored = renderCliNotices(notices, createCliStyles({ FORCE_COLOR: '1' }), 120);
+    assert.ok(colored.some((line) => line.includes('✖ Error') && line.includes('\u001b[31m')));
+    assert.ok(
+      colored.some((line) => line.includes('Cannot reconcile') && line.includes('\u001b[31m')),
+    );
+    assert.ok(
+      colored.includes('  Unattempted work: models. Fix configuration then rerun install.'),
+    );
   });
 });

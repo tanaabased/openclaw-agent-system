@@ -150,10 +150,10 @@ export function writeCliLifecycleTable(
 
 export interface CliNotice {
   message: string;
-  severity: 'notice' | 'warning';
+  severity: 'notice' | 'warning' | 'error';
 }
 
-/** Render completed install notices after the lifecycle table without dimming their guidance. */
+/** render shared diagnostic blocks without dimming recovery guidance. */
 export function renderCliNotices(
   notices: readonly CliNotice[],
   styles: CliStyles = defaultCliStyles,
@@ -162,19 +162,25 @@ export function renderCliNotices(
   if (notices.length === 0) return [];
   const columns =
     Number.isFinite(terminalColumns) && terminalColumns >= 1 ? Math.floor(terminalColumns) : 80;
-  const indent = '  ';
+  const indent = ' '.repeat(Math.min(2, columns - 1));
   const messageWidth = Math.max(1, columns - indent.length);
   const blocks = notices.flatMap(({ message, severity }) => {
-    const label = severity === 'notice' ? 'ℹ Notice' : '⚠ Warning';
-    const styledLabel = severity === 'notice' ? styles.notice(label) : styles.warning(label);
+    const label = { notice: 'ℹ Notice', warning: '⚠ Warning', error: '✖ Error' }[severity];
+    const styledLabel = styles[severity](label);
     return [
-      styledLabel,
+      ...wrapAnsi(styledLabel, columns, { hard: true }).split('\n'),
       ...wrapAnsi(message, messageWidth, { hard: true })
         .split('\n')
-        .map((line) => `${indent}${line}`),
+        .map((line) => `${indent}${severity === 'error' ? styles.error(line) : line}`),
     ];
   });
-  return ['', styles.bold('Notices'), '', ...blocks];
+  const heading = notices.some(({ severity }) => severity === 'error') ? 'Diagnostics' : 'Notices';
+  return [
+    '',
+    ...wrapAnsi(styles.bold(heading), columns, { hard: true }).split('\n'),
+    '',
+    ...blocks,
+  ];
 }
 
 export function writeCliNotices(
