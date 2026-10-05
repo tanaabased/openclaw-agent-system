@@ -49,6 +49,7 @@ function createProgram(
     manifestResult?: AgentManifestLoadResult;
     environment?: Readonly<NodeJS.ProcessEnv>;
     commandAuthority?: RegisterAgentSystemCliOptions['commandAuthority'];
+    collaboration?: RegisterAgentSystemCliOptions['collaboration'];
     setupPrompt?: RegisterAgentSystemCliOptions['setupPrompt'];
     notificationWaitError?: Error;
     cacheGatewayRequest?: OpCacheGatewayRequest;
@@ -154,6 +155,7 @@ function createProgram(
         };
       },
     },
+    collaboration: dependencies.collaboration,
     doctorService: {
       async inspect(input) {
         assert.equal(input.runtime, 'openclaw');
@@ -707,6 +709,38 @@ describe('cli/register', () => {
     assert.equal(output.join('').includes('status'), true);
   });
 
+  it('should route host-only collaboration without loading a workspace', async () => {
+    for (const operation of ['install', 'doctor']) {
+      let inspected = 0;
+      let reconciled = 0;
+      const test = createProgram(undefined, {
+        collaboration: {
+          async inspectHost() {
+            inspected++;
+            return [];
+          },
+          async reconcileHost() {
+            reconciled++;
+            return { outcomes: [], warnings: [] };
+          },
+        },
+      });
+      await test.program.parseAsync([
+        'node',
+        'openclaw',
+        'as',
+        operation,
+        '--collaboration',
+        '--json',
+      ]);
+      assert.equal(inspected, operation === 'doctor' ? 1 : 0);
+      assert.equal(reconciled, operation === 'install' ? 1 : 0);
+      assert.deepEqual(test.calls.install, []);
+      assert.deepEqual(test.calls.doctor, []);
+      assert.deepEqual(test.calls.agent, []);
+    }
+  });
+
   it('should delegate doctor inspection for an explicit agent', async () => {
     const { calls, program } = createProgram();
 
@@ -1018,6 +1052,8 @@ describe('cli/register', () => {
         ['install', '--skip-setup-agent'],
         ['install', '--rebuild-codex-path'],
         ['doctor'],
+        ['doctor', '--collaboration'],
+        ['install', '--collaboration'],
         ['status', '--agent', 'tanaabot'],
         ['credentials', 'set', 'op', '--from-env'],
         ['credentials', 'validate', 'op'],

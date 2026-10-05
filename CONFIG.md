@@ -3,6 +3,64 @@
 Set plugin-wide options under `plugins.entries.agent-system.config` in OpenClaw
 configuration. Workspace declarations belong in the [manifest](./MANIFEST.md).
 
+## `collaboration`
+
+| Type                                                     | Required | Default |
+| -------------------------------------------------------- | -------- | ------- |
+| `"all"`, `false`, or an array of exact managed agent IDs | no       | `"all"` |
+
+Ordinary OpenClaw Agent System installs reconcile collaboration across registered
+managed agents. `"all"` selects every managed agent; an explicit list selects one
+group whose members can communicate with one another. `false` or `[]` withdraws
+only Agent System-owned entries. IDs come from `agent.id`, not display names.
+Only registered managed IDs are added. Unresolved selected IDs produce a warning;
+deleting an agent still removes its owned entry without requiring a list edit.
+
+```sh
+# select every registered managed agent and explicitly migrate initial restrictions.
+openclaw config set plugins.entries.agent-system.config.collaboration all
+openclaw agent-system install --collaboration
+
+# select one group of managed participants.
+openclaw config set plugins.entries.agent-system.config.collaboration '["emori","smutlord"]' --strict-json
+openclaw agent-system install --collaboration
+
+# withdraw managed grants while retaining operator-owned entries.
+openclaw config set plugins.entries.agent-system.config.collaboration false --strict-json
+openclaw agent-system install --collaboration
+```
+
+For a nonempty managed group, install sets `tools.sessions.visibility=all` and
+`tools.agentToAgent.enabled=true`, then reconciles exact IDs into
+`tools.agentToAgent.allow`. This grants **session reading and messaging**, subject
+to native tool policy and sandbox restrictions. Pre-existing IDs and wildcards
+remain operator-owned, even when an ID matches a managed agent. Retained external
+participants can communicate with the managed group; this setting does not promise
+an exclusive group or override native tool denials.
+
+An omitted setting does not migrate explicit restrictive session visibility or
+disabled agent-to-agent access. Set `collaboration` explicitly to select that
+migration. After enrollment, later host restrictions block reconciliation until
+the operator changes the selection. To reauthorize the same group, install with
+`collaboration=false`, then restore the desired selection and install again.
+There is no separate consent prompt, and ordinary setup-consent flags do not
+override this rule.
+
+After deleting an agent through OpenClaw, run `install --collaboration` to remove
+its owned entry. This works outside any workspace, including after the final
+managed agent is gone. If cleanup empties the allowlist, install disables
+agent-to-agent access in the same write: OpenClaw treats an empty list as
+allow-all. Operator entries remain intact; `false` does not disable communication
+that those entries independently permit. Session visibility is not restored.
+Missing or invalid registered workspaces block membership cleanup rather than
+being treated as removed agents.
+
+`collaborationState` is an install-owned receipt stored alongside this setting.
+It records introduced IDs, the last selection, and safe empty-group shutdown.
+Do not edit or delete it: matching an ID alone never proves entry ownership.
+Configuration and ownership commit together. Doctor and passive discovery do
+not repair them. Standalone Codex does not manage this OpenClaw capability.
+
 ## `githubNotifications`
 
 | Field                  | Type    | Required | Default | Description                                       |

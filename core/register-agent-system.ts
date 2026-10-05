@@ -22,6 +22,7 @@ import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
+import createCollaborationLifecycleContribution from '../agent/collaboration-lifecycle.ts';
 import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
 import createInstallTool from '../tools/install/tool.ts';
 import createDoctorTool from '../tools/doctor/tool.ts';
@@ -301,6 +302,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService: lifecycleManifestService,
   };
   const automationService = new AutomationService(automationDependencies);
+  const collaboration = createCollaborationLifecycleContribution({
+    readConfig,
+    resolveAgentWorkspaceDir: (config, agentId) =>
+      api.runtime.agent.resolveAgentWorkspaceDir(config, agentId),
+    mutateConfigFile: (params) => api.runtime.config.mutateConfigFile(params),
+  });
   const lifecycleContributions = [
     createCodexPluginLifecycleContribution({
       readConfig,
@@ -352,6 +359,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
     }),
+    collaboration,
     createModelLifecycleContribution({
       async inspectConfiguredModels({ agentId, workspaceDir }) {
         const result = await runPluginCommandWithTimeout({
@@ -648,6 +656,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       credentialInput: opCredentialInput,
       credentialManager,
       doctorService: operatorDoctor,
+      collaboration,
       environmentService,
       input: process.stdin,
       installService: operatorInstall,
