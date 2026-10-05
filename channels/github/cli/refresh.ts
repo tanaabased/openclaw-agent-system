@@ -146,6 +146,22 @@ export default async function refreshNotificationsAgentSystem(
               },
             ]),
         ...(counts ? [{ label: 'items', style: 'field' as const, value: counts }] : []),
+        ...(result.code === 'github-notification-provider-throttle-active' &&
+        result.retryAt !== undefined
+          ? [
+              {
+                label: 'reason',
+                style: 'field' as const,
+                value: `GitHub rate limit; retry after ${new Date(result.retryAt).toISOString()}`,
+              },
+            ]
+          : []),
+        ...(result.itemFailures ?? []).map((failure) => ({
+          component: `${failure.repository}#${failure.number}`,
+          label: 'failure',
+          style: 'error' as const,
+          value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause} check repository write access`,
+        })),
       ],
       options.styles,
     );

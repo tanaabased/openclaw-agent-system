@@ -7,6 +7,30 @@ import {
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 describe('channels/github/intake/monitor/status', () => {
+  it('should report a permission-check failure without hiding an unrelated selected item', () => {
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    state.itemFailures = [
+      {
+        cause: 'repository-permission-denied',
+        itemType: 'issue',
+        number: 14,
+        repository: 'tanaabased/denied',
+        stage: 'permission-check',
+        updatedAt: '2026-08-11T12:05:00.000Z',
+      },
+    ];
+    const all = githubNotificationMonitorStatus('tanaabot', state);
+    assert.equal(all.status, 'degraded');
+    assert.deepEqual(all.itemFailures, state.itemFailures);
+    const selected = githubNotificationMonitorStatus('tanaabot', state, {
+      itemType: 'issue',
+      number: 12,
+      repository: 'tanaabased/example',
+    });
+    assert.equal(selected.status, 'ready');
+    assert.equal(selected.itemFailures, undefined);
+  });
   it('should project prepared intake without private worktree values', () => {
     const state = notificationMonitorState();
     state.lastSuccessfulPollAt = 2;

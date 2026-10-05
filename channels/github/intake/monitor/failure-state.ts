@@ -31,5 +31,7 @@ export default function createGitHubNotificationFailureState(
   );
   const jitter = 0.9 + input.random() * 0.2;
   state.nextPollAt = Math.max(input.now + Math.floor(exponential * jitter), input.retryAt ?? 0);
+  state.throttleUntil =
+    input.code === 'github-notification-rate-limited' ? state.nextPollAt : undefined;
   return state;
 }

@@ -4,6 +4,7 @@ import {
   createGitHubNotificationMonitorState,
   rememberProcessedEvent,
   type GitHubNotificationItemState,
+  type GitHubNotificationItemFailure,
   type GitHubNotificationMonitorState,
   type GitHubNotificationPullRequestState,
 } from './state.ts';
@@ -61,12 +62,21 @@ type GitHubNotificationPollCounts = Omit<GitHubNotificationPollResult, 'state'>;
 function pollError(error: unknown, now: number): GitHubNotificationPollError {
   if (error instanceof GitHubNotificationPollError) return error;
   if (error instanceof GitHubWorkEventClientError) {
-    const retryAt = Math.max(
-      error.rateLimit.resetAt ?? 0,
-      error.rateLimit.retryAfterMs ? now + error.rateLimit.retryAfterMs : 0,
-    );
+    const throttled = error.providerDiagnostic?.classification === 'rate-limit';
+    const retryAt = throttled
+      ? Math.max(
+          error.rateLimit.remaining === 0 ? (error.rateLimit.resetAt ?? 0) : 0,
+          error.rateLimit.retryAfterMs ? now + error.rateLimit.retryAfterMs : 0,
+        )
+      : 0;
     return new GitHubNotificationPollError(
-      error.code,
+      throttled
+        ? 'github-notification-rate-limited'
+        : error.providerDiagnostic?.classification === 'authentication'
+          ? 'github-notification-authentication-failed'
+          : error.providerDiagnostic?.classification === 'transport'
+            ? 'github-notification-transport-failed'
+            : error.code,
       error.message,
       retryAt > 0 ? retryAt : undefined,
       { cause: error },
@@ -77,6 +87,49 @@ function pollError(error: unknown, now: number): GitHubNotificationPollError {
     'The GitHub notification poll could not complete.',
     undefined,
     { cause: error },
+  );
+}
+
+function recordPermissionFailure(
+  state: GitHubNotificationMonitorState,
+  repository: string,
+  number: number,
+  itemType: GitHubNotificationItemFailure['itemType'],
+  updatedAt: string | undefined,
+  error: unknown,
+): boolean {
+  if (
+    !(error instanceof GitHubWorkEventClientError) ||
+    error.providerDiagnostic?.classification !== 'permission' ||
+    error.providerDiagnostic.httpStatus !== 403
+  )
+    return false;
+  const failure: GitHubNotificationItemFailure = {
+    cause: 'repository-permission-denied',
+    itemType,
+    number,
+    repository,
+    stage: 'permission-check',
+    ...(updatedAt === undefined ? {} : { updatedAt }),
+  };
+  state.itemFailures = (state.itemFailures ?? []).filter(
+    (entry) =>
+      entry.repository !== repository || entry.number !== number || entry.itemType !== itemType,
+  );
+  state.itemFailures.push(failure);
+  return true;
+}
+
+function clearPermissionFailure(
+  state: GitHubNotificationMonitorState,
+  repository: string,
+  number: number,
+  itemType: GitHubNotificationItemFailure['itemType'],
+): void {
+  if (!state.itemFailures) return;
+  state.itemFailures = state.itemFailures.filter(
+    (entry) =>
+      entry.repository !== repository || entry.number !== number || entry.itemType !== itemType,
   );
 }
 
@@ -223,7 +276,29 @@ async function observeCandidate(input: {
 }): Promise<void> {
   const { name, owner } = githubRepositoryPath(input.candidate.repositoryPath);
   const repository = await input.client.getRepository(owner, name);
-  const permission = await input.client.getPermission(owner, name, input.client.identity.login);
+  let permission;
+  try {
+    permission = await input.client.getPermission(owner, name, input.client.identity.login);
+  } catch (error) {
+    if (
+      recordPermissionFailure(
+        input.state,
+        `${owner}/${name}`,
+        input.candidate.number,
+        input.candidate.itemType,
+        input.candidate.updatedAt,
+        error,
+      )
+    )
+      return;
+    throw error;
+  }
+  clearPermissionFailure(
+    input.state,
+    `${owner}/${name}`,
+    input.candidate.number,
+    input.candidate.itemType,
+  );
   const item =
     input.canonicalItem ?? (await input.client.getItem(owner, name, input.candidate.number));
   if (
@@ -346,10 +421,32 @@ export async function pollGitHubNotifications(
           current.repositoryOwner,
           current.repositoryName,
         );
-        const permission = await input.client.getPermission(
-          current.repositoryOwner,
-          current.repositoryName,
-          input.client.identity.login,
+        let permission;
+        try {
+          permission = await input.client.getPermission(
+            current.repositoryOwner,
+            current.repositoryName,
+            input.client.identity.login,
+          );
+        } catch (error) {
+          if (
+            recordPermissionFailure(
+              state,
+              `${current.repositoryOwner}/${current.repositoryName}`,
+              current.number,
+              current.itemType,
+              undefined,
+              error,
+            )
+          )
+            continue;
+          throw error;
+        }
+        clearPermissionFailure(
+          state,
+          `${current.repositoryOwner}/${current.repositoryName}`,
+          current.number,
+          current.itemType,
         );
         const item = await input.client.getItem(
           current.repositoryOwner,
@@ -489,7 +586,13 @@ export async function pollGitHubNotifications(
           state,
         });
       }
-      state.searchBoundary = new Date(input.now).toISOString();
+      const oldestFailure = Math.min(
+        input.now,
+        ...(state.itemFailures ?? [])
+          .filter((failure) => failure.updatedAt !== undefined)
+          .map((failure) => Date.parse(failure.updatedAt!)),
+      );
+      state.searchBoundary = new Date(oldestFailure).toISOString();
     }
     return { ...counts, state };
   } catch (error) {

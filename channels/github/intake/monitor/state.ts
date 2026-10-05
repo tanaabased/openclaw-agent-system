@@ -67,6 +67,15 @@ export interface GitHubNotificationItemState {
   repositoryPermission: GitHubRepositoryPermission;
 }
 
+export interface GitHubNotificationItemFailure {
+  cause: 'repository-permission-denied';
+  itemType: 'issue' | 'pull-request';
+  number: number;
+  repository: string;
+  stage: 'permission-check';
+  updatedAt?: string;
+}
+
 export interface GitHubNotificationMonitorState {
   accountLogin?: string;
   accountNodeId?: string;
@@ -75,6 +84,7 @@ export interface GitHubNotificationMonitorState {
   diagnosticCode?: string;
   failureCount: number;
   items: Record<string, GitHubNotificationItemState>;
+  itemFailures?: GitHubNotificationItemFailure[];
   lastPollAt?: number;
   lastSuccessfulPollAt?: number;
   nextPollAt?: number;
@@ -82,6 +92,7 @@ export interface GitHubNotificationMonitorState {
   processedEventNodeIds: string[];
   schemaVersion: 6;
   searchBoundary?: string;
+  throttleUntil?: number;
   workspaceDir: string;
 }
 
