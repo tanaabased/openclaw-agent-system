@@ -38,7 +38,7 @@ cd "$GITHUB_WORKSPACE/examples/models/data"
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "models" and .code == "set-agent-models" and .status == "updated")'
 openclaw config get 'agents.entries.models-data' --json \
-  | jq -e '.model == "openai/gpt-5.4-nano" and .thinkingDefault == "medium" and .models["openai/gpt-5.4-nano"].agentRuntime.id == "codex" and .modelPolicy.allow == ["openai/gpt-5.5", "openai/gpt-5.4-nano"]'
+  | jq -e '.model.primary == "openai/gpt-5.4-nano" and .model.fallbacks == [] and .thinkingDefault == "medium" and .models["openai/gpt-5.4-nano"].agentRuntime.id == "codex" and .modelPolicy.allow == ["openai/gpt-5.5", "openai/gpt-5.4-nano"]'
 openclaw config get 'agents.defaults.modelPolicy.allow' --json \
   | jq -e '. == ["openai/gpt-5.5"]'
 

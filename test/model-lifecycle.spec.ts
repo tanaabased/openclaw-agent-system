@@ -196,6 +196,38 @@ describe('agent/model-lifecycle', () => {
     assert.equal(mutations(), 1);
   });
 
+  it('should clear fallback configuration drift when the primary already matches', async () => {
+    const config = readyCodexConfig();
+    config.agents!.entries!.emori!.model = { primary: 'openai/gpt-6-astra' };
+    const { contribution, mutations } = createHarness(config);
+
+    const before = await contribution.inspect?.(context);
+    assert.equal(
+      before?.some(({ code }) => code === 'agent-model-config-drift'),
+      true,
+    );
+
+    await contribution.reconcile?.(context);
+
+    assert.deepEqual(config.agents?.entries?.emori?.model, {
+      primary: 'openai/gpt-6-astra',
+      fallbacks: [],
+    });
+    const after = await contribution.inspect?.(context);
+    assert.equal(
+      after?.some(({ code }) => code === 'agent-model-config-drift'),
+      false,
+    );
+    assert.equal(
+      after?.some(({ code }) => code === 'agent-models-ready'),
+      true,
+    );
+
+    const repeated = await contribution.reconcile?.(context);
+    assert.equal(repeated?.outcomes[0]?.status, 'unchanged');
+    assert.equal(mutations(), 1);
+  });
+
   it('should diagnose and repair inherited selection policy at agent scope', async () => {
     const config = readyCodexConfig();
     config.agents!.defaults = {
@@ -506,7 +538,7 @@ describe('agent/model-lifecycle', () => {
       agents: {
         entries: {
           emori: {
-            model: 'openai/gpt-6-astra',
+            model: { primary: 'openai/gpt-6-astra', fallbacks: [] },
             models: {
               'openai/gpt-6-astra': { agentRuntime: { id: 'openclaw' } },
               'openai/gpt-5.6-terra': { agentRuntime: { id: 'openclaw' } },
