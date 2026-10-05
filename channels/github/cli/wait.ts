@@ -15,7 +15,7 @@ import {
 import {
   NotificationCliOptionError,
   notificationItemSelector,
-  notificationPositiveInteger,
+  notificationTimeoutSeconds,
 } from './options.ts';
 
 const defaultWaitSeconds = 300;
@@ -60,7 +60,7 @@ function waitOptions(options: WaitNotificationsAgentSystemOptions) {
   const timeoutSeconds =
     options.timeoutSeconds === undefined
       ? defaultWaitSeconds
-      : notificationPositiveInteger(options.timeoutSeconds, 'timeout');
+      : notificationTimeoutSeconds(options.timeoutSeconds);
   return { selector, target, timeoutMs: timeoutSeconds * 1_000 };
 }
 

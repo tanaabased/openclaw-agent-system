@@ -12,7 +12,7 @@ import type GitHubNotificationMonitorService from '../intake/monitor/service.ts'
 import {
   NotificationCliOptionError,
   notificationItemSelector,
-  notificationPositiveInteger,
+  notificationTimeoutSeconds,
 } from './options.ts';
 
 const defaultRefreshSeconds = 300;
@@ -43,7 +43,7 @@ function refreshOptions(options: RefreshNotificationsAgentSystemOptions) {
     timeoutMs:
       (options.timeoutSeconds === undefined
         ? defaultRefreshSeconds
-        : notificationPositiveInteger(options.timeoutSeconds, 'timeout')) * 1_000,
+        : notificationTimeoutSeconds(options.timeoutSeconds)) * 1_000,
   };
 }
 

@@ -216,7 +216,7 @@ Run one GitHub notification intake cycle immediately.
 | `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
 | `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
-| `--timeout <seconds>`          | no                   | `300`               | Positive integer bounding the complete refresh cycle.                        |
+| `--timeout <seconds>`          | no                   | `300`               | Integer from `1` through `2147483` bounding the complete refresh cycle.      |
 
 #### Usage
 
@@ -291,7 +291,7 @@ Wait for one semantic notification checkpoint without parsing session history or
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
 | `--refresh`                    | no                   | off                 | Advance provider-owned intake while waiting.                                 |
 | `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
-| `--timeout <seconds>`          | no                   | `300`               | Positive integer bounding the complete wait.                                 |
+| `--timeout <seconds>`          | no                   | `300`               | Integer from `1` through `2147483` bounding the complete wait.               |
 
 #### Usage
 

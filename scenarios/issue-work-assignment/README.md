@@ -115,6 +115,15 @@ openclaw agent-system install
 ## Testing
 
 ```bash
+# should reject notification timeouts that overflow the native timer
+cd "$TMPDIR/agent-system-notifications"
+if openclaw agent-system notifications refresh --timeout 2147484 --json > "$TMPDIR/refresh-overflow.json" 2> "$TMPDIR/refresh-overflow.stderr"; then exit 1; fi
+test ! -s "$TMPDIR/refresh-overflow.json"
+grep -F 'github-notification-refresh-options-invalid' "$TMPDIR/refresh-overflow.stderr"
+if openclaw agent-system notifications wait --for baseline-ready --timeout 2147484 --json > "$TMPDIR/wait-overflow.json" 2> "$TMPDIR/wait-overflow.stderr"; then exit 1; fi
+test ! -s "$TMPDIR/wait-overflow.json"
+grep -F 'github-notification-wait-options-invalid' "$TMPDIR/wait-overflow.stderr"
+
 # should expose one ready empty notification baseline before assignment intake
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system notifications wait \

@@ -89,32 +89,34 @@ describe('channels/github/cli/refresh', () => {
     assert.deepEqual(exitCodes, [1]);
   });
 
-  it('should reject an invalid timeout before starting a refresh', async () => {
-    const test = createOutput();
-    const exitCodes: number[] = [];
-    let refreshes = 0;
+  for (const timeoutSeconds of ['0', '2147484', '9007199254740991']) {
+    it(`should reject timeout ${timeoutSeconds} before starting a refresh`, async () => {
+      const test = createOutput();
+      const exitCodes: number[] = [];
+      let refreshes = 0;
 
-    await refreshNotificationsAgentSystem({
-      json: true,
-      manifestService: {
-        loadForAgentId: async () => manifest,
-        loadForCommandDirectory: async () => manifest,
-      },
-      monitorService: {
-        async runOnce() {
-          refreshes += 1;
-          return [];
+      await refreshNotificationsAgentSystem({
+        json: true,
+        manifestService: {
+          loadForAgentId: async () => manifest,
+          loadForCommandDirectory: async () => manifest,
         },
-      },
-      output: test.output,
-      setExitCode: (code) => exitCodes.push(code),
-      timeoutSeconds: '0',
-      workspaceDir: '/workspace',
-    });
+        monitorService: {
+          async runOnce() {
+            refreshes += 1;
+            return [];
+          },
+        },
+        output: test.output,
+        setExitCode: (code) => exitCodes.push(code),
+        timeoutSeconds,
+        workspaceDir: '/workspace',
+      });
 
-    assert.equal(refreshes, 0);
-    assert.deepEqual(test.stdout, []);
-    assert.match(test.stderr.join(''), /github-notification-refresh-options-invalid/u);
-    assert.deepEqual(exitCodes, [2]);
-  });
+      assert.equal(refreshes, 0);
+      assert.deepEqual(test.stdout, []);
+      assert.match(test.stderr.join(''), /github-notification-refresh-options-invalid/u);
+      assert.deepEqual(exitCodes, [2]);
+    });
+  }
 });
