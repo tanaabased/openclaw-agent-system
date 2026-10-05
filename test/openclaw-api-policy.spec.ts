@@ -41,6 +41,7 @@ const supportedPluginSdkSubpaths = new Set([
   'secret-ref-runtime',
   'session-store-runtime',
   'session-visibility',
+  'setup-runtime',
   'status-helpers',
 ]);
 const deprecatedPluginSdkSubpaths = new Set([
@@ -160,6 +161,7 @@ describe('openclaw api policy', () => {
       "import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-outbound';",
       "import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';",
       "import { createAgentToAgentPolicy, resolveSessionToolsVisibility } from 'openclaw/plugin-sdk/session-visibility';",
+      "import { createClackPrompter } from 'openclaw/plugin-sdk/setup-runtime';",
       "import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';",
     ].join('\n');
 

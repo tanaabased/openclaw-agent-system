@@ -51,7 +51,7 @@ openclaw agent --agent alpha --session-key agent:alpha:external-send --message e
 
 # should read the preserved unmanaged participant session
 openclaw agent --agent alpha --session-key agent:alpha:external-read --message external-read --timeout 120 | grep -F 'external-history-verified'
-curl --fail --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0 and .finalResponseCount >= 7 and ([.tools[] | select(.name == "sessions_send" and .callResponseCount == 1 and .resultRequestCount >= 1)] | length) == 2 and any(.tools[]; .name == "sessions_history" and .callResponseCount == 1 and .resultRequestCount >= 1)'
+curl --fail --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0 and .finalResponseCount >= 7 and ([.tools[] | select(.name == "sessions_send" and .callResponseCount == 2 and .resultRequestCount >= 2)] | length) == 1 and any(.tools[]; .name == "sessions_history" and .callResponseCount == 1 and .resultRequestCount >= 1)'
 
 # should stop the gateway before configuration lifecycle checks
 openclaw-gateway stop

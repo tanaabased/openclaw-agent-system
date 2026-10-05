@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 
 import ansis from 'ansis';
-import { ConfirmPrompt } from '@clack/core';
 import stringWidth from 'fast-string-width';
 
 import installAgentSystem from '../cli/install.ts';
@@ -27,7 +26,7 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
     runtime: 'openclaw',
     setup,
     workspaceDir: '/workspace',
-    environment: {},
+    environment: { NO_COLOR: '1' },
     input,
     output: {
       writeStdout: (value) => stdout.push(value),
@@ -179,29 +178,17 @@ describe('cli/setup-consent', () => {
     }
   });
 
-  it('should style the confirmation while retaining the no default', async () => {
-    for (const environment of [{ FORCE_COLOR: '3' }, { NO_COLOR: '', FORCE_COLOR: '3' }]) {
-      const test = fixture({
-        environment,
-        prompt: async (options) => {
-          assert.equal(options.initialValue, false);
-          assert.equal(options.active, 'Yes');
-          assert.equal(options.inactive, 'No');
-          const prompt = new ConfirmPrompt(options);
-          const rendered = options.render.call(prompt) ?? '';
-          assert.match(ansis.strip(rendered), /Continue with installation\?/u);
-          assert.match(ansis.strip(rendered), /Yes.*No/u);
-          if ('NO_COLOR' in environment) {
-            assert.equal(rendered.includes('\u001b'), false);
-          } else {
-            assert.ok(rendered.includes('\u001b[1mContinue with installation?\u001b[22m'));
-            assert.ok(rendered.includes('\u001b[38;2;0;200;138m'));
-          }
-          return true;
-        },
-      });
-      assert.equal(await confirmSetupInstall(test.options), true);
-    }
+  it('should request the standard confirmation with no selected by default', async () => {
+    const test = fixture({
+      prompt: async (options) => {
+        assert.deepEqual(options, {
+          message: 'Continue with installation?',
+          initialValue: false,
+        });
+        return true;
+      },
+    });
+    assert.equal(await confirmSetupInstall(test.options), true);
   });
 
   it('should preview only the selected setup phase', async () => {
@@ -272,7 +259,12 @@ describe('cli/setup-consent', () => {
   });
 
   it('should stop before mutations on decline, cancellation, or prompt failure', async () => {
-    for (const answer of [false, Symbol('cancelled'), new Error('private failure')]) {
+    for (const answer of [
+      false,
+      Symbol('cancelled'),
+      new Error('Setup cancelled'),
+      new Error('private failure'),
+    ]) {
       const test = fixture({
         prompt: async () => {
           if (answer instanceof Error) throw answer;
@@ -349,5 +341,9 @@ describe('cli/setup-consent', () => {
     await confirmSetupInstall(test.options);
     assert.equal(test.stderr.join('').includes(String.fromCharCode(27)), false);
     assert.match(test.stderr.join(''), /\\u001b/u);
+    const colored = fixture({ setup: unsafe.setup, environment: { FORCE_COLOR: '3' } });
+    await confirmSetupInstall(colored.options);
+    assert.equal(colored.stderr.join('').includes('\u001b[2J'), false);
+    assert.match(colored.stderr.join(''), /\\u001b\[2J/u);
   });
 });

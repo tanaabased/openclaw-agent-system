@@ -1,16 +1,7 @@
 import type { Readable } from 'node:stream';
 
-import { ConfirmPrompt } from '@clack/core';
-import {
-  settings,
-  S_BAR,
-  S_BAR_END,
-  S_RADIO_ACTIVE,
-  S_RADIO_INACTIVE,
-  S_STEP_ACTIVE,
-  S_STEP_CANCEL,
-  S_STEP_SUBMIT,
-} from '@clack/prompts';
+import { S_STEP_SUBMIT } from '@clack/prompts';
+import { createClackPrompter, type WizardPrompter } from 'openclaw/plugin-sdk/setup-runtime';
 import { wrapAnsi } from 'fast-wrap-ansi';
 
 import type {
@@ -34,7 +25,7 @@ export interface SetupConsentOptions extends InstallSetupOptions {
   output: CliOutput;
   styles?: CliStyles;
   terminalColumns?: number;
-  prompt?: (options: ConstructorParameters<typeof ConfirmPrompt>[0]) => Promise<boolean | symbol>;
+  prompt?: (options: Parameters<WizardPrompter['confirm']>[0]) => Promise<boolean | symbol>;
 }
 
 function enabled(value: string | undefined): boolean {
@@ -116,31 +107,10 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
   ];
   options.output.writeStderr(`${lines.join('\n')}\n`);
   try {
-    const answer = await (options.prompt ?? ((prompt) => new ConfirmPrompt(prompt).prompt()))({
-      active: 'Yes',
-      inactive: 'No',
+    const prompt = options.prompt ?? createClackPrompter(process.stderr).confirm;
+    const answer = await prompt({
+      message: 'Continue with installation?',
       initialValue: false,
-      input,
-      output: process.stderr,
-      render() {
-        const guide = settings.withGuide;
-        const finished = this.state === 'submit' || this.state === 'cancel';
-        const marker =
-          this.state === 'cancel' ? S_STEP_CANCEL : finished ? S_STEP_SUBMIT : S_STEP_ACTIVE;
-        const heading = wrap(
-          `${styles.action(marker)}  ${styles.bold('Continue with installation?')}`,
-        );
-        const prefix = guide ? `${styles.field(S_BAR)}  ` : '';
-        const selected = this.value ? 'Yes' : 'No';
-        if (finished) return `${heading}\n${prefix}${styles.field(selected)}`;
-        const yes = this.value
-          ? `${styles.action(S_RADIO_ACTIVE)} Yes`
-          : styles.field(`${S_RADIO_INACTIVE} Yes`);
-        const no = this.value
-          ? styles.field(`${S_RADIO_INACTIVE} No`)
-          : `${styles.action(S_RADIO_ACTIVE)} No`;
-        return `${guide ? `${styles.field(S_BAR)}\n` : ''}${heading}\n${wrap(`${guide ? `${styles.action(S_BAR)}  ` : ''}${yes} ${styles.field('/')} ${no}`)}\n${guide ? styles.action(S_BAR_END) : ''}\n`;
-      },
     });
     return answer === true;
   } catch {

@@ -35,7 +35,7 @@ sed \
 ## Testing
 
 ```bash
-# should style the narrow consent preview and decline on enter without mutations
+# should style the narrow consent preview and stop on decline or cancellation
 mkdir -p "$TMPDIR/setup-consent"
 cp "$GITHUB_WORKSPACE/examples/setup/consent/agent.yaml" "$TMPDIR/setup-consent/agent.yaml"
 cd "$TMPDIR/setup-consent"
