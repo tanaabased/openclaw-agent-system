@@ -9,6 +9,7 @@ import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';
 
+import { withPrivateStateLock } from './private-state-lock-context.ts';
 import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
 import createGoogleCapability from '../tools/google/capability.ts';
 import createGitCapability from '../tools/git/capability.ts';
@@ -342,7 +343,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           staleMs: 30_000,
         });
         try {
-          return await run();
+          return await withPrivateStateLock(lock, run);
         } finally {
           await lock.release();
         }

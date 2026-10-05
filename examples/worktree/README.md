@@ -23,6 +23,35 @@ openclaw agent-system install
 
 ## Testing
 
+The lock-loss regression pauses a read-only Git command under the installed
+plugin's preparation lease. Changing that test lock's timestamp forces the real
+heartbeat callback to report lost ownership. The command must fail through its
+normal error path, leave the compromised lock alone, and create no worktree.
+This exercises containment, not a host freeze or the Doctor approval flow.
+
+```bash
+# should fail a compromised preparation without creating a worktree
+mkdir -p "$TMPDIR/lock-loss-bin"
+command -v git > "$TMPDIR/lock-loss-bin/real-git"
+cp "$GITHUB_WORKSPACE/examples/worktree/delay-git.mjs" "$TMPDIR/lock-loss-bin/git"
+chmod +x "$TMPDIR/lock-loss-bin/git"
+cd "$GITHUB_WORKSPACE/examples/worktree/localbot"
+PATH="$TMPDIR/lock-loss-bin:$PATH" openclaw agent-system tool worktree -- prepare agent-system 790-lock-loss HEAD > "$TMPDIR/lock-loss.log" 2>&1 &
+preparation_pid=$!
+trap 'kill "$preparation_pid" 2>/dev/null || true' EXIT
+node "$GITHUB_WORKSPACE/examples/worktree/compromise-lock.mjs" "$TMPDIR/lock-loss-bin/paused" "$GITHUB_WORKSPACE/.git/agent-system-worktree-preparation.lock"
+if wait "$preparation_pid"; then cat "$TMPDIR/lock-loss.log"; exit 1; fi
+cat "$TMPDIR/lock-loss.log"
+grep -F 'The private state file lock was lost' "$TMPDIR/lock-loss.log"
+test -d "$GITHUB_WORKSPACE/.git/agent-system-worktree-preparation.lock"
+openclaw agent-system tool worktree -- list agent-system | jq -e 'all(.[]; (.branch | startswith("790-lock-loss-")) | not)'
+
+# should recover preparation after a lost lease without restarting the host
+cd "$GITHUB_WORKSPACE/examples/worktree/localbot"
+openclaw agent-system tool worktree -- prepare agent-system 790-lock-loss HEAD | jq -e '.status == "created"'
+openclaw agent-system tool worktree -- remove agent-system 790-lock-loss | jq -e '.status == "removed"'
+```
+
 ```bash
 # should grant the native managed worktree tool to the installed worktree agent
 openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_git_worktree") != null'

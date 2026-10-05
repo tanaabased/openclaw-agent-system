@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
+import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 import {
   githubConversationRecordVersion,
   createGitHubNotificationConversationState,
@@ -143,40 +144,45 @@ export default class GitHubNotificationConversationStateStore {
     await this.#ensureDirectories(snapshot.agentId);
     const lock = await acquirePrivateStateFileLock(this.#indexPath(snapshot.agentId), lockOptions);
     try {
-      const latest =
-        (await this.#readIndex(snapshot.agentId)) ??
-        createGitHubNotificationConversationState(snapshot.agentId, snapshot.workspaceDir);
-      this.#assertWorkspace(latest, snapshot);
-      if (latest.schemaVersion === 8 && latest.conversationIds.includes(snapshot.conversationId)) {
-        await this.#snapshot(latest, snapshot.conversationId);
-        await this.#writeRecord(validated);
-        return;
-      }
-      const next = decodeGitHubNotificationConversationIndex(
-        {
-          agentId: latest.agentId,
-          conversationIds: [...new Set([...this.#ids(latest), snapshot.conversationId])],
-          schemaVersion: 8,
-          workspaceDir: latest.workspaceDir,
-        },
-        snapshot.agentId,
-      );
-      if (!next) throw new Error('The GitHub notification conversation state is invalid.');
-      if (latest.schemaVersion === 7) {
-        // retain the original bytes; incomplete copies are unreferenced until index cutover.
-        const original = await file.read();
-        if (original !== undefined) {
-          await this.#file(snapshot.agentId, `${stateName}.legacy.json`).write(original);
+      return await withPrivateStateLock(lock, async () => {
+        const latest =
+          (await this.#readIndex(snapshot.agentId)) ??
+          createGitHubNotificationConversationState(snapshot.agentId, snapshot.workspaceDir);
+        this.#assertWorkspace(latest, snapshot);
+        if (
+          latest.schemaVersion === 8 &&
+          latest.conversationIds.includes(snapshot.conversationId)
+        ) {
+          await this.#snapshot(latest, snapshot.conversationId);
+          await this.#writeRecord(validated);
+          return;
         }
-        for (const conversationId of this.#ids(latest)) {
-          if (conversationId !== snapshot.conversationId) {
-            await this.#writeRecord(await this.#snapshot(latest, conversationId));
+        const next = decodeGitHubNotificationConversationIndex(
+          {
+            agentId: latest.agentId,
+            conversationIds: [...new Set([...this.#ids(latest), snapshot.conversationId])],
+            schemaVersion: 8,
+            workspaceDir: latest.workspaceDir,
+          },
+          snapshot.agentId,
+        );
+        if (!next) throw new Error('The GitHub notification conversation state is invalid.');
+        if (latest.schemaVersion === 7) {
+          // retain the original bytes; incomplete copies are unreferenced until index cutover.
+          const original = await file.read();
+          if (original !== undefined) {
+            await this.#file(snapshot.agentId, `${stateName}.legacy.json`).write(original);
+          }
+          for (const conversationId of this.#ids(latest)) {
+            if (conversationId !== snapshot.conversationId) {
+              await this.#writeRecord(await this.#snapshot(latest, conversationId));
+            }
           }
         }
-      }
-      await this.#writeRecord(validated);
-      // publish the index only after every referenced record has been written atomically.
-      await file.write(`${JSON.stringify(next, undefined, 2)}\n`);
+        await this.#writeRecord(validated);
+        // publish the index only after every referenced record has been written atomically.
+        await file.write(`${JSON.stringify(next, undefined, 2)}\n`);
+      });
     } finally {
       await lock.release();
     }
@@ -196,9 +202,11 @@ export default class GitHubNotificationConversationStateStore {
     const path = this.#recordPath(snapshot.agentId, snapshot.conversationId);
     const lock = await acquirePrivateStateFileLock(path, lockOptions);
     try {
-      await this.#recordFile(snapshot.agentId, snapshot.conversationId).write(
-        `${JSON.stringify({ ...snapshot, schemaVersion: githubConversationRecordVersion(snapshot.conversation) }, undefined, 2)}\n`,
-      );
+      return await withPrivateStateLock(lock, async () => {
+        await this.#recordFile(snapshot.agentId, snapshot.conversationId).write(
+          `${JSON.stringify({ ...snapshot, schemaVersion: githubConversationRecordVersion(snapshot.conversation) }, undefined, 2)}\n`,
+        );
+      });
     } finally {
       await lock.release();
     }
