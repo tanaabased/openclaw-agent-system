@@ -3,15 +3,27 @@
 Configuration, commands, and operations for the GitHub notification channel.
 Start with the [README](./README.md) for setup.
 
-- [Configuration reference](#configuration-reference)
-- [CLI reference](#cli)
+- [Configuration Reference](#configuration-reference)
+  - [`github.notifications.allowed-repository-owners`](#githubnotificationsallowed-repository-owners)
+  - [`github.notifications.approved-actors`](#githubnotificationsapproved-actors)
+  - [`github.notifications.assignment-types`](#githubnotificationsassignment-types)
+  - [`github.notifications.initial-mode`](#githubnotificationsinitial-mode)
+  - [`github.notifications.interval-minutes`](#githubnotificationsinterval-minutes)
+  - [`github.notifications.max-concurrent-issues`](#githubnotificationsmax-concurrent-issues)
+  - [`github.notifications.pull-request`](#githubnotificationspull-request)
+  - [Required Conversation Hook](#required-conversation-hook)
+- [Tools](#tools)
+  - [`agent_system_github_task_pr`](#agent_system_github_task_pr)
+- [CLI](#cli)
   - [`openclaw agent-system notifications refresh`](#openclaw-agent-system-notifications-refresh)
   - [`openclaw agent-system notifications status`](#openclaw-agent-system-notifications-status)
   - [`openclaw agent-system notifications wait`](#openclaw-agent-system-notifications-wait)
 - [Model routing](#model-routing)
-- [Processing and lifecycle](#processing-and-lifecycle)
-- [Security and lifecycle](#security-and-lifecycle)
-- [Durable state and upgrades](#durable-state-and-upgrades)
+- [Processing and Lifecycle](#processing-and-lifecycle)
+  - [Managed Worktrees](#managed-worktrees)
+  - [Pull Request Review Feedback](#pull-request-review-feedback)
+- [Security and Lifecycle](#security-and-lifecycle)
+  - [Durable State and Upgrades](#durable-state-and-upgrades)
 
 ## Configuration Reference
 
@@ -29,79 +41,11 @@ Declare `github.notifications` in the workspace manifest; see the
 | `max-concurrent-issues`            | no       | `2`                     | Positive integer                         |
 | `pull-request`                     | no       | see below               | Delivery PR assignees and reviewers      |
 
-### `github.notifications.pull-request`
+### `github.notifications.allowed-repository-owners`
 
-Controls recipients on issue task pull requests published by automatic Work
-delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant issue
-Work and Guided turns receive these defaults; unrelated direct `gh` pull requests
-are not linked.
-
-| Field       | Type                              | Required | Default            | Description                                                                                                               |
-| ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `assignees` | `assignment-actor` or pinned list | no       | `assignment-actor` | Add the admitted assigning actor, or replace that choice with up to ten pinned users. `[]` disables automatic assignment. |
-| `reviewers` | pinned list                       | no       | `[]`               | Request reviews from eligible users. Assignment alone does not request review.                                            |
-
-Each pinned user has `login` and `node-id`, as in `approved-actors`. The login
-must still resolve to that node ID at delivery. Duplicate identities within a
-list are invalid. GitHub eligibility applies; the agent cannot review its own
-PR. The same person may be both assignee and reviewer. Recipients need not be
-`approved-actors`: receiving a PR never grants assignment or comment authority.
-Existing assignees, review requests, and CODEOWNERS behavior are preserved.
-
-```yaml
-github:
-  notifications:
-    approved-actors:
-      - login: pirog
-        node-id: U_kgDOB9x7Qw
-    pull-request:
-      reviewers:
-        - login: reviewer
-          node-id: REPLACE_WITH_REAL_GITHUB_NODE_ID
-```
-
-A missing assigning-actor identity fails delivery rather than falling back to
-the issue author. An interrupted handoff reuses its PR and adds only missing
-recipients, without re-requesting a submitted review.
-
-### `agent_system_github_task_pr`
-
-Publish a task pull request from a prepared, trusted GitHub issue-owned session
-when work continues outside the automatic Work implementation turn. Use this
-tool instead of `gh pr create` for that issue. Automatic Work delivery still
-publishes terminally without a model tool call.
-
-#### Parameters
-
-| Parameter | Type   | Required | Default             | Description                   |
-| --------- | ------ | -------- | ------------------- | ----------------------------- |
-| `body`    | string | no       | `Closes #<issue>`   | Body for a newly created PR.  |
-| `title`   | string | no       | current issue title | Title for a newly created PR. |
-
-#### Usage
-
-From the prepared issue session, publish committed work on its exact managed
-branch:
-
-```json
-{ "title": "Finish the issue fix", "body": "Implementation and validation. Closes #12" }
-```
-
-The tool verifies current assignment authority, the agent-owned open PR and
-branch, then adds missing configured recipients. It preserves an existing PR's
-title, body, assignees, and completed reviews. It records the PR in the issue
-session; the next notification reconciliation completes the ordinary
-`pull-request-opened` card, comment baseline, and issue handoff. The tool does
-not merge. It is unavailable outside a prepared issue-owned session.
-
-The response reports `status: linked` for the completed PR link and a
-`handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
-durable handoff is published, then `published` on a later call. The tool does not run the asynchronous handoff turn itself.
-
-### `github.notifications.assignment-types`
-
-Selects the assignment kinds the channel discovers. Direct pull-request
-assignments have the [documented limitations](./README.md#current-limitations).
+Filters assignments by repository owner using the same `login` and `node-id`
+identity shape as `approved-actors`, with unique node IDs. The filter does not
+grant repository access or approve the owner's members.
 
 ### `github.notifications.approved-actors`
 
@@ -161,11 +105,10 @@ fields, and reports missing evidence as unverified. Setup failures do not retry,
 block work, or add GitHub comments. This optional access does not replace the
 [required conversation hook](#required-conversation-hook).
 
-### `github.notifications.allowed-repository-owners`
+### `github.notifications.assignment-types`
 
-Filters assignments by repository owner using the same `login` and `node-id`
-identity shape as `approved-actors`, with unique node IDs. The filter does not
-grant repository access or approve the owner's members.
+Selects the assignment kinds the channel discovers. Direct pull-request
+assignments have the [documented limitations](./README.md#current-limitations).
 
 ### `github.notifications.initial-mode`
 
@@ -186,6 +129,41 @@ an explicit wait for follow-up, or a retryable failure releases the slot; failed
 work moves to the back of the queue. Pull-request assignment intake is not
 counted against this issue-work limit.
 
+### `github.notifications.pull-request`
+
+Controls recipients on issue task pull requests published by automatic Work
+delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant issue
+Work and Guided turns receive these defaults; unrelated direct `gh` pull requests
+are not linked.
+
+| Field       | Type                              | Required | Default            | Description                                                                                                               |
+| ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `assignees` | `assignment-actor` or pinned list | no       | `assignment-actor` | Add the admitted assigning actor, or replace that choice with up to ten pinned users. `[]` disables automatic assignment. |
+| `reviewers` | pinned list                       | no       | `[]`               | Request reviews from eligible users. Assignment alone does not request review.                                            |
+
+Each pinned user has `login` and `node-id`, as in `approved-actors`. The login
+must still resolve to that node ID at delivery. Duplicate identities within a
+list are invalid. GitHub eligibility applies; the agent cannot review its own
+PR. The same person may be both assignee and reviewer. Recipients need not be
+`approved-actors`: receiving a PR never grants assignment or comment authority.
+Existing assignees, review requests, and CODEOWNERS behavior are preserved.
+
+```yaml
+github:
+  notifications:
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    pull-request:
+      reviewers:
+        - login: reviewer
+          node-id: REPLACE_WITH_REAL_GITHUB_NODE_ID
+```
+
+A missing assigning-actor identity fails delivery rather than falling back to
+the issue author. An interrupted handoff reuses its PR and adds only missing
+recipients, without re-requesting a submitted review.
+
 ### Required Conversation Hook
 
 For configured notifications, `doctor` reports unset or denied
@@ -195,6 +173,42 @@ access and verify required hook registration. Install preserves unrelated
 configuration and does not override `hooks.allowPromptInjection: false`.
 If the running Gateway has not reloaded the permission, restart it after install;
 notifications remain blocked until its required hooks are available.
+
+## Tools
+
+### `agent_system_github_task_pr`
+
+Publish a task pull request from a prepared, trusted GitHub issue-owned session
+when work continues outside the automatic Work implementation turn. Use this
+tool instead of `gh pr create` for that issue. Automatic Work delivery still
+publishes terminally without a model tool call.
+
+#### Parameters
+
+| Parameter | Type   | Required | Default             | Description                   |
+| --------- | ------ | -------- | ------------------- | ----------------------------- |
+| `body`    | string | no       | `Closes #<issue>`   | Body for a newly created PR.  |
+| `title`   | string | no       | current issue title | Title for a newly created PR. |
+
+#### Usage
+
+From the prepared issue session, publish committed work on its exact managed
+branch:
+
+```json
+{ "title": "Finish the issue fix", "body": "Implementation and validation. Closes #12" }
+```
+
+The tool verifies current assignment authority, the agent-owned open PR and
+branch, then adds missing configured recipients. It preserves an existing PR's
+title, body, assignees, and completed reviews. It records the PR in the issue
+session; the next notification reconciliation completes the ordinary
+`pull-request-opened` card, comment baseline, and issue handoff. The tool does
+not merge. It is unavailable outside a prepared issue-owned session.
+
+The response reports `status: linked` for the completed PR link and a
+`handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
+durable handoff is published, then `published` on a later call. The tool does not run the asynchronous handoff turn itself.
 
 ## CLI
 

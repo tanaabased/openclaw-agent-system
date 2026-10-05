@@ -8,6 +8,25 @@ The Git tools run noninteractive `git` commands and manage durable worktrees
 with the active agent's identity, SSH configuration, and policy. Enable them
 through the workspace's `git` declaration.
 
+- [Configuration Reference](#configuration-reference)
+  - [`git.email`](#gitemail)
+  - [`git.extensions`](#gitextensions)
+  - [`git.name`](#gitname)
+  - [`git.policy`](#gitpolicy)
+  - [`git.signing`](#gitsigning)
+  - [`git.ssh.private-keys`](#gitsshprivate-keys)
+  - [`git.worktrees`](#gitworktrees)
+- [Native Tools](#native-tools)
+  - [`agent_system_git`](#agent_system_git)
+  - [`agent_system_git_worktree`](#agent_system_git_worktree)
+- [CLI](#cli)
+  - [`openclaw agent-system tool git`](#openclaw-agent-system-tool-git)
+  - [`openclaw agent-system tool worktree -- list`](#openclaw-agent-system-tool-worktree----list)
+  - [`openclaw agent-system tool worktree -- prepare`](#openclaw-agent-system-tool-worktree----prepare)
+  - [`openclaw agent-system tool worktree -- remove`](#openclaw-agent-system-tool-worktree----remove)
+- [Shim](#shim)
+- [Launcher Bindings](#launcher-bindings)
+
 ## Overview
 
 | Interface                             | Purpose                                                      |
@@ -68,15 +87,6 @@ git:
     allowed-signers-file: .agent-system/allowed_signers
 ```
 
-### `git.name`
-
-| Type                               | Required | Default      |
-| ---------------------------------- | -------- | ------------ |
-| string or `from-environment` value | no       | `agent.name` |
-
-Sets both author and committer name for the Git child. Agent System does not
-fall through to repository, global, or system Git identity.
-
 ### `git.email`
 
 | Type                               | Required | Default       |
@@ -98,32 +108,56 @@ and built-in protection classification takes precedence. An allowed extension
 is trusted for its private argument surface. Undeclared and unsupported
 commands are denied; a declared helper that is missing is also denied.
 
-### `git.ssh.private-keys`
+### `git.name`
 
-| Type                          | Required | Default |
-| ----------------------------- | -------- | ------- |
-| key source or key source list | no       | none    |
+| Type                               | Required | Default      |
+| ---------------------------------- | -------- | ------------ |
+| string or `from-environment` value | no       | `agent.name` |
 
-Selects one or more unencrypted OpenSSH private keys in declaration order:
+Sets both author and committer name for the Git child. Agent System does not
+fall through to repository, global, or system Git identity.
+
+### `git.policy`
+
+| Field               | Values          | Required | Default | Covers                                                        |
+| ------------------- | --------------- | -------- | ------- | ------------------------------------------------------------- |
+| `delete-remote-ref` | `allow`, `deny` | no       | `deny`  | `--delete`, `-d`, `--prune`, deletion refspecs, and mirroring |
+| `force-push`        | `allow`, `deny` | no       | `deny`  | `--force`, `-f`, `--force-with-lease`, and positive refspecs  |
+
+Omitted fields remain denied. Enable only the required remote effects:
 
 ```yaml
 git:
-  ssh:
-    private-keys:
-      - path: ~/.ssh/id_ed25519
-      - from-environment: GIT_SSH_PRIVATE_KEY
+  policy:
+    force-push: allow
 ```
 
-`path` reads an existing owner-only regular file. Relative paths remain inside
-the agent workspace; absolute and `~/` paths are explicit operator choices.
-`from-environment` reads the named value from the completed Agent System
-environment, so dotenv, 1Password Environments, and direct OP secret references
-can supply the key. Secret acquisition belongs to the shared
-[environment contract](../../MANIFEST.md#environment-resolution), so the Git schema does
-not duplicate `from-op`. Encrypted keys are not yet supported. Agent System
-isolates the declared keys from ambient SSH identities and presents them only
-for Git SSH transport. Run `openclaw agent-system doctor` to check OpenSSH
-readiness.
+Supported public reads and recognized ordinary writes are allowed. This includes
+local branch and tag deletion, cleanup, discard, rebase, amend, and reset
+operations. These actions can still lose local work; Git's own state and the
+repository's review workflow remain responsible for recovery and coordination.
+
+Protected remote effects take precedence. `git push --mirror` selects both
+fields, so both must be `allow`.
+
+These fields provide the same narrow safeguards across Git providers because
+equivalent server-side controls are not consistently available. Where the
+provider supports ref protection, configure it as the authoritative boundary.
+For GitHub remotes, use
+[branch and tag rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+to restrict updates, deletions, and force pushes on important refs. A local
+`allow` cannot override a remote denial.
+
+Undeclared external helpers and unsupported command families remain denied
+independently of `git.policy`; use exact `git.extensions` declarations for
+trusted helpers.
+
+Agent System disables operator-global and system Git configuration, prompts,
+hooks, pagers, and editors and rejects configuration, executable, credential,
+and working-directory escape paths. Repository configuration can still name
+helpers, filters, aliases, and diff programs, so the wrapper does not make an
+untrusted checkout safe. Raw `git worktree` access permits only read-only
+`list`; use the managed worktree tool for lifecycle changes.
 
 ### `git.signing`
 
@@ -157,6 +191,33 @@ repository-owned trust file through normal review and branch controls; an
 untrusted checkout cannot establish trust merely by adding its own key.
 Hosting-provider signing-key registration remains a separate provider
 operation.
+
+### `git.ssh.private-keys`
+
+| Type                          | Required | Default |
+| ----------------------------- | -------- | ------- |
+| key source or key source list | no       | none    |
+
+Selects one or more unencrypted OpenSSH private keys in declaration order:
+
+```yaml
+git:
+  ssh:
+    private-keys:
+      - path: ~/.ssh/id_ed25519
+      - from-environment: GIT_SSH_PRIVATE_KEY
+```
+
+`path` reads an existing owner-only regular file. Relative paths remain inside
+the agent workspace; absolute and `~/` paths are explicit operator choices.
+`from-environment` reads the named value from the completed Agent System
+environment, so dotenv, 1Password Environments, and direct OP secret references
+can supply the key. Secret acquisition belongs to the shared
+[environment contract](../../MANIFEST.md#environment-resolution), so the Git schema does
+not duplicate `from-op`. Encrypted keys are not yet supported. Agent System
+isolates the declared keys from ambient SSH identities and presents them only
+for Git SSH transport. Run `openclaw agent-system doctor` to check OpenSSH
+readiness.
 
 ### `git.worktrees`
 
@@ -205,48 +266,6 @@ changes and retirement follow the [notification worktree lifecycle](../../channe
 them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored
 roots fail installation. Worktrees use deterministic paths and Git's own state,
 while `doctor` checks the configured roots, ignore state, and local overrides.
-
-### `git.policy`
-
-| Field               | Values          | Required | Default | Covers                                                        |
-| ------------------- | --------------- | -------- | ------- | ------------------------------------------------------------- |
-| `delete-remote-ref` | `allow`, `deny` | no       | `deny`  | `--delete`, `-d`, `--prune`, deletion refspecs, and mirroring |
-| `force-push`        | `allow`, `deny` | no       | `deny`  | `--force`, `-f`, `--force-with-lease`, and positive refspecs  |
-
-Omitted fields remain denied. Enable only the required remote effects:
-
-```yaml
-git:
-  policy:
-    force-push: allow
-```
-
-Supported public reads and recognized ordinary writes are allowed. This includes
-local branch and tag deletion, cleanup, discard, rebase, amend, and reset
-operations. These actions can still lose local work; Git's own state and the
-repository's review workflow remain responsible for recovery and coordination.
-
-Protected remote effects take precedence. `git push --mirror` selects both
-fields, so both must be `allow`.
-
-These fields provide the same narrow safeguards across Git providers because
-equivalent server-side controls are not consistently available. Where the
-provider supports ref protection, configure it as the authoritative boundary.
-For GitHub remotes, use
-[branch and tag rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
-to restrict updates, deletions, and force pushes on important refs. A local
-`allow` cannot override a remote denial.
-
-Undeclared external helpers and unsupported command families remain denied
-independently of `git.policy`; use exact `git.extensions` declarations for
-trusted helpers.
-
-Agent System disables operator-global and system Git configuration, prompts,
-hooks, pagers, and editors and rejects configuration, executable, credential,
-and working-directory escape paths. Repository configuration can still name
-helpers, filters, aliases, and diff programs, so the wrapper does not make an
-untrusted checkout safe. Raw `git worktree` access permits only read-only
-`list`; use the managed worktree tool for lifecycle changes.
 
 ## Native Tools
 
@@ -349,6 +368,28 @@ remain contained to the workspace and configured worktree root. Trusted
 operator commands may also use declared local repositories; undeclared paths
 remain unavailable.
 
+### `openclaw agent-system tool worktree -- list`
+
+List current agent-owned worktrees from Git without changing them.
+
+#### Options
+
+| Option or argument | Required | Default                   | Description                                                |
+| ------------------ | -------- | ------------------------- | ---------------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery       | Use the exact configured workspace for an installed agent. |
+| `[repository-id]`  | no       | all agent-owned worktrees | Limit the listing to one repository.                       |
+
+#### Usage
+
+```text
+openclaw agent-system tool worktree [--agent <id>] -- list [repository-id]
+```
+
+```sh
+# list worktrees for one repository.
+openclaw agent-system tool worktree -- list agent-system
+```
+
 ### `openclaw agent-system tool worktree -- prepare`
 
 Prepare or reuse a deterministic managed worktree.
@@ -382,28 +423,6 @@ For ordinary managed work, Agent System names both the branch and directory
 the work id when a description is available; otherwise use `<task-id>`.
 See [notification worktrees](../../channels/github/ADVANCED.md#managed-worktrees)
 for issue branch naming and retirement.
-
-### `openclaw agent-system tool worktree -- list`
-
-List current agent-owned worktrees from Git without changing them.
-
-#### Options
-
-| Option or argument | Required | Default                   | Description                                                |
-| ------------------ | -------- | ------------------------- | ---------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery       | Use the exact configured workspace for an installed agent. |
-| `[repository-id]`  | no       | all agent-owned worktrees | Limit the listing to one repository.                       |
-
-#### Usage
-
-```text
-openclaw agent-system tool worktree [--agent <id>] -- list [repository-id]
-```
-
-```sh
-# list worktrees for one repository.
-openclaw agent-system tool worktree -- list agent-system
-```
 
 ### `openclaw agent-system tool worktree -- remove`
 
