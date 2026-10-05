@@ -30,6 +30,7 @@ function createHarness(
   } = {},
 ) {
   const diagnostics: string[] = [];
+  const events: string[] = [];
   const output: string[] = [];
   const calls = {
     install: [] as Array<{
@@ -44,6 +45,7 @@ function createHarness(
   return {
     calls,
     diagnostics,
+    events,
     exitCodes,
     output,
     run: () =>
@@ -83,8 +85,14 @@ function createHarness(
           },
         },
         output: {
-          writeStderr: (message) => diagnostics.push(message),
-          writeStdout: (message) => output.push(message),
+          writeStderr: (message) => {
+            diagnostics.push(message);
+            events.push(message);
+          },
+          writeStdout: (message) => {
+            output.push(message);
+            events.push(message);
+          },
         },
         setExitCode: (code) => exitCodes.push(code),
         ...(options.rebuildCodexPath ? { rebuildCodexPath: true } : {}),
@@ -371,6 +379,44 @@ describe('cli/install', () => {
     assert.equal(result.outcomes[0].status, 'unchanged');
   });
 
+  it('should retain warnings before a styled blocking error after completed work', async () => {
+    const failure = new AgentSystemLifecycleError(
+      'collaboration',
+      'collaboration-failed',
+      'Cannot reconcile team.',
+      undefined,
+      undefined,
+      undefined,
+      {
+        outcomes: [
+          {
+            component: 'agent',
+            code: 'agent-created',
+            status: 'created',
+            message: 'agent registered',
+          },
+        ],
+        warnings: [{ component: 'path', code: 'manual-follow-up', message: 'Keep this warning.' }],
+        unattempted: [{ component: 'models' }],
+      },
+    );
+    const { output, diagnostics, events, exitCodes, run } = createHarness({ install: failure });
+    await run();
+    assert.match(output.join(''), /agent registered/u);
+    assert.ok(
+      events.join('').indexOf('agent registered') < events.join('').indexOf('Keep this warning'),
+    );
+    assert.match(diagnostics.join(''), /code=manual-follow-up/u);
+    const text = diagnostics.join('');
+    assert.match(text, /Keep this warning/u);
+    assert.match(text, /✖ Error/u);
+    assert.ok(text.indexOf('Keep this warning') < text.indexOf('✖ Error'));
+    assert.ok(text.indexOf('✖ Error') < text.indexOf('Unattempted work'));
+    assert.ok(text.indexOf('Unattempted work') < text.indexOf('Earlier completed'));
+    assert.match(text, /code=collaboration-failed/u);
+    assert.deepEqual(exitCodes, [1]);
+  });
+
   it('should report installation failures and set a failing exit code', async () => {
     const { diagnostics, exitCodes, output, run } = createHarness({
       install: new Error('agent workspace conflict'),
@@ -398,7 +444,7 @@ describe('cli/install', () => {
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
     assert.match(
-      diagnostics.join(''),
+      diagnostics.join('').replace(/\s+/gu, ' '),
       /github: GitHub config reconciliation failed. code=github-config-reconcile-failed/u,
     );
     assert.match(diagnostics.join(''), /Unattempted work: lifecycle/u);
@@ -421,19 +467,22 @@ describe('cli/install', () => {
             message: 'agent registered',
           },
         ],
-        warnings: [],
+        warnings: [{ component: 'path', code: 'retained-warning', message: 'Retain in JSON.' }],
         unattempted: [{ component: 'setup', stepId: 'agent-step' }],
       },
     );
     const { diagnostics, exitCodes, output, run } = createHarness({
       install: error,
       json: true,
+      styles: createCliStyles({ FORCE_COLOR: '3' }),
       skipSetupHost: true,
     });
     await run();
     assert.deepEqual(exitCodes, [1]);
     const result = JSON.parse(output.join(''));
     assert.equal(result.status, 'failed');
+    assert.equal(result.warnings[0].code, 'retained-warning');
+    assert.equal([...output, ...diagnostics].join('').includes('\u001b'), false);
     assert.deepEqual(
       result.outcomes.map(({ component }: { component: string }) => component),
       ['agent'],

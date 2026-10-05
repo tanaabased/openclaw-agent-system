@@ -1,6 +1,10 @@
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import {
+  withPrivateStateLock,
+  privateStateLockSignal,
+} from '../../../../core/private-state-lock-context.ts';
 import type { ConversationHookFinding } from '../../../../core/conversation-hook-access.ts';
 import type AgentManifestService from '../../../../manifest/service.ts';
 import type GitHubAccountClient from '../../../../core/github-account-client.ts';
@@ -225,7 +229,9 @@ export default class GitHubNotificationMonitorService {
   }
 
   #pollAgent(agentId: string, options: GitHubNotificationMonitorRunOptions) {
-    return this.#withLease(agentId, options, 'poll', () => this.#poll(agentId, options));
+    return this.#withLease(agentId, options, 'poll', (signal) =>
+      this.#poll(agentId, { ...options, signal }),
+    );
   }
 
   async #executionItemKeys(
@@ -272,7 +278,7 @@ export default class GitHubNotificationMonitorService {
       agentId,
       options,
       'execution',
-      () => this.#execute(agentId, options, result, itemKey),
+      (signal) => this.#execute(agentId, { ...options, signal }, result, itemKey),
       result,
       itemKey,
     );
@@ -282,7 +288,7 @@ export default class GitHubNotificationMonitorService {
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
     scope: 'execution' | 'poll',
-    operation: () => Promise<GitHubNotificationMonitorRunResult>,
+    operation: (signal?: AbortSignal) => Promise<GitHubNotificationMonitorRunResult>,
     previous?: GitHubNotificationMonitorRunResult,
     itemKey?: string,
   ): Promise<GitHubNotificationMonitorRunResult> {
@@ -318,7 +324,9 @@ export default class GitHubNotificationMonitorService {
     }
     let result: GitHubNotificationMonitorRunResult;
     try {
-      result = await operation();
+      result = await withPrivateStateLock(acquisition.lease, () =>
+        operation(privateStateLockSignal(options.signal)),
+      );
     } catch (error) {
       await acquisition.lease.release().catch(() => undefined);
       throw error;

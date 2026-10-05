@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 
+import ansis from 'ansis';
+import stringWidth from 'fast-string-width';
+
 import installAgentSystem from '../cli/install.ts';
 import confirmSetupInstall, { type SetupConsentOptions } from '../cli/setup-consent.ts';
 import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
@@ -23,7 +26,7 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
     runtime: 'openclaw',
     setup,
     workspaceDir: '/workspace',
-    environment: {},
+    environment: { NO_COLOR: '1' },
     input,
     output: {
       writeStdout: (value) => stdout.push(value),
@@ -99,6 +102,44 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
 }
 
 describe('cli/setup-consent', () => {
+  it('should style the preview without changing its wording or command details', async () => {
+    const host = normalizeAgentSetup({
+      steps: [
+        { id: 'brew-dependencies', check: ['brew', 'list'], apply: ['brew', 'install', 'jq'] },
+      ],
+    });
+    assert.equal(host.status, 'valid');
+    const colored = fixture({ setupHost: host.setup, environment: { FORCE_COLOR: '3' } });
+    const plain = fixture({
+      setupHost: host.setup,
+      environment: { NO_COLOR: '', FORCE_COLOR: '3' },
+    });
+    await confirmSetupInstall(colored.options);
+    await confirmSetupInstall(plain.options);
+    const preview = colored.stderr.join('');
+    assert.ok(preview.includes('\u001b[38;2;0;200;138msetup-host:'));
+    assert.ok(preview.includes('\u001b[38;2;226;82;146msetup-agent:'));
+    assert.ok(preview.includes('\u001b[1mbrew-dependencies\u001b[22m'));
+    assert.ok(preview.includes('\u001b[1m/workspace\u001b[22m'));
+    assert.ok(preview.includes('check \u001b[2m(argv,'));
+    assert.ok(preview.includes('apply \u001b[2m(argv,'));
+    assert.equal(ansis.strip(preview), plain.stderr.join(''));
+    assert.equal(plain.stderr.join('').includes('\u001b'), false);
+    assert.equal(
+      plain.stderr.join('').replace(/^[^ ]+ /u, ''),
+      [
+        'Install workspace "/workspace" with these setup steps:',
+        '  setup-host: brew-dependencies',
+        '    check (argv, 600s: ["brew","list"])',
+        '    apply (argv, 600s: ["brew","install","jq"])',
+        '  setup-agent: default',
+        '    check (zsh, 600s: "test -e private-marker")',
+        '    apply (zsh, 600s: "echo private-script")',
+        '',
+      ].join('\n'),
+    );
+  });
+
   it('should preview host setup before agent setup', async () => {
     const host = normalizeAgentSetup({ check: 'host check', apply: 'host apply' });
     assert.equal(host.status, 'valid');
@@ -109,6 +150,45 @@ describe('cli/setup-consent', () => {
     assert.ok(preview.indexOf('setup-host: default') < preview.indexOf('setup-agent: default'));
     assert.match(preview, /host apply/u);
     assert.match(preview, /private-script/u);
+  });
+
+  it('should wrap narrow previews without dropping command payloads', async () => {
+    const script = 'printf "  keep spaces  " ' + 'long-token-'.repeat(12);
+    const long = normalizeAgentSetup({ steps: [{ id: 'long-command', apply: script }] });
+    assert.equal(long.status, 'valid');
+    for (const columns of [32, 48]) {
+      const test = fixture({
+        setup: long.setup,
+        environment: { FORCE_COLOR: '3' },
+        terminalColumns: columns,
+      });
+      await confirmSetupInstall(test.options);
+      const lines = test.stderr.join('').trimEnd().split('\n');
+      assert.ok(lines.every((line) => stringWidth(line) <= columns));
+      const plain = lines.map((line) => ansis.strip(line));
+      const start = plain.findIndex((line) => line.startsWith('    apply '));
+      assert.notEqual(start, -1);
+      assert.equal(
+        plain
+          .slice(start)
+          .map((line) => line.slice(4))
+          .join(''),
+        `apply (sh, 600s: ${JSON.stringify(script)})`,
+      );
+    }
+  });
+
+  it('should request the standard confirmation with no selected by default', async () => {
+    const test = fixture({
+      prompt: async (options) => {
+        assert.deepEqual(options, {
+          message: 'Continue with installation?',
+          initialValue: false,
+        });
+        return true;
+      },
+    });
+    assert.equal(await confirmSetupInstall(test.options), true);
   });
 
   it('should preview only the selected setup phase', async () => {
@@ -168,17 +248,23 @@ describe('cli/setup-consent', () => {
   });
 
   it('should confirm before installation even in json mode and keep the preview on stderr', async () => {
-    const test = fixture();
+    const test = fixture({ environment: { FORCE_COLOR: '3' } });
     await test.install(true);
     assert.deepEqual(test.events, ['validate', 'prompt', 'install:apply']);
     assert.match(test.stderr.join(''), /private-script/u);
     assert.match(test.stderr.join(''), /zsh/u);
     assert.doesNotMatch(test.stdout.join(''), /private-script|private-marker/u);
+    assert.equal(test.stdout.join('').includes('\u001b'), false);
     assert.equal(JSON.parse(test.stdout.join('')).outcomes[0].stepId, 'default');
   });
 
   it('should stop before mutations on decline, cancellation, or prompt failure', async () => {
-    for (const answer of [false, Symbol('cancelled'), new Error('private failure')]) {
+    for (const answer of [
+      false,
+      Symbol('cancelled'),
+      new Error('Setup cancelled'),
+      new Error('private failure'),
+    ]) {
       const test = fixture({
         prompt: async () => {
           if (answer instanceof Error) throw answer;
@@ -255,5 +341,9 @@ describe('cli/setup-consent', () => {
     await confirmSetupInstall(test.options);
     assert.equal(test.stderr.join('').includes(String.fromCharCode(27)), false);
     assert.match(test.stderr.join(''), /\\u001b/u);
+    const colored = fixture({ setup: unsafe.setup, environment: { FORCE_COLOR: '3' } });
+    await confirmSetupInstall(colored.options);
+    assert.equal(colored.stderr.join('').includes('\u001b[2J'), false);
+    assert.match(colored.stderr.join(''), /\\u001b\[2J/u);
   });
 });
