@@ -24,15 +24,18 @@ export interface CollaborationDependencies {
   }): Promise<unknown>;
 }
 
-/** discover registered managed agents without environment resolution or lifecycle effects. */
+/** discover selected registered agents without environment resolution or lifecycle effects. */
 export async function discoverCollaborationMembers(
   config: OpenClawConfig,
   dependencies: Pick<CollaborationDependencies, 'resolveAgentWorkspaceDir'>,
 ): Promise<string[]> {
   const { selection, state } = collaborationConfiguration(config);
   if (selection === false || (Array.isArray(selection) && selection.length === 0)) return [];
+  const registered = configuredAgentEntries(config).map(({ id }) => id);
+  if (selection === 'all') return registered;
+  if (Array.isArray(selection)) return registered.filter((id) => selection.includes(id));
   const members: string[] = [];
-  for (const { id } of configuredAgentEntries(config)) {
+  for (const id of registered) {
     const workspace = dependencies.resolveAgentWorkspaceDir(config, id);
     try {
       if (!(await stat(workspace)).isDirectory()) throw new Error('not a directory');
@@ -52,7 +55,7 @@ export async function discoverCollaborationMembers(
   return members;
 }
 
-/** share the same host-scoped operation between ordinary and workspace-free lifecycle calls. */
+/** reconcile host-scoped collaboration through ordinary install; inspection is read-only. */
 export default function createCollaborationLifecycleContribution(
   dependencies: CollaborationDependencies,
 ) {
@@ -71,16 +74,22 @@ export default function createCollaborationLifecycleContribution(
                 {
                   code: 'collaboration-unavailable-members',
                   status: 'warning' as const,
-                  message: `Selected IDs are not registered managed agents: ${result.unavailableMembers.join(', ')}. Register their managed workspaces or revise the selection.`,
+                  message: `Selected IDs are not registered agents: ${result.unavailableMembers.join(', ')}. Register them or revise the selection.`,
                 },
               ]
             : []),
           {
-            code: result.changed ? 'collaboration-drift' : 'collaboration-ready',
+            code: result.notApplicable
+              ? 'collaboration-not-applicable'
+              : result.changed
+                ? 'collaboration-drift'
+                : 'collaboration-ready',
             status: result.changed ? 'drift' : 'healthy',
-            message: `Managed collaboration members: ${result.members.join(', ') || 'none'}. Retained operator entries: ${result.operatorEntries.join(', ') || 'none'}. Session access includes reading and messaging.`,
+            message: result.notApplicable
+              ? 'Collaboration is not applicable with fewer than two managed agents.'
+              : `Selected collaboration members: ${result.members.join(', ') || 'none'}. Effective entries after reconciliation: ${result.effectiveEntries.join(', ') || 'none'}. Session access includes reading and messaging.`,
             ...(result.changed
-              ? { remediation: 'Run openclaw agent-system install --collaboration.' }
+              ? { remediation: 'Run openclaw agent-system install from a managed workspace.' }
               : {}),
           },
         ];
@@ -91,11 +100,13 @@ export default function createCollaborationLifecycleContribution(
     },
     async reconcile() {
       let changed = false;
+      let connectedExternalEntries: string[] = [];
       await dependencies.mutateConfigFile({
         base: 'source',
         afterWrite: { mode: 'auto' },
         async mutate(config) {
           const result = await plan(config);
+          connectedExternalEntries = result.connectedExternalEntries;
           if (!result.changed) return false;
           config.tools = result.config.tools;
           config.plugins = result.config.plugins;
@@ -112,9 +123,16 @@ export default function createCollaborationLifecycleContribution(
       return {
         outcomes: [
           {
-            code: changed ? 'collaboration-updated' : 'collaboration-unchanged',
+            code: changed
+              ? 'collaboration-updated'
+              : verified.notApplicable
+                ? 'collaboration-not-applicable'
+                : 'collaboration-unchanged',
             status: changed ? 'updated' : 'unchanged',
-            message: `Managed collaboration: ${verified.members.join(', ') || 'none'}`,
+            message:
+              verified.notApplicable && !changed
+                ? 'Collaboration is not applicable with fewer than two managed agents.'
+                : `Selected collaboration: ${verified.members.join(', ') || 'none'}. Effective entries: ${verified.effectiveEntries.join(', ') || 'none'}.`,
           },
         ],
         warnings: [
@@ -122,15 +140,15 @@ export default function createCollaborationLifecycleContribution(
             ? [
                 {
                   code: 'collaboration-unavailable-members',
-                  message: `Selected IDs are not registered managed agents: ${verified.unavailableMembers.join(', ')}.`,
+                  message: `Selected IDs are not registered agents: ${verified.unavailableMembers.join(', ')}.`,
                 },
               ]
             : []),
-          ...(verified.members.length
+          ...(connectedExternalEntries.length
             ? [
                 {
                   code: 'collaboration-session-access',
-                  message: `Collaboration permits session reading and messaging. Retained operator entries also participate: ${verified.operatorEntries.join(', ') || 'none'}.`,
+                  message: `Collaboration permits session reading and messaging. Retained operator entries also participate: ${connectedExternalEntries.join(', ')}.`,
                 },
               ]
             : []),
@@ -138,9 +156,5 @@ export default function createCollaborationLifecycleContribution(
       };
     },
   } satisfies AgentSystemLifecycleContribution;
-  return {
-    ...contribution,
-    inspectHost: contribution.inspect,
-    reconcileHost: contribution.reconcile,
-  };
+  return contribution;
 }
