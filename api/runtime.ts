@@ -341,7 +341,7 @@ export default class AgentSystemToolRuntime {
         status: toolError.code,
       });
       this.#dependencies.logger.error(
-        `tool_call_failed auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} source=${quote(scope.source)} durationMs=${durationMs} code=${quote(toolError.code)}${toolError.failureDiagnostic ? ` stage=${quote(toolError.failureDiagnostic.stage)} category=${quote(toolError.failureDiagnostic.category)}` : ''}${toolError.providerDiagnostic ? ` ${formatProviderDiagnostic(toolError.providerDiagnostic)}` : ''}`,
+        `tool_call_failed auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} source=${quote(scope.source)} durationMs=${durationMs} code=${quote(toolError.code)}${toolError.failureDiagnostic ? ` stage=${quote(toolError.failureDiagnostic.stage)} category=${quote(toolError.failureDiagnostic.category)}${toolError.failureDiagnostic.reasonCode ? ` reasonCode=${quote(toolError.failureDiagnostic.reasonCode)}` : ''}${toolError.failureDiagnostic.publication ? ` publication=published pr=${toolError.failureDiagnostic.publication.number}` : ''}` : ''}${toolError.providerDiagnostic ? ` ${formatProviderDiagnostic(toolError.providerDiagnostic)}` : ''}`,
       );
       throw toolError;
     }

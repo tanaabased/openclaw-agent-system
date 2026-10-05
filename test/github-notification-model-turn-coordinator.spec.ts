@@ -46,6 +46,38 @@ function input() {
 }
 
 describe('channels/github/conversation/model-turn-coordinator', () => {
+  it('should retain the pull request candidate receipt when dispatch completion is uncertain', async () => {
+    const failure = new Error('uncertain host outcome');
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
+      candidates: {
+        async begin() {
+          return 'attempt-1';
+        },
+        async attestPromptSelection() {},
+        async cancel() {
+          assert.fail('must retain recovery evidence');
+        },
+        async finish() {
+          assert.fail('must not claim completion');
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          throw failure;
+        },
+      },
+      logger: { info() {}, warn() {} },
+    });
+    await assert.rejects(
+      coordinator.run({
+        ...input(),
+        contract: { ...contract, identity: { ...identity, eventId: 'pull-request-opened' } },
+      }),
+      (error) => error === failure,
+    );
+  });
+
   it('should preserve the causal candidate-start diagnostic without dispatching or cancelling another turn', async () => {
     const failure = new GitHubNotificationReplyCandidateStoreError('reply-turn-already-active');
     const warnings: string[] = [];

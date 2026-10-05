@@ -235,7 +235,8 @@ export default class GitHubNotificationReplyCandidateStore {
   async begin(input: GitHubNotificationReplyCandidateTurnInput): Promise<string> {
     return this.#exclusive(input, async (file) => {
       const active = await this.#read(file, input.agentId);
-      if (active && !this.#expired(active)) fail('reply-turn-already-active');
+      if (active && (!this.#expired(active) || active.identity.eventId === 'pull-request-opened'))
+        fail('reply-turn-already-active');
       if (active) await file.remove();
       const openedAt = this.#now();
       const state: GitHubNotificationReplyCandidateState = {
@@ -264,8 +265,11 @@ export default class GitHubNotificationReplyCandidateStore {
   async finish(input: GitHubNotificationReplyCandidateFinishInput): Promise<string[]> {
     return this.#exclusive(input, async (file) => {
       const active = await this.#matchingState(file, input);
+      if (!active.promptSelectedAt) {
+        if (active.identity.eventId !== 'pull-request-opened') await file.remove();
+        fail('reply-turn-prompt-selection-missing');
+      }
       await file.remove();
-      if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
       if (active.rejection) {
         throw new GitHubNotificationReplyCandidateRejectedError({
           code: active.rejection.code,
@@ -351,7 +355,7 @@ export default class GitHubNotificationReplyCandidateStore {
     const active = await this.#read(file, input.agentId);
     if (!active) fail('reply-turn-missing');
     if (this.#expired(active)) {
-      await file.remove();
+      if (active.identity.eventId !== 'pull-request-opened') await file.remove();
       fail('reply-turn-expired');
     }
     if (!sameTurn(active, input)) fail('reply-turn-mismatch');
