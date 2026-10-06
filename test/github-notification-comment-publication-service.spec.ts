@@ -251,6 +251,50 @@ function publicationService(
 }
 
 describe('channels/github/publication/comment-publication-service', () => {
+  it('should publish for a feedback-only author and recheck explicit denial without legacy fallback', async () => {
+    const fixture = stateFixture();
+    let writes = 0;
+    const current = {
+      ...configuration,
+      approvedIssueAssigners: [notificationAccount],
+      approvedFeedbackAuthors: [notificationActor],
+    };
+    const service = publicationService(fixture, {
+      async open() {
+        return {
+          authorized: true,
+          configuration: current,
+          client: {
+            identity: notificationAccount,
+            async createIssueComment() {
+              writes += 1;
+              return { databaseId: 101, nodeId: 'IC_reply' };
+            },
+            async findOwnIssueComment() {
+              return undefined;
+            },
+            async getIssueComment() {
+              return structuredClone(fixture.comment);
+            },
+          },
+        };
+      },
+    });
+    assert.equal(
+      (await service.publish({ accountId: agentId, target: fixture.target, text: publicText }))
+        .status,
+      'published',
+    );
+    current.approvedFeedbackAuthors = [];
+    await assert.rejects(
+      service.publish({ accountId: agentId, target: fixture.target, text: publicText }),
+      {
+        code: 'comment-actor-unapproved',
+      },
+    );
+    assert.equal(writes, 1);
+  });
+
   it('should reauthorize the exact source revision before publishing accepted text', async () => {
     const fixture = stateFixture();
     let opened = 0;
@@ -523,11 +567,16 @@ describe('channels/github/publication/review-feedback', () => {
       },
     };
     const destinations: number[] = [];
+    const current = {
+      ...configuration,
+      approvedIssueAssigners: [notificationAccount],
+      approvedFeedbackAuthors: [notificationActor],
+    };
     const service = publicationService(fixture, {
       async open() {
         return {
           authorized: true,
-          configuration,
+          configuration: current,
           client: {
             identity: notificationAccount,
             reviews: reviewClientFixture(review, comments),
@@ -547,6 +596,12 @@ describe('channels/github/publication/review-feedback', () => {
     });
     await service.publish({ accountId: agentId, target, text: publicText });
     assert.deepEqual(destinations, [45]);
+    current.approvedFeedbackAuthors = [];
+    await assert.rejects(service.publish({ accountId: agentId, target, text: publicText }), {
+      code: 'comment-actor-unapproved',
+    });
+    assert.deepEqual(destinations, [45]);
+    current.approvedFeedbackAuthors = [notificationActor];
     comments[0]!.body = 'Changed after dispatch.';
     await assert.rejects(service.publish({ accountId: agentId, target, text: publicText }), {
       code: 'github-notification-publication-source-changed',

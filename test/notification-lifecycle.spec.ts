@@ -100,7 +100,53 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       'github-notification-worktrees-required',
       'github-notification-email-required',
       'github-notification-identity-duplicate',
+      'github-notification-approved-actors-deprecated',
     ]);
+  });
+
+  it('should warn on legacy grants even with explicit overrides and validate duplicates per list', () => {
+    const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
+      routingService: {
+        async inspect() {
+          throw new Error('not used');
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+    });
+    const configured = structuredClone(manifest);
+    const settings = configured.github!.notifications!;
+    settings.approvedIssueAssigners = [
+      { login: 'assigner', nodeId: 'U_1' },
+      { login: 'renamed', nodeId: 'U_1' },
+    ];
+    settings.approvedFeedbackAuthors = [
+      { login: 'reviewer', nodeId: 'U_2' },
+      { login: 'renamed-reviewer', nodeId: 'U_2' },
+    ];
+    const validate = () =>
+      contribution.validate!({ ...context, manifest: configured })?.diagnostics ?? [];
+    const diagnostics = validate();
+    assert.deepEqual(
+      diagnostics.filter(({ severity }) => severity === 'error').map(({ fieldPath }) => fieldPath),
+      [
+        '/github/notifications/approved-issue-assigners/1/node-id',
+        '/github/notifications/approved-feedback-authors/1/node-id',
+      ],
+    );
+    const warning = diagnostics.find(
+      ({ code }) => code === 'github-notification-approved-actors-deprecated',
+    );
+    assert.equal(warning?.severity, 'warning');
+    assert.match(warning?.message ?? '', /approved-issue-assigners/u);
+    assert.match(warning?.message ?? '', /approved-feedback-authors/u);
+    assert.match(warning?.message ?? '', /operator-owner/u);
+    delete settings.approvedActors;
+    settings.approvedIssueAssigners = [{ login: 'assigner', nodeId: 'U_1' }];
+    settings.approvedFeedbackAuthors = [{ login: 'assigner', nodeId: 'U_1' }];
+    assert.deepEqual(validate(), []);
   });
 
   it('should reject duplicate pull request recipients without changing actor admission', () => {

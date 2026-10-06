@@ -33,7 +33,7 @@ export interface OperatorAccessDependencies {
 
 function desiredActors(context: AgentSystemLifecycleContext): GitHubApprovedActor[] {
   return (
-    context.manifest.github?.notifications?.approvedActors.filter(
+    context.manifest.github?.notifications?.approvedActors?.filter(
       (actor) => actor.operatorOwner === true,
     ) ?? []
   );

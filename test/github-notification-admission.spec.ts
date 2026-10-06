@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import type { GitHubNotificationsConfiguration } from '../channels/github/config-schema.ts';
 import { admitGitHubAssignment } from '../channels/github/intake/admit-assignment.ts';
 import {
   notificationAccount as account,
@@ -45,6 +46,74 @@ const base = {
 };
 
 describe('channels/github/intake/admit-assignment', () => {
+  it('should separate issue assigners from feedback with independent legacy fallback', () => {
+    const cases: Array<{
+      configuration: Partial<GitHubNotificationsConfiguration>;
+      approved: boolean;
+    }> = [
+      { configuration: { approvedActors: [actor] }, approved: true },
+      { configuration: { approvedIssueAssigners: [actor] }, approved: true },
+      { configuration: { approvedFeedbackAuthors: [actor] }, approved: false },
+      { configuration: {}, approved: false },
+      { configuration: { approvedActors: [actor], approvedFeedbackAuthors: [] }, approved: true },
+      { configuration: { approvedActors: [actor], approvedIssueAssigners: [] }, approved: false },
+      {
+        configuration: { approvedActors: [actor], approvedIssueAssigners: [account] },
+        approved: false,
+      },
+      {
+        configuration: {
+          approvedActors: [account],
+          approvedIssueAssigners: [actor],
+          approvedFeedbackAuthors: [],
+        },
+        approved: true,
+      },
+    ];
+    for (const entry of cases) {
+      const settings = { ...base.configuration, approvedActors: undefined };
+      const result = admitGitHubAssignment({
+        ...base,
+        configuration: { ...settings, ...entry.configuration },
+      });
+      assert.equal(result.disposition, entry.approved ? 'approved' : 'rejected');
+      if (!entry.approved) assert.equal(result.code, 'assignment-actor-unapproved');
+    }
+  });
+
+  it('should preserve direct pull request assignment only through legacy authority', () => {
+    const settings = { ...base.configuration, approvedActors: undefined };
+    for (const approvedIssueAssigners of [undefined, [], [account], [actor]]) {
+      for (const approvedActors of [undefined, [actor]]) {
+        const result = admitGitHubAssignment({
+          ...base,
+          item: {
+            ...base.item,
+            itemType: 'pull-request',
+            pullRequest: {
+              baseRef: 'main',
+              baseRepositoryDatabaseId: 4,
+              baseRepositoryNodeId: 'R_repo',
+              draft: false,
+              headRef: 'feature',
+              headRepositoryDatabaseId: 4,
+              headRepositoryNodeId: 'R_repo',
+              headSha: 'a'.repeat(40),
+              merged: false,
+            },
+          },
+          configuration: {
+            ...settings,
+            approvedActors,
+            approvedIssueAssigners,
+            approvedFeedbackAuthors: [actor],
+          },
+        });
+        assert.equal(result.disposition, approvedActors ? 'approved' : 'rejected');
+      }
+    }
+  });
+
   it('should approve a new assignment from a pinned actor in an allowed writable repository', () => {
     assert.deepEqual(admitGitHubAssignment(base), {
       code: 'assignment-approved',

@@ -85,7 +85,12 @@ export function admitGitHubAssignment(
   if (event.actor.type !== 'User') {
     return { code: 'assignment-actor-unsupported', disposition: 'rejected', event };
   }
-  if (!input.configuration.approvedActors.some(({ nodeId }) => nodeId === event.actor.nodeId)) {
+  // direct pr assignment retains only its legacy grant; issue grants do not change it.
+  const assigners =
+    input.item.itemType === 'issue'
+      ? (input.configuration.approvedIssueAssigners ?? input.configuration.approvedActors ?? [])
+      : (input.configuration.approvedActors ?? []);
+  if (!assigners.some(({ nodeId }) => nodeId === event.actor.nodeId)) {
     return { code: 'assignment-actor-unapproved', disposition: 'rejected', event };
   }
   return { code: 'assignment-approved', disposition: 'approved', event };

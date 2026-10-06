@@ -26,6 +26,45 @@ const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
 describe('channels/github/conversation/review-feedback', () => {
+  it('should authorize submitted reviews and replies only through the feedback grant', () => {
+    const review = reviewFixture();
+    const finding = reviewCommentFixture();
+    const feedbacks = [
+      reviewFeedback(review, [finding]),
+      reviewReplyFeedback(
+        review,
+        reviewCommentFixture({ replyToId: 70, body: '@tanaabot continue' }),
+        finding,
+      ),
+    ];
+    for (const comment of feedbacks) {
+      assert.equal(
+        admitReviewFeedback({
+          account: notificationAccount,
+          comment,
+          configuration: {
+            ...configuration,
+            approvedActors: undefined,
+            approvedFeedbackAuthors: [notificationActor],
+          },
+        }).disposition,
+        'approved',
+      );
+      assert.equal(
+        admitReviewFeedback({
+          account: notificationAccount,
+          comment,
+          configuration: {
+            ...configuration,
+            approvedFeedbackAuthors: [],
+            approvedIssueAssigners: [notificationActor],
+          },
+        }).code,
+        'comment-actor-unapproved',
+      );
+    }
+  });
+
   it('should admit a complete same-author review from a summary or finding mention', () => {
     const summary = reviewFixture();
     const finding = reviewCommentFixture();

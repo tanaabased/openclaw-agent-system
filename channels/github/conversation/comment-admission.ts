@@ -152,7 +152,9 @@ export function admitGitHubComment(input: {
   if (author.type !== 'User') {
     return { code: 'comment-actor-unsupported', disposition: 'rejected' };
   }
-  if (!input.configuration.approvedActors.some(({ nodeId }) => nodeId === author.nodeId)) {
+  const authors =
+    input.configuration.approvedFeedbackAuthors ?? input.configuration.approvedActors ?? [];
+  if (!authors.some(({ nodeId }) => nodeId === author.nodeId)) {
     return { code: 'comment-actor-unapproved', disposition: 'rejected' };
   }
   const maximumCommentCharacters =

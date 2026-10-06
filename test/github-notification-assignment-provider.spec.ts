@@ -60,6 +60,7 @@ function provider(
   onConnect = () => undefined,
   pullRequest = false,
   canonicalRepository = notificationRepository,
+  selectedManifest = manifest,
 ) {
   const itemNumber = pullRequest ? 13 : 12;
   return new GitHubNotificationAssignmentProvider({
@@ -149,7 +150,7 @@ function provider(
         return {
           diagnostics: [],
           digest: 'digest',
-          manifest,
+          manifest: selectedManifest,
           path: `${workspaceDir}/agent.yaml`,
           scope: { agentId: 'tanaabot', workspaceDir },
           status: 'loaded' as const,
@@ -173,6 +174,30 @@ function input() {
 }
 
 describe('channels/github/intake/assignment-provider', () => {
+  it('should require current issue authority independently from feedback at every provider boundary', async () => {
+    const selected = structuredClone(manifest);
+    const settings = selected.github!.notifications!;
+    delete settings.approvedActors;
+    settings.approvedFeedbackAuthors = [notificationActor];
+    const service = (assigned = true) =>
+      provider(assigned, true, () => undefined, false, notificationRepository, selected);
+    assert.equal((await service().inspect(input())).authorized, false);
+    const feedbackOnly = await service().open(input());
+    assert.equal(feedbackOnly.authorized, false);
+    if (!feedbackOnly.authorized)
+      assert.equal(feedbackOnly.reasonCode, 'assignment-actor-unapproved');
+    settings.approvedIssueAssigners = [notificationActor];
+    assert.equal((await service().open(input())).authorized, true);
+    assert.equal((await service(false).open(input())).authorized, false);
+    settings.approvedIssueAssigners = [];
+    assert.equal((await service().open(input())).authorized, false);
+    settings.approvedIssueAssigners = [notificationActor];
+    settings.allowedRepositoryOwners = [{ login: 'other', nodeId: 'O_other' }];
+    const disallowed = await service().open(input());
+    assert.equal(disallowed.authorized, false);
+    if (!disallowed.authorized) assert.equal(disallowed.reasonCode, 'repository-owner-disallowed');
+  });
+
   it('should recheck the exact approved assignment from canonical control facts', async () => {
     assert.deepEqual(await provider().inspect(input()), {
       authorized: true,
