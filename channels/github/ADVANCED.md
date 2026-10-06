@@ -346,58 +346,47 @@ returns nonzero.
 
 ## Model routing
 
-Declaring all four [model profiles](../../MANIFEST.md#models) enables routing for
-new issue conversations in either mode. Existing conversations and default-only
-manifests keep their ordinary behavior. Before the initial assignment turn, the
-manifest default model assesses bounded issue content in a fresh, tool-free
-native runtime context. The model supplies the reasoning judgment; code validates
-its response, maps the tier to the configured profile, and saves the decision
-before substantive work. Routing runs inside the issue's execution lease and
-outside the shared polling lease.
+All four [model profiles](../../MANIFEST.md#models) enable routing for new issue
+conversations in either mode; existing conversations and default-only manifests
+keep their behavior. Before substantive work, the manifest default model assesses
+bounded issue content in a fresh, tool-free native context. The channel validates
+the assessment with the [shared resolver](../../tools/model-routing/README.md)
+and saves the selection before the initial assignment turn.
+Automatic effort is `medium`, `high`, or justified `xhigh`.
 
-Verified native **Complexity** determines the tier. When native metadata is
-missing or unavailable, the visible fenced YAML capsule with
-`schema: tanaab/task-metadata/v2`, `mode: fallback`, and `fallback.complexity`
-can supply it. Missing, invalid, conflicting, and unavailable values remain
-distinct evidence for the model's labeled content assessment. **Work size**
-informs scope and decomposition, never the model tier. An unresolved complexity assessment retains its status and reason and continues
-using the conversation's frozen default profile. The private routing note explains
-this choice; the operator can select a model and effort manually. Unsupported
-profiles, malformed assessments, and failed classifiers still block that issue for
-retry without substitution. Intake uses the [shared resolver](../../tools/model-routing/README.md)
-while retaining its own bounded classifier and conversation lifecycle. Automatic efforts are
-`medium`, `high`, or justified `xhigh`.
+Verified native **Complexity** takes precedence. When native metadata is missing
+or unavailable, a visible fenced YAML capsule with `schema: tanaab/task-metadata/v2`,
+`mode: fallback`, and `fallback.complexity` can supply it. Missing, invalid,
+conflicting, and unavailable values remain distinct evidence for content
+assessment. **Work size** informs scope and decomposition, never the tier.
+Unresolved complexity retains its status and reason and uses the frozen default;
+manual model and effort selection remains available. Unsupported profiles,
+malformed assessments, and failed classifiers block the issue for retry without
+substitution.
 
-For complete issue routing, `install` additively grants Agent System permission
-to select the agent and classifier model, allowing the manifest default in both
-OpenClaw LLM allowlists. It preserves unrelated grants and settings; default-only,
-disabled, and pull-request-only declarations request nothing.
+For complete issue routing, `install` additively grants agent and classifier
+access to the manifest default in both OpenClaw LLM allowlists, preserving
+unrelated settings. Default-only, disabled, and pull-request-only declarations
+request nothing. If `doctor` reports saved permissions absent from its loaded
+state, restart the Gateway and retry the prepared assignment. Polling never
+grants access or substitutes for authentication.
 
-`doctor` distinguishes saved access from permissions loaded by its process. If
-loaded access is stale, restart the Gateway and retry the prepared assignment.
-Background polling never grants permissions or substitutes for authentication.
+Saved model and effort survive retries, restarts, comments, delivery continuation,
+and manifest edits. Supported native overrides take precedence independently.
+A permitted native fallback can continue automatic routing; a strict-selection
+mismatch or unapproved model cancels work. Execution records distinguish verified,
+permitted, and unverified selections. Missing native evidence alone neither blocks
+publication nor proves the requested route ran. The initial
+[routing note](../../tools/model-routing/README.md#reporting-and-continuation)
+remains private and is not execution evidence.
 
-The saved model and effort survive retries, restarts, comments, and delivery
-pull-request continuation. Later manifest edits do not reclassify existing
-conversations. Explicit supported native model and effort overrides take
-precedence independently. Automatic routing can continue on a permitted native
-fallback; a mismatch with a strict selection or an unapproved model cancels work.
-Execution records distinguish verified selections, permitted continuations, and
-unverified settings when native evidence is incomplete. Missing evidence alone
-does not block publication or prove the requested route ran.
-
-The initial private assessment includes a short routing note with model, effort,
-complexity, source, and reason. It is excluded from the public reply and is not
-runtime verification.
-
-For a demonstrated reasoning blocker, the agent explains the failed approach
-and asks the operator to approve a specific stronger profile. This is a
-conversational request, not an automatic escalation or structured clarification
-outcome. An approved change requires native controls that support and preserve
-both model and effort; otherwise the operator uses supported session controls.
-Authentication failures, rate limits, slow tests, and missing requirements do
-not justify escalation. A stronger profile is only confirmed by native runtime
-evidence.
+A demonstrated reasoning blocker permits a conversational request for operator
+approval of a specific stronger profile, explaining the failed approach; it is
+not a structured clarification outcome. Authentication failures, rate limits,
+slow tests, and missing requirements do not justify escalation. Apply an approved
+change only through native controls that preserve both model and effort, or leave
+it to the operator's supported session controls. Native runtime evidence must
+confirm the stronger selection.
 
 ## Processing and Lifecycle
 
@@ -414,8 +403,7 @@ happens next. GitHub prose cannot select or elevate the configured mode.
 
 The channel also:
 
-- admits only configured assignment types, approved actors, eligible repository
-  owners, and repositories where the agent has sufficient access
+- enforces the [admission and publication boundaries](#security-and-lifecycle)
 - keeps approved issue and delivery pull-request comments in the issue-owned
   session, publishes each ordinary final response back to its exact source,
   and drains a bounded pair of queued comments serially per execution pass
@@ -428,8 +416,9 @@ The Gateway polls independently of issue workers, so new assignments can begin
 while another issue is running. Each issue serializes preparation, comments,
 responses, and retirement across Gateway and CLI processes. Different issues
 can proceed concurrently up to the agent's durable issue-work limit; shared
-repository preparation is serialized. Assignment acknowledgments wait for
-durable session recording.
+repository preparation is serialized. See the
+[assignment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-assignment/README.md)
+for execution-lease and durable-recording checks.
 
 ### Managed Worktrees
 
@@ -463,11 +452,12 @@ require their own approved author and exact mention; parent text and diff hunks
 cannot supply either.
 
 One review produces one feedback turn. Later edits include only changed findings,
-while unchanged summaries and parent replies remain context. Review and comment
-links, author identities, reviewed commits, paths, current and original positions,
-diff hunks, and reply relationships accompany the turn where available. Original
-locations are historical; missing current positions are reported as unavailable or
-outdated. The agent must inspect current code before applying an old finding.
+while unchanged summaries and parent replies remain context. The
+[feedback presentation](./PRESENTATION.md#direct-message) preserves source links
+and locations; original locations are historical, and the agent must inspect
+current code before applying an old finding. The
+[comment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-comment/README.md)
+covers grouped reviews, historical locations, and later inline replies.
 
 Discovery pages and consumed member digests survive restarts. Each pass reads a
 bounded page of reviews and inline comments, resumes pagination, and revisits

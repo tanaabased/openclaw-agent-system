@@ -14,9 +14,11 @@ planning-only worktree checkpoint. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
 It also checks that the installed runtime saves publication receipts in the owning
-conversation file and keeps only routing identity in the shared index. A controlled
-per-issue execution lease verifies that intake can admit an issue before execution is available,
-and that the bounded CLI refresh reports its wait ending without losing that admission.
+conversation file and keeps only routing identity in the shared index. Assignment
+acknowledgments wait for durable session recording. Routing runs inside the issue's
+execution lease, outside the shared polling lease. Holding that execution lease
+verifies intake can admit an issue while execution is unavailable and the bounded
+CLI refresh ends its wait without losing the admission.
 While that lease remains held, a second issue reaches a prepared worktree and fails
 after the scenario removes its classifier grant. `doctor` identifies the drift,
 `install` repairs it, and the issue resumes the same worktree and conversation.

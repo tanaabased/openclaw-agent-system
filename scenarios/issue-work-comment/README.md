@@ -8,6 +8,11 @@ feedback rejection, and repeat polling across a Gateway restart. The same lifecy
 deterministic mock provider on pull requests and the live provider through
 workflow dispatch.
 
+Review turns carry available review/comment links, author identities, reviewed
+commits, paths, current and original positions, diff hunks, and reply relationships.
+Original positions are historical; missing current positions remain explicitly
+unavailable or outdated. Parent text and diff hunks cannot grant admission.
+
 The scenario creates one disposable issue in `tanaabased/big-test-bucket` and
 removes its pull request, branch, generated SSH key, and issue during cleanup.
 
