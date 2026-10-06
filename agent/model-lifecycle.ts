@@ -157,6 +157,7 @@ export default function createModelLifecycleContribution(
         context.manifest.agent.id,
         models,
         dependencies,
+        context.manifest.agent.runtime,
       );
       if (plan.status !== 'ready') return [planFinding(plan)];
       const findings = await modelFindings(
@@ -203,6 +204,7 @@ export default function createModelLifecycleContribution(
         agentId,
         models,
         dependencies,
+        context.manifest.agent.runtime,
       );
       if (plan.status !== 'ready') throw lifecycleError(planFinding(plan));
       if (!plan.changed) {
@@ -222,7 +224,13 @@ export default function createModelLifecycleContribution(
         base: 'source',
         afterWrite: { mode: 'auto' },
         mutate(config) {
-          const currentPlan = createConfigurationPlan(config, agentId, models, dependencies);
+          const currentPlan = createConfigurationPlan(
+            config,
+            agentId,
+            models,
+            dependencies,
+            context.manifest.agent.runtime,
+          );
           if (currentPlan.status !== 'ready') throw lifecycleError(planFinding(currentPlan));
           if (!sameRuntime(currentPlan.sourceRuntime, expectedRuntime)) {
             throw lifecycleError({
@@ -248,6 +256,7 @@ export default function createModelLifecycleContribution(
         agentId,
         models,
         dependencies,
+        context.manifest.agent.runtime,
       );
       if (verification.status !== 'ready' || verification.changed) {
         throw new AgentSystemLifecycleError(

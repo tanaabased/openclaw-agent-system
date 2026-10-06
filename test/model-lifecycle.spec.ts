@@ -22,6 +22,10 @@ const manifest: AgentManifest = {
   },
 };
 const context = { manifest, workspaceDir: '/workspace/emori' };
+const declaredContext = {
+  ...context,
+  manifest: { ...manifest, agent: { ...manifest.agent, runtime: 'codex' as const } },
+};
 
 interface ModelListRow {
   available: boolean | null;
@@ -36,6 +40,7 @@ const configuredModels: ModelListRow[] = [
 ];
 
 interface HarnessOptions {
+  beforeMutation?: (config: OpenClawConfig) => void;
   configuredModels?: ModelListRow[];
   configuredModelsError?: boolean;
   nativeAuthReady?: boolean;
@@ -50,6 +55,7 @@ function parseRef(value: string) {
 function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
   let mutations = 0;
   let configuredModelChecks = 0;
+  const thinkingRuntimes: string[] = [];
   const dependencies: ModelLifecycleDependencies = {
     async inspectConfiguredModels() {
       configuredModelChecks += 1;
@@ -58,6 +64,7 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
     },
     async mutateConfigFile({ mutate }) {
       mutations += 1;
+      options.beforeMutation?.(config);
       return { result: mutate(config) as boolean | undefined };
     },
     readConfig: () => config,
@@ -84,7 +91,8 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
         raw,
       });
     },
-    resolveThinkingPolicy() {
+    resolveThinkingPolicy({ agentRuntime }) {
+      thinkingRuntimes.push(agentRuntime);
       return {
         levels: (options.supportedEfforts ?? ['medium', 'high', 'xhigh']).map((id) => ({ id })),
       };
@@ -94,6 +102,7 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
     configuredModelChecks: () => configuredModelChecks,
     contribution: createModelLifecycleContribution(dependencies),
     mutations: () => mutations,
+    thinkingRuntimes,
   };
 }
 
@@ -139,6 +148,115 @@ function readyCodexConfig(): OpenClawConfig {
 }
 
 describe('agent/model-lifecycle', () => {
+  it('should reconcile declared codex profiles without a prior native route or workspace patch', async () => {
+    const config = codexConfig();
+    delete config.agents!.entries!.emori!.models!['openai/gpt-5.6-sol']!.agentRuntime;
+    config.agents!.defaults = {
+      modelPolicy: { allow: ['openai/gpt-5.5'] },
+      thinkingDefault: 'medium',
+    };
+    config.agents!.entries!.leia = { model: 'anthropic/claude-sonnet' };
+    const before = structuredClone(config);
+    const { contribution, mutations, thinkingRuntimes } = createHarness(config, {
+      nativeAuthReady: false,
+    });
+
+    const findings = await contribution.inspect?.(declaredContext);
+    assert.equal(
+      findings?.some(({ code }) => code === 'agent-model-config-drift'),
+      true,
+    );
+    assert.equal(
+      findings?.some(({ status }) => status === 'blocked'),
+      false,
+    );
+    assert.deepEqual(new Set(thinkingRuntimes), new Set(['codex']));
+    assert.deepEqual(config, before);
+    assert.equal(mutations(), 0);
+
+    const installed = await contribution.reconcile?.(declaredContext);
+    const agent = config.agents?.entries?.emori;
+    assert.equal(installed?.outcomes[0]?.status, 'updated');
+    assert.deepEqual(agent?.model, {
+      primary: 'openai/gpt-6-astra',
+      fallbacks: ['anthropic/claude-sonnet'],
+    });
+    assert.equal(agent?.thinkingDefault, 'high');
+    assert.deepEqual(agent?.models?.['openai/gpt-6-astra'], {
+      alias: 'astra',
+      agentRuntime: { id: 'codex' },
+    });
+    assert.deepEqual(agent?.models?.['openai/gpt-5.6-terra'], {
+      agentRuntime: { id: 'codex' },
+    });
+    assert.deepEqual(agent?.models?.['openai/gpt-5.6-sol'], {
+      params: { serviceTier: 'default' },
+      agentRuntime: { id: 'codex' },
+    });
+    assert.deepEqual(agent?.modelPolicy?.allow, [
+      'openai/gpt-5.5',
+      'openai/gpt-6-astra',
+      'openai/gpt-5.6-terra',
+      'openai/gpt-5.6-sol',
+    ]);
+    assert.deepEqual(
+      agent?.models?.['anthropic/claude-sonnet'],
+      before.agents?.entries?.emori?.models?.['anthropic/claude-sonnet'],
+    );
+    assert.deepEqual(config.agents?.defaults, before.agents?.defaults);
+    assert.deepEqual(config.agents?.entries?.leia, before.agents?.entries?.leia);
+
+    const installedConfig = structuredClone(config);
+    assert.equal((await contribution.inspect?.(declaredContext))?.[0]?.code, 'agent-models-ready');
+    assert.equal(
+      (await contribution.reconcile?.(declaredContext))?.outcomes[0]?.status,
+      'unchanged',
+    );
+    assert.equal(mutations(), 1);
+    assert.deepEqual(config, installedConfig);
+  });
+
+  it('should block explicit conflicts with declared codex before model mutation', async () => {
+    const config = codexConfig();
+    config.agents!.entries!.emori!.models!['openai/gpt-5.6-sol']!.agentRuntime = { id: 'openclaw' };
+    const before = structuredClone(config);
+    const { contribution, mutations } = createHarness(config);
+
+    assert.equal(
+      (await contribution.inspect?.(declaredContext))?.[0]?.code,
+      'agent-model-runtime-conflict',
+    );
+    await assert.rejects(
+      () => contribution.reconcile!(declaredContext),
+      (error: unknown) =>
+        error instanceof AgentSystemLifecycleError && error.code === 'agent-model-runtime-conflict',
+    );
+    assert.equal(mutations(), 0);
+    assert.deepEqual(config, before);
+  });
+
+  it('should recheck declared runtime conflicts inside the config mutation', async () => {
+    const config = codexConfig();
+    delete config.agents!.entries!.emori!.models!['openai/gpt-5.6-sol']!.agentRuntime;
+    const expected = structuredClone(config);
+    expected.agents!.entries!.emori!.models!['openai/gpt-5.6-terra'] = {
+      agentRuntime: { id: 'openclaw' },
+    };
+    const { contribution } = createHarness(config, {
+      beforeMutation(current) {
+        current.agents!.entries!.emori!.models!['openai/gpt-5.6-terra'] = {
+          agentRuntime: { id: 'openclaw' },
+        };
+      },
+    });
+    await assert.rejects(
+      () => contribution.reconcile!(declaredContext),
+      (error: unknown) =>
+        error instanceof AgentSystemLifecycleError && error.code === 'agent-model-runtime-conflict',
+    );
+    assert.deepEqual(config, expected);
+  });
+
   it('should activate only for manifests that declare models', () => {
     const { contribution } = createHarness(codexConfig());
 
