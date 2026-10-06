@@ -54,50 +54,44 @@ passive discovery never resolve credentials.
 
 ### Environment and state
 
-The names below are a suggested binding convention, not extra native GoG inputs.
-Only the three credential values need secret storage.
+These example bindings come from the declared agent environment and need secret
+storage. Their names are conventions, not extra native GoG inputs.
 
-| Variable or setting                                                | Required                       | Source and precedence                                                                                             | Default                                     | Store in 1Password? |
-| ------------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------- |
-| `GOG_ACCOUNT`                                                      | no                             | Managed execution ignores inherited selection and supplies the resolved `google.account`, otherwise `agent.email` | resolved email                              | no                  |
-| `GOG_AUTH_MODE`                                                    | no                             | Managed execution fixes the authentication mode                                                                   | `stored`                                    | no                  |
-| `GOG_CLIENT`                                                       | no                             | Managed execution fixes the local label through `--client=agent-system`                                           | `agent-system`                              | no                  |
-| `GOG_CONFIG_DIR`, `GOG_DATA_DIR`, `GOG_STATE_DIR`, `GOG_CACHE_DIR` | no                             | Derived for each managed generation or invocation; inherited overrides are discarded                              | private subdirectories                      | no                  |
-| `GOG_CREDENTIALS_JSON_B64`                                         | yes, with the example bindings | Declared agent environment; decoded according to `credential-encoding`                                            | none                                        | yes                 |
-| `GOG_HOME`                                                         | no                             | Launching host environment wins over declared agent environment, then the derived per-agent home                  | private state root / agent ID / `tools/gog` | no                  |
-| `GOG_KEYRING_BACKEND`                                              | no                             | Managed execution fixes the backend; inherited values cannot redirect it                                          | `file`                                      | no                  |
-| `GOG_KEYRING_PASSWORD`                                             | yes, with the example binding  | Declared agent environment; supplied only to explicit credential consumers and GoG child processes                | none                                        | yes                 |
-| `GOG_TOKEN_JSON_B64`                                               | yes, with the example bindings | Declared agent environment; must match the expected account and OAuth client                                      | none                                        | yes                 |
+| Binding                    | Required                       | Default | Purpose                                                                 |
+| -------------------------- | ------------------------------ | ------- | ----------------------------------------------------------------------- |
+| `GOG_CREDENTIALS_JSON_B64` | yes, with the example bindings | none    | Client JSON, decoded according to `credential-encoding`.                |
+| `GOG_KEYRING_PASSWORD`     | yes, with the example binding  | none    | Supplied only to explicit credential consumers and GoG child processes. |
+| `GOG_TOKEN_JSON_B64`       | yes, with the example bindings | none    | Token JSON matching the expected account and OAuth client.              |
 
-Without a home override, Agent System uses
+Managed execution fixes `GOG_ACCOUNT` to the resolved `google.account` or
+`agent.email`, `GOG_AUTH_MODE` to `stored`, `GOG_CLIENT` to `agent-system`
+(through `--client=agent-system`), and `GOG_KEYRING_BACKEND` to `file`.
+`GOG_CONFIG_DIR`, `GOG_DATA_DIR`, `GOG_STATE_DIR`, and `GOG_CACHE_DIR` use private
+subdirectories; inherited directory, account, client, backend, access-token, and
+ADC overrides cannot redirect managed execution.
+
+Optional `GOG_HOME` selects the managed store directly: the launching host
+value wins over the declared agent environment, then the derived default.
+Without an override, the default is
 `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/tools/gog` when `XDG_CONFIG_HOME`
-is absolute, otherwise `$HOME/.config/tanaab/agent-system/<agent-id>/tools/gog`.
-A relative `XDG_CONFIG_HOME` makes the default state root unavailable. For agent
-`emori` with user home `/Users/emori` and no XDG override, the durable home is
-`/Users/emori/.config/tanaab/agent-system/emori/tools/gog`.
+is absolute, or `$HOME/.config/tanaab/agent-system/<agent-id>/tools/gog` when unset.
+A relative `XDG_CONFIG_HOME` makes the default state root unavailable.
+Use a separate absolute private directory per agent, outside workspaces and
+admitted worktrees. An ownership receipt prevents another agent from reusing it.
+The host override changes only the home location; it imports no host secrets
+and does not alter [environment-source precedence](../../MANIFEST.md#environment-resolution).
 
-A supplied `GOG_HOME` selects the managed store root directly. Use a separate
-absolute private directory per agent, outside workspaces and admitted worktrees.
-A receipt binds an overridden home to one agent; another agent cannot reuse it.
-For CI, set `GOG_HOME` to a dedicated directory under `runner.temp`. This narrow
-host override applies only to the home location; it does not import host secrets
-or replace the normal environment-source precedence. Individual GoG directory,
-access-token, and ADC overrides cannot bypass the managed store.
+Only explicit Install changes durable authentication state. Unchanged installs
+verify through a copy without reimporting; failed imports or identity checks
+preserve the active state. Competing installs report busy; retry after the
+current install finishes. Routine calls and Doctor use disposable private copies
+without repairing missing state or changing the host environment; their
+`GOG_HOME`, `HOME`, and directory variables point at the copy.
 
-Only explicit Install changes durable authentication state. It stores encrypted
-generations under the managed home and activates one with `current.json`.
-Unchanged installs verify through a copy without reimporting; changed credentials
-create a new generation. Failed import or identity verification preserves the
-active generation. Competing installs report a busy diagnostic; retry after the
-current install finishes.
-
-Routine calls and Doctor use disposable private copies and never repair missing
-state. Their `GOG_HOME`, `HOME`, and directory variables point at that copy without
-changing the host environment. The OAuth app/client
-can be shared across production agents. Each Google user needs their own consent
-and token export; each agent gets separate state and should get a separate keyring
-password. Client ID, client secret, and project ID need no additional bindings
-when the complete client JSON is provided.
+Agents can share an OAuth client, but each Google user needs separate consent
+and a token export. Each agent gets separate state and should get a separate
+keyring password. Complete client JSON needs no extra client ID, client secret,
+or project ID bindings.
 
 ## Per-agent onboarding
 
