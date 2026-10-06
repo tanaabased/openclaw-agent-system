@@ -58,6 +58,7 @@ export default async function refreshNotificationsAgentSystem(
     writeCliError(
       options.output,
       `github-notifications: invalid refresh options code=github-notification-refresh-options-invalid message=${error instanceof NotificationCliOptionError ? error.message : 'unknown'}`,
+      options,
     );
     options.setExitCode(2);
     return;
@@ -82,6 +83,7 @@ export default async function refreshNotificationsAgentSystem(
     writeCliError(
       options.output,
       formatErrorDiagnostic('github-notifications', error, 'github-notification-refresh-failed'),
+      options,
     );
     options.setExitCode(1);
     return;
@@ -89,7 +91,11 @@ export default async function refreshNotificationsAgentSystem(
     clearTimeout(timeout);
   }
   if (!result) {
-    writeCliError(options.output, 'github-notifications: manual refresh returned no result');
+    writeCliError(
+      options.output,
+      'github-notifications: manual refresh returned no result',
+      options,
+    );
     options.setExitCode(1);
     return;
   }
@@ -119,7 +125,14 @@ export default async function refreshNotificationsAgentSystem(
         { label: 'agent', style: 'target', value: result.agentId },
         {
           label: 'status',
-          style: result.status === 'failed' ? 'error' : 'status',
+          style:
+            result.status === 'failed'
+              ? 'error'
+              : result.status === 'completed'
+                ? 'status'
+                : result.code === 'github-notification-disabled'
+                  ? 'notice'
+                  : 'warning',
           value: result.status,
         },
         { label: 'code', style: 'field', value: result.code },

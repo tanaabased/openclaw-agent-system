@@ -37,7 +37,7 @@ describe('cli/output', () => {
         ],
       );
       assert.deepEqual(stdout, []);
-      assert.doesNotMatch(stderr.join(''), /\u001b/u);
+      assert.equal(stderr.join('').includes('\u001b'), false);
       if (json)
         assert.equal(stderr.join(''), 'Useful context.\nWork is incomplete.\nOperation failed.\n');
       else {

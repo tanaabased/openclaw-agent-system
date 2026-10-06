@@ -11,7 +11,7 @@ import {
   type BackupCommandContext,
 } from './backup-context.ts';
 import { type BackupCliOutput, writeBackupFailure } from './backup-output.ts';
-import { writeCliJson, writeCliSummary } from './output.ts';
+import { writeCliError, writeCliJson, writeCliSummary } from './output.ts';
 
 /** prune selected local archives after checking caller authority and destination ownership. */
 export default async function backupPrune(
@@ -114,7 +114,7 @@ export default async function backupPrune(
           ],
           options.styles,
         );
-      options.output.writeStderr(`${error.message}\n`);
+      writeCliError(options.output, error.message, options);
       options.setExitCode(1);
     } else writeBackupFailure(options, error);
   }

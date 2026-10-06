@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { createCliStyles } from '../cli/output.ts';
 import refreshNotificationsAgentSystem from '../channels/github/cli/refresh.ts';
 import type { GitHubNotificationMonitorRunOptions } from '../channels/github/intake/monitor/service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -62,6 +63,42 @@ describe('channels/github/cli/refresh', () => {
     assert.equal(calls[0]?.waitForLeaseMs, 120_000);
     assert.equal(JSON.parse(test.stdout.join('')).code, 'github-notification-poll-complete');
     assert.deepEqual(test.stderr, []);
+  });
+
+  it('should distinguish throttled and intentionally disabled refreshes without changing json or exit status', async () => {
+    for (const code of [
+      'github-notification-provider-throttle-active',
+      'github-notification-disabled',
+    ]) {
+      for (const json of [false, true]) {
+        const test = createOutput();
+        const exitCodes: number[] = [];
+        const result = { agentId: 'tanaabot', code, status: 'skipped' as const };
+        await refreshNotificationsAgentSystem({
+          json,
+          manifestService: {
+            loadForAgentId: async () => manifest,
+            loadForCommandDirectory: async () => manifest,
+          },
+          monitorService: { runOnce: async () => [result] },
+          output: test.output,
+          setExitCode: (value) => exitCodes.push(value),
+          workspaceDir: '/workspace',
+          styles: {
+            ...createCliStyles({ NO_COLOR: '1' }),
+            warning: (value) => `<warning>${value}</warning>`,
+            notice: (value) => `<notice>${value}</notice>`,
+          },
+        });
+        assert.deepEqual(exitCodes, [1]);
+        if (json) assert.deepEqual(JSON.parse(test.stdout.join('')), result);
+        else
+          assert.match(
+            test.stdout.join(''),
+            code.endsWith('disabled') ? /<notice>status/u : /<warning>status/u,
+          );
+      }
+    }
   });
 
   it('should keep unexpected refresh failures out of json stdout', async () => {

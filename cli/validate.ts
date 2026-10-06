@@ -2,7 +2,7 @@ import type AgentManifestService from '../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
-  writeCliDiagnostics,
+  writeCliDiagnosticNotices,
   writeCliJson,
   writeCliSummary,
 } from './output.ts';
@@ -28,9 +28,9 @@ export default async function validateAgentSystem(
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
 
   if (result.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      formatManifestFailure(result).map(({ message }) => message),
+    writeCliDiagnosticNotices(
+      options,
+      formatManifestFailure(result).map(({ level, message }) => ({ severity: level, message })),
     );
     options.setExitCode(1);
     return;
@@ -68,8 +68,8 @@ export default async function validateAgentSystem(
       options.styles,
     );
   }
-  writeCliDiagnostics(
-    options.output,
-    formatManifestDiagnostics(result).map(({ message }) => message),
+  writeCliDiagnosticNotices(
+    options,
+    formatManifestDiagnostics(result).map(({ level, message }) => ({ severity: level, message })),
   );
 }

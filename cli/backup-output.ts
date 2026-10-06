@@ -2,7 +2,7 @@ import { BackupError, type BackupDiagnostic } from '../agent/backup-types.ts';
 import {
   type CliOutput,
   type CliStyles,
-  writeCliDiagnostics,
+  writeCliDiagnosticNotices,
   writeCliJson,
   writeCliSummary,
 } from './output.ts';
@@ -25,7 +25,7 @@ export function writeBackupFailure(options: BackupCliOutput, error: unknown): vo
       [{ label: 'backup', style: 'error', value: `failed (${code})` }],
       options.styles,
     );
-  writeCliDiagnostics(options.output, [message]);
+  writeCliDiagnosticNotices(options, [{ severity: 'error', message }]);
   options.setExitCode(1);
 }
 
@@ -33,8 +33,11 @@ export function writeBackupDiagnostics(
   options: BackupCliOutput,
   diagnostics: BackupDiagnostic[],
 ): void {
-  writeCliDiagnostics(
-    options.output,
-    diagnostics.map(({ code, message, path }) => `${code}: ${message}${path ? ` (${path})` : ''}`),
+  writeCliDiagnosticNotices(
+    options,
+    diagnostics.map(({ code, message, path }) => ({
+      severity: 'warning',
+      message: `${code}: ${message}${path ? ` (${path})` : ''}`,
+    })),
   );
 }

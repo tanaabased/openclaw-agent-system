@@ -7,12 +7,19 @@ import {
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { type CliOutput, writeCliJson } from './output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  writeCliDiagnosticNotices,
+  writeCliJson,
+} from './output.ts';
 
 export interface AutomationCommandOptions {
   agentId?: string;
   automations: Pick<AutomationService, 'list' | 'reconcile' | 'run' | 'runs'>;
   json: boolean;
+  styles?: CliStyles;
+  terminalColumns?: number;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   setExitCode(code: number): void;
@@ -54,7 +61,18 @@ export default async function automationOperation(
         options.output.writeStdout(
           `run=${result.runId}  execution=${result.execution}  delivery=${result.delivery}\n`,
         );
-      if (result.reason) options.output.writeStdout(`reason=${result.reason}\n`);
+      if (result.reason)
+        writeCliDiagnosticNotices(options, [
+          {
+            severity:
+              result.reason === 'invalid-spec'
+                ? 'error'
+                : result.reason === 'stopped'
+                  ? 'warning'
+                  : 'notice',
+            message: `reason=${result.reason}`,
+          },
+        ]);
       if (result.hasMore) options.output.writeStdout(`next-offset=${result.nextOffset}\n`);
     }
     if (result.status === 'attention' || result.status === 'skipped') options.setExitCode(1);
@@ -74,9 +92,17 @@ export default async function automationOperation(
         : {}),
     };
     if (options.json) writeCliJson(options.output, result);
-    options.output.writeStderr(`Automation operation stopped (${code}).\n`);
-    if (diagnostic)
-      options.output.writeStderr(`Gateway diagnostic: ${JSON.stringify(diagnostic)}\n`);
+    writeCliDiagnosticNotices(options, [
+      { severity: 'error', message: `Automation operation stopped (${code}).` },
+      ...(diagnostic
+        ? [
+            {
+              severity: 'error' as const,
+              message: `Gateway diagnostic: ${JSON.stringify(diagnostic)}`,
+            },
+          ]
+        : []),
+    ]);
     options.setExitCode(1);
   }
 }

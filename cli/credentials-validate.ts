@@ -22,12 +22,20 @@ export default async function validateCredentialsAgentSystem(
   options: ValidateCredentialsAgentSystemOptions,
 ): Promise<void> {
   if (options.credential !== 'op') {
-    writeCliError(options.output, `credentials: unsupported credential ${options.credential}`);
+    writeCliError(
+      options.output,
+      `credentials: unsupported credential ${options.credential}`,
+      options,
+    );
     options.setExitCode(1);
     return;
   }
   if (options.fromEnvironment && options.storeId) {
-    writeCliError(options.output, 'credentials: --from-env and --store cannot be used together');
+    writeCliError(
+      options.output,
+      'credentials: --from-env and --store cannot be used together',
+      options,
+    );
     options.setExitCode(1);
     return;
   }
@@ -43,12 +51,14 @@ export default async function validateCredentialsAgentSystem(
       writeCliError(
         options.output,
         'credentials: Gateway invalidation is pending. Restore Gateway access and run openclaw agent-system credentials cache flush.',
+        options,
       );
     }
 
     writeCliError(
       options.output,
       formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),
+      options,
     );
     options.setExitCode(1);
     return;

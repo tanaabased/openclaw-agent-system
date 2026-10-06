@@ -75,6 +75,7 @@ export default async function waitNotificationsAgentSystem(
     writeCliError(
       options.output,
       `github-notifications: invalid wait options code=github-notification-wait-options-invalid message=${error instanceof NotificationCliOptionError ? error.message : 'unknown'}`,
+      options,
     );
     options.setExitCode(2);
     return;

@@ -33,8 +33,8 @@ async function runOneShot(
   run: (setExitCode: (code: number) => void) => Promise<void>,
   options: Pick<
     RegisterGitHubNotificationsCliOptions,
-    'completeOneShot' | 'output' | 'setExitCode'
-  >,
+    'completeOneShot' | 'output' | 'setExitCode' | 'styles'
+  > & { json?: boolean },
   failureCode: string,
 ): Promise<void> {
   let exitCode = 0;
@@ -48,6 +48,7 @@ async function runOneShot(
     writeCliError(
       options.output,
       formatErrorDiagnostic('github-notifications', error, failureCode),
+      options,
     );
     setExitCode(1);
   } finally {
@@ -92,7 +93,7 @@ export default function registerGitHubNotificationsCli(
             timeoutSeconds: commandOptions.timeout,
             workspaceDir: options.cwd(),
           }),
-        options,
+        { ...options, json: commandOptions.json === true },
         'github-notification-refresh-failed',
       );
     });
@@ -153,7 +154,7 @@ export default function registerGitHubNotificationsCli(
             timeoutSeconds: commandOptions.timeout,
             workspaceDir: options.cwd(),
           }),
-        options,
+        { ...options, json: commandOptions.json === true },
         'github-notification-wait-failed',
       );
     });

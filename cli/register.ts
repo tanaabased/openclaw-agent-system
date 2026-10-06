@@ -36,7 +36,13 @@ import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type AgentInstallService from '../agent/install-service.ts';
 import { completeCliOneShot } from './one-shot.ts';
-import { type CliOutput, type CliStyles, defaultCliOutput, writeCliLines } from './output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  defaultCliOutput,
+  writeCliError,
+  writeCliLines,
+} from './output.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
 import type OpCredentialInput from '../credentials/op-input.ts';
 import type AgentSystemToolRegistry from '../api/registry.ts';
@@ -99,7 +105,7 @@ export default function registerAgentSystemCli(
   const output = options.output ?? defaultCliOutput;
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
   const environment = options.environment ?? process.env;
-  const allowOperatorCommand = async () => {
+  const allowOperatorCommand = async (json = false) => {
     try {
       const binding = await commandAuthority?.resolve(environment, cwd());
       if (
@@ -112,8 +118,10 @@ export default function registerAgentSystemCli(
     } catch {
       // Invalid authority must not downgrade an agent descendant to an operator.
     }
-    output.writeStderr(
-      'Agent System operator commands are unavailable to agent or setup descendants.\n',
+    writeCliError(
+      output,
+      'Agent System operator commands are unavailable to agent or setup descendants.',
+      { json, styles: options.styles, terminalColumns: options.terminalColumns },
     );
     setExitCode(1);
     return false;
@@ -153,11 +161,13 @@ export default function registerAgentSystemCli(
           )
           .option('--run-id <id>', 'Filter by the native occurrence id.');
       command.action(async (...args: unknown[]) => {
-        if (!(await allowOperatorCommand())) return;
+        if (!(await allowOperatorCommand(command.opts().json === true))) return;
         const selected = command.opts();
         const common = {
           ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
           automations: options.automations!,
+          styles: options.styles,
+          terminalColumns: options.terminalColumns,
           manifestService: options.manifestService,
           json: selected.json === true,
           output,
@@ -183,7 +193,7 @@ export default function registerAgentSystemCli(
       .option('--id <id>', 'Select the owned manifest automation id.')
       .option('--hash <hash>', 'Require the synchronized effective content hash.')
       .action(async () => {
-        if (!(await allowOperatorCommand())) return completeOneShot(1);
+        if (!(await allowOperatorCommand(true))) return completeOneShot(1);
         const args = execute.opts();
         if (
           typeof args.id !== 'string' ||
@@ -384,7 +394,7 @@ export default function registerAgentSystemCli(
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
-      if (!(await allowOperatorCommand())) return;
+      if (!(await allowOperatorCommand(doctor.opts().json === true))) return;
       const commandOptions = doctor.opts();
       const agentId = commandOptions.agent;
       await doctorAgentSystem({
@@ -419,7 +429,7 @@ export default function registerAgentSystemCli(
       const agentId = tool.opts().agent;
       const shim = tool.opts().shim;
       if (shim !== undefined && shim !== 'managed' && shim !== 'contextual') {
-        output.writeStderr('Invalid internal launcher invocation.\n');
+        writeCliError(output, 'Invalid internal launcher invocation.', options);
         setExitCode(1);
         return;
       }
@@ -468,7 +478,7 @@ export default function registerAgentSystemCli(
       .description(`${action === 'status' ? 'Inspect' : 'Flush'} the running Gateway OP cache.`)
       .option('--json', 'Write structured JSON output.')
       .action(async () => {
-        if (!(await allowOperatorCommand())) return;
+        if (!(await allowOperatorCommand(command.opts().json === true))) return;
         const agentId = command.opts().agent;
         await credentialsCache({
           action,
@@ -569,7 +579,7 @@ export default function registerAgentSystemCli(
     )
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
-      if (!(await allowOperatorCommand())) return;
+      if (!(await allowOperatorCommand(install.opts().json === true))) return;
       await installAgentSystem({
         installService: options.installService,
         json: install.opts().json === true,

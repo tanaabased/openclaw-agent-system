@@ -39,6 +39,7 @@ export default async function statusNotificationsAgentSystem(
     writeCliError(
       options.output,
       `github-notifications: invalid status options code=github-notification-status-options-invalid message=${error instanceof NotificationCliOptionError ? error.message : 'unknown'}`,
+      options,
     );
     options.setExitCode(2);
     return;

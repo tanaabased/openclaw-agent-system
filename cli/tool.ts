@@ -151,6 +151,7 @@ export default async function runAgentSystemTool(
         error,
         error instanceof AgentSystemToolError ? error.code : undefined,
       ),
+      options,
     );
     options.setExitCode(1);
   }

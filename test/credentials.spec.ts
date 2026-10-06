@@ -82,6 +82,51 @@ describe('cli/credentials', () => {
     assert.deepEqual(test.records.output, ['stored  op credential for data\nstore   file\n']);
   });
 
+  it('should warn about pending invalidation after successful credential writes', async () => {
+    for (const operation of ['set', 'unset']) {
+      const test = harness();
+      if (operation === 'set')
+        await setCredentialsAgentSystem({
+          ...test,
+          credential: 'op',
+          fromEnvironment: true,
+          fromStdin: false,
+          workspaceDir: '/workspace',
+          credentialInput: {
+            read: async () => ({ status: 'read', source: 'environment', token: 'private-token' }),
+          },
+          credentialManager: {
+            set: async () => ({
+              status: 'stored',
+              agentId: 'data',
+              storeId: 'file',
+              gatewayInvalidation: 'pending',
+            }),
+          },
+        });
+      else
+        await unsetCredentialsAgentSystem({
+          ...test,
+          credential: 'op',
+          workspaceDir: '/workspace',
+          credentialManager: {
+            unset: async () => ({
+              status: 'removed',
+              agentId: 'data',
+              storeIds: ['file'],
+              unavailableStoreIds: ['keychain'],
+              gatewayInvalidation: 'pending',
+            }),
+          },
+        });
+      assert.deepEqual(test.exitCodes, []);
+      assert.match(test.records.diagnostics.join(''), /Warning/u);
+      assert.doesNotMatch(test.records.diagnostics.join(''), /Error|private-token/u);
+      assert.match(test.records.output.join(''), /stored|removed/u);
+      assert.doesNotMatch(test.records.output.join(''), /Warning/u);
+    }
+  });
+
   it('should reject conflicting set input sources before loading the manifest', async () => {
     const test = harness();
 
@@ -244,6 +289,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, [1]);
     assert.deepEqual(test.records.output, []);
-    assert.deepEqual(test.records.diagnostics, ['credentials: unsupported credential other\n']);
+    assert.match(test.records.diagnostics.join(''), /Error/u);
+    assert.match(test.records.diagnostics.join(''), /unsupported credential other/u);
   });
 });
