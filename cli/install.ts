@@ -8,7 +8,7 @@ import {
   type CliOutput,
   type CliStyles,
   type CliNotice,
-  renderCliNotices,
+  writeCliDiagnosticNotices,
   writeCliDiagnostics,
   writeCliJson,
   writeCliLifecycleTable,
@@ -73,23 +73,17 @@ export default async function installAgentSystem(
 ): Promise<void> {
   const result = await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (result.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      options.json
-        ? formatManifestFailure(result).map(({ message }) => message)
-        : renderCliNotices(
-            formatManifestFailure(result).map(({ message }) => ({ severity: 'error', message })),
-            options.styles,
-            options.terminalColumns,
-          ),
+    writeCliDiagnosticNotices(
+      options,
+      formatManifestFailure(result).map(({ level, message }) => ({ severity: level, message })),
     );
     options.setExitCode(1);
     return;
   }
 
-  writeCliDiagnostics(
-    options.output,
-    formatManifestDiagnostics(result).map(({ message }) => message),
+  writeCliDiagnosticNotices(
+    options,
+    formatManifestDiagnostics(result).map(({ level, message }) => ({ severity: level, message })),
   );
   if (
     !(await confirmSetupInstall({
@@ -101,16 +95,7 @@ export default async function installAgentSystem(
     }))
   ) {
     const message = 'install: installation cancelled before making changes. code=setup-declined';
-    writeCliDiagnostics(
-      options.output,
-      options.json
-        ? [message]
-        : renderCliNotices(
-            [{ severity: 'error', message }],
-            options.styles,
-            options.terminalColumns,
-          ),
-    );
+    writeCliDiagnosticNotices(options, [{ severity: 'notice', message }]);
     options.setExitCode(1);
     return;
   }
@@ -209,20 +194,13 @@ export default async function installAgentSystem(
         ...guidance,
       ]);
     } else {
-      writeCliDiagnostics(
-        options.output,
-        renderCliNotices(
-          [
-            ...installNotices(
-              warnings.map((warning) => ({ ...warning, message: formatDiagnostic(warning) })),
-            ),
-            { severity: 'error', message: errorMessage },
-            { severity: 'notice', message: guidance.join('\n') },
-          ],
-          options.styles,
-          options.terminalColumns,
+      writeCliDiagnosticNotices(options, [
+        ...installNotices(
+          warnings.map((warning) => ({ ...warning, message: formatDiagnostic(warning) })),
         ),
-      );
+        { severity: 'error', message: errorMessage },
+        { severity: 'notice', message: guidance.join('\n') },
+      ]);
     }
     options.setExitCode(1);
   }

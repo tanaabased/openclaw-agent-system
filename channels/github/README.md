@@ -171,5 +171,4 @@ for assessment, permissions, overrides, and escalation.
 - [Global configuration](../../CONFIG.md): operator-owned plugin settings
 - [Git tools](../../tools/git/README.md): identity, SSH, policy, and managed worktrees
 - [GitHub CLI tool](../../tools/github/README.md): shared GitHub credentials and policy
-- [Design](./DESIGN.md): target lifecycle behavior, including unimplemented features
 - [Presentation](./PRESENTATION.md): reusable visible components

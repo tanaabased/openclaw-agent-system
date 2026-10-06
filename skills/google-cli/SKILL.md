@@ -47,7 +47,7 @@ Google credentials or extend Codex's setup lifecycle.
 
 ## Prerequisites
 
-- The host supplies the reviewed GoG v0.42.0 executable.
+- The host supplies a GoG executable within the [Google tool guide's supported version range](../../tools/google/README.md).
 - An operator completed consent, stored the three declared secret bindings, and
   ran Agent System install. See the [Google tool guide](../../tools/google/README.md).
 - The grant includes identity email access and the scopes required by the operation.

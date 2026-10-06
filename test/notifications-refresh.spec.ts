@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { createCliStyles } from '../cli/output.ts';
 import refreshNotificationsAgentSystem from '../channels/github/cli/refresh.ts';
 import type { GitHubNotificationMonitorRunOptions } from '../channels/github/intake/monitor/service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -64,6 +65,42 @@ describe('channels/github/cli/refresh', () => {
     assert.deepEqual(test.stderr, []);
   });
 
+  it('should distinguish throttled and intentionally disabled refreshes without changing json or exit status', async () => {
+    for (const code of [
+      'github-notification-provider-throttle-active',
+      'github-notification-disabled',
+    ]) {
+      for (const json of [false, true]) {
+        const test = createOutput();
+        const exitCodes: number[] = [];
+        const result = { agentId: 'tanaabot', code, status: 'skipped' as const };
+        await refreshNotificationsAgentSystem({
+          json,
+          manifestService: {
+            loadForAgentId: async () => manifest,
+            loadForCommandDirectory: async () => manifest,
+          },
+          monitorService: { runOnce: async () => [result] },
+          output: test.output,
+          setExitCode: (value) => exitCodes.push(value),
+          workspaceDir: '/workspace',
+          styles: {
+            ...createCliStyles({ NO_COLOR: '1' }),
+            warning: (value) => `<warning>${value}</warning>`,
+            notice: (value) => `<notice>${value}</notice>`,
+          },
+        });
+        assert.deepEqual(exitCodes, [1]);
+        if (json) assert.deepEqual(JSON.parse(test.stdout.join('')), result);
+        else
+          assert.match(
+            test.stdout.join(''),
+            code.endsWith('disabled') ? /<notice>status/u : /<warning>status/u,
+          );
+      }
+    }
+  });
+
   it('should keep unexpected refresh failures out of json stdout', async () => {
     const test = createOutput();
     const exitCodes: number[] = [];
@@ -89,32 +126,34 @@ describe('channels/github/cli/refresh', () => {
     assert.deepEqual(exitCodes, [1]);
   });
 
-  it('should reject an invalid timeout before starting a refresh', async () => {
-    const test = createOutput();
-    const exitCodes: number[] = [];
-    let refreshes = 0;
+  for (const timeoutSeconds of ['0', '2147484', '9007199254740991']) {
+    it(`should reject timeout ${timeoutSeconds} before starting a refresh`, async () => {
+      const test = createOutput();
+      const exitCodes: number[] = [];
+      let refreshes = 0;
 
-    await refreshNotificationsAgentSystem({
-      json: true,
-      manifestService: {
-        loadForAgentId: async () => manifest,
-        loadForCommandDirectory: async () => manifest,
-      },
-      monitorService: {
-        async runOnce() {
-          refreshes += 1;
-          return [];
+      await refreshNotificationsAgentSystem({
+        json: true,
+        manifestService: {
+          loadForAgentId: async () => manifest,
+          loadForCommandDirectory: async () => manifest,
         },
-      },
-      output: test.output,
-      setExitCode: (code) => exitCodes.push(code),
-      timeoutSeconds: '0',
-      workspaceDir: '/workspace',
-    });
+        monitorService: {
+          async runOnce() {
+            refreshes += 1;
+            return [];
+          },
+        },
+        output: test.output,
+        setExitCode: (code) => exitCodes.push(code),
+        timeoutSeconds,
+        workspaceDir: '/workspace',
+      });
 
-    assert.equal(refreshes, 0);
-    assert.deepEqual(test.stdout, []);
-    assert.match(test.stderr.join(''), /github-notification-refresh-options-invalid/u);
-    assert.deepEqual(exitCodes, [2]);
-  });
+      assert.equal(refreshes, 0);
+      assert.deepEqual(test.stdout, []);
+      assert.match(test.stderr.join(''), /github-notification-refresh-options-invalid/u);
+      assert.deepEqual(exitCodes, [2]);
+    });
+  }
 });

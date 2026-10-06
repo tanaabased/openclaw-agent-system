@@ -102,6 +102,7 @@ export default async function credentialsCache(options: {
     writeCliError(
       options.output,
       'credentials: Gateway cache request was not confirmed. Gateway may be unreachable, unauthorized, or incompatible; no local clear is Gateway success.',
+      options,
     );
     options.setExitCode(1);
   }

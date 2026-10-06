@@ -22,7 +22,7 @@ export interface CliStyles {
 export interface CliSummaryLine {
   component?: string;
   label: string;
-  style: 'action' | 'error' | 'field' | 'status' | 'target' | 'warning';
+  style: 'action' | 'error' | 'field' | 'notice' | 'status' | 'target' | 'warning';
   value: string;
 }
 
@@ -79,6 +79,7 @@ export function renderCliSummary(
     if (style === 'error') return `${styles.error(prefix)}${value}`;
     if (style === 'status') return `${styles.status(prefix)}${styles.target(value)}`;
     if (style === 'target') return `${styles.field(prefix)}${styles.target(value)}`;
+    if (style === 'notice') return `${styles.notice(prefix)}${value}`;
     if (style === 'warning') return `${styles.warning(prefix)}${value}`;
     return `${styles.field(prefix)}${value}`;
   });
@@ -192,7 +193,31 @@ export function writeCliNotices(
   styles?: CliStyles,
   terminalColumns?: number,
 ): void {
-  writeCliLines(output, renderCliNotices(notices, styles, terminalColumns));
+  writeCliDiagnostics(output, renderCliNotices(notices, styles, terminalColumns));
+}
+
+export interface CliDiagnosticOptions {
+  output: CliOutput;
+  json?: boolean;
+  styles?: CliStyles;
+  terminalColumns?: number;
+}
+
+/** preserve machine diagnostics while presenting human diagnostics on stderr. */
+export function writeCliDiagnosticNotices(
+  options: CliDiagnosticOptions,
+  notices: readonly CliNotice[],
+): void {
+  writeCliDiagnostics(
+    options.output,
+    options.json
+      ? notices.map(({ message }) => message)
+      : renderCliNotices(
+          notices,
+          options.styles,
+          options.terminalColumns ?? process.stderr.columns,
+        ),
+  );
 }
 
 export function writeCliJson(output: CliOutput, value: unknown): void {
@@ -204,8 +229,12 @@ export function writeCliDiagnostics(output: CliOutput, messages: readonly string
   output.writeStderr(`${messages.join('\n')}\n`);
 }
 
-export function writeCliError(output: CliOutput, message: string): void {
-  writeCliDiagnostics(output, [message]);
+export function writeCliError(
+  output: CliOutput,
+  message: string,
+  options: Omit<CliDiagnosticOptions, 'output'> = {},
+): void {
+  writeCliDiagnosticNotices({ ...options, output }, [{ severity: 'error', message }]);
 }
 
 export const defaultCliOutput: CliOutput = {

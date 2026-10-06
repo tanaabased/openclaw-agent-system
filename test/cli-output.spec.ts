@@ -8,6 +8,7 @@ import {
   renderCliNotices,
   renderCliSummary,
   writeCliDiagnostics,
+  writeCliDiagnosticNotices,
   writeCliJson,
   writeCliSummary,
 } from '../cli/output.ts';
@@ -15,6 +16,44 @@ import {
 const plainStyles = createCliStyles({ NO_COLOR: '1' });
 
 describe('cli/output', () => {
+  it('should retain severity on stderr without decorating machine output', () => {
+    for (const json of [false, true]) {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      writeCliDiagnosticNotices(
+        {
+          json,
+          output: {
+            writeStdout: (text) => stdout.push(text),
+            writeStderr: (text) => stderr.push(text),
+          },
+          styles: createCliStyles({ NO_COLOR: '1' }),
+          terminalColumns: 24,
+        },
+        [
+          { severity: 'notice', message: 'Useful context.' },
+          { severity: 'warning', message: 'Work is incomplete.' },
+          { severity: 'error', message: 'Operation failed.' },
+        ],
+      );
+      assert.deepEqual(stdout, []);
+      assert.equal(stderr.join('').includes('\u001b'), false);
+      if (json)
+        assert.equal(stderr.join(''), 'Useful context.\nWork is incomplete.\nOperation failed.\n');
+      else {
+        assert.match(stderr.join(''), /Notice/u);
+        assert.match(stderr.join(''), /Warning/u);
+        assert.match(stderr.join(''), /Error/u);
+        assert.ok(
+          stderr
+            .join('')
+            .split('\n')
+            .every((line) => stringWidth(line) <= 24),
+        );
+      }
+    }
+  });
+
   it('should align each summary to its own longest label without color', () => {
     assert.deepEqual(
       renderCliSummary(

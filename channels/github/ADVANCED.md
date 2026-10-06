@@ -1,17 +1,29 @@
 # GitHub Notifications Advanced Guide
 
 Configuration, commands, and operations for the GitHub notification channel.
-Start with the [README](./README.md) for setup. [Design](./DESIGN.md) describes the target lifecycle.
+Start with the [README](./README.md) for setup.
 
-- [Configuration reference](#configuration-reference)
-- [CLI reference](#cli)
+- [Configuration Reference](#configuration-reference)
+  - [`github.notifications.allowed-repository-owners`](#githubnotificationsallowed-repository-owners)
+  - [`github.notifications.approved-actors`](#githubnotificationsapproved-actors)
+  - [`github.notifications.assignment-types`](#githubnotificationsassignment-types)
+  - [`github.notifications.initial-mode`](#githubnotificationsinitial-mode)
+  - [`github.notifications.interval-minutes`](#githubnotificationsinterval-minutes)
+  - [`github.notifications.max-concurrent-issues`](#githubnotificationsmax-concurrent-issues)
+  - [`github.notifications.pull-request`](#githubnotificationspull-request)
+  - [Required Conversation Hook](#required-conversation-hook)
+- [Tools](#tools)
+  - [`agent_system_github_task_pr`](#agent_system_github_task_pr)
+- [CLI](#cli)
   - [`openclaw agent-system notifications refresh`](#openclaw-agent-system-notifications-refresh)
   - [`openclaw agent-system notifications status`](#openclaw-agent-system-notifications-status)
   - [`openclaw agent-system notifications wait`](#openclaw-agent-system-notifications-wait)
 - [Model routing](#model-routing)
-- [Processing and lifecycle](#processing-and-lifecycle)
-- [Security and lifecycle](#security-and-lifecycle)
-- [Durable state and upgrades](#durable-state-and-upgrades)
+- [Processing and Lifecycle](#processing-and-lifecycle)
+  - [Managed Worktrees](#managed-worktrees)
+  - [Pull Request Review Feedback](#pull-request-review-feedback)
+- [Security and Lifecycle](#security-and-lifecycle)
+  - [Durable State and Upgrades](#durable-state-and-upgrades)
 
 ## Configuration Reference
 
@@ -29,86 +41,11 @@ Declare `github.notifications` in the workspace manifest; see the
 | `max-concurrent-issues`            | no       | `2`                     | Positive integer                         |
 | `pull-request`                     | no       | see below               | Delivery PR assignees and reviewers      |
 
-### `github.notifications.pull-request`
+### `github.notifications.allowed-repository-owners`
 
-Controls recipients on issue task pull requests published by automatic Work
-delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant issue
-Work and Guided turns receive these defaults; unrelated direct `gh` pull requests
-are not linked.
-
-| Field       | Type                              | Required | Default            | Description                                                                                                               |
-| ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `assignees` | `assignment-actor` or pinned list | no       | `assignment-actor` | Add the admitted assigning actor, or replace that choice with up to ten pinned users. `[]` disables automatic assignment. |
-| `reviewers` | pinned list                       | no       | `[]`               | Request reviews from eligible users. Assignment alone does not request review.                                            |
-
-Each pinned user has `login` and `node-id`, as in `approved-actors`. The login
-must still resolve to that node ID at delivery. Duplicate identities within a
-list are invalid. GitHub eligibility applies; the agent cannot review its own
-PR. The same person may be both assignee and reviewer. Recipients need not be
-`approved-actors`: receiving a PR never grants assignment or comment authority.
-Existing assignees, review requests, and CODEOWNERS behavior are preserved.
-
-```yaml
-github:
-  notifications:
-    approved-actors:
-      - login: pirog
-        node-id: U_kgDOB9x7Qw
-    pull-request:
-      reviewers:
-        - login: reviewer
-          node-id: REPLACE_WITH_REAL_GITHUB_NODE_ID
-```
-
-A missing assigning-actor identity fails delivery rather than falling back to
-the issue author. An interrupted handoff reuses its PR and adds only missing
-recipients, without re-requesting a submitted review.
-
-### `agent_system_github_task_pr`
-
-Publish a task pull request from a prepared, trusted GitHub issue-owned session
-when work continues outside the automatic Work implementation turn. Use this
-tool instead of `gh pr create` for that issue. Automatic Work delivery still
-publishes terminally without a model tool call.
-
-#### Parameters
-
-| Parameter | Type   | Required | Default             | Description                   |
-| --------- | ------ | -------- | ------------------- | ----------------------------- |
-| `body`    | string | no       | `Closes #<issue>`   | Body for a newly created PR.  |
-| `title`   | string | no       | current issue title | Title for a newly created PR. |
-
-#### Usage
-
-From the prepared issue session, publish committed work on its exact managed
-branch:
-
-```json
-{ "title": "Finish the issue fix", "body": "Implementation and validation. Closes #12" }
-```
-
-The tool verifies current assignment authority, the agent-owned open PR and
-branch, then adds missing configured recipients. It preserves an existing PR's
-title, body, assignees, and completed reviews. It records the PR in the issue
-session; the next notification reconciliation completes the ordinary
-`pull-request-opened` card, comment baseline, and issue handoff. The tool does
-not merge. It is unavailable outside a prepared issue-owned session.
-
-The response reports `status: linked` for the completed PR link and a
-`handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
-durable handoff is published, then `published` on a later call. A verified same-PR
-retry remains available during its own PR-opened turn. If that turn lacks confirmed
-terminal completion, `recovery-required` preserves the pending event and stops
-automatic replay; it does not mean the PR must be recreated. This includes
-interrupted attempts whose completion cannot be recovered through the supported
-host API. Pending comments remain unconsumed until handoff is resolved. Checkpoint
-failures retain a bounded reason code and the already-completed publication outcome.
-The tool does not run the asynchronous handoff turn itself.
-
-### `github.notifications.assignment-types`
-
-Selects the assignment kinds the channel discovers. Direct pull-request
-assignments have the [documented limitations](./README.md#current-limitations).
+Filters assignments by repository owner using the same `login` and `node-id`
+identity shape as `approved-actors`, with unique node IDs. The filter does not
+grant repository access or approve the owner's members.
 
 ### `github.notifications.approved-actors`
 
@@ -168,11 +105,10 @@ fields, and reports missing evidence as unverified. Setup failures do not retry,
 block work, or add GitHub comments. This optional access does not replace the
 [required conversation hook](#required-conversation-hook).
 
-### `github.notifications.allowed-repository-owners`
+### `github.notifications.assignment-types`
 
-Filters assignments by repository owner using the same `login` and `node-id`
-identity shape as `approved-actors`, with unique node IDs. The filter does not
-grant repository access or approve the owner's members.
+Selects the assignment kinds the channel discovers. Direct pull-request
+assignments have the [documented limitations](./README.md#current-limitations).
 
 ### `github.notifications.initial-mode`
 
@@ -193,6 +129,41 @@ an explicit wait for follow-up, or a retryable failure releases the slot; failed
 work moves to the back of the queue. Pull-request assignment intake is not
 counted against this issue-work limit.
 
+### `github.notifications.pull-request`
+
+Controls recipients on issue task pull requests published by automatic Work
+delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant issue
+Work and Guided turns receive these defaults; unrelated direct `gh` pull requests
+are not linked.
+
+| Field       | Type                              | Required | Default            | Description                                                                                                               |
+| ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `assignees` | `assignment-actor` or pinned list | no       | `assignment-actor` | Add the admitted assigning actor, or replace that choice with up to ten pinned users. `[]` disables automatic assignment. |
+| `reviewers` | pinned list                       | no       | `[]`               | Request reviews from eligible users. Assignment alone does not request review.                                            |
+
+Each pinned user has `login` and `node-id`, as in `approved-actors`. The login
+must still resolve to that node ID at delivery. Duplicate identities within a
+list are invalid. GitHub eligibility applies; the agent cannot review its own
+PR. The same person may be both assignee and reviewer. Recipients need not be
+`approved-actors`: receiving a PR never grants assignment or comment authority.
+Existing assignees, review requests, and CODEOWNERS behavior are preserved.
+
+```yaml
+github:
+  notifications:
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    pull-request:
+      reviewers:
+        - login: reviewer
+          node-id: REPLACE_WITH_REAL_GITHUB_NODE_ID
+```
+
+A missing assigning-actor identity fails delivery rather than falling back to
+the issue author. An interrupted handoff reuses its PR and adds only missing
+recipients, without re-requesting a submitted review.
+
 ### Required Conversation Hook
 
 For configured notifications, `doctor` reports unset or denied
@@ -202,6 +173,49 @@ access and verify required hook registration. Install preserves unrelated
 configuration and does not override `hooks.allowPromptInjection: false`.
 If the running Gateway has not reloaded the permission, restart it after install;
 notifications remain blocked until its required hooks are available.
+
+## Tools
+
+### `agent_system_github_task_pr`
+
+Publish a task pull request from a prepared, trusted GitHub issue-owned session
+when work continues outside the automatic Work implementation turn. Use this
+tool instead of `gh pr create` for that issue. Automatic Work delivery still
+publishes terminally without a model tool call.
+
+#### Parameters
+
+| Parameter | Type   | Required | Default             | Description                   |
+| --------- | ------ | -------- | ------------------- | ----------------------------- |
+| `body`    | string | no       | `Closes #<issue>`   | Body for a newly created PR.  |
+| `title`   | string | no       | current issue title | Title for a newly created PR. |
+
+#### Usage
+
+From the prepared issue session, publish committed work on its exact managed
+branch:
+
+```json
+{ "title": "Finish the issue fix", "body": "Implementation and validation. Closes #12" }
+```
+
+The tool verifies current assignment authority, the agent-owned open PR and
+branch, then adds missing configured recipients. It preserves an existing PR's
+title, body, assignees, and completed reviews. It records the PR in the issue
+session; the next notification reconciliation completes the ordinary
+`pull-request-opened` card, comment baseline, and issue handoff. The tool does
+not merge. It is unavailable outside a prepared issue-owned session.
+
+The response reports `status: linked` for the completed PR link and a
+`handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
+durable handoff is published, then `published` on a later call. A verified same-PR
+retry remains available during its own PR-opened turn. If that turn lacks confirmed
+terminal completion, `recovery-required` preserves the pending event and stops
+automatic replay; it does not mean the PR must be recreated. This includes
+interrupted attempts whose completion cannot be recovered through the supported
+host API. Pending comments remain unconsumed until handoff is resolved. Checkpoint
+failures retain a bounded reason code and the already-completed publication outcome.
+The tool does not run the asynchronous handoff turn itself.
 
 ## CLI
 
@@ -223,7 +237,7 @@ Run one GitHub notification intake cycle immediately.
 | `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
 | `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
-| `--timeout <seconds>`          | no                   | `300`               | Positive integer bounding the complete refresh cycle.                        |
+| `--timeout <seconds>`          | no                   | `300`               | Integer from `1` through `2147483` bounding the complete refresh cycle.      |
 
 #### Usage
 
@@ -298,7 +312,7 @@ Wait for one semantic notification checkpoint without parsing session history or
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
 | `--refresh`                    | no                   | off                 | Advance provider-owned intake while waiting.                                 |
 | `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
-| `--timeout <seconds>`          | no                   | `300`               | Positive integer bounding the complete wait.                                 |
+| `--timeout <seconds>`          | no                   | `300`               | Integer from `1` through `2147483` bounding the complete wait.               |
 
 #### Usage
 
@@ -332,58 +346,47 @@ returns nonzero.
 
 ## Model routing
 
-Declaring all four [model profiles](../../MANIFEST.md#models) enables routing for
-new issue conversations in either mode. Existing conversations and default-only
-manifests keep their ordinary behavior. Before the initial assignment turn, the
-manifest default model assesses bounded issue content in a fresh, tool-free
-native runtime context. The model supplies the reasoning judgment; code validates
-its response, maps the tier to the configured profile, and saves the decision
-before substantive work. Routing runs inside the issue's execution lease and
-outside the shared polling lease.
+All four [model profiles](../../MANIFEST.md#models) enable routing for new issue
+conversations in either mode; existing conversations and default-only manifests
+keep their behavior. Before substantive work, the manifest default model assesses
+bounded issue content in a fresh, tool-free native context. The channel validates
+the assessment with the [shared resolver](../../tools/model-routing/README.md)
+and saves the selection before the initial assignment turn.
+Automatic effort is `medium`, `high`, or justified `xhigh`.
 
-Verified native **Complexity** determines the tier. When native metadata is
-missing or unavailable, the visible fenced YAML capsule with
-`schema: tanaab/task-metadata/v2`, `mode: fallback`, and `fallback.complexity`
-can supply it. Missing, invalid, conflicting, and unavailable values remain
-distinct evidence for the model's labeled content assessment. **Work size**
-informs scope and decomposition, never the model tier. An unresolved complexity assessment retains its status and reason and continues
-using the conversation's frozen default profile. The private routing note explains
-this choice; the operator can select a model and effort manually. Unsupported
-profiles, malformed assessments, and failed classifiers still block that issue for
-retry without substitution. Intake uses the [shared resolver](../../tools/model-routing/README.md)
-while retaining its own bounded classifier and conversation lifecycle. Automatic efforts are
-`medium`, `high`, or justified `xhigh`.
+Verified native **Complexity** takes precedence. When native metadata is missing
+or unavailable, a visible fenced YAML capsule with `schema: tanaab/task-metadata/v2`,
+`mode: fallback`, and `fallback.complexity` can supply it. Missing, invalid,
+conflicting, and unavailable values remain distinct evidence for content
+assessment. **Work size** informs scope and decomposition, never the tier.
+Unresolved complexity retains its status and reason and uses the frozen default;
+manual model and effort selection remains available. Unsupported profiles,
+malformed assessments, and failed classifiers block the issue for retry without
+substitution.
 
-For complete issue routing, `install` additively grants Agent System permission
-to select the agent and classifier model, allowing the manifest default in both
-OpenClaw LLM allowlists. It preserves unrelated grants and settings; default-only,
-disabled, and pull-request-only declarations request nothing.
+For complete issue routing, `install` additively grants agent and classifier
+access to the manifest default in both OpenClaw LLM allowlists, preserving
+unrelated settings. Default-only, disabled, and pull-request-only declarations
+request nothing. If `doctor` reports saved permissions absent from its loaded
+state, restart the Gateway and retry the prepared assignment. Polling never
+grants access or substitutes for authentication.
 
-`doctor` distinguishes saved access from permissions loaded by its process. If
-loaded access is stale, restart the Gateway and retry the prepared assignment.
-Background polling never grants permissions or substitutes for authentication.
+Saved model and effort survive retries, restarts, comments, delivery continuation,
+and manifest edits. Supported native overrides take precedence independently.
+A permitted native fallback can continue automatic routing; a strict-selection
+mismatch or unapproved model cancels work. Execution records distinguish verified,
+permitted, and unverified selections. Missing native evidence alone neither blocks
+publication nor proves the requested route ran. The initial
+[routing note](../../tools/model-routing/README.md#reporting-and-continuation)
+remains private and is not execution evidence.
 
-The saved model and effort survive retries, restarts, comments, and delivery
-pull-request continuation. Later manifest edits do not reclassify existing
-conversations. Explicit supported native model and effort overrides take
-precedence independently. Automatic routing can continue on a permitted native
-fallback; a mismatch with a strict selection or an unapproved model cancels work.
-Execution records distinguish verified selections, permitted continuations, and
-unverified settings when native evidence is incomplete. Missing evidence alone
-does not block publication or prove the requested route ran.
-
-The initial private assessment includes a short routing note with model, effort,
-complexity, source, and reason. It is excluded from the public reply and is not
-runtime verification.
-
-For a demonstrated reasoning blocker, the agent explains the failed approach
-and asks the operator to approve a specific stronger profile. This is a
-conversational request, not an automatic escalation or structured clarification
-outcome. An approved change requires native controls that support and preserve
-both model and effort; otherwise the operator uses supported session controls.
-Authentication failures, rate limits, slow tests, and missing requirements do
-not justify escalation. A stronger profile is only confirmed by native runtime
-evidence.
+A demonstrated reasoning blocker permits a conversational request for operator
+approval of a specific stronger profile, explaining the failed approach; it is
+not a structured clarification outcome. Authentication failures, rate limits,
+slow tests, and missing requirements do not justify escalation. Apply an approved
+change only through native controls that preserve both model and effort, or leave
+it to the operator's supported session controls. Native runtime evidence must
+confirm the stronger selection.
 
 ## Processing and Lifecycle
 
@@ -400,8 +403,7 @@ happens next. GitHub prose cannot select or elevate the configured mode.
 
 The channel also:
 
-- admits only configured assignment types, approved actors, eligible repository
-  owners, and repositories where the agent has sufficient access
+- enforces the [admission and publication boundaries](#security-and-lifecycle)
 - keeps approved issue and delivery pull-request comments in the issue-owned
   session, publishes each ordinary final response back to its exact source,
   and drains a bounded pair of queued comments serially per execution pass
@@ -414,8 +416,30 @@ The Gateway polls independently of issue workers, so new assignments can begin
 while another issue is running. Each issue serializes preparation, comments,
 responses, and retirement across Gateway and CLI processes. Different issues
 can proceed concurrently up to the agent's durable issue-work limit; shared
-repository preparation is serialized. Assignment acknowledgments wait for
-durable session recording.
+repository preparation is serialized. See the
+[assignment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-assignment/README.md)
+for execution-lease and durable-recording checks.
+
+### Managed Worktrees
+
+The channel uses [managed Git worktrees](../../tools/git/README.md#gitworktrees).
+New GitHub issue worktrees keep the immutable-id directory but name the branch
+`<issue-number>-<title-slug>-<five-character-hash>`. The title slug is limited to
+48 characters and falls back to `issue` when the title cannot be slugged. The
+hash separates agent-scoped worktrees for the same issue. Existing GitHub issue
+branches keep their original names through retries, title edits, and cleanup.
+
+When GitHub reports new canonical coordinates for the same immutable repository
+and owner identities, the channel may update the managed origin. It verifies and
+fetches the new origin before continuing and restores the prior origin on failure.
+This retargeting is unavailable through the model-facing worktree tool and
+operator command.
+
+Completed assignment retirement removes only the exact clean managed checkout,
+using non-forced Git removal. Missing worktrees complete idempotently; dirty,
+unsafe, or unreadable checkouts, local branches, and remote refs remain untouched.
+See the [retirement scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-retirement/README.md)
+for incomplete-work retention and completed-work cleanup.
 
 ### Pull Request Review Feedback
 
@@ -428,11 +452,12 @@ require their own approved author and exact mention; parent text and diff hunks
 cannot supply either.
 
 One review produces one feedback turn. Later edits include only changed findings,
-while unchanged summaries and parent replies remain context. Review and comment
-links, author identities, reviewed commits, paths, current and original positions,
-diff hunks, and reply relationships accompany the turn where available. Original
-locations are historical; missing current positions are reported as unavailable or
-outdated. The agent must inspect current code before applying an old finding.
+while unchanged summaries and parent replies remain context. The
+[feedback presentation](./PRESENTATION.md#direct-message) preserves source links
+and locations; original locations are historical, and the agent must inspect
+current code before applying an old finding. The
+[comment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-comment/README.md)
+covers grouped reviews, historical locations, and later inline replies.
 
 Discovery pages and consumed member digests survive restarts. Each pass reads a
 bounded page of reviews and inline comments, resumes pagination, and revisits

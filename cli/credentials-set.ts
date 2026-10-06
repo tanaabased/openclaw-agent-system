@@ -2,7 +2,13 @@ import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialInput from '../credentials/op-input.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
-import { type CliOutput, type CliStyles, writeCliError, writeCliSummary } from './output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  writeCliError,
+  writeCliDiagnosticNotices,
+  writeCliSummary,
+} from './output.ts';
 import { formatDiagnostic } from '../core/logger.ts';
 
 export interface SetCredentialsAgentSystemOptions {
@@ -25,12 +31,20 @@ export default async function setCredentialsAgentSystem(
   options: SetCredentialsAgentSystemOptions,
 ): Promise<void> {
   if (options.credential !== 'op') {
-    writeCliError(options.output, `credentials: unsupported credential ${options.credential}`);
+    writeCliError(
+      options.output,
+      `credentials: unsupported credential ${options.credential}`,
+      options,
+    );
     options.setExitCode(1);
     return;
   }
   if (options.fromEnvironment && options.fromStdin) {
-    writeCliError(options.output, 'credentials: --from-env and --stdin cannot be used together');
+    writeCliError(
+      options.output,
+      'credentials: --from-env and --stdin cannot be used together',
+      options,
+    );
     options.setExitCode(1);
     return;
   }
@@ -44,6 +58,7 @@ export default async function setCredentialsAgentSystem(
     writeCliError(
       options.output,
       formatDiagnostic({ code: input.code, component: 'credentials', message: input.message }),
+      options,
     );
     options.setExitCode(1);
     return;
@@ -51,15 +66,19 @@ export default async function setCredentialsAgentSystem(
 
   const result = await options.credentialManager.set(loaded.manifest, input.token, options.storeId);
   if (result.gatewayInvalidation === 'pending') {
-    writeCliError(
-      options.output,
-      'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
-    );
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'warning',
+        message:
+          'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
+      },
+    ]);
   }
   if (result.status === 'invalid') {
     writeCliError(
       options.output,
       formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),
+      options,
     );
     options.setExitCode(1);
     return;

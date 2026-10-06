@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System puts your OpenClaw agent's identity, environment, and credential
+Agent System puts your OpenClaw agent's identity, environment, automations, and credential
 configuration in the repo alongside setup steps for installing dependencies and
 configuring the workspace. Clone the repo and run
 `openclaw agent-system install` to get your agent ready for work.
@@ -39,6 +39,7 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
 - **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
 - **The right model for the work:** route GitHub issues to declared model tiers by complexity.
+- **Put recurring work on the clock:** schedule repository commands and agent prompts from `agent.yaml`.
 - **Repeatable setup:** rerun Install to reconcile configuration and checked dependency installation; use Doctor to find drift.
 
 ## Ships With
@@ -49,6 +50,7 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
 - [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
 - [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
+- [`agent_system_github_task_pr`](./channels/github/ADVANCED.md#agent_system_github_task_pr) — Publish and link delivery pull requests from prepared issue-owned sessions.
 - [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
 - [`agent_system_model_routing`](./tools/model-routing/README.md) — Resolve model and effort candidates from the agent's profiles.
@@ -59,6 +61,8 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ### CLI
 
+- [`openclaw agent-system automations`](./CLI.md#openclaw-agent-system-automations-list) — Inspect, sync, and run declared jobs and read their history.
+- [`openclaw agent-system backup`](./CLI.md#openclaw-agent-system-backup-create) — Create, verify, restore, and prune workspace backups.
 - [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
 - [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
 - [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
@@ -112,7 +116,8 @@ For a development checkout, follow [Install from source](./DEVELOPMENT.md#instal
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Unreleased           | 2026.9.8         | 2026.9.8           |
+| 0.9.0                | 2026.9.8         | 2026.9.8           |
+| 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |
 | 0.6.0                | 2026.9.2         | 2026.9.3           |
 | 0.5.3                | 2026.7.1         | 2026.7.2           |
@@ -206,6 +211,23 @@ openclaw agent-system tool gh -- api user --jq .login
 for consent interactively; CI or `--yes` runs unattended. Doctor runs setup
 checks without repairs. Make applies safe to repeat: earlier effects are not
 rolled back on failure. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
+
+Add recurring work to the same manifest, then rerun Install:
+
+```yaml
+automations:
+  - id: daily-review
+    schedule: every 24 hours
+    prompt: Review the repository for actionable maintenance work and report the highest-priority finding.
+  - id: daily-backup
+    runtimes: [openclaw]
+    schedule: every 24 hours
+    run: [openclaw, agent-system, backup, create, --json]
+```
+
+OpenClaw runs command jobs without a model; standalone Codex supports recurring
+prompt jobs through the desktop app. See [automation configuration](./MANIFEST.md#automations)
+and [Codex support](./CODEX.md#repository-automations) for runtime requirements.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See

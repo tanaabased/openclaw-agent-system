@@ -29,13 +29,18 @@ explicitly upgrade an existing `@openclaw/codex@2026.9.7` installation to
 `@openclaw/codex@2026.9.8` before workspace reconciliation. Agent installation
 provisions a missing applicable plugin but leaves conflicting existing versions
 for explicit operator reconciliation.
-Then run `openclaw agent-system install` and `openclaw agent-system doctor` from
-each managed workspace to reconcile and verify its desired state before restarting:
+Start the upgraded Gateway and verify RPC readiness before reconciling workspaces;
+OpenClaw automation reconciliation and inspection require a running Gateway:
 
 ```sh
 openclaw gateway restart
 openclaw gateway status --deep --require-rpc
 ```
+
+Then run `openclaw agent-system install` from each managed workspace. If installation
+reports configuration changes that require a Gateway restart, restart it and verify
+RPC readiness again. Run `openclaw agent-system doctor` from each workspace to
+verify the reconciled state.
 
 If Node's executable path changed, also align the managed service's runtime;
 `--no-restart` does not rebind it. See

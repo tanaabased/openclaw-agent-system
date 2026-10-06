@@ -171,11 +171,9 @@ they install plugins and mutate isolated OpenClaw or provider state.
 
 #### Lifecycle Approval
 
-The [approval example](./examples/approval/README.md) checks native Install and
-Doctor discovery, approval, denial, cancellation, and unavailable approval through
-the Control UI protocol with native OpenClaw and OpenClaw-hosted Codex. It runs
-only in GitHub Actions against the [development target](./README.md#version-compatibility); local unit checks do not prove
-installed chat compatibility. Other chat channels are outside this matrix.
+See the [approval example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/approval/README.md)
+for installed Control UI approval coverage across native OpenClaw and
+OpenClaw-hosted Codex. Other chat channels are outside this matrix.
 
 The integration uses the public
 [`before_tool_call.requireApproval` hook](https://docs.openclaw.ai/plugins/plugin-permission-requests).

@@ -3,6 +3,10 @@
 Set plugin-wide options under `plugins.entries.agent-system.config` in OpenClaw
 configuration. Workspace declarations belong in the [manifest](./MANIFEST.md).
 
+- [`collaboration`](#collaboration)
+- [`githubNotifications`](#githubnotifications)
+- [`opCache`](#opcache)
+
 ## `collaboration`
 
 | Type                                                                  | Required | Default  |

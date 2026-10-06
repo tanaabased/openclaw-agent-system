@@ -84,6 +84,6 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 ## Validation
 
 - Confirm the route came from trusted runtime context.
-- Confirm OpenClaw used native chat approval and standalone Codex used only `setupRuntime inspect`.
+- Confirm OpenClaw used native chat approval. Standalone Codex used `setupRuntime inspect` and, when available, `automationRuntime inspect` or `list` with read-only native project and thread lookups.
 - Confirm no apply, install, secret-resolution, or OpenClaw reconciliation path ran.
 - Confirm findings and limitations were reported without secret-bearing command or process output.

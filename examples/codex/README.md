@@ -1,6 +1,31 @@
 # Codex Example
 
-This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, runtime-aware setup, automation planning, session context, transfer, and removal on a disposable GitHub Actions runner. Automation lookup inputs below are explicit fixtures; native desktop-tool writes require separate installed proof.
+This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, runtime-aware setup, automation planning, session context, transfer, and removal on a disposable GitHub Actions runner.
+
+## Automation Checks
+
+Automation lookup inputs below are explicit fixtures. The installed runtime's
+`list` and `sync` routes inspect inventory and plan authorized native app actions;
+they do not write scheduler files. The `run` and `runs` checks assert the explicit
+`automation-run-now-unsupported` and `automation-history-unavailable` results.
+
+The trusted `automationRuntime` exposes `threads-sync` under explicit installation
+authorization and a fresh plan digest. It creates per-automation conversations
+through `codex app-server` in the ambient profile, adds an attributed setup
+history item without model generation, and verifies resume through a fresh
+process. Repeated sync reuses those conversations.
+
+The prepare/cancel check retains a pending journal until saved-state verification
+and permits cancellation only while the failed write's target remains unchanged.
+Pending creates also require no new native IDs: an unmarked job could be a partial
+create. Lost-response recovery may acknowledge the exact saved pending definition
+without another create; further writes require a fresh plan. Older journals retain
+the whole-scheduler cancellation check.
+
+Native request/response and saved-state captures live in `fixtures/` with separate
+provenance. Ordinary tests consume reviewed captures without contacting the app;
+constructed failure cases are identified in the tests. This packed/headless
+scenario does not replace separate installed desktop-tool verification.
 
 ## Setup
 
@@ -166,14 +191,16 @@ node "$runtime" binding bind --plugin-data "$root/timeout-data" --workspace "$ro
 node "$runtime" setup inspect --plugin-data "$root/timeout-data" \
   | jq -e '.status == "inspected" and [.findings[].code] == ["setup-blocked"]'
 
-# should load the bound workspace and only standalone capabilities through the packaged hook
+# should load the bound workspace through a packaged hook path containing spaces
 root="$TMPDIR/agent-system-codex-example"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
+cache_root=$(jq -r .cachePath "$root/cache.json")
+plugin_root="$root/plugin with spaces"
+cp -R "$cache_root" "$plugin_root"
+hook=$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$plugin_root/hooks/hooks.json")
 plugin_data="$root/plugin-data"
 workspace=$(cd "$root/workspace" && pwd -P)
 context=$(printf '%s\n' '{"hook_event_name":"SessionStart","source":"startup"}' \
-  | PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" node "$runtime" session-start \
+  | PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
   | jq -r '.hookSpecificOutput.additionalContext')
 printf '%s\n' "$context" | grep -F '"status": "active"'
 printf '%s\n' "$context" | grep -F '"id": "codex-example"'

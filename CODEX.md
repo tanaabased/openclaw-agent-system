@@ -59,91 +59,88 @@ Git and GitHub use native host commands and authorization.
 
 ## Model Routing
 
-Configure models and efforts in [`agent.yaml`](./MANIFEST.md#models), then use the
-[model routing skill](./skills/model-routing/SKILL.md) for new work. See the
-[helper contract](./tools/model-routing/README.md) for runtime mappings, overrides,
-and unresolved results.
+Declare model profiles in `agent.yaml`, then use
+[the model routing skill](./skills/model-routing/SKILL.md) when starting new work:
+
+```yaml
+models:
+  default: { model: openai/gpt-6-astra, effort: high }
+  low: { model: openai/gpt-5.6-terra, effort: medium }
+  medium: { model: openai/gpt-5.6-sol, effort: high }
+  high: { model: openai/gpt-6-astra, effort: xhigh }
+```
+
+See [profile configuration](./MANIFEST.md#models) for field rules and
+[model routing](./tools/model-routing/README.md) for selection and overrides.
+Standalone Codex reads these profiles without changing OpenClaw configuration.
+A mapped selection still needs native Codex support and application; it is not
+proof that the model is available or that a task is using it.
 
 ## Repository Automations
 
-Declare jobs in [`agent.yaml`](./MANIFEST.md#automations), then use
-`$agent-system-install` in the desktop app. Install computes a deterministic plan,
-applies authorized native automation actions one at a time, and verifies each saved
-definition. Doctor compares desired and saved settings without changing or running
-jobs. Headless Install returns `requires-native-app-sync` when app work remains;
-it cannot complete native writes by itself.
+Declare recurring work in `agent.yaml`:
 
-Independent prompt jobs run in the one local saved project whose canonical path
-matches the bound workspace. Missing or ambiguous projects block planning; a
-worktree binding does not silently schedule in its parent checkout. An explicit
-`overrides.codex.target: { thread: existing-id }` selects an existing local Codex
-chat in that same workspace. Supply a fresh native exact-thread read; this adapter
-accepts active, idle, running, or completed status and rejects other statuses.
-It neither creates a replacement chat nor binds to the installer's conversation.
+```yaml
+automations:
+  - id: daily-review
+    schedule: every 24 hours
+    prompt: Review the repository for actionable maintenance work and report the highest-priority finding.
+```
+
+Use `$agent-system-install` in the desktop app to apply authorized native actions
+and verify each saved definition. Doctor compares desired and saved settings
+without changing or running jobs. Headless Install returns
+`requires-native-app-sync` when native app work remains.
 
 The shared [`thread` declaration](./MANIFEST.md#persistent-conversations) creates
-stable **per-automation** conversations here, even when several jobs declare the
-same ID. These chats do not share context. Conversation setup uses the native
-`codex app-server` protocol in the ambient profile: it adds an attributed setup
-history item without model generation and verifies resume through a fresh process.
-The compatible native `codex` executable must be available on `PATH`; unsupported
-protocol methods fail closed. The desktop app still owns every schedule.
+stable **per-automation** conversations, even when jobs declare the same ID;
+these chats do not share context. A compatible `codex` executable must be on
+`PATH`; unsupported protocol methods fail closed. The desktop app owns every
+schedule.
 
-| Setting              | Supported behavior                                                                                                                                                                                                                                                                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Payload              | Recurring prompts, including prompts explicitly asking a model to run a script. Zero-model command declarations are rejected.                                                                                                                                                                                                                           |
-| Interval             | Whole minutes or hours with an interval from 1 to 999. Native timing and DST behavior apply.                                                                                                                                                                                                                                                            |
-| Cron                 | One minute at every hour, or one daily time with daily, weekday, or month-day selection across all months. Expressions requiring multiple jobs or unsupported day-field combinations are rejected.                                                                                                                                                      |
-| Timezone             | `native` only; explicit zones are unsupported. The adapter does not promise a timezone override.                                                                                                                                                                                                                                                        |
-| One-shots            | Unsupported until native anchor and completion persistence are proven.                                                                                                                                                                                                                                                                                  |
-| Model and effort     | Independent jobs copy omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit manifest overrides. Supported effort values are checked; the native app remains authoritative for model availability and valid model/effort combinations. Later default changes appear as drift. |
-| Thread overrides     | Persistent chats retain their model and effort; specifying either override on a heartbeat is rejected.                                                                                                                                                                                                                                                  |
-| Limits and telemetry | Native concurrency, retry, catch-up, and timeout semantics; explicit `timeout-seconds` is rejected. Execution and delivery telemetry are reported as unavailable.                                                                                                                                                                                       |
+The [manifest reference](./MANIFEST.md#automations) owns shared syntax and
+schedules. Codex supports this subset:
 
-The adapter uses ambient host credentials and permissions. It never resolves
-OpenClaw credentials or changes Codex permission settings. An unavailable model,
-account, app operation, or unattended permission blocks completion; fix the native
-profile condition and inspect again. A saved definition proves persistence, not
-that the app will be running or that a scheduled prompt can execute successfully.
+| Manifest field                                    | Codex behavior                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `overrides.codex.effort`, `overrides.codex.model` | Independent jobs inherit omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit overrides. Later default changes appear as drift; native Codex decides model/effort availability.                        |
+| `overrides.codex.target`                          | Defaults to an independent job in the one saved local project matching the bound workspace. `{ thread: existing-id }` selects an existing local chat there; model and effort overrides are rejected for chat targets.                                                              |
+| `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                               |
+| `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                            |
+| `schedule`                                        | Whole-minute or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
+| `schedule.timezone`                               | `native` only. Native timing and DST behavior apply.                                                                                                                                                                                                                               |
+| `thread`                                          | Creates a persistent conversation per automation. Model and effort overrides are rejected for persistent chat targets.                                                                                                                                                             |
+| `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                         |
 
-An Agent System marker plus a private non-secret ledger owns each job. Native UI
-edits to managed fields are drift. Notification preferences remain native-owned.
-Unchanged jobs receive no native writes. Removed declarations pause their jobs and
-retain mappings and history; reintroduced IDs reuse the same native job. Personal
-and Me jobs are never adopted by name. Unknown saved schemas stop inspection.
+Missing or ambiguous projects block planning; worktree bindings do not select the
+parent checkout. Chat targets require a fresh native exact-chat read with active,
+idle, running, or completed status. Explicit chat targets are not replaced or
+rebound to the installer's conversation.
 
-The install skill owns the internal plan/prepare/acknowledge sequence through the
-trusted `automationRuntime` context. Prepared writes retain a pending journal until
-saved-state verification succeeds. If a native response is lost, acknowledgment
-can recover the exact pending marker and definition without another create, even
-after unrelated jobs or the valid manifest change. Recovery records the prepared
-effect; further writes require a fresh plan. A failed write can be cancelled only
-while its target matches the pre-write snapshot. A pending create also requires
-no new native IDs, because an unmarked new job could be a partially saved create.
-Older pending journals retain their whole-scheduler cancellation check.
-Divergence or missing owned jobs requires operator investigation. There
-is no rollback of earlier verified actions and no atomic compare-and-swap guarantee
-against concurrent native UI edits. A process crash during a journal transition
-may leave `automation-journal-busy`; first confirm no reconciliation is running,
-then remove only that stale Agent System `.lock` directory. Never repair native
-scheduler files or delete the ownership ledger to force a sync.
+Codex uses ambient host credentials and permissions; it does not resolve OpenClaw
+credentials or change Codex permission settings. Unavailable models, accounts,
+app operations, or unattended permissions block completion. Saved definitions
+prove persistence, not successful execution. Run-now, native occurrence history,
+and execution/delivery telemetry are unavailable; a separately requested manual
+task has its own history and does not prove native scheduling.
 
-The trusted `automationRuntime` also accepts `list` and `sync` with the same
-project/thread JSON inputs as `plan`. `threads-sync` additionally takes the fresh
-plan digest and reconciles conversations only, within explicit installation authorization. Both inspect desired/native inventory; `sync`
-returns the plan for Install's authorized native write sequence. It does not apply
-headless scheduler writes. `automations --help` documents the internal routes.
-`run` and `runs` accept `{ "id": "manifest-id" }` and exit 1 with respectively
-`automation-run-now-unsupported` and `automation-history-unavailable`. Neither
-creates a task, changes a job, or claims a scheduler occurrence. An explicitly
-requested manual task has separate task history and does not consume a saved
-one-shot or prove native scheduling.
+### Ownership and Recovery
 
-Native request/response and saved-state captures live in `fixtures/` with separate
-provenance. Capture, comparison, and acceptance are explicit development work;
-ordinary tests consume reviewed captures without contacting the app. Constructed
-failure cases are identified in the tests. Installed desktop-tool verification is
-separate from the GitHub Actions-only packed/headless Codex example.
+Agent System owns jobs through markers and a private non-secret ledger. Native
+edits to managed fields are drift; notification preferences remain native-owned.
+Unchanged jobs receive no writes. Removed declarations pause jobs and retain
+history; reintroduced IDs reuse them. Personal and Me jobs are not adopted by name.
+Unknown saved schemas stop inspection.
+
+Interrupted writes require saved-state readback before retry; the install skill
+guides recovery. Missing owned jobs or divergent state require investigation.
+Earlier verified actions are not rolled back, and concurrent native UI edits are
+not protected by atomic compare-and-swap. For `automation-journal-busy`, confirm
+no reconciliation is running before removing only the stale Agent System `.lock`
+directory. Never repair native scheduler files or delete the ownership ledger.
+
+See the [Codex example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex/README.md#automation-checks)
+for conversation setup, headless planning, and recovery checks.
 
 ## Development
 

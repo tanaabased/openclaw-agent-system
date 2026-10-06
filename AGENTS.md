@@ -61,7 +61,7 @@
 
 ## GitHub notification messages
 
-- Apply `channels/github/DESIGN.md` as the target contract for lifecycle types, execution modes, state transitions, structured context, hidden instructions, capability inheritance, clarification, and publication behavior.
+- Keep lifecycle implementations responsible for provider facts and lifecycle-specific resources. The shared coordinator owns durable conversation state, scheduling, retries, mode enforcement, turn dispatch, and publication; keep those concerns out of polling intake state.
 - Apply `channels/github/PRESENTATION.md` only as the visual component contract for assignment cards, direct messages, private responses, plans, questions, and quoted `To GitHub` responses.
 - Keep `channels/github/README.md` and `channels/github/ADVANCED.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
 - Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
@@ -69,6 +69,7 @@
 - Inject hidden GitHub lifecycle, mode, event, and response instructions through the central `before_prompt_build` hook for Gateway turns. One-shot CLI notification turns use the already resolved trusted turn contract in channel-owned system-prompt context and attest its selection before dispatch, because their caller-owned plugin registry does not activate global hooks. Do not substitute dispatch `extraSystemPrompt`, arbitrary channel metadata, or process-local state for trusted contract selection.
 - Treat `issue` + `work` + `comment` as the compatibility baseline. Resolve every model turn through the trusted durable active-turn descriptor and shared catalog available to both Gateway and native Codex runtimes; add supported tuples explicitly and never fall back to another prompt.
 - Keep typed GitHub reply candidates in the channel-owned file-backed handoff so model tool execution and publication remain correct across process and runtime boundaries.
+- Keep the issue as the conversation owner after delivery, freeze each admitted comment's exact source, and reauthorize that source before publishing its reply. Preserve raw provider prose separately from visible mention substitution and treat it as untrusted context.
 
 ## Test design
 

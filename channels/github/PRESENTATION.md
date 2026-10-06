@@ -2,7 +2,7 @@
 
 This guide defines the reusable human-visible components for the GitHub
 notifications channel. It describes their appearance and composition only. The
-[design guide](./DESIGN.md) defines message and lifecycle behavior, and the
+[advanced guide](./ADVANCED.md#processing-and-lifecycle) describes lifecycle behavior, and the
 [channel README](./README.md) describes the current implementation.
 
 ## Style
@@ -73,7 +73,6 @@ comment:
 ```
 
 Use the agent's configured emoji and fall back to `🤖` when it has none.
-[Lifecycle rules](./DESIGN.md#lifecycle-rules) govern raw comment preservation.
 
 A review feedback message groups its summary and selected findings under the
 verified reviewer identity and review link. Each finding retains its own permalink,
@@ -93,7 +92,7 @@ original location as current code.
 ```
 
 Use this card for the private `pull-request-opened` turn and the deterministic
-GitHub handoff. See [lifecycle rules](./DESIGN.md#lifecycle-rules) for scheduling,
+GitHub handoff. See [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
 session ownership, and publication.
 
 ## Implementation Card
@@ -169,7 +168,7 @@ naturally rather than imposing a fixed mention position.
 
 Use one concise final answer for an ordinary admitted comment, without a
 `To GitHub` wrapper or a second model-authored answer. The
-[turn contract](./DESIGN.md#turn-contract) owns its private/public mirroring.
+[security and lifecycle](./ADVANCED.md#security-and-lifecycle) reference describes its private/public mirroring.
 
 ## Private and Public Composition
 

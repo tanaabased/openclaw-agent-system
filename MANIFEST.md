@@ -7,13 +7,13 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
 - [Discovery](#discovery)
 - [Component configuration](#component-configuration)
 - [Configuration](#configuration)
-  - [`schema-version`](#schema-version)
   - [`agent`](#agent)
-  - [`models`](#models)
-  - [`memory`](#memory)
-  - [`environment`](#environment)
-  - [`backup`](#backup)
   - [`automations`](#automations)
+  - [`backup`](#backup)
+  - [`environment`](#environment)
+  - [`memory`](#memory)
+  - [`models`](#models)
+  - [`schema-version`](#schema-version)
   - [Setup](#setup)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
@@ -107,14 +107,6 @@ environment:
     - AGENT_EMAIL
 ```
 
-### `schema-version`
-
-| Type    | Required | Default |
-| ------- | -------- | ------- |
-| integer | yes      | `1`     |
-
-Identifies the manifest schema. Version `1` is the only accepted value.
-
 ### `agent`
 
 | Field         | Type                               | Required      | Default                  | Behavior                                                         |
@@ -146,156 +138,7 @@ Set `agent.runtime: codex` when a fresh OpenClaw installation's setup will bind
 the agent to Codex. This declaration selects the shared prerequisite; it does
 not install a model binding or pin a plugin version. Existing agent-specific or
 inherited `agentRuntime` bindings also select the prerequisite. An `openai/*`
-model name alone does not. EMORI and smutlord consumer migrations that establish
-Codex bindings during setup need this declaration before their first install;
-those workspace changes remain with their owning tasks.
-
-### `models`
-
-`models` is optional. Omitting it leaves the agent's existing model configuration
-untouched. When present, `default` is required; `low`, `medium`, and `high` are an
-additive work-tier group and must be declared together or omitted together.
-
-Each profile requires both fields:
-
-| Field    | Type                         | Required | Default | Behavior                                                      |
-| -------- | ---------------------------- | -------- | ------- | ------------------------------------------------------------- |
-| `effort` | `medium`, `high`, or `xhigh` | yes      | none    | Explicit profile effort, intersected with runtime support.    |
-| `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
-
-The [routing helper](./tools/model-routing/README.md) validates assessments and
-explicit selections against these profiles; it has no built-in model or effort
-defaults. Configuration generators can read `profiles.default` from `inspect`.
-
-Model refs cannot select an authentication profile. Runtime and credential
-configuration remain outside the manifest.
-
-OpenClaw's `agents.entries.<id>.models` map stores per-model metadata such as
-`agentRuntime`; it does not authorize selection. Selection is governed by the
-agent's effective `modelPolicy.allow`, which may come from the agent entry or
-`agents.defaults`.
-
-`install` applies declared models to the bound agent:
-
-- Sets the primary model and thinking effort from `default`.
-- Binds declared models to the agent's established runtime route without resolving credentials.
-- Extends a restrictive per-agent `modelPolicy.allow` only as needed, preserving inherited permissions. Unrestricted or matching wildcard policies need no repair.
-- Preserves global defaults, fallbacks, other agents, unrelated model settings, and existing sessions.
-
-> [!NOTE]
-> An incompatible or ambiguous runtime binding blocks installation. Removing
-> profiles later does not undo defaults or policy entries.
-
-`doctor` checks configuration, selection policy, model presence, and effort
-support without authentication or inference. OpenClaw owns runtime health.
-Explicit unavailability produces a warning; unknown availability is not failure.
-Inspection errors remain distinct from known unsupported models or efforts.
-
-Complete work tiers enable [GitHub issue model routing](channels/github/ADVANCED.md#model-routing)
-for new issue conversations. A default-only manifest keeps ordinary model behavior.
-
-For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-routing).
-
-### `memory`
-
-`memory` is optional. Omitting it leaves the bound agent's existing OpenClaw
-memory search configuration untouched. When present, `search.provider` is
-required:
-
-| Field      | Type                      | Required | Default | Behavior                                                                  |
-| ---------- | ------------------------- | -------- | ------- | ------------------------------------------------------------------------- |
-| `api-key`  | environment name          | no       | none    | Reads one declared Agent System environment binding; valid with `openai`. |
-| `model`    | string                    | no       | none    | Overrides OpenClaw's embedding model; valid only with `openai`.           |
-| `provider` | `none`, `local`, `openai` | yes      | none    | Selects keyword-only, local embedding, or OpenAI embedding search.        |
-
-`install` sets the bound agent's provider and fallback, plus the optional model
-and API-key reference, while preserving other memory settings and agents. The
-`none` provider retains keyword search. Configure `local` through OpenClaw before
-expecting semantic search:
-
-```sh
-openclaw models --agent tanaabot auth login --provider llama-cpp --method local
-```
-
-An OpenAI `api-key` becomes an agent-and-binding-scoped `SecretRef`. Use a
-declared dotenv file or stored 1Password credential so it survives restarts.
-Agent System resolves only that reference when OpenClaw loads its secret snapshot.
-
-> [!NOTE]
-> Source-linked installs use the checkout's built standalone provider because
-> OpenClaw cannot load plugin integrations from a `config` origin. Build before
-> installation; restart the Gateway after changing the provider form or binding.
-> An operator who can rewrite `openclaw.json` can copy the reference.
-
-Doctor preserves the memory database and checks readiness by provider:
-
-- `none`: keyword index.
-- `local`: local provider availability.
-- `openai`: the configured credential and one bounded embedding probe; an unrelated fallback credential cannot establish readiness.
-
-Authentication, permission, billing/quota, and transport failures omit upstream
-error bodies. Index identity and synchronization drift are separate findings.
-
-Use OpenClaw's explicit memory commands when you intend to mutate the index:
-
-```sh
-# inspect the bound agent without rebuilding its index.
-openclaw memory status --agent tanaabot --deep --json
-
-# rebuild only when doctor reports index drift and you intend the write.
-openclaw memory status --index --agent tanaabot
-```
-
-### `environment`
-
-| Field          | Type                    | Required | Default | Behavior                                                              |
-| -------------- | ----------------------- | -------- | ------- | --------------------------------------------------------------------- |
-| `dotenv`       | string or string list   | no       | none    | Ordered workspace-relative dotenv files.                              |
-| `op`           | string or string list   | no       | none    | Ordered 1Password Environment IDs merged after `set`.                 |
-| `path-prepend` | string or string list   | no       | none    | Ordered workspace-relative executable directories.                    |
-| `required`     | string list             | no       | none    | Names that fail complete environment resolution when absent or empty. |
-| `set`          | string or `from-op` map | no       | none    | Explicit values merged over dotenv values.                            |
-
-Schema-owned YAML keys use kebab-case. Environment names and user-defined
-identifiers remain literal and are never casing-converted. See
-[Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
-[Path](#path) for executable projection.
-
-### `backup`
-
-Defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
-Loading the manifest creates no backups.
-
-| Field                   | Type                         | Required | Default                 | Description                                                      |
-| ----------------------- | ---------------------------- | -------- | ----------------------- | ---------------------------------------------------------------- |
-| `backup.exclude`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns applied last; exclusions win.   |
-| `backup.git-ignore`     | boolean                      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
-| `backup.include`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
-| `backup.openclaw-state` | `auto`, `required`, or `off` | no       | `auto`                  | Capture an existing agent database, require it, or omit it.      |
-| `backup.output`         | string                       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
-
-```yaml
-backup:
-  output: .agent-system/backups
-  git-ignore: true
-  openclaw-state: auto
-  include:
-    - MEMORY.md
-    - memory/**
-    - DREAMS.md
-    - GOALS.md
-  exclude:
-    - scratch/**
-    - previous-backups/**
-```
-
-CLI options override manifest fields, which override defaults; there is no
-backup-specific environment layer. Include/exclude options replace their manifest
-lists; `--include=` and `--exclude=` clear them. Includes cannot override mandatory
-exclusions. Exclude previous custom destinations explicitly.
-
-See the [backup command](./CLI.md#openclaw-agent-system-backup-create) for coverage,
-destination restrictions, and sensitive-archive handling.
+model name alone does not.
 
 ### `automations`
 
@@ -413,8 +256,8 @@ creating its replacement. Old schedule history and conversation bindings remain.
 #### OpenClaw execution and ownership
 
 The Gateway must be running and the invoking operator must have native cron read
-and administration permissions. The adapter uses the public CLI transport tested
-with OpenClaw 2026.9.6. Unavailable or incompatible RPCs block reconciliation.
+and administration permissions. The adapter uses the public CLI transport;
+unavailable or incompatible RPCs block reconciliation.
 Model-facing Install and Doctor report that operator synchronization is required;
 they do not acquire operator transport authority.
 
@@ -423,8 +266,7 @@ installed workspace, declaration, ownership, enabled state, and synchronized has
 before issuing temporary agent authority. Plain `git` and `gh` use managed launchers;
 tool policy precedes invocation-scoped credentials. Arbitrary executables remain
 operator-authored host commands, with the same [containment boundary](./CLI.md#trust-boundary)
-as setup. Changes to command declarations require another Install; dependencies
-of an executable script are not recursively hashed.
+as setup. Changes to command declarations require another Install.
 
 Prompt jobs default to the owning agent in an independent isolated session. Omitted model
 and effort follow native agent defaults; explicit model and supported native
@@ -459,10 +301,10 @@ proof of delivery.
 
 | Form               | Example                                                           | Meaning                                |
 | ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
-| Recurring interval | `every 1 hour` or `{ every: 60 minutes }`                         | Elapsed-time recurrence.               |
-| Relative one-shot  | `in 1 hour` or `{ in: 60 minutes }`                               | Delay from initial activation.         |
 | Absolute one-shot  | `'2026-10-01T09:00:00-04:00'` or `{ at: '2026-10-01T13:00:00Z' }` | RFC 3339 timestamp, normalized to UTC. |
 | Cron               | `'0 9 * * 1-5'` or `{ cron: '0 9 * * 1-5' }`                      | Numeric five-field calendar schedule.  |
+| Recurring interval | `every 1 hour` or `{ every: 60 minutes }`                         | Elapsed-time recurrence.               |
+| Relative one-shot  | `in 1 hour` or `{ in: 60 minutes }`                               | Delay from initial activation.         |
 
 Durations use positive integers with matching singular/plural seconds, minutes,
 hours, or days (86,400 seconds). Timestamps require seconds and an explicit offset,
@@ -485,6 +327,159 @@ Formatting-only edits do not cause drift; prompt/script content and argv order d
 Only the selected runtime's overrides apply. Executable dependencies are not
 recursively hashed. Payload, timeout, and enabled-state edits preserve one-shot
 trigger identity; activation and completion state belong to reconciliation.
+
+### `backup`
+
+Defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
+Loading the manifest creates no backups.
+
+| Field                   | Type                         | Required | Default                 | Description                                                      |
+| ----------------------- | ---------------------------- | -------- | ----------------------- | ---------------------------------------------------------------- |
+| `backup.exclude`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns applied last; exclusions win.   |
+| `backup.git-ignore`     | boolean                      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
+| `backup.include`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
+| `backup.openclaw-state` | `auto`, `required`, or `off` | no       | `auto`                  | Capture an existing agent database, require it, or omit it.      |
+| `backup.output`         | string                       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
+
+```yaml
+backup:
+  output: .agent-system/backups
+  git-ignore: true
+  openclaw-state: auto
+  include:
+    - MEMORY.md
+    - memory/**
+    - DREAMS.md
+    - GOALS.md
+  exclude:
+    - scratch/**
+    - previous-backups/**
+```
+
+CLI options override manifest fields, which override defaults; there is no
+backup-specific environment layer. Include/exclude options replace their manifest
+lists; `--include=` and `--exclude=` clear them. Includes cannot override mandatory
+exclusions. Exclude previous custom destinations explicitly.
+
+See the [backup command](./CLI.md#openclaw-agent-system-backup-create) for coverage,
+destination restrictions, and sensitive-archive handling.
+
+### `environment`
+
+| Field          | Type                    | Required | Default | Behavior                                                              |
+| -------------- | ----------------------- | -------- | ------- | --------------------------------------------------------------------- |
+| `dotenv`       | string or string list   | no       | none    | Ordered workspace-relative dotenv files.                              |
+| `op`           | string or string list   | no       | none    | Ordered 1Password Environment IDs merged after `set`.                 |
+| `path-prepend` | string or string list   | no       | none    | Ordered workspace-relative executable directories.                    |
+| `required`     | string list             | no       | none    | Names that fail complete environment resolution when absent or empty. |
+| `set`          | string or `from-op` map | no       | none    | Explicit values merged over dotenv values.                            |
+
+Schema-owned YAML keys use kebab-case. Environment names and user-defined
+identifiers remain literal and are never casing-converted. See
+[Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
+[Path](#path) for executable projection.
+
+### `memory`
+
+`memory` is optional. Omitting it leaves the bound agent's existing OpenClaw
+memory search configuration untouched. When present, `search.provider` is
+required:
+
+| Field      | Type                      | Required | Default | Behavior                                                                  |
+| ---------- | ------------------------- | -------- | ------- | ------------------------------------------------------------------------- |
+| `api-key`  | environment name          | no       | none    | Reads one declared Agent System environment binding; valid with `openai`. |
+| `model`    | string                    | no       | none    | Overrides OpenClaw's embedding model; valid only with `openai`.           |
+| `provider` | `none`, `local`, `openai` | yes      | none    | Selects keyword-only, local embedding, or OpenAI embedding search.        |
+
+`install` sets the bound agent's provider and fallback, plus the optional model
+and API-key reference, while preserving other memory settings and agents. The
+`none` provider retains keyword search. Configure `local` through OpenClaw before
+expecting semantic search:
+
+```sh
+openclaw models --agent tanaabot auth login --provider llama-cpp --method local
+```
+
+An OpenAI `api-key` becomes an agent-and-binding-scoped `SecretRef`. Use a
+declared dotenv file or stored 1Password credential so it survives restarts.
+Agent System resolves only that reference when OpenClaw loads its secret snapshot.
+
+An operator who can rewrite `openclaw.json` can copy the reference. For linked
+checkouts, follow the [source-install rebuild and restart steps](./DEVELOPMENT.md#install-from-source)
+after changing the provider form or binding.
+
+Doctor preserves the memory database and checks readiness by provider:
+
+- `none`: keyword index.
+- `local`: local provider availability.
+- `openai`: the configured credential and one bounded embedding probe; an unrelated fallback credential cannot establish readiness.
+
+Authentication, permission, billing/quota, and transport failures omit upstream
+error bodies. Index identity and synchronization drift are separate findings.
+
+Use OpenClaw's explicit memory commands when you intend to mutate the index:
+
+```sh
+# inspect the bound agent without rebuilding its index.
+openclaw memory status --agent tanaabot --deep --json
+
+# rebuild only when doctor reports index drift and you intend the write.
+openclaw memory status --index --agent tanaabot
+```
+
+### `models`
+
+`models` is optional. Omitting it leaves the agent's existing model configuration
+untouched. When present, `default` is required; `low`, `medium`, and `high` are an
+additive work-tier group and must be declared together or omitted together.
+
+Each profile requires both fields:
+
+| Field    | Type                         | Required | Default | Behavior                                                      |
+| -------- | ---------------------------- | -------- | ------- | ------------------------------------------------------------- |
+| `effort` | `medium`, `high`, or `xhigh` | yes      | none    | Explicit profile effort, intersected with runtime support.    |
+| `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
+
+The [routing helper](./tools/model-routing/README.md) validates assessments and
+explicit selections against these profiles; it has no built-in model or effort
+defaults. Configuration generators can read `profiles.default` from `inspect`.
+
+Model refs cannot select an authentication profile. Runtime and credential
+configuration remain outside the manifest.
+
+OpenClaw's `agents.entries.<id>.models` map stores per-model metadata such as
+`agentRuntime`; it does not authorize selection. Selection is governed by the
+agent's effective `modelPolicy.allow`, which may come from the agent entry or
+`agents.defaults`.
+
+`install` applies declared models to the bound agent:
+
+- Sets the primary model and thinking effort from `default`.
+- Binds declared models to the agent's established runtime route without resolving credentials.
+- Extends a restrictive per-agent `modelPolicy.allow` only as needed, preserving inherited permissions. Unrestricted or matching wildcard policies need no repair.
+- Preserves global defaults, fallbacks, other agents, unrelated model settings, and existing sessions.
+
+> [!NOTE]
+> An incompatible or ambiguous runtime binding blocks installation. Removing
+> profiles later does not undo defaults or policy entries.
+
+`doctor` checks configuration, selection policy, model presence, and effort
+support without authentication or inference. OpenClaw owns runtime health.
+Explicit unavailability produces a warning; unknown availability is not failure.
+Inspection errors remain distinct from known unsupported models or efforts.
+
+Complete work tiers enable [GitHub issue model routing](channels/github/ADVANCED.md#model-routing)
+for new issue conversations. A default-only manifest keeps ordinary model behavior.
+
+For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-routing).
+
+### `schema-version`
+
+| Type    | Required | Default |
+| ------- | -------- | ------- |
+| integer | yes      | `1`     |
+
+Identifies the manifest schema. Version `1` is the only accepted value.
 
 ### Setup
 
@@ -694,24 +689,11 @@ To clone as the agent, first declare its [Git identity and SSH
 keys](./tools/git/README.md#configuration-reference) and [GitHub username, token,
 and public keys](./tools/github/README.md#configuration-reference). Supply host
 executables directly or install them in `setup-host`; credential sources and
-key files must be available before agent-bound setup. Then add:
-
-```yaml
-setup-agent:
-  steps:
-    - id: clone-project
-      runtimes: [openclaw]
-      check: test -d repos/project/.git
-      apply: |
-        gh api user --jq .login
-        mkdir -p repos
-        git clone git@github.com:your-org/project.git repos/project
-```
-
-Replace `your-org/project` with the target repository. Within agent scope,
-managed `gh` and `git` use the declared agent identities without operator-identity
-fallback. The process still runs as the installing OS user. This example requires
-OpenClaw's managed tools.
+key files must be available before agent-bound setup. The
+[setup example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/setup/README.md)
+exercises checked SSH cloning with OpenClaw's managed tools. They use the declared
+agent identities without operator-identity fallback; the process still runs as
+the installing OS user.
 
 ## Environment Resolution
 

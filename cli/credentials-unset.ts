@@ -1,7 +1,13 @@
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
-import { type CliOutput, type CliStyles, writeCliError, writeCliSummary } from './output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  writeCliError,
+  writeCliDiagnosticNotices,
+  writeCliSummary,
+} from './output.ts';
 import { formatDiagnostic } from '../core/logger.ts';
 
 export interface UnsetCredentialsAgentSystemOptions {
@@ -21,7 +27,11 @@ export default async function unsetCredentialsAgentSystem(
   options: UnsetCredentialsAgentSystemOptions,
 ): Promise<void> {
   if (options.credential !== 'op') {
-    writeCliError(options.output, `credentials: unsupported credential ${options.credential}`);
+    writeCliError(
+      options.output,
+      `credentials: unsupported credential ${options.credential}`,
+      options,
+    );
     options.setExitCode(1);
     return;
   }
@@ -29,15 +39,19 @@ export default async function unsetCredentialsAgentSystem(
   if (!loaded) return;
   const result = await options.credentialManager.unset(loaded.manifest.agent.id, options.storeId);
   if (result.gatewayInvalidation === 'pending') {
-    writeCliError(
-      options.output,
-      'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
-    );
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'warning',
+        message:
+          'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
+      },
+    ]);
   }
   if (result.status === 'invalid') {
     writeCliError(
       options.output,
       formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),
+      options,
     );
     options.setExitCode(1);
     return;
@@ -66,9 +80,11 @@ export default async function unsetCredentialsAgentSystem(
     options.styles,
   );
   if (result.unavailableStoreIds.length > 0) {
-    writeCliError(
-      options.output,
-      `credentials: unavailable stores were skipped: ${result.unavailableStoreIds.join(', ')}`,
-    );
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'warning',
+        message: `credentials: unavailable stores were skipped: ${result.unavailableStoreIds.join(', ')}`,
+      },
+    ]);
   }
 }

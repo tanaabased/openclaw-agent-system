@@ -97,6 +97,13 @@ grep -F 'setup was skipped' "$TMPDIR/setup-skip.stderr"
 test "$(wc -l < checked-runs | tr -d ' ')" = 1
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
 
+# should keep human setup warnings on stderr without contaminating primary results
+cd "$TMPDIR/setup-tanaabot"
+NO_COLOR=1 openclaw agent-system install --skip-setup --yes > "$TMPDIR/setup-human.stdout" 2> "$TMPDIR/setup-human.stderr"
+grep -F 'Warning' "$TMPDIR/setup-human.stderr"
+grep -F 'setup was skipped' "$TMPDIR/setup-human.stderr"
+if grep -F 'Warning' "$TMPDIR/setup-human.stdout"; then exit 1; fi
+
 # should preserve completed setup effects and stop later work after an apply failure
 mkdir -p "$TMPDIR/setup-failures"
 cp "$GITHUB_WORKSPACE/examples/setup/failures/agent.yaml" "$TMPDIR/setup-failures/agent.yaml"

@@ -13,7 +13,7 @@ commands and flags remain restricted to the reviewed surface. Older releases,
 prereleases, and a future 1.x release require a compatibility review.
 
 Standalone Codex keeps native host-authorized Google operations. Its Agent System
-Doctor and Install remain limited to Codex setup steps.
+Doctor and Install do not manage Google credentials; see [standalone Codex](../../CODEX.md).
 
 ## Configuration
 
@@ -54,44 +54,44 @@ passive discovery never resolve credentials.
 
 ### Environment and state
 
-The names below are a suggested binding convention, not extra native GoG inputs.
-Only the three credential values need secret storage.
+These example bindings come from the declared agent environment and need secret
+storage. Their names are conventions, not extra native GoG inputs.
 
-| Variable or setting                                                | Required                       | Source and precedence                                                                                             | Default                                     | Store in 1Password? |
-| ------------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------- |
-| `GOG_ACCOUNT`                                                      | no                             | Managed execution ignores inherited selection and supplies the resolved `google.account`, otherwise `agent.email` | resolved email                              | no                  |
-| `GOG_AUTH_MODE`                                                    | no                             | Managed execution fixes the authentication mode                                                                   | `stored`                                    | no                  |
-| `GOG_CLIENT`                                                       | no                             | Managed execution fixes the local label through `--client=agent-system`                                           | `agent-system`                              | no                  |
-| `GOG_CONFIG_DIR`, `GOG_DATA_DIR`, `GOG_STATE_DIR`, `GOG_CACHE_DIR` | no                             | Derived for each managed generation or invocation; inherited overrides are discarded                              | private subdirectories                      | no                  |
-| `GOG_CREDENTIALS_JSON_B64`                                         | yes, with the example bindings | Declared agent environment; decoded according to `credential-encoding`                                            | none                                        | yes                 |
-| `GOG_HOME`                                                         | no                             | Launching host environment wins over declared agent environment, then the derived per-agent home                  | private state root / agent ID / `tools/gog` | no                  |
-| `GOG_KEYRING_BACKEND`                                              | no                             | Managed execution fixes the backend; inherited values cannot redirect it                                          | `file`                                      | no                  |
-| `GOG_KEYRING_PASSWORD`                                             | yes, with the example binding  | Declared agent environment; supplied only to explicit credential consumers and GoG child processes                | none                                        | yes                 |
-| `GOG_TOKEN_JSON_B64`                                               | yes, with the example bindings | Declared agent environment; must match the expected account and OAuth client                                      | none                                        | yes                 |
+| Binding                    | Required                       | Default | Purpose                                                                 |
+| -------------------------- | ------------------------------ | ------- | ----------------------------------------------------------------------- |
+| `GOG_CREDENTIALS_JSON_B64` | yes, with the example bindings | none    | Client JSON, decoded according to `credential-encoding`.                |
+| `GOG_KEYRING_PASSWORD`     | yes, with the example binding  | none    | Supplied only to explicit credential consumers and GoG child processes. |
+| `GOG_TOKEN_JSON_B64`       | yes, with the example bindings | none    | Token JSON matching the expected account and OAuth client.              |
 
-Without a home override, Agent System uses
+Managed execution fixes `GOG_ACCOUNT` to the resolved `google.account` or
+`agent.email`, `GOG_AUTH_MODE` to `stored`, `GOG_CLIENT` to `agent-system`
+(through `--client=agent-system`), and `GOG_KEYRING_BACKEND` to `file`.
+`GOG_CONFIG_DIR`, `GOG_DATA_DIR`, `GOG_STATE_DIR`, and `GOG_CACHE_DIR` use private
+subdirectories; inherited directory, account, client, backend, access-token, and
+ADC overrides cannot redirect managed execution.
+
+Optional `GOG_HOME` selects the managed store directly: the launching host
+value wins over the declared agent environment, then the derived default.
+Without an override, the default is
 `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/tools/gog` when `XDG_CONFIG_HOME`
-is absolute, otherwise `$HOME/.config/tanaab/agent-system/<agent-id>/tools/gog`.
-A relative `XDG_CONFIG_HOME` makes the default state root unavailable. For agent
-`emori` with user home `/Users/emori` and no XDG override, the durable home is
-`/Users/emori/.config/tanaab/agent-system/emori/tools/gog`.
+is absolute, or `$HOME/.config/tanaab/agent-system/<agent-id>/tools/gog` when unset.
+A relative `XDG_CONFIG_HOME` makes the default state root unavailable.
+Use a separate absolute private directory per agent, outside workspaces and
+admitted worktrees. An ownership receipt prevents another agent from reusing it.
+The host override changes only the home location; it imports no host secrets
+and does not alter [environment-source precedence](../../MANIFEST.md#environment-resolution).
 
-A supplied `GOG_HOME` selects the managed store root directly. Use a separate
-absolute private directory per agent, outside workspaces and admitted worktrees.
-A receipt binds an overridden home to one agent; another agent cannot reuse it.
-For CI, set `GOG_HOME` to a dedicated directory under `runner.temp`. This narrow
-host override applies only to the home location; it does not import host secrets
-or replace the normal environment-source precedence. Individual GoG directory,
-access-token, and ADC overrides cannot bypass the managed store.
+Only explicit Install changes durable authentication state. Unchanged installs
+verify through a copy without reimporting; failed imports or identity checks
+preserve the active state. Competing installs report busy; retry after the
+current install finishes. Routine calls and Doctor use disposable private copies
+without repairing missing state or changing the host environment; their
+`GOG_HOME`, `HOME`, and directory variables point at the copy.
 
-Install stores encrypted generations under that root and activates one with
-`current.json`. Routine calls and Doctor use disposable private copies, so the
-child's `GOG_HOME`, `HOME`, and directory variables point at that copy; they do
-not change the host process's environment or runner home. The OAuth app/client
-can be shared across production agents. Each Google user needs their own consent
-and token export; each agent gets separate state and should get a separate keyring
-password. Client ID, client secret, and project ID need no additional bindings
-when the complete client JSON is provided.
+Agents can share an OAuth client, but each Google user needs separate consent
+and a token export. Each agent gets separate state and should get a separate
+keyring password. Complete client JSON needs no extra client ID, client secret,
+or project ID bindings.
 
 ## Per-agent onboarding
 
@@ -160,81 +160,29 @@ reports a live authenticated email check. The harmless service read also proves
 that the grant has the service permission. Calls need no interactive login after
 setup. GoG performs access-token refresh; Agent System does not implement OAuth.
 
-Only explicit Install reconciles durable state. An unchanged install verifies
-through a copy without reimporting; changed account/client/token/password imports
-into a new generation. Failed import or identity verification leaves the active
-generation intact. Competing installs for the same home fail with an actionable
-busy diagnostic; retry once the current install finishes. Ordinary calls never
-repair missing state. Credential consumers resolve the declared values explicitly;
-the existing secret resolver may cache them in process memory.
-
 After managed verification succeeds, remove the identified plaintext download and
 export and any no-longer-needed onboarding keyring. Retain the three secrets in
 1Password. External apps in Testing can have seven-day refresh-token expiry;
 follow the [upstream audience guidance](https://gogcli.sh/quickstart.html) rather
 than treating Testing as a permanent unattended setup.
 
-### Recover existing Emori credentials
+### Recover existing credentials
 
-After installing this updated Agent System version, reuse the saved Base64 values;
-valid saved authorizations require no new consent:
+Reuse valid saved authorizations with `credential-encoding: base64`; no new
+consent is needed. Confirm the agent ID/email, 1Password environment, and three
+binding names. Omit `google.account` only when `agent.email` is the intended
+account. Unset any old `GOG_HOME`, run `openclaw agent-system install --json`,
+then Doctor and a harmless managed read for an already-authorized service.
+A fresh encrypted store can use a new password without changing the Google grant;
+a token export's previous local label does not change its OAuth client.
 
-1. Confirm the manifest's agent ID/email, 1Password environment, and three binding
-   names. Set `credential-encoding: base64` and omit `google.account` only when
-   `agent.email` is the intended Google account.
-2. From Emori's workspace, unset the old shell `GOG_HOME`. Run
-   `openclaw agent-system install --json`. This imports the saved values into the
-   derived home using the fixed `agent-system` label; a token export's previous
-   local label does not change its actual OAuth client. A fresh encrypted store
-   can use a new password without changing the Google grant.
-3. Run Doctor, then a harmless managed read for an already authorized service.
-   Do not add Tasks or any other scope merely to perform recovery. If the grant
-   is revoked/expired or lacks identity access, redo consent for the needed scopes.
-4. Only after success, identify and remove old GoG-owned files from the workspace.
-   Do not delete generic `config` or `data` directories wholesale. Keep saved
-   credentials until the managed entrypoint works.
+Repeat consent only for revoked or expired grants or missing identity access;
+do not add service scopes merely for recovery. After verification, remove only
+identified obsolete GoG files. Do not delete generic `config` or `data` directories
+or discard working credentials before the managed entrypoint succeeds.
 
-### Test authorization
-
-Reuse Emori's Google account with a **separate test Cloud project and OAuth app**.
-No additional Workspace user license is needed. Name the app **Tanaab Agent System
-Test**, enable **Tasks API**, and create a Desktop client. For an organization-owned
-project and eligible Workspace users, use an Internal audience. An External app
-needs the appropriate test-user/publishing setup described upstream.
-
-Authorize only Tasks read-only plus the identity scopes GoG includes:
-
-```sh
-# use the native binary and a separate private staging home for the test app.
-export GOG_HOME="$HOME/.config/tanaab/agent-system/google-live/tools/gog/onboarding"
-mkdir -p "$GOG_HOME"
-"$GOG_BIN" --client agent-system auth credentials set "$CLIENT_JSON" --no-input
-"$GOG_BIN" --client agent-system auth add "$GOOGLE_EMAIL" --services tasks --readonly --force-consent
-"$GOG_BIN" --client agent-system auth tokens export "$GOOGLE_EMAIL" --out "$GOG_HOME/authorization.json"
-```
-
-Use the test client's JSON and a separate password, following the private-shell
-steps above. Verify that consent requests Tasks read access and identity, with no
-Drive, mail, or calendar access. [Google's `tasks.readonly` scope](https://developers.google.com/workspace/tasks/auth)
-allows reading all this user's task lists/tasks, not modifying them; it is not a
-per-list permission. A separate project avoids [combined authorization](https://developers.google.com/identity/protocols/oauth2/web-server#incrementalAuth)
-with the production app. The reviewed GoG version disables incremental inclusion
-when `--readonly` is selected.
-
-Put the four named values (`GOG_ACCOUNT`, `GOG_CREDENTIALS_JSON_B64`,
-`GOG_TOKEN_JSON_B64`, and `GOG_KEYRING_PASSWORD`) in the existing test 1Password environment
-`jglytdfegfggijqkalco2cxexa`, which is already used by repository 1Password tests.
-The repository secret `TANAAB_OP_TESTVAULT` supplies the service account; confirm it
-can read these environment values. The test job does not need Google passwords,
-`gcloud`, a model key, or extra project/client-ID/client-secret fields.
-
-The normal PR example matrix runs the
-[Google Tasks scenario](../../examples/google/README.md) on macOS and Linux. It
-imports into a fresh runner-temp `GOG_HOME`, verifies identity, confirms
-unchanged installation, and reads one task list through the managed tool.
-Assertions discard task data, and the ephemeral runner removes its store.
-The scenario runs after the test environment is populated; this guide does not
-claim live authorization has already passed.
+For repository CI authorization, follow the
+[Google Tasks example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/google/README.md#manual-authorization).
 
 ## `agent_system_google`
 
@@ -282,7 +230,7 @@ distinct statuses; disabled APIs and unreadable keyrings have separate diagnosti
 
 Use canonical command names; service and command aliases are not admitted. The
 reviewed flags are defined in [the static contract](./command-contract.ts). Unknown
-flags fail before credentials resolve. See the [upstream command index](https://github.com/openclaw/gogcli/tree/v0.42.0/docs/commands)
+flags fail before credentials resolve. See the [upstream command index](https://github.com/openclaw/gogcli/tree/main/docs/commands)
 for argument details.
 
 | Service  | Commands                                                                                                     |
@@ -312,6 +260,32 @@ attachment flags separately. `--values-json` accepts inline JSON; `@file` input 
 not admitted. Plain text file/stdin input works for Docs; Markdown processing is
 excluded because it can introduce additional file and process effects.
 
+## `openclaw agent-system tool gog`
+
+Run the [supported Google commands](#supported-commands) from an operator terminal
+using the selected agent's account and workspace.
+
+### Options
+
+| Option or argument   | Required | Default             | Description                                 |
+| -------------------- | -------- | ------------------- | ------------------------------------------- |
+| `--agent <id>`       | no       | workspace discovery | Select an installed agent's workspace.      |
+| `-- <GoG arguments>` | yes      | none                | Forward canonical GoG arguments after `--`. |
+
+### Usage
+
+```text
+openclaw agent-system tool gog [--agent <id>] -- <GoG arguments>
+```
+
+```sh
+# list task lists using the current workspace's configured account.
+openclaw agent-system tool gog -- tasks lists list --max 1 --readonly
+```
+
+The same command admission and filesystem boundaries apply as for
+[`agent_system_google`](#agent_system_google).
+
 ## `gog` and `AGENT_SYSTEM_GOG`
 
 The contextual `gog` shim uses the managed runtime inside an agent context and the
@@ -337,8 +311,7 @@ gog --agent-system
 "$AGENT_SYSTEM_GOG" gmail search 'is:unread' --max 10
 ```
 
-The [generic tool CLI](../../CLI.md) remains operator-only when invoked unbound.
-Private GoG state follows the [per-agent home contract](#environment-and-state). Routine calls use disposable private copies so GoG
-refresh, cache, and migration effects do not change durable authentication state.
+The [operator CLI](#openclaw-agent-system-tool-gog) remains operator-only when invoked unbound.
+Private GoG state follows the [per-agent home contract](#environment-and-state).
 The agents still share an OS user; these are practical context and identity
 boundaries, not complete operating-system isolation.

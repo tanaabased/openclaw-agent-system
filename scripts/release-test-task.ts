@@ -107,8 +107,11 @@ const environment = {
 };
 
 try {
-  await check('build the plugin runtime', () => run('bun', ['run', 'build']));
-  await check('validate plugin metadata', () => run('bun', ['run', 'plugin:check']));
+  // supplied archives must match the checkout already built and validated by the caller.
+  if (!suppliedArchivePath) {
+    await check('build the plugin runtime', () => run('bun', ['run', 'build']));
+    await check('validate plugin metadata', () => run('bun', ['run', 'plugin:check']));
+  }
 
   const { archivePath, packageResult } = await check(
     suppliedArchivePath
@@ -202,7 +205,6 @@ try {
     'bin/gog',
     'bin/agent-system-gog',
     'channels/github/ADVANCED.md',
-    'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',
     'skills/git-cli/agents/openai.yaml',
@@ -268,7 +270,7 @@ try {
   });
 
   const packageRoot = await check('extract the npm package archive', async () => {
-    const unpackedRoot = join(temporaryRoot, 'unpacked');
+    const unpackedRoot = join(temporaryRoot, 'plugin with spaces');
     await mkdir(unpackedRoot);
     await run('tar', ['-xzf', archivePath, '-C', unpackedRoot]);
     return join(unpackedRoot, 'package');
@@ -369,18 +371,19 @@ try {
   });
 
   await check('ship an executable Codex session hook', async () => {
-    const result = await run(
-      process.execPath,
-      [join(packageRoot, 'dist', 'codex', 'codex-runtime.js'), 'session-start'],
-      {
-        env: {
-          ...environment,
-          PLUGIN_DATA: join(temporaryRoot, 'codex-plugin-data'),
-          PLUGIN_ROOT: packageRoot,
-        },
-        input: `${JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup' })}\n`,
+    const hooks = JSON.parse(await readFile(join(packageRoot, 'hooks', 'hooks.json'), 'utf8')) as {
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    const command = hooks.hooks.SessionStart[0]?.hooks[0]?.command;
+    assert.ok(command, 'the packaged session hook must declare its command');
+    const result = await run('/bin/sh', ['-c', command], {
+      env: {
+        ...environment,
+        PLUGIN_DATA: join(temporaryRoot, 'codex-plugin-data'),
+        PLUGIN_ROOT: packageRoot,
       },
-    );
+      input: `${JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup' })}\n`,
+    });
     const response = JSON.parse(result.output) as {
       hookSpecificOutput?: { additionalContext?: string; hookEventName?: string };
     };
