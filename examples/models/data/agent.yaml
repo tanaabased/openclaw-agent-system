@@ -3,6 +3,7 @@ schema-version: 1
 agent:
   id: models-data
   name: Models Data
+  runtime: codex
 
 models:
   default:

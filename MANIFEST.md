@@ -117,7 +117,7 @@ environment:
 | `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
 | `id`          | string                             | yes           | none                     | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
 | `name`        | string or `from-environment` value | for `install` | none                     | Agent display name applied to OpenClaw by `install`.             |
-| `runtime`     | `codex`                            | no            | none                     | Declares Codex intent before fresh setup establishes a binding.  |
+| `runtime`     | `codex`                            | no            | none                     | Selects the Codex prerequisite and declared model runtime.       |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:
@@ -134,11 +134,12 @@ dollar-prefixed scalar in these fields remains literal.
 Identity fields do not configure tools by themselves; a tool may explicitly use
 them as defaults.
 
-Set `agent.runtime: codex` when a fresh OpenClaw installation's setup will bind
-the agent to Codex. This declaration selects the shared prerequisite; it does
-not install a model binding or pin a plugin version. Existing agent-specific or
-inherited `agentRuntime` bindings also select the prerequisite. An `openai/*`
-model name alone does not.
+Set `agent.runtime: codex` to select the shared Codex prerequisite. With `models`
+declared, `install` also creates agent-scoped Codex bindings for those profiles
+without an existing route or workspace routing patch. Without `models`, existing
+model bindings remain untouched. The declaration does not pin a plugin version.
+Existing agent-specific or inherited `agentRuntime` bindings also select the
+prerequisite. An `openai/*` model name alone does not.
 
 ### `automations`
 
@@ -444,8 +445,8 @@ The [routing helper](./tools/model-routing/README.md) validates assessments and
 explicit selections against these profiles; it has no built-in model or effort
 defaults. Configuration generators can read `profiles.default` from `inspect`.
 
-Model refs cannot select an authentication profile. Runtime and credential
-configuration remain outside the manifest.
+Model refs cannot select an authentication profile. Credential configuration
+remains outside the manifest.
 
 OpenClaw's `agents.entries.<id>.models` map stores per-model metadata such as
 `agentRuntime`; it does not authorize selection. Selection is governed by the
@@ -455,7 +456,7 @@ agent's effective `modelPolicy.allow`, which may come from the agent entry or
 `install` applies declared models to the bound agent:
 
 - Sets the primary model and thinking effort from `default`.
-- Binds declared models to the agent's established runtime route without resolving credentials.
+- Binds declared models to `agent.runtime` when present, otherwise to the agent's established runtime route, without resolving credentials.
 - Extends a restrictive per-agent `modelPolicy.allow` only as needed, preserving inherited permissions. Unrestricted or matching wildcard policies need no repair.
 - Preserves global defaults, fallbacks, other agents, unrelated model settings, and existing sessions.
 

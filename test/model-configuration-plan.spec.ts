@@ -36,6 +36,156 @@ function configWithModel(
 }
 
 describe('agent/model-configuration-plan', () => {
+  it('should bind every distinct profile to the declared runtime without consulting old routes', () => {
+    const profiles = {
+      default: { model: 'openai/next', effort: 'high' as const },
+      low: { model: 'openai/small', effort: 'medium' as const },
+      medium: { model: 'openai/next', effort: 'high' as const },
+      high: { model: 'openai/large', effort: 'xhigh' as const },
+    };
+    const unexpected = () => {
+      throw new Error('declared runtime must not depend on an existing route');
+    };
+    const declaredDependencies = {
+      ...dependencies,
+      resolveCliBackendDispatchEligibility: unexpected,
+      resolveDefaultModelForAgent: unexpected,
+    };
+    const configs: OpenClawConfig[] = [
+      { agents: { entries: { emori: {} } } },
+      {
+        agents: {
+          defaults: { thinkingDefault: 'medium' },
+          entries: {
+            emori: {
+              model: { primary: 'openai/previous', fallbacks: ['anthropic/fallback'] },
+              models: {
+                'openai/previous': { agentRuntime: { id: 'openclaw' } },
+                'openai/next': { alias: 'next', params: { serviceTier: 'default' } },
+              },
+              modelPolicy: { allow: ['openai/previous'] },
+            },
+            leia: { model: 'openai/previous' },
+          },
+        },
+      },
+    ];
+
+    for (const config of configs) {
+      const before = structuredClone(config);
+      const plan = createConfigurationPlan(
+        config,
+        'emori',
+        profiles,
+        declaredDependencies,
+        'codex',
+      );
+      assert.equal(plan.status, 'ready');
+      if (plan.status !== 'ready') continue;
+      assert.equal(plan.sourceRuntime, 'codex');
+      assert.equal(plan.changed, true);
+      const agent = plan.config.agents?.entries?.emori;
+      assert.deepEqual(agent?.model, {
+        primary: 'openai/next',
+        fallbacks: before.agents?.entries?.emori?.model ? ['anthropic/fallback'] : [],
+      });
+      assert.equal(agent?.thinkingDefault, 'high');
+      for (const value of ['openai/next', 'openai/small', 'openai/large']) {
+        assert.equal(agent?.models?.[value]?.agentRuntime?.id, 'codex');
+        assert.equal(agent?.modelPolicy?.allow?.includes(value), true);
+      }
+      assert.deepEqual(
+        agent?.models?.['openai/previous'],
+        before.agents?.entries?.emori?.models?.['openai/previous'],
+      );
+      assert.equal(
+        agent?.models?.['openai/next']?.alias,
+        before.agents?.entries?.emori?.models?.['openai/next']?.alias,
+      );
+      assert.deepEqual(
+        agent?.models?.['openai/next']?.params,
+        before.agents?.entries?.emori?.models?.['openai/next']?.params,
+      );
+      assert.deepEqual(plan.config.agents?.defaults, before.agents?.defaults);
+      assert.deepEqual(plan.config.agents?.entries?.leia, before.agents?.entries?.leia);
+      assert.deepEqual(config, before);
+
+      const repeated = createConfigurationPlan(
+        plan.config,
+        'emori',
+        profiles,
+        declaredDependencies,
+        'codex',
+      );
+      assert.equal(repeated.status, 'ready');
+      if (repeated.status === 'ready') {
+        assert.equal(repeated.changed, false);
+        assert.deepEqual(repeated.config, plan.config);
+      }
+    }
+  });
+
+  it('should retain default route inference when runtime is omitted', () => {
+    const config: OpenClawConfig = { agents: { entries: { emori: {} } } };
+    const plan = createConfigurationPlan(config, 'emori', models, {
+      ...dependencies,
+      resolveCliBackendDispatchEligibility: () => undefined,
+    });
+
+    assert.equal(plan.status, 'ready');
+    if (plan.status !== 'ready') return;
+    assert.equal(plan.sourceRuntime, 'openclaw');
+    assert.equal(
+      plan.config.agents?.entries?.emori?.models?.['openai/next']?.agentRuntime?.id,
+      'openclaw',
+    );
+  });
+
+  it('should reject explicit and inherited conflicts with the declared runtime without changing state', () => {
+    const configs: OpenClawConfig[] = [
+      {
+        agents: {
+          entries: { emori: { models: { 'openai/next': { agentRuntime: { id: 'openclaw' } } } } },
+        },
+      },
+      {
+        agents: {
+          defaults: { models: { 'openai/next': { agentRuntime: { id: 'openclaw' } } } },
+          entries: { emori: {} },
+        },
+      },
+      {
+        agents: {
+          entries: { emori: { models: { 'openai/*': { agentRuntime: { id: 'openclaw' } } } } },
+        },
+      },
+      {
+        agents: {
+          entries: { emori: { models: { 'openai/next': { agentRuntime: { id: 'auto' } } } } },
+        },
+      },
+      {
+        agents: { entries: { emori: {} } },
+        models: {
+          providers: {
+            openai: {
+              baseUrl: 'https://example.invalid',
+              agentRuntime: { id: 'openclaw' },
+              models: [],
+            },
+          },
+        },
+      },
+    ];
+
+    for (const config of configs) {
+      const before = structuredClone(config);
+      const plan = createConfigurationPlan(config, 'emori', models, dependencies, 'codex');
+      assert.equal(plan.status, 'conflict');
+      assert.deepEqual(config, before);
+    }
+  });
+
   it('should return a detached agent-only plan without changing the input snapshot', () => {
     const config: OpenClawConfig = {
       agents: {

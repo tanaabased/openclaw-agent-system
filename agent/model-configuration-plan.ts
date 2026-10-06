@@ -2,6 +2,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { configuredAgentValue } from '../core/configured-agents.ts';
 import type { AgentModelProfile, AgentModelsConfiguration } from '../manifest/models-schema.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 interface ModelRef {
   model: string;
@@ -125,9 +126,11 @@ function isDefaultRuntime(runtime: string): boolean {
 function resolveSourceRuntime(
   config: OpenClawConfig,
   agentId: string,
-  sourceModel: ModelRef,
   dependencies: ModelConfigurationDependencies,
+  declaredRuntime?: AgentManifest['agent']['runtime'],
 ): { runtime: string; status: 'ready' } | { message: string; status: 'conflict' } {
+  if (declaredRuntime !== undefined) return { runtime: declaredRuntime, status: 'ready' };
+  const sourceModel = dependencies.resolveDefaultModelForAgent({ agentId, config });
   const eligible = dependencies.resolveCliBackendDispatchEligibility({
     agentId,
     config,
@@ -258,6 +261,7 @@ export default function createConfigurationPlan(
   agentId: string,
   models: AgentModelsConfiguration,
   dependencies: ModelConfigurationDependencies,
+  declaredRuntime?: AgentManifest['agent']['runtime'],
 ): ModelConfigurationPlan {
   const agent = configuredAgentValue(config, agentId);
   if (!agent) {
@@ -267,8 +271,7 @@ export default function createConfigurationPlan(
     };
   }
 
-  const sourceModel = dependencies.resolveDefaultModelForAgent({ agentId, config });
-  const sourceResolution = resolveSourceRuntime(config, agentId, sourceModel, dependencies);
+  const sourceResolution = resolveSourceRuntime(config, agentId, dependencies, declaredRuntime);
   if (sourceResolution.status !== 'ready') return sourceResolution;
   const sourceRuntime = sourceResolution.runtime;
 
@@ -285,6 +288,7 @@ export default function createConfigurationPlan(
     const ref = parseModelRef(value);
     const explicitRuntime = configuredRuntime(config, agentId, ref);
     if (!explicitRuntime) {
+      if (declaredRuntime !== undefined) continue;
       const eligible = dependencies.resolveCliBackendDispatchEligibility({
         agentId,
         config,
@@ -294,7 +298,7 @@ export default function createConfigurationPlan(
       });
       if (eligible && !sameRuntime(eligible.provider, sourceRuntime)) {
         return {
-          message: `OpenClaw resolves ${value} through runtime ${eligible.provider} instead of the existing ${sourceRuntime} route.`,
+          message: `OpenClaw resolves ${value} through runtime ${eligible.provider} instead of the selected ${sourceRuntime} route.`,
           status: 'conflict',
         };
       }
@@ -302,13 +306,13 @@ export default function createConfigurationPlan(
     }
     if (isDefaultRuntime(explicitRuntime)) {
       return {
-        message: `OpenClaw model ${value} has an ambiguous ${explicitRuntime} runtime binding instead of the verified ${sourceRuntime} route.`,
+        message: `OpenClaw model ${value} has an ambiguous ${explicitRuntime} runtime binding instead of the selected ${sourceRuntime} route.`,
         status: 'conflict',
       };
     }
     if (!sameRuntime(explicitRuntime, sourceRuntime)) {
       return {
-        message: `OpenClaw model ${value} explicitly uses runtime ${explicitRuntime} instead of the existing ${sourceRuntime} route.`,
+        message: `OpenClaw model ${value} explicitly uses runtime ${explicitRuntime} instead of the selected ${sourceRuntime} route.`,
         status: 'conflict',
       };
     }
