@@ -9,6 +9,12 @@ Automation lookup inputs below are explicit fixtures. The installed runtime's
 they do not write scheduler files. The `run` and `runs` checks assert the explicit
 `automation-run-now-unsupported` and `automation-history-unavailable` results.
 
+The trusted `automationRuntime` exposes `threads-sync` under explicit installation
+authorization and a fresh plan digest. It creates per-automation conversations
+through `codex app-server` in the ambient profile, adds an attributed setup
+history item without model generation, and verifies resume through a fresh
+process. Repeated sync reuses those conversations.
+
 The prepare/cancel check retains a pending journal until saved-state verification
 and permits cancellation only while the failed write's target remains unchanged.
 Pending creates also require no new native IDs: an unmarked job could be a partial

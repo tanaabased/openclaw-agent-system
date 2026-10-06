@@ -94,11 +94,9 @@ without changing or running jobs. Headless Install returns
 
 The shared [`thread` declaration](./MANIFEST.md#persistent-conversations) creates
 stable **per-automation** conversations, even when jobs declare the same ID;
-these chats do not share context. Setup uses the native `codex app-server`
-protocol in the ambient profile, adds an attributed setup history item without
-model generation, and verifies resume through a fresh process. A compatible
-`codex` executable must be on `PATH`; unsupported protocol methods fail closed.
-The desktop app still owns every schedule.
+these chats do not share context. A compatible `codex` executable must be on
+`PATH`; unsupported protocol methods fail closed. The desktop app owns every
+schedule.
 
 The [manifest reference](./MANIFEST.md#automations) owns shared syntax and
 schedules. Codex supports this subset:
@@ -126,12 +124,6 @@ prove persistence, not successful execution. Run-now, native occurrence history,
 and execution/delivery telemetry are unavailable; a separately requested manual
 task has its own history and does not prove native scheduling.
 
-The trusted `automationRuntime` exposes `threads-sync` for conversation setup
-under explicit installation authorization and a fresh plan digest. Its `sync`
-route returns the plan for authorized native schedule writes; it does not write
-scheduler files. See the [Codex example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex/README.md#automation-checks)
-for the internal planning and recovery commands.
-
 ### Ownership and Recovery
 
 Agent System owns jobs through markers and a private non-secret ledger. Native
@@ -148,7 +140,7 @@ no reconciliation is running before removing only the stale Agent System `.lock`
 directory. Never repair native scheduler files or delete the ownership ledger.
 
 See the [Codex example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex/README.md#automation-checks)
-for headless planning and recovery checks.
+for conversation setup, headless planning, and recovery checks.
 
 ## Development
 

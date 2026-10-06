@@ -155,35 +155,12 @@ automations:
   - id: backup
     runtimes: [openclaw]
     schedule: every 24 hours
-    run: [sh, ./backup.sh, tanaabased/big-test-bucket, backups]
+    run: [openclaw, agent-system, backup, create, --json]
 ```
 
-The example `backup.sh` requires `jq`, a pre-existing release tag, and managed
-GitHub permissions for its upload. Configure [backup selection](./MANIFEST.md#backup)
-and [GitHub policy](./tools/github/README.md) in the owning manifest. Every failed
-step stops the sequence before local pruning:
-
-```sh
-#!/bin/sh
-set -eu
-repository=$1
-tag=$2
-archive=$(openclaw agent-system backup create --json | jq -er .archive)
-openclaw agent-system backup verify "$archive" --json
-gh release upload "$tag" "$archive" --repo "$repository"
-download=$(mktemp -d)
-trap 'rm -rf "$download"' EXIT HUP INT TERM
-name=$(basename "$archive")
-gh release download "$tag" --repo "$repository" --pattern "$name" --dir "$download"
-cmp "$archive" "$download/$name"
-openclaw agent-system backup verify "$download/$name" --json
-openclaw agent-system backup prune --keep 10 --json
-```
-
-Upload acceptance alone is insufficient: download, byte comparison, and archive
-verification must succeed before pruning. This example does not create a release
-or promise remote retention. Codex can run an explicitly authored prompt invoking
-a script, but that remains model-backed and follows its documented limitations.
+Configure [backup selection](./MANIFEST.md#backup), then use the
+[backup commands](#openclaw-agent-system-backup-create) for verification and
+retention. For Codex automation support, see the [supported fields](./CODEX.md#repository-automations).
 
 ## `openclaw agent-system backup create`
 

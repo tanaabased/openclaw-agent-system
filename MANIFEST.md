@@ -405,11 +405,9 @@ An OpenAI `api-key` becomes an agent-and-binding-scoped `SecretRef`. Use a
 declared dotenv file or stored 1Password credential so it survives restarts.
 Agent System resolves only that reference when OpenClaw loads its secret snapshot.
 
-> [!NOTE]
-> Source-linked installs use the checkout's built standalone provider because
-> OpenClaw cannot load plugin integrations from a `config` origin. Build before
-> installation; restart the Gateway after changing the provider form or binding.
-> An operator who can rewrite `openclaw.json` can copy the reference.
+An operator who can rewrite `openclaw.json` can copy the reference. For linked
+checkouts, follow the [source-install rebuild and restart steps](./DEVELOPMENT.md#install-from-source)
+after changing the provider form or binding.
 
 Doctor preserves the memory database and checks readiness by provider:
 
@@ -692,24 +690,11 @@ To clone as the agent, first declare its [Git identity and SSH
 keys](./tools/git/README.md#configuration-reference) and [GitHub username, token,
 and public keys](./tools/github/README.md#configuration-reference). Supply host
 executables directly or install them in `setup-host`; credential sources and
-key files must be available before agent-bound setup. Then add:
-
-```yaml
-setup-agent:
-  steps:
-    - id: clone-project
-      runtimes: [openclaw]
-      check: test -d repos/project/.git
-      apply: |
-        gh api user --jq .login
-        mkdir -p repos
-        git clone git@github.com:your-org/project.git repos/project
-```
-
-Replace `your-org/project` with the target repository. Within agent scope,
-managed `gh` and `git` use the declared agent identities without operator-identity
-fallback. The process still runs as the installing OS user. This example requires
-OpenClaw's managed tools.
+key files must be available before agent-bound setup. The
+[setup example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/setup/README.md)
+exercises checked SSH cloning with OpenClaw's managed tools. They use the declared
+agent identities without operator-identity fallback; the process still runs as
+the installing OS user.
 
 ## Environment Resolution
 
