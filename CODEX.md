@@ -81,6 +81,14 @@ chat in that same workspace. Supply a fresh native exact-thread read; this adapt
 accepts active, idle, running, or completed status and rejects other statuses.
 It neither creates a replacement chat nor binds to the installer's conversation.
 
+The shared [`thread` declaration](./MANIFEST.md#persistent-conversations) creates
+stable **per-automation** conversations here, even when several jobs declare the
+same ID. These chats do not share context. Conversation setup uses the native
+`codex app-server` protocol in the ambient profile: it adds an attributed setup
+history item without model generation and verifies resume through a fresh process.
+The compatible native `codex` executable must be available on `PATH`; unsupported
+protocol methods fail closed. The desktop app still owns every schedule.
+
 | Setting              | Supported behavior                                                                                                                                                                                                                                                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Payload              | Recurring prompts, including prompts explicitly asking a model to run a script. Zero-model command declarations are rejected.                                                                                                                                                                                                                           |
@@ -89,7 +97,7 @@ It neither creates a replacement chat nor binds to the installer's conversation.
 | Timezone             | `native` only; explicit zones are unsupported. The adapter does not promise a timezone override.                                                                                                                                                                                                                                                        |
 | One-shots            | Unsupported until native anchor and completion persistence are proven.                                                                                                                                                                                                                                                                                  |
 | Model and effort     | Independent jobs copy omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit manifest overrides. Supported effort values are checked; the native app remains authoritative for model availability and valid model/effort combinations. Later default changes appear as drift. |
-| Thread overrides     | Existing chats retain their model and effort; specifying either override on a heartbeat is rejected.                                                                                                                                                                                                                                                    |
+| Thread overrides     | Persistent chats retain their model and effort; specifying either override on a heartbeat is rejected.                                                                                                                                                                                                                                                  |
 | Limits and telemetry | Native concurrency, retry, catch-up, and timeout semantics; explicit `timeout-seconds` is rejected. Execution and delivery telemetry are reported as unavailable.                                                                                                                                                                                       |
 
 The adapter uses ambient host credentials and permissions. It never resolves
@@ -121,7 +129,8 @@ then remove only that stale Agent System `.lock` directory. Never repair native
 scheduler files or delete the ownership ledger to force a sync.
 
 The trusted `automationRuntime` also accepts `list` and `sync` with the same
-project/thread JSON inputs as `plan`. Both inspect desired/native inventory; `sync`
+project/thread JSON inputs as `plan`. `threads-sync` additionally takes the fresh
+plan digest and reconciles conversations only, within explicit installation authorization. Both inspect desired/native inventory; `sync`
 returns the plan for Install's authorized native write sequence. It does not apply
 headless scheduler writes. `automations --help` documents the internal routes.
 `run` and `runs` accept `{ "id": "manifest-id" }` and exit 1 with respectively

@@ -1,4 +1,4 @@
-import { createRequire } from 'node:module';
+import properLockfile from 'proper-lockfile';
 
 import nodeErrorCode from '../utils/node-error-code.ts';
 import type { PrivateStateLockGuard } from './private-state-lock-context.ts';
@@ -33,8 +33,6 @@ interface ProperLockfile {
     },
   ): Promise<() => Promise<void>>;
 }
-
-const properLockfile = createRequire(import.meta.url)('proper-lockfile') as ProperLockfile;
 
 /** Acquire an atomic cross-process lease without exposing the lock library to callers. */
 export default async function acquirePrivateStateFileLock(

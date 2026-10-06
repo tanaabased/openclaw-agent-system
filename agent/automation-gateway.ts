@@ -1,8 +1,14 @@
-import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
+
+import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
+import type { AutomationGatewayDiagnostic } from './automation-gateway-diagnostic.ts';
 
 export type AutomationGateway = (
   method:
+    | 'sessions.resolve'
+    | 'sessions.list'
+    | 'sessions.create'
+    | 'sessions.patch'
     | 'cron.list'
     | 'cron.get'
     | 'cron.add'
@@ -14,7 +20,10 @@ export type AutomationGateway = (
 ) => Promise<Record<string, unknown>>;
 
 export class AutomationError extends Error {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly diagnostic?: AutomationGatewayDiagnostic,
+  ) {
     super(`Automation operation failed (${code}).`);
   }
 }
@@ -112,15 +121,26 @@ export type AutomationGatewayCaller = typeof callGatewayFromCli;
 export function createAutomationGateway(call: AutomationGatewayCaller): AutomationGateway {
   return async (method, params) => {
     assertPrivateStateLocksHeld();
-    const readOnly = !['cron.add', 'cron.update', 'cron.run'].includes(method);
+    const readOnly = ![
+      'cron.add',
+      'cron.update',
+      'cron.run',
+      'sessions.create',
+      'sessions.patch',
+    ].includes(method);
     try {
       return await call(method, { timeout: '10000' }, params, {
         progress: false,
         scopes: [readOnly ? 'operator.read' : 'operator.admin'],
         ...(readOnly ? { sharedStateMode: 'read-only' as const } : {}),
       });
-    } catch {
-      throw new AutomationError('automation-gateway-unavailable');
+    } catch (error) {
+      const { default: automationGatewayDiagnostic } =
+        await import('./automation-gateway-diagnostic.ts');
+      throw new AutomationError(
+        'automation-gateway-unavailable',
+        automationGatewayDiagnostic(method, error),
+      );
     }
   };
 }

@@ -14,6 +14,7 @@ import acquirePrivateStateFileLock, {
 import abortableDelay from '../../utils/abortable-delay.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
+import GitCommandError from './command-error.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 import type { GitWorktreeLayout } from './worktree-layout.ts';
@@ -110,7 +111,7 @@ function validateIdentifier(value: string, label: string): void {
 }
 
 function requireGitSuccess(command: string, response: GitWorktreeGitResult): GitWorktreeGitResult {
-  if (response.exitCode !== 0) throw new Error(`Git ${command} failed.`);
+  if (response.exitCode !== 0) throw new GitCommandError(command, response);
   return response;
 }
 

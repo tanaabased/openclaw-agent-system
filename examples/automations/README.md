@@ -178,6 +178,36 @@ fi
 openclaw-aimock evidence --scenario automations --expected-evidence "$GITHUB_WORKSPACE/examples/automations/expected-evidence.json"
 ```
 
+The following paused jobs verify native persistent routing and duplicate-title
+separation without extra model calls.
+
+```bash
+# should share explicit ids while keeping matching titles separate
+set -euo pipefail
+cd "$TMPDIR/automation-agent"
+rm -f threads-ready
+cp "$GITHUB_WORKSPACE/examples/automations/threads.yaml" automations.yaml
+openclaw agent-system automations sync --json | tee "$TMPDIR/automation-threads-sync.json" | jq -e '.status == "synchronized"'
+openclaw agent-system automations list --json | tee threads-before.json | jq -e '[.jobs[] | select(.id | startswith("shared-")) | .routing] | length == 2 and .[0] == .[1] and (.[0] | startswith("session:agent:"))'
+jq -e '([.jobs[] | select(.id == "shared-builds" or .id == "separate-review") | .routing] | unique | length) == 2' threads-before.json
+openclaw agent-system automations sync --json | tee "$TMPDIR/automation-threads-resync.json" | jq -e 'select(.status == "synchronized") | all(.outcomes[]; .status == "unchanged")'
+openclaw gateway call sessions.list --params '{"agentId":"automation-tanaabot","archived":"all"}' --json | jq -e '[.sessions[] | select(.displayName == "Project activity")] | length == 2'
+touch threads-ready
+
+# should preserve persistent routing through a gateway restart
+set -euo pipefail
+cd "$TMPDIR/automation-agent"
+if ! test -f threads-ready; then
+  echo "Named conversation setup failed; see the preceding sync diagnostics." >&2
+  exit 1
+fi
+openclaw-gateway stop
+OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
+openclaw agent-system automations sync --json | tee "$TMPDIR/automation-threads-restart-sync.json" | jq -e 'select(.status == "synchronized") | all(.outcomes[]; .status == "unchanged")'
+openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, routing}]' > threads-after.json
+jq -S '[.jobs[] | {id, routing}]' threads-before.json | diff - threads-after.json
+```
+
 ## Cleanup
 
 ```bash

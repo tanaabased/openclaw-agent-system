@@ -7,6 +7,7 @@ import {
   listCodexAutomations,
   codexAutomationRunGap,
   prepareCodexAutomation,
+  syncCodexAutomationThreads,
 } from './codex-automations.ts';
 import { CodexAutomationError } from './codex-automation-state.ts';
 import codexModelRouting from './codex-model-routing.ts';
@@ -229,7 +230,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const action = args[1];
     if (action === '--help') {
       process.stdout.write(
-        'Usage: automations <list|sync|run|runs|inspect|plan|prepare|acknowledge|cancel> --plugin-data <path>\nRequests are JSON on stdin; run and runs require id. Sync plans native app writes; run-now and execution/delivery history are unavailable.\n',
+        'Usage: automations <list|sync|run|runs|inspect|plan|threads-sync|prepare|acknowledge|cancel> --plugin-data <path>\nRequests are JSON on stdin; run and runs require id. Sync plans native app writes; run-now and execution/delivery history are unavailable.\n',
       );
       return;
     }
@@ -242,6 +243,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         'inspect',
         'plan',
         'prepare',
+        'threads-sync',
         'acknowledge',
         'cancel',
       ].includes(action ?? '')
@@ -278,7 +280,9 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       return;
     }
     if (typeof request.digest !== 'string') throw new Error('expected an approved plan digest');
-    if (action === 'prepare')
+    if (action === 'threads-sync')
+      writeJson(await syncCodexAutomationThreads(pluginData, request.digest, inputs));
+    else if (action === 'prepare')
       writeJson(await prepareCodexAutomation(pluginData, request.digest, inputs));
     else if (action === 'acknowledge')
       writeJson(await acknowledgeCodexAutomation(pluginData, request.digest, request.receipt));

@@ -31,10 +31,15 @@ const overrideSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const automationThreadSchema = Type.Object(
+  { id: Type.Optional(textSchema), name: Type.Optional(textSchema) },
+  { additionalProperties: false, minProperties: 1 },
+);
 const jobSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])' }),
     enabled: Type.Optional(Type.Boolean()),
+    thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
     runtimes: Type.Optional(
       Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
         minItems: 1,
@@ -86,6 +91,7 @@ export interface AgentAutomation {
   payload:
     | { kind: 'command'; run: NormalizedCommand }
     | { kind: 'prompt'; prompt: string | { file: string } };
+  thread?: { id?: string; name?: string };
   timeoutSeconds?: number;
   overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
 }
@@ -155,6 +161,12 @@ export default function normalizeAutomations(
       );
       continue;
     }
+    if (payload.kind === 'command' && Object.hasOwn(job, 'thread')) {
+      diagnostics.push(
+        automationDiagnostic('manifest-automation-command-thread', `${path}/thread`),
+      );
+      continue;
+    }
     const normalizedPayload =
       payload.kind === 'command'
         ? { kind: 'command' as const, run: normalizeCommand(payload.run, payload.shell ?? 'sh') }
@@ -188,9 +200,38 @@ export default function normalizeAutomations(
       runtimes: [...(job.runtimes ?? (['openclaw', 'codex'] as const))].sort(),
       schedule,
       payload: normalizedPayload,
+      ...(job.thread == null
+        ? {}
+        : {
+            thread:
+              typeof job.thread === 'string'
+                ? { name: job.thread.trim() }
+                : Object.fromEntries(
+                    Object.entries(job.thread).map(([key, value]) => [key, value.trim()]),
+                  ),
+          }),
       ...(job['timeout-seconds'] === undefined ? {} : { timeoutSeconds: job['timeout-seconds'] }),
       overrides: structuredClone(job.overrides ?? {}),
     });
+  }
+  const sharedNames = new Map<string, string>();
+  for (const [index, job] of automations.entries()) {
+    if (
+      !job.runtimes.includes('openclaw') ||
+      job.overrides.openclaw?.target !== undefined ||
+      !job.thread?.id ||
+      !job.thread.name
+    )
+      continue;
+    const previous = sharedNames.get(job.thread.id);
+    if (previous !== undefined && previous !== job.thread.name)
+      diagnostics.push(
+        automationDiagnostic(
+          'manifest-automation-thread-name-conflict',
+          `/automations/${index}/thread/name`,
+        ),
+      );
+    sharedNames.set(job.thread.id, job.thread.name);
   }
   return diagnostics.length
     ? { status: 'invalid', diagnostics }

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+[[ "${GITHUB_ACTIONS:-}" == true ]] || exit 2
+agent_id="${1:?agent id required}"
+stage="${2:?stage required}"
+case "$stage" in
+  registered | clone-failed | readback-failed) ;;
+  *) exit 2 ;;
+esac
+
+# fingerprints identify the fixture without printing key material or comments.
+key_path="$HOME/.ssh/big-test-bucket-ssh"
+public_fingerprint="$(ssh-keygen -lf "$key_path.pub" 2>/dev/null | awk '{print $2}')" || public_fingerprint=unavailable
+private_fingerprint="$(ssh-keygen -y -P '' -f "$key_path" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')" || private_fingerprint=unavailable
+registered=unknown
+if public_key="$(awk '{print $1 " " $2}' "$key_path.pub" 2>/dev/null)"; then
+  if keys="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent "$agent_id" -- api --paginate /user/keys --jq '.[].key' 2>/dev/null)"; then
+    registered=false
+    if printf '%s\n' "$keys" | awk '{print $1 " " $2}' | grep -Fqx -- "$public_key"; then
+      registered=true
+    fi
+  fi
+fi
+printf 'ssh-evidence stage=%s publicFingerprint=%s privateFingerprint=%s registered=%s\n' \
+  "$stage" "$public_fingerprint" "$private_fingerprint" "$registered" >&2

@@ -34,6 +34,7 @@ openclaw agent-system install
 export GIT_SSH_PRIVATE_KEY="$(cat "$HOME/.ssh/big-test-bucket-ssh")"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-git-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/big-test-bucket-ssh.key-id"
+openclaw-ssh-evidence tanaabot registered
 ```
 
 ## Testing
@@ -97,7 +98,10 @@ cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 # should prepare github worktrees with the configured ssh transport
 export GIT_SSH_PRIVATE_KEY="$(cat "$HOME/.ssh/big-test-bucket-ssh")"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system ssh-transport origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-ssh-worktree.json" | grep -F '"status": "created"'
+if ! OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system ssh-transport origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-ssh-worktree.json" | grep -F '"status": "created"'; then
+  openclaw-ssh-evidence tanaabot clone-failed
+  exit 1
+fi
 cd "$(jq -r .path "$TMPDIR/agent-system-ssh-worktree.json")"
 "$GITHUB_WORKSPACE/bin/git" remote get-url origin | grep -Fx 'git@github.com:tanaabased/openclaw-agent-system.git'
 ```

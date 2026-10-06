@@ -63,15 +63,20 @@ export default async function automationOperation(
       error instanceof AutomationError || error instanceof AgentSystemLifecycleError
         ? error.code
         : 'automation-operation-failed';
+    const failure = error instanceof AgentSystemLifecycleError ? error.cause : error;
+    const diagnostic = failure instanceof AutomationError ? failure.diagnostic : undefined;
     const result = {
       status: 'failed',
       code,
+      ...(diagnostic ? { diagnostic } : {}),
       ...(error instanceof AgentSystemLifecycleError && error.progress
         ? { progress: error.progress }
         : {}),
     };
     if (options.json) writeCliJson(options.output, result);
     options.output.writeStderr(`Automation operation stopped (${code}).\n`);
+    if (diagnostic)
+      options.output.writeStderr(`Gateway diagnostic: ${JSON.stringify(diagnostic)}\n`);
     options.setExitCode(1);
   }
 }

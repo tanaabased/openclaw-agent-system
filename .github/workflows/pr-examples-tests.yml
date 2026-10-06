@@ -112,4 +112,9 @@ jobs:
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash
-        run: openclaw-diagnostics
+        run: |
+          if [[ -d "${OPENCLAW_WORKSPACE:-}" ]]; then
+            openclaw-diagnostics
+          else
+            echo "No OpenClaw workspace was created; see the scenario failure output above."
+          fi
