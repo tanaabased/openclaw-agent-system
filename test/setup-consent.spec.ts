@@ -323,7 +323,7 @@ describe('cli/setup-consent', () => {
     assert.deepEqual(test.events, ['validate', 'install:skip']);
     assert.equal(JSON.parse(test.stdout.join('')).warnings[0].code, 'setup-skipped');
     assert.equal(test.stderr.length, 1);
-    assert.match(test.stderr.join(''), /Warning.*skipped/u);
+    assert.match(test.stderr.join(''), /skipped/u);
     assert.doesNotMatch(test.stderr.join(''), /private-script/u);
   });
 

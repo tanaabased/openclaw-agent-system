@@ -196,7 +196,7 @@ describe('cli/install', () => {
     assert.deepEqual(rows.slice(-2), ['', 'workspace  /workspace']);
   });
 
-  it('should render completed warnings beneath the results table', async () => {
+  it('should keep completed warnings on stderr and primary results on stdout', async () => {
     const { diagnostics, output, run } = createHarness({
       install: {
         outcomes: [
@@ -221,11 +221,9 @@ describe('cli/install', () => {
 
     await run();
 
-    assert.deepEqual(diagnostics, []);
-    assert.match(
-      output.join(''),
-      /workspace {2}\/workspace\n\nNotices\n\n⚠ Warning\n {2}The existing/u,
-    );
+    assert.match(output.join(''), /workspace {2}\/workspace/u);
+    assert.doesNotMatch(output.join(''), /Warning/u);
+    assert.match(diagnostics.join(''), /⚠ Warning\n {2}The existing/u);
   });
 
   it('should report explicit unchanged outcomes for every component', async () => {
@@ -292,10 +290,8 @@ describe('cli/install', () => {
         { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
       ]);
       assert.deepEqual(harness.exitCodes, []);
-      assert.deepEqual(
-        harness.diagnostics,
-        json ? ['path: Manual follow-up. code=manual-follow-up\n'] : [],
-      );
+      if (json)
+        assert.deepEqual(harness.diagnostics, ['path: Manual follow-up. code=manual-follow-up\n']);
       const text = harness.output.join('');
       assert.equal(text.includes('manual-follow-up'), json);
       if (json) {
@@ -311,7 +307,7 @@ describe('cli/install', () => {
         for (const { message } of installed.outcomes) {
           assert.ok(text.replace(/\s+/g, ' ').includes(message));
         }
-        assert.match(text, /Notices\n\n⚠ Warning\n {2}Manual follow-up\./u);
+        assert.match(harness.diagnostics.join(''), /Notices\n\n⚠ Warning\n {2}Manual follow-up\./u);
       }
       assert.deepEqual(installed, original);
     }
@@ -344,9 +340,8 @@ describe('cli/install', () => {
 
     await run();
 
-    const text = output.join('');
-    assert.deepEqual(diagnostics, []);
-    assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('Notices'));
+    const text = diagnostics.join('');
+    assert.doesNotMatch(output.join(''), /Notices/u);
     const normalized = text.replace(/\s+/g, ' ');
     assert.match(normalized, /ℹ Notice Operator recognition is channel-wide OpenClaw/u);
     assert.match(normalized, /⚠ Warning Running Gateway access for pirog is unverified\./u);
@@ -507,6 +502,26 @@ describe('cli/install', () => {
     assert.equal(result.blocked.code, 'op-credential-not-stored');
     assert.deepEqual(result.outcomes, []);
     assert.deepEqual(result.unattempted, [{ component: 'lifecycle' }]);
+  });
+
+  it('should preserve warning severity alongside a manifest failure', async () => {
+    const harness = createHarness({
+      manifest: {
+        status: 'invalid',
+        scope: { workspaceDir: '/workspace' },
+        path: '/workspace/agent.yaml',
+        diagnostics: [
+          { severity: 'warning', code: 'manifest-warning', message: 'Retain this warning.' },
+        ],
+      },
+    });
+    await harness.run();
+    assert.match(harness.diagnostics.join(''), /Error/u);
+    assert.match(harness.diagnostics.join(''), /Warning/u);
+    assert.match(harness.diagnostics.join(''), /manifest-warning/u);
+    assert.deepEqual(harness.output, []);
+    assert.deepEqual(harness.calls.install, []);
+    assert.deepEqual(harness.exitCodes, [1]);
   });
 
   it('should not install an invalid workspace manifest', async () => {

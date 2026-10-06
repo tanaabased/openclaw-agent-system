@@ -192,7 +192,27 @@ export function writeCliNotices(
   styles?: CliStyles,
   terminalColumns?: number,
 ): void {
-  writeCliLines(output, renderCliNotices(notices, styles, terminalColumns));
+  writeCliDiagnostics(output, renderCliNotices(notices, styles, terminalColumns));
+}
+
+export interface CliDiagnosticOptions {
+  output: CliOutput;
+  json?: boolean;
+  styles?: CliStyles;
+  terminalColumns?: number;
+}
+
+/** preserve machine diagnostics while presenting human diagnostics on stderr. */
+export function writeCliDiagnosticNotices(
+  options: CliDiagnosticOptions,
+  notices: readonly CliNotice[],
+): void {
+  writeCliDiagnostics(
+    options.output,
+    options.json
+      ? notices.map(({ message }) => message)
+      : renderCliNotices(notices, options.styles, options.terminalColumns),
+  );
 }
 
 export function writeCliJson(output: CliOutput, value: unknown): void {

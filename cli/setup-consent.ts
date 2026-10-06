@@ -11,10 +11,16 @@ import type {
 } from '../manifest/setup-schema.ts';
 import setupStepApplies from '../agent/setup-runtime.ts';
 import { selectedSetupPhases, type InstallSetupOptions } from '../agent/install-options.ts';
-import { createCliStyles, type CliOutput, type CliStyles } from './output.ts';
+import {
+  createCliStyles,
+  writeCliDiagnosticNotices,
+  type CliOutput,
+  type CliStyles,
+} from './output.ts';
 
 export interface SetupConsentOptions extends InstallSetupOptions {
   runtime: AgentSetupRuntime;
+  json?: boolean;
   setup?: AgentSetupConfiguration;
   setupHost?: AgentSetupConfiguration;
   workspaceDir: string;
@@ -43,19 +49,28 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
   if (!options.setup && !options.setupHost) return true;
   const { skipSetupHost, skipSetupAgent } = selectedSetupPhases(options);
   if (skipSetupHost && skipSetupAgent) {
-    options.output.writeStderr(
-      'Warning: setup was skipped; no setup checks or applies will run.\n',
-    );
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'warning',
+        message: 'setup was skipped; no setup checks or applies will run.',
+      },
+    ]);
     return true;
   }
   if (skipSetupHost && options.setupHost)
-    options.output.writeStderr(
-      'Warning: host setup was skipped; no host setup checks or applies will run.\n',
-    );
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'warning',
+        message: 'host setup was skipped; no host setup checks or applies will run.',
+      },
+    ]);
   if (skipSetupAgent && options.setup)
-    options.output.writeStderr(
-      'Warning: agent setup was skipped; no agent setup checks or applies will run.\n',
-    );
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'warning',
+        message: 'agent setup was skipped; no agent setup checks or applies will run.',
+      },
+    ]);
   const applicable = [
     ...(!skipSetupHost ? (options.setupHost?.steps ?? []) : []).map((step) => ({
       step,
