@@ -3,6 +3,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { Logger } from '../../../core/logger.ts';
 import type { AgentModelsConfiguration } from '../../../manifest/models-schema.ts';
+import assignmentStage from './assignment-stage.ts';
 import { initializeModelRouting } from './model-routing.ts';
 import type ModelRoutingService from './model-routing-service.ts';
 import { githubNotificationAssignmentCard } from '../events/assignment.ts';
@@ -214,7 +215,7 @@ export default class GitHubNotificationAssignmentSessionService {
     if (!assignmentSupport.session) {
       throw new Error('The GitHub lifecycle does not support assignment sessions.');
     }
-    const config = await this.#dependencies.readConfig();
+    const config = await assignmentStage('initialization', () => this.#dependencies.readConfig());
     const conversationId = githubNotificationConversationId({
       itemNumber: input.item.number,
       lifecycleId: input.item.lifecycleId,
@@ -230,40 +231,46 @@ export default class GitHubNotificationAssignmentSessionService {
     if (!assignmentEventId || assignmentEventId !== input.item.assignmentEventNodeId) {
       throw new Error('The GitHub assignment turn is missing its intake identity.');
     }
-    await this.#initializeConversation(input, conversationId);
+    await assignmentStage('initialization', () =>
+      this.#initializeConversation(input, conversationId),
+    );
     const current = await this.#conversation(input, conversationId);
     if (current.conversation.assignmentResponse) {
       if (current.conversation.assignmentResponse.status === 'pending') {
-        await this.#publish(input.agentId, conversationId, input.signal);
+        await assignmentStage('publication', () =>
+          this.#publish(input.agentId, conversationId, input.signal),
+        );
       }
       const reconciled = await this.#conversation(input, conversationId);
       if (
         reconciled.conversation.assignmentResponse?.status === 'published' &&
         reconciled.conversation.implementation?.status === 'pending'
       ) {
-        const contextInput = await this.#context(input);
+        const contextInput = await assignmentStage('context', () => this.#context(input));
         const projection = assignmentSupport.session.project(contextInput);
-        await this.#implement({
-          assignmentEventId,
-          config,
-          conversationId,
-          lifecycleContext: input.lifecycle.context.project(contextInput),
-          projectionTimestamp: projection.timestamp,
-          repository,
-          route,
-          session: input,
-        });
+        await assignmentStage('implementation', () =>
+          this.#implement({
+            assignmentEventId,
+            config,
+            conversationId,
+            lifecycleContext: input.lifecycle.context.project(contextInput),
+            projectionTimestamp: projection.timestamp,
+            repository,
+            route,
+            session: input,
+          }),
+        );
       } else if (reconciled.conversation.implementation?.status === 'delivery-pending') {
-        await this.#deliver(input, conversationId, repository);
+        await assignmentStage('delivery', () => this.#deliver(input, conversationId, repository));
       } else if (handoffPending(reconciled.conversation)) {
-        await this.#reconcileHandoff(input);
+        await assignmentStage('handoff', () => this.#reconcileHandoff(input));
       }
       return sessionOutcome((await this.#conversation(input, conversationId)).conversation);
     }
     const pendingRouting = Boolean(
       current.conversation.modelRouting && !current.conversation.modelRouting.decision,
     );
-    let contextInput = await this.#context(input, pendingRouting);
+    let contextInput = await assignmentStage('context', () => this.#context(input, pendingRouting));
     if (pendingRouting && contextInput.itemContext) {
       await this.#dependencies.modelRouting?.assess(
         current.state,
@@ -271,7 +278,7 @@ export default class GitHubNotificationAssignmentSessionService {
         input.signal,
       );
       // Reauthorize after inference; a slow assessment must not retain stale assignment authority.
-      contextInput = await this.#context(input);
+      contextInput = await assignmentStage('context', () => this.#context(input));
     }
     const projection = assignmentSupport.session.project(contextInput);
     const lifecycleContext = input.lifecycle.context.project(contextInput);
@@ -292,7 +299,9 @@ export default class GitHubNotificationAssignmentSessionService {
       },
       timestamp: projection.timestamp,
     });
-    await this.#checkpointActiveTurn(input, conversationId, assignmentEventId);
+    await assignmentStage('checkpoint', () =>
+      this.#checkpointActiveTurn(input, conversationId, assignmentEventId),
+    );
     const recipients =
       input.item.lifecycleId === 'issue'
         ? await this.#dependencies.recipientGuidance?.forItem({
@@ -311,28 +320,36 @@ export default class GitHubNotificationAssignmentSessionService {
       route.agentId,
       recipients,
     );
-    const turn = await this.#dependencies.coordinator.run({
-      afterRecord: () =>
-        this.#dependencies.acknowledgments.publish({
-          agentId: input.agentId,
-          item: input.item,
-          modeId: input.mode.policy.id,
-          ...(input.signal === undefined ? {} : { signal: input.signal }),
-          workspaceDir: input.workspaceDir,
-        }),
-      config,
-      contract,
-      createIfMissing: true,
-      ctxPayload,
-      executionSurface: input.executionSurface,
-      messageId,
-      route,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      sourceId: assignmentEventId,
-    });
-    await this.#checkpointResponse(input, conversationId, assignmentEventId, turn.publication);
+    const turn = await assignmentStage('execution', () =>
+      this.#dependencies.coordinator.run({
+        afterRecord: () =>
+          assignmentStage('acknowledgment', () =>
+            this.#dependencies.acknowledgments.publish({
+              agentId: input.agentId,
+              item: input.item,
+              modeId: input.mode.policy.id,
+              ...(input.signal === undefined ? {} : { signal: input.signal }),
+              workspaceDir: input.workspaceDir,
+            }),
+          ),
+        config,
+        contract,
+        createIfMissing: true,
+        ctxPayload,
+        executionSurface: input.executionSurface,
+        messageId,
+        route,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        sourceId: assignmentEventId,
+      }),
+    );
+    await assignmentStage('checkpoint', () =>
+      this.#checkpointResponse(input, conversationId, assignmentEventId, turn.publication),
+    );
     if (turn.publication.status === 'candidate') {
-      await this.#publish(input.agentId, conversationId, input.signal);
+      await assignmentStage('publication', () =>
+        this.#publish(input.agentId, conversationId, input.signal),
+      );
     }
     this.#dependencies.logger.info(
       `github-notifications: assignment response prepared agent=${route.agentId} item=${repository}#${input.item.number} publication=${turn.publication.status}`,
@@ -375,10 +392,12 @@ export default class GitHubNotificationAssignmentSessionService {
   }
 
   async #implement(input: AssignmentImplementationInput): Promise<void> {
-    await this.#checkpointImplementationActiveTurn(
-      input.session,
-      input.conversationId,
-      input.assignmentEventId,
+    await assignmentStage('checkpoint', () =>
+      this.#checkpointImplementationActiveTurn(
+        input.session,
+        input.conversationId,
+        input.assignmentEventId,
+      ),
     );
     const recipients =
       input.session.item.lifecycleId === 'issue' && input.session.mode.policy.id === 'work'
@@ -400,41 +419,47 @@ export default class GitHubNotificationAssignmentSessionService {
     );
     const messageId = `implementation:${input.assignmentEventId}`;
     const body = githubNotificationImplementationCard(input.session.item.number);
-    const turn = await this.#dependencies.coordinator.run({
-      config: input.config,
-      contract,
-      createIfMissing: true,
-      ctxPayload: modelTurnContext({
-        body,
-        includeLifecycleContextInBody: true,
-        lifecycleContext: input.lifecycleContext,
+    const turn = await assignmentStage('execution', () =>
+      this.#dependencies.coordinator.run({
+        config: input.config,
+        contract,
+        createIfMissing: true,
+        ctxPayload: modelTurnContext({
+          body,
+          includeLifecycleContextInBody: true,
+          lifecycleContext: input.lifecycleContext,
+          messageId,
+          repository: `${input.repository}#${input.session.item.number}`,
+          route: input.route,
+          sender: {
+            from: 'agent-system:github-notifications',
+            id: 'agent-system',
+            isBot: true,
+            isSelf: false,
+            label: 'Agent System',
+          },
+          timestamp: input.projectionTimestamp,
+        }),
+        executionSurface: input.session.executionSurface,
         messageId,
-        repository: `${input.repository}#${input.session.item.number}`,
         route: input.route,
-        sender: {
-          from: 'agent-system:github-notifications',
-          id: 'agent-system',
-          isBot: true,
-          isSelf: false,
-          label: 'Agent System',
-        },
-        timestamp: input.projectionTimestamp,
+        ...(input.session.signal === undefined ? {} : { signal: input.session.signal }),
+        sourceId: input.assignmentEventId,
       }),
-      executionSurface: input.session.executionSurface,
-      messageId,
-      route: input.route,
-      ...(input.session.signal === undefined ? {} : { signal: input.session.signal }),
-      sourceId: input.assignmentEventId,
-    });
-    await this.#checkpointImplementationReadyForDelivery(
-      input.session,
-      input.conversationId,
-      input.assignmentEventId,
+    );
+    await assignmentStage('checkpoint', () =>
+      this.#checkpointImplementationReadyForDelivery(
+        input.session,
+        input.conversationId,
+        input.assignmentEventId,
+      ),
     );
     this.#dependencies.logger.info(
       `github-notifications: assignment implementation prepared agent=${input.route.agentId} item=${input.repository}#${input.session.item.number} publication=${turn.publication.status}`,
     );
-    await this.#deliver(input.session, input.conversationId, input.repository);
+    await assignmentStage('delivery', () =>
+      this.#deliver(input.session, input.conversationId, input.repository),
+    );
   }
 
   async #deliver(
@@ -442,41 +467,50 @@ export default class GitHubNotificationAssignmentSessionService {
     conversationId: string,
     repository: string,
   ): Promise<void> {
-    if (!input.worktree) {
+    const worktree = input.worktree;
+    if (!worktree) {
       throw new Error('The GitHub assignment delivery worktree is missing.');
     }
-    const receipt = await this.#dependencies.deliveries.deliver({
-      agentId: input.agentId,
-      item: input.item,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      workspaceDir: input.workspaceDir,
-      worktree: input.worktree,
-    });
-    await this.#dependencies.handoffs.checkpoint({
-      agentId: input.agentId,
-      executionSurface: input.executionSurface,
-      item: input.item,
-      lifecycle: input.lifecycle,
-      pullRequest: receipt,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      workspaceDir: input.workspaceDir,
-    });
-    await this.#checkpointImplementationCompleted(input, conversationId);
-    await this.#reconcileHandoff(input);
+    const receipt = await assignmentStage('delivery', () =>
+      this.#dependencies.deliveries.deliver({
+        agentId: input.agentId,
+        item: input.item,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        workspaceDir: input.workspaceDir,
+        worktree,
+      }),
+    );
+    await assignmentStage('handoff', () =>
+      this.#dependencies.handoffs.checkpoint({
+        agentId: input.agentId,
+        executionSurface: input.executionSurface,
+        item: input.item,
+        lifecycle: input.lifecycle,
+        pullRequest: receipt,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        workspaceDir: input.workspaceDir,
+      }),
+    );
+    await assignmentStage('checkpoint', () =>
+      this.#checkpointImplementationCompleted(input, conversationId),
+    );
+    await assignmentStage('handoff', () => this.#reconcileHandoff(input));
     this.#dependencies.logger.info(
       `github-notifications: assignment delivery completed agent=${input.agentId} item=${repository}#${input.item.number} pr=${receipt.pullRequestNumber}`,
     );
   }
 
   async #reconcileHandoff(input: GitHubNotificationAssignmentSessionInput): Promise<void> {
-    await this.#dependencies.handoffs.reconcile({
-      agentId: input.agentId,
-      executionSurface: input.executionSurface,
-      item: input.item,
-      lifecycle: input.lifecycle,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      workspaceDir: input.workspaceDir,
-    });
+    await assignmentStage('handoff', () =>
+      this.#dependencies.handoffs.reconcile({
+        agentId: input.agentId,
+        executionSurface: input.executionSurface,
+        item: input.item,
+        lifecycle: input.lifecycle,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        workspaceDir: input.workspaceDir,
+      }),
+    );
   }
 
   async #conversation(

@@ -48,6 +48,7 @@ openclaw-github-notifications wait-route \
 # should register only the generated public key for tanaabot
 cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-retirement-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
+openclaw-ssh-evidence notification-data registered
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"

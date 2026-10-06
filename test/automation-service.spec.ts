@@ -170,6 +170,10 @@ describe('agent/automation-service', () => {
         return sessions.has(key) ? { ok: true, key, agentId: 'tanaabot' } : { ok: false };
       if (method === 'sessions.list') return { sessions: [...sessions.values()] };
       if (method === 'sessions.create') {
+        assert.equal(Object.hasOwn(params, 'idempotencyKey'), false);
+        assert.equal(params.agentId, 'tanaabot');
+        assert.equal(params.cwd, root);
+        assert.match(key, /^agent:tanaabot:automation:/u);
         sessions.set(key, { key, sessionId: 'durable-id', workspaceDir: root });
         if (loseResponse) {
           loseResponse = false;

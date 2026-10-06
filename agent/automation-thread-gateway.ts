@@ -77,7 +77,6 @@ export default function automationThreadGateway(
       if (!(await lookup(key)))
         await request('sessions.create', {
           key,
-          idempotencyKey: key,
           agentId: context.agentId,
           cwd: context.workspaceDir,
         });
