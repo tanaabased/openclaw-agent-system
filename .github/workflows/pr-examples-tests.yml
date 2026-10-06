@@ -69,10 +69,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Prepare release-shaped build
-        uses: tanaabased/prepare-release-action@v1
+        uses: tanaabased/actions/prepare-release@v1
         with:
           version: dev
-          sync: false
           commands: |
             version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
