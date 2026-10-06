@@ -34,6 +34,7 @@
 ## Required Reading
 
 - Before editing or auditing documentation, read and apply [Documentation Design](./DOCUMENTATION.md), including its change gate and protected README positioning.
+- Before changing CLI output, read [CLI Presentation](./cli/PRESENTATION.md). Use the shared palette and command presentation boundary; never print command-owned diagnostics directly or add a second message section.
 - Before optimization assessments or changes to an accepted optimization decision, read and apply [Optimization Guidance](./.github/OPTIMIZATION.md).
 
 ## Identity and configuration

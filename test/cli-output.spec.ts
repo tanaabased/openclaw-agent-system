@@ -187,12 +187,13 @@ describe('cli/output', () => {
 
     assert.deepEqual(lines, [
       '',
-      'Notices',
+      'Messages',
       '',
       'ℹ Notice',
       '  Channel-wide operator',
       '  recognition remains subject to',
       '  tool policy.',
+      '',
       '⚠ Warning',
       '  Reload the Gateway, then',
       '  verify a fresh assignment.',
@@ -208,6 +209,7 @@ describe('cli/output', () => {
     assert.equal(ansis.strip(lines[3] ?? ''), 'ℹ Notice');
     assert.equal(lines[4], '  Information remains readable.');
     assert.notEqual(lines[3], ansis.strip(lines[3] ?? ''));
+    assert.equal(lines[1], '\u001b[1mMessages\u001b[22m');
   });
   it('should render red errors with neutral guidance at narrow widths and honor no-color', () => {
     const notices = [
@@ -238,7 +240,7 @@ describe('cli/output', () => {
     const colored = renderCliNotices(notices, createCliStyles({ FORCE_COLOR: '1' }), 120);
     assert.ok(colored.some((line) => line.includes('✖ Error') && line.includes('\u001b[31m')));
     assert.ok(
-      colored.some((line) => line.includes('Cannot reconcile') && line.includes('\u001b[31m')),
+      colored.some((line) => line.includes('Cannot reconcile') && !line.includes('\u001b[')),
     );
     assert.ok(
       colored.includes('  Unattempted work: models. Fix configuration then rerun install.'),

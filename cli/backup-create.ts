@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import type WorkspaceBackupService from '../agent/backup-service.ts';
 import { BackupError } from '../agent/backup-types.ts';
 import type { BackupConfiguration } from '../manifest/backup-schema.ts';
@@ -15,7 +16,7 @@ import {
 import { writeCliJson, writeCliSummary } from './output.ts';
 
 /** create or preview one archive using the existing CLI output and trusted command binding. */
-export default async function backupCreate(
+async function backupCreate(
   options: BackupCommandContext &
     BackupCliOutput & {
       service: WorkspaceBackupService;
@@ -94,3 +95,5 @@ export default async function backupCreate(
     writeBackupFailure(options, error);
   }
 }
+
+export default presentCliCommand(backupCreate);

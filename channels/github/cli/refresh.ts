@@ -1,3 +1,4 @@
+import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
@@ -48,7 +49,7 @@ function refreshOptions(options: RefreshNotificationsAgentSystemOptions) {
 }
 
 /** Run one bounded notification intake cycle from a one-shot CLI process. */
-export default async function refreshNotificationsAgentSystem(
+async function refreshNotificationsAgentSystem(
   options: RefreshNotificationsAgentSystemOptions,
 ): Promise<void> {
   let parsed;
@@ -181,3 +182,5 @@ export default async function refreshNotificationsAgentSystem(
   }
   if (result.status !== 'completed') options.setExitCode(1);
 }
+
+export default presentCliCommand(refreshNotificationsAgentSystem);

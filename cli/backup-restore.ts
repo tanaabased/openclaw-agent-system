@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import { resolve } from 'node:path';
 
 import type WorkspaceBackupService from '../agent/backup-service.ts';
@@ -11,7 +12,7 @@ import {
 import { writeCliJson, writeCliSummary } from './output.ts';
 
 /** restore is an operator-only inspection action and never selects a live agent. */
-export default async function backupRestore(
+async function backupRestore(
   options: BackupCommandContext &
     BackupCliOutput & { service: WorkspaceBackupService; archive: string; target: string },
 ): Promise<void> {
@@ -68,3 +69,5 @@ export default async function backupRestore(
     writeBackupFailure(options, error);
   }
 }
+
+export default presentCliCommand(backupRestore);

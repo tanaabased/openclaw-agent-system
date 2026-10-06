@@ -110,6 +110,7 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
       `${styles.action(S_STEP_SUBMIT)} Install workspace ${styles.field('"')}${styles.bold(workspace.slice(1, -1))}${styles.field('"')} with these setup steps:`,
     ),
     ...applicable.flatMap(({ step, stage }) => [
+      '',
       wrap(
         `${stage === 'setup-host' ? styles.action(`${stage}:`) : styles.accent(`${stage}:`)} ${styles.bold(step.id)}`,
         2,
@@ -120,7 +121,7 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
       wrap(`apply ${styles.field(`(${describeCommand(step.apply)})`)}`, 4),
     ]),
   ];
-  options.output.writeStderr(`${lines.join('\n')}\n`);
+  options.output.writeStderr(`\n${lines.join('\n')}\n\n`);
   try {
     const prompt = options.prompt ?? createClackPrompter(process.stderr).confirm;
     const answer = await prompt({

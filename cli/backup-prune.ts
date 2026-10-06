@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import {
   BackupPruneError,
   type BackupPruneResult,
@@ -14,7 +15,7 @@ import { type BackupCliOutput, writeBackupFailure } from './backup-output.ts';
 import { writeCliError, writeCliJson, writeCliSummary } from './output.ts';
 
 /** prune selected local archives after checking caller authority and destination ownership. */
-export default async function backupPrune(
+async function backupPrune(
   options: BackupCommandContext &
     BackupCliOutput & {
       service: WorkspaceBackupService;
@@ -119,3 +120,5 @@ export default async function backupPrune(
     } else writeBackupFailure(options, error);
   }
 }
+
+export default presentCliCommand(backupPrune);

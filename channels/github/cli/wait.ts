@@ -1,3 +1,4 @@
+import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
@@ -65,7 +66,7 @@ function waitOptions(options: WaitNotificationsAgentSystemOptions) {
 }
 
 /** Wait for one semantic notification checkpoint with optional one-shot intake refresh. */
-export default async function waitNotificationsAgentSystem(
+async function waitNotificationsAgentSystem(
   options: WaitNotificationsAgentSystemOptions,
 ): Promise<void> {
   let parsed;
@@ -111,3 +112,5 @@ export default async function waitNotificationsAgentSystem(
   }
   if (result.status !== 'completed') options.setExitCode(1);
 }
+
+export default presentCliCommand(waitNotificationsAgentSystem);

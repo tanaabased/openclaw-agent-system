@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
@@ -18,7 +19,7 @@ export interface ValidateCredentialsAgentSystemOptions {
 }
 
 /** Validate an OP credential against every OP resource declared by the manifest. */
-export default async function validateCredentialsAgentSystem(
+async function validateCredentialsAgentSystem(
   options: ValidateCredentialsAgentSystemOptions,
 ): Promise<void> {
   if (options.credential !== 'op') {
@@ -74,3 +75,5 @@ export default async function validateCredentialsAgentSystem(
     options.styles,
   );
 }
+
+export default presentCliCommand(validateCredentialsAgentSystem);

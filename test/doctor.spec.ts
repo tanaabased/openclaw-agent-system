@@ -29,6 +29,7 @@ describe('cli/doctor', () => {
     for (const json of [false, true]) {
       const output: string[] = [];
       const diagnostics: string[] = [];
+      const events: string[] = [];
       const exitCodes: number[] = [];
       const calls: unknown[] = [];
       const warnedManifest: AgentManifestLoadResult = {
@@ -54,8 +55,14 @@ describe('cli/doctor', () => {
           },
         },
         output: {
-          writeStderr: (value) => diagnostics.push(value),
-          writeStdout: (value) => output.push(value),
+          writeStderr: (value) => {
+            diagnostics.push(value);
+            events.push('diagnostics');
+          },
+          writeStdout: (value) => {
+            output.push(value);
+            events.push('result');
+          },
         },
         setExitCode: (code) => exitCodes.push(code),
         styles: createCliStyles(json ? { FORCE_COLOR: '3' } : { NO_COLOR: '1', FORCE_COLOR: '3' }),
@@ -67,6 +74,7 @@ describe('cli/doctor', () => {
       ]);
       assert.deepEqual(exitCodes, [1]);
       assert.equal(diagnostics.length, 1);
+      assert.deepEqual(events, ['result', 'diagnostics']);
       assert.ok(diagnostics[0]!.includes('code=manifest-warning'));
       assert.equal(output.length, 1);
       const text = output.join('');
@@ -77,6 +85,7 @@ describe('cli/doctor', () => {
       } else {
         const rows = text
           .split('\n')
+          .map((row) => row.trim())
           .filter((row) => /^\S+\s+(blocked|warning|drift|manual|healthy)\s/.test(row));
         assert.deepEqual(
           rows.map((row) => row.split(/\s+/).slice(0, 2)),

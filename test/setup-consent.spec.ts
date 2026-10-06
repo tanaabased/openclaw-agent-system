@@ -126,15 +126,21 @@ describe('cli/setup-consent', () => {
     assert.equal(ansis.strip(preview), plain.stderr.join(''));
     assert.equal(plain.stderr.join('').includes('\u001b'), false);
     assert.equal(
-      plain.stderr.join('').replace(/^[^ ]+ /u, ''),
+      plain.stderr
+        .join('')
+        .trimStart()
+        .replace(/^[^ ]+ /u, ''),
       [
         'Install workspace "/workspace" with these setup steps:',
+        '',
         '  setup-host: brew-dependencies',
         '    check (argv, 600s: ["brew","list"])',
         '    apply (argv, 600s: ["brew","install","jq"])',
+        '',
         '  setup-agent: default',
         '    check (zsh, 600s: "test -e private-marker")',
         '    apply (zsh, 600s: "echo private-script")',
+        '',
         '',
       ].join('\n'),
     );

@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import {
   type CliOutput,
@@ -20,9 +21,7 @@ export interface ValidateAgentSystemOptions {
 }
 
 /** Discover and validate one workspace manifest without mutating OpenClaw state. */
-export default async function validateAgentSystem(
-  options: ValidateAgentSystemOptions,
-): Promise<void> {
+async function validateAgentSystem(options: ValidateAgentSystemOptions): Promise<void> {
   const result = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
@@ -73,3 +72,5 @@ export default async function validateAgentSystem(
     formatManifestDiagnostics(result).map(({ level, message }) => ({ severity: level, message })),
   );
 }
+
+export default presentCliCommand(validateAgentSystem);

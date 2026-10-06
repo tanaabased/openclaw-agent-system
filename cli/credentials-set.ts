@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialInput from '../credentials/op-input.ts';
@@ -27,9 +28,7 @@ export interface SetCredentialsAgentSystemOptions {
 }
 
 /** Validate and persist an OP service-account token from one explicit or interactive source. */
-export default async function setCredentialsAgentSystem(
-  options: SetCredentialsAgentSystemOptions,
-): Promise<void> {
+async function setCredentialsAgentSystem(options: SetCredentialsAgentSystemOptions): Promise<void> {
   if (options.credential !== 'op') {
     writeCliError(
       options.output,
@@ -103,3 +102,5 @@ export default async function setCredentialsAgentSystem(
     options.styles,
   );
 }
+
+export default presentCliCommand(setCredentialsAgentSystem);

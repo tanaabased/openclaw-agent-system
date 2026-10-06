@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
 import {
   type CliOutput,
@@ -45,7 +46,7 @@ function writeHuman(output: CliOutput, view: EnvironmentView, styles?: CliStyles
 }
 
 /** Inspect Agent System environment metadata without exposing values. */
-export default async function envAgentSystem(options: EnvAgentSystemOptions): Promise<void> {
+async function envAgentSystem(options: EnvAgentSystemOptions): Promise<void> {
   const result = options.agentId
     ? await options.environmentService.loadForAgentId(options.agentId, 'cli')
     : await options.environmentService.loadForCommandDirectory(options.workspaceDir, 'cli');
@@ -72,3 +73,5 @@ export default async function envAgentSystem(options: EnvAgentSystemOptions): Pr
   if (options.json) writeCliJson(options.output, view);
   else writeHuman(options.output, view, options.styles);
 }
+
+export default presentCliCommand(envAgentSystem);
