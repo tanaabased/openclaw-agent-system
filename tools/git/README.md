@@ -249,12 +249,11 @@ symlinks, and other unsafe paths fail closed. Managed worktree preparation
 still requires every declared local override to be a ready repository. Use a
 remote base such as `origin/main` to start from the latest fetched branch.
 
-Preparation holds a repository-specific cross-process lock through clone,
-origin reconciliation, fetch, and worktree creation, then releases it before
-agent work starts. Concurrent callers reuse the same deterministic worktree;
-different repositories can prepare independently. Declared local repository
-aliases share the lock in Git's common metadata directory. Waiting callers honor
-cancellation and stop after ten minutes if the repository remains busy.
+Preparation is serialized per repository; concurrent callers reuse the same
+worktree, while different repositories can prepare independently. Waiting callers
+honor cancellation and stop after ten minutes if the repository remains busy.
+See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/worktree/README.md)
+for lock-loss and recovery checks.
 
 Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
 all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
@@ -483,12 +482,9 @@ Agent-bound Gateway and setup children receive absolute executable paths:
 "$AGENT_SYSTEM_GIT_WORKTREE" list
 ```
 
-These bindings exist only in Agent System-owned child environments, not login
-shells, repository config, or manifest environment output. They are executable
-paths, not credentials or authority capabilities. They retain the ordinary
-classification, policy, credential, containment, and audit checks and fail
-without valid active-agent authority. The [shim](#shim) retains its contextual
-host fallback.
+These launchers require active-agent authority under the shared
+[execution boundary](../../CLI.md#trust-boundary). The [shim](#shim) retains
+its contextual host fallback.
 
 ## Further Reading
 

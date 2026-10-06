@@ -256,8 +256,8 @@ creating its replacement. Old schedule history and conversation bindings remain.
 #### OpenClaw execution and ownership
 
 The Gateway must be running and the invoking operator must have native cron read
-and administration permissions. The adapter uses the public CLI transport tested
-with OpenClaw 2026.9.6. Unavailable or incompatible RPCs block reconciliation.
+and administration permissions. The adapter uses the public CLI transport;
+unavailable or incompatible RPCs block reconciliation.
 Model-facing Install and Doctor report that operator synchronization is required;
 they do not acquire operator transport authority.
 
@@ -266,8 +266,7 @@ installed workspace, declaration, ownership, enabled state, and synchronized has
 before issuing temporary agent authority. Plain `git` and `gh` use managed launchers;
 tool policy precedes invocation-scoped credentials. Arbitrary executables remain
 operator-authored host commands, with the same [containment boundary](./CLI.md#trust-boundary)
-as setup. Changes to command declarations require another Install; dependencies
-of an executable script are not recursively hashed.
+as setup. Changes to command declarations require another Install.
 
 Prompt jobs default to the owning agent in an independent isolated session. Omitted model
 and effort follow native agent defaults; explicit model and supported native

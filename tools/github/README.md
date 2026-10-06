@@ -292,11 +292,9 @@ path to the strict managed launcher:
 "$AGENT_SYSTEM_GH" repo view owner/repo
 ```
 
-The binding exists only in Agent System-owned child environments, not login
-shells, repository config, or manifest environment output. It is an executable
-path, not a token or authority capability. It retains classification, policy,
-credential, containment, and audit checks and fails without valid active-agent
-authority. The [shim](#shim) retains its contextual host fallback.
+This launcher requires active-agent authority under the shared
+[execution boundary](../../CLI.md#trust-boundary). The [shim](#shim) retains
+its contextual host fallback.
 
 ## Further Reading
 

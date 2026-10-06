@@ -763,8 +763,12 @@ launchers and Agent System's `worktree` route never fall back. Direct `tool` and
 `credentials` commands remain trusted operator interfaces and may select an
 installed agent explicitly.
 
-Strict launcher bindings belong to the [Git tool](./tools/git/README.md#launcher-bindings)
-and [GitHub tool](./tools/github/README.md#launcher-bindings) guides.
+Strict launcher bindings exist only in Agent System-owned child environments,
+not login shells, repository config, or manifest environment output. They are
+executable paths, not credentials or authority capabilities, and require valid
+active-agent authority. Classification, policy, credential, containment, and audit
+checks still apply. See the [Git](./tools/git/README.md#launcher-bindings) and
+[GitHub](./tools/github/README.md#launcher-bindings) guides for variables and usage.
 
 These are practical same-user guardrails, not process isolation. Absolute
 binaries, replaced `PATH` values, direct HTTP, SDKs, and unrelated host
