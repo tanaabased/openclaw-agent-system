@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import type { GitHubNotificationsConfiguration } from '../channels/github/config-schema.ts';
 import {
   reviewFixture,
   reviewCommentFixture,
@@ -103,6 +104,7 @@ function authority(
   comments: GitHubCanonicalIssueComment[],
   truncated = false,
   maximumCommentCharacters = 8_000,
+  selectedConfiguration: GitHubNotificationsConfiguration = configuration,
 ): {
   open(): Promise<GitHubNotificationAssignmentInspection<CommentClient>>;
 } {
@@ -128,7 +130,7 @@ function authority(
   };
   return {
     async open() {
-      return { authorized: true, client, configuration };
+      return { authorized: true, client, configuration: selectedConfiguration };
     },
   };
 }
@@ -370,7 +372,12 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const observedActiveTurns: unknown[] = [];
     const publishedTexts: string[] = [];
     const orchestrator = new GitHubNotificationCommentOrchestrator({
-      assignmentAuthority: authority([incoming]),
+      assignmentAuthority: authority([incoming], false, 8_000, {
+        ...configuration,
+        approvedActors: undefined,
+        approvedIssueAssigners: [notificationAccount],
+        approvedFeedbackAuthors: [notificationActor],
+      }),
       conversationStateStore: store,
       initialModeId: 'work',
       lifecycles: lifecycles(),

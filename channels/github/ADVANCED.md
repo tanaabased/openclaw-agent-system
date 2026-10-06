@@ -6,6 +6,8 @@ Start with the [README](./README.md) for setup.
 - [Configuration Reference](#configuration-reference)
   - [`github.notifications.allowed-repository-owners`](#githubnotificationsallowed-repository-owners)
   - [`github.notifications.approved-actors`](#githubnotificationsapproved-actors)
+  - [`github.notifications.approved-feedback-authors`](#githubnotificationsapproved-feedback-authors)
+  - [`github.notifications.approved-issue-assigners`](#githubnotificationsapproved-issue-assigners)
   - [`github.notifications.assignment-types`](#githubnotificationsassignment-types)
   - [`github.notifications.initial-mode`](#githubnotificationsinitial-mode)
   - [`github.notifications.interval-minutes`](#githubnotificationsinterval-minutes)
@@ -31,15 +33,17 @@ Declare `github.notifications` in the workspace manifest; see the
 [complete example](./README.md#configuration) and shared
 [manifest rules](../../MANIFEST.md).
 
-| Field under `github.notifications` | Required | Default                 | Values                                   |
-| ---------------------------------- | -------- | ----------------------- | ---------------------------------------- |
-| `allowed-repository-owners`        | no       | any owner               | Nonempty list of pinned owner identities |
-| `approved-actors`                  | yes      | none                    | Nonempty list of pinned user identities  |
-| `assignment-types`                 | no       | `[issue, pull-request]` | One or both kinds, without duplicates    |
-| `initial-mode`                     | no       | `work`                  | `guided` or `work`                       |
-| `interval-minutes`                 | no       | `5`                     | Integer from `1` through `1440`          |
-| `max-concurrent-issues`            | no       | `2`                     | Positive integer                         |
-| `pull-request`                     | no       | see below               | Delivery PR assignees and reviewers      |
+| Field under `github.notifications` | Required | Default                 | Values                                     |
+| ---------------------------------- | -------- | ----------------------- | ------------------------------------------ |
+| `allowed-repository-owners`        | no       | any owner               | Nonempty list of pinned owner identities   |
+| `approved-actors`                  | no       | none                    | Deprecated nonempty list of pinned users   |
+| `approved-feedback-authors`        | no       | legacy list, else deny  | Pinned users; `[]` denies all feedback     |
+| `approved-issue-assigners`         | no       | legacy list, else deny  | Pinned users; `[]` denies issue assignment |
+| `assignment-types`                 | no       | `[issue, pull-request]` | One or both kinds, without duplicates      |
+| `initial-mode`                     | no       | `work`                  | `guided` or `work`                         |
+| `interval-minutes`                 | no       | `5`                     | Integer from `1` through `1440`            |
+| `max-concurrent-issues`            | no       | `2`                     | Positive integer                           |
+| `pull-request`                     | no       | see below               | Delivery PR assignees and reviewers        |
 
 ### `github.notifications.allowed-repository-owners`
 
@@ -49,8 +53,10 @@ grant repository access or approve the owner's members.
 
 ### `github.notifications.approved-actors`
 
-Lists the GitHub users allowed to assign work, including the agent's own
-verified identity when self-assignment is intended.
+Deprecated compatibility grant. Legacy-only configurations retain issue assignment,
+direct pull-request assignment, and existing-work feedback authorization. Each new
+explicit list replaces only its own legacy fallback. Validation emits
+`github-notification-approved-actors-deprecated` without blocking otherwise valid work.
 
 | Field            | Type    | Required | Default | Description                                |
 | ---------------- | ------- | -------- | ------- | ------------------------------------------ |
@@ -67,7 +73,7 @@ node ID together so a renamed or recycled login cannot inherit authorization.
 `agent-system-github:<node-id>` identity. This is **channel-wide OpenClaw operator
 recognition**, not a repository-scoped or styling-only permission. It can expose
 other owner-gated capabilities permitted by independent tool policy. The flag is
-not accepted on `allowed-repository-owners` and is unrelated to the visible session
+not accepted on the new authorization lists or `allowed-repository-owners` and is unrelated to the visible session
 assignee. No username-only, unqualified, or wildcard grant is generated.
 
 ```yaml
@@ -105,10 +111,52 @@ fields, and reports missing evidence as unverified. Setup failures do not retry,
 block work, or add GitHub comments. This optional access does not replace the
 [required conversation hook](#required-conversation-hook).
 
+### `github.notifications.approved-feedback-authors`
+
+Pins users who may provide actionable issue comments, linked delivery PR comments,
+submitted reviews, and eligible inline replies on existing admitted work. Membership
+does not authorize assignments or start unrelated work. Current-work eligibility,
+repository scope, exact mentions in author prose, human-author and self-comment
+checks, and reauthorization before publication still apply.
+
+### `github.notifications.approved-issue-assigners`
+
+Pins users who may assign issues, including the agent's verified identity when
+self-assignment is intended. Membership does not authorize feedback.
+
+Both new lists use required `login` and immutable `node-id` pins, with unique node IDs
+within each list. They do not accept `operator-owner`. Each omitted list falls back
+to `approved-actors`, or denies all if the legacy list is also omitted. An explicit
+`[]` denies its permission even when the legacy list is present.
+
+| Permission                    | Grant                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| Issue assignment              | `approved-issue-assigners`, otherwise `approved-actors`, otherwise deny  |
+| Existing-work feedback        | `approved-feedback-authors`, otherwise `approved-actors`, otherwise deny |
+| Direct PR assignment          | `approved-actors` only, subject to `assignment-types`                    |
+| OpenClaw operator recognition | Legacy `approved-actors` records with `operator-owner: true` only        |
+
+#### Migration
+
+Configure both explicit lists to separate assignment from feedback. Retain legacy
+records needed for direct PR assignments or existing `operator-owner` grants;
+the new lists neither create nor revoke these permissions. Removing a legacy
+operator record retires its grant claim at the next install under the existing
+provenance rules. To retain operator recognition without its assignment or feedback
+fallbacks, keep that record and explicitly configure both new lists; use
+`assignment-types: [issue]` to disable direct PR intake.
+
+Review-request intake is outside this channel's current lifecycle. None of these
+grants authorizes it. The separate implementation tracked in
+[#239](https://github.com/tanaabased/openclaw-agent-system/issues/239) must use
+`approved-review-requesters`, not a fallback to these lists.
+
 ### `github.notifications.assignment-types`
 
 Selects the assignment kinds the channel discovers. Direct pull-request
-assignments have the [documented limitations](./README.md#current-limitations).
+assignments use only `approved-actors` for compatibility; the issue-specific list
+neither grants nor removes their authority. They have the
+[documented limitations](./README.md#current-limitations).
 
 ### `github.notifications.initial-mode`
 
@@ -141,17 +189,17 @@ are not linked.
 | `assignees` | `assignment-actor` or pinned list | no       | `assignment-actor` | Add the admitted assigning actor, or replace that choice with up to ten pinned users. `[]` disables automatic assignment. |
 | `reviewers` | pinned list                       | no       | `[]`               | Request reviews from eligible users. Assignment alone does not request review.                                            |
 
-Each pinned user has `login` and `node-id`, as in `approved-actors`. The login
+Each pinned user has `login` and `node-id`, as in the authorization lists. The login
 must still resolve to that node ID at delivery. Duplicate identities within a
 list are invalid. GitHub eligibility applies; the agent cannot review its own
 PR. The same person may be both assignee and reviewer. Recipients need not be
-`approved-actors`: receiving a PR never grants assignment or comment authority.
+in either authorization list: receiving a PR never grants assignment or comment authority.
 Existing assignees, review requests, and CODEOWNERS behavior are preserved.
 
 ```yaml
 github:
   notifications:
-    approved-actors:
+    approved-issue-assigners:
       - login: pirog
         node-id: U_kgDOB9x7Qw
     pull-request:

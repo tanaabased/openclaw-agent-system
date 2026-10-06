@@ -39,14 +39,15 @@ function desiredState(context: AgentSystemLifecycleContext): NotificationRouting
 
 function duplicateIdentityDiagnostics(
   manifest: AgentManifest,
-  field: 'approvedActors' | 'allowedRepositoryOwners',
+  field:
+    | 'approvedActors'
+    | 'approvedIssueAssigners'
+    | 'approvedFeedbackAuthors'
+    | 'allowedRepositoryOwners',
   fieldPath: string,
 ): ManifestDiagnostic[] {
   const notifications = manifest.github?.notifications;
-  const identities =
-    field === 'approvedActors'
-      ? notifications?.approvedActors
-      : notifications?.allowedRepositoryOwners;
+  const identities = notifications?.[field];
   if (!identities) return [];
   const seen = new Set<string>();
   const diagnostics: ManifestDiagnostic[] = [];
@@ -107,10 +108,29 @@ function validateNotifications(manifest: AgentManifest): ManifestDiagnostic[] {
     ),
     ...duplicateIdentityDiagnostics(
       manifest,
+      'approvedIssueAssigners',
+      '/github/notifications/approved-issue-assigners',
+    ),
+    ...duplicateIdentityDiagnostics(
+      manifest,
+      'approvedFeedbackAuthors',
+      '/github/notifications/approved-feedback-authors',
+    ),
+    ...duplicateIdentityDiagnostics(
+      manifest,
       'allowedRepositoryOwners',
       '/github/notifications/allowed-repository-owners',
     ),
   );
+  if (manifest.github.notifications.approvedActors !== undefined) {
+    diagnostics.push({
+      code: 'github-notification-approved-actors-deprecated',
+      fieldPath: '/github/notifications/approved-actors',
+      message:
+        'approved-actors is deprecated. Use approved-issue-assigners and approved-feedback-authors independently; [] denies that permission. Retain legacy records for direct pull-request assignment and operator-owner grants. No list here grants review-request authority.',
+      severity: 'warning',
+    });
+  }
   for (const field of ['assignees', 'reviewers'] as const) {
     const recipients = manifest.github.notifications.pullRequest?.[field];
     if (recipients === undefined) continue;

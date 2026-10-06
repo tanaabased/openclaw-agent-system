@@ -119,7 +119,7 @@ describe('github operator access', () => {
     const f = fixture();
     f.config = { commands: { ownerAllowFrom: ['discord:keep', 123] } };
     const ctx = context();
-    ctx.manifest.github!.notifications!.approvedActors.push(
+    ctx.manifest.github!.notifications!.approvedActors!.push(
       { login: 'second', nodeId: 'U_second', operatorOwner: true },
       { login: 'third', nodeId: 'U_third' },
     );
@@ -154,6 +154,30 @@ describe('github operator access', () => {
           finding.message.includes('Reload the Gateway'),
       ),
     );
+  });
+
+  it('should preserve explicit legacy operator grants while new lists never create them', async () => {
+    const f = fixture();
+    const ctx = context();
+    await f.service.reconcile(ctx);
+    const settings = ctx.manifest.github!.notifications!;
+    settings.approvedIssueAssigners = [];
+    settings.approvedFeedbackAuthors = [{ login: 'reviewer', nodeId: 'U_reviewer' }];
+    await f.service.reconcile(ctx);
+    assert.deepEqual(f.config.commands?.ownerAllowFrom, [identity]);
+    assert.equal(f.writes, 1);
+    assert.equal(f.state.grants.length, 1);
+    delete settings.approvedActors;
+    await f.service.reconcile(ctx);
+    assert.deepEqual(f.config.commands?.ownerAllowFrom, []);
+    assert.deepEqual(f.state.grants, []);
+    const explicitOnly = fixture();
+    settings.approvedIssueAssigners = [actor];
+    settings.approvedFeedbackAuthors = [actor];
+    assert.deepEqual(await explicitOnly.service.inspect(ctx), []);
+    await explicitOnly.service.reconcile(ctx);
+    assert.equal(explicitOnly.writes, 0);
+    assert.deepEqual(explicitOnly.state.grants, []);
   });
 
   it('should reject mismatched pins before writing either grants or claims', async () => {

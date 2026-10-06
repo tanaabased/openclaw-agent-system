@@ -86,7 +86,10 @@ github:
     initial-mode: work
     interval-minutes: 5
     max-concurrent-issues: 2
-    approved-actors:
+    approved-issue-assigners:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    approved-feedback-authors:
       - login: pirog
         node-id: U_kgDOB9x7Qw
     allowed-repository-owners:
@@ -94,10 +97,12 @@ github:
         node-id: O_kgDOB7x6Qw
 ```
 
-`approved-actors` pins who may assign work; `allowed-repository-owners` restricts
-which repositories are eligible. Neither grants GitHub repository access. See the
+`approved-issue-assigners` pins who may assign issues; `approved-feedback-authors`
+pins who may give actionable feedback on existing work. Neither implies the other.
+`allowed-repository-owners` restricts eligible repositories. These lists do not
+grant GitHub repository access. See the
 [configuration reference](./ADVANCED.md#configuration-reference) for all fields,
-defaults, and optional OpenClaw operator recognition.
+defaults, legacy `approved-actors` migration, and optional OpenClaw operator recognition.
 
 ## Install and Verify
 

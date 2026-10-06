@@ -45,10 +45,18 @@ export const externalGitHubNotificationsSchema = Type.Object(
         uniqueItems: true,
       }),
     ),
-    'approved-actors': Type.Array(externalGitHubApprovedActorSchema, {
-      minItems: 1,
-      uniqueItems: true,
-    }),
+    'approved-actors': Type.Optional(
+      Type.Array(externalGitHubApprovedActorSchema, {
+        minItems: 1,
+        uniqueItems: true,
+      }),
+    ),
+    'approved-issue-assigners': Type.Optional(
+      Type.Array(externalGitHubIdentitySchema, { uniqueItems: true }),
+    ),
+    'approved-feedback-authors': Type.Optional(
+      Type.Array(externalGitHubIdentitySchema, { uniqueItems: true }),
+    ),
     'allowed-repository-owners': Type.Optional(
       Type.Array(externalGitHubIdentitySchema, {
         minItems: 1,
@@ -76,7 +84,9 @@ export interface GitHubApprovedActor extends GitHubIdentityPin {
 
 export interface GitHubNotificationsConfiguration {
   assignmentTypes: Array<'issue' | 'pull-request'>;
-  approvedActors: GitHubApprovedActor[];
+  approvedActors?: GitHubApprovedActor[];
+  approvedIssueAssigners?: GitHubIdentityPin[];
+  approvedFeedbackAuthors?: GitHubIdentityPin[];
   allowedRepositoryOwners?: GitHubIdentityPin[];
   initialMode?: 'guided' | 'work';
   intervalMinutes: number;
@@ -100,10 +110,22 @@ export function decodeGitHubNotifications(
 
   return {
     assignmentTypes: value['assignment-types'] ?? ['issue', 'pull-request'],
-    approvedActors: value['approved-actors'].map((actor) => ({
-      ...decodeIdentity(actor),
-      ...(actor['operator-owner'] === undefined ? {} : { operatorOwner: actor['operator-owner'] }),
-    })),
+    ...(value['approved-actors'] === undefined
+      ? {}
+      : {
+          approvedActors: value['approved-actors'].map((actor) => ({
+            ...decodeIdentity(actor),
+            ...(actor['operator-owner'] === undefined
+              ? {}
+              : { operatorOwner: actor['operator-owner'] }),
+          })),
+        }),
+    ...(value['approved-issue-assigners'] === undefined
+      ? {}
+      : { approvedIssueAssigners: value['approved-issue-assigners'].map(decodeIdentity) }),
+    ...(value['approved-feedback-authors'] === undefined
+      ? {}
+      : { approvedFeedbackAuthors: value['approved-feedback-authors'].map(decodeIdentity) }),
     ...(value['allowed-repository-owners'] === undefined
       ? {}
       : {

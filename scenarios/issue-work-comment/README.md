@@ -4,7 +4,9 @@ This GitHub Actions-only scenario proves the `issue` + `work` + `comment` turn. 
 establishes and completes a real issue assignment so the comment is reconciled
 against a durable active lifecycle. It covers an ordinary comment, a submitted
 review with grouped findings, historical locations, a later inline reply, self-authored
-feedback rejection, and repeat polling across a Gateway restart. The same lifecycle contract runs against the
+feedback rejection, and repeat polling across a Gateway restart. Assignment and feedback
+use explicit pinned lists while the legacy record retains operator recognition.
+The same lifecycle contract runs against the
 deterministic mock provider on pull requests and the live provider through
 workflow dispatch.
 
@@ -38,6 +40,7 @@ chmod 600 "$HOME/.ssh/known_hosts"
 mkdir "$TMPDIR/agent-system-notifications"
 mkdir "$TMPDIR/agent-system-notification-actor"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
+sed 's/^/    /' "$GITHUB_WORKSPACE/scenarios/issue-work-comment/authorization-grants.yaml" >> "$TMPDIR/agent-system-notifications/agent.yaml"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 

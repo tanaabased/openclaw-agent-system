@@ -30,7 +30,7 @@ ${field === 'approved-actors' ? `        operator-owner: ${flag}` : `    allowed
       assert.equal(result.status, 'valid');
       if (result.status === 'valid')
         assert.equal(
-          result.manifest.github?.notifications?.approvedActors[0]?.operatorOwner,
+          result.manifest.github?.notifications?.approvedActors?.[0]?.operatorOwner,
           flag === 'true',
         );
     }
@@ -132,6 +132,75 @@ github:
       maxConcurrentIssues: 2,
       pullRequest: { assignees: 'assignment-actor', reviewers: [] },
     });
+  });
+
+  it('should preserve independent explicit lists, omission, and empty denial through decoding', () => {
+    const prefix = 'schema-version: 1\nagent:\n  id: data\ngithub:\n  notifications:';
+    const cases = [
+      { source: ' {}', expected: {} },
+      {
+        source: '\n    approved-issue-assigners: []\n    approved-feedback-authors: []',
+        expected: { approvedIssueAssigners: [], approvedFeedbackAuthors: [] },
+      },
+      {
+        source:
+          '\n    approved-issue-assigners:\n      - login: assigner\n        node-id: U_assigner',
+        expected: { approvedIssueAssigners: [{ login: 'assigner', nodeId: 'U_assigner' }] },
+      },
+      {
+        source:
+          '\n    approved-feedback-authors:\n      - login: reviewer\n        node-id: U_reviewer',
+        expected: { approvedFeedbackAuthors: [{ login: 'reviewer', nodeId: 'U_reviewer' }] },
+      },
+      {
+        source:
+          '\n    approved-actors:\n      - login: operator\n        node-id: U_operator\n        operator-owner: true\n    approved-issue-assigners: []\n    approved-feedback-authors:\n      - login: reviewer\n        node-id: U_reviewer',
+        expected: {
+          approvedActors: [{ login: 'operator', nodeId: 'U_operator', operatorOwner: true }],
+          approvedIssueAssigners: [],
+          approvedFeedbackAuthors: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
+        },
+      },
+    ];
+    for (const entry of cases) {
+      const result = parseAgentManifest(prefix + entry.source);
+      assert.equal(result.status, 'valid');
+      if (result.status !== 'valid') continue;
+      assert.deepEqual(result.manifest.github?.notifications, {
+        assignmentTypes: ['issue', 'pull-request'],
+        initialMode: 'work',
+        intervalMinutes: 5,
+        maxConcurrentIssues: 2,
+        pullRequest: { assignees: 'assignment-actor', reviewers: [] },
+        ...entry.expected,
+      });
+    }
+  });
+
+  it('should require safe immutable pins and reject operator flags on either new grant', () => {
+    for (const field of ['approved-issue-assigners', 'approved-feedback-authors']) {
+      for (const pin of [
+        'login: actor',
+        'node-id: U_actor',
+        'login: actor\n        node-id: ""',
+        'login: actor\n        node-id: "U actor"',
+        'login: "@actor"\n        node-id: U_actor',
+        'login: actor\n        node-id: U_actor\n        operator-owner: true',
+      ]) {
+        assert.equal(
+          parseAgentManifest(
+            `schema-version: 1\nagent:\n  id: data\ngithub:\n  notifications:\n    ${field}:\n      - ${pin}`,
+          ).status,
+          'invalid',
+        );
+      }
+    }
+    assert.equal(
+      parseAgentManifest(
+        'schema-version: 1\nagent:\n  id: data\ngithub:\n  notifications:\n    approved-review-requesters: []',
+      ).status,
+      'invalid',
+    );
   });
 
   it('should parse pull request recipient overrides and reject more than ten assignees', () => {
