@@ -123,6 +123,29 @@ describe('channels/github/conversation/conversation-state-store', () => {
     await assert.rejects(restarted.read(routed.agentId, routed.conversationId));
   });
 
+  it('should retain a recovery-required pull request event across restart', async () => {
+    const value = snapshot();
+    value.conversation!.deliveryPullRequest = {
+      baselineEstablished: true,
+      eventRecorded: false,
+      eventStatus: 'recovery-required',
+      nodeId: 'PR_delivery',
+      number: 45,
+      status: 'open',
+    };
+    value.conversation!.activeTurn = { eventId: 'pull-request-opened', sourceId: 'PR_delivery' };
+    await store.write(value);
+    const restarted = new GitHubNotificationConversationStateStore({
+      rootDir,
+      currentUid: process.getuid?.(),
+    });
+    assert.deepEqual(await restarted.read(value.agentId, value.conversationId), value);
+    const corrupt = JSON.parse(await readFile(recordPath(value), 'utf8'));
+    corrupt.conversation.deliveryPullRequest.eventRecorded = true;
+    await writeFile(recordPath(value), JSON.stringify(corrupt));
+    await assert.rejects(restarted.read(value.agentId, value.conversationId));
+  });
+
   it('should upgrade ordinary records and retain review membership and cursors across a restart', async () => {
     const value = snapshot();
     await store.write(value);

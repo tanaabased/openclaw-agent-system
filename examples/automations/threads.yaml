@@ -1,0 +1,18 @@
+- id: shared-builds
+  enabled: false
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  prompt: Review failed builds.
+  thread: { id: project-activity, name: Project activity }
+- id: shared-reviews
+  enabled: false
+  runtimes: [openclaw]
+  schedule: every 2 hours
+  prompt: Review open pull requests.
+  thread: { id: project-activity, name: Project activity }
+- id: separate-review
+  enabled: false
+  runtimes: [openclaw]
+  schedule: every 3 hours
+  prompt: Review a separate area.
+  thread: Project activity

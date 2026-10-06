@@ -23,6 +23,58 @@ openclaw agent-system install
 
 ## Testing
 
+The lock-loss regression pauses a read-only Git command under the installed
+plugin's preparation lease. Changing that test lock's timestamp forces the real
+heartbeat callback to report lost ownership. The command must fail through its
+normal error path, leave the compromised lock alone, and create no worktree.
+This exercises containment, not a host freeze or the Doctor approval flow.
+The injected command sets `OPENCLAW_PATH_BOOTSTRAPPED=1` so OpenClaw preserves
+the fixture-first `PATH` instead of prepending system Git. This override stays
+local to that one CI command.
+
+```bash
+# should fail a compromised preparation without creating a worktree
+mkdir -p "$TMPDIR/lock-loss-bin"
+rm -f "$TMPDIR/lock-loss-bin/paused" "$TMPDIR/lock-loss-verified"
+command -v git > "$TMPDIR/lock-loss-bin/real-git"
+cp "$GITHUB_WORKSPACE/examples/worktree/delay-git.mjs" "$TMPDIR/lock-loss-bin/git"
+chmod +x "$TMPDIR/lock-loss-bin/git"
+cd "$GITHUB_WORKSPACE/examples/worktree/localbot"
+OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/lock-loss-bin:$PATH" openclaw agent-system tool worktree -- prepare agent-system 790-lock-loss HEAD > "$TMPDIR/lock-loss.log" 2>&1 &
+preparation_pid=$!
+cleanup_preparation() {
+  preparation_status=$?
+  trap - EXIT
+  if test -n "$preparation_pid"; then
+    kill "$preparation_pid" 2>/dev/null || true
+    wait "$preparation_pid" 2>/dev/null || true
+  fi
+  tail -n 80 "$TMPDIR/lock-loss.log"
+  if test "$preparation_status" -ne 0; then
+    openclaw agent-system tool worktree -- remove agent-system 790-lock-loss || true
+  fi
+  exit "$preparation_status"
+}
+trap cleanup_preparation EXIT
+node "$GITHUB_WORKSPACE/examples/worktree/compromise-lock.mjs" "$TMPDIR/lock-loss-bin/paused" "$GITHUB_WORKSPACE/.git/agent-system-worktree-preparation.lock"
+preparation_status=0
+wait "$preparation_pid" || preparation_status=$?
+preparation_pid=''
+test "$preparation_status" -ne 0
+grep -F 'The private state file lock was lost' "$TMPDIR/lock-loss.log"
+test -d "$GITHUB_WORKSPACE/.git/agent-system-worktree-preparation.lock"
+openclaw agent-system tool worktree -- list agent-system | jq -e 'all(.[]; (.branch | startswith("790-lock-loss-")) | not)'
+touch "$TMPDIR/lock-loss-verified"
+
+# should recover preparation after a lost lease without restarting the host
+test -f "$TMPDIR/lock-loss-verified" || { echo 'Lock-loss containment was not verified; recovery cannot be tested.' >&2; exit 1; }
+cd "$GITHUB_WORKSPACE/examples/worktree/localbot"
+trap 'tail -n 80 "$TMPDIR/lock-loss-recovery.json"; openclaw agent-system tool worktree -- remove agent-system 790-lock-loss || true' EXIT
+openclaw agent-system tool worktree -- prepare agent-system 790-lock-loss HEAD | tee "$TMPDIR/lock-loss-recovery.json" | jq -e '.status == "created"'
+openclaw agent-system tool worktree -- remove agent-system 790-lock-loss | jq -e '.status == "removed"'
+trap - EXIT
+```
+
 ```bash
 # should grant the native managed worktree tool to the installed worktree agent
 openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_git_worktree") != null'

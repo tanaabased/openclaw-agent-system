@@ -8,8 +8,8 @@ import {
   type CliOutput,
   type CliStyles,
   type CliNotice,
+  renderCliNotices,
   writeCliDiagnostics,
-  writeCliError,
   writeCliJson,
   writeCliLifecycleTable,
   writeCliNotices,
@@ -48,6 +48,7 @@ export interface InstallAgentSystemOptions extends Pick<
 
 function installNotices(warnings: ReadonlyArray<{ code: string; message: string }>): CliNotice[] {
   return warnings.flatMap(({ code, message }) => {
+    if (code === 'collaboration-session-access') return [{ severity: 'notice', message }];
     if (code === 'github-operator-loaded-access-unverified') {
       return [
         {
@@ -74,7 +75,13 @@ export default async function installAgentSystem(
   if (result.status !== 'loaded') {
     writeCliDiagnostics(
       options.output,
-      formatManifestFailure(result).map(({ message }) => message),
+      options.json
+        ? formatManifestFailure(result).map(({ message }) => message)
+        : renderCliNotices(
+            formatManifestFailure(result).map(({ message }) => ({ severity: 'error', message })),
+            options.styles,
+            options.terminalColumns,
+          ),
     );
     options.setExitCode(1);
     return;
@@ -93,9 +100,16 @@ export default async function installAgentSystem(
       workspaceDir: result.scope.workspaceDir,
     }))
   ) {
-    writeCliError(
+    const message = 'install: installation cancelled before making changes. code=setup-declined';
+    writeCliDiagnostics(
       options.output,
-      'install: installation cancelled before making changes. code=setup-declined',
+      options.json
+        ? [message]
+        : renderCliNotices(
+            [{ severity: 'error', message }],
+            options.styles,
+            options.terminalColumns,
+          ),
     );
     options.setExitCode(1);
     return;
@@ -181,13 +195,35 @@ export default async function installAgentSystem(
         options.terminalColumns,
       );
     }
-    writeCliError(options.output, formatErrorDiagnostic(blocked.component, error, blocked.code));
-    writeCliDiagnostics(options.output, [
-      `Unattempted work: ${unattempted.map(({ component, stepId }) => (stepId ? `${component}/${stepId}` : component)).join(', ')}.`,
+    const guidance = [
+      `Unattempted work: ${unattempted.map(({ component, stepId }) => (stepId ? `${component}/${stepId}` : component)).join(', ') || 'none'}.`,
       ...(outcomes.length > 0 ? [] : ['No completed component outcomes were reported.']),
       recovery,
       ...(hint ? [hint] : []),
-    ]);
+    ];
+    const errorMessage = formatErrorDiagnostic(blocked.component, error, blocked.code);
+    if (options.json) {
+      writeCliDiagnostics(options.output, [
+        ...warnings.map((warning) => formatDiagnostic(warning)),
+        errorMessage,
+        ...guidance,
+      ]);
+    } else {
+      writeCliDiagnostics(
+        options.output,
+        renderCliNotices(
+          [
+            ...installNotices(
+              warnings.map((warning) => ({ ...warning, message: formatDiagnostic(warning) })),
+            ),
+            { severity: 'error', message: errorMessage },
+            { severity: 'notice', message: guidance.join('\n') },
+          ],
+          options.styles,
+          options.terminalColumns,
+        ),
+      );
+    }
     options.setExitCode(1);
   }
 }

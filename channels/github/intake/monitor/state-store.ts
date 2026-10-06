@@ -1,5 +1,6 @@
 import { join, resolve } from 'node:path';
 
+import { withPrivateStateLock } from '../../../../core/private-state-lock-context.ts';
 import decodeGitHubNotificationMonitorState from './state-codec.ts';
 import type { GitHubNotificationMonitorState } from './state.ts';
 import PrivateStateFile from '../../../../core/private-state-file.ts';
@@ -109,7 +110,7 @@ export default class GitHubNotificationMonitorStateStore {
       staleMs: 30_000,
     });
     try {
-      return await operation();
+      return await withPrivateStateLock(lock, operation);
     } finally {
       await lock.release();
     }

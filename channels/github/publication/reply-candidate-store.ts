@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
+import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 import acquirePrivateStateFileLock, {
   type PrivateStateFileLockHandle,
 } from '../../../core/private-state-file-lock.ts';
@@ -235,7 +236,8 @@ export default class GitHubNotificationReplyCandidateStore {
   async begin(input: GitHubNotificationReplyCandidateTurnInput): Promise<string> {
     return this.#exclusive(input, async (file) => {
       const active = await this.#read(file, input.agentId);
-      if (active && !this.#expired(active)) fail('reply-turn-already-active');
+      if (active && (!this.#expired(active) || active.identity.eventId === 'pull-request-opened'))
+        fail('reply-turn-already-active');
       if (active) await file.remove();
       const openedAt = this.#now();
       const state: GitHubNotificationReplyCandidateState = {
@@ -264,8 +266,11 @@ export default class GitHubNotificationReplyCandidateStore {
   async finish(input: GitHubNotificationReplyCandidateFinishInput): Promise<string[]> {
     return this.#exclusive(input, async (file) => {
       const active = await this.#matchingState(file, input);
+      if (!active.promptSelectedAt) {
+        if (active.identity.eventId !== 'pull-request-opened') await file.remove();
+        fail('reply-turn-prompt-selection-missing');
+      }
       await file.remove();
-      if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
       if (active.rejection) {
         throw new GitHubNotificationReplyCandidateRejectedError({
           code: active.rejection.code,
@@ -351,7 +356,7 @@ export default class GitHubNotificationReplyCandidateStore {
     const active = await this.#read(file, input.agentId);
     if (!active) fail('reply-turn-missing');
     if (this.#expired(active)) {
-      await file.remove();
+      if (active.identity.eventId !== 'pull-request-opened') await file.remove();
       fail('reply-turn-expired');
     }
     if (!sameTurn(active, input)) fail('reply-turn-mismatch');
@@ -384,7 +389,7 @@ export default class GitHubNotificationReplyCandidateStore {
         retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
         staleMs: defaultTtlMs,
       });
-      return await run(resources.file);
+      return await withPrivateStateLock(handle, () => run(resources.file));
     } finally {
       await handle?.release();
     }
@@ -399,29 +404,33 @@ export default class GitHubNotificationReplyCandidateStore {
       staleMs: defaultTtlMs,
     });
     try {
-      const active = await this.#read(legacy.file, input.agentId);
-      if (!active) return;
-      if (this.#expired(active)) {
-        await legacy.file.remove();
-        return;
-      }
-      if (active.conversationId !== input.conversationId) return;
-      const target = await this.#resources(input.agentId, input.conversationId);
-      const targetLock = await this.#acquireFileLock(target.lockPath, {
-        retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
-        staleMs: defaultTtlMs,
-      });
-      try {
-        const existing = await this.#read(target.file, input.agentId);
-        if (existing && (existing.turnId !== active.turnId || !sameTurn(existing, active))) {
-          fail('reply-turn-already-active');
+      return await withPrivateStateLock(lock, async () => {
+        const active = await this.#read(legacy.file, input.agentId);
+        if (!active) return;
+        if (this.#expired(active)) {
+          await legacy.file.remove();
+          return;
         }
-        // a completed copy may already contain newer candidates after an interrupted migration.
-        if (!existing) await target.file.write(`${JSON.stringify(active, undefined, 2)}\n`);
-        await legacy.file.remove();
-      } finally {
-        await targetLock.release();
-      }
+        if (active.conversationId !== input.conversationId) return;
+        const target = await this.#resources(input.agentId, input.conversationId);
+        const targetLock = await this.#acquireFileLock(target.lockPath, {
+          retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
+          staleMs: defaultTtlMs,
+        });
+        try {
+          return await withPrivateStateLock(targetLock, async () => {
+            const existing = await this.#read(target.file, input.agentId);
+            if (existing && (existing.turnId !== active.turnId || !sameTurn(existing, active))) {
+              fail('reply-turn-already-active');
+            }
+            // a completed copy may already contain newer candidates after an interrupted migration.
+            if (!existing) await target.file.write(`${JSON.stringify(active, undefined, 2)}\n`);
+            await legacy.file.remove();
+          });
+        } finally {
+          await targetLock.release();
+        }
+      });
     } finally {
       await lock.release();
     }

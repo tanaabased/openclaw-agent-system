@@ -3,6 +3,8 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
+import { createAutomationGateway } from '../agent/automation-gateway.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
 import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
@@ -49,7 +51,6 @@ function createProgram(
     manifestResult?: AgentManifestLoadResult;
     environment?: Readonly<NodeJS.ProcessEnv>;
     commandAuthority?: RegisterAgentSystemCliOptions['commandAuthority'];
-    collaboration?: RegisterAgentSystemCliOptions['collaboration'];
     setupPrompt?: RegisterAgentSystemCliOptions['setupPrompt'];
     notificationWaitError?: Error;
     cacheGatewayRequest?: OpCacheGatewayRequest;
@@ -155,7 +156,6 @@ function createProgram(
         };
       },
     },
-    collaboration: dependencies.collaboration,
     doctorService: {
       async inspect(input) {
         assert.equal(input.runtime, 'openclaw');
@@ -413,6 +413,57 @@ describe('cli/automation-commands', () => {
       assert.deepEqual(result.exitCodes, [1]);
     }
   });
+  it('should report safe gateway diagnostics in json and text through lifecycle wrappers', async () => {
+    const request = createAutomationGateway(async () => {
+      throw Object.assign(new Error('secret token and payload'), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+        details: { token: 'secret' },
+      });
+    });
+    for (const json of [true, false]) {
+      for (const wrapped of [true, false]) {
+        const result = createProgram(undefined, {
+          automations: {
+            reconcile: async () => {
+              try {
+                return await request('sessions.create', { token: 'secret' });
+              } catch (error) {
+                if (!wrapped) throw error;
+                throw new AgentSystemLifecycleError(
+                  'automations',
+                  'automation-gateway-unavailable',
+                  'stopped',
+                  { cause: error },
+                );
+              }
+            },
+          } as never,
+        });
+        await result.program.parseAsync([
+          'node',
+          'openclaw',
+          'as',
+          'automations',
+          'sync',
+          ...(json ? ['--json'] : []),
+        ]);
+        if (json) {
+          const output = JSON.parse(result.output.join(''));
+          assert.equal(output.status, 'failed');
+          assert.equal(output.diagnostic.method, 'sessions.create');
+          assert.equal(output.diagnostic.category, 'rejected');
+          assert.equal(output.diagnostic.gatewayCode, 'INVALID_REQUEST');
+        } else assert.deepEqual(result.output, []);
+        assert.match(result.diagnostics.join(''), /sessions\.create/u);
+        assert.match(result.diagnostics.join(''), /INVALID_REQUEST/u);
+        assert.ok(![...result.output, ...result.diagnostics].join('').includes('secret'));
+        assert.deepEqual(result.exitCodes, [1]);
+      }
+    }
+  });
+
   it('should print queued text and expose bounded partial failures on stdout and stderr', async () => {
     const result = createProgram(undefined, {
       automations: {
@@ -731,35 +782,15 @@ describe('cli/register', () => {
     assert.equal(output.join('').includes('status'), true);
   });
 
-  it('should route host-only collaboration without loading a workspace', async () => {
+  it('should reject removed collaboration-only flags', async () => {
     for (const operation of ['install', 'doctor']) {
-      let inspected = 0;
-      let reconciled = 0;
-      const test = createProgram(undefined, {
-        collaboration: {
-          async inspectHost() {
-            inspected++;
-            return [];
-          },
-          async reconcileHost() {
-            reconciled++;
-            return { outcomes: [], warnings: [] };
-          },
-        },
-      });
-      await test.program.parseAsync([
-        'node',
-        'openclaw',
-        'as',
-        operation,
-        '--collaboration',
-        '--json',
-      ]);
-      assert.equal(inspected, operation === 'doctor' ? 1 : 0);
-      assert.equal(reconciled, operation === 'install' ? 1 : 0);
+      const test = createProgram();
+      await assert.rejects(
+        test.program.parseAsync(['node', 'openclaw', 'as', operation, '--collaboration', '--json']),
+        /unknown option/u,
+      );
       assert.deepEqual(test.calls.install, []);
       assert.deepEqual(test.calls.doctor, []);
-      assert.deepEqual(test.calls.agent, []);
     }
   });
 
@@ -1074,8 +1105,6 @@ describe('cli/register', () => {
         ['install', '--skip-setup-agent'],
         ['install', '--rebuild-codex-path'],
         ['doctor'],
-        ['doctor', '--collaboration'],
-        ['install', '--collaboration'],
         ['status', '--agent', 'tanaabot'],
         ['credentials', 'set', 'op', '--from-env'],
         ['credentials', 'validate', 'op'],

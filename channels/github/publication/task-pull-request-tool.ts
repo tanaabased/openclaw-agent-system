@@ -14,7 +14,10 @@ import {
   GitHubIssueDeliveryError,
   type default as GitHubNotificationIssueDeliveryService,
 } from '../conversation/issue-delivery-service.ts';
-import type GitHubNotificationPullRequestHandoffService from '../conversation/pull-request-handoff-service.ts';
+import {
+  GitHubNotificationPullRequestHandoffError,
+  type default as GitHubNotificationPullRequestHandoffService,
+} from '../conversation/pull-request-handoff-service.ts';
 import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import { githubNotificationChannelId } from '../routing/routing.ts';
@@ -76,6 +79,7 @@ function unavailable(): never {
 function handoffFailure(
   stage: AgentSystemToolFailureDiagnostic['stage'],
   category: AgentSystemToolFailureDiagnostic['category'],
+  completed?: { number: number; reasonCode?: string },
 ): AgentSystemToolError {
   const guidance =
     stage === 'publication'
@@ -89,10 +93,19 @@ function handoffFailure(
         : 'Check that the issue assignment is still authorized before retrying.';
   return new AgentSystemToolError(
     'execution_failed',
-    `Task PR handoff failed at ${stage} (${category}). ${guidance}`,
+    `Task PR handoff failed at ${stage} (${category}). ${completed ? `PR #${completed.number} publication is complete. ${completed.reasonCode ? `Reason: ${completed.reasonCode}. ` : ''}` : ''}${guidance}`,
     false,
     undefined,
-    { stage, category },
+    {
+      stage,
+      category,
+      ...(completed
+        ? {
+            publication: { status: 'published', number: completed.number },
+            ...(completed.reasonCode ? { reasonCode: completed.reasonCode } : {}),
+          }
+        : {}),
+    },
   );
 }
 
@@ -138,7 +151,14 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
         !item.intake.worktreePath ||
         !item.intake.worktreeBranch ||
         !conversation.assignmentResponse ||
-        (conversation.activeTurn && conversation.activeTurn.eventId !== 'comment')
+        (conversation.activeTurn &&
+          conversation.activeTurn.eventId !== 'comment' &&
+          !(
+            conversation.activeTurn.eventId === 'pull-request-opened' &&
+            conversation.activeTurn.sourceId === conversation.deliveryPullRequest?.nodeId &&
+            conversation.deliveryPullRequest.status === 'open' &&
+            conversation.implementation?.status === 'completed'
+          ))
       )
         unavailable();
       const services = dependencies.services();
@@ -164,6 +184,14 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
           item,
           workspaceDir: scope.workspaceDir,
           worktree: { branch: item.intake.worktreeBranch, path: item.intake.worktreePath },
+          ...(conversation.deliveryPullRequest
+            ? {
+                expectedPullRequest: {
+                  pullRequestNodeId: conversation.deliveryPullRequest.nodeId,
+                  pullRequestNumber: conversation.deliveryPullRequest.number,
+                },
+              }
+            : {}),
           ...(input.body === undefined ? {} : { body: input.body }),
           ...(input.title === undefined ? {} : { title: input.title }),
           ...(scope.signal === undefined ? {} : { signal: scope.signal }),
@@ -174,14 +202,15 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
           error instanceof GitHubIssueDeliveryError ? error.category : 'state-or-configuration',
         );
       }
+      const completedPublication = { number: pullRequest.pullRequestNumber };
       let refreshed;
       try {
         refreshed = await services.authority.open(authorityInput);
       } catch {
-        throw handoffFailure('authorization', 'state-or-configuration');
+        throw handoffFailure('authorization', 'state-or-configuration', completedPublication);
       }
       if (!refreshed.authorized) {
-        throw handoffFailure('authorization', 'authority-revoked');
+        throw handoffFailure('authorization', 'authority-revoked', completedPublication);
       }
       let handoffStatus;
       try {
@@ -192,8 +221,17 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
           workspaceDir: scope.workspaceDir,
           ...(scope.signal === undefined ? {} : { signal: scope.signal }),
         });
-      } catch {
-        throw handoffFailure('checkpoint', 'checkpoint-failed');
+      } catch (error) {
+        throw handoffFailure('checkpoint', 'checkpoint-failed', {
+          number: pullRequest.pullRequestNumber,
+          reasonCode:
+            error instanceof GitHubNotificationPullRequestHandoffError &&
+            /^github-notification-pull-request-handoff-(session-ineligible|identity-mismatch|work-owned|source-failed)$/u.test(
+              error.code,
+            )
+              ? error.code
+              : 'github-notification-pull-request-handoff-checkpoint-unknown',
+        });
       }
       return {
         handoffStatus,

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 
 import AgentSystemToolError from '../api/error.ts';
+import { githubNotificationToolCauseCode } from '../channels/github/intake/monitor/diagnostic.ts';
+import GitCommandError from '../tools/git/command-error.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
 
-function definitionFixture(options: { cleanupFails?: boolean; ssh?: boolean } = {}) {
+function definitionFixture(
+  options: { cleanupFails?: boolean; ssh?: boolean; prepareError?: Error } = {},
+) {
   const events: string[] = [];
   const prepared: Array<{ cloneUrl?: string }> = [];
   const definition = createGitWorktreeToolDefinition({
@@ -31,6 +35,7 @@ function definitionFixture(options: { cleanupFails?: boolean; ssh?: boolean } = 
       },
       async prepare(_context, input) {
         events.push(`prepare:${input.repositoryId}:${input.workId}`);
+        if (options.prepareError) throw options.prepareError;
         prepared.push(input);
         return { workId: input.workId } as never;
       },
@@ -64,6 +69,31 @@ function definitionFixture(options: { cleanupFails?: boolean; ssh?: boolean } = 
 }
 
 describe('tools/git/worktree-tool', () => {
+  it('should retain classified subprocess evidence after cleanup and notification wrapping', async () => {
+    const cause = new GitCommandError('clone', {
+      exitCode: 128,
+      stderr: 'Permission denied (publickey). private-token',
+    });
+    const fixture = definitionFixture({ prepareError: cause });
+    await assert.rejects(
+      fixture.definition.execute(
+        { action: 'prepare', baseRef: 'origin/main', repository: { id: 'repo' }, workId: 'task' },
+        fixture.configuration,
+        fixture.scope,
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof AgentSystemToolError);
+        assert.equal(error.cause, cause);
+        assert.equal(
+          githubNotificationToolCauseCode(new Error('outer', { cause: error })),
+          'git-clone-ssh-authentication-exit-128',
+        );
+        assert.equal(error.message.includes('private-token'), false);
+        return true;
+      },
+    );
+    assert.equal(fixture.events.at(-1), 'dispose');
+  });
   it('should declare git and configured ssh transport requirements', () => {
     const plain = definitionFixture();
     const ssh = definitionFixture({ ssh: true });

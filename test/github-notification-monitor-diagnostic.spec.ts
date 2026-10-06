@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict';
 
+import GitCommandError from '../tools/git/command-error.ts';
 import { ModelRoutingError } from '../channels/github/conversation/model-routing.ts';
 import { GitHubNotificationAssignmentOrchestratorError } from '../channels/github/intake/assignment-orchestrator.ts';
 import { githubNotificationToolCauseCode } from '../channels/github/intake/monitor/diagnostic.ts';
 
 describe('channels/github/intake/monitor/diagnostic', () => {
+  it('should preserve safe git failure evidence through the worktree boundary', () => {
+    const error = new GitHubNotificationAssignmentOrchestratorError(
+      'github-notification-worktree-preparation-failed',
+      'worktree failed',
+      {
+        cause: new GitCommandError('clone', {
+          exitCode: 128,
+          stderr: 'Permission denied (publickey). private-host token-secret',
+        }),
+      },
+    );
+    assert.equal(githubNotificationToolCauseCode(error), 'git-clone-ssh-authentication-exit-128');
+  });
   it('should expose only a bounded llm cause code through nested assignment failures', () => {
     const denied = Object.assign(new Error('private operator policy details'), {
       code: 'LLM_COMPLETION_NOT_AUTHORIZED',

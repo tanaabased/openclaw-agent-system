@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 
 import {
+  AutomationError,
   createAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
   nativeAutomationRun,
   nativeAutomationHistory,
 } from '../agent/automation-gateway.ts';
+import { privateStateFileLockLostErrorCode } from '../core/private-state-file-lock.ts';
+import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
+import { controlledFileLock } from './private-state-file-lock-fixture.ts';
 
 const job = (id: string) => ({
   id,
@@ -19,6 +23,28 @@ const job = (id: string) => ({
   state: {},
 });
 describe('agent/automation-gateway', () => {
+  it('should stop session rpc before dispatch after lock loss without relabeling it as transport failure', async () => {
+    const fixture = await controlledFileLock();
+    let calls = 0;
+    const request = createAutomationGateway(async () => {
+      calls += 1;
+      return {};
+    });
+    try {
+      await assert.rejects(
+        withPrivateStateLock(fixture.handle, async () => {
+          fixture.compromise();
+          for (const method of ['sessions.create', 'sessions.patch'] as const)
+            await assert.rejects(request(method, {}), { code: privateStateFileLockLostErrorCode });
+        }),
+        { code: privateStateFileLockLostErrorCode },
+      );
+    } finally {
+      await fixture.handle.release();
+    }
+    assert.equal(calls, 0);
+  });
+
   it('should supply exact native operator transport options and contain provider failures', async () => {
     const calls: unknown[][] = [];
     const request = createAutomationGateway(async (...args: unknown[]) => {
@@ -33,9 +59,20 @@ describe('agent/automation-gateway', () => {
       'cron.add',
       'cron.update',
       'cron.run',
+      'sessions.resolve',
+      'sessions.list',
+      'sessions.create',
+      'sessions.patch',
     ] as const) {
       await request(method, { id: 'fixture' });
-      const readOnly = ['cron.list', 'cron.get', 'cron.status', 'cron.runs'].includes(method);
+      const readOnly = [
+        'cron.list',
+        'cron.get',
+        'cron.status',
+        'cron.runs',
+        'sessions.resolve',
+        'sessions.list',
+      ].includes(method);
       assert.deepEqual(calls.at(-1), [
         method,
         { timeout: '10000' },
@@ -52,7 +89,9 @@ describe('agent/automation-gateway', () => {
         throw new Error('secret');
       })('cron.run', {}),
       (error: unknown) =>
-        error instanceof Error &&
+        error instanceof AutomationError &&
+        error.diagnostic?.method === 'cron.run' &&
+        error.diagnostic.category === 'unknown' &&
         error.message.includes('automation-gateway-unavailable') &&
         !error.message.includes('secret'),
     );

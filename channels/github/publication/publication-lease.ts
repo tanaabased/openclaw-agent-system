@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
+import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 import {
   default as acquirePrivateStateFileLock,
   privateStateFileLockBusyErrorCode,
@@ -70,7 +71,7 @@ export default class GitHubNotificationPublicationLeaseStore {
         continue;
       }
       try {
-        return await run();
+        return await withPrivateStateLock(handle, run);
       } finally {
         await handle.release();
       }

@@ -16,6 +16,11 @@ import {
 } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 
+import {
+  withPrivateStateLock,
+  assertPrivateStateLocksHeld,
+  privateStateLockSignal,
+} from '../core/private-state-lock-context.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
@@ -425,6 +430,7 @@ export default class WorkspaceBackupService {
               'backup-prune-race',
               'Archive selection changed before deletion.',
             );
+          assertPrivateStateLocksHeld();
           await unlink(path);
           remaining.splice(
             remaining.findIndex((entry) => entry.path === path),
@@ -449,7 +455,7 @@ export default class WorkspaceBackupService {
     await ensureDirectory(control, true);
     const lock = await acquirePrivateStateFileLock(join(control, 'capture'), lockOptions);
     try {
-      return await run();
+      return await withPrivateStateLock(lock, run);
     } finally {
       await lock.release();
     }
@@ -479,115 +485,125 @@ export default class WorkspaceBackupService {
     const lock = await acquirePrivateStateFileLock(join(control, 'capture'), lockOptions);
     let stage: string | undefined;
     try {
-      signal?.throwIfAborted();
-      // refresh selection under the lease after concurrent creation and ignore changes.
-      const fresh = await this.plan({
-        manifest: { schemaVersion: 1, agent: { id: plan.agentId }, backup: plan.settings },
-        workspaceDir: plan.workspaceDir,
-        overrides: plan.settings,
-      });
-      await ignoreDestination(plan.workspaceDir, fresh.settings.output);
-      await ensureDirectory(fresh.settings.output);
-      stage = await mkdtemp(join(control, 'capture-'));
-      const payload = join(stage, 'workspace');
-      await mkdir(payload, { mode: 0o700 });
-      const captured = await captureWorkspace(fresh, payload, signal);
-      const snapshot = await captureAgentSnapshot(fresh, stage, this.snapshotCommand);
-      const coverage = {
-        ...fresh.coverage,
-        stage:
-          snapshot.state === 'captured'
-            ? ('workspace-and-agent-state' as const)
-            : ('workspace-only' as const),
-        openclawState: snapshot.state,
-        limitations: [
-          ...fresh.coverage.limitations,
-          ...(snapshot.state === 'absent'
-            ? ['The selected OpenClaw agent database did not exist at capture time.']
-            : []),
-          ...(snapshot.state === 'captured'
-            ? ['OpenClaw omits transient agent database lease rows from its snapshot.']
-            : []),
-        ],
-      };
-      const agentSystemVersion = (
-        JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
-          version: string;
-        }
-      ).version;
-      const manifest: WorkspaceBackupManifest = {
-        format: 'agent-system-backup',
-        version: 2,
-        agentId: fresh.agentId,
-        capturedAt: new Date().toISOString(),
-        settings: fresh.settings,
-        coverage,
-        diagnostics: fresh.diagnostics,
-        inventory: captured.inventory,
-        ...(snapshot.manifest
-          ? {
-              snapshot: {
-                manifest: snapshot.manifest,
-                openclawVersion: fresh.openclawVersion ?? 'unavailable',
-                agentSystemVersion,
-              },
-            }
-          : {}),
-      };
-      const temporaryArchive = join(stage, 'archive.tar.gz');
-      await writeWorkspaceArchive(temporaryArchive, payload, manifest, signal, snapshot.directory);
-      await this.verify(temporaryArchive, plan.agentId, signal);
-      const destination = join(
-        fresh.settings.output,
-        `${plan.agentId}-${manifest.capturedAt.replace(/[:.]/gu, '-')}-${randomUUID()}.tar.gz`,
-      );
-      // copy to the destination filesystem privately, then use an exclusive hard link to publish.
-      const pending = join(fresh.settings.output, `.pending-${randomUUID()}.tar.gz`);
-      try {
-        const source = await open(temporaryArchive, 'r');
-        let target: FileHandle | undefined;
-        try {
-          target = await open(
-            pending,
-            constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-            0o600,
-          );
-          for await (const chunk of source.createReadStream({ autoClose: false })) {
-            signal?.throwIfAborted();
-            await target.writeFile(chunk);
-          }
-          await target.sync();
-        } finally {
-          await source.close();
-          await target?.close();
-        }
-        await this.verify(pending, plan.agentId, signal);
-        await ensureDirectory(fresh.settings.output);
+      return await withPrivateStateLock(lock, async () => {
+        signal = privateStateLockSignal(signal);
         signal?.throwIfAborted();
-        for (const [source, expected] of captured.sources) {
-          try {
-            if (
-              fingerprint(await lstat(source)) !== expected ||
-              (await realpath(dirname(source))) !== dirname(source)
-            )
-              throw new BackupError(
-                'backup-source-changed',
-                `A source changed before publication: ${relative(fresh.workspaceDir, source) || '.'}. No archive was published.`,
-              );
-          } catch (error) {
-            if (nodeErrorCode(error) === 'ENOENT')
-              throw new BackupError(
-                'backup-source-lost',
-                `A source disappeared before publication: ${relative(fresh.workspaceDir, source)}. No archive was published.`,
-              );
-            throw error;
+        // refresh selection under the lease after concurrent creation and ignore changes.
+        const fresh = await this.plan({
+          manifest: { schemaVersion: 1, agent: { id: plan.agentId }, backup: plan.settings },
+          workspaceDir: plan.workspaceDir,
+          overrides: plan.settings,
+        });
+        await ignoreDestination(plan.workspaceDir, fresh.settings.output);
+        await ensureDirectory(fresh.settings.output);
+        stage = await mkdtemp(join(control, 'capture-'));
+        const payload = join(stage, 'workspace');
+        await mkdir(payload, { mode: 0o700 });
+        const captured = await captureWorkspace(fresh, payload, signal);
+        const snapshot = await captureAgentSnapshot(fresh, stage, this.snapshotCommand);
+        const coverage = {
+          ...fresh.coverage,
+          stage:
+            snapshot.state === 'captured'
+              ? ('workspace-and-agent-state' as const)
+              : ('workspace-only' as const),
+          openclawState: snapshot.state,
+          limitations: [
+            ...fresh.coverage.limitations,
+            ...(snapshot.state === 'absent'
+              ? ['The selected OpenClaw agent database did not exist at capture time.']
+              : []),
+            ...(snapshot.state === 'captured'
+              ? ['OpenClaw omits transient agent database lease rows from its snapshot.']
+              : []),
+          ],
+        };
+        const agentSystemVersion = (
+          JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
+            version: string;
           }
+        ).version;
+        const manifest: WorkspaceBackupManifest = {
+          format: 'agent-system-backup',
+          version: 2,
+          agentId: fresh.agentId,
+          capturedAt: new Date().toISOString(),
+          settings: fresh.settings,
+          coverage,
+          diagnostics: fresh.diagnostics,
+          inventory: captured.inventory,
+          ...(snapshot.manifest
+            ? {
+                snapshot: {
+                  manifest: snapshot.manifest,
+                  openclawVersion: fresh.openclawVersion ?? 'unavailable',
+                  agentSystemVersion,
+                },
+              }
+            : {}),
+        };
+        const temporaryArchive = join(stage, 'archive.tar.gz');
+        await writeWorkspaceArchive(
+          temporaryArchive,
+          payload,
+          manifest,
+          signal,
+          snapshot.directory,
+        );
+        await this.verify(temporaryArchive, plan.agentId, signal);
+        const destination = join(
+          fresh.settings.output,
+          `${plan.agentId}-${manifest.capturedAt.replace(/[:.]/gu, '-')}-${randomUUID()}.tar.gz`,
+        );
+        // copy to the destination filesystem privately, then use an exclusive hard link to publish.
+        const pending = join(fresh.settings.output, `.pending-${randomUUID()}.tar.gz`);
+        try {
+          const source = await open(temporaryArchive, 'r');
+          let target: FileHandle | undefined;
+          try {
+            target = await open(
+              pending,
+              constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+              0o600,
+            );
+            for await (const chunk of source.createReadStream({ autoClose: false })) {
+              signal?.throwIfAborted();
+              await target.writeFile(chunk);
+            }
+            await target.sync();
+          } finally {
+            await source.close();
+            await target?.close();
+          }
+          await this.verify(pending, plan.agentId, signal);
+          await ensureDirectory(fresh.settings.output);
+          signal?.throwIfAborted();
+          for (const [source, expected] of captured.sources) {
+            try {
+              if (
+                fingerprint(await lstat(source)) !== expected ||
+                (await realpath(dirname(source))) !== dirname(source)
+              )
+                throw new BackupError(
+                  'backup-source-changed',
+                  `A source changed before publication: ${relative(fresh.workspaceDir, source) || '.'}. No archive was published.`,
+                );
+            } catch (error) {
+              if (nodeErrorCode(error) === 'ENOENT')
+                throw new BackupError(
+                  'backup-source-lost',
+                  `A source disappeared before publication: ${relative(fresh.workspaceDir, source)}. No archive was published.`,
+                );
+              throw error;
+            }
+          }
+          assertPrivateStateLocksHeld();
+          await link(pending, destination);
+        } finally {
+          await unlink(pending).catch(() => undefined);
         }
-        await link(pending, destination);
-      } finally {
-        await unlink(pending).catch(() => undefined);
-      }
-      return { archive: destination, manifest };
+        return { archive: destination, manifest };
+      });
     } finally {
       if (stage) await rm(stage, { recursive: true, force: true });
       await lock.release();

@@ -7,6 +7,8 @@ import GitHubNotificationMonitorStateStore from '../channels/github/intake/monit
 import { patchGitHubNotificationItem } from '../channels/github/intake/monitor/state-checkpoint.ts';
 import { githubNotificationRetirementItemKeys } from '../channels/github/intake/monitor/state.ts';
 import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/intake/monitor/cycle-lease.ts';
+import { privateStateFileLockLostErrorCode } from '../core/private-state-file-lock.ts';
+import { controlledFileLock } from './private-state-file-lock-fixture.ts';
 import {
   approvedNotificationItem,
   notificationItemKey,
@@ -14,6 +16,40 @@ import {
 } from './github-notification-fixtures.ts';
 
 describe('channels/github/intake/monitor/state-store', () => {
+  it('should refuse stale updates and removals while an independent owner can still write', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'agent-system-lost-state-'));
+    const independent = new GitHubNotificationMonitorStateStore({ rootDir });
+    const state = notificationMonitorState();
+    try {
+      await independent.write(state);
+      for (const operation of ['update', 'remove']) {
+        const fixture = await controlledFileLock();
+        const stale = new GitHubNotificationMonitorStateStore({
+          rootDir,
+          acquireFileLock: async () => fixture.handle,
+        });
+        await assert.rejects(
+          operation === 'update'
+            ? stale.update(state.agentId, (current) => {
+                fixture.compromise();
+                return { ...current!, failureCount: 99 };
+              })
+            : stale.remove(state.agentId, () => {
+                fixture.compromise();
+                return true;
+              }),
+          { code: privateStateFileLockLostErrorCode },
+        );
+        assert.deepEqual(await independent.read(state.agentId), state);
+        assert.equal(fixture.releases(), 0);
+      }
+      await independent.update(state.agentId, (current) => ({ ...current!, failureCount: 1 }));
+      assert.equal((await independent.read(state.agentId))?.failureCount, 1);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it('should serialize updates from independent stores without using the execution lease', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-updates-'));
     const rootDir = join(temporaryDirectory, 'state');

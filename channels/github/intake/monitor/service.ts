@@ -1,6 +1,10 @@
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import {
+  withPrivateStateLock,
+  privateStateLockSignal,
+} from '../../../../core/private-state-lock-context.ts';
 import type { ConversationHookFinding } from '../../../../core/conversation-hook-access.ts';
 import type AgentManifestService from '../../../../manifest/service.ts';
 import type GitHubAccountClient from '../../../../core/github-account-client.ts';
@@ -20,7 +24,7 @@ import { pollGitHubNotifications } from './poller.ts';
 import type NotificationRoutingService from '../../routing/service.ts';
 import GitHubWorkEventClient from '../../provider/work-event-client.ts';
 import { resolveMaximumCommentCharacters } from '../../provider/comment-limit.ts';
-import { githubNotificationDiagnostic } from './diagnostic.ts';
+import { githubNotificationDiagnostic, githubNotificationToolCauseCode } from './diagnostic.ts';
 import createGitHubNotificationFailureState from './failure-state.ts';
 import { pendingGitHubNotificationItemKeys } from './item-queries.ts';
 import GitHubNotificationMonitorReconciler, {
@@ -225,7 +229,9 @@ export default class GitHubNotificationMonitorService {
   }
 
   #pollAgent(agentId: string, options: GitHubNotificationMonitorRunOptions) {
-    return this.#withLease(agentId, options, 'poll', () => this.#poll(agentId, options));
+    return this.#withLease(agentId, options, 'poll', (signal) =>
+      this.#poll(agentId, { ...options, signal }),
+    );
   }
 
   async #executionItemKeys(
@@ -272,7 +278,7 @@ export default class GitHubNotificationMonitorService {
       agentId,
       options,
       'execution',
-      () => this.#execute(agentId, options, result, itemKey),
+      (signal) => this.#execute(agentId, { ...options, signal }, result, itemKey),
       result,
       itemKey,
     );
@@ -282,7 +288,7 @@ export default class GitHubNotificationMonitorService {
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
     scope: 'execution' | 'poll',
-    operation: () => Promise<GitHubNotificationMonitorRunResult>,
+    operation: (signal?: AbortSignal) => Promise<GitHubNotificationMonitorRunResult>,
     previous?: GitHubNotificationMonitorRunResult,
     itemKey?: string,
   ): Promise<GitHubNotificationMonitorRunResult> {
@@ -318,7 +324,9 @@ export default class GitHubNotificationMonitorService {
     }
     let result: GitHubNotificationMonitorRunResult;
     try {
-      result = await operation();
+      result = await withPrivateStateLock(acquisition.lease, () =>
+        operation(privateStateLockSignal(options.signal)),
+      );
     } catch (error) {
       await acquisition.lease.release().catch(() => undefined);
       throw error;
@@ -541,6 +549,7 @@ export default class GitHubNotificationMonitorService {
       }
       const now = (this.#dependencies.clock ?? Date.now)();
       const diagnostic = githubNotificationDiagnostic(error);
+      const causeCode = githubNotificationToolCauseCode(error);
       try {
         if (workspaceDir) {
           const failed = await this.#saveFailure(
@@ -551,7 +560,7 @@ export default class GitHubNotificationMonitorService {
             diagnostic.retryAt,
           );
           this.#dependencies.logger.warn(
-            `github-notifications: poll deferred agent=${agentId} code=${diagnostic.code}`,
+            `github-notifications: poll deferred agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
           );
           return {
             agentId,
@@ -572,7 +581,7 @@ export default class GitHubNotificationMonitorService {
         };
       }
       this.#dependencies.logger.warn(
-        `github-notifications: poll deferred agent=${agentId} code=${diagnostic.code}`,
+        `github-notifications: poll deferred agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
       );
       return { agentId, code: diagnostic.code, status: 'failed' };
     }
@@ -697,8 +706,9 @@ export default class GitHubNotificationMonitorService {
           'skipped',
         );
       const diagnostic = githubNotificationDiagnostic(error);
+      const causeCode = githubNotificationToolCauseCode(error);
       this.#dependencies.logger.warn(
-        `github-notifications: execution failed agent=${agentId} code=${diagnostic.code}`,
+        `github-notifications: execution failed agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
       );
       // execution failures belong to lifecycle checkpoints, not provider polling backoff.
       return this.#deferExecution(agentId, itemKey, result, diagnostic.code, 'failed');

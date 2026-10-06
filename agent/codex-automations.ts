@@ -5,6 +5,12 @@ import { join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { AutomationError } from './automation-gateway.ts';
+import AutomationThreads, {
+  automationThreadSelection,
+  type AutomationThreadAdapter,
+} from './automation-threads.ts';
+import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
 import { automationHash } from './automation-hash.ts';
 import planCodexAutomations, {
   automationRecordSchema,
@@ -33,6 +39,7 @@ const actionSchema = Type.Object(
     id: Type.Optional(Type.String()),
     expected: nativeAutomationSchema,
     removed: Type.Boolean(),
+    retire: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -41,6 +48,7 @@ const ledgerSchema = Type.Object(
     version: Type.Literal(1),
     scope: hash,
     records: Type.Array(automationRecordSchema),
+    retired: Type.Optional(Type.Array(automationRecordSchema)),
     pending: Type.Optional(
       Type.Object(
         {
@@ -66,6 +74,7 @@ type Ledger = Static<typeof ledgerSchema>;
 export interface CodexAutomationDependencies {
   codexHome?: string;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
+  threadAdapter?: AutomationThreadAdapter;
 }
 
 async function snapshot(pluginData: string, dependencies: CodexAutomationDependencies) {
@@ -120,26 +129,75 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
   } catch {
     throw new CodexAutomationError('automation-ownership-invalid');
   }
-  return { loaded, workspace, codexHome, scope, file, ledger, root, path };
+  return { loaded, workspace, codexHome, scope, file, ledger, root, path, dependencies };
+}
+
+async function resolveThreads(selected: Awaited<ReturnType<typeof snapshot>>, apply = false) {
+  const jobs = (selected.loaded.manifest.automations ?? []).filter(
+    (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex')?.managed,
+  );
+  if (!jobs.length) return new Map<string, { id: string }>();
+  let connection = selected.dependencies.threadAdapter
+    ? undefined
+    : await connectCodexThreads(selected.workspace, selected.codexHome);
+  try {
+    const adapter =
+      selected.dependencies.threadAdapter ??
+      codexThreadAdapter(
+        (method, params) => connection!.request(method, params),
+        selected.workspace,
+        async (id) => {
+          await connection!.close();
+          connection = await connectCodexThreads(selected.workspace, selected.codexHome);
+          await connection.request('thread/resume', { threadId: id });
+        },
+      );
+    return await new AutomationThreads(
+      { root: selected.root, scope: selected.scope, runtime: 'codex' },
+      adapter,
+    ).resolve(jobs, apply);
+  } finally {
+    await connection?.close();
+  }
 }
 
 async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: CodexAutomationInputs) {
   const { loaded, workspace, scope, codexHome, ledger } = selected;
   const jobs = loaded.manifest.automations ?? [];
   const saved =
-    jobs.some((job) => job.runtimes.includes('codex')) || ledger.records.length || ledger.pending
+    jobs.some((job) => job.runtimes.includes('codex')) ||
+    ledger.records.length ||
+    ledger.retired?.length ||
+    ledger.pending
       ? await readCodexAutomations(codexHome)
       : [];
+  for (const retired of ledger.retired ?? []) {
+    const actual = saved.find((item) => item.id === retired.nativeId);
+    if (
+      !actual ||
+      retired.definition.status !== 'PAUSED' ||
+      !savedMatches(actual, retired.definition, workspace)
+    )
+      throw new CodexAutomationError('automation-retired-job-diverged');
+  }
   const needsDefaults = jobs.some(
     (job) =>
       job.runtimes.includes('codex') &&
       job.payload.kind === 'prompt' &&
-      (job.overrides.codex?.target ?? 'independent') === 'independent' &&
+      !automationThreadSelection(job, 'codex') &&
       (!job.overrides.codex?.model || !job.overrides.codex?.effort),
   );
   const defaults = needsDefaults
     ? await readCodexAutomationDefaults(codexHome).catch(() => undefined)
     : undefined;
+  let bindings: Map<string, { id: string }> | undefined;
+  let threadCode: string | undefined;
+  try {
+    bindings = await resolveThreads(selected);
+  } catch (error) {
+    threadCode =
+      error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed';
+  }
   const result = await planCodexAutomations({
     scope,
     workspace,
@@ -150,7 +208,28 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     records: ledger.records,
     inputs,
     defaults,
+    bindings,
   });
+  result.unmanagedCount -= ledger.retired?.length ?? 0;
+  if (threadCode) {
+    result.findings.push({ id: 'threads', code: threadCode });
+    result.actions = [];
+    const synchronizable = new Set([
+      'automation-thread-sync-required',
+      'automation-thread-name-drift',
+      'automation-missing',
+      'automation-drift',
+      'automation-healthy',
+      'automation-disabled',
+      'automation-disabled-retained',
+      'automation-removal-pending',
+      'automation-target-migration-pending',
+    ]);
+    result.status = result.findings.every((finding) => synchronizable.has(finding.code))
+      ? 'requires-native-app-sync'
+      : 'blocked';
+    result.digest = automationHash({ plan: result.digest, threadCode });
+  }
   if (ledger.pending)
     return {
       saved,
@@ -176,6 +255,55 @@ export async function inspectCodexAutomations(
 ) {
   const selected = await snapshot(pluginData, dependencies);
   return (await plan(selected, inputs)).result;
+}
+
+/** explicit native conversation sync; schedules remain owned by the desktop app tools. */
+export async function syncCodexAutomationThreads(
+  pluginData: string,
+  digest: string,
+  inputs: CodexAutomationInputs = {},
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const initial = await snapshot(pluginData, dependencies);
+  return withJournal(initial, async () => {
+    const selected = await snapshot(pluginData, dependencies);
+    const { result } = await plan(selected, inputs);
+    if (selected.scope !== initial.scope || selected.ledger.pending || result.digest !== digest)
+      throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    const allowed = new Set([
+      'automation-thread-sync-required',
+      'automation-thread-name-drift',
+      'automation-thread-recovery-required',
+      'automation-healthy',
+      'automation-disabled',
+      'automation-disabled-retained',
+      'automation-missing',
+      'automation-drift',
+      'automation-removal-pending',
+      'automation-target-migration-pending',
+    ]);
+    if (result.findings.some((finding) => !allowed.has(finding.code)))
+      throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    const jobs = selected.loaded.manifest.automations ?? [];
+    if (
+      jobs.some(
+        (job) =>
+          job.runtimes.includes('codex') &&
+          automationThreadSelection(job, 'codex')?.managed &&
+          (job.overrides.codex?.model !== undefined || job.overrides.codex?.effort !== undefined),
+      )
+    )
+      throw new CodexAutomationError('automation-thread-overrides-unsupported');
+    const bindings = await resolveThreads(selected, true).catch((error) => {
+      throw new CodexAutomationError(
+        error instanceof AutomationError ? error.code : 'automation-thread-sync-failed',
+      );
+    });
+    const current = await snapshot(pluginData, dependencies);
+    if (current.loaded.digest !== selected.loaded.digest)
+      throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    return { status: 'verified', routing: 'per-automation', threads: Object.fromEntries(bindings) };
+  });
 }
 
 /** operator inventory uses the same saved-state planner as doctor and install. */
@@ -349,13 +477,23 @@ export async function acknowledgeCodexAutomation(
       throw new CodexAutomationError('automation-readback-diverged');
     }
     const records = selected.ledger.records.filter((record) => record.id !== action.manifestId);
-    records.push({
+    const completed = {
       id: action.manifestId,
       nativeId: actual.id,
       definition: action.expected,
       removed: action.removed,
-    });
-    await selected.file.write(JSON.stringify({ version: 1, scope: selected.scope, records }));
+    };
+    const retired = [...(selected.ledger.retired ?? [])];
+    if (action.retire) retired.push(completed);
+    else records.push(completed);
+    await selected.file.write(
+      JSON.stringify({
+        version: 1,
+        scope: selected.scope,
+        records,
+        ...(retired.length ? { retired } : {}),
+      }),
+    );
     return { status: 'verified', manifestId: action.manifestId, nativeId: actual.id, digest };
   });
 }
@@ -381,9 +519,7 @@ export async function cancelCodexAutomation(
           saved.every((item) => before.nativeIds.includes(item.id)))
       : automationHash(saved) === pending.beforeHash;
     if (!unchanged) throw new CodexAutomationError('automation-cancel-recovery-required');
-    await selected.file.write(
-      JSON.stringify({ version: 1, scope: selected.scope, records: selected.ledger.records }),
-    );
+    await selected.file.write(JSON.stringify({ ...selected.ledger, pending: undefined }));
     return { status: 'cancelled', digest };
   });
 }

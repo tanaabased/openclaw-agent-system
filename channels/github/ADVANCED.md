@@ -208,7 +208,14 @@ not merge. It is unavailable outside a prepared issue-owned session.
 
 The response reports `status: linked` for the completed PR link and a
 `handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
-durable handoff is published, then `published` on a later call. The tool does not run the asynchronous handoff turn itself.
+durable handoff is published, then `published` on a later call. A verified same-PR
+retry remains available during its own PR-opened turn. If that turn lacks confirmed
+terminal completion, `recovery-required` preserves the pending event and stops
+automatic replay; it does not mean the PR must be recreated. This includes
+interrupted attempts whose completion cannot be recovered through the supported
+host API. Pending comments remain unconsumed until handoff is resolved. Checkpoint
+failures retain a bounded reason code and the already-completed publication outcome.
+The tool does not run the asynchronous handoff turn itself.
 
 ## CLI
 

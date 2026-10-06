@@ -50,6 +50,7 @@ openclaw-github-notifications wait-route \
 # should register only the generated public key for tanaabot
 cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-implementation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
+openclaw-ssh-evidence notification-data registered
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"
@@ -141,7 +142,10 @@ worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --
 worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
 cd "$worktree_path"
 head_sha="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD)"
-remote_line="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- ls-remote --heads origin "refs/heads/$worktree_branch")"
+if ! remote_line="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- ls-remote --heads origin "refs/heads/$worktree_branch")"; then
+  openclaw-ssh-evidence notification-data readback-failed
+  exit 1
+fi
 remote_sha="$(printf '%s\n' "$remote_line" | cut -f1)"
 test -n "$remote_sha"
 test "$remote_sha" = "$head_sha"

@@ -13,6 +13,7 @@ import {
   listCodexAutomations,
   codexAutomationRunGap,
   prepareCodexAutomation,
+  syncCodexAutomationThreads,
 } from '../agent/codex-automations.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
 import {
@@ -204,6 +205,61 @@ describe('agent/codex-automations', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should create per-automation conversations and migrate only after retiring the old active schedule', async () => {
+    await syncOne();
+    const conversations = new Map<string, { id: string; name?: string }>();
+    let creates = 0;
+    const dependencies = {
+      ...deps(),
+      threadAdapter: {
+        async lookup(id: string) {
+          return conversations.get(id) ?? null;
+        },
+        async create(_record: unknown, save: (id: string) => Promise<void>) {
+          const id = `thread-${++creates}`;
+          await save(id);
+          conversations.set(id, { id });
+          return id;
+        },
+        async rename(id: string, name: string) {
+          conversations.set(id, { id, name });
+        },
+      },
+    };
+    await manifest(job('    thread: { id: activity, name: Activity }\n'));
+    const before = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(before.status, 'requires-native-app-sync');
+    await syncCodexAutomationThreads(pluginData, before.digest, inputs(), dependencies);
+    const migration = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(migration.actions[0]?.retire, true);
+    assert.equal(migration.actions[0]?.expected.status, 'PAUSED');
+    const prepared = await prepareCodexAutomation(
+      pluginData,
+      migration.digest,
+      inputs(),
+      dependencies,
+    );
+    await nativeWrite(migration.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, prepared.digest, undefined, dependencies);
+    const replacement = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(replacement.actions[0]?.mode, 'create');
+    assert.equal(replacement.actions[0]?.expected.kind, 'heartbeat');
+    await prepareCodexAutomation(pluginData, replacement.digest, inputs(), dependencies);
+    await nativeWrite(replacement.actions[0]!.expected, 'replacement');
+    await acknowledgeCodexAutomation(pluginData, replacement.digest, undefined, dependencies);
+    assert.equal(
+      (await inspectCodexAutomations(pluginData, inputs(), dependencies)).status,
+      'aligned',
+    );
+    assert.equal(creates, 1);
+    assert.equal(
+      (await readCodexAutomations(codexHome)).filter((item) => item.definition.status === 'ACTIVE')
+        .length,
+      1,
+    );
+    assert.equal((await readCodexAutomations(codexHome)).length, 2);
   });
 
   it('should list owned state through the planner and report native occurrence gaps without writes', async () => {

@@ -92,6 +92,14 @@ and verify each saved definition. Doctor compares desired and saved settings
 without changing or running jobs. Headless Install returns
 `requires-native-app-sync` when native app work remains.
 
+The shared [`thread` declaration](./MANIFEST.md#persistent-conversations) creates
+stable **per-automation** conversations, even when jobs declare the same ID;
+these chats do not share context. Setup uses the native `codex app-server`
+protocol in the ambient profile, adds an attributed setup history item without
+model generation, and verifies resume through a fresh process. A compatible
+`codex` executable must be on `PATH`; unsupported protocol methods fail closed.
+The desktop app still owns every schedule.
+
 The [manifest reference](./MANIFEST.md#automations) owns shared syntax and
 schedules. Codex supports this subset:
 
@@ -103,12 +111,13 @@ schedules. Codex supports this subset:
 | `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                            |
 | `schedule`                                        | Whole-minute or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
 | `schedule.timezone`                               | `native` only. Native timing and DST behavior apply.                                                                                                                                                                                                                               |
+| `thread`                                          | Creates a persistent conversation per automation. Model and effort overrides are rejected for persistent chat targets.                                                                                                                                                             |
 | `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                         |
 
 Missing or ambiguous projects block planning; worktree bindings do not select the
 parent checkout. Chat targets require a fresh native exact-chat read with active,
-idle, running, or completed status. Install does not create a replacement chat or
-use its own conversation as the target.
+idle, running, or completed status. Explicit chat targets are not replaced or
+rebound to the installer's conversation.
 
 Codex uses ambient host credentials and permissions; it does not resolve OpenClaw
 credentials or change Codex permission settings. Unavailable models, accounts,
@@ -116,6 +125,12 @@ app operations, or unattended permissions block completion. Saved definitions
 prove persistence, not successful execution. Run-now, native occurrence history,
 and execution/delivery telemetry are unavailable; a separately requested manual
 task has its own history and does not prove native scheduling.
+
+The trusted `automationRuntime` exposes `threads-sync` for conversation setup
+under explicit installation authorization and a fresh plan digest. Its `sync`
+route returns the plan for authorized native schedule writes; it does not write
+scheduler files. See the [Codex example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex/README.md#automation-checks)
+for the internal planning and recovery commands.
 
 ### Ownership and Recovery
 

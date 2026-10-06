@@ -1,4 +1,5 @@
 import AgentSystemToolError from '../../../../api/error.ts';
+import GitCommandError from '../../../../tools/git/command-error.ts';
 import { GitHubAccountClientError } from '../../../../core/github-account-client.ts';
 import { GitHubNotificationPollError } from './poller.ts';
 
@@ -31,11 +32,13 @@ export function githubNotificationDiagnostic(error: unknown): { code: string; re
 
 export function githubNotificationToolCauseCode(error: unknown): string | undefined {
   let cause = error instanceof Error ? error.cause : undefined;
-  for (let depth = 0; depth < 4 && cause instanceof Error; depth++) {
-    if (cause instanceof AgentSystemToolError) return cause.code;
+  let toolCode: string | undefined;
+  for (let depth = 0; depth < 8 && cause instanceof Error; depth++) {
+    if (cause instanceof GitCommandError) return cause.diagnosticCode;
+    if (cause instanceof AgentSystemToolError) toolCode ??= cause.code;
     const code = 'code' in cause && typeof cause.code === 'string' ? cause.code : undefined;
     if (code && safeLlmCauseCodes.has(code)) return code;
     cause = cause.cause;
   }
-  return undefined;
+  return toolCode;
 }

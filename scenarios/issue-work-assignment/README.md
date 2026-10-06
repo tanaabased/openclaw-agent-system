@@ -93,6 +93,9 @@ openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model 
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
+
+# should activate the repaired hook policy before checking the running route
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data
@@ -106,6 +109,7 @@ openclaw config set plugins.entries.agent-system.llm.allowedCompletionModels '["
 # should register only the generated public key for tanaabot
 cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-assignment-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
+openclaw-ssh-evidence notification-data registered
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"

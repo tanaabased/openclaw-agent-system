@@ -351,7 +351,23 @@ describe('channels/github/conversation initial handoff', () => {
     );
   });
 
-  for (const phase of ['baseline', 'event', 'handoff-checkpoint', 'handoff'] as const) {
+  it('should retain eligible comments without replaying an interrupted event', async () => {
+    const fixture = await handoffFixture();
+    const comment = incomingComment();
+    fixture.comments.push(comment);
+    fixture.controls.fail = 'event';
+    await assert.rejects(fixture.reconcileHandoff());
+    const interrupted = fixture.snapshot();
+    assert.equal(interrupted.conversation?.deliveryPullRequest?.eventStatus, 'recovery-required');
+    await fixture.reconcileHandoff();
+    await fixture.reconcileComments();
+    await fixture.reconcileHandoff();
+    assert.deepEqual(fixture.snapshot(), interrupted);
+    assert.deepEqual(fixture.counts, { comments: 0, handoffs: 0, replies: 0 });
+    assert.equal(interrupted.conversation?.revisions[comment.nodeId], undefined);
+  });
+
+  for (const phase of ['baseline', 'handoff-checkpoint', 'handoff'] as const) {
     it(`should defer comment reconciliation until an interrupted ${phase} completes`, async () => {
       const fixture = await handoffFixture();
       const comment = incomingComment();

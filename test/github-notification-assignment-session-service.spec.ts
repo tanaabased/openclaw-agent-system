@@ -424,7 +424,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgmentFailures: 1,
       models: { default: profile, low: profile, medium: profile, high: profile },
     });
-    await assert.rejects(scenario.prepare(), /acknowledgment interrupted/);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-acknowledgment-failed',
+      cause: new Error('acknowledgment interrupted'),
+    });
     assert.deepEqual(await scenario.prepare(), { status: 'active' });
     assert.equal(scenario.classifications(), 1);
     assert.equal(scenario.metadataReads(), 1);
@@ -461,7 +464,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgmentFailures: 1,
       models: { default: profile, low: profile, medium: profile, high: profile },
     });
-    await assert.rejects(scenario.prepare(), /acknowledgment interrupted/);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-acknowledgment-failed',
+      cause: new Error('acknowledgment interrupted'),
+    });
     const routed = scenario.state().conversations[conversationId]!;
     assert.ok(routed.modelRouting?.decision);
     assert.equal(routed.baselineEstablished, true);
@@ -475,7 +481,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
 
   it('should initialize a new conversation before dispatch and retry an interrupted acknowledgment', async () => {
     const scenario = harness({ initialConversationMissing: true, acknowledgmentFailures: 1 });
-    await assert.rejects(scenario.prepare(), /acknowledgment interrupted/u);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-acknowledgment-failed',
+      cause: new Error('acknowledgment interrupted'),
+    });
     const pending = scenario.state().conversations[conversationId]!;
     assert.equal(pending.activeTurn?.eventId, 'assignment');
     assert.equal(pending.assignmentResponse, undefined);
@@ -653,7 +662,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
   it('should retry a pending publication without another assignment turn', async () => {
     const scenario = harness({ publicationFailures: 1 });
 
-    await assert.rejects(scenario.prepare(), /publication interrupted/u);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-publication-failed',
+      cause: new Error('publication interrupted'),
+    });
     assert.equal(
       scenario.state().conversations[conversationId]?.assignmentResponse?.status,
       'pending',
@@ -678,7 +690,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
   it('should retain the active assignment descriptor for a model-turn retry', async () => {
     const scenario = harness({ assignmentFailures: 1 });
 
-    await assert.rejects(scenario.prepare(), /assignment turn interrupted/u);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-execution-failed',
+      cause: new Error('assignment turn interrupted'),
+    });
     assert.deepEqual(scenario.state().conversations[conversationId]?.activeTurn, {
       eventId: 'assignment',
       sourceId: assignmentEventId,
@@ -702,7 +717,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
     const activeTurn = { eventId: 'comment' as const, sourceId: 'a'.repeat(64) };
     const scenario = harness({ initialActiveTurn: activeTurn });
 
-    await assert.rejects(scenario.prepare(), /Another GitHub notification model turn is active/u);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-checkpoint-failed',
+      cause: new Error('Another GitHub notification model turn is active.'),
+    });
 
     assert.deepEqual(scenario.counts, {
       acknowledgments: 0,
@@ -720,7 +738,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
     const scenario = harness({ implementationFailures: 1 });
 
     await scenario.prepare();
-    await assert.rejects(scenario.prepare(), /implementation turn interrupted/u);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-execution-failed',
+      cause: new Error('implementation turn interrupted'),
+    });
     assert.deepEqual(scenario.state().conversations[conversationId]?.activeTurn, {
       eventId: 'implementation',
       sourceId: assignmentEventId,
@@ -749,7 +770,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
     const scenario = harness({ deliveryFailures: 1 });
 
     await scenario.prepare();
-    await assert.rejects(scenario.prepare(), /delivery interrupted/u);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-delivery-failed',
+      cause: new Error('delivery interrupted'),
+    });
     assert.equal(scenario.state().conversations[conversationId]?.activeTurn, undefined);
     assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
       status: 'delivery-pending',
@@ -774,7 +798,10 @@ describe('channels/github/conversation/assignment-session-service', () => {
     const scenario = harness({ handoffFailures: 1 });
 
     await scenario.prepare();
-    await assert.rejects(scenario.prepare(), /handoff interrupted/u);
+    await assert.rejects(scenario.prepare(), {
+      code: 'github-notification-assignment-handoff-failed',
+      cause: new Error('handoff interrupted'),
+    });
 
     assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
       status: 'completed',
