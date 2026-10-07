@@ -1201,7 +1201,7 @@ describe('cli/register', () => {
         installOutcomes,
       });
       await program.parseAsync(['node', 'openclaw', 'agent-system', command]);
-      const rows = output.join('').split('\n');
+      const rows = output.join('').trim().split('\n');
       assert.match(rows[0]!, /^agent\s+(healthy|unchanged)$/);
       assert.ok(rows[1]!.startsWith('  '));
       assert.ok(rows.slice(0, -3).every((row) => row.length <= 32));

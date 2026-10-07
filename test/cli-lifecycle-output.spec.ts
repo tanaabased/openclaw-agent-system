@@ -7,6 +7,9 @@ import { createCliStyles, type CliStyles, renderCliLifecycleTable } from '../cli
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
 import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
 
+const renderTable = (...args: Parameters<typeof renderCliLifecycleTable>) =>
+  renderCliLifecycleTable(...args).slice(1, -1);
+
 const plainStyles = createCliStyles({ NO_COLOR: '1' });
 const markerStyles: CliStyles = {
   accent: (value) => `<accent>${value}</accent>`,
@@ -21,38 +24,48 @@ const markerStyles: CliStyles = {
 };
 
 describe('cli/lifecycle-output', () => {
-  it('should style individual cells and keep workspace metadata neutral', () => {
+  it('should keep tables flush left and separate logical rows without splitting wrapped lines', () => {
     const rows = renderCliLifecycleTable(
+      lifecycleTableLines(doctorFindings),
+      '/workspace',
+      plainStyles,
+      240,
+    );
+    assert.equal(rows[0], '');
+    assert.equal(rows.at(-1), '');
+    assert.equal(rows.at(-2), 'workspace  /workspace');
+    assert.ok(rows[1]!.startsWith('agent'));
+    assert.equal(rows[2], '');
+    assert.ok(rows[3]!.startsWith('security'));
+    assert.equal(rows.at(-3), '');
+  });
+  it('should style individual cells and keep workspace metadata neutral', () => {
+    const rows = renderTable(
       lifecycleTableLines([...doctorFindings, ...installOutcomes]),
       '/workspace',
       markerStyles,
       240,
-    );
+    ).filter(Boolean);
     for (const row of rows) {
       assert.equal(row.includes('<target>'), false);
     }
     assert.match(rows[0]!, /^agent +<status>healthy<\/status> +<dim>/);
     assert.match(rows[1]!, /^<bold>security<\/bold> +<warning>warning<\/warning> +This/);
     assert.match(rows[2]!, /^<bold>git<\/bold> +<error>blocked<\/error> +Git/);
-    assert.match(rows[3]!, /^<bold>github-notifications<\/bold> +<bold>manual<\/bold> +Manual/);
+    assert.match(rows[3]!, /^<bold>github-notifications<\/bold> +<dim>manual<\/dim> +Manual/);
     assert.match(rows[4]!, /^<bold>path<\/bold> +<warning>drift<\/warning> +Executable/);
     assert.match(rows[7]!, /^agent +<status>unchanged<\/status> +<dim>/);
     for (const row of rows.slice(8, 11)) {
       assert.match(row, /<action>(updated|created|removed)<\/action> +[^<]/);
       assert.equal(row.includes('<dim>') || row.includes('<bold>'), false);
     }
-    assert.deepEqual(rows.slice(-2), ['', 'workspace  <bold>/workspace</bold>']);
+    assert.equal(rows.at(-1), 'workspace  <bold>/workspace</bold>');
   });
 
   it('should keep colored and no-color layouts identical, with no-color taking precedence', () => {
     const lines = lifecycleTableLines([...doctorFindings, ...installOutcomes]);
-    const colored = renderCliLifecycleTable(
-      lines,
-      '/workspace',
-      createCliStyles({ FORCE_COLOR: '3' }),
-      80,
-    );
-    const plain = renderCliLifecycleTable(
+    const colored = renderTable(lines, '/workspace', createCliStyles({ FORCE_COLOR: '3' }), 80);
+    const plain = renderTable(
       lines,
       '/workspace',
       createCliStyles({ NO_COLOR: '', FORCE_COLOR: '3' }),
@@ -65,7 +78,7 @@ describe('cli/lifecycle-output', () => {
       plain,
     );
     assert.equal(colored.at(-1), 'workspace  \u001b[1m/workspace\u001b[22m');
-    for (const row of colored.filter((line) => line && !line.startsWith('workspace'))) {
+    for (const row of colored.filter((line) => line && !line.trimStart().startsWith('workspace'))) {
       if (row.startsWith(' ')) {
         // eslint-disable-next-line no-control-regex -- Explanations must not contain ANSI foreground colors.
         assert.equal(/\u001b\[(?:3[0-7]|38;)/.test(row), false);
@@ -76,7 +89,7 @@ describe('cli/lifecycle-output', () => {
   it('should wrap under the explanation column without losing words or explicit paragraphs', () => {
     const message =
       'Restore the configured file before retrying this operation.\n\nKeep all remediation words.';
-    const rows = renderCliLifecycleTable(
+    const rows = renderTable(
       lifecycleTableLines([{ component: 'git', status: 'blocked', message }]),
       '/workspace',
       plainStyles,
@@ -99,7 +112,7 @@ describe('cli/lifecycle-output', () => {
 
   it('should stack explanations when a useful third column does not fit', () => {
     const message = 'Use native tools and restrict generic execution.';
-    const rows = renderCliLifecycleTable(
+    const rows = renderTable(
       lifecycleTableLines([{ component: 'github-notifications', status: 'manual', message }]),
       '/workspace',
       plainStyles,
@@ -118,8 +131,8 @@ describe('cli/lifecycle-output', () => {
 
   it('should preserve oversized tokens and keep even very narrow headers readable', () => {
     const token = '/workspace/a-very-long-unbroken-file-name';
-    for (const columns of [12, 40, 80]) {
-      const rows = renderCliLifecycleTable(
+    for (const columns of [1, 2, 12, 40, 80]) {
+      const rows = renderTable(
         lifecycleTableLines([
           { component: 'github-notifications', status: 'manual', message: token },
         ]),
@@ -133,7 +146,7 @@ describe('cli/lifecycle-output', () => {
   });
 
   it('should measure terminal cells rather than code units', () => {
-    const rows = renderCliLifecycleTable(
+    const rows = renderTable(
       lifecycleTableLines([
         { component: '工具', status: 'healthy', message: '检查 café e\u0301 ready' },
         { component: 'path', status: 'healthy', message: 'Path ready' },
@@ -141,7 +154,7 @@ describe('cli/lifecycle-output', () => {
       '/workspace',
       plainStyles,
       80,
-    );
+    ).filter(Boolean);
     assert.equal(rows[0]!.indexOf('healthy'), 4);
     assert.equal(rows[1]!.indexOf('healthy'), 6);
     assert.equal(stringWidth(rows[0]!.slice(0, rows[0]!.indexOf('healthy'))), 6);
@@ -158,7 +171,9 @@ describe('cli/lifecycle-output', () => {
       );
     }
     assert.deepEqual(renderCliLifecycleTable([], '/workspace', plainStyles), [
+      '',
       'workspace  /workspace',
+      '',
     ]);
   });
 });

@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
@@ -17,7 +18,7 @@ export interface DoctorAgentSystemOptions {
 }
 
 /** Inspect every configured Agent System lifecycle component without applying repairs. */
-export default async function doctorAgentSystem(options: DoctorAgentSystemOptions): Promise<void> {
+async function doctorAgentSystem(options: DoctorAgentSystemOptions): Promise<void> {
   const manifest = await loadCommandManifest(options);
   if (!manifest) return;
   const result = await options.doctorService.inspect({
@@ -43,3 +44,5 @@ export default async function doctorAgentSystem(options: DoctorAgentSystemOption
   }
   if (result.status !== 'healthy') options.setExitCode(1);
 }
+
+export default presentCliCommand(doctorAgentSystem);

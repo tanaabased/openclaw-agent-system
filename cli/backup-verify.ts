@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import { resolve } from 'node:path';
 
 import type WorkspaceBackupService from '../agent/backup-service.ts';
@@ -16,7 +17,7 @@ import {
 import { writeCliJson, writeCliSummary } from './output.ts';
 
 /** inspect an archive without extracting it or requiring an operator's live workspace. */
-export default async function backupVerify(
+async function backupVerify(
   options: BackupCommandContext &
     BackupCliOutput & { service: WorkspaceBackupService; archive: string },
 ): Promise<void> {
@@ -55,3 +56,5 @@ export default async function backupVerify(
     writeBackupFailure(options, error);
   }
 }
+
+export default presentCliCommand(backupVerify);

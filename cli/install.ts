@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import confirmSetupInstall, { type SetupConsentOptions } from './setup-consent.ts';
 import {
   AgentInstallError,
@@ -12,7 +13,6 @@ import {
   writeCliDiagnostics,
   writeCliJson,
   writeCliLifecycleTable,
-  writeCliNotices,
 } from './output.ts';
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
@@ -68,9 +68,7 @@ function isSetupSkipWarning(code: string): boolean {
 }
 
 /** Reconcile every configured lifecycle component for the current workspace manifest. */
-export default async function installAgentSystem(
-  options: InstallAgentSystemOptions,
-): Promise<void> {
+async function installAgentSystem(options: InstallAgentSystemOptions): Promise<void> {
   const result = await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (result.status !== 'loaded') {
     writeCliDiagnosticNotices(
@@ -131,11 +129,9 @@ export default async function installAgentSystem(
         options.styles,
         options.terminalColumns,
       );
-      writeCliNotices(
-        options.output,
+      writeCliDiagnosticNotices(
+        options,
         installNotices(installed.warnings.filter(({ code }) => !isSetupSkipWarning(code))),
-        options.styles,
-        options.terminalColumns,
       );
     }
   } catch (error) {
@@ -205,3 +201,5 @@ export default async function installAgentSystem(
     options.setExitCode(1);
   }
 }
+
+export default presentCliCommand(installAgentSystem);

@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import type OpCache from '../environment/op-cache.ts';
 import {
   writeCliError,
@@ -28,7 +29,7 @@ export const requestOpCacheGateway: OpCacheGatewayRequest = async (action, agent
 };
 
 /** Never substitute a short-lived CLI cache for the running Gateway. */
-export default async function credentialsCache(options: {
+async function credentialsCache(options: {
   action: 'status' | 'flush';
   agentId?: string;
   json?: boolean;
@@ -107,3 +108,5 @@ export default async function credentialsCache(options: {
     options.setExitCode(1);
   }
 }
+
+export default presentCliCommand(credentialsCache);

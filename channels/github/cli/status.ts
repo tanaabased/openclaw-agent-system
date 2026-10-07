@@ -1,3 +1,4 @@
+import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
@@ -25,7 +26,7 @@ export interface StatusNotificationsAgentSystemOptions {
 }
 
 /** Report one redacted semantic projection of durable notification state. */
-export default async function statusNotificationsAgentSystem(
+async function statusNotificationsAgentSystem(
   options: StatusNotificationsAgentSystemOptions,
 ): Promise<void> {
   let selector;
@@ -105,3 +106,5 @@ export default async function statusNotificationsAgentSystem(
   }
   if (result.status === 'degraded') options.setExitCode(1);
 }
+
+export default presentCliCommand(statusNotificationsAgentSystem);

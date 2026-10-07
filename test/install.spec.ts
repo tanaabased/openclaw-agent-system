@@ -106,6 +106,55 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should combine manifest warnings with operation messages after the workspace footer', async () => {
+    for (const failed of [false, true]) {
+      const outcomes = [
+        {
+          code: 'agent-ready',
+          component: 'agent',
+          message: 'Agent ready.',
+          status: 'unchanged' as const,
+        },
+      ];
+      const warnings = [
+        { code: 'operation-warning', component: 'git', message: 'Operation warning.' },
+      ];
+      const install = failed
+        ? new AgentSystemLifecycleError(
+            'github',
+            'operation-stopped',
+            'Operation stopped.',
+            undefined,
+            undefined,
+            undefined,
+            {
+              outcomes,
+              warnings,
+              unattempted: [{ component: 'models' }],
+            },
+          )
+        : { agentId: 'tanaabot', workspaceDir: '/workspace', outcomes, warnings };
+      const harness = createHarness({
+        install,
+        manifest: {
+          ...validResult,
+          diagnostics: [
+            { code: 'manifest-warning', message: 'Manifest warning.', severity: 'warning' },
+          ],
+        },
+      });
+      await harness.run();
+      const text = harness.events.join('');
+      assert.equal(text.match(/Messages/gu)?.length, 1);
+      assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('Messages'));
+      assert.ok(text.indexOf('Messages') < text.indexOf('Manifest warning.'));
+      assert.match(text, /Operation warning/u);
+      if (failed) {
+        assert.match(text, /Operation stopped/u);
+        assert.deepEqual(harness.exitCodes, [1]);
+      } else assert.deepEqual(harness.exitCodes, []);
+    }
+  });
   it('should forward an explicit Codex PATH rebuild', async () => {
     const { calls, run } = createHarness({ rebuildCodexPath: true });
 
@@ -180,9 +229,12 @@ describe('cli/install', () => {
     assert.deepEqual(calls.install, [
       { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
     ]);
-    const rows = output.join('').trimEnd().split('\n');
+    const rows = output.join('').trim().split('\n');
     assert.deepEqual(
-      rows.slice(0, 7).map((row) => row.split(/\s+/).slice(0, 2)),
+      rows
+        .filter(Boolean)
+        .slice(0, 7)
+        .map((row) => row.trim().split(/\s+/).slice(0, 2)),
       [
         ['agent', 'created'],
         ['agent', 'updated'],
@@ -257,9 +309,12 @@ describe('cli/install', () => {
 
     await run();
 
-    const rows = output.join('').trimEnd().split('\n');
+    const rows = output.join('').trim().split('\n');
     assert.deepEqual(
-      rows.slice(0, 3).map((row) => row.split(/\s+/).slice(0, 2)),
+      rows
+        .filter(Boolean)
+        .slice(0, 3)
+        .map((row) => row.trim().split(/\s+/).slice(0, 2)),
       [
         ['agent', 'unchanged'],
         ['path', 'unchanged'],
@@ -298,16 +353,22 @@ describe('cli/install', () => {
         assert.equal(harness.output.length, 1);
         assert.equal(text, `${JSON.stringify(original, undefined, 2)}\n`);
       } else {
-        const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
+        const rows = text
+          .split('\n')
+          .map((row) => row.trim())
+          .filter((row) => /^(agent|path|git|github)\s/.test(row));
         assert.deepEqual(
-          rows.map((row) => row.split(/\s+/).slice(0, 2)),
+          rows.map((row) => row.trim().split(/\s+/).slice(0, 2)),
           installed.outcomes.map(({ component, status }) => [component, status]),
         );
         assert.ok(text.split('\n').some((row) => row.startsWith('  ')));
         for (const { message } of installed.outcomes) {
           assert.ok(text.replace(/\s+/g, ' ').includes(message));
         }
-        assert.match(harness.diagnostics.join(''), /Notices\n\n⚠ Warning\n {2}Manual follow-up\./u);
+        assert.match(
+          harness.diagnostics.join(''),
+          /Messages\n\n⚠ Warning\n {2}Manual follow-up\./u,
+        );
       }
       assert.deepEqual(installed, original);
     }
@@ -341,7 +402,7 @@ describe('cli/install', () => {
     await run();
 
     const text = diagnostics.join('');
-    assert.doesNotMatch(output.join(''), /Notices/u);
+    assert.doesNotMatch(output.join(''), /Messages/u);
     const normalized = text.replace(/\s+/g, ' ');
     assert.match(normalized, /ℹ Notice Operator recognition is channel-wide OpenClaw/u);
     assert.match(normalized, /⚠ Warning Running Gateway access for pirog is unverified\./u);

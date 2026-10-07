@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
@@ -23,7 +24,7 @@ export interface UnsetCredentialsAgentSystemOptions {
 }
 
 /** Remove an agent-scoped OP credential from one exact store or every registered store. */
-export default async function unsetCredentialsAgentSystem(
+async function unsetCredentialsAgentSystem(
   options: UnsetCredentialsAgentSystemOptions,
 ): Promise<void> {
   if (options.credential !== 'op') {
@@ -88,3 +89,5 @@ export default async function unsetCredentialsAgentSystem(
     ]);
   }
 }
+
+export default presentCliCommand(unsetCredentialsAgentSystem);

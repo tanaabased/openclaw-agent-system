@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import type AutomationService from '../agent/automation-service.ts';
 import { AutomationError } from '../agent/automation-gateway.ts';
 import {
@@ -27,7 +28,7 @@ export interface AutomationCommandOptions {
 }
 
 /** keep operator results bounded and diagnostics separate from primary output. */
-export default async function automationOperation(
+async function automationOperation(
   options: AutomationCommandOptions,
   operation: (manifest: AgentManifest, workspace: string) => Promise<Record<string, unknown>>,
 ) {
@@ -106,3 +107,5 @@ export default async function automationOperation(
     options.setExitCode(1);
   }
 }
+
+export default presentCliCommand(automationOperation);

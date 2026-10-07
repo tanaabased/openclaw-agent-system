@@ -5,6 +5,7 @@ import { defaultRuntime, type OutputRuntimeEnv } from 'openclaw/plugin-sdk/runti
 
 export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
   writeStderr(value: string): void;
+  collectNotices?(notices: readonly CliNotice[]): void;
 };
 
 export interface CliStyles {
@@ -32,6 +33,13 @@ export interface CliLifecycleLine extends CliSummaryLine {
   quiet: boolean;
 }
 
+// brand hues come from tanaab/theme; semantic colors follow the terminal palette.
+export const cliPalette = {
+  tp: '#00c88a',
+  ts: '#db2777',
+  brightPink: '#e25292',
+};
+
 function colorLevel(environment: NodeJS.ProcessEnv): number {
   if (Object.hasOwn(environment, 'NO_COLOR')) return 0;
   if (!Object.hasOwn(environment, 'FORCE_COLOR')) return ansis.level;
@@ -43,11 +51,7 @@ function colorLevel(environment: NodeJS.ProcessEnv): number {
 }
 
 export function createCliStyles(environment: NodeJS.ProcessEnv = process.env): CliStyles {
-  const color = new Ansis(colorLevel(environment)).extend({
-    tp: '#00c88a',
-    ts: '#db2777',
-    brightPink: '#e25292',
-  });
+  const color = new Ansis(colorLevel(environment)).extend(cliPalette);
 
   return {
     accent: (value) => color.brightPink(value),
@@ -113,14 +117,12 @@ export function renderCliLifecycleTable(
   const stacked = columns - prefixWidth < 24;
   const indent = ' '.repeat(stacked ? Math.min(2, columns - 1) : prefixWidth);
   const explanationWidth = columns - indent.length;
-  const rows = lines.flatMap(({ attention, component, label, quiet, style, value }) => {
+  const rows = lines.flatMap(({ attention, component, label, quiet, style, value }, rowIndex) => {
     const name = attention ? styles.bold(component) : component;
     const status =
       style === 'action' || style === 'error' || style === 'status' || style === 'warning'
         ? styles[style](label)
-        : attention
-          ? styles.bold(label)
-          : label;
+        : styles.field(label);
     const gap = ' '.repeat(componentWidth - stringWidth(component) + 2);
     const header = `${name}${gap}${status}`;
     const explanation = wrapAnsi(value, explanationWidth, { hard: true })
@@ -130,16 +132,20 @@ export function renderCliLifecycleTable(
       const compactHeader =
         componentWidth + labelWidth + 2 > columns ? `${name}  ${status}` : header;
       return [
+        ...(rowIndex ? [''] : []),
         ...wrapAnsi(compactHeader, columns, { hard: true }).split('\n'),
         ...explanation.map((line) => `${indent}${line}`),
       ];
     }
     const statusGap = ' '.repeat(labelWidth - stringWidth(label) + 2);
-    return explanation.map((line, index) =>
-      index === 0 ? `${header}${statusGap}${line}` : `${indent}${line}`,
-    );
+    return [
+      ...(rowIndex ? [''] : []),
+      ...explanation.map((line, index) =>
+        index === 0 ? `${header}${statusGap}${line}` : `${indent}${line}`,
+      ),
+    ];
   });
-  return [...rows, ...(rows.length ? [''] : []), `workspace  ${styles.bold(workspaceDir)}`];
+  return ['', ...rows, ...(rows.length ? [''] : []), `workspace  ${styles.bold(workspaceDir)}`, ''];
 }
 
 export function writeCliLifecycleTable(
@@ -168,32 +174,23 @@ export function renderCliNotices(
     Number.isFinite(terminalColumns) && terminalColumns >= 1 ? Math.floor(terminalColumns) : 80;
   const indent = ' '.repeat(Math.min(2, columns - 1));
   const messageWidth = Math.max(1, columns - indent.length);
-  const blocks = notices.flatMap(({ message, severity }) => {
+  const blocks = notices.flatMap(({ message, severity }, index) => {
     const label = { notice: 'ℹ Notice', warning: '⚠ Warning', error: '✖ Error' }[severity];
     const styledLabel = styles[severity](label);
     return [
+      ...(index ? [''] : []),
       ...wrapAnsi(styledLabel, columns, { hard: true }).split('\n'),
       ...wrapAnsi(message, messageWidth, { hard: true })
         .split('\n')
-        .map((line) => `${indent}${severity === 'error' ? styles.error(line) : line}`),
+        .map((line) => `${indent}${line}`),
     ];
   });
-  const heading = notices.some(({ severity }) => severity === 'error') ? 'Diagnostics' : 'Notices';
   return [
     '',
-    ...wrapAnsi(styles.bold(heading), columns, { hard: true }).split('\n'),
+    ...wrapAnsi(styles.bold('Messages'), columns, { hard: true }).split('\n'),
     '',
     ...blocks,
   ];
-}
-
-export function writeCliNotices(
-  output: CliOutput,
-  notices: readonly CliNotice[],
-  styles?: CliStyles,
-  terminalColumns?: number,
-): void {
-  writeCliDiagnostics(output, renderCliNotices(notices, styles, terminalColumns));
 }
 
 export interface CliDiagnosticOptions {
@@ -208,6 +205,10 @@ export function writeCliDiagnosticNotices(
   options: CliDiagnosticOptions,
   notices: readonly CliNotice[],
 ): void {
+  if (options.output.collectNotices) {
+    options.output.collectNotices(notices);
+    return;
+  }
   writeCliDiagnostics(
     options.output,
     options.json
@@ -226,6 +227,10 @@ export function writeCliJson(output: CliOutput, value: unknown): void {
 
 export function writeCliDiagnostics(output: CliOutput, messages: readonly string[]): void {
   if (messages.length === 0) return;
+  if (output.collectNotices) {
+    output.collectNotices(messages.map((message) => ({ severity: 'notice', message })));
+    return;
+  }
   output.writeStderr(`${messages.join('\n')}\n`);
 }
 
