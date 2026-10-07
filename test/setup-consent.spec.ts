@@ -131,7 +131,7 @@ describe('cli/setup-consent', () => {
         .trimStart()
         .replace(/^[^ ]+ /u, ''),
       [
-        'Install workspace "/workspace" with these setup steps:',
+        'install workspace "/workspace" with these setup steps:',
         '',
         '  setup-host: brew-dependencies',
         '    check (argv, 600s: ["brew","list"])',
@@ -144,6 +144,51 @@ describe('cli/setup-consent', () => {
         '',
       ].join('\n'),
     );
+  });
+
+  it('should keep mixed-case consent literals and one trailing section on declined install', async () => {
+    const mixed = normalizeAgentSetup({
+      steps: [
+        {
+          id: 'step-x',
+          check: ['CheckTool', '/Work/AgentX'],
+          apply: 'printf "$OP_TOKEN File.JSON"',
+        },
+      ],
+    });
+    assert.equal(mixed.status, 'valid');
+    for (const terminalColumns of [32, 120]) {
+      const previews: string[] = [];
+      for (const environment of [{ FORCE_COLOR: '3' }, { NO_COLOR: '', FORCE_COLOR: '3' }]) {
+        const test = fixture({
+          setup: mixed.setup,
+          workspaceDir: '/Work/AgentX',
+          terminalColumns,
+          environment,
+          skipSetupHost: true,
+          setupHost: setup,
+          prompt: async ({ initialValue, message }) => {
+            assert.equal(initialValue, false);
+            assert.equal(message, 'continue with installation?');
+            test.events.push('declined');
+            return false;
+          },
+        });
+        await test.install();
+        assert.deepEqual(test.events, ['validate', 'declined']);
+        assert.deepEqual(test.exitCodes, [1]);
+        assert.deepEqual(test.stdout, []);
+        const preview = ansis.strip(test.stderr.join(''));
+        previews.push(preview);
+        assert.equal(preview.match(/^messages$/gmu)?.length, 1);
+        const unwrapped = preview.replace(/\s/gu, '');
+        for (const literal of ['step-x', 'CheckTool', '/Work/AgentX', '$OP_TOKEN', 'File.JSON'])
+          assert.ok(unwrapped.includes(literal));
+        assert.ok(unwrapped.indexOf('installworkspace') < unwrapped.indexOf('messages'));
+        assert.ok(unwrapped.indexOf('⚠warning') < unwrapped.indexOf('ℹinfo'));
+      }
+      assert.equal(previews[0], previews[1]);
+    }
   });
 
   it('should preview host setup before agent setup', async () => {
@@ -188,7 +233,7 @@ describe('cli/setup-consent', () => {
     const test = fixture({
       prompt: async (options) => {
         assert.deepEqual(options, {
-          message: 'Continue with installation?',
+          message: 'continue with installation?',
           initialValue: false,
         });
         return true;

@@ -120,7 +120,7 @@ export default function registerAgentSystemCli(
     }
     writeCliError(
       output,
-      'Agent System operator commands are unavailable to agent or setup descendants.',
+      'agent system operator commands are unavailable to agent or setup descendants.',
       { json, styles: options.styles, terminalColumns: options.terminalColumns },
     );
     setExitCode(1);
@@ -129,37 +129,37 @@ export default function registerAgentSystemCli(
   const agentSystem = program
     .command('agent-system')
     .alias('as')
-    .description('Manage reproducible OpenClaw agent workspaces.')
+    .description('manage reproducible openclaw agent workspaces.')
     .action(() => writeHelp(agentSystem, output));
   if (options.automations) {
     const automations = agentSystem
       .command('automations')
-      .description('List, synchronize, run, and inspect owned repository automations.')
+      .description('list, synchronize, run, and inspect owned repository automations.')
       .action(() => writeHelp(automations, output));
     for (const action of ['list', 'sync', 'run', 'runs'] as const) {
       const command = automations
         .command(action === 'run' || action === 'runs' ? `${action} <id>` : action)
         .description(
           {
-            list: 'Inspect declared and native state without applying changes.',
-            sync: 'Reconcile owned automations using the install lifecycle.',
-            run: 'Queue one enabled synchronized job by manifest id.',
-            runs: 'Read native execution and delivery history by manifest id.',
+            list: 'inspect declared and native state without applying changes.',
+            sync: 'reconcile owned automations using the install lifecycle.',
+            run: 'queue one enabled synchronized job by manifest id.',
+            runs: 'read native execution and delivery history by manifest id.',
           }[action],
         )
-        .option('--agent <id>', 'Select an installed agent (operators only).')
-        .option('--json', 'Write one structured JSON result.');
+        .option('--agent <id>', 'select an installed agent (operators only).')
+        .option('--json', 'write one structured json result.');
       if (action === 'runs')
         command
           .addOption(
             command
-              .createOption('--limit <count>', 'Maximum history entries, from 1 to 200.')
+              .createOption('--limit <count>', 'maximum history entries, from 1 to 200.')
               .default('50'),
           )
           .addOption(
-            command.createOption('--offset <count>', 'History entries to skip.').default('0'),
+            command.createOption('--offset <count>', 'history entries to skip.').default('0'),
           )
-          .option('--run-id <id>', 'Filter by the native occurrence id.');
+          .option('--run-id <id>', 'filter by the native occurrence id.');
       command.action(async (...args: unknown[]) => {
         if (!(await allowOperatorCommand(command.opts().json === true))) return;
         const selected = command.opts();
@@ -189,9 +189,9 @@ export default function registerAgentSystemCli(
   if (options.automations && options.boundCommands) {
     const execute = agentSystem
       .command('automation-execute', { hidden: true })
-      .description('Execute one synchronized owned automation (scheduler entrypoint).')
-      .option('--id <id>', 'Select the owned manifest automation id.')
-      .option('--hash <hash>', 'Require the synchronized effective content hash.')
+      .description('execute one synchronized owned automation (scheduler entrypoint).')
+      .option('--id <id>', 'select the owned manifest automation id.')
+      .option('--hash <hash>', 'require the synchronized effective content hash.')
       .action(async () => {
         if (!(await allowOperatorCommand(true))) return completeOneShot(1);
         const args = execute.opts();
@@ -200,7 +200,7 @@ export default function registerAgentSystemCli(
           typeof args.hash !== 'string' ||
           !/^[a-f0-9]{64}$/u.test(args.hash)
         ) {
-          output.writeStderr('Automation execution requires an owned id and synchronized hash.\n');
+          output.writeStderr('automation execution requires an owned id and synchronized hash.\n');
           return completeOneShot(1);
         }
         const code = await executeAutomation({
@@ -219,23 +219,23 @@ export default function registerAgentSystemCli(
   const backupService = options.backupService ?? new WorkspaceBackupService();
   const backup = agentSystem
     .command('backup')
-    .description('Create, verify, prune, and restore private per-agent recovery archives.')
+    .description('create, verify, prune, and restore private per-agent recovery archives.')
     .action(() => writeHelp(backup, output));
   const create = backup
     .command('create')
-    .description('Capture selected workspace files and optional OpenClaw agent state.')
-    .option('--agent <id>', 'Select an installed agent (operators only).')
-    .option('--output <directory>', 'Override the manifest backup destination.')
+    .description('capture selected workspace files and optional openclaw agent state.')
+    .option('--agent <id>', 'select an installed agent (operators only).')
+    .option('--output <directory>', 'override the manifest backup destination.')
     .addOption(
       backup
-        .createOption('--openclaw-state <mode>', 'Capture agent state: auto, required, or off.')
+        .createOption('--openclaw-state <mode>', 'capture agent state: auto, required, or off.')
         .choices(['auto', 'required', 'off']),
     )
-    .option('--dry-run', 'Preview effective settings and selected files without writing.')
-    .option('--json', 'Write one structured JSON result.')
+    .option('--dry-run', 'preview effective settings and selected files without writing.')
+    .option('--json', 'write one structured json result.')
     .addOption(
       backup
-        .createOption('--git-ignore [boolean]', 'Apply Git-ignore rules; true or false.')
+        .createOption('--git-ignore [boolean]', 'apply git-ignore rules; true or false.')
         .choices(['true', 'false'])
         .preset('true'),
     );
@@ -244,7 +244,7 @@ export default function registerAgentSystemCli(
       backup
         .createOption(
           `--${name} <patterns...>`,
-          `Replace the manifest ${name} list; repeatable, use --${name}= to clear.`,
+          `replace the manifest ${name} list; repeatable, use --${name}= to clear.`,
         )
         .argParser((value: string, previous: string[] | undefined) => [
           ...(previous ?? []),
@@ -281,12 +281,12 @@ export default function registerAgentSystemCli(
   });
   const prune = backup
     .command('prune')
-    .description('Retain the newest local backups by embedded capture time.')
-    .option('--agent <id>', 'Select an installed agent (operators only).')
-    .option('--output <directory>', 'Override the manifest backup destination.')
-    .option('--keep <count>', 'Required positive integer number of backups to retain.')
-    .option('--dry-run', 'Preview without deleting or creating state.')
-    .option('--json', 'Write one structured JSON result.')
+    .description('retain the newest local backups by embedded capture time.')
+    .option('--agent <id>', 'select an installed agent (operators only).')
+    .option('--output <directory>', 'override the manifest backup destination.')
+    .option('--keep <count>', 'required positive integer number of backups to retain.')
+    .option('--dry-run', 'preview without deleting or creating state.')
+    .option('--json', 'write one structured json result.')
     .action(async () => {
       const selected = prune.opts();
       await backupPrune({
@@ -307,9 +307,9 @@ export default function registerAgentSystemCli(
     });
   const verifyArchive = backup
     .command('verify <archive>')
-    .description('Check archive structure, inventory and checksums without extraction.')
-    .option('--agent <id>', 'Require this archive agent identity (operators only).')
-    .option('--json', 'Write one structured JSON result.')
+    .description('check archive structure, inventory and checksums without extraction.')
+    .option('--agent <id>', 'require this archive agent identity (operators only).')
+    .option('--json', 'write one structured json result.')
     .action(async (archive) => {
       const selected = verifyArchive.opts();
       await backupVerify({
@@ -329,11 +329,11 @@ export default function registerAgentSystemCli(
   const restore = backup
     .command('restore <archive>')
     .description(
-      'Recover a verified archive into a fresh private staging directory (operators only).',
+      'recover a verified archive into a fresh private staging directory (operators only).',
     )
-    .option('--target <directory>', 'Required fresh recovery directory; never a live agent path.')
-    .option('--agent <id>', 'Require this recorded agent identity.')
-    .option('--json', 'Write one structured JSON result.')
+    .option('--target <directory>', 'required fresh recovery directory; never a live agent path.')
+    .option('--agent <id>', 'require this recorded agent identity.')
+    .option('--json', 'write one structured json result.')
     .action(async (archive) => {
       const selected = restore.opts();
       await backupRestore({
@@ -353,9 +353,9 @@ export default function registerAgentSystemCli(
     });
   const validate = agentSystem
     .command('validate')
-    .description('Discover and validate the workspace Agent System manifest.')
-    .option('--agent <id>', 'Validate the configured workspace for an OpenClaw agent.')
-    .option('--json', 'Write structured JSON output.')
+    .description('discover and validate the workspace agent system manifest.')
+    .option('--agent <id>', 'validate the configured workspace for an openclaw agent.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = validate.opts();
       const agentId = commandOptions.agent;
@@ -371,9 +371,9 @@ export default function registerAgentSystemCli(
     });
   const env = agentSystem
     .command('env')
-    .description('Inspect the resolved Agent System environment without showing values.')
-    .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
-    .option('--json', 'Write structured JSON output.')
+    .description('inspect the resolved agent system environment without showing values.')
+    .option('--agent <id>', 'inspect the configured workspace for an openclaw agent.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = env.opts();
       const agentId = commandOptions.agent;
@@ -390,9 +390,9 @@ export default function registerAgentSystemCli(
   const doctor = agentSystem
     .command('doctor')
     .alias('status')
-    .description('Inspect Agent System agent, path, and configured capability drift.')
-    .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
-    .option('--json', 'Write structured JSON output.')
+    .description('inspect agent system agent, path, and configured capability drift.')
+    .option('--agent <id>', 'inspect the configured workspace for an openclaw agent.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       if (!(await allowOperatorCommand(doctor.opts().json === true))) return;
       const commandOptions = doctor.opts();
@@ -422,14 +422,14 @@ export default function registerAgentSystemCli(
   });
   const tool = agentSystem
     .command('tool <command> [args...]')
-    .description('Run one registered command through its Agent System tool.')
-    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
+    .description('run one registered command through its agent system tool.')
+    .option('--agent <id>', 'use the configured workspace for an openclaw agent.')
     .addOption(agentSystem.createOption('--shim [mode]').hideHelp())
     .action(async (command, args) => {
       const agentId = tool.opts().agent;
       const shim = tool.opts().shim;
       if (shim !== undefined && shim !== 'managed' && shim !== 'contextual') {
-        writeCliError(output, 'Invalid internal launcher invocation.', options);
+        writeCliError(output, 'invalid internal launcher invocation.', options);
         setExitCode(1);
         return;
       }
@@ -466,17 +466,17 @@ export default function registerAgentSystemCli(
     });
   const credentials = agentSystem
     .command('credentials')
-    .description('Manage agent-scoped environment-provider credentials.')
+    .description('manage agent-scoped environment-provider credentials.')
     .action(() => writeHelp(credentials, output));
   const cache = credentials
     .command('cache')
-    .description('Inspect or flush the running Gateway OP cache.')
+    .description('inspect or flush the running gateway op cache.')
     .action(() => writeHelp(cache, output));
   for (const action of ['status', 'flush'] as const) {
     const command = cache
       .command(action)
-      .description(`${action === 'status' ? 'Inspect' : 'Flush'} the running Gateway OP cache.`)
-      .option('--json', 'Write structured JSON output.')
+      .description(`${action === 'status' ? 'inspect' : 'flush'} the running gateway op cache.`)
+      .option('--json', 'write structured json output.')
       .action(async () => {
         if (!(await allowOperatorCommand(command.opts().json === true))) return;
         const agentId = command.opts().agent;
@@ -490,15 +490,15 @@ export default function registerAgentSystemCli(
           ...(options.cacheGatewayRequest ? { request: options.cacheGatewayRequest } : {}),
         });
       });
-    if (action === 'flush') command.option('--agent <id>', 'Select an agent for invalidation.');
+    if (action === 'flush') command.option('--agent <id>', 'select an agent for invalidation.');
   }
   const credentialsSet = credentials
     .command('set <credential>')
-    .description('Validate and store an agent-scoped credential.')
-    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
-    .option('--store <id>', 'Write to one exact credential store.')
-    .option('--from-env', 'Read OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
-    .option('--stdin', 'Read the credential from standard input.')
+    .description('validate and store an agent-scoped credential.')
+    .option('--agent <id>', 'use the configured workspace for an openclaw agent.')
+    .option('--store <id>', 'write to one exact credential store.')
+    .option('--from-env', 'read OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
+    .option('--stdin', 'read the credential from standard input.')
     .action(async (credential) => {
       if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsSet.opts();
@@ -521,10 +521,10 @@ export default function registerAgentSystemCli(
     });
   const credentialsValidate = credentials
     .command('validate <credential>')
-    .description('Validate a credential against the current manifest.')
-    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
-    .option('--store <id>', 'Validate one exact credential store.')
-    .option('--from-env', 'Validate OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
+    .description('validate a credential against the current manifest.')
+    .option('--agent <id>', 'use the configured workspace for an openclaw agent.')
+    .option('--store <id>', 'validate one exact credential store.')
+    .option('--from-env', 'validate OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
     .action(async (credential) => {
       if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsValidate.opts();
@@ -545,9 +545,9 @@ export default function registerAgentSystemCli(
     });
   const credentialsUnset = credentials
     .command('unset <credential>')
-    .description('Remove an agent-scoped credential from persistent storage.')
-    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
-    .option('--store <id>', 'Remove from one exact credential store.')
+    .description('remove an agent-scoped credential from persistent storage.')
+    .option('--agent <id>', 'use the configured workspace for an openclaw agent.')
+    .option('--store <id>', 'remove from one exact credential store.')
     .action(async (credential) => {
       if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsUnset.opts();
@@ -567,17 +567,17 @@ export default function registerAgentSystemCli(
     });
   const install = agentSystem
     .command('install')
-    .description('Install the workspace agent and reconcile configured lifecycle state.')
-    .option('--yes', 'Confirm setup without prompting.')
-    .option('--non-interactive', 'Run without interactive prompts.')
-    .option('--skip-setup', 'Skip all setup checks and applies with a warning.')
-    .option('--skip-setup-host', 'Skip host setup checks and applies with a warning.')
-    .option('--skip-setup-agent', 'Skip agent setup checks and applies with a warning.')
+    .description('install the workspace agent and reconcile configured lifecycle state.')
+    .option('--yes', 'confirm setup without prompting.')
+    .option('--non-interactive', 'run without interactive prompts.')
+    .option('--skip-setup', 'skip all setup checks and applies with a warning.')
+    .option('--skip-setup-host', 'skip host setup checks and applies with a warning.')
+    .option('--skip-setup-agent', 'skip agent setup checks and applies with a warning.')
     .option(
       '--rebuild-codex-path',
-      'Replace the saved Codex PATH baseline with this process environment.',
+      'replace the saved codex PATH baseline with this process environment.',
     )
-    .option('--json', 'Write structured JSON output.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       if (!(await allowOperatorCommand(install.opts().json === true))) return;
       await installAgentSystem({

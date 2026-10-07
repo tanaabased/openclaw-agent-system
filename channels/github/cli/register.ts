@@ -63,17 +63,17 @@ export default function registerGitHubNotificationsCli(
 ): void {
   const notifications = agentSystem
     .command('notifications')
-    .description('Manage GitHub notification intake.')
+    .description('manage github notification intake.')
     .action(() => writeHelp(notifications, options.output));
   const refresh = notifications
     .command('refresh')
-    .description('Run one GitHub notification intake cycle now.')
-    .option('--agent <id>', 'Refresh notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--timeout <seconds>', 'Set the bounded refresh timeout in seconds.')
-    .option('--json', 'Write structured JSON output.')
+    .description('run one github notification intake cycle now.')
+    .option('--agent <id>', 'refresh notifications for an openclaw agent.')
+    .option('--repository <owner/name>', 'select one github repository.')
+    .option('--kind <issue|pull-request>', 'select one github item kind.')
+    .option('--number <number>', 'select one github item number.')
+    .option('--timeout <seconds>', 'set the bounded refresh timeout in seconds.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = refresh.opts();
       const agentId = commandOptions.agent;
@@ -99,12 +99,12 @@ export default function registerGitHubNotificationsCli(
     });
   const status = notifications
     .command('status')
-    .description('Inspect redacted GitHub notification lifecycle state.')
-    .option('--agent <id>', 'Inspect notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--json', 'Write structured JSON output.')
+    .description('inspect redacted github notification lifecycle state.')
+    .option('--agent <id>', 'inspect notifications for an openclaw agent.')
+    .option('--repository <owner/name>', 'select one github repository.')
+    .option('--kind <issue|pull-request>', 'select one github item kind.')
+    .option('--number <number>', 'select one github item number.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = status.opts();
       const agentId = commandOptions.agent;
@@ -124,15 +124,15 @@ export default function registerGitHubNotificationsCli(
     });
   const wait = notifications
     .command('wait')
-    .description('Wait for a durable GitHub notification lifecycle checkpoint.')
-    .option('--agent <id>', 'Wait on notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--for <target>', 'Select the semantic lifecycle checkpoint.')
-    .option('--refresh', 'Run intake refresh cycles while waiting.')
-    .option('--timeout <seconds>', 'Set the bounded wait timeout in seconds.')
-    .option('--json', 'Write structured JSON output.')
+    .description('wait for a durable github notification lifecycle checkpoint.')
+    .option('--agent <id>', 'wait on notifications for an openclaw agent.')
+    .option('--repository <owner/name>', 'select one github repository.')
+    .option('--kind <issue|pull-request>', 'select one github item kind.')
+    .option('--number <number>', 'select one github item number.')
+    .option('--for <target>', 'select the semantic lifecycle checkpoint.')
+    .option('--refresh', 'run intake refresh cycles while waiting.')
+    .option('--timeout <seconds>', 'set the bounded wait timeout in seconds.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = wait.opts();
       const agentId = commandOptions.agent;

@@ -54,7 +54,7 @@ function installNotices(warnings: ReadonlyArray<{ code: string; message: string 
         {
           severity: 'notice',
           message:
-            'Operator recognition is channel-wide OpenClaw access, not repository-scoped access; independent tool policy still applies.',
+            'operator recognition is channel-wide openclaw access, not repository-scoped access; independent tool policy still applies.',
         },
         { severity: 'warning', message },
       ];
@@ -176,11 +176,27 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
         options.terminalColumns,
       );
     }
+    const humanRecovery =
+      outcomes.length > 0
+        ? 'earlier completed changes remain applied. the blocking component may also have partial effects; rerun install after fixing it.'
+        : 'the blocking component may have partial effects; rerun install after fixing it.';
     const guidance = [
-      `Unattempted work: ${unattempted.map(({ component, stepId }) => (stepId ? `${component}/${stepId}` : component)).join(', ') || 'none'}.`,
-      ...(outcomes.length > 0 ? [] : ['No completed component outcomes were reported.']),
-      recovery,
-      ...(hint ? [hint] : []),
+      `${options.json ? 'Unattempted' : 'unattempted'} work: ${unattempted.map(({ component, stepId }) => (stepId ? `${component}/${stepId}` : component)).join(', ') || 'none'}.`,
+      ...(outcomes.length > 0
+        ? []
+        : [
+            options.json
+              ? 'No completed component outcomes were reported.'
+              : 'no completed component outcomes were reported.',
+          ]),
+      options.json ? recovery : humanRecovery,
+      ...(hint
+        ? [
+            options.json
+              ? hint
+              : 'host setup was skipped. if it installs the missing executable, rerun without --skip-setup-host or --skip-setup.',
+          ]
+        : []),
     ];
     const errorMessage = formatErrorDiagnostic(blocked.component, error, blocked.code);
     if (options.json) {

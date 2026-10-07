@@ -42,21 +42,21 @@ describe('cli/operation-diagnostics', () => {
         { code: 'backup-include-unmatched', message: 'No matching files.' },
       ]);
       assert.deepEqual(test.stdout, []);
-      if (!json) assert.match(test.stderr.join(''), /Warning/u);
+      if (!json) assert.match(test.stderr.join(''), /warning/u);
       writeBackupFailure(test, new BackupError('backup-failed', 'Cannot read archive.'));
       assert.deepEqual(test.exitCodes, [1]);
       if (json) assert.equal(JSON.parse(test.stdout.join('')).status, 'failed');
-      else assert.match(test.stderr.join(''), /Error/u);
+      else assert.match(test.stderr.join(''), /error/u);
     }
   });
 
   it('should classify native skip reasons while preserving automation json and exit status', async () => {
     for (const [reason, label] of [
-      ['not-due', 'Notice'],
-      ['disabled', 'Notice'],
-      ['already-running', 'Notice'],
-      ['stopped', 'Warning'],
-      ['invalid-spec', 'Error'],
+      ['not-due', 'info'],
+      ['disabled', 'info'],
+      ['already-running', 'info'],
+      ['stopped', 'warning'],
+      ['invalid-spec', 'error'],
     ]) {
       for (const json of [false, true]) {
         const test = output(json);

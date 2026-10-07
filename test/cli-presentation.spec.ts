@@ -32,10 +32,10 @@ describe('cli/presentation', () => {
       assert.deepEqual(JSON.parse(events[0]!.text), { status: 'ready' });
       if (json) assert.equal(events[1]!.text, 'Manifest notice.\nOperation warning.\n');
       else {
-        assert.equal(events[1]!.text.match(/Messages/gu)?.length, 1);
+        assert.equal(events[1]!.text.match(/messages/gu)?.length, 1);
         assert.match(
           events[1]!.text,
-          /Notice[\s\S]*Manifest notice[\s\S]*Warning[\s\S]*Operation warning/u,
+          /warning[\s\S]*Operation warning[\s\S]*info[\s\S]*Manifest notice/u,
         );
       }
     }
@@ -61,7 +61,7 @@ describe('cli/presentation', () => {
       if (fails) await assert.rejects(result, /operation failed/u);
       else assert.equal(await result, 'declined');
       assert.equal(events.length, 2);
-      assert.match(events[1]!, /Messages[\s\S]*Retained warning[\s\S]*Stopped before mutation/u);
+      assert.match(events[1]!, /messages[\s\S]*Stopped before mutation[\s\S]*Retained warning/u);
     }
   });
 });
