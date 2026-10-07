@@ -31,8 +31,8 @@ cp "$GITHUB_WORKSPACE/examples/automations/offline.yaml" "$TMPDIR/automation-age
 # should finish initial and repeated installation with deferred automation sync while offline
 cd "$TMPDIR/automation-agent"
 for attempt in 1 2; do
-  PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --skip-setup-agent --json | jq -e '(.warnings | any(.component == "automations" and .code == "automation-sync-deferred")) and (.outcomes | any(.component == "agent")) and (.outcomes | all(select(.component == "automations"); .status == "skipped" and .code == "automation-sync-deferred"))'
-  PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.warnings | any(.code == "automation-sync-deferred")) and (.outcomes | all(select(.component == "automations"); .status == "skipped"))'
+  PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --skip-setup-agent --json | jq -e '(.warnings | any(.component == "automations" and .code == "automation-sync-deferred")) and (.outcomes | any(.component == "agent")) and (.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "skipped" and .code == "automation-sync-deferred")'
+  PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.warnings | any(.code == "automation-sync-deferred")) and (.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "skipped")'
 done
 test ! -e offline-ran
 
@@ -46,7 +46,7 @@ OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-g
 cd "$TMPDIR/automation-agent"
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.warnings | all(.code != "automation-sync-deferred")) and (.outcomes | any(.component == "automations" and .code == "automation-synchronized" and .status == "created"))'
 openclaw gateway call cron.list --params '{"includeDisabled":true}' --json | jq -e '.jobs | any(.name == "Agent System: offline" and .enabled == false)'
-PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '.outcomes | all(select(.component == "automations"); .status == "unchanged")'
+PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "unchanged")'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 test ! -e offline-ran
 
