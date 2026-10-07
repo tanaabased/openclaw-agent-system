@@ -1,0 +1,5 @@
+- id: offline
+  runtimes: [openclaw]
+  enabled: false
+  schedule: every 1 hour
+  run: [sh, -c, touch offline-ran]

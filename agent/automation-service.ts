@@ -83,7 +83,8 @@ export default class AutomationService {
       id: 'automations',
       isConfigured: () => true,
       inspect: ({ manifest, workspaceDir }) => this.inspect(manifest, workspaceDir),
-      reconcile: ({ manifest, workspaceDir }) => this.reconcile(manifest, workspaceDir),
+      reconcile: ({ manifest, workspaceDir }) =>
+        this.reconcile(manifest, workspaceDir, { deferUnavailableGateway: true }),
     };
   }
 
@@ -398,9 +399,11 @@ export default class AutomationService {
     return matches[0];
   }
 
+  /** explicit sync is strict; install may defer unavailable initial scheduler discovery only. */
   async reconcile(
     manifest: AgentManifest,
     workspaceDir: string,
+    options: { deferUnavailableGateway?: boolean } = {},
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const { context, store } = await this.scope(manifest, workspaceDir);
     const initial = await store.read();
@@ -425,10 +428,30 @@ export default class AutomationService {
       return await store.withLock(async () => {
         const ledger = await store.read();
         const initialHash = automationHash(ledger);
-        const observed = await listNativeAutomations(request);
         // validate the complete plan before changing any native job.
         for (const job of declarations) effectiveAutomation(job, context);
         automationThreadNames(declarations, 'openclaw');
+        let observed: NativeAutomation[];
+        try {
+          observed = await listNativeAutomations(request);
+        } catch (error) {
+          if (
+            !options.deferUnavailableGateway ||
+            !(error instanceof AutomationError) ||
+            error.code !== 'automation-gateway-unavailable'
+          )
+            throw error;
+          const deferred = {
+            component: 'automations',
+            code: 'automation-sync-deferred',
+            message:
+              'Automation synchronization is deferred because the Gateway is unavailable; scheduler state was not verified or changed. Retry authorized install or automations sync when the Gateway is available.',
+          };
+          return {
+            outcomes: [{ ...deferred, status: 'skipped' as const }],
+            warnings: [deferred],
+          };
+        }
         for (const record of ledger.records) {
           const native = this.owned(record, observed, context.agentId);
           if (!native && record.nativeId)

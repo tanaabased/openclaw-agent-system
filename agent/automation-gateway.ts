@@ -137,9 +137,16 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
     } catch (error) {
       const { default: automationGatewayDiagnostic } =
         await import('./automation-gateway-diagnostic.ts');
+      const { default: automationGatewayUnavailable } =
+        await import('./automation-gateway-unavailable.ts');
+      const diagnostic = automationGatewayDiagnostic(method, error);
       throw new AutomationError(
-        'automation-gateway-unavailable',
-        automationGatewayDiagnostic(method, error),
+        automationGatewayUnavailable(error)
+          ? 'automation-gateway-unavailable'
+          : diagnostic.category === 'rejected'
+            ? 'automation-gateway-rejected'
+            : 'automation-gateway-failed',
+        diagnostic,
       );
     }
   };
