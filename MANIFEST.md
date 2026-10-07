@@ -257,8 +257,10 @@ creating its replacement. Old schedule history and conversation bindings remain.
 #### OpenClaw execution and ownership
 
 The Gateway must be running and the invoking operator must have native cron read
-and administration permissions. The adapter uses the public CLI transport;
-unavailable or incompatible RPCs block reconciliation.
+and administration permissions. The adapter uses the public CLI transport.
+Install may defer unavailable initial scheduler discovery without changing jobs;
+see [Install](./CLI.md#openclaw-agent-system-install). Explicit synchronization and
+incompatible RPCs still fail.
 Model-facing Install and Doctor report that operator synchronization is required;
 they do not acquire operator transport authority.
 

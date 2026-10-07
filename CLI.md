@@ -562,9 +562,13 @@ Output lists variable names, sources, required state, and override counts; value
 
 Install reconciles repository [automations](./MANIFEST.md#automations) alongside
 the rest of the workspace. Use [`automations sync`](#openclaw-agent-system-automations-sync)
-to reconcile automation jobs alone. Both require a running Gateway for automation
-reconciliation. Completed one-shots and native safety
-disable remain protected; failed synchronization reports partial results.
+to reconcile automation jobs alone. Automation reconciliation requires a running
+Gateway. If initial scheduler discovery cannot reach it, Install continues with
+an `automation-sync-deferred` warning and skipped outcome; scheduler state remains
+unverified and unchanged. Retry authorized Install or `automations sync` when the
+Gateway is available. Explicit sync, invalid declarations, authorization and
+ownership failures, and failed read-back remain errors. Completed one-shots and
+native safety disable remain protected; failed synchronization reports partial results.
 
 Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
 
