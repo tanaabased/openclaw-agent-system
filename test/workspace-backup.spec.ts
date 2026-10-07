@@ -8,6 +8,7 @@ import { pack } from 'tar-stream';
 import {
   chmod,
   copyFile,
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -351,6 +352,171 @@ describe('workspace backup', () => {
     });
     assert.ok(recovered.files.includes('memory/daily.md'));
     assert.ok(!recovered.files.includes('MEMORY.md'));
+  });
+
+  it('should prune large irrelevant trees and limit the final payload including parents', async function () {
+    this.timeout(120_000);
+    await executeFile('/usr/bin/git', ['init', workspace]);
+    await writeFile(join(workspace, '.gitignore'), 'large/\n');
+    await mkdir(join(workspace, 'large'));
+    // keep each inode's link count bounded across supported filesystems.
+    for (let batch = 0; batch < 100; batch++) {
+      const source = join(workspace, 'large', `${batch}-0`);
+      await writeFile(source, 'synthetic payload');
+      await Promise.all(
+        Array.from({ length: 999 }, (_, index) =>
+          link(source, join(workspace, 'large', `${batch}-${index + 1}`)),
+        ),
+      );
+    }
+    assert.equal((await readdir(join(workspace, 'large'))).length, 100_000);
+    const ignored = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: { gitIgnore: true, include: ['{MEMORY,DREAMS,BOOTSTRAP}.md'] },
+    });
+    assert.ok(ignored.files.includes('MEMORY.md'));
+    assert.ok(!ignored.files.some((path) => path.startsWith('large')));
+    const excluded = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: { include: ['large/**'], exclude: ['large/**'] },
+    });
+    assert.ok(excluded.files.length < 100);
+    assert.ok(!excluded.files.some((path) => path.startsWith('large/')));
+    await assert.rejects(
+      service.plan({
+        manifest,
+        workspaceDir: workspace,
+        overrides: {
+          gitIgnore: true,
+          include: ['large/*'],
+          exclude: ['.git', '.gitignore', 'agent.yaml', 'MEMORY.md', 'memory'],
+        },
+      }),
+      { code: 'backup-inventory-too-large' },
+    );
+  });
+
+  it('should retain tracked and explicitly included descendants of ignored trees', async () => {
+    await executeFile('/usr/bin/git', ['init', root]);
+    await mkdir(join(workspace, '.private', 'nested'), { recursive: true });
+    await writeFile(join(workspace, '.private', 'nested', 'tracked.md'), 'tracked');
+    await writeFile(join(workspace, '.private', 'nested', 'included.md'), 'included');
+    await writeFile(join(workspace, '.private', 'nested', 'other.md'), 'ignored');
+    await writeFile(join(workspace, '.gitignore'), '.private/\nMEMORY.md\nmemory/\n');
+    await executeFile('/usr/bin/git', [
+      '-C',
+      root,
+      'add',
+      '--force',
+      '--',
+      'workspace/.private/nested/tracked.md',
+    ]);
+    const result = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: {
+        gitIgnore: true,
+        include: ['{MEMORY,DREAMS,BOOTSTRAP}.md', 'memory/**', '.private/nested/included.md'],
+      },
+    });
+    for (const path of [
+      'MEMORY.md',
+      'memory/daily.md',
+      '.private',
+      '.private/nested',
+      '.private/nested/tracked.md',
+      '.private/nested/included.md',
+    ])
+      assert.ok(result.files.includes(path), path);
+    assert.ok(!result.files.includes('.private/nested/other.md'));
+    assert.ok(!result.diagnostics.some(({ code }) => code === 'backup-include-unmatched'));
+    const excluded = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: {
+        gitIgnore: true,
+        include: ['.private/nested/included.md', '.private/nested/*.md'],
+        exclude: ['.private'],
+      },
+    });
+    assert.ok(!excluded.files.some((path) => path.startsWith('.private')));
+    assert.ok(!excluded.diagnostics.some(({ code }) => code === 'backup-include-unmatched'));
+    await assert.rejects(
+      service.plan({
+        manifest,
+        workspaceDir: workspace,
+        overrides: { include: ['.private/missing.md'], exclude: ['.private'] },
+      }),
+      { code: 'backup-required-file-missing' },
+    );
+  });
+
+  it('should keep root-only brace matching and recover recursive dependency memory', async () => {
+    await executeFile('/usr/bin/git', ['init', workspace]);
+    await writeFile(join(workspace, '.gitignore'), 'MEMORY.md\nnode_modules/\nother/\n');
+    for (const directory of ['node_modules/pkg', 'other']) {
+      await mkdir(join(workspace, directory), { recursive: true });
+      await writeFile(join(workspace, directory, 'MEMORY.md'), 'nested');
+    }
+    const rootOnly = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: {
+        gitIgnore: true,
+        include: ['{MEMORY,DREAMS,BOOTSTRAP}.md', '{absent,optional}.md'],
+      },
+    });
+    assert.ok(rootOnly.files.includes('MEMORY.md'));
+    assert.ok(!rootOnly.files.includes('other/MEMORY.md'));
+    assert.ok(!rootOnly.files.includes('node_modules/pkg/MEMORY.md'));
+    assert.deepEqual(
+      rootOnly.diagnostics
+        .filter(({ code }) => code === 'backup-include-unmatched')
+        .map(({ path }) => path),
+      ['{absent,optional}.md'],
+    );
+    const recursive = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: { gitIgnore: true, include: ['**/MEMORY.md'] },
+    });
+    assert.ok(recursive.files.includes('other/MEMORY.md'));
+    assert.ok(recursive.files.includes('node_modules/pkg/MEMORY.md'));
+  });
+
+  it('should prune excluded directories without changing direct dotfile glob semantics', async () => {
+    await mkdir(join(workspace, 'scratch', 'excluded'), { recursive: true });
+    await writeFile(join(workspace, 'scratch', '.keep'), 'selected');
+    await writeFile(join(workspace, 'scratch', 'excluded', '.omit'), 'excluded by ancestor');
+    const result = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: { exclude: ['scratch/**'] },
+    });
+    assert.ok(result.files.includes('scratch/.keep'));
+    assert.ok(!result.files.includes('scratch/excluded/.omit'));
+  });
+
+  it('should not inspect descendants of irrelevant ignored excluded or dependency directories', async () => {
+    await executeFile('/usr/bin/git', ['init', workspace]);
+    await writeFile(join(workspace, '.gitignore'), '.agent-system/worktrees/\n');
+    for (const directory of ['.agent-system/worktrees', 'scratch', 'node_modules']) {
+      await mkdir(join(workspace, directory), { recursive: true });
+      await writeFile(join(workspace, directory, 'unsafe:path'), 'must not be visited');
+    }
+    const result = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: {
+        gitIgnore: true,
+        include: ['{MEMORY,DREAMS,BOOTSTRAP}.md'],
+        exclude: ['scratch'],
+      },
+    });
+    assert.ok(result.files.includes('MEMORY.md'));
+    assert.ok(!result.files.some((path) => path.includes('unsafe:path')));
   });
 
   it('should exclude effective default and aliased destinations despite includes', async () => {

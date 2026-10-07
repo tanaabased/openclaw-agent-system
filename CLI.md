@@ -212,7 +212,7 @@ Selection skips `**/node_modules/**`, `**/.npm/_cacache/**`, and
 `**/.eslintcache` unless explicitly included. Optional Git-ignore filtering runs before includes; excludes
 run last. Git-ignore requires a repository and retains tracked files. Includes
 can recover ignored files but cannot override mandatory exclusions. Use safe
-workspace-relative patterns with `/`: exact paths must exist, unmatched globs
+workspace-relative patterns with `/`: exact paths must exist, provably unmatched globs
 produce diagnostics, and selected special files fail.
 
 Default and selected destinations and `.agent-system/backup-staging` are always
@@ -346,7 +346,8 @@ openclaw as backup verify /private/backups/agent-backup.tar.gz --json
 ```
 
 Verification checks versions, manifests, paths, links, entry types, inventory,
-permissions, and checksums. Selection supports 100,000 entries; the root manifest
+permissions, and checksums. Selection supports 100,000 selected workspace entries,
+including structural parent directories; the root manifest
 is limited to 16 MiB. Bound callers may verify only their agent's archives within
 their workspace or configured destination. Success returns `status: verified`;
 failure returns `status: failed` and nonzero exit.
