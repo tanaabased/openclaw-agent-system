@@ -92,7 +92,7 @@ describe('agent/automation-gateway', () => {
         error instanceof AutomationError &&
         error.diagnostic?.method === 'cron.run' &&
         error.diagnostic.category === 'unknown' &&
-        error.message.includes('automation-gateway-unavailable') &&
+        error.code === 'automation-gateway-failed' &&
         !error.message.includes('secret'),
     );
   });

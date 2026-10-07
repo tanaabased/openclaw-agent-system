@@ -7,6 +7,7 @@ import isPathContained from '../utils/is-path-contained.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { BackupConfiguration } from '../manifest/backup-schema.ts';
+import backupDirectoryRelevant from './backup-directory-relevant.ts';
 import {
   BackupError,
   backupControlDirectory,
@@ -94,7 +95,7 @@ export function resolveBackupConfiguration(
   };
 }
 
-/** enumerate before git filtering so explicit includes can recover ignored descendants. */
+/** prune irrelevant trees while retaining explicitly included ignored descendants. */
 export async function planWorkspaceBackup(options: {
   manifest: AgentManifest;
   workspaceDir: string;
@@ -195,6 +196,51 @@ export async function planWorkspaceBackup(options: {
   }
   const diagnostics: BackupPlan['diagnostics'] = [];
   const candidates: string[] = [];
+  const excludedDirectories: string[] = [];
+  const selected = new Set<string>();
+  const trackedDirectories = new Set<string>();
+  if (settings.gitIgnore) {
+    try {
+      await backupGit(workspaceDir, ['rev-parse', '--show-toplevel']);
+      const tracked = await backupGit(workspaceDir, ['ls-files', '-z', '--cached', '--', '.']);
+      for (const path of tracked.stdout.split('\0').filter(Boolean)) {
+        let parent = dirname(path);
+        while (parent !== '.') {
+          trackedDirectories.add(parent);
+          parent = dirname(parent);
+        }
+      }
+    } catch {
+      throw new BackupError(
+        'backup-git-ignore-unavailable',
+        'Git-ignore selection requires readable local Git metadata.',
+      );
+    }
+  }
+  async function ignoredPaths(paths: string[]): Promise<Set<string>> {
+    const ignored = new Set<string>();
+    if (!settings.gitIgnore) return ignored;
+    try {
+      for (let index = 0; index < paths.length; index += 1000) {
+        try {
+          const result = await backupGit(
+            workspaceDir,
+            ['check-ignore', '-z', '--stdin'],
+            `${paths.slice(index, index + 1000).join('\0')}\0`,
+          );
+          for (const path of result.stdout.split('\0').filter(Boolean)) ignored.add(path);
+        } catch (error) {
+          if ((error as { code?: number }).code !== 1) throw error;
+        }
+      }
+    } catch {
+      throw new BackupError(
+        'backup-git-ignore-unavailable',
+        'Git-ignore selection requires readable local Git metadata.',
+      );
+    }
+    return ignored;
+  }
   async function visit(directory: string) {
     if (!isPathContained(workspaceDir, await realpath(directory)))
       throw new BackupError(
@@ -202,45 +248,50 @@ export async function planWorkspaceBackup(options: {
         'A workspace directory changed or escaped during selection.',
       );
     const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      const path = join(directory, entry.name);
-      const workspacePath = relative(workspaceDir, path).split(sep).join('/');
-      if (!safeBackupRelativePath(workspacePath))
-        throw new BackupError(
-          'backup-source-path-unsafe',
-          `Unsupported workspace path: ${JSON.stringify(workspacePath)}.`,
-        );
-      const canonical = await canonicalBackupPath(path);
-      if (
-        backupPathProtected(path, protectedPaths) ||
-        backupPathProtected(canonical, protectedPaths)
-      )
+    const paths = entries
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .map((entry) => {
+        const path = join(directory, entry.name);
+        const workspacePath = relative(workspaceDir, path).split(sep).join('/');
+        if (!safeBackupRelativePath(workspacePath))
+          throw new BackupError(
+            'backup-source-path-unsafe',
+            `Unsupported workspace path: ${JSON.stringify(workspacePath)}.`,
+          );
+        return { entry, path, workspacePath };
+      });
+    const ignored = await ignoredPaths(
+      paths
+        .filter(
+          ({ path, workspacePath }) =>
+            !backupPathProtected(path, protectedPaths) && !matches(workspacePath, settings.exclude),
+        )
+        .map(({ workspacePath }) => workspacePath),
+    );
+    for (const { entry, path, workspacePath } of paths) {
+      if (backupPathProtected(path, protectedPaths)) continue;
+      if (matches(workspacePath, settings.exclude)) {
+        candidates.push(workspacePath);
+        if (entry.isDirectory()) excludedDirectories.push(workspacePath);
         continue;
+      }
+      const canonical = await canonicalBackupPath(path);
+      if (backupPathProtected(canonical, protectedPaths)) continue;
       const regenerableDirectory =
         entry.isDirectory() &&
         (entry.name === 'node_modules' ||
           (entry.name === '_cacache' && directory.endsWith('/.npm')));
-      const mayInclude = settings.include.some((pattern) => {
-        const prefix = pattern
-          .split('/')
-          .filter(
-            (_, index, parts) => !parts.slice(0, index + 1).some((part) => /[?*[{]/u.test(part)),
-          )
-          .join('/');
-        return (
-          !prefix ||
-          prefix === workspacePath ||
-          prefix.startsWith(`${workspacePath}/`) ||
-          workspacePath.startsWith(`${prefix}/`)
-        );
-      });
+      const mayInclude =
+        entry.isDirectory() && backupDirectoryRelevant(workspacePath, settings.include);
       if (regenerableDirectory && !mayInclude) continue;
       candidates.push(workspacePath);
-      if (candidates.length > 100_000)
-        throw new BackupError(
-          'backup-inventory-too-large',
-          'A workspace backup supports at most 100000 entries.',
-        );
+      if (
+        (!matches(workspacePath, backupRegenerablePatterns) && !ignored.has(workspacePath)) ||
+        matches(workspacePath, settings.include)
+      )
+        selected.add(workspacePath);
+      if (ignored.has(workspacePath) && !mayInclude && !trackedDirectories.has(workspacePath))
+        continue;
       if (entry.isDirectory()) await visit(path);
     }
   }
@@ -253,11 +304,23 @@ export async function planWorkspaceBackup(options: {
         backupPathProtected(await canonicalBackupPath(requested), protectedPaths)
       )
         continue;
-      if (!/[?*[{]/u.test(pattern))
+      if (!/[?*[{]|[!+@]\(/u.test(pattern)) {
+        if (
+          await lstat(requested).catch((error: unknown) => {
+            if (nodeErrorCode(error) === 'ENOENT' || nodeErrorCode(error) === 'ENOTDIR')
+              return undefined;
+            throw error;
+          })
+        )
+          continue;
         throw new BackupError(
           'backup-required-file-missing',
           `An explicitly included path is missing: ${pattern}.`,
         );
+      }
+      // a pruned exclusion cannot prove that a potentially matching glob is absent.
+      if (excludedDirectories.some((directory) => backupDirectoryRelevant(directory, [pattern])))
+        continue;
       diagnostics.push({
         code: 'backup-include-unmatched',
         message: 'An include pattern matched no workspace entries.',
@@ -265,34 +328,6 @@ export async function planWorkspaceBackup(options: {
       });
     }
   }
-  const ignored = new Set<string>();
-  if (settings.gitIgnore) {
-    try {
-      await backupGit(workspaceDir, ['rev-parse', '--show-toplevel']);
-      for (let index = 0; index < candidates.length; index += 1000) {
-        const input = `${candidates.slice(index, index + 1000).join('\0')}\0`;
-        try {
-          const result = await backupGit(workspaceDir, ['check-ignore', '-z', '--stdin'], input);
-          for (const path of result.stdout.split('\0').filter(Boolean)) ignored.add(path);
-        } catch (error) {
-          if ((error as { code?: number }).code !== 1) throw error;
-        }
-      }
-    } catch {
-      throw new BackupError(
-        'backup-git-ignore-unavailable',
-        'Git-ignore selection requires readable local Git metadata.',
-      );
-    }
-  }
-  const selected = new Set(
-    candidates.filter(
-      (path) =>
-        ((!matches(path, backupRegenerablePatterns) && !ignored.has(path)) ||
-          matches(path, settings.include)) &&
-        !matches(path, settings.exclude),
-    ),
-  );
   for (const path of [...selected]) {
     const stats = await lstat(join(workspaceDir, path));
     if (!stats.isDirectory() && !stats.isFile() && !stats.isSymbolicLink())
@@ -327,6 +362,11 @@ export async function planWorkspaceBackup(options: {
       parent = dirname(parent);
     }
   }
+  if (selected.size > 100_000)
+    throw new BackupError(
+      'backup-inventory-too-large',
+      'A workspace backup supports at most 100000 entries.',
+    );
   return {
     agentId: options.manifest.agent.id,
     workspaceDir,

@@ -27,6 +27,14 @@ cd "$TMPDIR/backup-workspace/memory"
 openclaw as backup create --dry-run --json | jq -e '.status == "preview" and .coverage.openclawState == "off" and (.files | index("MEMORY.md")) and (.files | index("memory/day.md"))'
 test ! -e "$TMPDIR/backup-workspace/.agent-system"
 
+# should keep brace alternatives root-only and tolerate optional absent glob alternatives
+cd "$TMPDIR/backup-workspace"
+openclaw as backup create --dry-run --json --include '{MEMORY,DREAMS,BOOTSTRAP}.md' '{optional,absent}.md' | jq -e '(.files | index("MEMORY.md")) and ((.files | index("memory/MEMORY.md")) == null) and (.diagnostics | any(.code == "backup-include-unmatched" and .path == "{optional,absent}.md"))'
+
+# should recover ignored nested continuity through a recursive glob
+cd "$TMPDIR/backup-workspace"
+openclaw as backup create --dry-run --json --include '**/MEMORY.md' | jq -e '(.files | index("MEMORY.md")) and (.files | index("memory/MEMORY.md"))'
+
 # should prevent setup checks from creating archives and allow an explicit apply
 cd "$TMPDIR/backup-workspace"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "setup" and .status == "updated")'

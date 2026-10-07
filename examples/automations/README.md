@@ -1,7 +1,7 @@
 # Automations Example
 
 Exercises native scheduled commands through the packed plugin: owning identity,
-policy before missing credentials, workspace containment, stale-job rejection,
+offline install deferral, policy before missing credentials, workspace containment, stale-job rejection,
 one-shot retention, and command/SSH authority cleanup. Remote SSH is held by a
 fixture executable; Git and GitHub use the installed managed launchers. A strict
 AIMock prompt proves owning-agent context separately from model-free commands.
@@ -22,15 +22,34 @@ cp "$GITHUB_WORKSPACE/examples/automations/agent.yaml" "$TMPDIR/automation-agent
 cp "$GITHUB_WORKSPACE/examples/automations/IDENTITY.md" "$TMPDIR/automation-agent/IDENTITY.md"
 cp "$GITHUB_WORKSPACE/examples/automations/probe.sh" "$TMPDIR/automation-agent/probe.sh"
 cp "$GITHUB_WORKSPACE/examples/automations/prompt.md" "$TMPDIR/automation-agent/prompt.md"
-printf '[]\n' > "$TMPDIR/automation-agent/automations.yaml"
-OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
-cd "$TMPDIR/automation-agent"
-PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes
+cp "$GITHUB_WORKSPACE/examples/automations/offline.yaml" "$TMPDIR/automation-agent/automations.yaml"
 ```
 
 ## Testing
 
 ```bash
+# should finish initial and repeated installation with deferred automation sync while offline
+cd "$TMPDIR/automation-agent"
+for attempt in 1 2; do
+  PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --skip-setup-agent --json | jq -e '(.warnings | any(.component == "automations" and .code == "automation-sync-deferred")) and (.outcomes | any(.component == "agent")) and (.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "skipped" and .code == "automation-sync-deferred")'
+  PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.warnings | any(.code == "automation-sync-deferred")) and (.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "skipped")'
+done
+test ! -e offline-ran
+
+# should keep explicit synchronization failure honest while offline
+cd "$TMPDIR/automation-agent"
+if openclaw agent-system automations sync --json > offline-sync.json; then exit 1; fi
+jq -e '.status == "failed" and .code == "automation-gateway-unavailable"' offline-sync.json
+
+# should reconcile deferred disabled jobs once the gateway is reachable
+OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
+cd "$TMPDIR/automation-agent"
+PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.warnings | all(.code != "automation-sync-deferred")) and (.outcomes | any(.component == "automations" and .code == "automation-synchronized" and .status == "created"))'
+openclaw gateway call cron.list --params '{"includeDisabled":true}' --json | jq -e '.jobs | any(.name == "Agent System: offline" and .enabled == false)'
+PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "unchanged")'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+test ! -e offline-ran
+
 # should run plain git and gh under the scheduled agent without a model
 cd "$TMPDIR/automation-agent"
 cp "$GITHUB_WORKSPACE/examples/automations/identity.yaml" automations.yaml

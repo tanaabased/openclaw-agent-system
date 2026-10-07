@@ -10,7 +10,10 @@ import {
 } from '../agent/automation-gateway.ts';
 import { automationPatch, nativeAutomationHash } from '../agent/automation-projection.ts';
 import AutomationService from '../agent/automation-service.ts';
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import AgentInstallService from '../agent/install-service.ts';
+import AgentSystemLifecycleRegistry, {
+  AgentSystemLifecycleError,
+} from '../core/lifecycle-registry.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
@@ -157,6 +160,228 @@ describe('agent/automation-service', () => {
   });
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
+
+  it('should defer offline install without synchronizing disabled jobs and later converge online', async () => {
+    manifest.automations![0]!.enabled = false;
+    const online = service.dependencies.request!;
+    const offlineMethods: string[] = [];
+    service.dependencies.request = createAutomationGateway(async (method) => {
+      offlineMethods.push(method);
+      throw Object.assign(new Error('secret connection details'), {
+        name: 'GatewayTransportError',
+        kind: 'closed',
+        code: 1006,
+        requestDispatched: false,
+        connectionDetails: {},
+      });
+    });
+    const otherWork: string[] = [];
+    const install = new AgentInstallService({
+      lifecycleRegistry: new AgentSystemLifecycleRegistry([
+        {
+          id: 'before',
+          isConfigured: () => true,
+          reconcile: async () => {
+            otherWork.push('before');
+            return { outcomes: [] };
+          },
+        },
+        service.contribution(),
+        {
+          id: 'after',
+          isConfigured: () => true,
+          reconcile: async () => {
+            otherWork.push('after');
+            return { outcomes: [] };
+          },
+        },
+      ]),
+    });
+    const input = { runtime: 'openclaw' as const, manifest, workspaceDir: root };
+    const { store } = await service.scope(manifest, root);
+    const before = await store.read();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await install.install(input);
+      assert.equal(result.warnings[0]?.code, 'automation-sync-deferred');
+      assert.deepEqual(
+        result.outcomes
+          .filter(({ component }) => component === 'automations')
+          .map(({ code, status }) => ({ code, status })),
+        [{ code: 'automation-sync-deferred', status: 'skipped' }],
+      );
+      assert.deepEqual(await store.read(), before);
+      assert.equal(native.length, 0);
+    }
+    assert.deepEqual(otherWork, ['before', 'after', 'before', 'after']);
+    assert.deepEqual(offlineMethods, ['cron.list', 'cron.list']);
+    await assert.rejects(service.reconcile(manifest, root), {
+      code: 'automation-gateway-unavailable',
+    });
+    service.dependencies.request = online;
+    const synchronized = await install.install(input);
+    assert.equal(synchronized.warnings.length, 0);
+    assert.equal(
+      synchronized.outcomes.find(({ component }) => component === 'automations')?.status,
+      'created',
+    );
+    assert.equal(native[0]?.enabled, false);
+    assert.ok(calls.some(({ method }) => method === 'cron.get'));
+    calls = [];
+    const repeated = await service.reconcile(manifest, root);
+    assert.equal(repeated.outcomes[0]?.status, 'unchanged');
+    assert.equal(mutations().length, 0);
+    assert.ok(!calls.some(({ method }) => method === 'cron.run'));
+  });
+
+  it('should preserve existing jobs and ownership while install synchronization is deferred', async () => {
+    await service.reconcile(manifest, root);
+    const before = structuredClone(native);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    manifest.automations = [];
+    service.dependencies.request = createAutomationGateway(async () => {
+      throw Object.assign(new Error('secret'), {
+        name: 'GatewayTransportError',
+        kind: 'timeout',
+        requestDispatched: false,
+        connectionDetails: {},
+      });
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await service.contribution().reconcile!({ manifest, workspaceDir: root });
+      assert.equal(result.warnings?.[0]?.code, 'automation-sync-deferred');
+      assert.deepEqual(native, before);
+      assert.deepEqual(await store.read(), ledger);
+    }
+  });
+
+  it('should validate declarations before attempting offline scheduler discovery', async () => {
+    let requests = 0;
+    service.dependencies.request = createAutomationGateway(async () => {
+      requests += 1;
+      throw Object.assign(new Error('secret'), {
+        name: 'GatewayTransportError',
+        kind: 'timeout',
+        requestDispatched: false,
+        connectionDetails: {},
+      });
+    });
+    manifest.automations![0]!.overrides.openclaw = { effort: 'max' };
+    await assert.rejects(service.contribution().reconcile!({ manifest, workspaceDir: root }), {
+      code: 'automation-effort-unsupported',
+    });
+    assert.equal(requests, 0);
+    assert.equal(native.length, 0);
+  });
+
+  it('should keep gateway auth rejection and unknown failures fatal during install', async () => {
+    for (const [failure, code] of [
+      [
+        Object.assign(new Error('secret'), {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'FORBIDDEN',
+          retryable: false,
+        }),
+        'automation-gateway-rejected',
+      ],
+      [
+        Object.assign(new Error('secret'), { name: 'GatewayCredentialsRequiredError' }),
+        'automation-gateway-failed',
+      ],
+      [
+        Object.assign(new Error('secret'), {
+          name: 'GatewayTransportError',
+          kind: 'closed',
+          code: 1008,
+          requestDispatched: false,
+          connectionDetails: {},
+        }),
+        'automation-gateway-failed',
+      ],
+      [
+        Object.assign(new Error('secret'), {
+          name: 'GatewayTransportError',
+          kind: 'timeout',
+          requestDispatched: true,
+          connectionDetails: {},
+        }),
+        'automation-gateway-failed',
+      ],
+      [new Error('gateway unavailable: secret'), 'automation-gateway-failed'],
+    ] as const) {
+      service.dependencies.request = createAutomationGateway(async () => {
+        throw failure;
+      });
+      await assert.rejects(
+        service.contribution().reconcile!({ manifest, workspaceDir: root }),
+        (error: unknown) => {
+          assert.ok(error instanceof AgentSystemLifecycleError);
+          assert.equal(error.code, code);
+          assert.deepEqual(error.progress?.warnings, []);
+          assert.deepEqual(error.progress?.outcomes, []);
+          assert.ok(!JSON.stringify(error).includes('secret'));
+          return true;
+        },
+      );
+    }
+    assert.equal(native.length, 0);
+  });
+
+  it('should keep ownership conflicts fatal during install without changing jobs', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.agentId = 'other';
+    const before = structuredClone(native);
+    calls = [];
+    await assert.rejects(service.contribution().reconcile!({ manifest, workspaceDir: root }), {
+      code: 'automation-ownership-conflict',
+    });
+    assert.deepEqual(native, before);
+    assert.equal(mutations().length, 0);
+  });
+
+  it('should fail install on unavailable readback after a write and retain recovery state', async () => {
+    const online = service.dependencies.request!;
+    service.dependencies.request = createAutomationGateway(async (method, _options, params) => {
+      if (method === 'cron.get')
+        throw Object.assign(new Error('secret'), {
+          name: 'GatewayTransportError',
+          kind: 'timeout',
+          requestDispatched: false,
+          connectionDetails: {},
+        });
+      return online(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>);
+    });
+    await assert.rejects(
+      service.contribution().reconcile!({ manifest, workspaceDir: root }),
+      (error: unknown) => {
+        assert.ok(error instanceof AgentSystemLifecycleError);
+        assert.equal(error.code, 'automation-gateway-unavailable');
+        assert.deepEqual(error.progress?.warnings, []);
+        return true;
+      },
+    );
+    assert.equal(native.length, 1);
+    assert.equal(native[0]?.enabled, false);
+    const { store } = await service.scope(manifest, root);
+    assert.equal((await store.read()).records[0]?.pending?.kind, 'create');
+    service.dependencies.request = online;
+    await service.reconcile(manifest, root);
+    assert.equal(native.length, 1);
+    assert.equal((await store.read()).records[0]?.pending, undefined);
+  });
+
+  it('should keep divergent readback fatal during install', async () => {
+    const online = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      const result = await online(method, params);
+      return method === 'cron.get' ? { ...result, enabled: true } : result;
+    };
+    await assert.rejects(service.contribution().reconcile!({ manifest, workspaceDir: root }), {
+      code: 'automation-readback-diverged',
+    });
+    assert.equal(native.length, 1);
+    assert.equal(native[0]?.enabled, false);
+  });
 
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {
     const sessions = new Map<string, Record<string, unknown>>();

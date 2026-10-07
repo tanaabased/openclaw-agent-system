@@ -106,6 +106,42 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should expose deferred automation sync in both output modes without failing install', async () => {
+    const deferred = {
+      component: 'automations',
+      code: 'automation-sync-deferred',
+      message:
+        'Automation synchronization is deferred; scheduler state was not verified or changed.',
+    };
+    for (const json of [false, true]) {
+      const harness = createHarness({
+        json,
+        install: {
+          agentId: 'tanaabot',
+          workspaceDir: '/workspace',
+          outcomes: [{ ...deferred, status: 'skipped' }],
+          warnings: [deferred],
+        },
+      });
+      await harness.run();
+      assert.deepEqual(harness.exitCodes, []);
+      assert.match(harness.diagnostics.join(''), /deferred/u);
+      if (json) {
+        const result = JSON.parse(harness.output.join(''));
+        assert.equal(result.outcomes[0].status, 'skipped');
+        assert.equal(result.warnings[0].code, 'automation-sync-deferred');
+        assert.equal(result.blocked, undefined);
+      } else {
+        assert.match(harness.output.join(''), /skipped/u);
+        assert.ok(
+          harness.events.join('').indexOf('workspace  /workspace') <
+            harness.events.join('').indexOf('Messages'),
+        );
+      }
+      assert.ok(!harness.output.join('').includes('automation-synchronized'));
+    }
+  });
+
   it('should combine manifest warnings with operation messages after the workspace footer', async () => {
     for (const failed of [false, true]) {
       const outcomes = [
