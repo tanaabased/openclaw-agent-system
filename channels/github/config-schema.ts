@@ -37,7 +37,7 @@ const externalPullRequestRecipientsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const externalGitHubNotificationsSchema = Type.Object(
+const externalLegacyGitHubNotificationsSchema = Type.Object(
   {
     'assignment-types': Type.Optional(
       Type.Array(Type.Union([Type.Literal('issue'), Type.Literal('pull-request')]), {
@@ -71,6 +71,50 @@ export const externalGitHubNotificationsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const externalNotificationTriggerSchema = Type.Object(
+  {
+    allowed: Type.Optional(Type.Array(externalGitHubApprovedActorSchema, { uniqueItems: true })),
+  },
+  { additionalProperties: false },
+);
+
+const externalGitHubNotificationPolicySchema = Type.Object(
+  {
+    'schema-version': Type.Literal(2),
+    runtimes: Type.Optional(
+      Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
+        minItems: 1,
+        uniqueItems: true,
+      }),
+    ),
+    'interval-minutes': Type.Optional(Type.Integer({ minimum: 1, maximum: 1_440 })),
+    'max-concurrent-items': Type.Optional(Type.Integer({ minimum: 1 })),
+    'allowed-repository-owners': Type.Array(externalGitHubIdentitySchema, {
+      minItems: 1,
+      uniqueItems: true,
+    }),
+    'issue-assignment': Type.Optional(
+      Type.Object(
+        {
+          ...externalNotificationTriggerSchema.properties,
+          mode: Type.Optional(
+            Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    'review-request': Type.Optional(externalNotificationTriggerSchema),
+    feedback: Type.Optional(externalNotificationTriggerSchema),
+  },
+  { additionalProperties: false },
+);
+
+export const externalGitHubNotificationsSchema = Type.Union([
+  externalLegacyGitHubNotificationsSchema,
+  externalGitHubNotificationPolicySchema,
+]);
+
 type ExternalGitHubNotifications = Static<typeof externalGitHubNotificationsSchema>;
 
 export interface GitHubIdentityPin {
@@ -83,6 +127,7 @@ export interface GitHubApprovedActor extends GitHubIdentityPin {
 }
 
 export interface GitHubNotificationsConfiguration {
+  schemaVersion?: never;
   assignmentTypes: Array<'issue' | 'pull-request'>;
   approvedActors?: GitHubApprovedActor[];
   approvedIssueAssigners?: GitHubIdentityPin[];
@@ -97,16 +142,64 @@ export interface GitHubNotificationsConfiguration {
   };
 }
 
+export interface GitHubNotificationPolicy {
+  schemaVersion: 2;
+  runtimes: Array<'openclaw' | 'codex'>;
+  intervalMinutes: number;
+  maxConcurrentItems: number;
+  allowedRepositoryOwners: GitHubIdentityPin[];
+  issueAssignment?: { allowed: GitHubApprovedActor[]; mode: 'plan' | 'work' | 'auto' };
+  reviewRequest?: { allowed: GitHubApprovedActor[] };
+  feedback?: { allowed: GitHubApprovedActor[] };
+}
+
+export type GitHubNotificationsDeclaration =
+  GitHubNotificationsConfiguration | GitHubNotificationPolicy;
+
+/** keep version 2 declarations out of legacy channel execution and authority. */
+export function legacyGitHubNotifications(
+  declaration: GitHubNotificationsDeclaration | undefined,
+): GitHubNotificationsConfiguration | undefined {
+  return declaration?.schemaVersion === 2 ? undefined : declaration;
+}
+
 /** Decode the channel-owned github.notifications manifest fragment. */
 export function decodeGitHubNotifications(
   value: ExternalGitHubNotifications,
-): GitHubNotificationsConfiguration {
+): GitHubNotificationsDeclaration {
   const decodeIdentity = (
     identity: Static<typeof externalGitHubIdentitySchema>,
   ): GitHubIdentityPin => ({
     login: identity.login,
     nodeId: identity['node-id'],
   });
+
+  if ('schema-version' in value) {
+    const actors = (trigger: Static<typeof externalNotificationTriggerSchema>) =>
+      (trigger.allowed ?? []).map((actor) => ({
+        ...decodeIdentity(actor),
+        operatorOwner: actor['operator-owner'] ?? false,
+      }));
+    return {
+      schemaVersion: 2,
+      runtimes: value.runtimes ?? ['openclaw', 'codex'],
+      intervalMinutes: value['interval-minutes'] ?? 5,
+      maxConcurrentItems: value['max-concurrent-items'] ?? 2,
+      allowedRepositoryOwners: value['allowed-repository-owners'].map(decodeIdentity),
+      ...(value['issue-assignment'] === undefined
+        ? {}
+        : {
+            issueAssignment: {
+              allowed: actors(value['issue-assignment']),
+              mode: value['issue-assignment'].mode ?? 'plan',
+            },
+          }),
+      ...(value['review-request'] === undefined
+        ? {}
+        : { reviewRequest: { allowed: actors(value['review-request']) } }),
+      ...(value.feedback === undefined ? {} : { feedback: { allowed: actors(value.feedback) } }),
+    };
+  }
 
   return {
     assignmentTypes: value['assignment-types'] ?? ['issue', 'pull-request'],

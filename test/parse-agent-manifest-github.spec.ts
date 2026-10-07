@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { legacyGitHubNotifications } from '../channels/github/config-schema.ts';
+
 import parseAgentManifest from '../manifest/parse.ts';
 
 function diagnosticCodes(source: string): Set<string> {
@@ -30,7 +32,8 @@ ${field === 'approved-actors' ? `        operator-owner: ${flag}` : `    allowed
       assert.equal(result.status, 'valid');
       if (result.status === 'valid')
         assert.equal(
-          result.manifest.github?.notifications?.approvedActors?.[0]?.operatorOwner,
+          legacyGitHubNotifications(result.manifest.github?.notifications)?.approvedActors?.[0]
+            ?.operatorOwner,
           flag === 'true',
         );
     }
@@ -210,10 +213,13 @@ github:
     );
     assert.equal(result.status, 'valid');
     if (result.status === 'valid')
-      assert.deepEqual(result.manifest.github?.notifications?.pullRequest, {
-        assignees: [],
-        reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
-      });
+      assert.deepEqual(
+        legacyGitHubNotifications(result.manifest.github?.notifications)?.pullRequest,
+        {
+          assignees: [],
+          reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
+        },
+      );
     const assignees = Array.from(
       { length: 11 },
       (_, index) => `        - login: user${index}\n          node-id: U_${index}`,
@@ -236,7 +242,10 @@ github:
 
     assert.equal(result.status, 'valid');
     if (result.status !== 'valid') return;
-    assert.equal(result.manifest.github?.notifications?.initialMode, 'guided');
+    assert.equal(
+      legacyGitHubNotifications(result.manifest.github?.notifications)?.initialMode,
+      'guided',
+    );
   });
 
   it('should parse and validate github notification issue concurrency', () => {
@@ -254,7 +263,10 @@ github:
 
     assert.equal(result.status, 'valid');
     if (result.status === 'valid') {
-      assert.equal(result.manifest.github?.notifications?.maxConcurrentIssues, 4);
+      assert.equal(
+        legacyGitHubNotifications(result.manifest.github?.notifications)?.maxConcurrentIssues,
+        4,
+      );
     }
     for (const value of ['0', '-1', '1.5', 'many']) {
       assert.equal(
@@ -320,7 +332,10 @@ github:
 
     assert.equal(result.status, 'valid');
     if (result.status !== 'valid') return;
-    assert.deepEqual(result.manifest.github?.notifications?.assignmentTypes, ['issue']);
+    assert.deepEqual(
+      legacyGitHubNotifications(result.manifest.github?.notifications)?.assignmentTypes,
+      ['issue'],
+    );
   });
 
   it('should reject legacy github ask decisions with exact migration guidance', () => {

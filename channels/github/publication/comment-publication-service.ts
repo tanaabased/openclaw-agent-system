@@ -1,3 +1,4 @@
+import { legacyGitHubNotifications } from '../config-schema.ts';
 import {
   admitReviewFeedback,
   isReviewFeedback,
@@ -302,7 +303,8 @@ export default class GitHubNotificationCommentPublicationService {
       loaded.status !== 'loaded' ||
       loaded.manifest.agent.id !== normalizedAccountId ||
       resolve(loaded.scope.workspaceDir) !== resolve(conversationState.workspaceDir) ||
-      !loaded.manifest.github?.notifications
+      !loaded.manifest.github ||
+      !legacyGitHubNotifications(loaded.manifest.github.notifications)
     ) {
       fail('github-notification-publication-state-missing');
     }

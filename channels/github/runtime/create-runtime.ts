@@ -5,6 +5,7 @@ import type {
   dispatchChannelInboundTurn,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import { legacyGitHubNotifications } from '../config-schema.ts';
 import {
   assertConversationHookReady,
   type ConversationHookFinding,
@@ -263,11 +264,13 @@ export default function createGitHubNotificationRuntime(
           loaded.status !== 'loaded' ||
           loaded.manifest.agent.id !== input.agentId ||
           resolve(loaded.scope.workspaceDir) !== resolve(input.workspaceDir) ||
-          !loaded.manifest.github?.notifications
+          !legacyGitHubNotifications(loaded.manifest.github?.notifications)
         ) {
           throw new Error('The GitHub notification initial mode configuration is unavailable.');
         }
-        return modeRegistry.resolve(loaded.manifest.github.notifications.initialMode ?? 'work');
+        return modeRegistry.resolve(
+          legacyGitHubNotifications(loaded.manifest.github?.notifications)?.initialMode ?? 'work',
+        );
       };
       const assignmentProvider = new GitHubNotificationAssignmentProvider({
         accountClient: dependencies.accountClient,
@@ -384,7 +387,8 @@ export default function createGitHubNotificationRuntime(
         async maximumConcurrentIssues(agentId) {
           const loaded = await manifestService.loadForAgentId(agentId, 'service');
           return loaded.status === 'loaded'
-            ? (loaded.manifest.github?.notifications?.maxConcurrentIssues ?? 2)
+            ? (legacyGitHubNotifications(loaded.manifest.github?.notifications)
+                ?.maxConcurrentIssues ?? 2)
             : 2;
         },
         monitorService,

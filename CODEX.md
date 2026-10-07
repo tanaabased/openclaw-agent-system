@@ -76,6 +76,14 @@ Standalone Codex reads these profiles without changing OpenClaw configuration.
 A mapped selection still needs native Codex support and application; it is not
 proof that the model is available or that a task is using it.
 
+## GitHub Notification Policy
+
+The [version 2 notification schema](./MANIFEST.md#githubnotifications) can be parsed
+and bound for profile preparation. Execution is not implemented yet: Doctor reports
+`github-notification-runtime-unsupported`, and Install blocks before applying setup.
+No notification job, working chat, operator grant, or GitHub mutation is created.
+The manifest reference owns the agreed modes and follow-up activation contract.
+
 ## Repository Automations
 
 Declare recurring work in `agent.yaml`:

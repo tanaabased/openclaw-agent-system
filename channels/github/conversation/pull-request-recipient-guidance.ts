@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 
+import { legacyGitHubNotifications, type GitHubIdentityPin } from '../config-schema.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
-import type { GitHubIdentityPin } from '../config-schema.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
@@ -44,7 +44,7 @@ export default class GitHubNotificationPullRequestRecipientGuidance {
         loaded.status !== 'loaded' ||
         loaded.manifest.agent.id !== input.agentId ||
         resolve(loaded.scope.workspaceDir) !== resolve(input.workspaceDir) ||
-        !loaded.manifest.github?.notifications ||
+        !legacyGitHubNotifications(loaded.manifest.github?.notifications) ||
         input.item.lifecycleId !== 'issue' ||
         input.item.itemType !== 'issue' ||
         input.item.disposition !== 'approved' ||
@@ -53,7 +53,9 @@ export default class GitHubNotificationPullRequestRecipientGuidance {
       )
         return unavailable;
 
-      const configured = loaded.manifest.github.notifications.pullRequest;
+      const configured = legacyGitHubNotifications(
+        loaded.manifest.github?.notifications,
+      )?.pullRequest;
       const assignees = configured?.assignees ?? 'assignment-actor';
       let resolvedAssignees: GitHubIdentityPin[];
       if (assignees === 'assignment-actor') {

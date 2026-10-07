@@ -57,6 +57,22 @@ cp "$root/rebound-workspace/agent.yaml" "$root/rebound-workspace/agent.expected.
 ## Testing
 
 ```bash
+# should accept notification policy without activating an unsupported runtime
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+mkdir -p "$root/notification-workspace"
+cp "$GITHUB_WORKSPACE/examples/codex/notification-policy-agent.yaml" "$root/notification-workspace/agent.yaml"
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/notification-workspace" --confirm \
+  | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
+node "$runtime" setup inspect --plugin-data "$plugin_data" \
+  | jq -e '.status == "inspected" and any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "blocked")'
+if output=$(node "$runtime" setup install --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "github-notification-runtime-unsupported"'
+test ! -e "$root/notification-workspace/.setup-applied"
+test ! -d "$CODEX_HOME/automations"
+
 # should preview a valid workspace without persisting a binding
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

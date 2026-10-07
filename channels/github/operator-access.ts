@@ -3,13 +3,13 @@ import { resolve } from 'node:path';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { resolveCommandAuthorization } from 'openclaw/plugin-sdk/command-auth';
 
+import { legacyGitHubNotifications, type GitHubApprovedActor } from './config-schema.ts';
 import type GitHubAccountClient from '../../core/github-account-client.ts';
 import type {
   AgentSystemLifecycleContext,
   AgentSystemLifecycleFinding,
 } from '../../core/lifecycle-registry.ts';
 import { configuredAgentValue } from '../../core/configured-agents.ts';
-import type { GitHubApprovedActor } from './config-schema.ts';
 import type OperatorGrantStore from './operator-grant-store.ts';
 import type { OperatorGrantClaim, OperatorGrantState } from './operator-grant-store.ts';
 import type { NotificationRoutingServiceDependencies } from './routing/service.ts';
@@ -33,7 +33,7 @@ export interface OperatorAccessDependencies {
 
 function desiredActors(context: AgentSystemLifecycleContext): GitHubApprovedActor[] {
   return (
-    context.manifest.github?.notifications?.approvedActors?.filter(
+    legacyGitHubNotifications(context.manifest.github?.notifications)?.approvedActors?.filter(
       (actor) => actor.operatorOwner === true,
     ) ?? []
   );

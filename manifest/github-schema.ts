@@ -3,7 +3,7 @@ import { Type, type Static } from 'typebox';
 import {
   decodeGitHubNotifications,
   externalGitHubNotificationsSchema,
-  type GitHubNotificationsConfiguration,
+  type GitHubNotificationsDeclaration,
 } from '../channels/github/config-schema.ts';
 import {
   decodeGitHubToolConfiguration,
@@ -32,7 +32,7 @@ type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
 
 export interface GitHubManifestConfiguration extends GitHubToolManifestConfiguration {
   host?: 'github.com';
-  notifications?: GitHubNotificationsConfiguration;
+  notifications?: GitHubNotificationsDeclaration;
   token?: EnvironmentBinding;
   username?: ResolvableString;
 }

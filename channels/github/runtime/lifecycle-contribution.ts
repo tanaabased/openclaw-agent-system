@@ -1,3 +1,4 @@
+import { legacyGitHubNotifications } from '../config-schema.ts';
 import type ConversationHookAccess from '../../../core/conversation-hook-access.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../../../manifest/types.ts';
 import type { NotificationRoutingDesiredState } from '../routing/routing.ts';
@@ -12,6 +13,7 @@ import type GitHubNotificationMonitorService from '../intake/monitor/service.ts'
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubOperatorAccess from '../operator-access.ts';
 import type GitHubModelRoutingAccess from '../model-routing-access.ts';
+import { githubNotificationRuntimeBlocker } from '../notification-policy.ts';
 
 const notificationLifecycleLeaseWaitMs = 120_000;
 
@@ -32,7 +34,7 @@ function isoTime(value: number | undefined): string {
 function desiredState(context: AgentSystemLifecycleContext): NotificationRoutingDesiredState {
   return {
     agentId: context.manifest.agent.id,
-    enabled: context.manifest.github?.notifications !== undefined,
+    enabled: legacyGitHubNotifications(context.manifest.github?.notifications) !== undefined,
     workspaceDir: context.workspaceDir,
   };
 }
@@ -46,7 +48,7 @@ function duplicateIdentityDiagnostics(
     | 'allowedRepositoryOwners',
   fieldPath: string,
 ): ManifestDiagnostic[] {
-  const notifications = manifest.github?.notifications;
+  const notifications = legacyGitHubNotifications(manifest.github?.notifications);
   const identities = notifications?.[field];
   if (!identities) return [];
   const seen = new Set<string>();
@@ -66,7 +68,8 @@ function duplicateIdentityDiagnostics(
 }
 
 function validateNotifications(manifest: AgentManifest): ManifestDiagnostic[] {
-  if (!manifest.github?.notifications) return [];
+  const notifications = legacyGitHubNotifications(manifest.github?.notifications);
+  if (!notifications || !manifest.github) return [];
   const diagnostics: ManifestDiagnostic[] = [];
   if (manifest.github.username === undefined) {
     diagnostics.push({
@@ -122,7 +125,7 @@ function validateNotifications(manifest: AgentManifest): ManifestDiagnostic[] {
       '/github/notifications/allowed-repository-owners',
     ),
   );
-  if (manifest.github.notifications.approvedActors !== undefined) {
+  if (notifications.approvedActors !== undefined) {
     diagnostics.push({
       code: 'github-notification-approved-actors-deprecated',
       fieldPath: '/github/notifications/approved-actors',
@@ -132,7 +135,7 @@ function validateNotifications(manifest: AgentManifest): ManifestDiagnostic[] {
     });
   }
   for (const field of ['assignees', 'reviewers'] as const) {
-    const recipients = manifest.github.notifications.pullRequest?.[field];
+    const recipients = notifications.pullRequest?.[field];
     if (recipients === undefined) continue;
     if (recipients === 'assignment-actor') continue;
     const seenNodes = new Set<string>();
@@ -164,16 +167,31 @@ export default function createNotificationLifecycleContribution(
     isConfigured: () => true,
     validate({ manifest }) {
       if (!manifest.github?.notifications) return undefined;
+      const blocker = githubNotificationRuntimeBlocker(manifest.github.notifications, 'openclaw');
       return {
         code: 'github-notifications-declaration-valid',
-        diagnostics: validateNotifications(manifest),
+        diagnostics: blocker
+          ? [
+              {
+                code: blocker.code,
+                message: blocker.message,
+                fieldPath: '/github/notifications/runtimes',
+                severity: 'error',
+              },
+            ]
+          : validateNotifications(manifest),
         summary: 'GitHub notification declaration',
       };
     },
     async inspect(context) {
+      const blocker = githubNotificationRuntimeBlocker(
+        context.manifest.github?.notifications,
+        'openclaw',
+      );
+      if (blocker) return [blocker];
       const operatorFindings = (await dependencies.operatorAccess?.inspect(context)) ?? [];
       const modelRoutingFindings = (await dependencies.modelRoutingAccess?.inspect(context)) ?? [];
-      const hookFindings = context.manifest.github?.notifications
+      const hookFindings = legacyGitHubNotifications(context.manifest.github?.notifications)
         ? [await dependencies.hookAccess.inspect(context.workspaceDir)]
         : [];
       if (hookFindings.some(({ status }) => status === 'blocked'))
@@ -271,7 +289,17 @@ export default function createNotificationLifecycleContribution(
     },
     async reconcile(context) {
       try {
-        const hookOutcome = context.manifest.github?.notifications
+        const blocker = githubNotificationRuntimeBlocker(
+          context.manifest.github?.notifications,
+          'openclaw',
+        );
+        if (blocker)
+          throw new AgentSystemLifecycleError(
+            'github-notifications',
+            blocker.code,
+            blocker.message,
+          );
+        const hookOutcome = legacyGitHubNotifications(context.manifest.github?.notifications)
           ? await dependencies.hookAccess.reconcile(context.workspaceDir)
           : undefined;
         const modelRoutingOutcome = (await dependencies.modelRoutingAccess?.reconcile(context)) ?? {
@@ -283,7 +311,7 @@ export default function createNotificationLifecycleContribution(
           warnings: [],
         };
         const result = await dependencies.routingService.reconcile(desiredState(context));
-        const disabled = !context.manifest.github?.notifications;
+        const disabled = !legacyGitHubNotifications(context.manifest.github?.notifications);
         const initialState = await dependencies.stateStore?.read(context.manifest.agent.id);
         let state = initialState;
         if (

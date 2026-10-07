@@ -35,6 +35,40 @@ describe('agent/codex-setup', () => {
     baseEnvironment: { HOME: '/tmp', PATH: '/bin:/usr/bin' },
   };
 
+  it('should report unsupported notification execution before applying setup or granting authority', async () => {
+    await manifest(`github:
+  username: pirog
+  notifications:
+    schema-version: 2
+    runtimes: [codex]
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_owner
+    issue-assignment:
+      mode: auto
+      allowed:
+        - login: pirog
+          node-id: U_pirog
+          operator-owner: true
+setup-agent:
+  apply: touch .must-not-apply
+`);
+    const inspected = await inspectCodexSetup(pluginData, undefined, dependencies);
+    assert.ok(
+      inspected.findings.some(
+        ({ code, status }) =>
+          code === 'github-notification-runtime-unsupported' && status === 'blocked',
+      ),
+    );
+    await assert.rejects(
+      installCodexSetup(pluginData, undefined, dependencies),
+      (error: unknown) =>
+        error instanceof CodexSetupError &&
+        error.code === 'github-notification-runtime-unsupported',
+    );
+    await assert.rejects(access(join(workspace, '.must-not-apply')));
+  });
+
   it('should inspect and install only setup steps applicable to codex', async () => {
     await writeFile(
       join(workspace, 'setup.yaml'),

@@ -1,6 +1,8 @@
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import { legacyGitHubNotifications } from '../../config-schema.ts';
+import { githubNotificationRuntimeBlocker } from '../../notification-policy.ts';
 import {
   withPrivateStateLock,
   privateStateLockSignal,
@@ -245,7 +247,9 @@ export default class GitHubNotificationMonitorService {
     }
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     const notifications =
-      loaded.status === 'loaded' ? loaded.manifest.github?.notifications : undefined;
+      loaded.status === 'loaded'
+        ? legacyGitHubNotifications(loaded.manifest.github?.notifications)
+        : undefined;
     if (!notifications) {
       return githubNotificationRetirementItemKeys(state);
     }
@@ -361,6 +365,11 @@ export default class GitHubNotificationMonitorService {
           status: 'skipped',
         };
       }
+      const blocker = githubNotificationRuntimeBlocker(
+        loaded.manifest.github?.notifications,
+        'openclaw',
+      );
+      if (blocker) return { agentId, code: blocker.code, status: 'failed' };
       workspaceDir = loaded.scope.workspaceDir;
       const now = (this.#dependencies.clock ?? Date.now)();
       const loadedState = this.#dependencies.stateStore.load
@@ -371,7 +380,7 @@ export default class GitHubNotificationMonitorService {
               state ? ({ state, status: 'ready' } as const) : ({ status: 'missing' } as const),
             );
       let current = loadedState.status === 'missing' ? undefined : loadedState.state;
-      const notifications = loaded.manifest.github?.notifications;
+      const notifications = legacyGitHubNotifications(loaded.manifest.github?.notifications);
       if (!notifications) {
         if (githubNotificationRetirementItemKeys(current).length === 0) {
           await this.#reconciler.retireDisabledAssignments(agentId, current, now, signal);
@@ -614,6 +623,11 @@ export default class GitHubNotificationMonitorService {
           'skipped',
         );
       }
+      const blocker = githubNotificationRuntimeBlocker(
+        loaded.manifest.github?.notifications,
+        'openclaw',
+      );
+      if (blocker) return { ...result, code: blocker.code, status: 'failed' };
       const current = await this.#dependencies.stateStore.read(agentId);
       if (current && current.workspaceDir !== loaded.scope.workspaceDir) {
         return this.#deferExecution(
@@ -624,7 +638,7 @@ export default class GitHubNotificationMonitorService {
           'skipped',
         );
       }
-      if (!loaded.manifest.github?.notifications) {
+      if (!legacyGitHubNotifications(loaded.manifest.github?.notifications)) {
         await this.#reconciler.retireDisabledAssignments(
           agentId,
           current,

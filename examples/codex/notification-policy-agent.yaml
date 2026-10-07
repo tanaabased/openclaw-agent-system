@@ -1,0 +1,18 @@
+schema-version: 1
+agent:
+  id: codex-notification-policy
+github:
+  username: example-agent
+  notifications:
+    schema-version: 2
+    allowed-repository-owners:
+      - login: example-owner
+        node-id: O_example
+    issue-assignment:
+      allowed:
+        - login: example-operator
+          node-id: U_operator
+          operator-owner: true
+      mode: auto
+setup-agent:
+  apply: touch .setup-applied

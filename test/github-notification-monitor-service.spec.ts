@@ -103,6 +103,55 @@ function monitorService(
 }
 
 describe('channels/github/intake/monitor/service', () => {
+  it('should block unsupported policy without polling or retiring existing work', async () => {
+    const policyManifest: AgentManifest = {
+      ...manifest,
+      github: {
+        username: 'tanaabot',
+        notifications: {
+          schemaVersion: 2,
+          runtimes: ['openclaw', 'codex'],
+          intervalMinutes: 5,
+          maxConcurrentItems: 2,
+          allowedRepositoryOwners: [{ login: 'tanaabased', nodeId: 'O_owner' }],
+          issueAssignment: { allowed: [{ login: 'pirog', nodeId: 'U_actor' }], mode: 'auto' },
+        },
+      },
+    };
+    const state = notificationMonitorState();
+    const original = structuredClone(state);
+    const effects: string[] = [];
+    const service = monitorService({
+      manifestService: { loadForAgentId: async () => loadedManifest(policyManifest) },
+      accountClient: {
+        async connect() {
+          effects.push('connect');
+          throw new Error('unexpected provider access');
+        },
+      },
+      assignmentOrchestrator: {
+        async reconcile() {
+          effects.push('reconcile');
+        },
+        async respond() {
+          effects.push('respond');
+        },
+      },
+      stateStore: {
+        read: async () => state,
+        async update(_agentId, patch) {
+          effects.push('update');
+          return patch(state);
+        },
+      },
+    });
+    const [result] = await service.runOnce({ agentId: 'tanaabot' });
+    assert.equal(result?.code, 'github-notification-runtime-unsupported');
+    assert.equal(result?.status, 'failed');
+    assert.deepEqual(effects, []);
+    assert.deepEqual(state, original);
+  });
+
   it('should cancel a lost poll lease without recording provider failure or reporting success', async () => {
     const fixture = await controlledFileLock();
     let writes = 0;

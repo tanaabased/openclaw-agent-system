@@ -18,6 +18,7 @@ import {
 } from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
+import { validateGitHubNotificationPolicy } from '../channels/github/notification-policy.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import { decodeBackup, externalBackupSchema } from './backup-schema.ts';
@@ -409,11 +410,16 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
 
   const host = declarations.find(({ key }) => key === 'setup-host');
   const agent = declarations.find(({ key }) => key === agentKey);
+  const manifest = decodeManifest(value);
+  const notificationDiagnostics = validateGitHubNotificationPolicy(manifest.github);
+  if (notificationDiagnostics.length > 0) {
+    return { status: 'invalid', diagnostics: notificationDiagnostics };
+  }
 
   return {
     status: 'valid',
     manifest: {
-      ...decodeManifest(value),
+      ...manifest,
       ...(host?.setup?.status === 'valid' ? { setupHost: host.setup.setup } : {}),
       ...(agent?.setup?.status === 'valid' ? { setup: agent.setup.setup } : {}),
     },
