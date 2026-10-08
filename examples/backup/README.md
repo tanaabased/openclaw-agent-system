@@ -35,6 +35,18 @@ openclaw as backup create --dry-run --json --include '{MEMORY,DREAMS,BOOTSTRAP}.
 cd "$TMPDIR/backup-workspace"
 openclaw as backup create --dry-run --json --include '**/MEMORY.md' | jq -e '(.files | index("MEMORY.md")) and (.files | index("memory/MEMORY.md"))'
 
+# should show effective filters and bounded pruning reasons in a human preview
+cd "$TMPDIR/backup-workspace"
+mkdir -p Scratch node_modules
+printf 'not visited' > Scratch/unsafe:path
+printf 'not visited' > node_modules/unsafe:path
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'exclude' | grep -F 'Scratch'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'pruned' | grep -F 'exclude: Scratch'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'pruned' | grep -F 'regenerable: node_modules'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'selected' | grep -F 'MEMORY.md'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'workspace' | grep -F "$TMPDIR/backup-workspace"
+rm -rf Scratch node_modules
+
 # should prevent setup checks from creating archives and allow an explicit apply
 cd "$TMPDIR/backup-workspace"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "setup" and .status == "updated")'

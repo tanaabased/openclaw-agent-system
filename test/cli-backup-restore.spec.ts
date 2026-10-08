@@ -55,8 +55,11 @@ describe('cli/backup-restore', () => {
           events.map(({ stream }) => stream),
           ['stdout', 'stderr'],
         );
-        assert.match(events[1]!.text, /warning[\s\S]*No Match for Optional\.md\./u);
-        assert.equal(text.match(/No Match for Optional\.md\./gu)?.length, 1);
+        assert.match(
+          events[1]!.text,
+          /warning[\s\S]*backup-include-unmatched:[\s\S]*Optional\.md/u,
+        );
+        assert.equal(text.match(/backup-include-unmatched:/gu)?.length, 1);
         assert.equal(text.match(/CaptureError: unreadable entry\./gu)?.length, 1);
         assert.ok(!events[0]!.text.includes('CaptureError'));
       }
