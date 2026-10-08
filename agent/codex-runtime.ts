@@ -1,7 +1,11 @@
 import process from 'node:process';
 
+import { inspectCodexIntake, runCodexIntake } from './codex-intake.ts';
+import { IntakeError } from '../channels/github/intake/record-store.ts';
+
 import {
   acknowledgeCodexAutomation,
+  codexIntakePermission,
   cancelCodexAutomation,
   inspectCodexAutomations,
   listCodexAutomations,
@@ -225,6 +229,23 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     writeJson(await codexModelRouting(pluginData, JSON.parse(await readStandardInput())));
     return;
   }
+  if (command === 'intake') {
+    const action = args[1];
+    if (action === '--help') {
+      process.stdout.write(
+        'Usage: intake <inspect|scan|permission|permission-acknowledge> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only.\n',
+      );
+      return;
+    }
+    const pluginData = parsePluginData(args.slice(2));
+    if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
+    else if (action === 'scan') writeJson(await runCodexIntake(pluginData));
+    else if (action === 'permission') writeJson(await codexIntakePermission(pluginData, undefined));
+    else if (action === 'permission-acknowledge')
+      writeJson(await codexIntakePermission(pluginData, JSON.parse(await readStandardInput())));
+    else throw new Error('expected intake inspect, scan, permission, or permission-acknowledge');
+    return;
+  }
   if (command === 'setup') return runSetup(args.slice(1));
   if (command === 'automations') {
     const action = args[1];
@@ -294,7 +315,9 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       );
     return;
   }
-  throw new Error('expected session-start, binding, setup, automations, or model-routing command');
+  throw new Error(
+    'expected session-start, binding, setup, automations, intake, or model-routing command',
+  );
 }
 
 runCodexRuntime().catch((error: unknown) => {
@@ -306,7 +329,8 @@ runCodexRuntime().catch((error: unknown) => {
           code: error.code,
           ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
         }
-      : error instanceof CodexSetupError ||
+      : error instanceof IntakeError ||
+          error instanceof CodexSetupError ||
           error instanceof RoutingError ||
           error instanceof CodexAutomationError
         ? { code: error.code }

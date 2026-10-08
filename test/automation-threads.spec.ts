@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import AutomationThreads, { automationThreadSelection } from '../agent/automation-threads.ts';
+import AutomationThreads, {
+  automationThreadSelection,
+  type AutomationThread,
+  type AutomationThreadSettings,
+} from '../agent/automation-threads.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 
 function jobs(thread: unknown, ids = ['builds', 'reviews']) {
@@ -24,7 +28,7 @@ describe('agent/automation-threads', () => {
     await rm(root, { recursive: true, force: true });
   });
   function fixture(runtime: 'openclaw' | 'codex') {
-    const native = new Map<string, { id: string; name?: string }>();
+    const native = new Map<string, AutomationThread>();
     let creates = 0;
     const adapter = {
       async lookup(id: string) {
@@ -34,20 +38,42 @@ describe('agent/automation-threads', () => {
         record: { nativeId?: string },
         saveId: (id: string) => Promise<void>,
         fresh: boolean,
+        settings?: AutomationThreadSettings,
       ) {
         if (!fresh && !record.nativeId) throw new Error('ambiguous');
         const id = record.nativeId ?? `native-${++creates}`;
         await saveId(id);
-        native.set(id, { id });
+        native.set(id, { id, ...settings });
         return id;
       },
       async rename(id: string, name: string) {
-        native.set(id, { id, name });
+        native.set(id, { ...native.get(id), id, name });
       },
     };
     const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
     return { store, adapter, native, creates: () => creates };
   }
+  it('should create with selected settings and detect drift without changing or replacing the chat', async () => {
+    const f = fixture('codex');
+    const declarations = jobs('Intake', ['intake']);
+    declarations[0]!.overrides.codex = { model: 'gpt-6-luna', effort: 'medium' };
+    const id = (await f.store.resolve(declarations, true)).get('intake')!.id;
+    assert.deepEqual(f.native.get(id), {
+      id,
+      name: 'Intake',
+      model: 'gpt-6-luna',
+      effort: 'medium',
+    });
+    assert.equal((await f.store.resolve(declarations, true)).get('intake')!.id, id);
+    declarations[0]!.overrides.codex.effort = 'high';
+    for (const apply of [false, true])
+      await assert.rejects(
+        f.store.resolve(declarations, apply),
+        rejects('automation-thread-model-drift'),
+      );
+    assert.equal(f.native.get(id)?.effort, 'medium');
+    assert.equal(f.creates(), 1);
+  });
   it('should share explicit ids in openclaw but partition codex by stable automation id', async () => {
     for (const runtime of ['openclaw', 'codex'] as const) {
       const f = fixture(runtime);

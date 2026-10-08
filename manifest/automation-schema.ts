@@ -96,6 +96,8 @@ export interface AgentAutomation {
   overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
 }
 export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
+  /** optional presentation supplied by a runtime-owned job projection. */
+  displayName?: string;
   payload: { kind: 'command'; run: NormalizedCommand } | { kind: 'prompt'; prompt: string };
 };
 

@@ -8,6 +8,7 @@
 ### New Features
 
 - Added admitted pull request reviews and inline findings to issue-owned conversations, with source links and code context. [#205](https://github.com/tanaabased/openclaw-agent-system/issues/205)
+- Added Codex issue-assignment intake with one persistent chat, historical baseline exclusion, and explicit recurring consent. [#246](https://github.com/tanaabased/openclaw-agent-system/issues/246)
 - Added `agent.yaml` automations with native OpenClaw scheduling and app-assisted Codex prompt scheduling. [#194](https://github.com/tanaabased/openclaw-agent-system/issues/194) [#195](https://github.com/tanaabased/openclaw-agent-system/issues/195) [#196](https://github.com/tanaabased/openclaw-agent-system/issues/196)
 - Added `github.notifications` v2 policy parsing with independent triggers and explicit blockers for unimplemented execution. [#245](https://github.com/tanaabased/openclaw-agent-system/issues/245)
 - Added named, persistent automation conversations in OpenClaw and Codex. [#229](https://github.com/tanaabased/openclaw-agent-system/issues/229)

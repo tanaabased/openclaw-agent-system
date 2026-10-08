@@ -26,6 +26,8 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
   });
   let sequence = 0;
   let buffer = '';
+  let diagnosticTail = '';
+  let hostAccessDenied = false;
   const pending = new Map<
     number,
     {
@@ -37,14 +39,26 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
   const fail = () => {
     for (const item of pending.values()) {
       clearTimeout(item.timer);
-      item.reject(new AutomationError('automation-thread-transport-unavailable'));
+      item.reject(
+        new AutomationError(
+          hostAccessDenied
+            ? 'automation-thread-host-access-required'
+            : 'automation-thread-transport-unavailable',
+        ),
+      );
     }
     pending.clear();
   };
-  child.once('error', fail);
+  child.once('error', (error: NodeJS.ErrnoException) => {
+    hostAccessDenied ||= error.code === 'EACCES' || error.code === 'EPERM';
+    fail();
+  });
   child.once('exit', fail);
   child.stdin.on('error', fail);
-  child.stderr.resume();
+  child.stderr.on('data', (chunk: Buffer) => {
+    diagnosticTail = (diagnosticTail + chunk.toString()).slice(-2048);
+    hostAccessDenied ||= /permission denied|operation not permitted/iu.test(diagnosticTail);
+  });
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk: string) => {
     buffer += chunk;
@@ -168,11 +182,16 @@ export function codexThreadAdapter(
       !['idle', 'active', 'running', 'completed', 'notLoaded'].includes(String(thread.status.type))
     )
       throw new AutomationError('automation-thread-unavailable');
-    return { id, ...(typeof thread.name === 'string' ? { name: thread.name } : {}) };
+    return {
+      id,
+      ...(typeof thread.name === 'string' ? { name: thread.name } : {}),
+      ...(typeof thread.model === 'string' ? { model: thread.model } : {}),
+      ...(typeof thread.reasoningEffort === 'string' ? { effort: thread.reasoningEffort } : {}),
+    };
   }
   return {
     lookup,
-    async create(record, saveId, fresh) {
+    async create(record, saveId, fresh, settings) {
       if (!record.nativeId && !fresh)
         throw new AutomationError('automation-thread-create-ambiguous');
       let id = record.nativeId;
@@ -180,6 +199,8 @@ export function codexThreadAdapter(
         const result = await request('thread/start', {
           cwd: workspace,
           ephemeral: false,
+          ...(settings?.model ? { model: settings.model } : {}),
+          ...(settings?.effort ? { config: { model_reasoning_effort: settings.effort } } : {}),
           threadSource: `agent-system:${record.key}`,
         });
         if (!nativeObject(result.thread) || typeof result.thread.id !== 'string')

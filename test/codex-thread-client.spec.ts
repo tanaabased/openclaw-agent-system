@@ -30,8 +30,12 @@ describe('agent/codex-thread-client', () => {
   });
   it('should journal the id before non-generating materialization and resume verification', async () => {
     const calls: string[] = [];
-    const request: CodexThreadRequest = async (method) => {
+    const request: CodexThreadRequest = async (method, params) => {
       calls.push(method);
+      if (method === 'thread/start') {
+        assert.equal(params.model, 'gpt-6-luna');
+        assert.deepEqual(params.config, { model_reasoning_effort: 'medium' });
+      }
       return method === 'thread/start' ? { thread: { id: 'native' } } : {};
     };
     const adapter = codexThreadAdapter(request, '/workspace');
@@ -43,6 +47,7 @@ describe('agent/codex-thread-client', () => {
           calls.push('journal');
         },
         true,
+        { model: 'gpt-6-luna', effort: 'medium' },
       ),
       'native',
     );

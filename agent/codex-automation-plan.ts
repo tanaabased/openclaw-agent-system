@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import type { inspectCodexIntakePermission } from './codex-intake-permission.ts';
 import { automationThreadSelection } from './automation-threads.ts';
 import { automationHash } from './automation-hash.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
@@ -52,6 +53,7 @@ export interface CodexAutomationPlan {
     name?: string;
   }[];
   telemetry: { execution: 'unavailable'; delivery: 'unavailable' };
+  permission?: Awaited<ReturnType<typeof inspectCodexIntakePermission>>;
 }
 
 export function codexAutomationMarker(scope: string, id: string): string {
@@ -188,7 +190,7 @@ export default async function planCodexAutomations(options: {
       }
       if (!record && actual) continue;
       const common = {
-        name: `${options.agentId}: ${job.id}`,
+        name: job.displayName ?? `${options.agentId}: ${job.id}`,
         prompt: `${job.payload.prompt}\n\n${codexAutomationMarker(scope, job.id)}`,
         rrule,
         status: job.enabled ? ('ACTIVE' as const) : ('PAUSED' as const),
@@ -196,7 +198,10 @@ export default async function planCodexAutomations(options: {
       };
       let expected: NativeAutomation;
       if (target !== 'independent') {
-        if (override?.model !== undefined || override?.effort !== undefined) {
+        if (
+          !selection?.managed &&
+          (override?.model !== undefined || override?.effort !== undefined)
+        ) {
           throw new CodexAutomationError('automation-thread-overrides-unsupported');
         }
         if (!selection?.managed) await verifyThread(inputs.threads ?? [], target.thread, workspace);

@@ -391,12 +391,13 @@ An unversioned block retains the existing [OpenClaw channel contract](./channels
 A block with `schema-version: 2` declares portable notification policy. The outer
 manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix.
 
-**Current support:** v2 parsing, defaults, and identity validation are implemented.
-Neither runtime executes v2 notifications yet. Codex Doctor reports
-`github-notification-runtime-unsupported`, and Install stops before applying setup.
-OpenClaw rejects selected v2 execution before legacy routing or authority is used.
-A Codex-only declaration does not enable the OpenClaw channel. Binding and passive
-manifest discovery never activate monitoring or resolve credentials.
+**Current support:** v2 parsing, defaults, identity validation, and Codex issue-assignment
+intake are implemented. Authorized Install reconciles the owned schedule; intake
+stops at durable records. Dispatch, assessment, review requests, feedback, and
+OpenClaw v2 execution remain unavailable. OpenClaw rejects selected v2 execution
+before legacy routing or authority is used. A Codex-only declaration does not
+enable the OpenClaw channel. Binding and passive discovery never activate work.
+See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
 
 #### Version 2 fields
 
@@ -484,52 +485,13 @@ github:
           operator-owner: false
 ```
 
-#### Activation and implementation handoff
+#### Activation
 
-The following execution contract is agreed for the follow-up implementation; it
-is not shipped monitoring behavior:
-
-- Presence of `github.notifications` expresses desired monitoring. Removing it
-  disables monitoring; runtime selection restricts its consumers. Empty authority
-  lists admit no work. Install is the explicit reconciliation boundary.
-- For Codex, project notification policy into exactly one owned
-  `github-issue-assignment` automation using the existing digest-bound planner,
-  native app writes, ownership records, and saved-state verification. Cadence comes
-  only from `interval-minutes`; reject a competing user automation with that ID.
-- Prefer a supported unsurfaced execution context if continuity and observability
-  can be demonstrated; otherwise reuse one chat named `AGENT SYSTEM ISSUE ASSIGNMENT`.
-  Repeated installation and polling must not create additional jobs or intake chats.
-- Missing, disabled, invalid, or revoked policy stops admission immediately and
-  requires pausing the previously owned job through authorized native reconciliation.
-  Preserve the ownership record so invalid or missing manifests cannot prevent
-  cleanup. Retain durable checkpoints; report failed or unverified pauses explicitly.
-- Verify authenticated login and immutable identity through the same native host
-  surface used for provider reads. Confirm repository access, pinned owner, open
-  issue, current assignee, and the actual assigning actor from the assignment event.
-  Missing or mismatched identity, incomplete evidence, and insufficient access are
-  actionable blockers. Read-only intake must not inherit legacy write-permission
-  requirements; later implementation checks its own necessary permissions.
-- Establish the historical baseline at first successful authorized activation.
-  Persist event identity and intake checkpoints atomically, serialize overlapping
-  polls locally, and avoid replay after restart. Partial scans must not advance past
-  unseen evidence. Unchanged or empty scans end quietly.
-
-[#246](https://github.com/tanaabased/openclaw-agent-system/issues/246) owns scheduling,
-admission, durable intake, and stopping the owned job. [#247](https://github.com/tanaabased/openclaw-agent-system/issues/247)
-owns dispatch and model routing; [#249](https://github.com/tanaabased/openclaw-agent-system/issues/249)
-owns assessment and planning. [Me #117](https://github.com/pirog/me/issues/117) prepares
-the profile without activation. Implementation, PR delivery, and automated feedback
-continuation are later work.
-
-Customization fields are deferred to [#250](https://github.com/tanaabased/openclaw-agent-system/issues/250).
-They will select one default or replacement working skill and optional trusted
-guidance per named step beneath the relevant trigger. Assessment and initial
-planning remain one step. Agent System owns runtime authority and generic defaults;
-Canon owns company procedures; profiles own selections and preferences. No guidance
-or replacement can expand authority. Reconcile the earlier channel-wide guidance
-proposal in [#61](https://github.com/tanaabased/openclaw-agent-system/issues/61) and
-review design in [#239](https://github.com/tanaabased/openclaw-agent-system/issues/239)
-before adding their keys; unsupported placeholders are rejected now.
+Policy declares desired monitoring; binding and passive discovery do not activate
+it. Install reconciles the selected runtime. Empty authority lists admit no work;
+removing policy stops admission and requires reconciliation to pause the owned job.
+See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
+Future dispatch, assessment, and customization remain outside this contract.
 
 #### Legacy compatibility
 

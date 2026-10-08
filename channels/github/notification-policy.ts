@@ -43,12 +43,18 @@ export function validateGitHubNotificationPolicy(
   return diagnostics;
 }
 
-/** schema support is not runtime support; no version 2 execution adapter ships yet. */
+/** codex supports issue intake only; other execution adapters remain unavailable. */
 export function githubNotificationRuntimeBlocker(
   declaration: GitHubNotificationsDeclaration | undefined,
   runtime: 'openclaw' | 'codex',
 ) {
   if (declaration?.schemaVersion !== 2 || !declaration.runtimes.includes(runtime)) return;
+  if (
+    runtime === 'codex' &&
+    !declaration.reviewRequest?.allowed.length &&
+    !declaration.feedback?.allowed.length
+  )
+    return;
   return {
     code: 'github-notification-runtime-unsupported',
     message: `Version 2 GitHub notifications are declared for ${runtime}, but its execution adapter is not implemented.`,

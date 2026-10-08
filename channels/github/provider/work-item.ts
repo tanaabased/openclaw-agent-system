@@ -102,3 +102,11 @@ export function githubRepositoryPath(value: string): { name: string; owner: stri
   }
   return { name, owner };
 }
+
+/** pinned identity comparisons require both the immutable id and case-insensitive login. */
+export function githubIdentityMatches(
+  left: Pick<GitHubIdentity, 'login' | 'nodeId'>,
+  right: Pick<GitHubIdentity, 'login' | 'nodeId'>,
+): boolean {
+  return left.nodeId === right.nodeId && left.login.toLowerCase() === right.login.toLowerCase();
+}

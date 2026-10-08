@@ -34,7 +34,10 @@ const ledgerSchema = Type.Object(
 export interface AutomationThread {
   id: string;
   name?: string;
+  model?: string;
+  effort?: string;
 }
+export type AutomationThreadSettings = Pick<AutomationThread, 'model' | 'effort'>;
 export interface AutomationThreadAdapter {
   /** exact lookup only. Null means confirmed absence, never a failed lookup. */
   lookup(id: string): Promise<AutomationThread | null>;
@@ -43,6 +46,7 @@ export interface AutomationThreadAdapter {
     record: Readonly<ThreadRecord>,
     saveId: (id: string) => Promise<void>,
     fresh: boolean,
+    settings?: AutomationThreadSettings,
   ): Promise<string>;
   rename(id: string, name: string): Promise<void>;
 }
@@ -144,11 +148,12 @@ export default class AutomationThreads {
           selection: AutomationThreadSelection;
           record?: ThreadRecord;
           native: AutomationThread | null;
+          settings?: AutomationThreadSettings;
         }
       >();
       const nativeNames = new Map<string, string>();
       // verify every existing target and all aliases before the first mutation.
-      for (const { selection } of selected) {
+      for (const { job, selection } of selected) {
         if (prepared.has(selection.key)) continue;
         const record = ledger.records.find((r) => r.key === selection.key);
         const id = record?.nativeId ?? selection.exact;
@@ -165,7 +170,12 @@ export default class AutomationThreads {
             throw new AutomationError('automation-thread-name-conflict');
           nativeNames.set(native.id, name);
         }
-        prepared.set(selection.key, { selection, record, native });
+        const override = job.overrides.codex;
+        const settings =
+          this.options.runtime === 'codex' && selection.managed && override
+            ? { model: override.model, effort: override.effort }
+            : undefined;
+        prepared.set(selection.key, { selection, record, native, settings });
       }
       if (this.options.runtime === 'codex') {
         const active = new Set<string>();
@@ -181,7 +191,7 @@ export default class AutomationThreads {
         { id: string; outcome: 'created' | 'bound' | 'reused'; name?: string }
       >();
       for (const [key, entry] of prepared) {
-        const { selection } = entry;
+        const { selection, settings } = entry;
         let { record, native } = entry;
         let outcome: 'created' | 'bound' | 'reused' = record ? 'reused' : 'bound';
         if (!native || (record && record.phase !== 'ready')) {
@@ -201,6 +211,7 @@ export default class AutomationThreads {
               await save();
             },
             fresh,
+            settings,
           );
           native = await this.adapter.lookup(id);
           if (!native || native.id !== id)
@@ -221,6 +232,11 @@ export default class AutomationThreads {
             throw new AutomationError('automation-thread-readback-diverged');
           native = readback;
         }
+        const settingsMatch = (thread: AutomationThread) =>
+          !settings ||
+          ((settings.model === undefined || thread.model === settings.model) &&
+            (settings.effort === undefined || thread.effort === settings.effort));
+        if (!settingsMatch(native)) throw new AutomationError('automation-thread-model-drift');
         if (selection.managed && apply && (!record || record.phase !== 'ready')) {
           if (!record) {
             record = { key, phase: 'ready', nativeId: native.id };

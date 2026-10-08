@@ -40,6 +40,10 @@ describe('agent/codex-setup', () => {
   username: pirog
   notifications:
     schema-version: 2
+    review-request:
+      allowed:
+        - login: pirog
+          node-id: U_pirog
     runtimes: [codex]
     allowed-repository-owners:
       - login: tanaabased

@@ -1,5 +1,6 @@
 import { delimiter } from 'node:path';
 
+import { inspectCodexIntake } from './codex-intake.ts';
 import { inspectCodexAutomations } from './codex-automations.ts';
 import type { CodexAutomationInputs } from './codex-automation-plan.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -165,6 +166,7 @@ export async function inspectCodexSetup(
     agentId: selected.agentId,
     workspaceDir: selected.workspaceDir,
     manifestDigest: selected.manifestDigest,
+    intake: await inspectCodexIntake(pluginData, dependencies),
     findings: [
       ...(await lifecycle.inspect(context)),
       ...(notificationBlocker

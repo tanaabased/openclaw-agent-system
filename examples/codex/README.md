@@ -57,7 +57,7 @@ cp "$root/rebound-workspace/agent.yaml" "$root/rebound-workspace/agent.expected.
 ## Testing
 
 ```bash
-# should accept notification policy without activating an unsupported runtime
+# should expose packaged intake and plan one owned schedule without activating it
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -66,10 +66,12 @@ mkdir -p "$root/notification-workspace"
 cp "$GITHUB_WORKSPACE/examples/codex/notification-policy-agent.yaml" "$root/notification-workspace/agent.yaml"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/notification-workspace" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
-node "$runtime" setup inspect --plugin-data "$plugin_data" \
-  | jq -e '.status == "inspected" and any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "blocked")'
-if output=$(node "$runtime" setup install --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "github-notification-runtime-unsupported"'
+node "$runtime" intake inspect --plugin-data "$plugin_data" \
+  | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
+if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
+printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+  | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
 test ! -e "$root/notification-workspace/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
 
@@ -242,7 +244,23 @@ jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
-# should create separate durable native conversations for a shared declaration id
+# should require scanner permission before native activation in a fresh profile
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" intake permission --plugin-data "$root/notification-data" | tee "$root/permission-missing.json" | jq -e '.configured == false and .execution == "unverified" and .code == "intake-permission-required"'
+
+# should distinguish a native rule fixture from reload acknowledgment and execution proof
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+mkdir -p "$CODEX_HOME/rules"
+jq -r '"prefix_rule(pattern = " + (.argv | tojson) + ", decision = \"allow\")"' "$root/permission-missing.json" > "$CODEX_HOME/rules/intake-fixture.rules"
+node "$runtime" intake permission --plugin-data "$root/notification-data" | tee "$root/permission-reload.json" | jq -e '.configured == true and .code == "intake-permission-reload-required" and .execution == "unverified"'
+jq '{digest, confirmReload: true}' "$root/permission-reload.json" | node "$runtime" intake permission-acknowledge --plugin-data "$root/notification-data" | jq -e '.status == "acknowledged" and .execution == "unverified"'
+node "$runtime" intake permission --plugin-data "$root/notification-data" | jq -e '.reloadAcknowledged == true and .execution == "unverified"'
+
+# should create durable conversations with selected models for a shared declaration id
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -253,7 +271,7 @@ printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-da
 jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
 
-# should reuse native conversations after the creating process has exited
+# should retain conversation identities and model settings after the creating process exits
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"

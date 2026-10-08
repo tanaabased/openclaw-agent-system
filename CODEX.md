@@ -78,11 +78,36 @@ proof that the model is available or that a task is using it.
 
 ## GitHub Notification Policy
 
-The [version 2 notification schema](./MANIFEST.md#githubnotifications) can be parsed
-and bound for profile preparation. Execution is not implemented yet: Doctor reports
-`github-notification-runtime-unsupported`, and Install blocks before applying setup.
-No notification job, working chat, operator grant, or GitHub mutation is created.
-The manifest reference owns the agreed modes and follow-up activation contract.
+Version 2 [notification policy](./MANIFEST.md#githubnotifications) supports issue-assignment
+intake through one managed `github-issue-assignment` schedule and one retained chat,
+`ISSUE ASSIGNMENTS`, displayed under `AGENT SYSTEM`. The automation is named
+`📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
+`interval-minutes`; the automation ID is reserved. Intake records eligible
+assignments only. Dispatch, assessment, review requests, feedback, and OpenClaw v2
+execution remain unavailable.
+
+Use `$agent-system-install` to authorize and reconcile the schedule. Before activation,
+Install requires native recurring approval for the exact scanner command and an
+explicit acknowledgment after restarting Codex. It never writes permission rules
+or broadens sandbox access. Doctor distinguishes missing/stale consent and pending
+reload from saved automation state. The acknowledgment does not prove unattended
+execution; verify that separately with a real scheduled poll. See
+[Codex rules](https://learn.chatgpt.com/docs/agent-configuration/rules) for native consent
+and reload behavior. Intake uses
+native host GitHub access; the authenticated account must match `github.username`
+and applicable identity pins. Repository read access is sufficient. The first
+successful activation establishes a historical baseline; reinstall and restart
+retain it and deduplicate assignments by event identity.
+
+Use `$agent-system-doctor` to inspect admitted issues, assigning actors, event IDs,
+baseline, checkpoint, and blockers without contacting GitHub. Scheduled scans use
+the trusted `intakeRuntime` from Agent System context and stay quiet when unchanged.
+Records require fresh authorization before any later execution.
+
+Removing or revoking policy stops admission. Run authorized Install to pause the
+owned job, including when the manifest is missing or invalid. Ownership and intake
+evidence are retained for recovery; do not delete them to clear a blocker.
+See [automation recovery](#ownership-and-recovery) for native write failures.
 
 ## Repository Automations
 
@@ -109,16 +134,16 @@ schedule.
 The [manifest reference](./MANIFEST.md#automations) owns shared syntax and
 schedules. Codex supports this subset:
 
-| Manifest field                                    | Codex behavior                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `overrides.codex.effort`, `overrides.codex.model` | Independent jobs inherit omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit overrides. Later default changes appear as drift; native Codex decides model/effort availability.                        |
-| `overrides.codex.target`                          | Defaults to an independent job in the one saved local project matching the bound workspace. `{ thread: existing-id }` selects an existing local chat there; model and effort overrides are rejected for chat targets.                                                              |
-| `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                               |
-| `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                            |
-| `schedule`                                        | Whole-minute or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
-| `schedule.timezone`                               | `native` only. Native timing and DST behavior apply.                                                                                                                                                                                                                               |
-| `thread`                                          | Creates a persistent conversation per automation. Model and effort overrides are rejected for persistent chat targets.                                                                                                                                                             |
-| `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                         |
+| Manifest field                                    | Codex behavior                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `overrides.codex.effort`, `overrides.codex.model` | Independent jobs inherit omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit overrides. Later default changes appear as drift; native Codex decides model/effort availability.                                                 |
+| `overrides.codex.target`                          | Defaults to an independent job in the one saved local project matching the bound workspace. `{ thread: existing-id }` selects an existing local chat there; model and effort overrides are rejected for these explicit chat targets.                                                                        |
+| `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                                                        |
+| `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                                                     |
+| `schedule`                                        | Whole-minute intervals from 1 to 1440 or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
+| `schedule.timezone`                               | `native` only. Native timing and DST behavior apply.                                                                                                                                                                                                                                                        |
+| `thread`                                          | Creates a persistent conversation per automation. Explicit model and effort overrides set initial native chat settings; later drift requires the native chat controls.                                                                                                                                      |
+| `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                                                  |
 
 Missing or ambiguous projects block planning; worktree bindings do not select the
 parent checkout. Chat targets require a fresh native exact-chat read with active,
@@ -139,6 +164,11 @@ edits to managed fields are drift; notification preferences remain native-owned.
 Unchanged jobs receive no writes. Removed declarations pause jobs and retain
 history; reintroduced IDs reuse them. Personal and Me jobs are not adopted by name.
 Unknown saved schemas stop inspection.
+
+For `automation-thread-model-drift`, use the existing chat’s native controls to
+apply the requested model and effort, then rerun Install. Settings-only app-server
+updates do not persist across connections; Agent System does not claim success
+from a transient update or replace the chat.
 
 Interrupted writes require saved-state readback before retry; the install skill
 guides recovery. Missing owned jobs or divergent state require investigation.
