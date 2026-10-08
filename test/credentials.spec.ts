@@ -120,10 +120,10 @@ describe('cli/credentials', () => {
           },
         });
       assert.deepEqual(test.exitCodes, []);
-      assert.match(test.records.diagnostics.join(''), /Warning/u);
-      assert.doesNotMatch(test.records.diagnostics.join(''), /Error|private-token/u);
+      assert.match(test.records.diagnostics.join(''), /warning/u);
+      assert.doesNotMatch(test.records.diagnostics.join(''), /error|private-token/u);
       assert.match(test.records.output.join(''), /stored|removed/u);
-      assert.doesNotMatch(test.records.output.join(''), /Warning/u);
+      assert.doesNotMatch(test.records.output.join(''), /warning/u);
     }
   });
 
@@ -289,7 +289,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, [1]);
     assert.deepEqual(test.records.output, []);
-    assert.match(test.records.diagnostics.join(''), /Error/u);
+    assert.match(test.records.diagnostics.join(''), /error/u);
     assert.match(test.records.diagnostics.join(''), /unsupported credential other/u);
   });
 });

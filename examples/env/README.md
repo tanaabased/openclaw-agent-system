@@ -26,11 +26,23 @@ cd "$GITHUB_WORKSPACE/examples/env/data"
 output="$(AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json)"
 printf '%s\n' "$output" | jq -e '.variables | any(.name == "AGENT_SYSTEM_LEIA_BARE")'
 printf '%s\n' "$output" | jq -e '.variables | any(.name == "AGENT_SYSTEM_LEIA_BRACED")'
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env | grep -F 'AGENT_SYSTEM_LEIA_LAYERED' | grep -F 'source=environment.dotenv[1]' | grep -F 'required=false' | grep -F 'overridden=1'
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env | grep -F 'AGENT_SYSTEM_LEIA_SET_OVERRIDE' | grep -F 'source=environment.set' | grep -F 'required=false' | grep -F 'overridden=1'
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env | grep -F 'AGENT_SYSTEM_LEIA_FROM_DOTENV' | grep -F 'source=environment.set' | grep -F 'required=true' | grep -F 'overridden=0'
+printf '%s\n' "$output" | jq -e '.variables | any(.name == "AGENT_SYSTEM_LEIA_LAYERED" and .source == "environment.dotenv[1]" and .required == false and (.overriddenSources | length) == 1)'
+printf '%s\n' "$output" | jq -e '.variables | any(.name == "AGENT_SYSTEM_LEIA_SET_OVERRIDE" and .source == "environment.set" and .required == false and (.overriddenSources | length) == 1)'
+printf '%s\n' "$output" | jq -e '.variables | any(.name == "AGENT_SYSTEM_LEIA_FROM_DOTENV" and .source == "environment.set" and .required == true and (.overriddenSources | length) == 0)'
 printf '%s\n' "$output" | jq -e '.variables | any(.required == true)'
 printf '%s\n' "$output" | jq -e '[.. | objects | has("values")] | all(. == false)'
+if printf '%s\n' "$output" | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-private-'; then exit 1; fi
+
+# should report human environment metadata across wrapped lines without exposing values
+cd "$GITHUB_WORKSPACE/examples/env/data"
+output="$(AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env)"
+printf '%s\n' "$output" | grep -F 'AGENT_SYSTEM_LEIA_LAYERED' | grep -F 'source=environment.dotenv[1]'
+printf '%s\n' "$output" | grep -F 'AGENT_SYSTEM_LEIA_SET_OVERRIDE' | grep -F 'source=environment.set'
+printf '%s\n' "$output" | grep -F 'AGENT_SYSTEM_LEIA_FROM_DOTENV' | grep -F 'source=environment.set'
+printf '%s\n' "$output" | grep -F 'required=false'
+printf '%s\n' "$output" | grep -F 'required=true'
+printf '%s\n' "$output" | grep -F 'overridden=1'
+printf '%s\n' "$output" | grep -F 'overridden=0'
 if printf '%s\n' "$output" | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-private-'; then exit 1; fi
 
 # should inspect a registered agent without current workspace discovery

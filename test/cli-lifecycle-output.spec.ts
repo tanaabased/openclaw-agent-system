@@ -39,6 +39,20 @@ describe('cli/lifecycle-output', () => {
     assert.ok(rows[3]!.startsWith('security'));
     assert.equal(rows.at(-3), '');
   });
+  it('should allow compact lifecycle rows without changing wrapped rows or footer', () => {
+    const lines = lifecycleTableLines(installOutcomes);
+    const padded = renderCliLifecycleTable(lines, '/Work/AgentX', plainStyles, 40);
+    const compact = renderCliLifecycleTable(lines, '/Work/AgentX', plainStyles, 40, {
+      rowPadding: 0,
+    });
+    assert.deepEqual(compact.filter(Boolean), padded.filter(Boolean));
+    assert.equal(
+      padded.filter((line) => line === '').length - compact.filter((line) => line === '').length,
+      lines.length - 1,
+    );
+    assert.equal(compact.at(-2), 'workspace  /Work/AgentX');
+  });
+
   it('should style individual cells and keep workspace metadata neutral', () => {
     const rows = renderTable(
       lifecycleTableLines([...doctorFindings, ...installOutcomes]),

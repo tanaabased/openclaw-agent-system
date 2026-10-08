@@ -22,6 +22,10 @@ cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/ag
 openclaw agent-system --help | grep -F 'validate'
 openclaw as --help | grep -F 'validate'
 
+# should expose lowercase owned descriptions without changing host help headings
+openclaw agent-system install --help | grep -F 'confirm setup without prompting.'
+openclaw as status --help | grep -F 'inspect agent system agent, path, and configured capability drift.'
+
 # should install the scenario agent with a component-first table without color
 cd "$TMPDIR/install-data"
 NO_COLOR=1 openclaw agent-system install | grep -E '^agent[[:space:]]+created[[:space:]]' | grep -F 'OpenClaw agent install-data'

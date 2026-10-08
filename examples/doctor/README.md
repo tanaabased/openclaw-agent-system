@@ -24,13 +24,13 @@ cp "$GITHUB_WORKSPACE/examples/doctor/warning-data/agent.yaml" "$TMPDIR/warning-
 cd "$TMPDIR/warning-doctor-data"
 output="$(NO_COLOR=1 openclaw agent-system install --skip-setup --yes 2>&1)"
 printf '%s\n' "$output" | grep -F 'manifest-setup-deprecated'
-printf '%s\n' "$output" | awk '/^[[:space:]]*workspace[[:space:]]/ {footer=NR} /^Messages$/ {section=NR; count++} END {exit !(footer && section > footer && count == 1)}'
+printf '%s\n' "$output" | awk '/^[[:space:]]*workspace[[:space:]]/ {footer=NR} /^messages$/ {section=NR; count++} END {exit !(footer && section > footer && count == 1)}'
 
 # should place doctor manifest warnings after the workspace footer
 cd "$TMPDIR/warning-doctor-data"
 output="$(NO_COLOR=1 openclaw agent-system doctor 2>&1)"
 printf '%s\n' "$output" | grep -F 'manifest-setup-deprecated'
-printf '%s\n' "$output" | awk '/^[[:space:]]*workspace[[:space:]]/ {footer=NR} /^Messages$/ {section=NR; count++} END {exit !(footer && section > footer && count == 1)}'
+printf '%s\n' "$output" | awk '/^[[:space:]]*workspace[[:space:]]/ {footer=NR} /^messages$/ {section=NR; count++} END {exit !(footer && section > footer && count == 1)}'
 
 # should report component-first healthy agent and path state without color
 cd "$GITHUB_WORKSPACE/examples/doctor/data"

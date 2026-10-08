@@ -40,7 +40,7 @@ for no_color, answer in ((False, b"\r"), (True, b"\r"), (False, b"\x03"), (True,
             if not chunk:
                 break
             output.extend(chunk)
-            if not answered and b"Continue with installation?" in output:
+            if not answered and b"continue with installation?" in output:
                 os.write(master, answer)
                 answered = True
         assert process.wait(timeout=5) == 1, output.decode(errors="replace")
@@ -51,7 +51,7 @@ for no_color, answer in ((False, b"\r"), (True, b"\r"), (False, b"\x03"), (True,
         assert plain.index("setup-host:") < plain.index("setup-agent:")
         assert "brew-dependencies" in plain
         assert "agent-task" in plain
-        assert "Continue with installation?" in plain
+        assert "continue with installation?" in plain
         assert "No" in plain
         if no_color:
             assert not re.search(r"\x1b\[[0-9;]*m", text), "NO_COLOR must disable styling"

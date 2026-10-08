@@ -492,6 +492,25 @@ describe('cli/automation-commands', () => {
 });
 
 describe('cli/register', () => {
+  it('should lowercase owned help descriptions while preserving host headings and env identifiers', () => {
+    const { program } = createProgram();
+    const root = program.commands.find((command) => command.name() === 'agent-system')!;
+    const install = root.commands.find((command) => command.name() === 'install')!;
+    const doctor = root.commands.find((command) => command.name() === 'doctor')!;
+    const credentials = root.commands.find((command) => command.name() === 'credentials')!;
+    const set = credentials.commands.find((command) => command.name() === 'set')!;
+    assert.match(install.helpInformation(), /^Usage:/u);
+    assert.match(install.helpInformation(), /confirm setup without prompting/u);
+    assert.match(doctor.helpInformation(), /inspect agent system agent/u);
+    assert.match(
+      set.helpInformation(),
+      /read OP_SERVICE_ACCOUNT_TOKEN from the process environment/u,
+    );
+    for (const command of [root, install, doctor, credentials, set]) {
+      assert.equal(command.description(), command.description().toLowerCase());
+    }
+  });
+
   it('should report loaded manifest warnings consistently without corrupting command output', async () => {
     const commands = [
       ['doctor', '--json'],

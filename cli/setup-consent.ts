@@ -107,7 +107,7 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
   const workspace = JSON.stringify(options.workspaceDir);
   const lines = [
     wrap(
-      `${styles.action(S_STEP_SUBMIT)} Install workspace ${styles.field('"')}${styles.bold(workspace.slice(1, -1))}${styles.field('"')} with these setup steps:`,
+      `${styles.action(S_STEP_SUBMIT)} install workspace ${styles.field('"')}${styles.bold(workspace.slice(1, -1))}${styles.field('"')} with these setup steps:`,
     ),
     ...applicable.flatMap(({ step, stage }) => [
       '',
@@ -125,7 +125,7 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
   try {
     const prompt = options.prompt ?? createClackPrompter(process.stderr).confirm;
     const answer = await prompt({
-      message: 'Continue with installation?',
+      message: 'continue with installation?',
       initialValue: false,
     });
     return answer === true;
