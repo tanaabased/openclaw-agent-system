@@ -11,6 +11,7 @@ export interface BackupCliOutput {
   json: boolean;
   output: CliOutput;
   styles?: CliStyles;
+  terminalColumns?: number;
   setExitCode(code: number): void;
 }
 
@@ -29,6 +30,11 @@ export function writeBackupFailure(options: BackupCliOutput, error: unknown): vo
   options.setExitCode(1);
 }
 
+const humanBackupDiagnostics: Record<string, string> = {
+  'backup-include-unmatched': 'include pattern matched no observed workspace entries',
+  'backup-symlink-omitted': 'link outside the selected payload omitted',
+};
+
 export function writeBackupDiagnostics(
   options: BackupCliOutput,
   diagnostics: BackupDiagnostic[],
@@ -37,7 +43,7 @@ export function writeBackupDiagnostics(
     options,
     diagnostics.map(({ code, message, path }) => ({
       severity: 'warning',
-      message: `${code}: ${message}${path ? ` (${path})` : ''}`,
+      message: `${code}: ${options.json ? message : (humanBackupDiagnostics[code] ?? message)}${path ? ` (${path})` : ''}`,
     })),
   );
 }

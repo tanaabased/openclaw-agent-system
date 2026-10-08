@@ -602,7 +602,7 @@ export default class WorkspaceBackupService {
         } finally {
           await unlink(pending).catch(() => undefined);
         }
-        return { archive: destination, manifest };
+        return { archive: destination, manifest, selection: fresh.selection };
       });
     } finally {
       if (stage) await rm(stage, { recursive: true, force: true });

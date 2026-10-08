@@ -519,6 +519,106 @@ describe('workspace backup', () => {
     assert.ok(!result.files.some((path) => path.includes('unsafe:path')));
   });
 
+  it('should bound exclusion evidence without inspecting rejected descendants or protected paths', async () => {
+    for (let index = 0; index < 25; index++) {
+      const directory = join(workspace, `Skip-${index}`);
+      await mkdir(directory);
+      await writeFile(join(directory, 'unsafe:path'), 'not observed');
+    }
+    await mkdir(join(workspace, 'Protected'));
+    await writeFile(join(workspace, 'Protected', 'unsafe:path'), 'not observed');
+    await mkdir(join(workspace, 'node_modules'));
+    await writeFile(join(workspace, 'node_modules', 'unsafe:path'), 'not observed');
+    const result = await planWorkspaceBackup({
+      manifest,
+      workspaceDir: workspace,
+      protectedPaths: [join(workspace, 'Protected')],
+      overrides: {
+        exclude: ['Skip-*'],
+        include: ['Protected/*.md', 'Skip-*/*.md', 'Missing-*.md'],
+      },
+    });
+    assert.deepEqual(result.files, ['MEMORY.md', 'agent.yaml', 'memory', 'memory/daily.md']);
+    const exclusions = result.selection!.find(({ reason }) => reason === 'exclude')!;
+    assert.equal(exclusions.observedEntries, 25);
+    assert.equal(exclusions.prunedDirectories, 25);
+    assert.equal(exclusions.directories.length, 20);
+    assert.deepEqual(
+      result.selection!.find(({ reason }) => reason === 'protected'),
+      {
+        reason: 'protected',
+        observedEntries: 1,
+        prunedDirectories: 1,
+        directories: [],
+      },
+    );
+    assert.deepEqual(
+      result.selection!.find(({ reason }) => reason === 'regenerable'),
+      {
+        reason: 'regenerable',
+        observedEntries: 1,
+        prunedDirectories: 1,
+        directories: [],
+      },
+    );
+    assert.ok(!JSON.stringify(result.selection).includes('Protected'));
+    assert.deepEqual(
+      result.diagnostics.map(({ path }) => path),
+      ['Missing-*.md'],
+    );
+  });
+
+  it('should preview and create an empty selection without inventing excluded descendant counts', async () => {
+    const plan = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: {
+        exclude: ['agent.yaml', 'MEMORY.md', 'memory', '.agent-system'],
+        include: ['Absent-*.md'],
+      },
+    });
+    assert.deepEqual(plan.files, []);
+    assert.deepEqual(
+      plan.diagnostics.map(({ path }) => path),
+      ['Absent-*.md'],
+    );
+    assert.deepEqual(plan.selection, [
+      { reason: 'exclude', observedEntries: 3, prunedDirectories: 1, directories: ['memory'] },
+    ]);
+    assert.deepEqual((await readdir(workspace)).sort(), ['MEMORY.md', 'agent.yaml', 'memory']);
+    const result = await service.create(plan);
+    assert.deepEqual(result.manifest.inventory, []);
+    assert.deepEqual((await service.verify(result.archive)).inventory, []);
+  });
+
+  it('should report refreshed selection separately without changing archive metadata', async () => {
+    const plan = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: { exclude: ['Later'] },
+    });
+    await mkdir(join(workspace, 'Later'));
+    await writeFile(join(workspace, 'Later', 'unsafe:path'), 'not observed');
+    const result = await service.create(plan);
+    assert.ok(!plan.selection?.some(({ reason }) => reason === 'exclude'));
+    assert.deepEqual(
+      result.selection?.find(({ reason }) => reason === 'exclude'),
+      {
+        reason: 'exclude',
+        observedEntries: 1,
+        prunedDirectories: 1,
+        directories: ['Later'],
+      },
+    );
+    assert.equal('selection' in result.manifest, false);
+    assert.deepEqual(
+      (await service.verify(result.archive)).inventory
+        .map(({ path }) => path)
+        .filter((path) => path !== '.agent-system'),
+      plan.files,
+    );
+  });
+
   it('should exclude effective default and aliased destinations despite includes', async () => {
     await mkdir(join(workspace, '.agent-system', 'backups'), { recursive: true });
     await writeFile(join(workspace, '.agent-system', 'backups', 'old.tar.gz'), 'old');
