@@ -64,7 +64,7 @@ describe('workspace backup', () => {
     for (const state of ['captured', 'off', 'absent'] as const) {
       const stdout: string[] = [];
       const stderr: string[] = [];
-      const archive = join(root, `${state}.tar.gz`);
+      const archive = `/tmp/backup-${state}.tar.gz`;
       const fixture = {
         format: 'agent-system-backup' as const,
         version: 2 as const,
@@ -91,6 +91,14 @@ describe('workspace backup', () => {
       };
       await backupVerify({
         service: { verify: async () => fixture } as unknown as WorkspaceBackupService,
+        manifestService: {
+          async loadForAgentId() {
+            throw new Error('unexpected manifest lookup');
+          },
+          async loadForCommandDirectory() {
+            throw new Error('unexpected manifest lookup');
+          },
+        },
         agentId: 'tanaabot',
         workspaceDir: '/workspace',
         environment: {},
@@ -104,11 +112,10 @@ describe('workspace backup', () => {
         setExitCode() {},
       });
       const preview = `${stdout.join('')}\n${stderr.join('')}`;
-      assert.match(preview, /verification  verified/u);
+      assert.match(preview, /verification\s+verified/u);
       assert.match(preview, new RegExp(`coverage\\s+workspace and agent state: ${state}`, 'u'));
       assert.ok(preview.includes(archive));
-      if (state === 'captured') assert.match(preview, /coverage  workspace and agent state: captured/u);
-      else assert.doesNotMatch(stderr.join(''), /warning/u);
+      if (state !== 'captured') assert.doesNotMatch(stderr.join(''), /warning/u);
       previews.push(preview);
     }
 
@@ -121,6 +128,14 @@ describe('workspace backup', () => {
           throw new BackupError('backup-checksum-mismatch', 'checksum mismatch');
         },
       } as unknown as WorkspaceBackupService,
+      manifestService: {
+        async loadForAgentId() {
+          throw new Error('unexpected manifest lookup');
+        },
+        async loadForCommandDirectory() {
+          throw new Error('unexpected manifest lookup');
+        },
+      },
       agentId: 'tanaabot',
       workspaceDir: '/workspace',
       environment: {},
@@ -133,7 +148,7 @@ describe('workspace backup', () => {
       styles: createCliStyles({ NO_COLOR: '1' }),
       setExitCode: (code) => failedExit.push(code),
     });
-    assert.match(failedOut.join(''), /verification  failed \\(backup-checksum-mismatch\\)/u);
+    assert.match(failedOut.join(''), /verification\s+failed\s+\(backup-checksum-mismatch\)/u);
     assert.deepEqual(failedExit, [1]);
     assert.match(failedErr.join(''), /error/u);
     assert.equal(previews.length, 3);
