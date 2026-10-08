@@ -4,19 +4,22 @@ import {
   type CliStyles,
   writeCliDiagnosticNotices,
   writeCliJson,
-  writeCliSummary,
+  renderCliSummary,
+  writeCliLines,
 } from './output.ts';
 
 export interface BackupCliOutput {
   json: boolean;
   output: CliOutput;
   styles?: CliStyles;
+  terminalColumns?: number;
   setExitCode(code: number): void;
 }
 
 export function writeBackupFailure(
   options: BackupCliOutput,
   error: unknown,
+  humanMessage?: string,
   label = 'backup',
 ): void {
   const code = error instanceof BackupError ? error.code : 'backup-failed';
@@ -24,12 +27,17 @@ export function writeBackupFailure(
   const diagnostics = [{ code, message }];
   if (options.json) writeCliJson(options.output, { status: 'failed', diagnostics });
   else
-    writeCliSummary(
-      options.output,
-      [{ label, style: 'error', value: `failed (${code})` }],
-      options.styles,
-    );
-  writeCliDiagnosticNotices(options, [{ severity: 'error', message }]);
+    writeCliLines(options.output, [
+      '',
+      ...renderCliSummary([{ label, style: 'error', value: `failed (${code})` }], options.styles, {
+        rowPadding: 0,
+        terminalColumns: options.terminalColumns ?? process.stdout.columns,
+      }),
+      '',
+    ]);
+  writeCliDiagnosticNotices(options, [
+    { severity: 'error', message: options.json ? message : (humanMessage ?? message) },
+  ]);
   options.setExitCode(1);
 }
 

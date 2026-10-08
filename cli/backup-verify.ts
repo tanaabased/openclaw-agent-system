@@ -54,7 +54,7 @@ async function backupVerify(
       );
     writeBackupDiagnostics(options, manifest.diagnostics);
   } catch (error) {
-    writeBackupFailure(options, error, 'verification');
+    writeBackupFailure(options, error, undefined, 'verification');
   }
 }
 
