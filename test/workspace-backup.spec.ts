@@ -44,8 +44,10 @@ const manifest: AgentManifest = {
 describe('workspace backup', () => {
   let root: string;
   let workspace: string;
+  let cleanupTimeout: number;
   const service = new WorkspaceBackupService();
   beforeEach(async () => {
+    cleanupTimeout = 10_000;
     root = await realpath(await mkdtemp(join(tmpdir(), 'workspace-backup-')));
     workspace = join(root, 'workspace');
     await mkdir(workspace);
@@ -54,7 +56,8 @@ describe('workspace backup', () => {
     await mkdir(join(workspace, 'memory'));
     await writeFile(join(workspace, 'memory', 'daily.md'), 'daily memory\n');
   });
-  afterEach(async () => {
+  afterEach(async function () {
+    this.timeout(cleanupTimeout);
     await rm(root, { recursive: true, force: true });
   });
 
@@ -356,6 +359,7 @@ describe('workspace backup', () => {
 
   it('should prune large irrelevant trees and limit the final payload including parents', async function () {
     this.timeout(120_000);
+    cleanupTimeout = 120_000;
     await executeFile('/usr/bin/git', ['init', workspace]);
     await writeFile(join(workspace, '.gitignore'), 'large/\n');
     await mkdir(join(workspace, 'large'));
