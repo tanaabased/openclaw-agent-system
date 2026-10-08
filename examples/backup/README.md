@@ -35,7 +35,19 @@ openclaw as backup create --dry-run --json --include '{MEMORY,DREAMS,BOOTSTRAP}.
 cd "$TMPDIR/backup-workspace"
 openclaw as backup create --dry-run --json --include '**/MEMORY.md' | jq -e '(.files | index("MEMORY.md")) and (.files | index("memory/MEMORY.md"))'
 
-# should prevent setup checks from creating archives and allow an explicit apply
+# should show effective filters and bounded pruning reasons in a human preview
+cd "$TMPDIR/backup-workspace"
+mkdir -p Scratch node_modules
+printf 'not visited' > Scratch/unsafe:path
+printf 'not visited' > node_modules/unsafe:path
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'exclude' | grep -F 'Scratch'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'pruned' | grep -F 'exclude: Scratch'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'pruned' | grep -F 'regenerable: node_modules'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'selected' | grep -F 'MEMORY.md'
+NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'workspace' | grep -F "$TMPDIR/backup-workspace"
+rm -rf Scratch node_modules
+
+# should create and verify the same archive during a bound setup apply
 cd "$TMPDIR/backup-workspace"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "setup" and .status == "updated")'
 test -f backup-applied
@@ -49,6 +61,29 @@ git check-ignore "$archive"
 openclaw as backup restore "$archive" --target "$TMPDIR/backup-recovered" --json | jq -e '.status == "restored" and .agentId == "backup-example" and .coverage.openclawState == "off"'
 cmp MEMORY.md "$TMPDIR/backup-recovered/workspace/MEMORY.md"
 cmp memory/day.md "$TMPDIR/backup-recovered/workspace/memory/day.md"
+
+# should describe deliberate omissions separately from staging and degraded capture
+cd "$TMPDIR/backup-workspace"
+archive="$(find .agent-system/backups -name '*.tar.gz' | head -1)"
+NO_COLOR=1 openclaw as backup restore "$archive" --target "$TMPDIR/backup-human" > "$TMPDIR/backup-human-output"
+grep -F 'archive' "$TMPDIR/backup-human-output"
+grep -F 'target' "$TMPDIR/backup-human-output"
+grep -F 'workspace' "$TMPDIR/backup-human-output"
+grep -F 'activation' "$TMPDIR/backup-human-output" | grep -F 'not activated'
+grep -F 'database disabled' "$TMPDIR/backup-human-output"
+grep -F 'protected path' "$TMPDIR/backup-human-output"
+grep -F 'capture scope' "$TMPDIR/backup-human-output"
+grep -F 'non-atomic capture' "$TMPDIR/backup-human-output"
+cmp MEMORY.md "$TMPDIR/backup-human/workspace/MEMORY.md"
+
+# should reject reusing a populated staging target with an error message
+cd "$TMPDIR/backup-workspace"
+archive="$(find .agent-system/backups -name '*.tar.gz' | head -1)"
+if NO_COLOR=1 openclaw as backup restore "$archive" --target "$TMPDIR/backup-human" > "$TMPDIR/backup-rejected-output" 2> "$TMPDIR/backup-rejected-messages"; then exit 1; fi
+grep -F 'backup-target-nonempty' "$TMPDIR/backup-rejected-output"
+grep -F 'messages' "$TMPDIR/backup-rejected-messages"
+grep -F 'error' "$TMPDIR/backup-rejected-messages"
+cmp MEMORY.md "$TMPDIR/backup-human/workspace/MEMORY.md"
 
 # should let explicit excludes override included ignored memory
 cd "$TMPDIR/backup-workspace"
@@ -94,12 +129,29 @@ cmp MEMORY.md "$TMPDIR/backup-with-state/workspace/MEMORY.md"
 ```
 
 ```bash
-# should preview and apply retention to five installed-cli backups without changing the retained set.
+# should create five installed-cli backups for retention.
 cd "$TMPDIR/backup-workspace"
 for index in 1 2 3 4 5; do
   openclaw as backup create --output "$TMPDIR/prune-archives" --openclaw-state off --json | jq -e '.status == "created"'
 done
 test "$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 5
+```
+
+```bash
+# should preview counted removals with selected agent and destination context.
+cd "$TMPDIR/backup-workspace"
+preview="$(NO_COLOR=1 openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --dry-run)"
+printf '%s\n' "$preview" | grep -F 'mode' | grep -F 'preview'
+printf '%s\n' "$preview" | grep -F 'agent' | grep -F 'backup-example'
+printf '%s\n' "$preview" | grep -F 'output' | grep -F "$TMPDIR/prune-archives"
+printf '%s\n' "$preview" | grep -F 'kept (3)'
+printf '%s\n' "$preview" | grep -F 'would-delete (2)'
+printf '%s\n' "$preview" | grep -F 'deleted (0)' | grep -F 'none'
+```
+
+```bash
+# should preview and apply retention without changing the retained set.
+cd "$TMPDIR/backup-workspace"
 openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --dry-run --json | jq -e '.status == "preview" and (.kept | length) == 3 and (.wouldDelete | length) == 2 and (.deleted | length) == 0'
 test "$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 5
 openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --dry-run --json | jq -r '.kept[]' | sort > "$TMPDIR/prune-expected"
@@ -108,6 +160,17 @@ find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | sort > "$TMPDIR/pru
 cmp "$TMPDIR/prune-expected" "$TMPDIR/prune-actual"
 while IFS= read -r archive; do openclaw as backup verify "$archive" --json | jq -e '.status == "verified"'; done < "$TMPDIR/prune-actual"
 openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --json | jq -e '.status == "pruned" and (.deleted | length) == 0'
+```
+
+```bash
+# should show applied retention with no pending removals after pruning.
+cd "$TMPDIR/backup-workspace"
+applied="$(NO_COLOR=1 openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3)"
+printf '%s\n' "$applied" | grep -F 'mode' | grep -F 'applied'
+printf '%s\n' "$applied" | grep -F 'keep' | grep -F '3'
+printf '%s\n' "$applied" | grep -F 'kept (3)'
+printf '%s\n' "$applied" | grep -F 'would-delete (0)' | grep -F 'none'
+printf '%s\n' "$applied" | grep -F 'deleted (0)' | grep -F 'none'
 ```
 
 ```bash

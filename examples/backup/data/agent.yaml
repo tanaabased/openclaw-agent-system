@@ -13,5 +13,6 @@ setup:
   check: |
     test -f backup-applied || openclaw as backup create --json
   apply: |
-    openclaw agent-system backup create --json
+    archive="$(openclaw agent-system backup create --json | jq -er '.archive')"
+    openclaw as backup verify "$archive" --json | jq -e '.status == "verified" and .agentId == "backup-example"'
     touch backup-applied

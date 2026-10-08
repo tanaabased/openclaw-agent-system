@@ -1512,7 +1512,7 @@ describe('backup cli registration', () => {
     const output = result.output.join('');
     assert.ok(output.includes('backup'));
     assert.ok(output.includes('preview'));
-    assert.ok(output.includes('agent state: off'));
+    assert.ok(output.includes('agent database off (not included)'));
     assert.ok(!output.includes('\u001b'));
   });
 

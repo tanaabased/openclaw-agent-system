@@ -22,9 +22,11 @@ export interface CliStyles {
 
 export interface CliSummaryLine {
   component?: string;
+  quiet?: boolean;
   label: string;
   style: 'action' | 'error' | 'field' | 'notice' | 'status' | 'target' | 'warning';
   value: string;
+  valueStyle?: keyof CliStyles;
 }
 
 export interface CliLifecycleLine extends CliSummaryLine {
@@ -77,7 +79,7 @@ interface CliTableRow {
   cells: Array<{ value: string; style?: keyof CliStyles }>;
   value: string;
   quiet?: boolean;
-  target?: boolean;
+  valueStyle?: keyof CliStyles;
 }
 
 /** share terminal-cell alignment and wrapping; padding separates rows, not wrapped lines. */
@@ -95,7 +97,7 @@ function renderCliTable(
   const prefixWidth = widths.reduce((sum, width) => sum + width + 2, 0);
   const stacked = columns - prefixWidth < 24;
   const indent = ' '.repeat(stacked ? Math.min(2, columns - 1) : prefixWidth);
-  return rows.flatMap(({ cells, value, quiet, target }, index) => {
+  return rows.flatMap(({ cells, value, quiet, valueStyle }, index) => {
     const header = cells
       .map(
         ({ value, style }, cellIndex) =>
@@ -104,7 +106,7 @@ function renderCliTable(
       .join('');
     const explanation = wrapAnsi(value, columns - indent.length, { hard: true })
       .split('\n')
-      .map((line) => (target ? styles.target(line) : quiet ? styles.field(line) : line));
+      .map((line) => (valueStyle ? styles[valueStyle](line) : quiet ? styles.field(line) : line));
     const padding = index ? Array<string>(rowPadding).fill('') : [];
     if (stacked) {
       const compactHeader = cells
@@ -132,12 +134,13 @@ export function renderCliSummary(
 ): string[] {
   const hasComponents = lines.some(({ component }) => component !== undefined);
   return renderCliTable(
-    lines.map(({ component, label, style, value }) => ({
+    lines.map(({ component, label, quiet, style, value, valueStyle }) => ({
       cells: [
         { value: label, style: style === 'target' ? 'field' : style },
         ...(hasComponents ? [{ value: component ?? '' }] : []),
       ],
-      target: style === 'target',
+      valueStyle: valueStyle ?? (style === 'target' ? 'target' : undefined),
+      quiet,
       value,
     })),
     styles,
