@@ -62,6 +62,29 @@ openclaw as backup restore "$archive" --target "$TMPDIR/backup-recovered" --json
 cmp MEMORY.md "$TMPDIR/backup-recovered/workspace/MEMORY.md"
 cmp memory/day.md "$TMPDIR/backup-recovered/workspace/memory/day.md"
 
+# should describe deliberate omissions separately from staging and degraded capture
+cd "$TMPDIR/backup-workspace"
+archive="$(find .agent-system/backups -name '*.tar.gz' | head -1)"
+NO_COLOR=1 openclaw as backup restore "$archive" --target "$TMPDIR/backup-human" > "$TMPDIR/backup-human-output"
+grep -F 'archive' "$TMPDIR/backup-human-output"
+grep -F 'target' "$TMPDIR/backup-human-output"
+grep -F 'workspace' "$TMPDIR/backup-human-output"
+grep -F 'activation' "$TMPDIR/backup-human-output" | grep -F 'not activated'
+grep -F 'database disabled' "$TMPDIR/backup-human-output"
+grep -F 'protected path' "$TMPDIR/backup-human-output"
+grep -F 'capture scope' "$TMPDIR/backup-human-output"
+grep -F 'non-atomic capture' "$TMPDIR/backup-human-output"
+cmp MEMORY.md "$TMPDIR/backup-human/workspace/MEMORY.md"
+
+# should reject reusing a populated staging target with an error message
+cd "$TMPDIR/backup-workspace"
+archive="$(find .agent-system/backups -name '*.tar.gz' | head -1)"
+if NO_COLOR=1 openclaw as backup restore "$archive" --target "$TMPDIR/backup-human" > "$TMPDIR/backup-rejected-output" 2> "$TMPDIR/backup-rejected-messages"; then exit 1; fi
+grep -F 'backup-target-nonempty' "$TMPDIR/backup-rejected-output"
+grep -F 'messages' "$TMPDIR/backup-rejected-messages"
+grep -F 'error' "$TMPDIR/backup-rejected-messages"
+cmp MEMORY.md "$TMPDIR/backup-human/workspace/MEMORY.md"
+
 # should let explicit excludes override included ignored memory
 cd "$TMPDIR/backup-workspace"
 openclaw agent-system backup create --dry-run --json --include 'memory/**' 'MEMORY.md' --exclude 'memory/**' | jq -e '(.files | index("MEMORY.md")) and ((.files | index("memory/day.md")) == null)'
