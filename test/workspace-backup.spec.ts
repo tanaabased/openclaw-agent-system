@@ -24,7 +24,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import WorkspaceBackupService from '../agent/backup-service.ts';
-import type { LegacyWorkspaceBackupManifest } from '../agent/backup-types.ts';
+import { BackupError, type LegacyWorkspaceBackupManifest } from '../agent/backup-types.ts';
 import { planWorkspaceBackup } from '../agent/backup-selection.ts';
 import { verifyWorkspaceArchive, writeWorkspaceArchive } from '../agent/backup-archive.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -33,6 +33,7 @@ import backupCreate from '../cli/backup-create.ts';
 import backupVerify from '../cli/backup-verify.ts';
 import backupRestore from '../cli/backup-restore.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 const executeFile = promisify(execFile);
 const manifest: AgentManifest = {
@@ -56,6 +57,86 @@ describe('workspace backup', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should preview verification and coverage separately for backup fixtures', async () => {
+    const previews: string[] = [];
+    for (const state of ['captured', 'off', 'absent'] as const) {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      const archive = join(root, `${state}.tar.gz`);
+      const fixture = {
+        format: 'agent-system-backup' as const,
+        version: 2 as const,
+        agentId: 'tanaabot',
+        capturedAt: '2026-10-07T00:00:00.000Z',
+        settings: {
+          output: '/workspace/backups',
+          include: [],
+          exclude: [],
+          openclawState: 'auto' as const,
+          gitIgnore: true,
+        },
+        inventory: [
+          { path: 'MEMORY.md', type: 'file' as const, mode: 0o600, size: 14, sha256: 'fixture' },
+        ],
+        diagnostics: [],
+        coverage: {
+          stage: 'workspace-only' as const,
+          openclawState: state,
+          atomic: false as const,
+          omittedPaths: [],
+          limitations: [],
+        },
+      };
+      await backupVerify({
+        service: { verify: async () => fixture } as unknown as WorkspaceBackupService,
+        agentId: 'tanaabot',
+        workspaceDir: '/workspace',
+        environment: {},
+        json: false,
+        archive,
+        output: {
+          writeStdout: (value) => stdout.push(value),
+          writeStderr: (value) => stderr.push(value),
+        },
+        styles: createCliStyles({ NO_COLOR: '1' }),
+        setExitCode() {},
+      });
+      const preview = `${stdout.join('')}\n${stderr.join('')}`;
+      assert.match(preview, /verification  verified/u);
+      assert.match(preview, new RegExp(`coverage\\s+workspace and agent state: ${state}`, 'u'));
+      assert.ok(preview.includes(archive));
+      if (state === 'captured') assert.match(preview, /coverage  workspace and agent state: captured/u);
+      else assert.doesNotMatch(stderr.join(''), /warning/u);
+      previews.push(preview);
+    }
+
+    const failedOut: string[] = [];
+    const failedErr: string[] = [];
+    const failedExit: number[] = [];
+    await backupVerify({
+      service: {
+        verify: async () => {
+          throw new BackupError('backup-checksum-mismatch', 'checksum mismatch');
+        },
+      } as unknown as WorkspaceBackupService,
+      agentId: 'tanaabot',
+      workspaceDir: '/workspace',
+      environment: {},
+      json: false,
+      archive: join(root, 'failed.tar.gz'),
+      output: {
+        writeStdout: (value) => failedOut.push(value),
+        writeStderr: (value) => failedErr.push(value),
+      },
+      styles: createCliStyles({ NO_COLOR: '1' }),
+      setExitCode: (code) => failedExit.push(code),
+    });
+    assert.match(failedOut.join(''), /verification  failed \\(backup-checksum-mismatch\\)/u);
+    assert.deepEqual(failedExit, [1]);
+    assert.match(failedErr.join(''), /error/u);
+    assert.equal(previews.length, 3);
   });
 
   it('should strictly decode backup keys without changing literal patterns', () => {

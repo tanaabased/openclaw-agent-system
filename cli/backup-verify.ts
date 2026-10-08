@@ -39,21 +39,22 @@ async function backupVerify(
       writeCliSummary(
         options.output,
         [
-          { label: 'backup', style: 'status', value: 'verified' },
+          { label: 'verification', style: 'status', value: 'verified' },
           { label: 'agent', style: 'target', value: manifest.agentId },
           { label: 'archive', style: 'target', value: archive },
           { label: 'entries', style: 'field', value: String(manifest.inventory.length) },
           {
             label: 'coverage',
-            style: manifest.coverage.openclawState === 'captured' ? 'status' : 'warning',
+            style: manifest.coverage.openclawState === 'captured' ? 'status' : 'field',
             value: `workspace and agent state: ${manifest.coverage.openclawState}`,
           },
         ],
         options.styles,
+        { rowPadding: 0 },
       );
     writeBackupDiagnostics(options, manifest.diagnostics);
   } catch (error) {
-    writeBackupFailure(options, error);
+    writeBackupFailure(options, error, 'verification');
   }
 }
 

@@ -14,7 +14,11 @@ export interface BackupCliOutput {
   setExitCode(code: number): void;
 }
 
-export function writeBackupFailure(options: BackupCliOutput, error: unknown): void {
+export function writeBackupFailure(
+  options: BackupCliOutput,
+  error: unknown,
+  label = 'backup',
+): void {
   const code = error instanceof BackupError ? error.code : 'backup-failed';
   const message = error instanceof Error ? error.message : 'The workspace backup operation failed.';
   const diagnostics = [{ code, message }];
@@ -22,7 +26,7 @@ export function writeBackupFailure(options: BackupCliOutput, error: unknown): vo
   else
     writeCliSummary(
       options.output,
-      [{ label: 'backup', style: 'error', value: `failed (${code})` }],
+      [{ label, style: 'error', value: `failed (${code})` }],
       options.styles,
     );
   writeCliDiagnosticNotices(options, [{ severity: 'error', message }]);
