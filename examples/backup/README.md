@@ -47,7 +47,7 @@ NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'sele
 NO_COLOR=1 openclaw as backup create --dry-run --exclude Scratch | grep -F 'workspace' | grep -F "$TMPDIR/backup-workspace"
 rm -rf Scratch node_modules
 
-# should prevent setup checks from creating archives and allow an explicit apply
+# should create and verify the same archive during a bound setup apply
 cd "$TMPDIR/backup-workspace"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "setup" and .status == "updated")'
 test -f backup-applied
