@@ -22,6 +22,7 @@ export interface CliStyles {
 
 export interface CliSummaryLine {
   component?: string;
+  quiet?: boolean;
   label: string;
   style: 'action' | 'error' | 'field' | 'notice' | 'status' | 'target' | 'warning';
   value: string;
@@ -132,12 +133,13 @@ export function renderCliSummary(
 ): string[] {
   const hasComponents = lines.some(({ component }) => component !== undefined);
   return renderCliTable(
-    lines.map(({ component, label, style, value }) => ({
+    lines.map(({ component, label, quiet, style, value }) => ({
       cells: [
         { value: label, style: style === 'target' ? 'field' : style },
         ...(hasComponents ? [{ value: component ?? '' }] : []),
       ],
       target: style === 'target',
+      quiet,
       value,
     })),
     styles,
