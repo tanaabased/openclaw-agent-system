@@ -68,25 +68,81 @@ export function createCliStyles(environment: NodeJS.ProcessEnv = process.env): C
 
 const defaultCliStyles = createCliStyles();
 
+export interface CliTableOptions {
+  rowPadding?: 0 | 1;
+  terminalColumns?: number;
+}
+
+interface CliTableRow {
+  cells: Array<{ value: string; style?: keyof CliStyles }>;
+  value: string;
+  quiet?: boolean;
+  target?: boolean;
+}
+
+/** share terminal-cell alignment and wrapping; padding separates rows, not wrapped lines. */
+function renderCliTable(
+  rows: readonly CliTableRow[],
+  styles: CliStyles,
+  { rowPadding = 0, terminalColumns = 80 }: CliTableOptions,
+): string[] {
+  const columns =
+    Number.isFinite(terminalColumns) && terminalColumns >= 1 ? Math.floor(terminalColumns) : 80;
+  const widths = Array.from(
+    { length: Math.max(0, ...rows.map(({ cells }) => cells.length)) },
+    (_, index) => Math.max(0, ...rows.map(({ cells }) => stringWidth(cells[index]?.value ?? ''))),
+  );
+  const prefixWidth = widths.reduce((sum, width) => sum + width + 2, 0);
+  const stacked = columns - prefixWidth < 24;
+  const indent = ' '.repeat(stacked ? Math.min(2, columns - 1) : prefixWidth);
+  return rows.flatMap(({ cells, value, quiet, target }, index) => {
+    const header = cells
+      .map(
+        ({ value, style }, cellIndex) =>
+          `${style ? styles[style](value) : value}${' '.repeat(widths[cellIndex]! - stringWidth(value) + 2)}`,
+      )
+      .join('');
+    const explanation = wrapAnsi(value, columns - indent.length, { hard: true })
+      .split('\n')
+      .map((line) => (target ? styles.target(line) : quiet ? styles.field(line) : line));
+    const padding = index ? Array<string>(rowPadding).fill('') : [];
+    if (stacked) {
+      const compactHeader = cells
+        .map(({ value, style }) => (style ? styles[style](value) : value))
+        .join('  ');
+      return [
+        ...padding,
+        ...wrapAnsi(compactHeader, columns, { hard: true }).split('\n'),
+        ...explanation.map((line) => `${indent}${line}`),
+      ];
+    }
+    return [
+      ...padding,
+      ...explanation.map((line, lineIndex) =>
+        lineIndex === 0 ? `${header}${line}` : `${indent}${line}`,
+      ),
+    ];
+  });
+}
+
 export function renderCliSummary(
   lines: readonly CliSummaryLine[],
   styles: CliStyles = defaultCliStyles,
+  options: CliTableOptions = {},
 ): string[] {
-  const labelWidth = Math.max(0, ...lines.map(({ label }) => label.length)) + 2;
-  const componentWidth = Math.max(0, ...lines.map(({ component }) => component?.length ?? 0));
-  return lines.map(({ component, label, style, value }) => {
-    const formattedLabel = label.padEnd(labelWidth);
-    const formattedComponent =
-      componentWidth === 0 ? '' : `${(component ?? '').padEnd(componentWidth)}  `;
-    const prefix = `${formattedLabel}${formattedComponent}`;
-    if (style === 'action') return `${styles.action(prefix)}${styles.target(value)}`;
-    if (style === 'error') return `${styles.error(prefix)}${value}`;
-    if (style === 'status') return `${styles.status(prefix)}${styles.target(value)}`;
-    if (style === 'target') return `${styles.field(prefix)}${styles.target(value)}`;
-    if (style === 'notice') return `${styles.notice(prefix)}${value}`;
-    if (style === 'warning') return `${styles.warning(prefix)}${value}`;
-    return `${styles.field(prefix)}${value}`;
-  });
+  const hasComponents = lines.some(({ component }) => component !== undefined);
+  return renderCliTable(
+    lines.map(({ component, label, style, value }) => ({
+      cells: [
+        { value: label, style: style === 'target' ? 'field' : style },
+        ...(hasComponents ? [{ value: component ?? '' }] : []),
+      ],
+      target: style === 'target',
+      value,
+    })),
+    styles,
+    options,
+  );
 }
 
 export function writeCliLines(output: CliOutput, lines: readonly string[]): void {
@@ -98,53 +154,37 @@ export function writeCliSummary(
   output: CliOutput,
   lines: readonly CliSummaryLine[],
   styles?: CliStyles,
+  options?: CliTableOptions,
 ): void {
-  writeCliLines(output, renderCliSummary(lines, styles));
+  writeCliLines(output, renderCliSummary(lines, styles, options));
 }
 
-/** Render Doctor and Install without changing other summary callers. */
+/** lifecycle tables default to padded rows and retain their workspace footer. */
 export function renderCliLifecycleTable(
   lines: readonly CliLifecycleLine[],
   workspaceDir: string,
   styles: CliStyles = defaultCliStyles,
   terminalColumns = 80,
+  options: Pick<CliTableOptions, 'rowPadding'> = {},
 ): string[] {
-  const columns =
-    Number.isFinite(terminalColumns) && terminalColumns >= 1 ? Math.floor(terminalColumns) : 80;
-  const componentWidth = Math.max(0, ...lines.map(({ component }) => stringWidth(component)));
-  const labelWidth = Math.max(0, ...lines.map(({ label }) => stringWidth(label)));
-  const prefixWidth = componentWidth + labelWidth + 4;
-  const stacked = columns - prefixWidth < 24;
-  const indent = ' '.repeat(stacked ? Math.min(2, columns - 1) : prefixWidth);
-  const explanationWidth = columns - indent.length;
-  const rows = lines.flatMap(({ attention, component, label, quiet, style, value }, rowIndex) => {
-    const name = attention ? styles.bold(component) : component;
-    const status =
-      style === 'action' || style === 'error' || style === 'status' || style === 'warning'
-        ? styles[style](label)
-        : styles.field(label);
-    const gap = ' '.repeat(componentWidth - stringWidth(component) + 2);
-    const header = `${name}${gap}${status}`;
-    const explanation = wrapAnsi(value, explanationWidth, { hard: true })
-      .split('\n')
-      .map((line) => (quiet ? styles.field(line) : line));
-    if (stacked) {
-      const compactHeader =
-        componentWidth + labelWidth + 2 > columns ? `${name}  ${status}` : header;
-      return [
-        ...(rowIndex ? [''] : []),
-        ...wrapAnsi(compactHeader, columns, { hard: true }).split('\n'),
-        ...explanation.map((line) => `${indent}${line}`),
-      ];
-    }
-    const statusGap = ' '.repeat(labelWidth - stringWidth(label) + 2);
-    return [
-      ...(rowIndex ? [''] : []),
-      ...explanation.map((line, index) =>
-        index === 0 ? `${header}${statusGap}${line}` : `${indent}${line}`,
-      ),
-    ];
-  });
+  const rows = renderCliTable(
+    lines.map(({ attention, component, label, quiet, style, value }) => ({
+      cells: [
+        { value: component, ...(attention ? { style: 'bold' as const } : {}) },
+        {
+          value: label,
+          style:
+            style === 'action' || style === 'error' || style === 'status' || style === 'warning'
+              ? style
+              : 'field',
+        },
+      ],
+      quiet,
+      value,
+    })),
+    styles,
+    { rowPadding: 1, ...options, terminalColumns },
+  );
   return ['', ...rows, ...(rows.length ? [''] : []), `workspace  ${styles.bold(workspaceDir)}`, ''];
 }
 
@@ -154,8 +194,12 @@ export function writeCliLifecycleTable(
   workspaceDir: string,
   styles?: CliStyles,
   terminalColumns?: number,
+  options?: Pick<CliTableOptions, 'rowPadding'>,
 ): void {
-  writeCliLines(output, renderCliLifecycleTable(lines, workspaceDir, styles, terminalColumns));
+  writeCliLines(
+    output,
+    renderCliLifecycleTable(lines, workspaceDir, styles, terminalColumns, options),
+  );
 }
 
 export interface CliNotice {
@@ -174,8 +218,12 @@ export function renderCliNotices(
     Number.isFinite(terminalColumns) && terminalColumns >= 1 ? Math.floor(terminalColumns) : 80;
   const indent = ' '.repeat(Math.min(2, columns - 1));
   const messageWidth = Math.max(1, columns - indent.length);
-  const blocks = notices.flatMap(({ message, severity }, index) => {
-    const label = { notice: 'ℹ Notice', warning: '⚠ Warning', error: '✖ Error' }[severity];
+  const priority = { error: 0, warning: 1, notice: 2 };
+  const ordered = [...notices].sort(
+    (left, right) => priority[left.severity] - priority[right.severity],
+  );
+  const blocks = ordered.flatMap(({ message, severity }, index) => {
+    const label = { notice: 'ℹ info', warning: '⚠ warning', error: '✖ error' }[severity];
     const styledLabel = styles[severity](label);
     return [
       ...(index ? [''] : []),
@@ -187,7 +235,7 @@ export function renderCliNotices(
   });
   return [
     '',
-    ...wrapAnsi(styles.bold('Messages'), columns, { hard: true }).split('\n'),
+    ...wrapAnsi(styles.bold('messages'), columns, { hard: true }).split('\n'),
     '',
     ...blocks,
   ];

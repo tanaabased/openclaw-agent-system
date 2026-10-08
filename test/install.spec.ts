@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import ansis from 'ansis';
+
 import installAgentSystem from '../cli/install.ts';
 import { AgentInstallError, type AgentInstallResult } from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -106,6 +108,81 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should preview fixture-backed success and partial failure across widths and color modes', async () => {
+    const literal = 'AgentX /Work/AgentX/File.JSON OP_TOKEN 2026-10-07T23:00:00Z';
+    const outcomes = installOutcomes.map((item) => ({
+      ...item,
+      message: `${item.message} ${literal}`,
+    }));
+    const warnings = [
+      {
+        component: 'collaboration',
+        code: 'collaboration-session-access',
+        message: `info A ${literal}`,
+      },
+      { component: 'git', code: 'warning-a', message: `warning A ${literal}` },
+      { component: 'path', code: 'warning-b', message: `warning B ${literal}` },
+    ];
+    for (const failed of [false, true]) {
+      const install = failed
+        ? new AgentSystemLifecycleError(
+            'github',
+            'external-error',
+            `HTTP 403: InvalidToken ${literal}`,
+            undefined,
+            undefined,
+            undefined,
+            { outcomes, warnings, unattempted: [{ component: 'models', stepId: 'ProfileX' }] },
+          )
+        : { agentId: 'AgentX', workspaceDir: '/Work/AgentX', outcomes, warnings };
+      for (const terminalColumns of [32, 120]) {
+        const previews: string[] = [];
+        for (const environment of [{ FORCE_COLOR: '3' }, { NO_COLOR: '', FORCE_COLOR: '3' }]) {
+          const harness = createHarness({
+            install,
+            terminalColumns,
+            styles: createCliStyles(environment),
+          });
+          await harness.run();
+          const text = ansis.strip(harness.events.join(''));
+          previews.push(text);
+          assert.equal(text.match(/^messages$/gmu)?.length, 1);
+          assert.ok(text.indexOf('workspace  ') < text.indexOf('messages'));
+          const unwrapped = text.replace(/\s/gu, '');
+          assert.ok(unwrapped.includes(literal.replace(/\s/gu, '')));
+          assert.ok(unwrapped.indexOf('warningA') < unwrapped.indexOf('warningB'));
+          assert.ok(unwrapped.indexOf('warningB') < unwrapped.indexOf('infoA'));
+          if (failed)
+            assert.ok(unwrapped.indexOf('HTTP403:InvalidToken') < unwrapped.indexOf('warningA'));
+          assert.deepEqual(harness.exitCodes, failed ? [1] : []);
+          assert.deepEqual(
+            harness.calls.install.map(({ manifest }) => manifest),
+            [validResult.manifest],
+          );
+          const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
+          assert.deepEqual(
+            rows.map((row) => row.trim().split(/\s/).filter(Boolean).slice(0, 2)),
+            outcomes.map(({ component, status }) => [component, status]),
+          );
+        }
+        assert.equal(previews[0], previews[1]);
+      }
+      const json = createHarness({
+        install,
+        json: true,
+        styles: createCliStyles({ FORCE_COLOR: '3' }),
+      });
+      await json.run();
+      const result = JSON.parse(json.output.join(''));
+      assert.deepEqual(result.outcomes, outcomes);
+      assert.deepEqual(result.warnings, warnings);
+      if (failed) assert.equal(result.blocked.message, `HTTP 403: InvalidToken ${literal}`);
+      assert.ok(!json.events.join('').includes('\u001b'));
+      assert.ok(!json.diagnostics.join('').includes('messages'));
+      assert.deepEqual(json.exitCodes, failed ? [1] : []);
+    }
+  });
+
   it('should expose deferred automation sync in both output modes without failing install', async () => {
     const deferred = {
       component: 'automations',
@@ -135,7 +212,7 @@ describe('cli/install', () => {
         assert.match(harness.output.join(''), /skipped/u);
         assert.ok(
           harness.events.join('').indexOf('workspace  /workspace') <
-            harness.events.join('').indexOf('Messages'),
+            harness.events.join('').indexOf('messages'),
         );
       }
       assert.ok(!harness.output.join('').includes('automation-synchronized'));
@@ -181,9 +258,9 @@ describe('cli/install', () => {
       });
       await harness.run();
       const text = harness.events.join('');
-      assert.equal(text.match(/Messages/gu)?.length, 1);
-      assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('Messages'));
-      assert.ok(text.indexOf('Messages') < text.indexOf('Manifest warning.'));
+      assert.equal(text.match(/messages/gu)?.length, 1);
+      assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('messages'));
+      assert.ok(text.indexOf('messages') < text.indexOf('Manifest warning.'));
       assert.match(text, /Operation warning/u);
       if (failed) {
         assert.match(text, /Operation stopped/u);
@@ -310,8 +387,8 @@ describe('cli/install', () => {
     await run();
 
     assert.match(output.join(''), /workspace {2}\/workspace/u);
-    assert.doesNotMatch(output.join(''), /Warning/u);
-    assert.match(diagnostics.join(''), /⚠ Warning\n {2}The existing/u);
+    assert.doesNotMatch(output.join(''), /warning/u);
+    assert.match(diagnostics.join(''), /⚠ warning\n {2}The existing/u);
   });
 
   it('should report explicit unchanged outcomes for every component', async () => {
@@ -403,7 +480,7 @@ describe('cli/install', () => {
         }
         assert.match(
           harness.diagnostics.join(''),
-          /Messages\n\n⚠ Warning\n {2}Manual follow-up\./u,
+          /messages\n\n⚠ warning\n {2}Manual follow-up\./u,
         );
       }
       assert.deepEqual(installed, original);
@@ -438,10 +515,10 @@ describe('cli/install', () => {
     await run();
 
     const text = diagnostics.join('');
-    assert.doesNotMatch(output.join(''), /Messages/u);
+    assert.doesNotMatch(output.join(''), /messages/u);
     const normalized = text.replace(/\s+/g, ' ');
-    assert.match(normalized, /ℹ Notice Operator recognition is channel-wide OpenClaw/u);
-    assert.match(normalized, /⚠ Warning Running Gateway access for pirog is unverified\./u);
+    assert.match(normalized, /ℹ info operator recognition is channel-wide openclaw/u);
+    assert.match(normalized, /⚠ warning Running Gateway access for pirog is unverified\./u);
     assert.match(normalized, /Reload the Gateway, then verify a fresh/u);
     assert.equal(text.includes('github-operator-loaded-access-unverified'), false);
   });
@@ -471,7 +548,7 @@ describe('cli/install', () => {
     assert.equal(result.outcomes[0].status, 'unchanged');
   });
 
-  it('should retain warnings before a styled blocking error after completed work', async () => {
+  it('should order errors before retained warnings after completed work', async () => {
     const failure = new AgentSystemLifecycleError(
       'collaboration',
       'collaboration-failed',
@@ -501,10 +578,10 @@ describe('cli/install', () => {
     assert.match(diagnostics.join(''), /code=manual-follow-up/u);
     const text = diagnostics.join('');
     assert.match(text, /Keep this warning/u);
-    assert.match(text, /✖ Error/u);
-    assert.ok(text.indexOf('Keep this warning') < text.indexOf('✖ Error'));
-    assert.ok(text.indexOf('✖ Error') < text.indexOf('Unattempted work'));
-    assert.ok(text.indexOf('Unattempted work') < text.indexOf('Earlier completed'));
+    assert.match(text, /✖ error/u);
+    assert.ok(text.indexOf('✖ error') < text.indexOf('Keep this warning'));
+    assert.ok(text.indexOf('Keep this warning') < text.indexOf('unattempted work'));
+    assert.ok(text.indexOf('unattempted work') < text.indexOf('earlier completed'));
     assert.match(text, /code=collaboration-failed/u);
     assert.deepEqual(exitCodes, [1]);
   });
@@ -519,7 +596,7 @@ describe('cli/install', () => {
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
     assert.match(diagnostics.join(''), /install: agent workspace conflict/u);
-    assert.match(diagnostics.join(''), /Unattempted work: lifecycle/u);
+    assert.match(diagnostics.join(''), /unattempted work: lifecycle/u);
   });
 
   it('should attribute lifecycle reconciliation failures to their component', async () => {
@@ -539,7 +616,7 @@ describe('cli/install', () => {
       diagnostics.join('').replace(/\s+/gu, ' '),
       /github: GitHub config reconciliation failed. code=github-config-reconcile-failed/u,
     );
-    assert.match(diagnostics.join(''), /Unattempted work: lifecycle/u);
+    assert.match(diagnostics.join(''), /unattempted work: lifecycle/u);
   });
 
   it('should report completed, blocked, and unattempted work in one json failure', async () => {
@@ -613,8 +690,8 @@ describe('cli/install', () => {
       },
     });
     await harness.run();
-    assert.match(harness.diagnostics.join(''), /Error/u);
-    assert.match(harness.diagnostics.join(''), /Warning/u);
+    assert.match(harness.diagnostics.join(''), /error/u);
+    assert.match(harness.diagnostics.join(''), /warning/u);
     assert.match(harness.diagnostics.join(''), /manifest-warning/u);
     assert.deepEqual(harness.output, []);
     assert.deepEqual(harness.calls.install, []);

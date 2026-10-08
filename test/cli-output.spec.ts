@@ -41,9 +41,9 @@ describe('cli/output', () => {
       if (json)
         assert.equal(stderr.join(''), 'Useful context.\nWork is incomplete.\nOperation failed.\n');
       else {
-        assert.match(stderr.join(''), /Notice/u);
-        assert.match(stderr.join(''), /Warning/u);
-        assert.match(stderr.join(''), /Error/u);
+        assert.match(stderr.join(''), /info/u);
+        assert.match(stderr.join(''), /warning/u);
+        assert.match(stderr.join(''), /error/u);
         assert.ok(
           stderr
             .join('')
@@ -52,6 +52,67 @@ describe('cli/output', () => {
         );
       }
     }
+  });
+
+  it('should stably sort human severities without mutating notices or mixed-case data', () => {
+    const notices = Object.freeze([
+      { severity: 'notice' as const, message: 'info A: /Work/AgentX OP_TOKEN' },
+      { severity: 'warning' as const, message: 'warning A: HTTP 403' },
+      { severity: 'error' as const, message: 'error A: InvalidToken' },
+      { severity: 'warning' as const, message: 'warning B: AgentY' },
+      { severity: 'error' as const, message: 'error B: GitHub' },
+      { severity: 'notice' as const, message: 'info B: 2026-10-07T23:00:00Z' },
+    ]);
+    const original = structuredClone(notices);
+    const lines = renderCliNotices(notices, plainStyles, 120);
+    assert.deepEqual(
+      lines.filter((line) => line.startsWith('  ')),
+      [notices[2]!, notices[4]!, notices[1]!, notices[3]!, notices[0]!, notices[5]!].map(
+        ({ message }) => `  ${message}`,
+      ),
+    );
+    assert.deepEqual(notices, original);
+  });
+
+  it('should share terminal-cell alignment and explicit padding for compact summaries', () => {
+    const input = [
+      { label: '工具', style: 'action' as const, value: 'keep AgentX /Work/File.JSON' },
+      { label: 'e\u0301', style: 'status' as const, value: 'ready OP_TOKEN' },
+    ];
+    const compact = renderCliSummary(input, plainStyles, { terminalColumns: 120 });
+    assert.deepEqual(compact, ['工具  keep AgentX /Work/File.JSON', 'e\u0301     ready OP_TOKEN']);
+    assert.deepEqual(
+      renderCliSummary(input, plainStyles, { rowPadding: 1, terminalColumns: 120 }),
+      [compact[0], '', compact[1]],
+    );
+    for (const terminalColumns of [12, 32, 80]) {
+      const colored = renderCliSummary(input, createCliStyles({ FORCE_COLOR: '3' }), {
+        terminalColumns,
+      });
+      const plain = renderCliSummary(input, plainStyles, { terminalColumns });
+      assert.deepEqual(
+        colored.map((line) => ansis.strip(line)),
+        plain,
+      );
+      assert.ok(plain.every((line) => stringWidth(line) <= terminalColumns));
+      assert.match(plain.join('').replace(/\s/gu, ''), /AgentX\/Work\/File.JSON/u);
+    }
+  });
+
+  it('should color status labels but not action or success explanations', () => {
+    const colored = renderCliSummary(
+      [
+        { label: 'installed', style: 'action', value: 'explanation stays neutral' },
+        { label: 'healthy', style: 'status', value: 'success prose stays neutral' },
+        { label: 'target', style: 'target', value: '/Work/AgentX' },
+      ],
+      createCliStyles({ FORCE_COLOR: '3' }),
+      { terminalColumns: 120 },
+    );
+    assert.ok(colored[0]!.includes('\u001b[38;2;0;200;138minstalled'));
+    assert.ok(colored[0]!.endsWith('explanation stays neutral'));
+    assert.ok(colored[1]!.endsWith('success prose stays neutral'));
+    assert.ok(colored[2]!.includes('\u001b[38;2;219;39;119m/Work/AgentX'));
   });
 
   it('should align each summary to its own longest label without color', () => {
@@ -109,8 +170,8 @@ describe('cli/output', () => {
         markerStyles,
       ),
       [
-        '<error>blocked  </error>inspection failed',
-        '<warning>drift    </warning>configuration differs',
+        '<error>blocked</error>  inspection failed',
+        '<warning>drift</warning>    configuration differs',
       ],
     );
   });
@@ -187,16 +248,16 @@ describe('cli/output', () => {
 
     assert.deepEqual(lines, [
       '',
-      'Messages',
+      'messages',
       '',
-      'ℹ Notice',
+      '⚠ warning',
+      '  Reload the Gateway, then',
+      '  verify a fresh assignment.',
+      '',
+      'ℹ info',
       '  Channel-wide operator',
       '  recognition remains subject to',
       '  tool policy.',
-      '',
-      '⚠ Warning',
-      '  Reload the Gateway, then',
-      '  verify a fresh assignment.',
     ]);
   });
 
@@ -206,10 +267,10 @@ describe('cli/output', () => {
       createCliStyles({ FORCE_COLOR: '1' }),
     );
 
-    assert.equal(ansis.strip(lines[3] ?? ''), 'ℹ Notice');
+    assert.equal(ansis.strip(lines[3] ?? ''), 'ℹ info');
     assert.equal(lines[4], '  Information remains readable.');
     assert.notEqual(lines[3], ansis.strip(lines[3] ?? ''));
-    assert.equal(lines[1], '\u001b[1mMessages\u001b[22m');
+    assert.equal(lines[1], '\u001b[1mmessages\u001b[22m');
   });
   it('should render red errors with neutral guidance at narrow widths and honor no-color', () => {
     const notices = [
@@ -238,7 +299,7 @@ describe('cli/output', () => {
       assert.match(plain.join('').replace(/\s+/gu, ''), /Cannotreconcile/u);
     }
     const colored = renderCliNotices(notices, createCliStyles({ FORCE_COLOR: '1' }), 120);
-    assert.ok(colored.some((line) => line.includes('✖ Error') && line.includes('\u001b[31m')));
+    assert.ok(colored.some((line) => line.includes('✖ error') && line.includes('\u001b[31m')));
     assert.ok(
       colored.some((line) => line.includes('Cannot reconcile') && !line.includes('\u001b[')),
     );
