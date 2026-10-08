@@ -32,7 +32,7 @@ import parseAgentManifest from '../manifest/parse.ts';
 import backupCreate from '../cli/backup-create.ts';
 import backupVerify from '../cli/backup-verify.ts';
 import backupRestore from '../cli/backup-restore.ts';
-import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import AgentManifestService, { type AgentManifestLoadResult } from '../manifest/service.ts';
 
 const executeFile = promisify(execFile);
 const manifest: AgentManifest = {
@@ -45,6 +45,14 @@ describe('workspace backup', () => {
   let root: string;
   let workspace: string;
   const service = new WorkspaceBackupService();
+  function commandManifestService() {
+    return new AgentManifestService({
+      getConfig: () => ({}),
+      logger: { error() {}, info() {}, warn() {} },
+      parseSessionAgentId: () => undefined,
+      resolveAgentWorkspaceDir: () => workspace,
+    });
+  }
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'workspace-backup-')));
     workspace = join(root, 'workspace');
@@ -935,27 +943,15 @@ describe('workspace backup', () => {
   });
 
   it('should allow trusted setup applies and restrict bound archive verification before reading', async () => {
-    const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
-      status: 'loaded',
-      manifest,
-      scope: { workspaceDir: workspace },
-      path: join(workspace, 'agent.yaml'),
-      digest: 'fixture',
-      diagnostics: [],
-      validationChecks: [],
-    };
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      'schema-version: 1\nagent: { id: tanaabot }\nbackup: { openclaw-state: off }\n',
+    );
     const output: string[] = [];
     let exitCode = 0;
     const options = {
       service,
-      manifestService: {
-        async loadForAgentId() {
-          return loaded;
-        },
-        async loadForCommandDirectory() {
-          return loaded;
-        },
-      },
+      manifestService: commandManifestService(),
       workspaceDir: workspace,
       environment: {},
       json: true,
@@ -992,6 +988,133 @@ describe('workspace backup', () => {
     await backupRestore({ ...options, archive: created.archive, target });
     assert.equal(JSON.parse(output.pop()!).diagnostics[0].code, 'backup-restore-operator-only');
     await assert.rejects(lstat(target), { code: 'ENOENT' });
+  });
+
+  describe('bound verification with real manifest discovery', () => {
+    async function verifyArchive(archive: string) {
+      const output: string[] = [];
+      let exitCode = 0;
+      await backupVerify({
+        service,
+        manifestService: commandManifestService(),
+        workspaceDir: workspace,
+        archive,
+        environment: {},
+        json: true,
+        output: {
+          writeStdout(value: string) {
+            output.push(value);
+          },
+          writeStderr() {},
+        },
+        setExitCode(code: number) {
+          exitCode = code;
+        },
+        commandAuthority: {
+          async resolve() {
+            return {
+              agentId: 'tanaabot',
+              workingDirectory: workspace,
+              admittedWorkingDirectories: [workspace],
+            };
+          },
+        },
+      });
+      return { result: JSON.parse(output.join('')), exitCode };
+    }
+
+    async function configureOutput(output: string) {
+      await writeFile(
+        join(workspace, 'agent.yaml'),
+        `schema-version: 1\nagent: { id: tanaabot }\nbackup:\n  openclaw-state: off\n  output: ${JSON.stringify(output)}\n`,
+      );
+    }
+
+    for (const managed of [false, true]) {
+      it(`should verify archives in a configured ${managed ? 'own-agent' : 'unmanaged'} external destination`, async () => {
+        const external = join(root, 'external');
+        await configureOutput(external);
+        if (managed) {
+          await mkdir(join(external, '.agent-system'), { recursive: true });
+          await writeFile(
+            join(external, '.agent-system', 'agent.yaml'),
+            'schema-version: 1\nagent: { id: tanaabot }\n',
+          );
+        }
+        const created = await service.create(
+          await service.plan({
+            manifest: { ...manifest, backup: { ...manifest.backup, output: external } },
+            workspaceDir: workspace,
+            bound: true,
+          }),
+        );
+        const { result, exitCode } = await verifyArchive(created.archive);
+        assert.equal(result.status, 'verified');
+        assert.equal(result.archive, created.archive);
+        assert.equal(result.agentId, 'tanaabot');
+        assert.equal(exitCode, 0);
+      });
+    }
+
+    for (const location of ['other-agent', 'invalid-manifest', 'symlinked-manifest']) {
+      it(`should reject a configured ${location} location before archive verification`, async () => {
+        const external = join(root, 'external');
+        await configureOutput(external);
+        await mkdir(external);
+        const locationManifest = join(external, 'agent.yaml');
+        if (location === 'symlinked-manifest')
+          await symlink(join(workspace, 'agent.yaml'), locationManifest);
+        else
+          await writeFile(
+            locationManifest,
+            location === 'other-agent'
+              ? 'schema-version: 1\nagent: { id: other }\n'
+              : 'schema-version: invalid\n',
+          );
+        const archive = join(external, 'unreadable-archive.tar.gz');
+        await writeFile(archive, 'not an archive');
+        const { result, exitCode } = await verifyArchive(archive);
+        assert.equal(result.status, 'failed');
+        assert.equal(result.diagnostics[0].code, 'backup-location-agent-mismatch');
+        assert.equal(exitCode, 1);
+      });
+    }
+
+    it('should reject archive aliases escaping the workspace before reading', async () => {
+      const outside = join(root, 'outside.tar.gz');
+      await writeFile(outside, 'not an archive');
+      const alias = join(workspace, 'archive.tar.gz');
+      await symlink(outside, alias);
+      const { result, exitCode } = await verifyArchive(alias);
+      assert.equal(result.diagnostics[0].code, 'backup-archive-outside-scope');
+      assert.equal(exitCode, 1);
+    });
+
+    it('should discover another agent behind an archive alias into the configured destination', async () => {
+      const external = join(root, 'external');
+      await configureOutput(external);
+      await mkdir(external);
+      await writeFile(join(external, 'agent.yaml'), 'schema-version: 1\nagent: { id: other }\n');
+      const archive = join(external, 'archive.tar.gz');
+      await writeFile(archive, 'not an archive');
+      const alias = join(workspace, 'archive.tar.gz');
+      await symlink(archive, alias);
+      const { result, exitCode } = await verifyArchive(alias);
+      assert.equal(result.diagnostics[0].code, 'backup-location-agent-mismatch');
+      assert.equal(exitCode, 1);
+    });
+
+    it('should reject another agent archive inside the own workspace', async () => {
+      const created = await service.create(
+        await service.plan({
+          manifest: { ...manifest, agent: { id: 'other' } },
+          workspaceDir: workspace,
+        }),
+      );
+      const { result, exitCode } = await verifyArchive(created.archive);
+      assert.equal(result.diagnostics[0].code, 'backup-agent-mismatch');
+      assert.equal(exitCode, 1);
+    });
   });
 
   it('should reject configured destinations belonging to another agent before creating files', async () => {
