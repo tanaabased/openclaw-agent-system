@@ -122,16 +122,19 @@ The receipt selects retained evidence; it does not grant authority by itself.
    - **Other:** retain necessary work outside those concerns; prefer a descriptive
      heading when useful.
 
-   Finish each section that anticipates file edits with an **Expected file changes**
-   list grounded in the inspected repository: operation, path, and brief purpose.
-   Give each file one primary section; identify move/merge sources and destinations,
-   mark provisional paths, and label generated or lockfile changes. Do not invent
-   files or line-count estimates. This is an expected footprint, not a frozen patch
-   manifest; the implementation handoff should surface material deviations.
+   Within each section, pair each intended change with its inspected file or small
+   group of related files, operation, and necessary rationale. Describe the work once;
+   do not append a separate file inventory or repeat it in a section introduction.
+   Follow the presentation reference's file notation, including provisional paths.
+   State cross-cutting decisions once and keep consequential sequencing and delivery
+   checks in Operations. Group test cases by behavior and owning files; enumerate
+   individual cases only when they capture a material requirement or likely mistake.
    Check that pruning one concern has not broken another. Keep investigation and planning
    with the assessor; do not add separate planning workflows or repeated optimization loops.
-   Cut needless repetition, but retain implementation details, edge cases, schema choices,
-   limits, and examples needed for a reliable handoff. Finish the engineering plan before
+   Scale detail to the issue: retain decisions, constraints, and non-obvious failure
+   cases needed for a reliable handoff; leave routine implementation mechanics to the
+   implementer. Remove repeated scope exclusions, safeguards, and evidence already
+   stated elsewhere. Finish the engineering plan before
    writing summary, assessment, and planSummary. Do not compress the plan into those fields.
 
 6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper

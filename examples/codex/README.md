@@ -40,6 +40,10 @@ and a normalized title: reconciliation must find the existing chat, verify its i
 correct the title before assessment, and avoid a second creation. Check summary concision
 and agreement with the full plan semantically; verify that the complete plan follows inline
 without a word-count target or an extra click. Do not assert exact model wording.
+Check that full-plan sections pair each change with its files instead of repeating
+the work in a separate inventory. Required decisions and meaningful validation must
+survive the shorter presentation; grouped test cases must still identify the behavior
+being checked. Do not invent file edits for sections that only describe operations.
 For readability acceptance, review the assessment and summary without reading the full
 plan: identify the affected user, their task and current friction, the proposed change,
 and any consequential choice or limitation. Reject an opening that only lists internal

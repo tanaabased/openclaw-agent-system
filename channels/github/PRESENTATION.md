@@ -150,11 +150,7 @@ tables when they make the complete result easier to review.
 
 ### Code
 
-- <intended change>
-
-**Expected file changes**
-
-- **Modify:** <path> — <purpose>
+- **Modify <file or related files>:** <intended change and necessary rationale>
 ```
 
 Use the applicable subsections **Code**, **Documentation**, **Tests**, **Operations**,
@@ -205,18 +201,26 @@ to understand the proposed experience and make the relevant decision. Blocking q
 remain visible in the clarification outcome; never disguise them as settled decisions.
 
 Retain the user-facing summary and full plan together and keep their facts consistent.
-The full plan has no word-count or bullet-count target: preserve the details needed for
-implementation, including file changes, documentation/test justifications, sequencing,
-risks, and evidence. Remove needless repetition without cutting necessary detail.
+The full plan has no word-count or bullet-count target. Scale detail to the issue:
+preserve implementation decisions, file changes, necessary rationale, consequential
+sequencing, and non-obvious risks. Leave routine mechanics to implementation. State
+shared constraints once; link evidence rather than repeating its findings throughout.
 Render the complete full plan inline immediately after its summary, with no accordion,
 separate-document link, or additional click. Never truncate it in the renderer.
 Older retained results without a separate plan summary still show their complete full plan.
 
-Place a compact **Expected file changes** list after the bullets in each section that
-anticipates file edits. Use **Add**, **Modify**, **Remove**, or **Move/merge**, followed by
-the path and purpose. Show sources and destinations for moves/merges, identify provisional
-paths, label generated files, and give each file one primary section. Omit empty lists
-and line-count estimates. Use links to inspected files where the host supports them.
+Pair each proposed change with its file or small group of related files in the same
+bullet. Use **Add**, **Modify**, **Remove**, or **Move/merge**, followed by the paths and
+the work to do; do not repeat the work in a separate file inventory. Show sources and
+destinations for moves/merges, identify provisional paths, label generated and lockfile
+changes, and give each file one primary section. Use short repository-relative labels
+linked to inspected files where the host supports them; do not display absolute paths
+as long bullet labels. Do not invent files or line-count estimates. These are expected
+changes, not a frozen patch manifest; surface material deviations during implementation.
+Keep cross-file sequencing and delivery checks in Operations. In Tests, group cases by
+behavior and owning files; spell out individual cases only when needed to preserve an
+important requirement or prevent a likely mistake. Work without file edits needs no
+invented file list.
 
 The private routing card follows the assessment. Its values come from saved routing and
 native readback, with requested selection distinct from effective execution. Preserve
