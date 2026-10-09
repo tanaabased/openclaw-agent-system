@@ -2,7 +2,7 @@
 
 ### Compatibility
 
-- Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.9.8`. [#218](https://github.com/tanaabased/openclaw-agent-system/issues/218)
+- Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.9.9`. [#218](https://github.com/tanaabased/openclaw-agent-system/issues/218) [#281](https://github.com/tanaabased/openclaw-agent-system/issues/281)
 - Updated supported Node.js versions to `>=24.16.0 <25 || >=26.1.0`. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214)
 
 ### New Features
