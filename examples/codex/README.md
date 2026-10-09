@@ -47,6 +47,13 @@ mechanisms, even if it is concise and technically correct. Compare it with the i
 repository findings, and full plan to catch invented benefits or concealed uncertainty.
 Use a fresh issue as well as revisions so the trial does not merely reproduce a coached
 example; assess meaning rather than word counts or a forbidden-words list.
+For the opening editor, inspect the native helper call: it must start without inherited
+conversation and receive only the editor instructions and factual user-journey brief,
+not the full plan or earlier opening. Verify that the assessor checks its claims against
+the plan and that the full plan, outcome, questions, and saved routing remain intact.
+Include a clarification case so editing does not turn an unresolved choice into a promise;
+if isolated helpers are unavailable, require an explicit limitation rather than a false
+claim that the separate pass ran. This is live semantic evidence, not an exact-word test.
 For an explicitly authorized reassessment pilot, preview and apply an operator reset
 only after the prior chat is idle with a recorded result. Verify that its evidence
 remains retained, an ordinary poll creates nothing, and a subsequent assignment event

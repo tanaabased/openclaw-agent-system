@@ -183,26 +183,28 @@ same sentence; do not make the reader translate internal vocabulary. Keep reposi
 readiness and implementation architecture out of the assessment unless they change
 the user's understanding of the problem.
 
-For example, instead of “add a trusted assessment selection contract and retain its
-provenance,” write “let you add your own assessment instructions or choose a different
-assessment procedure, and show which instructions were used.” The second version
-explains what the user gains without discarding the technical detail from the full plan.
+The opening describes a sequence the reader can picture: what they are trying to do,
+where today's experience falls short, what they would do after the change, what they
+would receive, and what they could do if something goes wrong. Name only actions and
+outcomes supported by the investigation. A list of components or friendlier synonyms
+for those components is not a user journey.
 
-Before submission, rewrite Assessment and Plan summary from the user's perspective
-after finishing the engineering plan; do not merely reread or compress that plan.
-Then read the rewritten opening without the full plan. The reader
-must be able to identify who has what problem, why it matters, what would change, and
-any decision or limitation that affects approval. Rewrite passages that require knowledge
-of internal names or merely announce implementation mechanisms, then check that the
-revised opening still agrees with the full plan. Keep this review out of the visible result.
+For example: “You could give your agent extra instructions or choose another assessment
+skill. When you assign an issue, it would follow that choice and return its assessment
+and plan in the usual chat. If it cannot find the chosen skill, it would tell you what
+to fix.” This explains an experience; “add a supported selection pathway” does not.
 
-Keep Assessment short. Aim for 300–600 words in Plan summary when the work warrants it;
-use less for simple work. This is a target, not a quota, minimum, or enforced limit.
-Surface consequential decisions, dependencies, and material risks in the summary so the
-user can review the approach before reading the details. Blocking questions remain visible
-in the clarification outcome; a summary must not disguise them as settled decisions.
+Read Assessment and Plan summary without the full plan. The reader must be able to
+explain their actions and expected results, along with any decision or limitation that
+affects approval. Keep consequential uncertainty visible. Do not pad the opening with
+branch bookkeeping, testing checklists, or architectural reassurance. Keep this review
+out of the visible result; the assessment skill owns how the editing pass is performed.
 
-Write the full plan first, then derive its summary. Retain and revise both together.
+Keep Assessment short. Plan summary has no word quota: use only what the user needs
+to understand the proposed experience and make the relevant decision. Blocking questions
+remain visible in the clarification outcome; never disguise them as settled decisions.
+
+Retain the user-facing summary and full plan together and keep their facts consistent.
 The full plan has no word-count or bullet-count target: preserve the details needed for
 implementation, including file changes, documentation/test justifications, sequencing,
 risks, and evidence. Remove needless repetition without cutting necessary detail.

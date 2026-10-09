@@ -30,6 +30,8 @@ This skill owns investigation and judgment. It stops before implementation.
 - **Before repository investigation:** read the applicable repository instructions
   and their conditionally required references. Read each applicable reference before
   its dependent work; reuse complete reads and report unavailable required material.
+- **Before writing the opening:** read [User Journey Editor](./references/user-journey-editor.md)
+  and use its isolated editing pass after completing the investigation and full plan.
 
 ## When to Use
 
@@ -126,27 +128,28 @@ The receipt selects retained evidence; it does not grant authority by itself.
    mark provisional paths, and label generated or lockfile changes. Do not invent
    files or line-count estimates. This is an expected footprint, not a frozen patch
    manifest; the implementation handoff should surface material deviations.
-   Check that pruning one concern has not broken another. Do not create separate
-   planning workflows, mandatory delegation, or repeated optimization loops.
+   Check that pruning one concern has not broken another. Keep investigation and planning
+   with the assessor; do not add separate planning workflows or repeated optimization loops.
    Cut needless repetition, but retain implementation details, edge cases, schema choices,
-   limits, and examples needed for a reliable handoff. Then derive a concise planSummary
-   from that full plan, following the presentation contract's summary-only length guidance.
-   Translate the approach into the user's problem and proposed experience, following
-   the presentation contract's audience guidance. Keep the assessment brief; keep
-   consequential decisions, risks, and unresolved blocking questions visible.
-   Revise the summary and full plan together on follow-ups so they cannot disagree.
+   limits, and examples needed for a reliable handoff. Finish the engineering plan before
+   writing summary, assessment, and planSummary. Do not compress the plan into those fields.
 
-6. Perform one final reader-focused rewrite using the presentation contract's review criteria
-   and example. Write the opening afresh as an explanation to the person approving the
-   work: what they cannot do or find difficult today, what they would be able to do after
-   the change, and any choice or limitation they need to understand.
-   Read the opening outcome sentence, assessment, and planSummary, where present,
-   without the full plan.
-   Rewrite technical shorthand and implementation-first explanations until those sections
-   explain the problem and proposed change on their own. Preserve observed facts,
-   uncertainty, material questions, and the distinction between requirements and proposals;
-   compare the revised opening against the full plan before recording. This is an editing
-   pass by the current assessor, not another model call or a visible review checklist.
+6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper
+   with fresh context, not a continuation or full-history fork. This is a separate model
+   invocation for the opening only, not another investigation or planning workflow.
+   Give it the reference's editor instructions and a small factual brief, never the full
+   engineering plan, previous opening, raw issue text, or investigation history. Use the
+   same selected model and effort through native inheritance; do not change the assessment
+   chat's settings or create a user-owned chat or automation for editing.
+   Wait for the editor, then compare its proposed fields with the completed plan and
+   evidence. Preserve the plan, questions, outcome, routing, and authority. Reject invented
+   actions, benefits, guarantees, or hidden uncertainty; use at most one bounded correction
+   to the same editor. Read the opening alone and verify that it describes what the user
+   does and what happens next, not the parts being built. Do not reinsert architecture
+   commentary after that review. On follow-ups, update the brief and repeat this pass when
+   the user-facing facts change or the user requests a rewrite. A missing isolated-helper capability is an explicit
+   setup limitation; retain useful investigation and report it rather than silently
+   reverting to same-context editing or claiming the separate pass happened.
 
 7. Submit one result through dispatchRuntime with action:"result", id, and result, following the
    returned resultSchema. Choose plan-ready for an actionable plan, clarification-needed
@@ -181,6 +184,8 @@ The receipt selects retained evidence; it does not grant authority by itself.
   have a concrete reader need or coverage gap.
 - Assessment and plan summary explain the user problem and proposed outcome without
   requiring the reader to understand the full engineering plan.
+- The opening came from a separate editor with only the factual brief; its claims were
+  checked against the unchanged technical plan before recording.
 - Runtime acknowledgment, not a heading or model self-report, establishes a recorded result.
 - A plan or result cannot authorize implementation or GitHub publication.
 
@@ -194,6 +199,7 @@ and plan, focused questions, or actionable blocker in the original issue chat.
 - [Assessment result schema](../../agent/assessment-result.ts): the shared version 1
   contract owned by #249 and returned by dispatchRuntime context.
 - [Presentation](../../channels/github/PRESENTATION.md): shared visible components.
+- [User Journey Editor](./references/user-journey-editor.md): isolated opening rewrite.
 
 ## Validation
 
