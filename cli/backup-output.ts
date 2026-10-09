@@ -20,6 +20,7 @@ export function writeBackupFailure(
   options: BackupCliOutput,
   error: unknown,
   humanMessage?: string,
+  label = 'backup',
 ): void {
   const code = error instanceof BackupError ? error.code : 'backup-failed';
   const message = error instanceof Error ? error.message : 'The workspace backup operation failed.';
@@ -28,11 +29,10 @@ export function writeBackupFailure(
   else
     writeCliLines(options.output, [
       '',
-      ...renderCliSummary(
-        [{ label: 'backup', style: 'error', value: `failed (${code})` }],
-        options.styles,
-        { rowPadding: 0, terminalColumns: options.terminalColumns ?? process.stdout.columns },
-      ),
+      ...renderCliSummary([{ label, style: 'error', value: `failed (${code})` }], options.styles, {
+        rowPadding: 0,
+        terminalColumns: options.terminalColumns ?? process.stdout.columns,
+      }),
       '',
     ]);
   writeCliDiagnosticNotices(options, [
