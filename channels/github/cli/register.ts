@@ -6,7 +6,7 @@ import {
   writeCliLines,
 } from '../../../cli/output.ts';
 import type { CommandLike } from '../../../cli/register.ts';
-import { formatErrorDiagnostic } from '../../../core/logger.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import refreshNotificationsAgentSystem from './refresh.ts';
@@ -47,7 +47,7 @@ async function runOneShot(
   } catch (error) {
     writeCliError(
       options.output,
-      formatErrorDiagnostic('github-notifications', error, failureCode),
+      formatRedactedErrorDiagnostic('github-notifications', error, failureCode),
       options,
     );
     setExitCode(1);
