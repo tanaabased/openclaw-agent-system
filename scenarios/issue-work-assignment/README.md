@@ -175,6 +175,17 @@ for level in error info debug; do
   grep -F 'code=manifest-shadowed' "$TMPDIR/notification-status.stderr"
 done
 
+# should collect human notification status warnings in one trailing messages section
+cd "$TMPDIR/agent-system-notifications"
+test ! -e .agent-system/agent.yaml
+cp agent.yaml .agent-system/agent.yaml
+trap 'rm -f .agent-system/agent.yaml' EXIT
+status_output="$(NO_COLOR=1 OPENCLAW_LOG_LEVEL=error openclaw agent-system notifications status 2>&1)"
+printf '%s\n' "$status_output" | grep -F 'scope' | grep -F 'all items'
+printf '%s\n' "$status_output" | grep -F 'capacity' | grep -F 'agent-wide'
+printf '%s\n' "$status_output" | grep -Fx 'messages'
+printf '%s\n' "$status_output" | grep -F 'code=manifest-shadowed'
+
 # should admit an approved issue while a bounded refresh cannot acquire its execution lease
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
@@ -198,6 +209,19 @@ printf '%s' "$execution_lock" > "$TMPDIR/notification-execution-lock"
 blocked_refresh="$(openclaw agent-system notifications refresh --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --timeout 30 --json || true)"
 jq -se 'length == 1 and (.[0] | .status == "skipped" and .code == "github-notification-cycle-aborted" and (.lastSuccessfulPollAt | type) == "number")' <<< "$blocked_refresh"
 openclaw agent-system notifications status --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --json | jq -e --argjson number "$issue_number" '.status == "ready" and (.items | length) == 1 and (.items[0] | .number == $number and .disposition == "approved" and .stage == "admitted" and .worktree == "pending")'
+
+# should expose selected issue scope and agent-wide capacity in human notification status
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+status_output="$(NO_COLOR=1 OPENCLAW_LOG_LEVEL=error openclaw agent-system notifications status --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number")"
+printf '%s\n' "$status_output" | grep -F 'agent' | grep -F 'notification-data'
+printf '%s\n' "$status_output" | grep -F 'scope' | grep -F "issue tanaabased/big-test-bucket#$issue_number"
+printf '%s\n' "$status_output" | grep -F 'status' | grep -F 'ready'
+printf '%s\n' "$status_output" | grep -F 'baseline' | grep -F 'ready'
+printf '%s\n' "$status_output" | grep -F 'capacity' | grep -F 'agent-wide'
+printf '%s\n' "$status_output" | grep -F 'approved' | grep -F "tanaabased/big-test-bucket#$issue_number"
+printf '%s\n' "$status_output" | grep -F 'stage=admitted'
+printf '%s\n' "$status_output" | grep -F 'worktree' | grep -F 'pending'
 
 # should retain a prepared independent assignment when native classification is denied
 cd "$TMPDIR/agent-system-notification-actor"
