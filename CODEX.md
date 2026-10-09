@@ -55,6 +55,7 @@ Git and GitHub use native host commands and authorization.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guide native host Git operations.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guide native host GitHub operations.
 - [Install](./skills/install/SKILL.md) — Apply Codex setup and synchronize declared automations through the native app.
+- [Issue assessment](./skills/issue-assessment/SKILL.md) — Assess an admitted issue in its native worktree and retain a plan, questions, or a setup blocker.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 
 ## Model Routing
@@ -83,8 +84,10 @@ intake through one managed `github-issue-assignment` schedule and one retained c
 `ISSUE ASSIGNMENTS`, displayed under `AGENT SYSTEM`. The automation is named
 `📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
 `interval-minutes`; the automation ID is reserved. Intake records eligible
-assignments only. Dispatch, assessment, review requests, feedback, and OpenClaw v2
-execution remain unavailable.
+assignments durably. After explicit reconciliation of the assessment-enabled
+schedule, `plan` assignments can create native issue chats and worktrees in existing
+saved local Git-backed projects. Review requests, feedback, implementation, GitHub
+publication, and OpenClaw v2 execution remain unavailable through this Codex path.
 
 Use `$agent-system-install` to authorize and reconcile the schedule. Before activation,
 Install requires native recurring approval for the exact scanner command and an
@@ -101,8 +104,45 @@ retain it and deduplicate assignments by event identity.
 
 Use `$agent-system-doctor` to inspect admitted issues, assigning actors, event IDs,
 baseline, checkpoint, and blockers without contacting GitHub. Scheduled scans use
-the trusted `intakeRuntime` from Agent System context and stay quiet when unchanged.
-Records require fresh authorization before any later execution.
+the trusted `intakeRuntime` from Agent System context. The assessment-enabled
+schedule also revisits retained dispatch work through `dispatchRuntime`, even when
+intake is unchanged. Unchanged combined results stay quiet. Records require fresh
+authorization before execution; previous intake-only consent does not enable dispatch.
+
+### Issue Assessment
+
+Add the source checkout as a saved local Codex project before assigning an issue.
+Dispatch verifies its GitHub origin and, when configured, constrains it to
+`git.worktrees.repositories.local.github-<repository-database-id>`. It refreshes the
+repository's default branch and pins the exact starting commit for the native
+worktree. Missing or ambiguous projects retain one actionable blocker for retry;
+this path does not clone repositories or register projects.
+
+Bounded issue evidence and structured metadata inform the shared model router.
+The saved model and effort are passed explicitly to native creation and retained
+on continuation. Requested settings and verified effective settings remain distinct.
+The issue chat performs read-only assessment and records one of three outcomes:
+`plan-ready`, `clarification-needed`, or `operator-setup-blocker`, with evidence and
+completed/remaining investigation. A user follow-up may revise the assessment in
+the same chat. A result never authorizes implementation or publication.
+
+Native creation receipts, chat identity, worktree, and results survive interrupted
+polls. An uncertain creation is reconciled against native creation history; it is
+never blindly repeated. Preserve the retained evidence when repairing access,
+project setup, or host failures. Unresolved creations continue to consume capacity
+until reconciled, preventing a succession of potentially live duplicate chats.
+After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
+with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.
+The preview requires the exact native rejected call and no child or pending receipt.
+Repeat with its returned `digest` to retain the denied attempt and permit fresh
+preparation after resuming the schedule. Timeouts and unknown outcomes cannot use
+this recovery path.
+An automatic-review rejection additionally requires renewed operator approval for
+the exact failed call. Supply its `approvedCallId` in both preview and apply, and
+communicate that authorization to the intake chat before resuming. This field
+records an approval already given; it does not grant one.
+Packed/headless checks do not prove native desktop rendering or scheduled delivery;
+those require a separately authorized installed-plugin occurrence.
 
 Removing or revoking policy stops admission. Run authorized Install to pause the
 owned job, including when the manifest is missing or invalid. Ownership and intake
@@ -110,6 +150,13 @@ evidence are retained for recovery; do not delete them to clear a blocker.
 See [automation recovery](#ownership-and-recovery) for native write failures.
 
 ## Repository Automations
+
+Installer-created automation chats use native `auto_review` with the
+`workspace-write` sandbox and `on-request` approvals. Setup verifies the returned
+permissions and their persistence through a fresh native process before marking
+the chat ready. Native policy remains authoritative; auto-review may deny an
+action. Existing ready chats retain their selected permissions. Neither setup nor
+the plugin writes global approval rules to enable auto-review.
 
 Declare recurring work in `agent.yaml`:
 

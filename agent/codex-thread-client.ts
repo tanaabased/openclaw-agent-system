@@ -142,8 +142,22 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
 export function codexThreadAdapter(
   request: CodexThreadRequest,
   workspace: string,
-  verifyDurable?: (id: string) => Promise<void>,
+  verifyDurable?: (id: string) => Promise<Record<string, unknown>>,
 ): AutomationThreadAdapter {
+  const permissions = {
+    approvalPolicy: 'on-request',
+    approvalsReviewer: 'auto_review',
+    sandbox: 'workspace-write',
+  };
+  function verifyPermissions(result: Record<string, unknown>) {
+    if (
+      result.approvalPolicy !== permissions.approvalPolicy ||
+      !['auto_review', 'guardian_subagent'].includes(String(result.approvalsReviewer)) ||
+      !nativeObject(result.sandbox) ||
+      result.sandbox.type !== 'workspaceWrite'
+    )
+      throw new AutomationError('automation-thread-permissions-diverged');
+  }
   async function lookup(id: string) {
     let result: Record<string, unknown>;
     try {
@@ -199,6 +213,7 @@ export function codexThreadAdapter(
         const result = await request('thread/start', {
           cwd: workspace,
           ephemeral: false,
+          ...permissions,
           ...(settings?.model ? { model: settings.model } : {}),
           ...(settings?.effort ? { config: { model_reasoning_effort: settings.effort } } : {}),
           threadSource: `agent-system:${record.key}`,
@@ -207,9 +222,10 @@ export function codexThreadAdapter(
           throw new AutomationError('automation-thread-response-invalid');
         id = result.thread.id;
         await saveId(id);
+        verifyPermissions(result);
       } else {
         // known identity can resume; loss before durable materialization remains a recovery barrier.
-        await request('thread/resume', { threadId: id });
+        verifyPermissions(await request('thread/resume', { threadId: id, ...permissions }));
       }
       await request('thread/inject_items', {
         threadId: id,
@@ -227,8 +243,9 @@ export function codexThreadAdapter(
         ],
       });
       await request('thread/unsubscribe', { threadId: id });
-      if (verifyDurable) await verifyDurable(id);
-      else await request('thread/resume', { threadId: id });
+      verifyPermissions(
+        verifyDurable ? await verifyDurable(id) : await request('thread/resume', { threadId: id }),
+      );
       return id;
     },
     async rename(id, name) {

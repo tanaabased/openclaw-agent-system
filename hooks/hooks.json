@@ -1,5 +1,4 @@
 {
-  "description": "Load the explicitly bound Agent System workspace context.",
   "hooks": {
     "SessionStart": [
       {

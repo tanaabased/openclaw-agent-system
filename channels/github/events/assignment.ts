@@ -1,6 +1,5 @@
-import githubNotificationCard, {
-  githubNotificationMarkdownText,
-} from '../conversation/presentation/card.ts';
+import { githubNotificationMarkdownText } from '../conversation/presentation/card.ts';
+import assignmentCard from '../conversation/presentation/assignment-card.ts';
 import githubNotificationAssignmentEventInstructions from '../conversation/prompts/event-assignment.ts';
 import githubNotificationAssignmentResponseInstructions from '../conversation/prompts/response-assignment.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
@@ -30,11 +29,10 @@ export function githubNotificationAssignmentCard(
     modeId === 'guided'
       ? 'The workspace is prepared; wait for operator direction'
       : 'Please begin working on it';
-  return githubNotificationCard({
-    emoji: projection.emoji,
-    summary: `[@${githubNotificationMarkdownText(projection.sender.label)}](${projection.sender.url}) assigned you to [${githubNotificationMarkdownText(projection.item.label)}](${projection.item.url}). ${action} in \`${githubNotificationMarkdownText(modeId)}\` mode.`,
-    title: `${projection.item.kind} assigned`,
-  });
+  return assignmentCard(
+    projection,
+    `${action} in \`${githubNotificationMarkdownText(modeId)}\` mode.`,
+  );
 }
 
 /** Describe the registered assignment model event without scheduling it. */

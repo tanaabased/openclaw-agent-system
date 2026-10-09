@@ -1,5 +1,6 @@
 import process from 'node:process';
 
+import { runCodexDispatch } from './codex-dispatch.ts';
 import { inspectCodexIntake, runCodexIntake } from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 
@@ -224,6 +225,28 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
+  if (command === 'dispatch') {
+    if (args[1] === '--help') {
+      process.stdout.write(
+        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, or retry-denied. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection; omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+      );
+      return;
+    }
+    const pluginData = parsePluginData(args.slice(1));
+    const request: unknown = JSON.parse(await readStandardInput());
+    if (!request || typeof request !== 'object' || Array.isArray(request))
+      throw new Error('dispatch-action-invalid');
+    const { action, ...input } = request as Record<string, unknown>;
+    if (
+      typeof action !== 'string' ||
+      !['inspect', 'next', 'prepare', 'reconcile', 'context', 'result', 'retry-denied'].includes(
+        action,
+      )
+    )
+      throw new Error('dispatch-action-invalid');
+    writeJson(await runCodexDispatch(pluginData, action, input));
+    return;
+  }
   if (command === 'model-routing') {
     const pluginData = parsePluginData(args.slice(1));
     writeJson(await codexModelRouting(pluginData, JSON.parse(await readStandardInput())));
@@ -316,7 +339,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     return;
   }
   throw new Error(
-    'expected session-start, binding, setup, automations, intake, or model-routing command',
+    'expected session-start, binding, setup, automations, intake, dispatch, or model-routing command',
   );
 }
 
@@ -334,7 +357,9 @@ runCodexRuntime().catch((error: unknown) => {
           error instanceof RoutingError ||
           error instanceof CodexAutomationError
         ? { code: error.code }
-        : {};
+        : /^(?:dispatch|assessment-result)-[a-z-]+$/u.test(message)
+          ? { code: message }
+          : {};
   process.stderr.write(`${JSON.stringify({ status: 'error', ...details, message })}\n`);
   process.exitCode = 1;
 });

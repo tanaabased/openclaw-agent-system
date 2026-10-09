@@ -266,7 +266,7 @@ async function resolveThreads(selected: Awaited<ReturnType<typeof snapshot>>, ap
         async (id) => {
           await connection!.close();
           connection = await connectCodexThreads(selected.workspace, selected.codexHome);
-          await connection.request('thread/resume', { threadId: id });
+          return connection.request('thread/resume', { threadId: id });
         },
       );
     return await new AutomationThreads(
@@ -401,6 +401,42 @@ export async function inspectCodexAutomations(
 ) {
   const selected = await snapshot(pluginData, dependencies);
   return (await plan(selected, inputs)).result;
+}
+
+/** dispatch requires the newly approved schedule, not merely historical intake activation. */
+export async function inspectCodexDispatchActivation(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies = {},
+  pausedRecovery = false,
+) {
+  const selected = await snapshot(pluginData, dependencies);
+  const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
+  const record = selected.ledger.records.find((entry) => entry.id === intakeAutomationId);
+  if (
+    selected.cleanupOnly ||
+    selected.ledger.pending ||
+    !job ||
+    job.payload.kind !== 'prompt' ||
+    !record ||
+    record.removed ||
+    record.definition.kind !== 'heartbeat' ||
+    record.definition.status !== 'ACTIVE' ||
+    record.definition.prompt !==
+      job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId)
+  )
+    throw new Error('dispatch-activation-required');
+  const saved = await readCodexAutomations(selected.codexHome);
+  const actual = saved.find((entry) => entry.id === record.nativeId);
+  if (
+    !actual ||
+    !savedMatches(
+      actual,
+      pausedRecovery ? { ...record.definition, status: 'PAUSED' } : record.definition,
+      selected.workspace,
+    )
+  )
+    throw new Error('dispatch-activation-required');
+  return { sourceThreadId: record.definition.targetThreadId };
 }
 
 /** explicit native conversation sync; schedules remain owned by the desktop app tools. */

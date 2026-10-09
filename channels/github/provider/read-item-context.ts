@@ -70,7 +70,7 @@ export default async function readItemContext(
           '-F',
           `page=${page}`,
           '--jq',
-          '[.[]|{authorLogin:(.user.login//"unknown"),body,createdAt:.created_at}]',
+          '[.[]|{databaseId:.id,authorLogin:(.user.login//"unknown"),body,createdAt:.created_at}]',
         ],
         'item-context comments',
       );
@@ -100,6 +100,21 @@ export default async function readItemContext(
       );
       commentsTruncated ||= authorLogin.truncated || commentBody.truncated;
       comments.push({
+        ...(typeof comment.databaseId === 'number' &&
+        Number.isSafeInteger(comment.databaseId) &&
+        comment.databaseId > 0
+          ? {
+              url:
+                'https://github.com/' +
+                owner +
+                '/' +
+                name +
+                '/issues/' +
+                number +
+                '#issuecomment-' +
+                comment.databaseId,
+            }
+          : {}),
         authorLogin: authorLogin.text,
         body: commentBody.text,
         createdAt: githubResponseTimestamp(comment.createdAt, 'item-context comment time'),
@@ -155,6 +170,7 @@ export default async function readItemContext(
     }
   }
   let metadata;
+  let nativeMetadata;
   if (includeRoutingMetadata && itemType === 'issue') {
     let native = nativeRoutingMetadata(undefined);
     try {
@@ -172,10 +188,12 @@ export default async function readItemContext(
     } catch {
       // Optional metadata failure remains distinct from a missing field.
     }
+    nativeMetadata = native;
     metadata = routingMetadata(native, body.text);
   }
   return {
     ...(metadata === undefined ? {} : { routingMetadata: metadata }),
+    ...(nativeMetadata === undefined ? {} : { nativeRoutingMetadata: nativeMetadata }),
     body: body.text,
     comments,
     ...(itemType === 'pull-request' ? { files } : {}),

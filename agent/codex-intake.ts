@@ -18,6 +18,7 @@ import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
+import readItemContext from '../channels/github/provider/read-item-context.ts';
 import { githubResponseIdentity } from '../channels/github/provider/work-event-normalization.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
@@ -67,10 +68,14 @@ export async function connectCodexGitHub(
   } catch {
     throw new IntakeError('intake-github-identity-invalid');
   }
-  return new GitHubWorkItemClient(new GitHubWorkEventApiClient({ identity, execute }));
+  const api = new GitHubWorkEventApiClient({ identity, execute });
+  return Object.assign(new GitHubWorkItemClient(api), {
+    getItemContext: (owner: string, name: string, number: number) =>
+      readItemContext(api, owner, name, number, 'issue', true),
+  });
 }
 
-async function selected(pluginData: string, deps: CodexIntakeDependencies) {
+export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDependencies) {
   const inspection = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
   if (
     inspection.status !== 'bound' ||
@@ -94,7 +99,15 @@ async function selected(pluginData: string, deps: CodexIntakeDependencies) {
       agentId: loaded.manifest.agent.id,
     }),
   );
-  return { policy, store, workspace, agentId: loaded.manifest.agent.id, digest: loaded.digest };
+  return {
+    policy,
+    store,
+    workspace,
+    agentId: loaded.manifest.agent.id,
+    digest: loaded.digest,
+    manifest: loaded.manifest,
+    codexHome: namespace,
+  };
 }
 
 async function retainedStore(pluginData: string, deps: CodexIntakeDependencies) {
@@ -137,7 +150,7 @@ async function retainedStore(pluginData: string, deps: CodexIntakeDependencies) 
 }
 
 async function connectSelected(
-  current: Awaited<ReturnType<typeof selected>>,
+  current: Awaited<ReturnType<typeof selectCodexIntake>>,
   deps: CodexIntakeDependencies,
   signal: AbortSignal,
 ) {
@@ -157,7 +170,7 @@ async function connectSelected(
 
 /** authorized install verifies native identity before it prepares an active schedule write. */
 export async function preflightCodexIntake(pluginData: string, deps: CodexIntakeDependencies = {}) {
-  const current = await selected(pluginData, deps);
+  const current = await selectCodexIntake(pluginData, deps);
   const client = await connectSelected(current, deps, AbortSignal.timeout(30_000));
   const state = await current.store.read();
   if (state && !githubIdentityMatches(state.account, client.identity))
@@ -171,7 +184,7 @@ export async function runCodexIntake(
   deps: CodexIntakeDependencies = {},
 ) {
   try {
-    const current = await selected(pluginData, deps);
+    const current = await selectCodexIntake(pluginData, deps);
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const { policy, digest } = current.policy;
     return await scanAssignments({
@@ -190,7 +203,7 @@ export async function runCodexIntake(
         );
       },
       async assertCurrent() {
-        const fresh = await selected(pluginData, deps);
+        const fresh = await selectCodexIntake(pluginData, deps);
         if (
           fresh.digest !== current.digest ||
           fresh.store.location.scope !== current.store.location.scope
@@ -237,7 +250,7 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
   let code: string | undefined;
   let context: { workspaceDir: string; scope: string } | undefined;
   try {
-    const current = await selected(pluginData, deps);
+    const current = await selectCodexIntake(pluginData, deps);
     context = { workspaceDir: current.workspace, scope: current.store.location.scope };
     state = await current.store.read();
     code = !current.policy

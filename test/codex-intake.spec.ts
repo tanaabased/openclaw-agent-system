@@ -9,6 +9,7 @@ import {
   acknowledgeCodexAutomation,
   codexIntakePermission,
   inspectCodexAutomations,
+  inspectCodexDispatchActivation,
   prepareCodexAutomation,
   syncCodexAutomationThreads,
 } from '../agent/codex-automations.ts';
@@ -210,6 +211,27 @@ describe('agent/codex-intake', () => {
     await acknowledgeCodexAutomation(pluginData, desired.digest, undefined, deps);
     assert.equal((await plan()).status, 'aligned');
     assert.equal((await plan()).actions.length, 0);
+    assert.deepEqual(await inspectCodexDispatchActivation(pluginData, deps), {
+      sourceThreadId: 'intake-thread',
+    });
+    await assert.rejects(
+      inspectCodexDispatchActivation(pluginData, deps, true),
+      /dispatch-activation-required/,
+    );
+    await saveNative({ ...prepared.request, status: 'PAUSED' });
+    assert.deepEqual(await inspectCodexDispatchActivation(pluginData, deps, true), {
+      sourceThreadId: 'intake-thread',
+    });
+    await assert.rejects(
+      inspectCodexDispatchActivation(pluginData, deps),
+      /dispatch-activation-required/,
+    );
+    await saveNative({ ...prepared.request, prompt: 'Previously authorized intake only.' });
+    await assert.rejects(
+      inspectCodexDispatchActivation(pluginData, deps),
+      /dispatch-activation-required/,
+    );
+    await saveNative(prepared.request);
     assert.equal(creates, 1);
     assert.equal(conversations.get('intake-thread')!.name, 'ISSUE ASSIGNMENTS');
     assert.equal(conversations.get('intake-thread')!.model, 'gpt-6-luna');

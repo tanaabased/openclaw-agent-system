@@ -9,6 +9,11 @@ import {
 
 const rejects = (code: string) => (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === code;
+const permissions = {
+  approvalPolicy: 'on-request',
+  approvalsReviewer: 'auto_review',
+  sandbox: { type: 'workspaceWrite' },
+};
 describe('agent/codex-thread-client', () => {
   it('should distinguish native absence from permission and transport failures', async () => {
     for (const [error, absent] of [
@@ -35,8 +40,11 @@ describe('agent/codex-thread-client', () => {
       if (method === 'thread/start') {
         assert.equal(params.model, 'gpt-6-luna');
         assert.deepEqual(params.config, { model_reasoning_effort: 'medium' });
+        assert.equal(params.approvalPolicy, 'on-request');
+        assert.equal(params.approvalsReviewer, 'auto_review');
+        assert.equal(params.sandbox, 'workspace-write');
       }
-      return method === 'thread/start' ? { thread: { id: 'native' } } : {};
+      return { ...permissions, ...(method === 'thread/start' ? { thread: { id: 'native' } } : {}) };
     };
     const adapter = codexThreadAdapter(request, '/workspace');
     assert.equal(
@@ -59,6 +67,30 @@ describe('agent/codex-thread-client', () => {
       'thread/resume',
     ]);
     assert.ok(!calls.includes('turn/start'));
+  });
+  it('should retain the native id and reject ignored or nonpersistent approval settings', async () => {
+    for (const stage of ['start', 'resume']) {
+      let retained: string | undefined;
+      const adapter = codexThreadAdapter(
+        async (method) => ({
+          ...permissions,
+          ...(method === 'thread/' + stage ? { approvalsReviewer: 'user' } : {}),
+          thread: { id: 'native' },
+        }),
+        '/workspace',
+      );
+      await assert.rejects(
+        adapter.create(
+          { key: 'binding', phase: 'creating' },
+          async (id) => {
+            retained = id;
+          },
+          true,
+        ),
+        rejects('automation-thread-permissions-diverged'),
+      );
+      assert.equal(retained, 'native');
+    }
   });
   it('should never repeat an ambiguous create or replace a known failed target', async () => {
     let calls = 0;
