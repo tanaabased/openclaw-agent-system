@@ -196,7 +196,6 @@ export function codexThreadAdapter(
       !['idle', 'active', 'running', 'completed', 'notLoaded'].includes(String(thread.status.type))
     )
       throw new AutomationError('automation-thread-unavailable');
-    verifyPermissions(await request('thread/resume', { threadId: id }));
     return {
       id,
       ...(typeof thread.name === 'string' ? { name: thread.name } : {}),

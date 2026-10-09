@@ -122,38 +122,4 @@ describe('agent/codex-thread-client', () => {
       await assert.rejects(codexThreadAdapter(async () => ({ thread }), cwd).lookup('native'));
     }
   });
-  it('should verify retained chat permissions without changing them or starting work', async () => {
-    const cwd = await realpath('.');
-    for (const saved of [
-      permissions,
-      { ...permissions, approvalsReviewer: 'user' },
-      { ...permissions, approvalPolicy: 'never' },
-      { ...permissions, sandbox: { type: 'dangerFullAccess' } },
-      {},
-    ]) {
-      const calls: string[] = [];
-      const adapter = codexThreadAdapter(async (method, params) => {
-        calls.push(method);
-        if (method === 'thread/read')
-          return {
-            thread: {
-              id: 'native',
-              cwd,
-              path: '/sessions/rollout.jsonl',
-              status: { type: 'idle' },
-            },
-          };
-        assert.equal(method, 'thread/resume');
-        assert.deepEqual(params, { threadId: 'native' });
-        return saved;
-      }, cwd);
-      if (saved === permissions) assert.equal((await adapter.lookup('native'))?.id, 'native');
-      else
-        await assert.rejects(
-          adapter.lookup('native'),
-          rejects('automation-thread-permissions-diverged'),
-        );
-      assert.deepEqual(calls, ['thread/read', 'thread/resume']);
-    }
-  });
 });

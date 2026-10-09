@@ -90,11 +90,12 @@ saved local Git-backed projects. Review requests, feedback, implementation, GitH
 publication, and OpenClaw v2 execution remain unavailable through this Codex path.
 
 Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
-workflow. Install verifies the retained chat's native approval settings and the saved
+workflow. Install verifies a new chat's saved native approval settings and the saved
 schedule; no global scanner allow rule or restart acknowledgment is required. Commands that need
 approval still pass through native review, which can deny them.
-Doctor reports chat-setting drift separately from saved automation state. Verify
-unattended execution separately with a real scheduled poll. Intake uses
+Doctor verifies saved automation definitions; current chat permissions are not
+exposed by the read-only native interface. Verify unattended execution separately
+with a real scheduled poll. Intake uses
 native host GitHub access; the authenticated account must match `github.username`
 and applicable identity pins. Repository read access is sufficient. The first
 successful activation establishes a historical baseline; reinstall and restart
@@ -153,9 +154,8 @@ Installer-created automation chats use native `auto_review` with the
 `workspace-write` sandbox and `on-request` approvals. Setup verifies the returned
 permissions and their persistence through a fresh native process before marking
 the chat ready. Native policy remains authoritative; auto-review may deny an
-action. Existing ready chats retain their selected permissions; incompatible settings
-block reconciliation. Neither setup nor the plugin writes global approval rules to
-enable auto-review.
+action. Existing ready chats retain their selected permissions. Neither setup nor
+the plugin writes global approval rules to enable auto-review.
 
 Declare recurring work in `agent.yaml`:
 

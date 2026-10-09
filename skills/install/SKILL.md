@@ -86,7 +86,7 @@ require `intakeRuntime` in the installer chat. Do not ask the operator to run in
 routes or start a new chat merely because that scanner route is absent.
 
 New automation chats use native `on-request` approval, `auto_review`, and `workspace-write`.
-The adapter verifies those settings after creation and when resolving retained chats.
+The adapter verifies those settings after creation through a fresh native process.
 Do not request a global scanner allow rule or restart acknowledgment. Each scheduled
 command remains subject to native approval review; installation does not preapprove it.
 If saved chat permissions diverge, report the exact chat and ask the operator to restore
