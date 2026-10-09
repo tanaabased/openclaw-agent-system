@@ -28,7 +28,7 @@ const externalGitHubKeySourceSchema = Type.Union([
 ]);
 const externalGitHubKeySourcesSchema = Type.Union([
   externalGitHubKeySourceSchema,
-  Type.Array(externalGitHubKeySourceSchema, { minItems: 1 }),
+  Type.Array(externalGitHubKeySourceSchema),
 ]);
 const externalGitHubPolicyDecisionSchema = Type.Union([
   Type.Literal('allow'),

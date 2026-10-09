@@ -80,7 +80,6 @@ export const externalGitSectionSchema = Type.Object(
           'private-keys': Type.Union([
             externalGitPrivateKeySourceSchema,
             Type.Array(externalGitPrivateKeySourceSchema, {
-              minItems: 1,
               uniqueItems: true,
             }),
           ]),

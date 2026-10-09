@@ -33,7 +33,7 @@ const commandObjectSchema = Type.Object(
 );
 const commandSchema = Type.Union([scriptSchema, argvSchema, commandObjectSchema]);
 const stepProperties = {
-  runtimes: Type.Optional(Type.Array(runtimeSchema, { minItems: 1, uniqueItems: true })),
+  runtimes: Type.Optional(Type.Array(runtimeSchema, { uniqueItems: true })),
   shell: Type.Optional(shellSchema),
   check: Type.Optional(commandSchema),
   apply: commandSchema,
@@ -50,7 +50,6 @@ const stepsSchema = Type.Object(
         },
         { additionalProperties: false },
       ),
-      { minItems: 1 },
     ),
   },
   { additionalProperties: false },

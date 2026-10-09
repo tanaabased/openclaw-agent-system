@@ -35,11 +35,11 @@ Declare `github.notifications` in the workspace manifest; see the
 
 | Field under `github.notifications` | Required | Default                 | Values                                     |
 | ---------------------------------- | -------- | ----------------------- | ------------------------------------------ |
-| `allowed-repository-owners`        | no       | any owner               | Nonempty list of pinned owner identities   |
-| `approved-actors`                  | no       | none                    | Deprecated nonempty list of pinned users   |
+| `allowed-repository-owners`        | no       | any owner               | Pinned owner identities; `[]` denies all   |
+| `approved-actors`                  | no       | none                    | Deprecated pinned users; `[]` denies all   |
 | `approved-feedback-authors`        | no       | legacy list, else deny  | Pinned users; `[]` denies all feedback     |
 | `approved-issue-assigners`         | no       | legacy list, else deny  | Pinned users; `[]` denies issue assignment |
-| `assignment-types`                 | no       | `[issue, pull-request]` | One or both kinds, without duplicates      |
+| `assignment-types`                 | no       | `[issue, pull-request]` | Unique kinds; `[]` disables discovery      |
 | `initial-mode`                     | no       | `work`                  | `guided` or `work`                         |
 | `interval-minutes`                 | no       | `5`                     | Integer from `1` through `1440`            |
 | `max-concurrent-issues`            | no       | `2`                     | Positive integer                           |
@@ -153,7 +153,8 @@ grants authorizes it. The separate implementation tracked in
 
 ### `github.notifications.assignment-types`
 
-Selects the assignment kinds the channel discovers. Direct pull-request
+Selects the assignment kinds the channel discovers. `[]` disables new assignment
+discovery without discarding existing conversations. Direct pull-request
 assignments use only `approved-actors` for compatibility; the issue-specific list
 neither grants nor removes their authority. They have the
 [documented limitations](./README.md#current-limitations).

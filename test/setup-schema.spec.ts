@@ -43,7 +43,7 @@ describe('manifest/setup-schema', () => {
   });
 
   it('should preserve independent runtime filters in short and long forms', () => {
-    for (const runtimes of [['openclaw'], ['codex'], ['openclaw', 'codex']]) {
+    for (const runtimes of [[], ['openclaw'], ['codex'], ['openclaw', 'codex']]) {
       const short = normalized({ runtimes, apply: 'true' });
       assert.deepEqual(short.steps[0]?.runtimes, runtimes);
       assert.notEqual(short.steps[0]?.runtimes, runtimes);
@@ -59,7 +59,7 @@ describe('manifest/setup-schema', () => {
   });
 
   it('should reject invalid runtime lists and validate commands on every runtime', () => {
-    for (const runtimes of [[], null, 'codex', ['openclaw', 'openclaw'], ['other'], ['Codex']]) {
+    for (const runtimes of [null, 'codex', ['openclaw', 'openclaw'], ['other'], ['Codex']]) {
       for (const input of [
         { runtimes, apply: 'true' },
         { steps: [{ id: 'one', runtimes, apply: 'true' }] },
@@ -234,7 +234,11 @@ describe('manifest/setup-schema', () => {
         JSON.stringify(command),
       );
     }
-    invalid({ steps: [] }, 'manifest-schema', '/setup/steps');
+    assert.deepEqual(normalizeAgentSetup({ steps: [] }), {
+      status: 'valid',
+      setup: { steps: [] },
+      diagnostics: [],
+    });
     invalid({ shell: 'fish', apply: 'true' }, 'manifest-schema', '/setup/shell');
     invalid({ shell: 'bash {0}', apply: 'true' }, 'manifest-schema', '/setup/shell');
     invalid({ apply: { run: 'true' } }, 'manifest-unknown-key', '/setup/apply/run');
