@@ -3,7 +3,6 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import type { inspectCodexIntakePermission } from './codex-intake-permission.ts';
 import { automationThreadSelection } from './automation-threads.ts';
 import { automationHash } from './automation-hash.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
@@ -53,7 +52,6 @@ export interface CodexAutomationPlan {
     name?: string;
   }[];
   telemetry: { execution: 'unavailable'; delivery: 'unavailable' };
-  permission?: Awaited<ReturnType<typeof inspectCodexIntakePermission>>;
 }
 
 export function codexAutomationMarker(scope: string, id: string): string {

@@ -72,37 +72,27 @@ create an equivalent manual task unless the user explicitly requests one.
 
 1. Require `automationRuntime` from the newest trusted context. Use its exact `argvPrefix` and `pluginData`; never infer a workspace or substitute the current conversation. If the installed context lacks this route, report that a plugin update and fresh task are required.
 2. Discover `automation_update` and call `list_projects`. For explicitly declared thread targets, call `read_thread` for each exact ID. Pass the decoded native result objects as `projects` and `threads` to the internal `plan --plugin-data <pluginData>` command. Deliver one JSON object through standard input, never interpolate prompts into shell arguments. This helper reads saved definitions and profile defaults and computes all desired fields; do not author the diff yourself.
-3. An `aligned` plan needs no schedule writes. A `blocked` plan stops schedule writes. Resolve `intake-permission-*` findings through the permission onboarding below before creating or activating the intake schedule. For `automation-thread-model-drift`, ask the operator to apply the requested model and effort through that existing chat’s native controls, then replan. Never claim a transient app-server update persisted, send an unauthorized model turn, or replace the chat to clear drift. A known partial conversation creation may use step 4 for recovery; resolve other conditions first. A headless session returns `requires-native-app-sync`; do not replace native tools with scheduler-file writes or a fabricated CLI. Report the concrete actions and digest, and apply only within the user's installation authorization. A changed scope or additional action requires renewed authorization.
+3. An `aligned` plan needs no schedule writes. A `blocked` plan stops schedule writes. For `automation-thread-model-drift`, ask the operator to apply the requested model and effort through that existing chat’s native controls, then replan. Never claim a transient app-server update persisted, send an unauthorized model turn, or replace the chat to clear drift. A known partial conversation creation may use step 4 for recovery; resolve other conditions first. A headless session returns `requires-native-app-sync`; do not replace native tools with scheduler-file writes or a fabricated CLI. Report the concrete actions and digest, and apply only within the user's installation authorization. A changed scope or additional action requires renewed authorization.
 4. When the plan reports `automation-thread-sync-required` or `automation-thread-name-drift`, pass its fresh digest and lookup inputs to `threads-sync --plugin-data <pluginData>` within the authorized installation scope. This reconciles native conversations only, using the ambient Codex app-server; it never writes schedules or runs a model. Report that shared IDs produce separate per-automation Codex histories. New chats receive declared model and effort settings at creation. Replan afterward. A known partial conversation creation may resume through this same route; an ambiguous create without its native ID remains blocked—never clear its journal or blindly create again.
 5. Before each schedule action, refresh native project/thread lookups and the plan. Require the remaining actions to match the authorized remainder, then pass its fresh `digest` and lookup objects to `prepare --plugin-data <pluginData>`. The helper journals one action and returns the exact native request. Invoke `automation_update` with that request unchanged. No name-based adoption, deletion, or generated substitute prompt is permitted.
 6. Pass the returned native result and prepared digest as `{ "digest": "...", "receipt": <native result> }` to `acknowledge --plugin-data <pluginData>`. The helper verifies saved settings before recording success. Stop on any tool failure, unreadable state, or divergence; retain and report earlier verified actions. Never infer saved settings from a rendered `view` card.
 7. If a response was lost after a possible write, call `acknowledge` with only the pending digest. Recovery requires the unique exact pending marker and expected saved definition; unrelated edits or a changed valid manifest do not invalidate that completed effect. Replan before any further native write. If the write definitively failed without changing its target, `cancel` with that digest can clear the pending operation. A pending create also requires no new native IDs, so an unmarked partial create cannot cause a blind duplicate. Older journals retain their whole-scheduler cancellation check. A divergent target remains blocked; never blindly create again or clear the journal by editing files.
 8. Repeat until the final plan is `aligned`. Report saved-configuration convergence separately from scheduled execution. Execution and delivery telemetry are unavailable through this adapter. Routing-kind migrations first pause and retain the old schedule, then create the replacement; never skip the pause/readback step. Removed declarations pause owned jobs and retain their mapping; reintroduced IDs reuse them. Existing notification preferences remain native-owned.
 
-Before v2 intake activation, invoke `intakeRuntime` with `permission --plugin-data <pluginData>`.
-This read-only check returns the exact scanner `argv`, native rule status, and a digest.
-If consent is missing, explain its recurring host access and request native reusable
-approval for that exact command using the native execution tool's full-argv prefix
-proposal. A one-time approval is insufficient. On a first install, the scan reports
-`intake-activation-required` without contacting GitHub. Never write rules yourself,
-shorten the prefix to Node or the runtime, or relax sandbox/approval settings.
-If native reusable consent is unavailable or denied, leave activation blocked.
+Install owns the complete activation flow: reconcile the retained chat, prepare the native
+schedule, apply it through `automation_update`, and acknowledge the exact saved result.
+Use `setupRuntime` and `automationRuntime` from the trusted context; activation does not
+require `intakeRuntime` in the installer chat. Do not ask the operator to run internal
+routes or start a new chat merely because that scanner route is absent.
 
-Reinspect after approval completes and require `configured: true` before requesting
-a restart. If the command runs without a human prompt but consent remains missing,
-ask the operator to select native **Ask for approval** for onboarding and retry the
-exact scanner proposal; automatic review can allow a run without saving consent.
-Never change the chat's permission mode yourself.
-
-After verifying saved consent, ask the operator to restart Codex and explicitly confirm the
-reload. Reinspect permission, then pass `{ "digest": "<fresh digest>", "confirmReload": true }`
-on stdin to `intakeRuntime permission-acknowledge --plugin-data <pluginData>` only
-with that direct confirmation. This records an operator acknowledgment, not native
-execution proof. Missing or changed scanner rules, paths, workspace, or profile require
-fresh onboarding. Replan after acknowledgment. Verify unattended operation through
-a separately authorized real scheduled poll; do not infer it from rule files,
-acknowledgments, successful manual scans, or another chat's permissions. Unrelated
-command approvals do not invalidate scanner acknowledgment.
+New automation chats use native `on-request` approval, `auto_review`, and `workspace-write`.
+The adapter verifies those settings after creation and when resolving retained chats.
+Do not request a global scanner allow rule or restart acknowledgment. Each scheduled
+command remains subject to native approval review; installation does not preapprove it.
+If saved chat permissions diverge, report the exact chat and ask the operator to restore
+its native settings before replanning; do not change an existing ready chat's permissions.
+An automatic-review denial must remain a blocker and be reported with its reason.
+Saved settings do not prove a scheduled poll ran; verify execution separately when authorized.
 
 For v2 issue intake, include the reserved `github-issue-assignment` job and retained
 chat in the authorized plan. Its model and effort come from `models.low`. Use native
@@ -114,7 +104,7 @@ that the native job may already be active. After policy revocation, acknowledge
 the exact native effect and replan to pause it. This recovery also works with a
 missing or invalid manifest; it never authorizes setup or infers ownership by title.
 
-For `automation-thread-host-access-required` or `intake-permission-host-access-required`, report that the native app-server needs approved host access to its Codex state directory and retry the same trusted operation through native approval. Never expose captured stderr or repair this by changing profile permissions.
+For `automation-thread-host-access-required`, report that the native app-server needs approved host access to its Codex state directory and retry the same trusted operation through native approval. Never expose captured stderr or repair this by changing profile permissions.
 
 Use the ambient Codex profile and its permissions. Prompt jobs may explicitly run scripts but remain model-backed. Do not convert command declarations, invent timeout guarantees, change profile permissions, or create managed Codex credentials. See [Codex automations](../../CODEX.md#repository-automations) for supported schedules and recovery diagnostics.
 

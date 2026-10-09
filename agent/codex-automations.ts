@@ -1,8 +1,3 @@
-import {
-  inspectCodexIntakePermission,
-  acknowledgeCodexIntakePermission,
-  type IntakePermissionDependencies,
-} from './codex-intake-permission.ts';
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -96,7 +91,6 @@ export interface CodexAutomationDependencies {
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
   threadAdapter?: AutomationThreadAdapter;
   intake?: CodexIntakeDependencies;
-  permission?: IntakePermissionDependencies;
 }
 
 async function snapshot(pluginData: string, dependencies: CodexAutomationDependencies) {
@@ -360,21 +354,6 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
       ? 'requires-native-app-sync'
       : 'blocked';
     result.digest = automationHash({ plan: result.digest, threadCode });
-  }
-  if (!selected.cleanupOnly && jobs.some((job) => job.id === intakeAutomationId)) {
-    const permission = await inspectCodexIntakePermission(
-      { pluginData: selected.root, workspace, codexHome },
-      selected.dependencies.permission,
-    );
-    result.permission = permission;
-    result.digest = automationHash({ plan: result.digest, permission });
-    if (permission.code) {
-      result.findings.push({ id: intakeAutomationId, code: permission.code });
-      result.actions = result.actions.filter(
-        (action) => action.manifestId !== intakeAutomationId || action.expected.status !== 'ACTIVE',
-      );
-      result.status = result.actions.length ? 'requires-native-app-sync' : 'blocked';
-    }
   }
   if (ledger.pending)
     return {
@@ -727,32 +706,5 @@ export async function cancelCodexAutomation(
     if (!unchanged) throw new CodexAutomationError('automation-cancel-recovery-required');
     await selected.file.write(JSON.stringify({ ...selected.ledger, pending: undefined }));
     return { status: 'cancelled', digest };
-  });
-}
-
-/** Explicit operator acknowledgment after native recurring consent and reload; never grants permission. */
-export async function codexIntakePermission(
-  pluginData: string,
-  input: unknown,
-  dependencies: CodexAutomationDependencies = {},
-) {
-  const selected = await snapshot(pluginData, dependencies);
-  if (selected.cleanupOnly || !selected.jobs.some((job) => job.id === intakeAutomationId))
-    throw new CodexAutomationError('intake-policy-disabled');
-  const context = {
-    pluginData: selected.root,
-    workspace: selected.workspace,
-    codexHome: selected.codexHome,
-  };
-  if (input === undefined) return inspectCodexIntakePermission(context, dependencies.permission);
-  return withJournal(selected, async () => {
-    const fresh = await snapshot(pluginData, dependencies);
-    if (
-      fresh.scope !== selected.scope ||
-      fresh.loaded.digest !== selected.loaded.digest ||
-      fresh.ledger.pending
-    )
-      throw new CodexAutomationError('automation-plan-stale-or-blocked');
-    return acknowledgeCodexIntakePermission(context, input, dependencies.permission);
   });
 }

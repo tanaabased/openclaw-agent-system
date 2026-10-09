@@ -259,21 +259,12 @@ jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
-# should require scanner permission before native activation in a fresh profile
+# should plan intake conversation setup without a global scanner rule or reload acknowledgment
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-node "$runtime" intake permission --plugin-data "$root/notification-data" | tee "$root/permission-missing.json" | jq -e '.configured == false and .execution == "unverified" and .code == "intake-permission-required"'
-
-# should distinguish a native rule fixture from reload acknowledgment and execution proof
-root="$TMPDIR/agent-system-codex-example"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-mkdir -p "$CODEX_HOME/rules"
-jq -r '"prefix_rule(pattern = " + (.argv | tojson) + ", decision = \"allow\")"' "$root/permission-missing.json" > "$CODEX_HOME/rules/intake-fixture.rules"
-node "$runtime" intake permission --plugin-data "$root/notification-data" | tee "$root/permission-reload.json" | jq -e '.configured == true and .code == "intake-permission-reload-required" and .execution == "unverified"'
-jq '{digest, confirmReload: true}' "$root/permission-reload.json" | node "$runtime" intake permission-acknowledge --plugin-data "$root/notification-data" | jq -e '.status == "acknowledged" and .execution == "unverified"'
-node "$runtime" intake permission --plugin-data "$root/notification-data" | jq -e '.reloadAcknowledged == true and .execution == "unverified"'
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
+test ! -d "$CODEX_HOME/rules"
 
 # should create durable conversations with selected models and verified auto review
 root="$TMPDIR/agent-system-codex-example"

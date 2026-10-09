@@ -6,7 +6,6 @@ import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 import {
   acknowledgeCodexAutomation,
-  codexIntakePermission,
   cancelCodexAutomation,
   inspectCodexAutomations,
   listCodexAutomations,
@@ -256,17 +255,14 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const action = args[1];
     if (action === '--help') {
       process.stdout.write(
-        'Usage: intake <inspect|scan|permission|permission-acknowledge> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only.\n',
+        'Usage: intake <inspect|scan> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only.\n',
       );
       return;
     }
     const pluginData = parsePluginData(args.slice(2));
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
     else if (action === 'scan') writeJson(await runCodexIntake(pluginData));
-    else if (action === 'permission') writeJson(await codexIntakePermission(pluginData, undefined));
-    else if (action === 'permission-acknowledge')
-      writeJson(await codexIntakePermission(pluginData, JSON.parse(await readStandardInput())));
-    else throw new Error('expected intake inspect, scan, permission, or permission-acknowledge');
+    else throw new Error('expected intake inspect or scan');
     return;
   }
   if (command === 'setup') return runSetup(args.slice(1));

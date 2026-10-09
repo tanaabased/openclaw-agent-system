@@ -7,7 +7,6 @@ import { parse, stringify } from 'smol-toml';
 
 import {
   acknowledgeCodexAutomation,
-  codexIntakePermission,
   inspectCodexAutomations,
   inspectCodexDispatchActivation,
   prepareCodexAutomation,
@@ -117,17 +116,8 @@ describe('agent/codex-intake', () => {
       { id: string; name?: string; model?: string; effort?: string }
     >();
     let creates = 0;
-    const argv = ['/node', '/runtime', 'intake', 'scan', '--plugin-data', pluginData];
     const deps = {
       codexHome,
-      permission: {
-        argv,
-        policy: async () => ({
-          decision: 'allow',
-          revision: 'approved',
-          matchedRules: [{ prefixRuleMatch: { decision: 'allow', matchedPrefix: argv } }],
-        }),
-      },
       intake: { now: () => baseline, connect: async () => fixture.client },
       threadAdapter: {
         async lookup(id: string) {
@@ -151,18 +141,12 @@ describe('agent/codex-intake', () => {
       },
     };
     const plan = () => inspectCodexAutomations(pluginData, {}, deps);
-    const blocked = await plan();
-    assert.ok(blocked.findings.some((x) => x.code === 'intake-permission-reload-required'));
-    await assert.rejects(prepareCodexAutomation(pluginData, blocked.digest, {}, deps), {
+    const first = await plan();
+    assert.equal(first.status, 'requires-native-app-sync');
+    assert.ok(first.findings.some((finding) => finding.code === 'automation-thread-sync-required'));
+    await assert.rejects(prepareCodexAutomation(pluginData, first.digest, {}, deps), {
       code: 'automation-plan-stale-or-blocked',
     });
-    const permission = await codexIntakePermission(pluginData, undefined, deps);
-    await codexIntakePermission(
-      pluginData,
-      { digest: permission.digest, confirmReload: true },
-      deps,
-    );
-    const first = await plan();
     await syncCodexAutomationThreads(pluginData, first.digest, {}, deps);
     const desired = await plan();
     await assert.rejects(

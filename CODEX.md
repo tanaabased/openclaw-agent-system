@@ -89,14 +89,12 @@ schedule, `plan` assignments can create native issue chats and worktrees in exis
 saved local Git-backed projects. Review requests, feedback, implementation, GitHub
 publication, and OpenClaw v2 execution remain unavailable through this Codex path.
 
-Use `$agent-system-install` to authorize and reconcile the schedule. Before activation,
-Install requires native recurring approval for the exact scanner command and an
-explicit acknowledgment after restarting Codex. It never writes permission rules
-or broadens sandbox access. Doctor distinguishes missing/stale consent and pending
-reload from saved automation state. The acknowledgment does not prove unattended
-execution; verify that separately with a real scheduled poll. See
-[Codex rules](https://learn.chatgpt.com/docs/agent-configuration/rules) for native consent
-and reload behavior. Intake uses
+Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
+workflow. Install verifies the retained chat's native approval settings and the saved
+schedule; no global scanner allow rule or restart acknowledgment is required. Commands that need
+approval still pass through native review, which can deny them.
+Doctor reports chat-setting drift separately from saved automation state. Verify
+unattended execution separately with a real scheduled poll. Intake uses
 native host GitHub access; the authenticated account must match `github.username`
 and applicable identity pins. Repository read access is sufficient. The first
 successful activation establishes a historical baseline; reinstall and restart
@@ -155,8 +153,9 @@ Installer-created automation chats use native `auto_review` with the
 `workspace-write` sandbox and `on-request` approvals. Setup verifies the returned
 permissions and their persistence through a fresh native process before marking
 the chat ready. Native policy remains authoritative; auto-review may deny an
-action. Existing ready chats retain their selected permissions. Neither setup nor
-the plugin writes global approval rules to enable auto-review.
+action. Existing ready chats retain their selected permissions; incompatible settings
+block reconciliation. Neither setup nor the plugin writes global approval rules to
+enable auto-review.
 
 Declare recurring work in `agent.yaml`:
 
