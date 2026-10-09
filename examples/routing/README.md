@@ -60,6 +60,14 @@ openclaw agents bindings --json | jq -e '[.[] | select(.agentId == "notification
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed" and .baselineAt != null and .baselineEstablished == false'
 
+# should show manual refresh scope and effective timeout
+cd "$TMPDIR/agent-system-notifications"
+output="$(NO_COLOR=1 openclaw agent-system notifications refresh --agent notification-data --timeout 300)"
+printf '%s\n' "$output" | grep -F 'agent' | grep -F 'notification-data'
+printf '%s\n' "$output" | grep -F 'scope' | grep -F 'all items'
+printf '%s\n' "$output" | grep -F 'timeout' | grep -F '300s'
+printf '%s\n' "$output" | grep -F 'status' | grep -F 'completed'
+
 # should keep baseline assignments free of managed worktrees
 cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
