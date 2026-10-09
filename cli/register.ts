@@ -303,6 +303,8 @@ export default function registerAgentSystemCli(
         styles: options.styles,
         json: selected.json === true,
         dryRun: selected.dryRun === true,
+        terminalColumns:
+          options.terminalColumns ?? (process.stdout.isTTY ? process.stdout.columns : undefined),
       });
     });
   const verifyArchive = backup

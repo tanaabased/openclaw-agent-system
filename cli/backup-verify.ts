@@ -1,5 +1,5 @@
 import presentCliCommand from './presentation.ts';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 import type WorkspaceBackupService from '../agent/backup-service.ts';
 import {
@@ -32,7 +32,7 @@ async function backupVerify(
         loaded.manifest.backup?.output,
       );
     }
-    if (binding) await assertBackupLocationOwner(options, binding, archive);
+    if (binding) await assertBackupLocationOwner(options, binding, dirname(archive));
     const manifest = await options.service.verify(archive, binding?.agentId ?? options.agentId);
     if (options.json) writeCliJson(options.output, { status: 'verified', archive, ...manifest });
     else

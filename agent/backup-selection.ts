@@ -12,6 +12,7 @@ import {
   BackupError,
   backupControlDirectory,
   backupDefaultOutput,
+  type BackupSelectionSummary,
   type BackupSettings,
   type BackupPlan,
   type BackupRuntimeProtection,
@@ -196,7 +197,32 @@ export async function planWorkspaceBackup(options: {
   }
   const diagnostics: BackupPlan['diagnostics'] = [];
   const candidates: string[] = [];
-  const excludedDirectories: string[] = [];
+  const prunedDirectories: string[] = [];
+  const selection: BackupSelectionSummary[] = [];
+  let directorySamples = 0;
+  function recordExclusion(
+    reason: BackupSelectionSummary['reason'],
+    workspacePath: string,
+    directory: boolean,
+    pruned = directory,
+  ) {
+    let summary = selection.find((item) => item.reason === reason);
+    if (!summary) {
+      summary = { reason, observedEntries: 0, prunedDirectories: 0, directories: [] };
+      selection.push(summary);
+    }
+    summary.observedEntries++;
+    if (reason === 'protected' && !directory) prunedDirectories.push(workspacePath);
+    if (directory && pruned) {
+      summary.prunedDirectories++;
+      prunedDirectories.push(workspacePath);
+      // never sample protected paths or inspect descendants to explain a rejected tree.
+      if (reason !== 'protected' && directorySamples < 20 && workspacePath.length <= 512) {
+        summary.directories.push(workspacePath);
+        directorySamples++;
+      }
+    }
+  }
   const selected = new Set<string>();
   const trackedDirectories = new Set<string>();
   if (settings.gitIgnore) {
@@ -269,27 +295,43 @@ export async function planWorkspaceBackup(options: {
         .map(({ workspacePath }) => workspacePath),
     );
     for (const { entry, path, workspacePath } of paths) {
-      if (backupPathProtected(path, protectedPaths)) continue;
+      if (backupPathProtected(path, protectedPaths)) {
+        recordExclusion('protected', workspacePath, entry.isDirectory());
+        continue;
+      }
       if (matches(workspacePath, settings.exclude)) {
         candidates.push(workspacePath);
-        if (entry.isDirectory()) excludedDirectories.push(workspacePath);
+        recordExclusion('exclude', workspacePath, entry.isDirectory());
         continue;
       }
       const canonical = await canonicalBackupPath(path);
-      if (backupPathProtected(canonical, protectedPaths)) continue;
+      if (backupPathProtected(canonical, protectedPaths)) {
+        recordExclusion('protected', workspacePath, entry.isDirectory());
+        continue;
+      }
       const regenerableDirectory =
         entry.isDirectory() &&
         (entry.name === 'node_modules' ||
           (entry.name === '_cacache' && directory.endsWith('/.npm')));
       const mayInclude =
         entry.isDirectory() && backupDirectoryRelevant(workspacePath, settings.include);
-      if (regenerableDirectory && !mayInclude) continue;
+      if (regenerableDirectory && !mayInclude) {
+        recordExclusion('regenerable', workspacePath, true);
+        continue;
+      }
       candidates.push(workspacePath);
       if (
         (!matches(workspacePath, backupRegenerablePatterns) && !ignored.has(workspacePath)) ||
         matches(workspacePath, settings.include)
       )
         selected.add(workspacePath);
+      else
+        recordExclusion(
+          matches(workspacePath, backupRegenerablePatterns) ? 'regenerable' : 'gitignore',
+          workspacePath,
+          entry.isDirectory(),
+          ignored.has(workspacePath) && !mayInclude && !trackedDirectories.has(workspacePath),
+        );
       if (ignored.has(workspacePath) && !mayInclude && !trackedDirectories.has(workspacePath))
         continue;
       if (entry.isDirectory()) await visit(path);
@@ -318,8 +360,8 @@ export async function planWorkspaceBackup(options: {
           `An explicitly included path is missing: ${pattern}.`,
         );
       }
-      // a pruned exclusion cannot prove that a potentially matching glob is absent.
-      if (excludedDirectories.some((directory) => backupDirectoryRelevant(directory, [pattern])))
+      // a pruned tree cannot prove that a potentially matching glob is absent.
+      if (prunedDirectories.some((directory) => backupDirectoryRelevant(directory, [pattern])))
         continue;
       diagnostics.push({
         code: 'backup-include-unmatched',
@@ -376,6 +418,7 @@ export async function planWorkspaceBackup(options: {
       ? { openclawVersion: options.runtimeProtection.openclawVersion }
       : {}),
     protectedPaths,
+    selection,
     files: [...selected].sort(),
     diagnostics,
     coverage: {

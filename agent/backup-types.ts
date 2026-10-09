@@ -46,6 +46,13 @@ export interface BackupCoverage {
   limitations: string[];
 }
 
+export interface BackupSelectionSummary {
+  reason: 'protected' | 'exclude' | 'regenerable' | 'gitignore';
+  observedEntries: number;
+  prunedDirectories: number;
+  directories: string[];
+}
+
 export interface BackupPlan {
   agentId: string;
   workspaceDir: string;
@@ -54,6 +61,7 @@ export interface BackupPlan {
   files: string[];
   diagnostics: BackupDiagnostic[];
   protectedPaths: string[];
+  selection?: BackupSelectionSummary[];
   agentDir?: string;
   openclawVersion?: string;
 }
