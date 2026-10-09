@@ -116,7 +116,8 @@
     "test:release": "node --import tsx scripts/release-test-task.ts",
     "test": "bun run test:unit",
     "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/unit-timing-reporter.cjs \"test/**/*.spec.ts\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json",
+    "validate": "bun run lint && bun run typecheck && bun run test && bun run build && bun run plugin:check"
   },
   "codexTools": {
     "managedPaths": [

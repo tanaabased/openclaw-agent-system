@@ -61,7 +61,6 @@ describe('manifest/automation-schema', () => {
       { ...base, prompt: '   ' },
       { ...base, prompt: { file: '' } },
       { ...base, run: 'true', overrides: { codex: { model: 'secret-marker' } } },
-      { ...base, prompt: 'hello', runtimes: [] },
       { ...base, prompt: 'hello', runtimes: ['codex', 'codex'] },
       { ...base, prompt: 'hello', 'timeout-seconds': 3601 },
       { ...base, prompt: 'hello', 'timeout-seconds': 0 },

@@ -226,6 +226,22 @@ jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
+# should refresh local settings through the bound codex runtime without changing the shared base
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+printf '%s\n' 'models: { default: { effort: xhigh } }' 'setup-agent: { steps: [] }' > "$root/workspace/agent.local.yaml"
+cp "$root/workspace/agent.local.yaml" "$root/local.expected.yaml"
+printf '%s\n' '{"hook_event_name":"SessionStart","source":"startup"}' \
+  | PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" node "$runtime" session-start \
+  | jq -r '.hookSpecificOutput.additionalContext' \
+  | sed -n '/^{/,/^}/p' \
+  | jq -e '.binding.context.modelRouting.default.thinking == "xhigh"'
+cmp "$root/workspace/agent.expected.yaml" "$root/workspace/agent.yaml"
+cmp "$root/local.expected.yaml" "$root/workspace/agent.local.yaml"
+rm "$root/workspace/agent.local.yaml"
+
 # should create separate durable native conversations for a shared declaration id
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

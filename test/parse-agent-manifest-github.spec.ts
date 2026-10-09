@@ -284,7 +284,7 @@ github:
   notifications:
     approved-actors: []
 `).has('manifest-schema'),
-      true,
+      false,
     );
     assert.equal(
       diagnosticCodes(`
@@ -417,7 +417,7 @@ github:
     });
   });
 
-  it('should reject empty key arrays and ambiguous github key objects', () => {
+  it('should accept cleared key arrays and reject ambiguous github key objects', () => {
     assert.equal(
       diagnosticCodes(`
 schema-version: 1
@@ -426,7 +426,7 @@ agent:
 github:
   ssh-keys: []
 `).has('manifest-schema'),
-      true,
+      false,
     );
     const ambiguous = parseAgentManifest(`
 schema-version: 1

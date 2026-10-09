@@ -41,13 +41,11 @@ export const externalGitHubNotificationsSchema = Type.Object(
   {
     'assignment-types': Type.Optional(
       Type.Array(Type.Union([Type.Literal('issue'), Type.Literal('pull-request')]), {
-        minItems: 1,
         uniqueItems: true,
       }),
     ),
     'approved-actors': Type.Optional(
       Type.Array(externalGitHubApprovedActorSchema, {
-        minItems: 1,
         uniqueItems: true,
       }),
     ),
@@ -59,7 +57,6 @@ export const externalGitHubNotificationsSchema = Type.Object(
     ),
     'allowed-repository-owners': Type.Optional(
       Type.Array(externalGitHubIdentitySchema, {
-        minItems: 1,
         uniqueItems: true,
       }),
     ),

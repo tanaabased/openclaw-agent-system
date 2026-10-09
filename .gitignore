@@ -6,6 +6,10 @@ reports/
 *.tsbuildinfo
 *.tgz
 
+# Machine-local Agent System overrides
+/agent.local.yaml
+/.agent-system/agent.local.yaml
+
 # Logs and local state
 *.log
 .env

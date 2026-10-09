@@ -467,6 +467,36 @@ describe('agent/lifecycle-approval', () => {
     }
   });
 
+  it('should reject added, changed, removed, or invalid overlays before credentials or setup', async () => {
+    for (const transition of ['added', 'changed', 'removed', 'invalid']) {
+      const f = await fixture();
+      const path = join(f.root, 'agent.local.yaml');
+      if (transition !== 'added') await writeFile(path, '{}');
+      const request = await f.request('agent_system_install', {}, f.context);
+      request.requireApproval.onResolution('allow-once');
+      if (transition === 'removed') await rm(path);
+      else
+        await writeFile(path, transition === 'invalid' ? 'agent: null' : 'agent: { name: Local }');
+      await assert.rejects(f.approval.execute('agent_system_install', {}, 'call', f.toolContext));
+      assert.deepEqual(f.calls, []);
+      f.controller.abort();
+    }
+  });
+
+  it('should execute the approved effective setup with the same credential boundary', async () => {
+    const f = await fixture();
+    await writeFile(
+      join(f.root, 'agent.local.yaml'),
+      'setup: { steps: [{ id: local, apply: apply-local }] }',
+    );
+    const request = await f.request('agent_system_install', {}, f.context);
+    assert.deepEqual(f.calls, []);
+    request.requireApproval.onResolution('allow-once');
+    await f.approval.execute('agent_system_install', {}, 'call', f.toolContext);
+    assert.deepEqual(f.calls, ['credentials', 'reconcile', 'inspect', 'apply-local']);
+    f.controller.abort();
+  });
+
   it('should stop pending and resolved approvals when the turn is cancelled', async () => {
     for (const resolved of [false, true]) {
       const f = await fixture();

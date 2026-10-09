@@ -5,6 +5,7 @@ Configure an agent workspace through `agent.yaml`. Start with the
 for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or inspect declarations.
 
 - [Discovery](#discovery)
+- [Machine-local overrides](#machine-local-overrides)
 - [Component configuration](#component-configuration)
 - [Configuration](#configuration)
   - [`agent`](#agent)
@@ -27,7 +28,7 @@ Agent System discovers one manifest from an agent workspace:
 agent.yaml                 # shorthand
 ```
 
-The preferred file wins when both exist; the files never merge. Passive loading
+The preferred base file wins when both exist; the two base files never merge. Passive loading
 validates the manifest but does not resolve environment values or mutate state.
 The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks,
 files larger than 1 MiB, invalid UTF-8, duplicate keys, and unsupported YAML
@@ -46,6 +47,61 @@ environment:
   set:
     NODE_ENV: development
 ```
+
+## Machine-local Overrides
+
+One shared profile, local machine choices. Add an optional `agent.local.yaml`
+**beside the selected base**: `.agent-system/agent.local.yaml` for the preferred
+location, or root `agent.local.yaml` for the shorthand. The loader ignores local
+files elsewhere; an overlay without a base does not establish a managed workspace.
+
+Before creating the local file, append these missing entries to the workspace's
+`.gitignore`, preserving existing content. Keep the base tracked; do not replace
+an existing local file during setup.
+
+```gitignore
+/agent.local.yaml
+/.agent-system/agent.local.yaml
+```
+
+The overlay can contain any schema-supported setting without repeating required
+base fields. For example:
+
+```yaml
+models:
+  default:
+    effort: medium
+
+git:
+  worktrees:
+    root: /local/agent-worktrees
+
+github:
+  notifications:
+    assignment-types: []
+```
+
+Mappings merge recursively. Scalars and complete arrays replace inherited values;
+arrays do not merge by index or job ID. `[]` clears a configurable list, while `{}`
+retains inherited mapping entries. Empty runtime lists select no runtimes; empty
+assignment types disable new assignment discovery. Command vectors still need an
+executable. `null` is not deletion: it is accepted only where the field's schema
+allows it, such as an automation's `thread`.
+
+Both documents must be mappings and meet the same file and YAML protections.
+The merged document must pass the complete schema, including unknown-key checks
+and the active runtime's agent-ID and workspace-binding checks. Referenced files
+remain relative to the selected manifest directory; workspace-relative settings
+retain their existing anchors.
+
+Shared-loader results retain effective declarations' source files and YAML field
+paths; validation diagnostics attribute field errors to those sources. Overlay
+presence and contents affect the manifest digest and cache freshness, including
+addition, edits, and removal. A change requires fresh lifecycle approval.
+
+Codex and OpenClaw consume the same effective manifest within their existing runtime
+ownership. Loading it does not read secrets, run setup, or reconcile installed
+state. Use the owning runtime's explicit lifecycle operation to apply changes.
 
 ## Component Configuration
 
@@ -162,7 +218,7 @@ Operator [list](./CLI.md#openclaw-agent-system-automations-list),
 | `payload`         | command or prompt object                                   | one payload form | none          | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
 | `prompt`          | nonblank string or `{ file: relative-path }`               | one payload form | none          | Inline text or UTF-8 prompt file.                                              |
 | `run`             | nonblank shell string, argv array, or `{ command, args? }` | one payload form | none          | Command; argv stays literal and ordered.                                       |
-| `runtimes`        | unique nonempty list of `openclaw` / `codex`               | no               | both          | Runtime applicability.                                                         |
+| `runtimes`        | unique list of `openclaw` / `codex`                        | no               | both          | Runtime applicability.                                                         |
 | `schedule`        | string or object                                           | yes              | none          | Schedule forms below.                                                          |
 | `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`          | Shell strings only; place inside `payload` for long-form commands.             |
 | `thread`          | null, nonblank string, or `{ id?: string, name?: string }` | no               | independent   | Persistent prompt conversation; at least one object field is required.         |
@@ -577,8 +633,8 @@ setup-agent:
 
 Strings, block scalars, and the short mapping normalize to one step named
 `default`. Named steps require a unique lowercase kebab-case `id` and an `apply`;
-`check` is optional. `steps` must be nonempty and cannot mix with short-mapping
-fields. Bare arrays and command objects are not setup shorthand: place them
+`check` is optional. `steps: []` clears the phase; `steps` cannot mix with
+short-mapping fields. Bare arrays and command objects are not setup shorthand: place them
 under `check` or `apply`.
 
 #### Shells, executables, and limits
@@ -644,7 +700,7 @@ setup-agent:
   apply: mkdir -p repos
 ```
 
-Lists must be nonempty and contain unique supported values. The invoking
+Lists contain unique supported values; `[]` selects no runtimes. The invoking
 integration selects the runtime from trusted context. OpenClaw always selects
 `openclaw`, including for OpenClaw-hosted Codex; the
 [standalone Codex adapter](./CODEX.md#skills) selects
