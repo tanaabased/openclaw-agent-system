@@ -4,6 +4,7 @@ import {
   createAgentSystemLifecycleLogger,
   createAgentSystemLogger,
   formatDiagnostic,
+  formatRedactedErrorDiagnostic,
 } from '../core/logger.ts';
 
 function createLogger() {
@@ -96,6 +97,19 @@ describe('core/logger', () => {
     assert.deepEqual(test.records.info, []);
     assert.deepEqual(fileDebug, ['[agent-system] manifest_absent']);
     assert.deepEqual(fileInfo, ['[agent-system] tool_call_completed']);
+  });
+
+  it('should retain only allowlisted system causes without upstream prose or values', () => {
+    for (const code of ['EACCES', 'private-token', 123, undefined]) {
+      const error = Object.assign(new Error('private-token\nprivate notification prose'), {
+        code,
+        stack: 'private inspected command',
+      });
+      const text = formatRedactedErrorDiagnostic('fixture', error, 'fixture-failed');
+      assert.match(text, /code=fixture-failed/u);
+      assert.ok(text.includes(`cause=${code === 'EACCES' ? 'EACCES' : 'unknown'}`));
+      assert.doesNotMatch(text, /private/u);
+    }
   });
 
   it('should format diagnostic identity as metadata instead of another namespace', () => {

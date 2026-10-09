@@ -10,7 +10,7 @@ import {
   writeCliDiagnosticNotices,
   writeCliLines,
 } from '../../../cli/output.ts';
-import { formatErrorDiagnostic } from '../../../core/logger.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import {
   NotificationCliOptionError,
@@ -86,7 +86,11 @@ async function refreshNotificationsAgentSystem(
   } catch (error) {
     writeCliError(
       options.output,
-      formatErrorDiagnostic('github-notifications', error, 'github-notification-refresh-failed'),
+      formatRedactedErrorDiagnostic(
+        'github-notifications',
+        error,
+        'github-notification-refresh-failed',
+      ),
       options,
     );
     options.setExitCode(1);

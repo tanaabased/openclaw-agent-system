@@ -106,6 +106,7 @@ export default function registerAgentSystemCli(
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
   const environment = options.environment ?? process.env;
   const allowOperatorCommand = async (json = false) => {
+    let cause = 'bound-descendant';
     try {
       const binding = await commandAuthority?.resolve(environment, cwd());
       if (
@@ -116,11 +117,12 @@ export default function registerAgentSystemCli(
       )
         return true;
     } catch {
+      cause = 'authority-unresolved';
       // Invalid authority must not downgrade an agent descendant to an operator.
     }
     writeCliError(
       output,
-      'agent system operator commands are unavailable to agent or setup descendants.',
+      `agent system operator commands are unavailable to agent or setup descendants. code=operator-command-denied cause=${cause}`,
       { json, styles: options.styles, terminalColumns: options.terminalColumns },
     );
     setExitCode(1);
@@ -200,7 +202,11 @@ export default function registerAgentSystemCli(
           typeof args.hash !== 'string' ||
           !/^[a-f0-9]{64}$/u.test(args.hash)
         ) {
-          output.writeStderr('automation execution requires an owned id and synchronized hash.\n');
+          writeCliError(
+            output,
+            'automation execution requires an owned id and synchronized hash. code=automation-execution-options-invalid',
+            { json: true },
+          );
           return completeOneShot(1);
         }
         const code = await executeAutomation({
@@ -431,7 +437,11 @@ export default function registerAgentSystemCli(
       const agentId = tool.opts().agent;
       const shim = tool.opts().shim;
       if (shim !== undefined && shim !== 'managed' && shim !== 'contextual') {
-        writeCliError(output, 'invalid internal launcher invocation.', options);
+        writeCliError(
+          output,
+          'invalid internal launcher invocation. code=tool-launcher-options-invalid',
+          options,
+        );
         setExitCode(1);
         return;
       }

@@ -1,3 +1,4 @@
+import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
 import presentCliCommand from './presentation.ts';
 import type OpCache from '../environment/op-cache.ts';
 import {
@@ -99,10 +100,10 @@ async function credentialsCache(options: {
         backoff.retryInMs > 0 ? `active; retry in ${Math.ceil(backoff.retryInMs / 1000)}s` : 'none',
     });
     writeCliSummary(options.output, lines, options.styles);
-  } catch {
+  } catch (error) {
     writeCliError(
       options.output,
-      'credentials: Gateway cache request was not confirmed. Gateway may be unreachable, unauthorized, or incompatible; no local clear is Gateway success.',
+      `credentials: Gateway cache request was not confirmed. Gateway may be unreachable, unauthorized, or incompatible; no local clear is Gateway success. code=credentials-cache-request-failed action=${options.action} diagnostic=${JSON.stringify(gatewayErrorDiagnostic(error))}`,
       options,
     );
     options.setExitCode(1);
