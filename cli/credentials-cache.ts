@@ -51,7 +51,7 @@ async function credentialsCache(options: {
       OpCache['status']
     > & { invalidated?: ReturnType<OpCache['flush']> };
     const lines: CliSummaryLine[] = [
-      { label: 'gateway', style: 'target', value: `pid ${process.pid} (${process.scope})` },
+      { label: 'gateway', style: 'field', value: `pid ${process.pid} (${process.scope})` },
       {
         label: 'policy',
         style: 'field',
@@ -65,14 +65,9 @@ async function credentialsCache(options: {
         value: `${options.agentId ?? 'all agents'}: ${invalidated.entries} entries, ${invalidated.clients} clients, ${invalidated.pending} pending loads, ${invalidated.values} snapshots`,
       });
     } else {
-      lines.push({
-        label: 'entries',
-        style: 'field',
-        value: `${entries.length} retained; ${entries.filter((entry) => entry.cached).length} cached`,
-      });
+      lines.push({ label: 'entries', style: 'field', value: `${entries.length} retained` });
       for (const entry of entries) {
-        const age =
-          entry.ageMs === null ? 'not retrieved' : `age ${Math.floor(entry.ageMs / 1000)}s`;
+        const age = entry.ageMs === null ? 'not retrieved' : `${Math.floor(entry.ageMs / 1000)}s old`;
         const expiry = !entry.cached
           ? 'no snapshot'
           : entry.expired
@@ -80,10 +75,19 @@ async function credentialsCache(options: {
             : entry.expiresInMs === null
               ? 'no expiry'
               : `expires in ${Math.ceil(entry.expiresInMs / 1000)}s`;
+        const state = entry.expired
+          ? 'expired'
+          : entry.cached
+            ? 'cached'
+            : entry.pending
+              ? 'pending'
+              : 'empty';
         lines.push({
+          component: entry.agentId,
           label: 'agent',
-          style: 'field',
-          value: `${entry.agentId}: ${age}; ${expiry}${entry.pending ? '; pending' : ''}`,
+          style: entry.expired ? 'warning' : entry.cached ? 'status' : 'field',
+          quiet: !entry.cached && !entry.pending,
+          value: `${state}${entry.pending && entry.cached ? ', pending' : ''}; ${age}; ${expiry}`,
         });
       }
       lines.push({
@@ -98,11 +102,11 @@ async function credentialsCache(options: {
       value:
         backoff.retryInMs > 0 ? `active; retry in ${Math.ceil(backoff.retryInMs / 1000)}s` : 'none',
     });
-    writeCliSummary(options.output, lines, options.styles);
+    writeCliSummary(options.output, lines, options.styles, { rowPadding: 0 });
   } catch {
     writeCliError(
       options.output,
-      'credentials: Gateway cache request was not confirmed. Gateway may be unreachable, unauthorized, or incompatible; no local clear is Gateway success.',
+      'credentials: gateway cache request was not confirmed. the gateway may be unreachable, unauthorized, or incompatible; no local clear is gateway success.',
       options,
     );
     options.setExitCode(1);
