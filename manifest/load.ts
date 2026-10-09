@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 
 import loadAutomations from './automation-files.ts';
 import readManifestFile, { type ManifestFileDependency } from './read-file.ts';
-import { maximumManifestBytes, type ManifestDiscovery } from './discover.ts';
-import parseAgentManifest, { parseManifestYaml } from './parse.ts';
+import type { ManifestDiscovery } from './discover.ts';
+import { normalizeAgentManifest, parseManifestYaml } from './parse.ts';
+import mergeManifestDocuments, {
+  manifestSourceForField,
+  type ManifestSources,
+} from './merge-documents.ts';
+import readManifestDocument from './read-document.ts';
 import { normalizeAgentSetup } from './setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from './types.ts';
 
@@ -37,6 +41,9 @@ export type AgentManifestLoadResult =
       scope: AgentManifestScope;
       path: string;
       digest: string;
+      overlayPath?: string;
+      /** effective YAML pointers to declarations; normalized defaults have no source field. */
+      sources?: ManifestSources;
       setupHostFilePath?: string;
       setupHostFileFingerprint?: string;
       setupFilePath?: string;
@@ -112,6 +119,7 @@ async function loadSetupFile(
       diagnostics: yaml.diagnostics.map((diagnostic) => ({
         ...diagnostic,
         fieldPath,
+        sourcePath: path,
         message: `Setup file ${JSON.stringify(reference)} contains invalid YAML (${diagnostic.code}).`,
       })),
     };
@@ -123,6 +131,7 @@ async function loadSetupFile(
       path,
       diagnostics: normalized.diagnostics.map((diagnostic) => ({
         ...diagnostic,
+        sourcePath: path,
         message: `Setup file ${JSON.stringify(reference)}: ${diagnostic.message}`,
       })),
     };
@@ -143,45 +152,39 @@ export async function loadDiscoveredManifest(
   const selected = discovery.selected;
 
   if (!selected) return { status: 'unmanaged', scope, diagnostics: [] };
-  if (selected.status === 'invalid') {
+  if (selected.status === 'invalid' || discovery.overlay?.status === 'invalid') {
     return invalidManifestResult(scope, discovery.diagnostics, selected.path);
   }
 
-  const contents = await readFile(selected.path);
-  if (contents.byteLength > maximumManifestBytes) {
+  const base = await readManifestDocument(selected.path);
+  if (base.status === 'invalid')
     return invalidManifestResult(
       scope,
-      [
-        ...discovery.diagnostics,
-        {
-          code: 'manifest-too-large',
-          message: `The manifest exceeds the ${maximumManifestBytes}-byte size limit.`,
-          severity: 'error',
-        },
-      ],
+      [...discovery.diagnostics, ...base.diagnostics],
       selected.path,
     );
-  }
-
-  let source: string;
-  try {
-    source = new TextDecoder('utf-8', { fatal: true }).decode(contents);
-  } catch {
+  const overlay =
+    discovery.overlay?.status === 'readable'
+      ? await readManifestDocument(discovery.overlay.path)
+      : undefined;
+  if (overlay?.status === 'invalid')
     return invalidManifestResult(
       scope,
-      [
-        ...discovery.diagnostics,
-        {
-          code: 'manifest-encoding',
-          message: 'The manifest must be valid UTF-8.',
-          severity: 'error',
-        },
-      ],
+      [...discovery.diagnostics, ...overlay.diagnostics],
       selected.path,
     );
-  }
-
-  const parsed = parseAgentManifest(source);
+  const { value, sources } = mergeManifestDocuments(base, overlay);
+  const parsed = normalizeAgentManifest(value);
+  const attributeDiagnostics = (diagnostics: ManifestDiagnostic[]): ManifestDiagnostic[] =>
+    diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      ...(diagnostic.fieldPath === undefined || diagnostic.sourcePath !== undefined
+        ? {}
+        : {
+            sourcePath: manifestSourceForField(sources, diagnostic.fieldPath)?.path,
+          }),
+    }));
+  parsed.diagnostics = attributeDiagnostics(parsed.diagnostics);
   if (parsed.status === 'invalid') {
     return invalidManifestResult(
       scope,
@@ -198,6 +201,7 @@ export async function loadDiscoveredManifest(
         {
           code: 'agent-id-mismatch',
           fieldPath: '/agent/id',
+          sourcePath: sources['/agent/id']?.path,
           message: `Manifest agent id ${parsed.manifest.agent.id} does not match OpenClaw agent ${expectedAgentId}.`,
           severity: 'error',
         },
@@ -217,7 +221,11 @@ export async function loadDiscoveredManifest(
   if (includedHost?.status === 'invalid') {
     return invalidManifestResult(
       scope,
-      [...discovery.diagnostics, ...parsed.diagnostics, ...includedHost.diagnostics],
+      [
+        ...discovery.diagnostics,
+        ...parsed.diagnostics,
+        ...attributeDiagnostics(includedHost.diagnostics),
+      ],
       selected.path,
       undefined,
       includedHost.path,
@@ -234,7 +242,11 @@ export async function loadDiscoveredManifest(
   if (included?.status === 'invalid') {
     return invalidManifestResult(
       scope,
-      [...discovery.diagnostics, ...parsed.diagnostics, ...included.diagnostics],
+      [
+        ...discovery.diagnostics,
+        ...parsed.diagnostics,
+        ...attributeDiagnostics(included.diagnostics),
+      ],
       selected.path,
       included.path,
       includedHost?.path,
@@ -245,7 +257,11 @@ export async function loadDiscoveredManifest(
     return {
       ...invalidManifestResult(
         scope,
-        [...discovery.diagnostics, ...parsed.diagnostics, ...automationResult.diagnostics],
+        [
+          ...discovery.diagnostics,
+          ...parsed.diagnostics,
+          ...attributeDiagnostics(automationResult.diagnostics),
+        ],
         selected.path,
         included?.path,
         includedHost?.path,
@@ -260,7 +276,8 @@ export async function loadDiscoveredManifest(
     ...(includedHost ? { setupHost: includedHost.setup } : {}),
     ...(included ? { setup: included.setup } : {}),
   };
-  const digestHash = createHash('sha256').update(contents);
+  const digestHash = createHash('sha256').update(base.contents);
+  if (overlay) digestHash.update('\0agent.local.yaml\0').update(overlay.contents);
   if (includedHost) digestHash.update('\0').update(includedHost.contents);
   if (included) digestHash.update('\0').update(included.contents);
   for (const file of automationResult.files) digestHash.update('\0').update(file.fingerprint);
@@ -270,7 +287,7 @@ export async function loadDiscoveredManifest(
     checks: [],
     diagnostics: [],
   };
-  const lifecycleDiagnostics = lifecycleValidation.diagnostics;
+  const lifecycleDiagnostics = attributeDiagnostics(lifecycleValidation.diagnostics);
   if (lifecycleDiagnostics.some(({ severity }) => severity === 'error')) {
     return {
       ...invalidManifestResult(
@@ -289,6 +306,8 @@ export async function loadDiscoveredManifest(
     scope,
     path: selected.path,
     digest,
+    sources,
+    ...(overlay ? { overlayPath: overlay.path } : {}),
     ...(includedHost === undefined
       ? {}
       : {

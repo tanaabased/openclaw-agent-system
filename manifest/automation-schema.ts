@@ -42,7 +42,6 @@ const jobSchema = Type.Object(
     thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
     runtimes: Type.Optional(
       Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
-        minItems: 1,
         uniqueItems: true,
       }),
     ),

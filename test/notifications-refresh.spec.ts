@@ -87,7 +87,7 @@ describe('channels/github/cli/refresh', () => {
           styles: {
             ...createCliStyles({ NO_COLOR: '1' }),
             warning: (value) => `<warning>${value}</warning>`,
-            notice: (value) => `<notice>${value}</notice>`,
+            field: (value) => `<field>${value}</field>`,
           },
         });
         assert.deepEqual(exitCodes, [1]);
@@ -95,7 +95,7 @@ describe('channels/github/cli/refresh', () => {
         else
           assert.match(
             test.stdout.join(''),
-            code.endsWith('disabled') ? /<notice>status/u : /<warning>status/u,
+            code.endsWith('disabled') ? /<field>status/u : /<warning>status/u,
           );
       }
     }

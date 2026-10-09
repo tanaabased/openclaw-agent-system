@@ -53,6 +53,8 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
     updatedSince: string,
     assignmentTypes: readonly ('issue' | 'pull-request')[],
   ): Promise<GitHubAssignedItemDiscovery> {
+    if (assignmentTypes.length === 0)
+      return { candidates: [], incomplete: false, totalCount: 0, truncated: false };
     const candidates: GitHubAssignedItemCandidate[] = [];
     let incomplete = false;
     let totalCount = 0;

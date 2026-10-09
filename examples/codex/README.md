@@ -283,6 +283,22 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 test ! -d "$CODEX_HOME/rules"
 
+# should refresh local settings through the bound codex runtime without changing the shared base
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+printf '%s\n' 'models: { default: { effort: xhigh } }' 'setup-agent: { steps: [] }' > "$root/workspace/agent.local.yaml"
+cp "$root/workspace/agent.local.yaml" "$root/local.expected.yaml"
+printf '%s\n' '{"hook_event_name":"SessionStart","source":"startup"}' \
+  | PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" node "$runtime" session-start \
+  | jq -r '.hookSpecificOutput.additionalContext' \
+  | sed -n '/^{/,/^}/p' \
+  | jq -e '.binding.context.modelRouting.default.thinking == "xhigh"'
+cmp "$root/workspace/agent.expected.yaml" "$root/workspace/agent.yaml"
+cmp "$root/local.expected.yaml" "$root/workspace/agent.local.yaml"
+rm "$root/workspace/agent.local.yaml"
+
 # should create durable conversations with selected models and verified auto review
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

@@ -110,6 +110,24 @@ export function formatErrorDiagnostic(component: string, error: unknown, code?: 
   });
 }
 
+/** report only recognized system causes, never arbitrary upstream error prose or values. */
+export function formatRedactedErrorDiagnostic(
+  component: string,
+  error: unknown,
+  code: string,
+): string {
+  const candidate = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  const cause =
+    ['EACCES', 'EPERM', 'ENOENT', 'ENOSPC', 'EIO', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'].find(
+      (value) => value === candidate,
+    ) ?? 'unknown';
+  return formatDiagnostic({
+    component,
+    code,
+    message: `operation failed; upstream details withheld. cause=${cause}`,
+  });
+}
+
 export function formatManifestDiagnostics(
   result: AgentManifestLoadResult,
 ): AgentSystemFormattedDiagnostic[] {

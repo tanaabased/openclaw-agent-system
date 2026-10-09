@@ -44,4 +44,31 @@ test ! -e automation-ran
 cd "$GITHUB_WORKSPACE/examples/validate/automation-missing"
 if output=$(openclaw agent-system validate 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'code=manifest-automation-prompt-file-unreadable'
+
+# should validate a local overlay and leave both declarations untouched
+workspace="$TMPDIR/manifest-overlay"
+mkdir -p "$workspace/.agent-system"
+printf '%s\n' 'schema-version: 1' 'agent: { id: overlay-shared }' > "$workspace/.agent-system/agent.yaml"
+printf '%s\n' 'agent: { id: overlay-local }' 'setup-agent: { apply: touch must-not-run }' > "$workspace/.agent-system/agent.local.yaml"
+cp "$workspace/.agent-system/agent.yaml" "$workspace/base.expected"
+cp "$workspace/.agent-system/agent.local.yaml" "$workspace/local.expected"
+cd "$workspace"
+openclaw agent-system validate --json | jq -e '.status == "valid" and .agentId == "overlay-local"'
+cmp .agent-system/agent.yaml base.expected
+cmp .agent-system/agent.local.yaml local.expected
+test ! -e must-not-run
+
+# should reject a malformed local overlay instead of using the valid base
+workspace="$TMPDIR/manifest-overlay"
+printf '%s\n' 'agent: { unknown: value }' > "$workspace/.agent-system/agent.local.yaml"
+cd "$workspace"
+if output=$(openclaw agent-system validate 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'code=manifest-unknown-key'
+
+# should restore base settings after local overlay removal
+workspace="$TMPDIR/manifest-overlay"
+rm "$workspace/.agent-system/agent.local.yaml"
+cd "$workspace"
+openclaw agent-system validate --json | jq -e '.status == "valid" and .agentId == "overlay-shared"'
+cmp .agent-system/agent.yaml base.expected
 ```

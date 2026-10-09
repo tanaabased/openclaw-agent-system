@@ -8,6 +8,7 @@ import {
   writeCliJson,
   writeCliSummary,
 } from '../../../cli/output.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import {
   githubNotificationWaitTargets,
@@ -84,30 +85,87 @@ async function waitNotificationsAgentSystem(
   const manifest = await loadCommandManifest(options);
   if (!manifest) return;
 
-  const result = await options.statusService.wait({
-    agentId: manifest.manifest.agent.id,
-    executionSurface: 'cli-one-shot',
-    refresh: options.refresh,
-    ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
-    target: parsed.target,
-    timeoutMs: parsed.timeoutMs,
-  });
+  let result;
+  try {
+    result = await options.statusService.wait({
+      agentId: manifest.manifest.agent.id,
+      executionSurface: 'cli-one-shot',
+      refresh: options.refresh,
+      ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
+      target: parsed.target,
+      timeoutMs: parsed.timeoutMs,
+    });
+  } catch (error) {
+    writeCliError(
+      options.output,
+      formatRedactedErrorDiagnostic(
+        'github-notifications',
+        error,
+        'github-notification-wait-failed',
+      ),
+      options,
+    );
+    options.setExitCode(1);
+    return;
+  }
   if (options.json) {
     writeCliJson(options.output, result);
   } else {
+    const selectedItem = parsed.selector
+      ? result.observation.items.find(
+          (item) =>
+            item.repository === parsed.selector?.repository &&
+            item.itemType === parsed.selector?.itemType &&
+            item.number === parsed.selector?.number,
+        )
+      : undefined;
+    const observed = [
+      `status=${result.observation.status}`,
+      `code=${result.observation.code}`,
+      ...(parsed.target === 'baseline-ready'
+        ? [`baseline=${result.observation.baseline.status}`]
+        : selectedItem
+          ? [
+              `item=${selectedItem.disposition}`,
+              ...(selectedItem.stage ? [`stage=${selectedItem.stage}`] : []),
+              `worktree=${selectedItem.worktree}`,
+              `reason=${selectedItem.reasonCode}`,
+            ]
+          : []),
+    ].join(' ');
     writeCliSummary(
       options.output,
       [
         { label: 'agent', style: 'target', value: result.agentId },
-        { label: 'target', style: 'field', value: result.target },
+        { label: 'checkpoint', style: 'action', value: result.target },
+        {
+          label: 'scope',
+          style: 'target',
+          value: parsed.selector
+            ? `${parsed.selector.repository}#${parsed.selector.number} (${parsed.selector.itemType})`
+            : 'baseline',
+        },
+        { label: 'timeout', style: 'field', value: `${parsed.timeoutMs / 1_000}s` },
+        {
+          label: 'refresh',
+          style: 'field',
+          value: options.refresh ? 'requested' : 'not requested',
+        },
         {
           label: 'status',
-          style: result.status === 'completed' ? 'status' : 'error',
-          value: result.status,
+          style:
+            result.status === 'completed'
+              ? 'status'
+              : result.status === 'timed-out'
+                ? 'warning'
+                : 'error',
+          value: result.status === 'completed' ? 'checkpoint reached' : result.status,
         },
         { label: 'code', style: 'field', value: result.code },
+        { label: 'last observed', style: 'field', value: observed },
       ],
       options.styles,
+      { rowPadding: 0 },
     );
   }
   if (result.status !== 'completed') options.setExitCode(1);

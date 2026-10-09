@@ -252,9 +252,8 @@ git:
     }
   });
 
-  it('should reject empty, ambiguous, and direct 1password git key sources', () => {
+  it('should reject ambiguous and direct 1password git key sources', () => {
     for (const privateKeys of [
-      '[]',
       '{ path: key, from-environment: GIT_SSH_PRIVATE_KEY }',
       '{ from-onepassword: op://vault/item/private-key }',
     ]) {

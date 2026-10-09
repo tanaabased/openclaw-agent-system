@@ -313,7 +313,7 @@ environment:
     );
   });
 
-  it('should reject empty and duplicate required variable lists', () => {
+  it('should accept cleared and reject duplicate required variable lists', () => {
     assert.equal(
       diagnosticCodes(`
 schema-version: 1
@@ -322,7 +322,7 @@ agent:
 environment:
   required: []
 `).has('manifest-schema'),
-      true,
+      false,
     );
     assert.equal(
       diagnosticCodes(`
@@ -338,9 +338,8 @@ environment:
     );
   });
 
-  it('should reject empty, blank, and duplicate dotenv declarations', () => {
+  it('should reject blank and duplicate dotenv declarations', () => {
     for (const dotenv of [
-      '[]',
       "''",
       "'   '",
       '[.agent-system/env/base.env, .agent-system/env/base.env]',
@@ -358,8 +357,8 @@ environment:
     }
   });
 
-  it('should reject empty, blank, and duplicate 1password environment declarations', () => {
-    for (const environments of ['[]', "''", "'   '", '[env-agent, env-agent]']) {
+  it('should reject blank and duplicate 1password environment declarations', () => {
+    for (const environments of ["''", "'   '", '[env-agent, env-agent]']) {
       assert.equal(
         diagnosticCodes(`
 schema-version: 1
@@ -373,8 +372,8 @@ environment:
     }
   });
 
-  it('should reject empty, absolute, and duplicate path prepend declarations', () => {
-    for (const paths of ['[]', "''", "'   '", '/usr/local/bin', '[tools/bin, tools/bin]']) {
+  it('should reject blank, absolute, and duplicate path prepend declarations', () => {
+    for (const paths of ["''", "'   '", '/usr/local/bin', '[tools/bin, tools/bin]']) {
       assert.equal(
         diagnosticCodes(`
 schema-version: 1

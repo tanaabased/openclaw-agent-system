@@ -38,8 +38,20 @@ test ! -e offline-ran
 
 # should keep explicit synchronization failure honest while offline
 cd "$TMPDIR/automation-agent"
-if openclaw agent-system automations sync --json > offline-sync.json; then exit 1; fi
+if OPENCLAW_LOG_LEVEL=debug openclaw agent-system automations sync --json > offline-sync.json; then exit 1; fi
 jq -e '.status == "failed" and .code == "automation-gateway-unavailable"' offline-sync.json
+
+# should retain plain human failure diagnostics at debug level while offline
+cd "$TMPDIR/automation-agent"
+if NO_COLOR=1 OPENCLAW_LOG_LEVEL=debug openclaw agent-system automations sync > "$TMPDIR/automation-offline.stdout" 2> "$TMPDIR/automation-offline.stderr"; then exit 1; fi
+grep -F 'messages' "$TMPDIR/automation-offline.stderr"
+grep -F 'automation-gateway-unavailable' "$TMPDIR/automation-offline.stderr"
+
+# should reject malformed scheduler options without contaminating machine stdout
+if OPENCLAW_LOG_LEVEL=debug openclaw as automation-execute --id review --hash invalid > "$TMPDIR/automation-options.stdout" 2> "$TMPDIR/automation-options.stderr"; then exit 1; fi
+test ! -s "$TMPDIR/automation-options.stdout"
+grep -F 'code=automation-execution-options-invalid' "$TMPDIR/automation-options.stderr"
+if grep -F 'messages' "$TMPDIR/automation-options.stderr"; then exit 1; fi
 
 # should reconcile deferred disabled jobs once the gateway is reachable
 OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
@@ -102,12 +114,12 @@ bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" cleanup identity
 # should report markdown drift and preserve unmanaged disabled jobs during sync
 cd "$TMPDIR/automation-agent"
 unmanaged_id=$(openclaw gateway call cron.add --params '{"name":"unmanaged-197","enabled":false,"schedule":{"kind":"every","everyMs":3600000},"sessionTarget":"isolated","wakeMode":"now","payload":{"kind":"agentTurn","message":"never run this unmanaged fixture"},"delivery":{"mode":"none"}}' --json | jq -er '.job.id // .id')
-openclaw gateway call cron.get --params "{\"id\":\"$unmanaged_id\"}" --json > unmanaged-before.json
+openclaw gateway call cron.get --params "{\"id\":\"$unmanaged_id\"}" --json | jq -S '(.job // .) | {id, enabled, schedule, sessionTarget, wakeMode, payload, delivery}' > unmanaged-before.json
 printf 'Review the latest repository changes.\n' >> prompt.md
 if openclaw agent-system automations list --json > drift.json; then exit 1; fi
 jq -e '.findings | any(.stepId == "paused-review" and .code == "automation-drift")' drift.json
 openclaw agent-system automations sync --json | jq -e '.outcomes | any(.stepId == "paused-review" and .status == "updated")'
-openclaw gateway call cron.get --params "{\"id\":\"$unmanaged_id\"}" --json | diff - unmanaged-before.json
+openclaw gateway call cron.get --params "{\"id\":\"$unmanaged_id\"}" --json | jq -S '(.job // .) | {id, enabled, schedule, sessionTarget, wakeMode, payload, delivery}' | diff - unmanaged-before.json
 openclaw gateway call cron.remove --params "{\"id\":\"$unmanaged_id\"}" --json | jq -e '.ok == true'
 
 # should synchronize equivalent inline declarations without rewriting native jobs

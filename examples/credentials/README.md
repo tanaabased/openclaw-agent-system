@@ -191,11 +191,16 @@ output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unse
 printf '%s\n' "$output" | grep -F 'unchanged'
 printf '%s\n' "$output" | grep -F 'Gateway invalidation is pending'
 
-# should fail cache controls when the gateway is unavailable
-if output=$(openclaw agent-system credentials cache status --json 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'Gateway cache request was not confirmed'
-if output=$(openclaw agent-system credentials cache flush --json 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'Gateway cache request was not confirmed'
+# should fail cache controls with bounded protocol evidence and empty machine stdout at normal and debug levels
+for level in info debug; do
+  for action in status flush; do
+    if OPENCLAW_LOG_LEVEL="$level" openclaw agent-system credentials cache "$action" --json > "$TMPDIR/cache-failure.stdout" 2> "$TMPDIR/cache-failure.stderr"; then exit 1; fi
+    test ! -s "$TMPDIR/cache-failure.stdout"
+    grep -F 'code=credentials-cache-request-failed' "$TMPDIR/cache-failure.stderr"
+    grep -F 'category' "$TMPDIR/cache-failure.stderr"
+    if grep -F 'messages' "$TMPDIR/cache-failure.stderr"; then exit 1; fi
+  done
+done
 
 # should stop the strict mock model cleanly
 openclaw-aimock stop

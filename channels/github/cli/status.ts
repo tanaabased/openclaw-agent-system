@@ -4,10 +4,14 @@ import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  createCliStyles,
+  renderCliSummary,
+  writeCliDiagnosticNotices,
   writeCliError,
   writeCliJson,
-  writeCliSummary,
+  writeCliLines,
 } from '../../../cli/output.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
@@ -22,6 +26,7 @@ export interface StatusNotificationsAgentSystemOptions {
   setExitCode(code: number): void;
   statusService: Pick<GitHubNotificationStatusService, 'inspect'>;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -48,61 +53,138 @@ async function statusNotificationsAgentSystem(
   const manifest = await loadCommandManifest(options);
   if (!manifest) return;
 
-  const result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+  let result;
+  try {
+    result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+  } catch (error) {
+    writeCliError(
+      options.output,
+      formatRedactedErrorDiagnostic(
+        'github-notifications',
+        error,
+        'github-notification-status-failed',
+      ),
+      options,
+    );
+    options.setExitCode(1);
+    return;
+  }
   if (options.json) {
     writeCliJson(options.output, result);
   } else {
-    writeCliSummary(
-      options.output,
+    const styles = options.styles ?? createCliStyles();
+    const tableOptions = {
+      rowPadding: 0 as const,
+      terminalColumns: options.terminalColumns ?? process.stdout.columns,
+    };
+    const statusStyle =
+      result.status === 'degraded' ? 'error' : result.status === 'pending' ? 'warning' : 'status';
+    const summary = renderCliSummary(
       [
         { label: 'agent', style: 'target', value: result.agentId },
         {
-          label: 'status',
-          style:
-            result.status === 'degraded'
-              ? 'error'
-              : result.status === 'pending'
-                ? 'warning'
-                : 'status',
-          value: result.status,
+          label: 'scope',
+          style: 'field',
+          value: selector
+            ? `${selector.itemType} ${selector.repository}#${selector.number}`
+            : 'all items',
         },
-        { label: 'code', style: 'field', value: result.code },
-        { label: 'baseline', style: 'field', value: result.baseline.status },
+        { label: 'status', style: 'field', value: result.status, valueStyle: statusStyle },
+        { label: 'code', style: 'field', value: result.code, quiet: true },
+        {
+          label: 'baseline',
+          style: 'field',
+          value: result.baseline.status,
+          valueStyle: result.baseline.status === 'pending' ? 'warning' : 'field',
+        },
         {
           label: 'capacity',
           style: 'field',
-          value: `active=${result.capacity.active} queued=${result.capacity.queued} limit=${result.capacity.limit}`,
+          value: `agent-wide active=${result.capacity.active} queued=${result.capacity.queued} limit=${result.capacity.limit}`,
+          quiet: true,
         },
-        ...result.items.map((item) => ({
-          component: `${item.repository}#${item.number}`,
-          label: 'item',
-          style: 'field' as const,
-          value: [
-            item.itemType,
-            item.disposition,
-            `stage=${item.stage ?? 'none'}`,
-            `worktree=${item.worktree}`,
-            ...(item.scheduling === undefined ? [] : [`scheduling=${item.scheduling}`]),
-            ...(item.waitingReason === undefined ? [] : [`waiting-reason=${item.waitingReason}`]),
-            ...(item.cleanup === undefined
-              ? []
-              : [
-                  `cleanup=${item.cleanup.status}`,
-                  `session=${item.cleanup.session}`,
-                  `cleanup-worktree=${item.cleanup.worktree}`,
-                  `cleanup-reason=${item.cleanup.reasonCode}`,
-                ]),
-          ].join(' '),
-        })),
-        ...(result.itemFailures ?? []).map((failure) => ({
-          component: `${failure.repository}#${failure.number}`,
-          label: 'failure',
-          style: 'error' as const,
-          value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause} check repository write access and retry refresh`,
-        })),
       ],
-      options.styles,
+      styles,
+      tableOptions,
     );
+    const items = result.items.flatMap((item, index) => [
+      ...(index ? [''] : []),
+      ...renderCliSummary(
+        [
+          {
+            component: `${item.repository}#${item.number}`,
+            label: item.disposition,
+            style: 'field',
+            quiet: true,
+            value: `${item.itemType} stage=${item.stage ?? 'none'}`,
+          },
+        ],
+        styles,
+        tableOptions,
+      ),
+      ...renderCliSummary(
+        [
+          {
+            label: 'worktree',
+            style: 'field',
+            quiet: true,
+            value: `${item.worktree}${item.scheduling === undefined ? '' : ` scheduling=${item.scheduling}`}`,
+          },
+          ...(item.waitingReason === undefined
+            ? []
+            : [{ label: 'waiting', style: 'warning' as const, value: item.waitingReason }]),
+          ...(item.failureCode === undefined
+            ? []
+            : [{ label: 'failure', style: 'error' as const, value: item.failureCode }]),
+          ...(item.cleanup === undefined
+            ? []
+            : [
+                {
+                  label: 'cleanup',
+                  style:
+                    item.cleanup.status === 'failed'
+                      ? ('error' as const)
+                      : item.cleanup.status === 'skipped'
+                        ? ('warning' as const)
+                        : ('field' as const),
+                  quiet: true,
+                  value: [
+                    item.cleanup.status,
+                    `session=${item.cleanup.session} cleanup-worktree=${item.cleanup.worktree}`,
+                    `cleanup-reason=${item.cleanup.reasonCode}`,
+                  ].join('\n'),
+                },
+              ]),
+        ],
+        styles,
+        tableOptions,
+      ),
+    ]);
+    const failures = renderCliSummary(
+      (result.itemFailures ?? []).map((failure) => ({
+        component: `${failure.repository}#${failure.number}`,
+        label: 'failure',
+        style: 'error',
+        value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause}`,
+      })),
+      styles,
+      tableOptions,
+    );
+    writeCliLines(options.output, [
+      '',
+      ...summary,
+      '',
+      styles.bold('items'),
+      '',
+      ...(items.length ? items : [styles.field(selector ? 'no matching items' : 'no items')]),
+      ...(failures.length ? ['', styles.bold('attention'), '', ...failures] : []),
+      '',
+    ]);
+    if (failures.length) {
+      writeCliDiagnosticNotices(options, [
+        { severity: 'error', message: 'check repository write access and retry refresh' },
+      ]);
+    }
   }
   if (result.status === 'degraded') options.setExitCode(1);
 }

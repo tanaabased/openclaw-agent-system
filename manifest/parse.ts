@@ -41,7 +41,7 @@ const externalAgentManifestSchema = Type.Object(
                   minLength: 1,
                   pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
                 }),
-                { minItems: 1, uniqueItems: true },
+                { uniqueItems: true },
               ),
             ]),
           ),
@@ -53,7 +53,7 @@ const externalAgentManifestSchema = Type.Object(
                   minLength: 1,
                   pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
                 }),
-                { minItems: 1, uniqueItems: true },
+                { uniqueItems: true },
               ),
             ]),
           ),
@@ -68,13 +68,12 @@ const externalAgentManifestSchema = Type.Object(
                   minLength: 1,
                   pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
                 }),
-                { minItems: 1, uniqueItems: true },
+                { uniqueItems: true },
               ),
             ]),
           ),
           required: Type.Optional(
             Type.Array(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }), {
-              minItems: 1,
               uniqueItems: true,
             }),
           ),
@@ -176,7 +175,7 @@ function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): Manif
   if (error.keyword === 'additionalProperties') {
     return error.params.additionalProperties.map((property) => ({
       code: 'manifest-unknown-key',
-      fieldPath: `${error.instancePath}/${String(property)}`,
+      fieldPath: `${error.instancePath}/${pointerSegment(String(property))}`,
       message: `Unknown manifest key: ${String(property)}.`,
       severity: 'error',
     }));
@@ -336,7 +335,11 @@ export function parseManifestYaml(
 export default function parseAgentManifest(source: string): ParsedAgentManifest {
   const yaml = parseManifestYaml(source);
   if (yaml.status === 'invalid') return yaml;
-  const { value } = yaml;
+  return normalizeAgentManifest(yaml.value);
+}
+
+/** validate and normalize an effective document before any external values are resolved. */
+export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const agentKey = isRecord(value) && Object.hasOwn(value, 'setup-agent') ? 'setup-agent' : 'setup';
   const declarations = (['setup-host', agentKey] as const).flatMap((key) => {
     if (!isRecord(value) || !Object.hasOwn(value, key)) return [];

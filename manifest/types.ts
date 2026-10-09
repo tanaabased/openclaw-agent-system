@@ -45,6 +45,7 @@ export interface ManifestDiagnostic {
   message: string;
   severity: 'error' | 'warning';
   fieldPath?: string;
+  sourcePath?: string;
 }
 
 export type ParsedAgentManifest =
