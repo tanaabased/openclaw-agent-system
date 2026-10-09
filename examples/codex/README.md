@@ -40,6 +40,13 @@ and a normalized title: reconciliation must find the existing chat, verify its i
 correct the title before assessment, and avoid a second creation. Check summary concision
 and agreement with the full plan semantically; verify that the complete plan follows inline
 without a word-count target or an extra click. Do not assert exact model wording.
+For readability acceptance, review the assessment and summary without reading the full
+plan: identify the affected user, their task and current friction, the proposed change,
+and any consequential choice or limitation. Reject an opening that only lists internal
+mechanisms, even if it is concise and technically correct. Compare it with the issue,
+repository findings, and full plan to catch invented benefits or concealed uncertainty.
+Use a fresh issue as well as revisions so the trial does not merely reproduce a coached
+example; assess meaning rather than word counts or a forbidden-words list.
 For an explicitly authorized reassessment pilot, preview and apply an operator reset
 only after the prior chat is idle with a recorded result. Verify that its evidence
 remains retained, an ordinary poll creates nothing, and a subsequent assignment event

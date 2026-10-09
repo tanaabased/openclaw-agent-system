@@ -131,7 +131,7 @@ tables when they make the complete result easier to review.
 
 ## Assessment
 
-<assessment>
+<who is affected, what they are trying to do, what happens now, and why it falls short>
 
 > ## 🧠 Model routing
 >
@@ -142,7 +142,7 @@ tables when they make the complete result easier to review.
 
 ## Plan summary
 
-<concise approach, major changes, dependencies, material risks, and validation>
+<proposed changes in the user's experience, important choices or limits, and how success will be checked>
 
 ## Full plan
 
@@ -161,6 +161,25 @@ Use the applicable subsections **Code**, **Documentation**, **Tests**, **Operati
 and **Other** inside the full plan. Omit empty sections; a descriptive heading may replace
 Other. Group tests by the repository's actual layers. Keep documentation and test
 justifications beside their proposed changes, and preserve dependencies across sections.
+
+Write Assessment and Plan summary for someone who knows the product but not its
+implementation. Assessment explains the user's task, current friction, and desired
+outcome in concrete terms grounded in the investigation. Plan summary explains what
+the proposed fix would let the user do, the important behavior and limits, and how
+success will be checked. Translate the engineering plan; do not merely shorten it.
+
+Keep schema keys, file paths, commit hashes, branch bookkeeping, and internal machinery
+in the full plan or evidence unless a detail is necessary for a user decision. Explain
+material dependencies and risks through their consequences for the user. Preserve
+uncertainty and distinguish observed behavior, requirements, and proposed choices;
+plain language must not turn assumptions into facts or hide blocking questions.
+Apply the same audience to the opening outcome sentence and question context.
+
+Before submission, read Assessment and Plan summary without the full plan. The reader
+must be able to identify who has what problem, why it matters, what would change, and
+any decision or limitation that affects approval. Rewrite passages that require knowledge
+of internal names or merely announce implementation mechanisms, then check that the
+revised opening still agrees with the full plan. Keep this review out of the visible result.
 
 Keep Assessment short. Aim for 300–600 words in Plan summary when the work warrants it;
 use less for simple work. This is a target, not a quota, minimum, or enforced limit.

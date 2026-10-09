@@ -131,11 +131,21 @@ The receipt selects retained evidence; it does not grant authority by itself.
    Cut needless repetition, but retain implementation details, edge cases, schema choices,
    limits, and examples needed for a reliable handoff. Then derive a concise planSummary
    from that full plan, following the presentation contract's summary-only length guidance.
-   Cover the approach, major changes, consequential decisions, dependencies, material risks,
-   and validation. Keep the assessment brief; keep unresolved blocking questions visible.
+   Translate the approach into the user's problem and proposed experience, following
+   the presentation contract's audience guidance. Keep the assessment brief; keep
+   consequential decisions, risks, and unresolved blocking questions visible.
    Revise the summary and full plan together on follow-ups so they cannot disagree.
 
-6. Submit one result through dispatchRuntime with action:"result", id, and result, following the
+6. Perform one final reader-focused pass using the presentation contract's review criteria.
+   Read the opening outcome sentence, assessment, and planSummary, where present,
+   without the full plan.
+   Rewrite technical shorthand and implementation-first explanations until those sections
+   explain the problem and proposed change on their own. Preserve observed facts,
+   uncertainty, material questions, and the distinction between requirements and proposals;
+   compare the revised opening against the full plan before recording. This is an editing
+   pass by the current assessor, not another model call or a visible review checklist.
+
+7. Submit one result through dispatchRuntime with action:"result", id, and result, following the
    returned resultSchema. Choose plan-ready for an actionable plan, clarification-needed
    for blocking requirements, or operator-setup-blocker for an operational obstacle.
    Retain evidence and completed/remaining investigation in every outcome. Keep the
@@ -149,7 +159,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
    This runtime handoff is the only write authorized by the assessment workflow;
    do not edit repository files, install dependencies, commit, push, or publish.
 
-7. After the runtime acknowledges recording, reproduce its complete presentation
+8. After the runtime acknowledges recording, reproduce its complete presentation
    Markdown in this chat. The host frames the recorded outcome and routing card;
    show assessment, routing card, plan summary, and full plan inline in that order.
    Do not reconstruct its status, shorten the plan/questions, or replace verified
@@ -166,6 +176,8 @@ The receipt selects retained evidence; it does not grant authority by itself.
   unanswered requirements or unavailable evidence behind assumptions.
 - Proposed work and file changes follow repository evidence, and documentation/tests
   have a concrete reader need or coverage gap.
+- Assessment and plan summary explain the user problem and proposed outcome without
+  requiring the reader to understand the full engineering plan.
 - Runtime acknowledgment, not a heading or model self-report, establishes a recorded result.
 - A plan or result cannot authorize implementation or GitHub publication.
 
