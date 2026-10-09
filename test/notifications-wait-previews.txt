@@ -1,0 +1,58 @@
+illustrative fixture data; no provider operations
+
+## baseline-success
+[stdout]
+agent          fixture-agent
+checkpoint     baseline-ready
+scope          baseline
+timeout        12s
+refresh        not requested
+status         checkpoint reached
+code           github-notification-baseline-ready
+last observed  status=ready code=github-notification-status-ready baseline=ready
+
+## item-success
+[stdout]
+agent          fixture-agent
+checkpoint     prepared
+scope          tanaabased/example#12 (issue)
+timeout        12s
+refresh        requested
+status         checkpoint reached
+code           github-notification-item-prepared
+last observed  status=ready code=github-notification-status-ready item=approved
+               stage=prepared worktree=ready
+               reason=github-notification-item-prepared
+
+## timeout
+[stdout]
+agent          fixture-agent
+checkpoint     baseline-ready
+scope          baseline
+timeout        12s
+refresh        not requested
+status         timed-out
+code           github-notification-wait-timeout
+last observed  status=ready code=github-notification-status-ready baseline=ready
+
+## degraded
+[stdout]
+agent          fixture-agent
+checkpoint     baseline-ready
+scope          baseline
+timeout        12s
+refresh        not requested
+status         failed
+code           github-notification-status-degraded
+last observed  status=degraded code=github-notification-status-degraded
+               baseline=ready
+
+## invalid-options
+[stderr]
+
+messages
+
+✖ error
+  github-notifications: invalid wait options
+  code=github-notification-wait-options-invalid message=for must be one of
+  assignment-rejected, baseline-ready, prepared, retired, worktree-ready.
