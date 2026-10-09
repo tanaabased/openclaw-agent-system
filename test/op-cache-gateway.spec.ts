@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import ansis from 'ansis';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import registerOpCache from '../core/register-op-cache.ts';
@@ -170,21 +171,27 @@ describe('core/op-cache-gateway', () => {
       },
     ];
     for (const state of states) {
-      const stdout: string[] = [];
-      const stderr: string[] = [];
-      await credentialsCache({
-        action: 'status',
-        request: async () => ({ ...base, entries: state.entries, backoff: state.backoff }),
-        output: {
-          writeStdout: (value) => stdout.push(value),
-          writeStderr: (value) => stderr.push(value),
-        },
-        setExitCode() {},
-      });
-      const preview = stdout.join('');
-      assert.match(preview, state.expected, state.name);
-      assert.equal(preview.includes('private-value'), false);
-      assert.deepEqual(stderr, []);
+      const previews: string[] = [];
+      for (const environment of [{ NO_COLOR: '1' }, { FORCE_COLOR: '3' }]) {
+        const stdout: string[] = [];
+        const stderr: string[] = [];
+        await credentialsCache({
+          action: 'status',
+          styles: createCliStyles(environment),
+          request: async () => ({ ...base, entries: state.entries, backoff: state.backoff }),
+          output: {
+            writeStdout: (value) => stdout.push(value),
+            writeStderr: (value) => stderr.push(value),
+          },
+          setExitCode() {},
+        });
+        const preview = ansis.strip(stdout.join(''));
+        assert.match(preview, state.expected, state.name);
+        assert.equal(preview.includes('private-value'), false);
+        assert.deepEqual(stderr, []);
+        previews.push(preview);
+      }
+      assert.equal(previews[0], previews[1], state.name);
     }
 
     const stdout: string[] = [];
@@ -192,6 +199,7 @@ describe('core/op-cache-gateway', () => {
     let code = 0;
     await credentialsCache({
       action: 'status',
+      styles: createCliStyles({ NO_COLOR: '1' }),
       request: async () => {
         throw new Error('private gateway detail');
       },
