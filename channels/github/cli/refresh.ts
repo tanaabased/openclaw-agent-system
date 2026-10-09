@@ -6,7 +6,9 @@ import {
   type CliStyles,
   writeCliError,
   writeCliJson,
-  writeCliSummary,
+  renderCliSummary,
+  writeCliDiagnosticNotices,
+  writeCliLines,
 } from '../../../cli/output.ts';
 import { formatErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
@@ -31,6 +33,7 @@ export interface RefreshNotificationsAgentSystemOptions {
   setExitCode(code: number): void;
   styles?: CliStyles;
   timeoutSeconds?: unknown;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -120,21 +123,54 @@ async function refreshNotificationsAgentSystem(
         : result.baselineEstablished
           ? `established at ${new Date(result.baselineAt).toISOString()} with ${result.baseline ?? 0} existing assignments`
           : `ready since ${new Date(result.baselineAt).toISOString()}`;
-    writeCliSummary(
-      options.output,
+    const styles = options.styles;
+    const tableOptions = {
+      rowPadding: 0 as const,
+      terminalColumns: options.terminalColumns ?? process.stdout.columns,
+    };
+    const disabled = result.code === 'github-notification-disabled';
+    const throttled = result.code === 'github-notification-provider-throttle-active';
+    const failures = result.itemFailures ?? [];
+    const status =
+      result.status === 'failed'
+        ? 'failed'
+        : disabled
+          ? 'disabled'
+          : throttled
+            ? 'throttled'
+            : failures.length && result.status === 'completed'
+              ? 'completed with item failures'
+              : result.status;
+    const statusStyle =
+      result.status === 'failed'
+        ? 'error'
+        : disabled
+          ? 'field'
+          : throttled || failures.length
+            ? 'warning'
+            : result.status === 'completed'
+              ? 'status'
+              : 'field';
+    const summary = renderCliSummary(
       [
         { label: 'agent', style: 'target', value: result.agentId },
         {
+          label: 'scope',
+          style: 'target',
+          value: parsed.selector
+            ? `${parsed.selector.itemType} ${parsed.selector.repository}#${parsed.selector.number}`
+            : 'all items',
+        },
+        {
+          label: 'timeout',
+          style: 'field',
+          value: `${parsed.timeoutMs / 1_000}s${options.timeoutSeconds === undefined ? ' (default)' : ''}`,
+        },
+        {
           label: 'status',
-          style:
-            result.status === 'failed'
-              ? 'error'
-              : result.status === 'completed'
-                ? 'status'
-                : result.code === 'github-notification-disabled'
-                  ? 'notice'
-                  : 'warning',
-          value: result.status,
+          style: statusStyle,
+          valueStyle: statusStyle,
+          value: status,
         },
         { label: 'code', style: 'field', value: result.code },
         { label: 'baseline', style: 'field', value: baseline },
@@ -150,7 +186,7 @@ async function refreshNotificationsAgentSystem(
                 value: new Date(result.retryAt).toISOString(),
               },
             ]),
-        ...(result.nextPollAt === undefined || result.retryAt !== undefined
+        ...(result.nextPollAt === undefined
           ? []
           : [
               {
@@ -160,25 +196,50 @@ async function refreshNotificationsAgentSystem(
               },
             ]),
         ...(counts ? [{ label: 'items', style: 'field' as const, value: counts }] : []),
-        ...(result.code === 'github-notification-provider-throttle-active' &&
-        result.retryAt !== undefined
-          ? [
-              {
-                label: 'reason',
-                style: 'field' as const,
-                value: `GitHub rate limit; retry after ${new Date(result.retryAt).toISOString()}`,
-              },
-            ]
-          : []),
-        ...(result.itemFailures ?? []).map((failure) => ({
-          component: `${failure.repository}#${failure.number}`,
-          label: 'failure',
-          style: 'error' as const,
-          value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause} check repository write access`,
-        })),
       ],
-      options.styles,
+      styles,
+      tableOptions,
     );
+    const failureRows = renderCliSummary(
+      failures.map((failure) => ({
+        component: `${failure.repository}#${failure.number}`,
+        label: 'failure',
+        style: 'error' as const,
+        value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause}`,
+      })),
+      styles,
+      tableOptions,
+    );
+    writeCliLines(options.output, [
+      '',
+      ...summary,
+      ...(failureRows.length ? ['', ...failureRows] : []),
+      '',
+    ]);
+    if (failures.length) {
+      writeCliDiagnosticNotices(options, [
+        { severity: 'error', message: 'check repository write access and retry refresh' },
+      ]);
+    }
+    if (throttled) {
+      writeCliDiagnosticNotices(options, [
+        {
+          severity: 'warning',
+          message: 'provider rate limit; wait for it to clear before refreshing again',
+        },
+      ]);
+    } else if (disabled) {
+      writeCliDiagnosticNotices(options, [
+        { severity: 'notice', message: 'enable github notifications in agent.yaml to refresh' },
+      ]);
+    } else if (result.status === 'failed') {
+      writeCliDiagnosticNotices(options, [
+        {
+          severity: 'error',
+          message: 'inspect the reported code and retry refresh after resolving the cause',
+        },
+      ]);
+    }
   }
   if (result.status !== 'completed') options.setExitCode(1);
 }
