@@ -9,6 +9,9 @@ import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
 import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
 import { createCliStyles } from '../cli/output.ts';
+import { backupPreviewPlan } from './backup-presentation-fixtures.ts';
+import { pruneFixture } from './backup-prune-presentation-fixtures.ts';
+import { restoreFixtureManifest } from './cli-backup-restore-fixtures.ts';
 import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
 import registerAgentSystemCli, { type RegisterAgentSystemCliOptions } from '../cli/register.ts';
 import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
@@ -55,10 +58,13 @@ function createProgram(
     notificationWaitError?: Error;
     cacheGatewayRequest?: OpCacheGatewayRequest;
     terminalColumns?: number;
+    toolExitCode?: number;
+    toolStderr?: string;
     doctorFindings?: typeof doctorFindings;
     installOutcomes?: typeof installOutcomes;
   } = {},
 ) {
+  const events: Array<{ stream: string; text: string }> = [];
   const diagnostics: string[] = [];
   const exitCodes: number[] = [];
   const output: string[] = [];
@@ -263,8 +269,14 @@ function createProgram(
     },
     setExitCode: (code) => exitCodes.push(code),
     output: {
-      writeStderr: (message) => diagnostics.push(message),
-      writeStdout: (message) => output.push(message),
+      writeStderr: (message) => {
+        diagnostics.push(message);
+        events.push({ stream: 'stderr', text: message });
+      },
+      writeStdout: (message) => {
+        output.push(message);
+        events.push({ stream: 'stdout', text: message });
+      },
     },
     toolRegistry: {
       hostFallback: () => undefined,
@@ -279,8 +291,8 @@ function createProgram(
           auditId: 'audit-id',
           kind: 'cli' as const,
           commandResult: {
-            exitCode: 0,
-            stderr: '',
+            exitCode: dependencies.toolExitCode ?? 0,
+            stderr: dependencies.toolStderr ?? '',
             stdout: 'tanaabot\n',
             timedOut: false,
             truncated: false,
@@ -298,8 +310,199 @@ function createProgram(
     styles: createCliStyles({ NO_COLOR: '1' }),
     terminalColumns: dependencies.terminalColumns,
   });
-  return { calls, diagnostics, output, program, exitCodes };
+  return { calls, diagnostics, output, program, exitCodes, events };
 }
+
+describe('cli/command-family-fixtures', () => {
+  const leaves = [
+    ['validate'],
+    ['env'],
+    ['doctor'],
+    ['install'],
+    ['credentials', 'set', 'op', '--from-env'],
+    ['credentials', 'validate', 'op'],
+    ['credentials', 'unset', 'op'],
+    ['credentials', 'cache', 'status'],
+    ['credentials', 'cache', 'flush'],
+    ['backup', 'create', '--dry-run'],
+    ['backup', 'prune', '--keep', '1', '--dry-run'],
+    ['backup', 'verify', '/fixture.tar.gz'],
+    ['backup', 'restore', '/fixture.tar.gz', '--target', '/recovery'],
+    ['automations', 'list'],
+    ['automations', 'sync'],
+    ['automations', 'run', 'review'],
+    ['automations', 'runs', 'review'],
+    ['notifications', 'refresh'],
+    ['notifications', 'status'],
+    ['notifications', 'wait', '--for', 'baseline-ready'],
+    ['tool', 'gh', '--', 'api', 'user'],
+  ];
+  class BackupFixture extends WorkspaceBackupService {
+    override async plan() {
+      return backupPreviewPlan;
+    }
+    override async prune() {
+      return pruneFixture;
+    }
+    override async verify() {
+      return restoreFixtureManifest('captured');
+    }
+    override async restore() {
+      return { target: '/recovery', manifest: restoreFixtureManifest('captured') };
+    }
+  }
+  const automations = {
+    list: async () => ({
+      status: 'aligned',
+      jobs: [{ id: 'review', findings: [{ code: 'automation-healthy' }] }],
+    }),
+    reconcile: async () => ({ outcomes: [], warnings: [] }),
+    run: async () => ({
+      status: 'queued',
+      runId: 'occurrence',
+      execution: 'unavailable',
+      delivery: 'unavailable',
+    }),
+    runs: async () => ({
+      status: 'ok',
+      entries: [{ runId: 'occurrence', execution: 'ok', delivery: 'delivered' }],
+    }),
+  } as never;
+
+  it('should cover every current public leaf without treating aliases or hidden callbacks as leaves', () => {
+    const { program } = createProgram(undefined, { automations, automationRunner: true });
+    const names = (command: Command, prefix = ''): string[] =>
+      command.commands.flatMap((child) => {
+        const name = `${prefix}${child.name()}`;
+        if (child.name() === 'automation-execute') return [];
+        return child.commands.length ? names(child, `${name} `) : [name];
+      });
+    assert.equal(leaves.length, 21);
+    assert.deepEqual(
+      new Set(names(program.commands[0]!)),
+      new Set(
+        leaves.map((argv) =>
+          argv
+            .slice(
+              0,
+              argv[0] === 'credentials' && argv[1] === 'cache'
+                ? 3
+                : ['backup', 'automations', 'notifications', 'credentials'].includes(argv[0]!)
+                  ? 2
+                  : 1,
+            )
+            .join(' '),
+        ),
+      ),
+    );
+  });
+
+  const humanSignals = [
+    'valid',
+    'environment',
+    'workspace',
+    'workspace',
+    'stored',
+    'valid',
+    'removed',
+    'gateway',
+    'flushed',
+    'preview',
+    'prune',
+    'verified',
+    'staged',
+    'aligned',
+    'synchronized',
+    'queued',
+    'ok',
+    'completed',
+    'ready',
+    'checkpoint reached',
+    'tanaabot',
+  ];
+  for (const [index, argv] of leaves.entries()) {
+    it(`should preserve ordered human and machine output for ${argv.slice(0, 3).join(' ')}`, async () => {
+      for (const debug of [false, true]) {
+        for (const json of [false, true]) {
+          const machine =
+            json && (!['tool', 'credentials'].includes(argv[0]!) || argv[1] === 'cache');
+          const f = createProgram(undefined, {
+            automations,
+            backupService: new BackupFixture(),
+            cacheGatewayRequest: async (action) => ({
+              ...new OpCache().status(),
+              runtime: 'gateway',
+              ...(action === 'flush'
+                ? { invalidated: { entries: 0, clients: 0, pending: 0, values: 0 } }
+                : {}),
+            }),
+            environment: debug ? { OPENCLAW_DEBUG: '1', OPENCLAW_LOG_LEVEL: 'debug' } : {},
+            manifestResult: {
+              ...validResult,
+              diagnostics: [
+                { severity: 'warning', code: 'fixture-warning', message: 'fixture warning' },
+              ],
+            },
+          });
+          await f.program.parseAsync([
+            'node',
+            'openclaw',
+            'as',
+            ...argv,
+            ...(machine ? ['--json'] : []),
+          ]);
+          const stdout = f.output.join('');
+          const stderr = f.diagnostics.join('');
+          assert.ok(stdout.length > 0);
+          if (!machine) assert.ok(stdout.includes(humanSignals[index]!), stdout);
+          assert.doesNotMatch(stdout + stderr, /private-token|AGENT_COLOR.*green/u);
+          assert.deepEqual(f.exitCodes, []);
+          const firstDiagnostic = f.events.findIndex(({ stream }) => stream === 'stderr');
+          if (firstDiagnostic !== -1) {
+            assert.ok(f.events.slice(firstDiagnostic).every(({ stream }) => stream === 'stderr'));
+            if (machine) {
+              assert.doesNotMatch(stderr, /messages/u);
+              assert.ok(!stderr.includes('\u001b'));
+            } else assert.equal(stderr.match(/messages/gu)?.length, 1);
+          }
+          if (machine) {
+            assert.ok(!stdout.includes('\u001b'));
+            assert.ok(JSON.parse(stdout));
+          }
+        }
+      }
+    });
+  }
+
+  it('should preserve delegated child bytes and nonzero exit codes without adding a message section', async () => {
+    const f = createProgram(undefined, { toolExitCode: 17, toolStderr: 'Child MixedCase error\n' });
+    await f.program.parseAsync(['node', 'openclaw', 'as', 'tool', 'gh', '--', 'api', 'user']);
+    assert.deepEqual(f.events, [
+      { stream: 'stdout', text: 'tanaabot\n' },
+      { stream: 'stderr', text: 'Child MixedCase error\n' },
+    ]);
+    assert.deepEqual(f.exitCodes, [17]);
+  });
+
+  it('should reject malformed hidden execution with plain stderr and unchanged completion status', async () => {
+    const f = createProgram(undefined, { automationRunner: true });
+    await f.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'automation-execute',
+      '--id',
+      'review',
+      '--hash',
+      'bad',
+    ]);
+    assert.deepEqual(f.output, []);
+    assert.match(f.diagnostics.join(''), /code=automation-execution-options-invalid/u);
+    assert.doesNotMatch(f.diagnostics.join(''), /messages/u);
+    assert.ok(!f.diagnostics.join('').includes('\u001b'));
+    assert.deepEqual(f.calls.oneShotCompletion, [1]);
+  });
+});
 
 describe('cli/automation-commands', () => {
   it('should expose scheduler-wide inventory blockers in text without duplicating job findings', async () => {

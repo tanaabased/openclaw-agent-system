@@ -11,6 +11,7 @@ import {
   writeCliJson,
   writeCliLines,
 } from '../../../cli/output.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
@@ -52,7 +53,22 @@ async function statusNotificationsAgentSystem(
   const manifest = await loadCommandManifest(options);
   if (!manifest) return;
 
-  const result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+  let result;
+  try {
+    result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+  } catch (error) {
+    writeCliError(
+      options.output,
+      formatRedactedErrorDiagnostic(
+        'github-notifications',
+        error,
+        'github-notification-status-failed',
+      ),
+      options,
+    );
+    options.setExitCode(1);
+    return;
+  }
   if (options.json) {
     writeCliJson(options.output, result);
   } else {

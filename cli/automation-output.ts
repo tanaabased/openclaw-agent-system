@@ -94,12 +94,20 @@ async function automationOperation(
     };
     if (options.json) writeCliJson(options.output, result);
     writeCliDiagnosticNotices(options, [
-      { severity: 'error', message: `Automation operation stopped (${code}).` },
+      { severity: 'error', message: `automation operation stopped (${code}).` },
+      ...(error instanceof AgentSystemLifecycleError && error.progress
+        ? [
+            {
+              severity: 'warning' as const,
+              message: `partial progress: completed=${error.progress.outcomes.length} warnings=${error.progress.warnings.length} unattempted=${error.progress.unattempted.length}; ${error.progress.outcomes.length > 0 ? 'completed changes remain applied' : 'no completed changes reported'}; the stopped operation may have partial effects.`,
+            },
+          ]
+        : []),
       ...(diagnostic
         ? [
             {
               severity: 'error' as const,
-              message: `Gateway diagnostic: ${JSON.stringify(diagnostic)}`,
+              message: `gateway diagnostic: ${JSON.stringify(diagnostic)}`,
             },
           ]
         : []),

@@ -194,46 +194,11 @@ export default class AgentSystemToolRuntime {
     scope: AgentSystemToolScope,
     perform: (context: RuntimeExecutionContext<TResolvedConfiguration>) => Promise<TPayload>,
   ): Promise<AgentSystemToolExecutionMetadata & TPayload> {
-    const loaded = await loadBoundToolManifest(this.#dependencies.manifestService, scope);
-    const agentId = loaded.manifest.agent.id;
-    const workspaceDir = loaded.scope.workspaceDir;
-    const declaredConfiguration = definition.configuration.read(loaded.manifest);
-    if (declaredConfiguration === undefined) {
-      throw new AgentSystemToolError(
-        'capability_not_configured',
-        `Agent ${agentId} does not configure the ${definition.id} tool.`,
-      );
-    }
-    try {
-      definition.tool.validate?.(input, declaredConfiguration);
-    } catch {
-      throw new AgentSystemToolError(
-        'invalid_arguments',
-        `The ${definition.tool.name} request is invalid.`,
-      );
-    }
-    const operation = definition.tool.classify(input, declaredConfiguration);
-    const request = {
-      agentId,
-      operation,
-      toolId: definition.id,
-      toolName: definition.tool.name,
-    };
-    const authorization = definition.authorization?.authorize
-      ? await definition.authorization.authorize(operation, declaredConfiguration)
-      : await (this.#dependencies.authorize ?? defaultAuthorize)(request);
-    if (authorization.status === 'denied') {
-      throw new AgentSystemToolError(
-        operation.risk === 'unknown' ? 'operation_unclassified' : 'approval_denied',
-        authorization.reason,
-      );
-    }
-    if (definition.authorization?.authorize && this.#dependencies.authorize) {
-      const approval = await this.#dependencies.authorize(request);
-      if (approval.status !== 'allowed') {
-        throw new AgentSystemToolError('approval_denied', approval.reason);
-      }
-    }
+    const { loaded, agentId, workspaceDir, declaredConfiguration, operation } = await this.#admit(
+      definition,
+      input,
+      scope,
+    );
 
     const auditId = randomUUID();
     const startedAt = Date.now();
@@ -344,6 +309,70 @@ export default class AgentSystemToolRuntime {
         `tool_call_failed auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} source=${quote(scope.source)} durationMs=${durationMs} code=${quote(toolError.code)}${toolError.failureDiagnostic ? ` stage=${quote(toolError.failureDiagnostic.stage)} category=${quote(toolError.failureDiagnostic.category)}${toolError.failureDiagnostic.reasonCode ? ` reasonCode=${quote(toolError.failureDiagnostic.reasonCode)}` : ''}${toolError.failureDiagnostic.publication ? ` publication=published pr=${toolError.failureDiagnostic.publication.number}` : ''}` : ''}${toolError.providerDiagnostic ? ` ${formatProviderDiagnostic(toolError.providerDiagnostic)}` : ''}`,
       );
       throw toolError;
+    }
+  }
+
+  async #admit<TParameters extends TSchema, TDeclaredConfiguration, TResolvedConfiguration>(
+    definition: RuntimeDefinition<TParameters, TDeclaredConfiguration, TResolvedConfiguration>,
+    input: Static<TParameters>,
+    scope: AgentSystemToolScope,
+  ) {
+    let stage = 'binding';
+    let agentId: string | undefined;
+    try {
+      const loaded = await loadBoundToolManifest(this.#dependencies.manifestService, scope);
+      agentId = loaded.manifest.agent.id;
+      stage = 'configuration';
+      const workspaceDir = loaded.scope.workspaceDir;
+      const declaredConfiguration = definition.configuration.read(loaded.manifest);
+      if (declaredConfiguration === undefined) {
+        throw new AgentSystemToolError(
+          'capability_not_configured',
+          `Agent ${agentId} does not configure the ${definition.id} tool.`,
+        );
+      }
+      stage = 'validation';
+      try {
+        definition.tool.validate?.(input, declaredConfiguration);
+      } catch {
+        throw new AgentSystemToolError(
+          'invalid_arguments',
+          `The ${definition.tool.name} request is invalid.`,
+        );
+      }
+      stage = 'classification';
+      const operation = definition.tool.classify(input, declaredConfiguration);
+      const request = {
+        agentId,
+        operation,
+        toolId: definition.id,
+        toolName: definition.tool.name,
+      };
+      stage = 'authorization';
+      const authorization = definition.authorization?.authorize
+        ? await definition.authorization.authorize(operation, declaredConfiguration)
+        : await (this.#dependencies.authorize ?? defaultAuthorize)(request);
+      if (authorization.status === 'denied') {
+        throw new AgentSystemToolError(
+          operation.risk === 'unknown' ? 'operation_unclassified' : 'approval_denied',
+          authorization.reason,
+        );
+      }
+      if (definition.authorization?.authorize && this.#dependencies.authorize) {
+        const approval = await this.#dependencies.authorize(request);
+        if (approval.status !== 'allowed') {
+          throw new AgentSystemToolError('approval_denied', approval.reason);
+        }
+      }
+      return { loaded, agentId, workspaceDir, declaredConfiguration, operation };
+    } catch (error) {
+      const code = error instanceof AgentSystemToolError ? error.code : 'execution_failed';
+      this.#dependencies.logger.error(
+        `tool_admission_failed tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} source=${quote(scope.source)} stage=${quote(stage)}${agentId === undefined ? '' : ` agentId=${quote(agentId)}`} code=${quote(code)}`,
+      );
+      throw error instanceof AgentSystemToolError
+        ? error
+        : new AgentSystemToolError('execution_failed', 'The tool admission request failed.');
     }
   }
 

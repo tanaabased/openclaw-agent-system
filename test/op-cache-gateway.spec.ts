@@ -116,19 +116,49 @@ describe('core/op-cache-gateway', () => {
       },
       {
         name: 'cached',
-        entries: [{ agentId: 'agent: exact/id', client: true, pending: false, cached: true, ageMs: 1200, expiresInMs: 5000, expired: false }],
+        entries: [
+          {
+            agentId: 'agent: exact/id',
+            client: true,
+            pending: false,
+            cached: true,
+            ageMs: 1200,
+            expiresInMs: 5000,
+            expired: false,
+          },
+        ],
         backoff: { active: 0, retryInMs: 0 },
-        expected: /agent  agent: exact\/id.*cached.*1s old/u,
+        expected: /agent\s+agent: exact\/id.*cached.*1s old/u,
       },
       {
         name: 'pending',
-        entries: [{ agentId: 'pending-agent', client: true, pending: true, cached: false, ageMs: null, expiresInMs: null, expired: false }],
+        entries: [
+          {
+            agentId: 'pending-agent',
+            client: true,
+            pending: true,
+            cached: false,
+            ageMs: null,
+            expiresInMs: null,
+            expired: false,
+          },
+        ],
         backoff: { active: 0, retryInMs: 0 },
         expected: /pending.*not retrieved/u,
       },
       {
         name: 'expired',
-        entries: [{ agentId: 'expired-agent', client: true, pending: false, cached: true, ageMs: 9000, expiresInMs: 0, expired: true }],
+        entries: [
+          {
+            agentId: 'expired-agent',
+            client: true,
+            pending: false,
+            cached: true,
+            ageMs: 9000,
+            expiresInMs: 0,
+            expired: true,
+          },
+        ],
         backoff: { active: 0, retryInMs: 0 },
         expected: /expired.*9s old/u,
       },
@@ -169,7 +199,9 @@ describe('core/op-cache-gateway', () => {
         writeStdout: (value) => stdout.push(value),
         writeStderr: (value) => stderr.push(value),
       },
-      setExitCode(value) { code = value; },
+      setExitCode(value) {
+        code = value;
+      },
     });
     assert.equal(code, 1);
     assert.deepEqual(stdout, []);
