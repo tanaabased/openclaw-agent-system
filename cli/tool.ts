@@ -7,7 +7,7 @@ import type AgentManifestService from '../manifest/service.ts';
 import type { AgentCommandBinding, AgentCommandContext } from '../agent/command-authority.ts';
 import runHostCommand from '../api/host-command.ts';
 import { type CliOutput, writeCliError } from './output.ts';
-import { formatErrorDiagnostic } from '../core/logger.ts';
+import { formatErrorDiagnostic, formatRedactedErrorDiagnostic } from '../core/logger.ts';
 import readToolCommandStdin from '../api/read-command-stdin.ts';
 
 export interface RunAgentSystemToolOptions {
@@ -146,11 +146,9 @@ export default async function runAgentSystemTool(
   } catch (error) {
     writeCliError(
       options.output,
-      formatErrorDiagnostic(
-        'tool',
-        error,
-        error instanceof AgentSystemToolError ? error.code : undefined,
-      ),
+      error instanceof AgentSystemToolError
+        ? formatErrorDiagnostic('tool', error, error.code)
+        : formatRedactedErrorDiagnostic('tool', error, 'execution_failed'),
       options,
     );
     options.setExitCode(1);

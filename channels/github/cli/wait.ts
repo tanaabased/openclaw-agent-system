@@ -8,6 +8,7 @@ import {
   writeCliJson,
   writeCliSummary,
 } from '../../../cli/output.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import {
   githubNotificationWaitTargets,
@@ -84,14 +85,29 @@ async function waitNotificationsAgentSystem(
   const manifest = await loadCommandManifest(options);
   if (!manifest) return;
 
-  const result = await options.statusService.wait({
-    agentId: manifest.manifest.agent.id,
-    executionSurface: 'cli-one-shot',
-    refresh: options.refresh,
-    ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
-    target: parsed.target,
-    timeoutMs: parsed.timeoutMs,
-  });
+  let result;
+  try {
+    result = await options.statusService.wait({
+      agentId: manifest.manifest.agent.id,
+      executionSurface: 'cli-one-shot',
+      refresh: options.refresh,
+      ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
+      target: parsed.target,
+      timeoutMs: parsed.timeoutMs,
+    });
+  } catch (error) {
+    writeCliError(
+      options.output,
+      formatRedactedErrorDiagnostic(
+        'github-notifications',
+        error,
+        'github-notification-wait-failed',
+      ),
+      options,
+    );
+    options.setExitCode(1);
+    return;
+  }
   if (options.json) {
     writeCliJson(options.output, result);
   } else {
