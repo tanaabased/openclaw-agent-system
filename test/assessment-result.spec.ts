@@ -14,6 +14,12 @@ describe('agent/assessment-result', () => {
       {
         outcome: 'plan-ready',
         assessment: 'Current behavior differs.',
+        planSummary: 'Repair the shared owner.',
+        plan: 'Change the owner and test the boundary.',
+      },
+      {
+        outcome: 'plan-ready',
+        assessment: 'Current behavior differs.',
         plan: 'Change the owner and test the boundary.',
       },
       {
@@ -33,6 +39,14 @@ describe('agent/assessment-result', () => {
     for (const invalid of [
       '## Plan ready',
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: ' ' },
+      { ...common, outcome: 'plan-ready', assessment: 'Observed.', planSummary: 'A summary.' },
+      ...[' ', 42].map((planSummary) => ({
+        ...common,
+        outcome: 'plan-ready',
+        assessment: 'Observed.',
+        planSummary,
+        plan: 'Change the owner.',
+      })),
       { ...common, outcome: 'clarification-needed', assessment: 'Observed.', questions: [] },
       {
         ...common,

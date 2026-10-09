@@ -31,7 +31,14 @@ const common = { version: Type.Literal(1), summary: text, evidence, progress };
 /** shared issue assessment contract owned by #249; lifecycle identity stays runtime-owned. */
 export const assessmentResultSchema = Type.Union([
   Type.Object(
-    { ...common, outcome: Type.Literal('plan-ready'), assessment: text, plan: text },
+    {
+      ...common,
+      outcome: Type.Literal('plan-ready'),
+      assessment: text,
+      // optional for retained version 1 results written before summary/full-plan presentation.
+      planSummary: Type.Optional(text),
+      plan: text,
+    },
     { additionalProperties: false },
   ),
   Type.Object(

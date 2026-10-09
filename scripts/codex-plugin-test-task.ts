@@ -230,7 +230,12 @@ try {
       await readFile(join(skillsRoot, directory, 'SKILL.md'), 'utf8'),
     );
   }
-  for (const path of ['dist/codex/codex-runtime.js', 'hooks/hooks.json']) {
+  for (const path of [
+    'dist/codex/codex-runtime.js',
+    'hooks/hooks.json',
+    'agent/assessment-result.ts',
+    'channels/github/PRESENTATION.md',
+  ]) {
     assert.equal(
       await readFile(join(cacheRoot, path), 'utf8'),
       await readFile(join(packageRoot, path), 'utf8'),

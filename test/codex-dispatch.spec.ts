@@ -37,6 +37,7 @@ const result = {
   outcome: 'plan-ready',
   summary: 'Repair the contained behavior.',
   assessment: 'The user needs a reliable result.',
+  planSummary: 'Repair the owner and cover the missing case.',
   plan: 'Update the owner and test its public boundary.',
   evidence: [
     { source: 'repo/file.ts', status: 'observed', detail: 'The current owner omits this case.' },
@@ -152,6 +153,10 @@ describe('agent/codex-dispatch', () => {
         return '';
       },
       native: {
+        async rename(threadId, title) {
+          assert.equal(threadId, native?.id);
+          native!.name = title;
+        },
         async deniedCreation() {
           return { turnId: 'denied-turn', callId: 'denied-call' };
         },
@@ -165,6 +170,116 @@ describe('agent/codex-dispatch', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  async function reassign() {
+    now += 2000;
+    fixture.events.push({
+      ...fixture.events[0]!,
+      nodeId: 'E_assignment_' + now,
+      databaseId: now,
+      createdAt: new Date(now).toISOString(),
+    });
+    await runCodexIntake(pluginData, false, {
+      codexHome,
+      now: () => now,
+      connect: async () => fixture.client,
+    });
+  }
+
+  it('should preserve a completed assessment and dispatch once after an explicit reset and new assignment', async () => {
+    const first = await prepare();
+    created();
+    await request('result', { id: first.id, result }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    await next();
+    await reassign();
+    assert.deepEqual(await next(), { status: 'idle', changed: false });
+    const operator = { threadId: 'operator' };
+    const before = await request('inspect');
+    const preview = await request('reset', { id: first.id }, operator);
+    assert.equal(preview.status, 'reset-available');
+    assert.deepEqual(await request('inspect'), before);
+    assert.equal(
+      (await request('reset', { id: first.id, digest: preview.digest }, operator)).status,
+      'reset',
+    );
+    assert.deepEqual(await next(), { status: 'idle', changed: false });
+    await assert.rejects(
+      request('context', { id: first.id }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-reset/,
+    );
+    await assert.rejects(
+      request('result', { id: first.id, result }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-reset/,
+    );
+    await reassign();
+    const second = await prepare();
+    assert.notEqual(second.id, first.id);
+    const records = (await request('inspect')).records as {
+      id: string;
+      result?: unknown;
+      reset?: { by: string };
+      request: unknown;
+    }[];
+    assert.equal(records.length, 2);
+    assert.deepEqual(records[0]!.result, result);
+    assert.deepEqual(records[0]!.request, (before.records as { request: unknown }[])[0]!.request);
+    assert.equal(records[0]!.reset?.by, 'operator');
+    assert.equal(records[1]!.reset, undefined);
+    assert.equal(records[1]!.id, second.id);
+    // pending creation is reconciled, never emitted again as a fresh request.
+    native = undefined;
+    assert.notEqual((await next()).status, 'prepared');
+    assert.equal(((await request('inspect')).records as unknown[]).length, 2);
+  });
+
+  it('should reject reset from intake or child chats, unfinished work, stale previews, and active chats', async () => {
+    const first = await prepare();
+    const operator = { threadId: 'operator' };
+    await assert.rejects(request('reset', { id: first.id }), /dispatch-operator-caller-required/);
+    await assert.rejects(
+      request('reset', { id: first.id }, operator),
+      /dispatch-reset-unavailable/,
+    );
+    created();
+    await request('result', { id: first.id, result }, { threadId: 'issue-thread' });
+    await assert.rejects(
+      request('reset', { id: first.id }, { threadId: 'issue-thread' }),
+      /dispatch-operator-caller-required/,
+    );
+    await assert.rejects(
+      request('reset', { id: first.id }, operator),
+      /dispatch-reset-chat-active/,
+    );
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    const preview = await request('reset', { id: first.id }, operator);
+    native!.turnId = 'later-turn';
+    await assert.rejects(
+      request('reset', { id: first.id, digest: preview.digest }, operator),
+      /dispatch-reset-chat-active/,
+    );
+    native!.turnId = 'first-turn';
+    await assert.rejects(
+      request('reset', { id: first.id, digest: 'stale' }, operator),
+      /dispatch-recovery-stale/,
+    );
+    native!.status = 'notLoaded';
+    native!.turnStatus = 'interrupted';
+    await assert.rejects(
+      request('reset', { id: first.id }, operator),
+      /dispatch-reset-chat-active/,
+    );
+    native = undefined;
+    await assert.rejects(
+      request('reset', { id: first.id }, operator),
+      /dispatch-native-readback-diverged/,
+    );
+    const records = (await request('inspect')).records as { reset?: unknown; result: unknown }[];
+    assert.equal(records[0]!.reset, undefined);
+    assert.deepEqual(records[0]!.result, result);
   });
 
   it('should retry a verified denial only through a fresh operator recovery preview', async () => {
@@ -371,27 +486,78 @@ describe('agent/codex-dispatch', () => {
       request('result', { id: prepared.id, result: '## Plan ready' }, child),
       /assessment-result-invalid/,
     );
-    assert.equal((await request('result', { id: prepared.id, result }, child)).status, 'recorded');
+    const recorded = await request('result', { id: prepared.id, result }, child);
+    assert.equal(recorded.status, 'recorded');
+    assert.ok(String(recorded.presentation).includes(result.assessment));
+    assert.ok(String(recorded.presentation).includes(result.planSummary));
+    assert.ok(String(recorded.presentation).includes(result.plan));
+    assert.match(String(recorded.presentation), /Selected.*gpt-6\.1-sol \/ high/);
+    assert.match(
+      String(recorded.presentation),
+      /Effective settings.*Verified: gpt-6\.1-sol \/ high/,
+    );
     assert.equal((await next()).outcome, 'plan-ready');
     assert.deepEqual(await next(), { status: 'idle', changed: false });
-    assert.equal((await request('result', { id: prepared.id, result }, child)).status, 'recorded');
+    assert.deepEqual(await request('result', { id: prepared.id, result }, child), recorded);
     await assert.rejects(
       request('result', { id: prepared.id, result: { ...result, plan: 'Changed.' } }, child),
       /assessment-result-already-recorded/,
     );
     native!.turnId = 'user-follow-up';
-    assert.equal(
-      (
-        await request(
-          'result',
-          { id: prepared.id, result: { ...result, plan: 'Refined after clarification.' } },
-          child,
-        )
-      ).status,
-      'recorded',
+    const revised = await request(
+      'result',
+      { id: prepared.id, result: { ...result, plan: 'Refined after clarification.' } },
+      child,
     );
+    assert.equal(revised.status, 'recorded');
+    assert.ok(String(revised.presentation).includes('Refined after clarification.'));
+    assert.ok(!String(revised.presentation).includes(result.plan));
+    const resumed = await request('context', { id: prepared.id }, child);
+    assert.deepEqual(resumed.previousResult, { ...result, plan: 'Refined after clarification.' });
     assert.equal((await next()).changed, true);
     assert.deepEqual(await next(), { status: 'idle', changed: false });
+  });
+
+  it('should retain and present questions and setup obstacles without changing routing', async () => {
+    const prepared = await prepare();
+    created();
+    delete native!.model;
+    delete native!.effort;
+    const child = { threadId: 'issue-thread' };
+    const common = {
+      version: 1,
+      summary: 'Additional input is needed.',
+      evidence: result.evidence,
+      progress: result.progress,
+    };
+    for (const outcome of [
+      {
+        ...common,
+        outcome: 'clarification-needed',
+        assessment: 'Retention is unspecified.',
+        questions: ['How long should evidence remain?'],
+      },
+      {
+        ...common,
+        outcome: 'operator-setup-blocker',
+        code: 'source-unavailable',
+        remediation: 'Restore access to the required source.',
+      },
+    ]) {
+      native!.turnId = outcome.outcome;
+      const recorded = await request('result', { id: prepared.id, result: outcome }, child);
+      assert.equal(recorded.status, 'recorded');
+      assert.equal(recorded.outcome, outcome.outcome);
+      assert.match(String(recorded.presentation), /Selected.*gpt-6\.1-sol \/ high/);
+      assert.match(String(recorded.presentation), /Effective settings.*Not independently verified/);
+      assert.ok(
+        String(recorded.presentation).includes(
+          'questions' in outcome ? outcome.questions[0]! : outcome.remediation,
+        ),
+      );
+      const resumed = await request('context', { id: prepared.id }, child);
+      assert.deepEqual(resumed.previousResult, outcome);
+    }
   });
 
   it('should retain completed results when later reconciliation fails', async () => {
@@ -472,18 +638,18 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await first).status, 'routing-required');
   });
 
-  it('should offer one title repair and retain a missing-result failure without another launch', async () => {
+  it('should normalize a title before the first child assessment without an intake repair race', async () => {
     const prepared = await prepare();
     created();
     native!.name = 'a normalized native title';
-    const blocked = await request('reconcile', { id: prepared.id });
-    assert.deepEqual(blocked.repair, {
-      threadId: 'issue-thread',
-      title: '#3: REPAIR CONTAINED BEHAVIOR',
-    });
-    assert.equal((await request('reconcile', { id: prepared.id })).repair, undefined);
-    native!.name = '#3: REPAIR CONTAINED BEHAVIOR';
+    assert.equal(
+      (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
+      'verified',
+    );
+    assert.equal(native!.name, '#3: REPAIR CONTAINED BEHAVIOR');
+    assert.equal((await request('reconcile', { id: prepared.id })).status, 'assessing');
     native!.turnStatus = 'failed';
+    native!.status = 'idle';
     now += 300001;
     assert.equal((await next()).code, 'dispatch-assessment-result-missing');
     assert.equal(
@@ -495,6 +661,65 @@ describe('agent/codex-dispatch', () => {
       'recorded',
     );
     assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+  });
+
+  it('should not declare missing results from unloaded history or an active native chat', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+    for (const status of ['notLoaded', 'active']) {
+      for (const turnStatus of ['completed', 'failed', 'interrupted']) {
+        native!.status = status;
+        native!.turnStatus = turnStatus;
+        now += 300001;
+        assert.equal((await next()).status, 'assessing');
+        const records = (await request('inspect')).records as { phase: string; result?: unknown }[];
+        assert.equal(records.length, 1);
+        assert.equal(records[0]!.phase, 'assessing');
+        assert.equal(records[0]!.result, undefined);
+      }
+    }
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    assert.equal((await next()).outcome, 'plan-ready');
+  });
+
+  it('should retain verified child identity on rename failure and recover without another creation', async () => {
+    const prepared = await prepare();
+    created();
+    native!.name = 'shortened title';
+    const rename = deps.native!.rename;
+    deps.native!.rename = async () => {
+      throw new Error('rename-unavailable');
+    };
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /rename-unavailable/,
+    );
+    const record = ((await request('inspect')).records as { threadId: string }[])[0]!;
+    assert.equal(record.threadId, 'issue-thread');
+    deps.native!.rename = rename;
+    assert.equal((await request('reconcile', { id: prepared.id })).status, 'assessing');
+    assert.equal(native!.name, '#3: REPAIR CONTAINED BEHAVIOR');
+  });
+
+  it('should not rename a chat whose worktree or model verification fails', async () => {
+    const prepared = await prepare();
+    created();
+    native!.name = 'shortened title';
+    deps.native!.rename = async () => {
+      assert.fail('unverified chat must not be renamed');
+    };
+    native!.model = 'another-model';
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /dispatch-native-model-diverged/,
+    );
+    native!.model = 'gpt-6.1-sol';
+    native!.cwd = source;
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /dispatch-worktree-required/,
+    );
   });
 
   it('should preserve native and fallback disagreements with their provenance', async () => {

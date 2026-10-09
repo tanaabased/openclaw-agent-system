@@ -100,7 +100,11 @@ export const dispatchRecordSchema = Type.Object(
     ),
     result: Type.Optional(assessmentResultSchema),
     resultTurnId: Type.Optional(text),
+    reset: Type.Optional(
+      Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
+    ),
     notice: Type.Optional(hash),
+    // accept journals from the earlier model-mediated title repair.
     renameRequested: Type.Optional(Type.Boolean()),
     retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
   },
@@ -140,13 +144,15 @@ export default class CodexDispatchStore {
       !Value.Check(schema, state) ||
       state.scope !== this.scope ||
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
-      new Set(state.records.map((r) => r.issueKey)).size !== state.records.length ||
+      new Set(state.records.filter((r) => !r.reset).map((r) => r.issueKey)).size !==
+        state.records.filter((r) => !r.reset).length ||
       state.records.some(
         (r) =>
           (r.request && (!r.project || !r.context || !r.routing || !r.routingNote)) ||
           (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
           (r.phase === 'complete' && !r.result),
-      )
+      ) ||
+      state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId))
     )
       throw new Error('dispatch-state-invalid');
     return state;

@@ -227,7 +227,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, or retry-denied. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection; omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, retry-denied, or reset. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. For either operator action, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }
@@ -238,9 +238,16 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const { action, ...input } = request as Record<string, unknown>;
     if (
       typeof action !== 'string' ||
-      !['inspect', 'next', 'prepare', 'reconcile', 'context', 'result', 'retry-denied'].includes(
-        action,
-      )
+      ![
+        'inspect',
+        'next',
+        'prepare',
+        'reconcile',
+        'context',
+        'result',
+        'retry-denied',
+        'reset',
+      ].includes(action)
     )
       throw new Error('dispatch-action-invalid');
     writeJson(await runCodexDispatch(pluginData, action, input));

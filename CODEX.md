@@ -130,6 +130,22 @@ polls. An uncertain creation is reconciled against native creation history; it i
 never blindly repeated. Preserve the retained evidence when repairing access,
 project setup, or host failures. Unresolved creations continue to consume capacity
 until reconciled, preventing a succession of potentially live duplicate chats.
+An unloaded app-server history is not live chat status. Dispatch retains pending
+work rather than declaring a missing result from that history; it reports that
+blocker only when native readback positively shows an idle chat with a terminal turn.
+An abandoned chat whose live status is unavailable therefore needs operator inspection.
+After verifying creation provenance, worktree,
+and model settings, the runtime corrects a changed native title and verifies the rename
+before assessment; the display title does not establish chat identity.
+
+To repeat assessment through assignment intake, use `dispatchRuntime` with
+`{"action":"reset","id":"<assessment-receipt>"}` from an operator chat, then repeat
+with the returned `digest`. Reset requires a completed assessment and native confirmation
+that its recorded result turn completed, with no later turn. It freezes the previous
+result while preserving its chat and worktree; only a
+new assignment event after reset permits a fresh dispatch. Reassignment alone does
+not create another chat, and reset never authorizes implementation.
+
 After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
 with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.
 The preview requires the exact native rejected call and no child or pending receipt.

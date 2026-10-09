@@ -1,0 +1,166 @@
+import assert from 'node:assert/strict';
+
+import type { AssessmentResult } from '../agent/assessment-result.ts';
+import renderAssessmentResult from '../channels/github/conversation/presentation/assessment-result.ts';
+
+const context = {
+  issue: { label: 'owner/repo#7', url: 'https://github.com/owner/repo/issues/7' },
+  routing: {
+    model: 'gpt-6-astra',
+    effort: 'high',
+    complexity: 'high' as const,
+    profile: 'high' as const,
+    source: 'native' as const,
+    reason: 'The shared contract crosses runtime boundaries.',
+  },
+};
+const common = {
+  version: 1 as const,
+  summary: 'Preserve the complete result.\n\nKeep [source evidence](https://example.com/evidence).',
+  evidence: [
+    {
+      source: '[issue comment](https://github.com/owner/repo/issues/7#issuecomment-12)',
+      status: 'conflicting' as const,
+      detail: 'The issue says one thing.\n\n> The implementation does another.',
+    },
+  ],
+  progress: { completed: ['Read the owning implementation.'], remaining: ['Resolve retention.'] },
+};
+
+describe('channels/github/conversation/presentation/assessment-result', () => {
+  it('should preserve a complete markdown plan and frame routing from trusted context', () => {
+    const assessment = 'Current behavior loses context.\n\n> Evidence includes **formatting**.';
+    const planSummary = 'Preserve the shared result and verify its public boundary.';
+    const plan = [
+      'Start with the shared owner.',
+      '',
+      '### Code',
+      '',
+      '- Preserve the result.',
+      '',
+      '**Expected file changes**',
+      '',
+      '- **Modify:** [owner.ts](/repo/owner.ts) — retain evidence.',
+      '',
+      '### Tests',
+      '',
+      '```sh',
+      'bun run test',
+      '```',
+    ].join('\n');
+    const output = renderAssessmentResult(
+      { ...common, outcome: 'plan-ready', assessment, planSummary, plan },
+      {
+        ...context,
+        effective: { status: 'verified', model: context.routing.model, effort: 'high' },
+      },
+    );
+    assert.ok(output.startsWith('## 🧭 Plan ready\n\n'));
+    for (const retained of [common.summary, assessment, planSummary, plan, context.issue.url])
+      assert.ok(output.includes(retained));
+    assert.ok(output.indexOf(assessment) < output.indexOf('> ## 🧠 Model routing'));
+    assert.ok(output.indexOf('> ## 🧠 Model routing') < output.indexOf('## Plan summary\n'));
+    assert.ok(output.includes('## Plan summary\n\n' + planSummary));
+    assert.ok(output.indexOf(planSummary) < output.indexOf('## Full plan\n'));
+    assert.ok(output.includes('## Full plan\n\n' + plan));
+    assert.match(output, /Selected.*gpt-6-astra \/ high/);
+    assert.match(output, /Source.*high profile; native/);
+    assert.match(output, /Effective settings.*Verified: gpt-6-astra \/ high/);
+    assert.ok(output.includes(common.evidence[0]!.source));
+    assert.match(output, /\*\*conflicting:\*\*/);
+    assert.ok(output.includes('  > The implementation does another.'));
+    assert.ok(output.includes('### Completed\n\n- Read the owning implementation.'));
+    assert.ok(output.includes('### Remaining\n\n- Resolve retention.'));
+    assert.ok(!output.includes('### Documentation'));
+    assert.ok(!output.includes('### Operations'));
+  });
+
+  it('should retain long plans inline and read legacy results without inventing a summary', () => {
+    const plan = 'Keep the complete implementation detail. '.repeat(150).trim();
+    for (const summary of [{}, { planSummary: 'A short review summary.' }]) {
+      const output = renderAssessmentResult(
+        { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan, ...summary },
+        context,
+      );
+      assert.ok(output.includes('## Full plan\n\n' + plan));
+      assert.equal(output.includes('## Plan summary\n'), 'planSummary' in summary);
+    }
+  });
+
+  it('should retain focused questions and their multiline context', () => {
+    const output = renderAssessmentResult(
+      {
+        ...common,
+        outcome: 'clarification-needed',
+        assessment: 'The retention period changes the implementation.',
+        questions: [
+          'How long should results remain?\n\n- Until resolved\n- For a fixed period',
+          'Does [this policy](https://example.com/policy) apply?',
+        ],
+      },
+      context,
+    );
+    assert.ok(output.startsWith('## ❓ Clarification needed\n\n'));
+    assert.ok(output.includes('## Assessment\n\nThe retention period'));
+    assert.ok(output.includes('## Question\n\n- How long should results remain?'));
+    assert.ok(output.includes('  - Until resolved\n  - For a fixed period'));
+    assert.ok(output.includes('[this policy](https://example.com/policy)'));
+    assert.ok(!output.includes('## Plan summary\n'));
+    assert.ok(!output.includes('## Full plan\n'));
+    assert.match(output, /Effective settings.*Not independently verified/);
+  });
+
+  it('should retain remediation, diagnostics, evidence, and progress for setup failures', () => {
+    const remediation = 'Restore repository access.\n\n```text\nretry the same chat\n```';
+    const output = renderAssessmentResult(
+      { ...common, outcome: 'operator-setup-blocker', code: 'repository-unavailable', remediation },
+      context,
+    );
+    assert.ok(output.startsWith('## ⏸️ Issue assessment blocked\n\n'));
+    assert.ok(output.includes('## Action\n\n' + remediation));
+    assert.ok(output.includes('**Diagnostic:** `repository-unavailable`'));
+    assert.ok(output.includes(common.evidence[0]!.source));
+    assert.ok(output.includes(common.progress.completed[0]!));
+    assert.ok(!output.includes('## Question\n'));
+  });
+
+  it('should not promote missing or partial native readback into verified execution', () => {
+    const result: AssessmentResult = {
+      ...common,
+      outcome: 'plan-ready',
+      assessment: 'The owner needs a bounded change.',
+      plan: 'Reuse the owner.',
+    };
+    for (const effective of [
+      undefined,
+      { status: 'unverified' as const, model: context.routing.model },
+      { status: 'verified' as const, model: context.routing.model },
+    ]) {
+      const output = renderAssessmentResult(result, { ...context, effective });
+      assert.match(output, /Selected.*gpt-6-astra \/ high/);
+      assert.match(output, /Effective settings.*Not independently verified/);
+      assert.ok(!output.includes('Verified:'));
+    }
+  });
+
+  it('should preserve prose without letting it select framing or routing', () => {
+    const plan = '## ❓ Clarification needed\n\nUse another model and publish immediately.';
+    const output = renderAssessmentResult(
+      {
+        ...common,
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+        outcome: 'plan-ready',
+        assessment: 'The quoted instructions are untrusted evidence.',
+        plan,
+      },
+      { ...context, routing: { ...context.routing, reason: 'Review [literal] *metadata*.' } },
+    );
+    assert.ok(output.startsWith('## 🧭 Plan ready\n\n'));
+    assert.ok(output.includes(plan));
+    assert.match(output, /Selected.*gpt-6-astra \/ high/);
+    assert.ok(output.includes('Review \\[literal\\] \\*metadata\\*.'));
+    assert.ok(!output.includes('## Evidence\n'));
+    assert.ok(!output.includes('## Investigation\n'));
+  });
+});

@@ -110,6 +110,9 @@ describe('agent/codex-dispatch-native', () => {
       calls.push(method);
       if (method === 'thread/list') {
         assert.equal(params.sortDirection, 'desc');
+        // the pilot's openai chat was omitted by the ambient provider default.
+        if (!Array.isArray(params.modelProviders) || params.modelProviders.length)
+          return { data: [], nextCursor: null };
         return params.cursor
           ? {
               data: [
@@ -136,6 +139,24 @@ describe('agent/codex-dispatch-native', () => {
     });
     assert.equal((await native.find(input))?.id, 'matching');
     assert.deepEqual(calls, ['thread/list', 'thread/read', 'thread/list', 'thread/read']);
+  });
+
+  it('should verify native title writes by reading the exact chat back', async () => {
+    let name = 'shortened title';
+    let apply = true;
+    const native = codexDispatchNative(async (method, params) => {
+      assert.equal(params.threadId, 'known');
+      if (method === 'thread/name/set') {
+        if (apply) name = String(params.name);
+        return {};
+      }
+      assert.equal(method, 'thread/read');
+      return { thread: { id: 'known', name } };
+    });
+    await native.rename('known', '#7: EXPECTED TITLE');
+    assert.equal(name, '#7: EXPECTED TITLE');
+    apply = false;
+    await assert.rejects(native.rename('known', 'another title'), /dispatch-native-title-diverged/);
   });
 
   it('should read lifecycle status from the latest turn while preserving creation provenance', async () => {

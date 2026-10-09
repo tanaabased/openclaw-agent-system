@@ -44,7 +44,7 @@ export function matchesDispatchCreation(
   );
 }
 
-/** read supported native history; no thread creation, resumption, or filesystem history parsing. */
+/** verify native history and titles without creating chats or parsing filesystem history. */
 export function codexDispatchNative(request: CodexThreadRequest) {
   async function read(id: string) {
     try {
@@ -94,6 +94,10 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     };
   }
   return {
+    async rename(threadId: string, title: string) {
+      await request('thread/name/set', { threadId, name: title });
+      if ((await read(threadId))?.name !== title) throw new Error('dispatch-native-title-diverged');
+    },
     async deniedCreation(
       sourceThreadId: string,
       expected: Record<string, unknown>,
@@ -166,6 +170,8 @@ export function codexDispatchNative(request: CodexThreadRequest) {
           limit: 100,
           sortKey: 'created_at',
           sortDirection: 'desc',
+          // the ambient provider default can exclude native desktop-created chats.
+          modelProviders: [],
           sourceKinds: [
             'cli',
             'vscode',

@@ -127,16 +127,67 @@ tables when they make the complete result easier to review.
 ```markdown
 ## 🧭 Plan ready
 
-<one-sentence plan summary>
+<one-sentence outcome summary>
 
 ## Assessment
 
 <assessment>
 
-## Plan
+> ## 🧠 Model routing
+>
+> - **Selected:** <saved model> / <saved effort>
+> - **Basis:** <complexity and concise selection rationale>
+> - **Source:** <saved profile and evidence source>
+> - **Effective settings:** <verified native settings or not independently verified>
 
-<implementation plan>
+## Plan summary
+
+<concise approach, major changes, dependencies, material risks, and validation>
+
+## Full plan
+
+<coherent approach and consequential sequencing>
+
+### Code
+
+- <intended change>
+
+**Expected file changes**
+
+- **Modify:** <path> — <purpose>
 ```
+
+Use the applicable subsections **Code**, **Documentation**, **Tests**, **Operations**,
+and **Other** inside the full plan. Omit empty sections; a descriptive heading may replace
+Other. Group tests by the repository's actual layers. Keep documentation and test
+justifications beside their proposed changes, and preserve dependencies across sections.
+
+Keep Assessment short. Aim for 300–600 words in Plan summary when the work warrants it;
+use less for simple work. This is a target, not a quota, minimum, or enforced limit.
+Surface consequential decisions, dependencies, and material risks in the summary so the
+user can review the approach before reading the details. Blocking questions remain visible
+in the clarification outcome; a summary must not disguise them as settled decisions.
+
+Write the full plan first, then derive its summary. Retain and revise both together.
+The full plan has no word-count or bullet-count target: preserve the details needed for
+implementation, including file changes, documentation/test justifications, sequencing,
+risks, and evidence. Remove needless repetition without cutting necessary detail.
+Render the complete full plan inline immediately after its summary, with no accordion,
+separate-document link, or additional click. Never truncate it in the renderer.
+Older retained results without a separate plan summary still show their complete full plan.
+
+Place a compact **Expected file changes** list after the bullets in each section that
+anticipates file edits. Use **Add**, **Modify**, **Remove**, or **Move/merge**, followed by
+the path and purpose. Show sources and destinations for moves/merges, identify provisional
+paths, label generated files, and give each file one primary section. Omit empty lists
+and line-count estimates. Use links to inspected files where the host supports them.
+
+The private routing card follows the assessment. Its values come from saved routing and
+native readback, with requested selection distinct from effective execution. Preserve
+the model, effort, selection rationale, and provenance; use readable Markdown rather
+than assuming native card styling. Retained evidence and completed/remaining investigation
+may follow the plan or questions under **Evidence** and **Investigation**, omitting empty
+sections. The framing follows the structured result; prose headings never select state.
 
 ## Question
 
@@ -145,10 +196,20 @@ tables when they make the complete result easier to review.
 
 <one-sentence explanation>
 
+## Assessment
+
+<useful investigation and the decision blocked by missing requirements>
+
+<private model-routing card>
+
 ## Question
 
 <complete private question and relevant choices>
 ```
+
+Preserve each question and its context. Setup obstacles use **Issue assessment blocked**
+with **Action** and **Diagnostic**, plus retained evidence and investigation; keep them
+distinct from missing requirements. Show the routing card when saved routing is available.
 
 ## To GitHub
 

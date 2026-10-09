@@ -24,9 +24,10 @@ import {
   type CodexIntakeDependencies,
 } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import { assessmentSchema } from './model-routing.ts';
+import { assessmentSchema, type RoutingDecision } from './model-routing.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import assignmentCard from '../channels/github/conversation/presentation/assignment-card.ts';
+import renderAssessmentResult from '../channels/github/conversation/presentation/assessment-result.ts';
 import githubNotificationCard, {
   githubNotificationMarkdownText,
 } from '../channels/github/conversation/presentation/card.ts';
@@ -239,6 +240,7 @@ async function recover(
   record: DispatchRecord,
   intake: IntakeRecord,
   deps: CodexDispatchDependencies,
+  save: () => Promise<void>,
   threadId = record.threadId ?? record.receiptThreadId,
 ) {
   if (!record.request || !record.project) throw new Error('dispatch-creation-not-prepared');
@@ -254,13 +256,16 @@ async function recover(
   // identity is retained even when later workspace or model verification fails.
   record.threadId = found.id;
   record.worktree = found.cwd;
+  await save();
   await verifyDispatchWorktree(record.project, found.cwd, repository(intake), deps.git);
-  if (found.name !== record.request.title) throw new Error('dispatch-native-title-diverged');
   if (
     (found.model && found.model !== record.request.model) ||
     (found.effort && found.effort !== record.request.thinking)
   )
     throw new Error('dispatch-native-model-diverged');
+  // titles are presentation, not identity; normalize only after native authority checks.
+  if (found.name !== record.request.title)
+    await withNative(current, deps, (native) => native.rename(found.id, record.request!.title));
   record.effective = {
     status: found.model && found.effort ? 'verified' : 'unverified',
     ...(found.model ? { model: found.model } : {}),
@@ -322,15 +327,17 @@ export async function runCodexDispatch(
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
   const operatorRecovery = action === 'retry-denied';
+  const operatorReset = action === 'reset';
+  const operatorAction = operatorRecovery || operatorReset;
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
     operatorRecovery,
   );
   const childAction = action === 'context' || action === 'result';
-  if (operatorRecovery && caller === activation.sourceThreadId)
+  if (operatorAction && caller === activation.sourceThreadId)
     throw new Error('dispatch-operator-caller-required');
-  if (!operatorRecovery && !childAction && caller !== activation.sourceThreadId)
+  if (!operatorAction && !childAction && caller !== activation.sourceThreadId)
     throw new Error('dispatch-intake-caller-required');
   const admitted = await current.store.read();
   if (!admitted || admitted.policyDigest !== current.policy?.digest)
@@ -374,23 +381,15 @@ export async function runCodexDispatch(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
         );
-        const repair =
-          record.result.outcome === 'operator-setup-blocker' &&
-          record.result.code === 'dispatch-native-title-diverged' &&
-          record.threadId &&
-          record.request &&
-          !record.renameRequested
-            ? { threadId: record.threadId, title: record.request.title }
-            : undefined;
-        if (repair) record.renameRequested = true;
         await save();
-        return { ...result, ...(repair ? { repair } : {}) };
+        return result;
       };
       if (action === 'next') {
         if (Object.keys(input).some((key) => key !== 'projects'))
           throw new Error('dispatch-request-invalid');
         const completed = state.records.find(
-          (record) => record.phase === 'complete' && record.notice !== noticeDigest(record),
+          (record) =>
+            !record.reset && record.phase === 'complete' && record.notice !== noticeDigest(record),
         );
         if (completed) {
           const result = notice(
@@ -409,8 +408,13 @@ export async function runCodexDispatch(
           if (!intake) return fail(pending, new Error('dispatch-intake-record-missing'));
           try {
             await revalidate(current, intake, deps, signal);
-            const native = await recover(current, pending, intake, deps);
-            if (['completed', 'failed', 'interrupted'].includes(native.turnStatus ?? ''))
+            const native = await recover(current, pending, intake, deps, save);
+            // a separate app-server can reconstruct an active desktop turn as interrupted.
+            // notloaded is absence of live lifecycle evidence, not proof that work stopped.
+            if (
+              native.status === 'idle' &&
+              ['completed', 'failed', 'interrupted'].includes(native.turnStatus ?? '')
+            )
               throw new Error('dispatch-assessment-result-missing');
             pending.retryAfter = now + 300000;
             await fresh();
@@ -429,11 +433,18 @@ export async function runCodexDispatch(
         const latest = new Map<string, IntakeRecord>();
         for (const entry of admitted.records) latest.set(issueKey(entry), entry);
         const intake = [...latest.values()].find((entry) => {
-          const previous = state.records.find((record) => record.issueKey === issueKey(entry));
+          const previous = state.records.findLast((record) => record.issueKey === issueKey(entry));
+          if (previous?.reset)
+            return (
+              entry.id !== previous.intakeId &&
+              Date.parse(entry.assignment.createdAt) > previous.reset.at
+            );
           return !previous || (!previous.request && (previous.retryAfter ?? 0) <= now);
         });
         if (!intake) return { status: 'idle', changed: false };
-        let record = state.records.find((entry) => entry.issueKey === issueKey(intake));
+        let record = state.records.find(
+          (entry) => !entry.reset && entry.issueKey === issueKey(intake),
+        );
         if (!record) {
           record = {
             id: automationHash([current.store.location.scope, randomUUID()]),
@@ -505,6 +516,7 @@ export async function runCodexDispatch(
             changed: true,
             id: record.id,
             context: snapshot,
+            assessmentSchema,
             digest: automationHash({
               context: record.context,
               project: record.project,
@@ -525,6 +537,68 @@ export async function runCodexDispatch(
       const record = state.records.find((entry) => entry.id === input.id);
       const intake = record && admitted.records.find((entry) => entry.id === record.intakeId);
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
+      if (record.reset) throw new Error('dispatch-assessment-reset');
+      if (operatorReset) {
+        if (
+          Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||
+          (input.digest !== undefined && typeof input.digest !== 'string')
+        )
+          throw new Error('dispatch-request-invalid');
+        if (
+          state.records.some(
+            (entry) => entry.threadId === caller || entry.receiptThreadId === caller,
+          )
+        )
+          throw new Error('dispatch-operator-caller-required');
+        if (
+          record.sourceThreadId !== activation.sourceThreadId ||
+          record.phase !== 'complete' ||
+          !record.result ||
+          !record.request ||
+          !record.threadId
+        )
+          throw new Error('dispatch-reset-unavailable');
+        const native = await withNative(current, deps, (client) =>
+          client.find({
+            sourceThreadId: record.sourceThreadId,
+            prompt: record.request!.prompt,
+            createdAfter: record.createdAt,
+            threadId: record.threadId,
+          }),
+        );
+        if (
+          !native ||
+          !record.resultTurnId ||
+          native.turnId !== record.resultTurnId ||
+          !['idle', 'notLoaded'].includes(native.status) ||
+          native.turnStatus !== 'completed'
+        )
+          throw new Error('dispatch-reset-chat-active');
+        const digest = automationHash({ record, manifest: current.digest, turnId: native.turnId });
+        await fresh();
+        if (input.digest === undefined)
+          return {
+            status: 'reset-available',
+            id: record.id,
+            digest,
+            issue: issueUrl(intake),
+            threadId: record.threadId,
+            outcome: record.result.outcome,
+            instruction:
+              'Reset preserves this assessment and worktree. Only a new assignment event after reset permits one fresh assessment through normal intake. No implementation is authorized.',
+          };
+        if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+        record.reset = { at: now, by: caller };
+        await save();
+        return {
+          status: 'reset',
+          changed: true,
+          id: record.id,
+          threadId: record.threadId,
+          awaiting: 'new-assignment',
+          reset: record.reset,
+        };
+      }
       if (operatorRecovery) {
         if (
           Object.keys(input).some((key) => !['id', 'digest', 'approvedCallId'].includes(key)) ||
@@ -671,6 +745,8 @@ export async function runCodexDispatch(
             changed: true,
             id: record.id,
             request: record.request,
+            instruction:
+              'Call native create_thread once with request unchanged, including its full title. Do not reuse the short title supplied to prepare. Reconcile the returned receipt; never repeat an uncertain creation.',
             ...(record.deniedCreations?.length
               ? {
                   recovery: {
@@ -736,6 +812,7 @@ export async function runCodexDispatch(
             record,
             intake,
             deps,
+            save,
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
           );
           await fresh();
@@ -763,11 +840,24 @@ export async function runCodexDispatch(
               automationHash(record.result) !== automationHash(result)
             )
               throw new Error('assessment-result-already-recorded');
+            const decision = JSON.parse(record.routing!) as RoutingDecision;
+            const presentation = renderAssessmentResult(result, {
+              issue: {
+                label: repository(intake) + '#' + intake.issue.number,
+                url: issueUrl(intake),
+              },
+              routing: {
+                ...decision,
+                model: record.request!.model,
+                effort: record.request!.thinking,
+              },
+              effective: record.effective,
+            });
             record.result = result;
             record.resultTurnId = native.turnId;
             record.phase = 'complete';
             await save();
-            return { status: 'recorded', id: record.id, outcome: result.outcome };
+            return { status: 'recorded', id: record.id, outcome: result.outcome, presentation };
           }
           const result = notice(record, intake);
           await save();

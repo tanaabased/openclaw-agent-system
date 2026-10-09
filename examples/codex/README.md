@@ -27,9 +27,26 @@ Native request/response and saved-state captures live in `fixtures/` with separa
 provenance. Ordinary tests consume reviewed captures without contacting the app;
 constructed failure cases are identified in the tests. This packed/headless
 scenario does not replace separate installed desktop-tool verification.
-The dispatch checks below cover packaged discovery, read-only inspection, and the
-activation boundary. Native issue worktree creation, scheduled assessment output,
-and initial-message/blocker rendering require a separately authorized desktop test.
+The dispatch checks below cover packaged discovery, the assessment skill's schema and
+presentation resources in the installed cache, read-only inspection, and the activation
+boundary. Native issue worktree creation, useful assessment output, and desktop rendering
+require a separately authorized test. For assessment acceptance, review clear requirements,
+missing material information, conflicting evidence, and setup obstacles semantically:
+check repository grounding, focused questions, justified documentation/tests, credible file
+changes, and readable headings, lists, links, quotations, and code blocks. Deterministic
+package checks do not establish those model and desktop properties.
+Include a pending native receipt with a provider different from the app-server default
+and a normalized title: reconciliation must find the existing chat, verify its identity,
+correct the title before assessment, and avoid a second creation. Check summary concision
+and agreement with the full plan semantically; verify that the complete plan follows inline
+without a word-count target or an extra click. Do not assert exact model wording.
+For an explicitly authorized reassessment pilot, preview and apply an operator reset
+only after the prior chat is idle with a recorded result. Verify that its evidence
+remains retained, an ordinary poll creates nothing, and a subsequent assignment event
+produces exactly one new assessment chat through the normal intake flow.
+While assessment is active, poll through the separate app-server adapter: an unloaded
+history must not turn an apparent interruption into a missing-result blocker. Verify
+that the eventual recorded result completes the same dispatch.
 
 ## Setup
 
@@ -41,7 +58,7 @@ tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
 codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
 codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
 
-# should expose every packaged agent system skill to a fresh codex app server
+# should expose complete packaged skills to a fresh codex app server
 bun --cwd "$GITHUB_WORKSPACE" run test:codex-plugin
 
 # should prepare valid, inactive, and replacement workspaces

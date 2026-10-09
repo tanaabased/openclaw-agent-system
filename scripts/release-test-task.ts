@@ -193,6 +193,7 @@ try {
     'dist/codex/codex-runtime.js.map',
     'hooks/hooks.json',
     'index.ts',
+    'agent/assessment-result.ts',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
     'bin/agent-system-ssh-signing-key',
