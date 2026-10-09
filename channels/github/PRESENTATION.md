@@ -163,7 +163,8 @@ Other. Group tests by the repository's actual layers. Keep documentation and tes
 justifications beside their proposed changes, and preserve dependencies across sections.
 
 Write Assessment and Plan summary for someone who knows the product but not its
-implementation. Assessment explains the user's task, current friction, and desired
+implementation and is deciding what to approve, not reviewing an engineering design.
+Assessment explains the user's task, current friction, and desired
 outcome in concrete terms grounded in the investigation. Plan summary explains what
 the proposed fix would let the user do, the important behavior and limits, and how
 success will be checked. Translate the engineering plan; do not merely shorten it.
@@ -175,7 +176,21 @@ uncertainty and distinguish observed behavior, requirements, and proposed choice
 plain language must not turn assumptions into facts or hide blocking questions.
 Apply the same audience to the opening outcome sentence and question context.
 
-Before submission, read Assessment and Plan summary without the full plan. The reader
+Describe actions, controls, and consequences the user can recognize. A sentence that
+only names components, configuration structures, or lifecycle stages belongs in the
+full plan. When a technical term is necessary, explain its meaning or effect in the
+same sentence; do not make the reader translate internal vocabulary. Keep repository
+readiness and implementation architecture out of the assessment unless they change
+the user's understanding of the problem.
+
+For example, instead of “add a trusted assessment selection contract and retain its
+provenance,” write “let you add your own assessment instructions or choose a different
+assessment procedure, and show which instructions were used.” The second version
+explains what the user gains without discarding the technical detail from the full plan.
+
+Before submission, rewrite Assessment and Plan summary from the user's perspective
+after finishing the engineering plan; do not merely reread or compress that plan.
+Then read the rewritten opening without the full plan. The reader
 must be able to identify who has what problem, why it matters, what would change, and
 any decision or limitation that affects approval. Rewrite passages that require knowledge
 of internal names or merely announce implementation mechanisms, then check that the

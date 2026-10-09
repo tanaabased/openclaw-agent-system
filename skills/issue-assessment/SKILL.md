@@ -136,7 +136,10 @@ The receipt selects retained evidence; it does not grant authority by itself.
    consequential decisions, risks, and unresolved blocking questions visible.
    Revise the summary and full plan together on follow-ups so they cannot disagree.
 
-6. Perform one final reader-focused pass using the presentation contract's review criteria.
+6. Perform one final reader-focused rewrite using the presentation contract's review criteria
+   and example. Write the opening afresh as an explanation to the person approving the
+   work: what they cannot do or find difficult today, what they would be able to do after
+   the change, and any choice or limitation they need to understand.
    Read the opening outcome sentence, assessment, and planSummary, where present,
    without the full plan.
    Rewrite technical shorthand and implementation-first explanations until those sections
