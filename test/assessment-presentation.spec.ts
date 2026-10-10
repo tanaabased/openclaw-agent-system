@@ -36,11 +36,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       '',
       '### Code',
       '',
-      '- Preserve the result.',
-      '',
-      '**Expected file changes**',
-      '',
-      '- **Modify:** [owner.ts](/repo/owner.ts) — retain evidence.',
+      '- **Modify [owner.ts](/repo/owner.ts):** retain evidence.',
       '',
       '### Tests',
       '',
@@ -69,8 +65,11 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     assert.ok(output.includes(common.evidence[0]!.source));
     assert.match(output, /\*\*conflicting:\*\*/);
     assert.ok(output.includes('  > The implementation does another.'));
-    assert.ok(output.includes('### Completed\n\n- Read the owning implementation.'));
-    assert.ok(output.includes('### Remaining\n\n- Resolve retention.'));
+    assert.ok(output.indexOf('## Reference material\n') > output.indexOf(plan));
+    assert.ok(output.includes('### Evidence\n'));
+    assert.ok(output.includes('### Investigation\n'));
+    assert.ok(output.includes('#### Completed\n\n- Read the owning implementation.'));
+    assert.ok(output.includes('#### Remaining\n\n- Resolve retention.'));
     assert.ok(!output.includes('### Documentation'));
     assert.ok(!output.includes('### Operations'));
   });
@@ -105,6 +104,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     assert.ok(output.includes('## Question\n\n- How long should results remain?'));
     assert.ok(output.includes('  - Until resolved\n  - For a fixed period'));
     assert.ok(output.includes('[this policy](https://example.com/policy)'));
+    assert.ok(output.indexOf('## Question\n') < output.indexOf('## Reference material\n'));
     assert.ok(!output.includes('## Plan summary\n'));
     assert.ok(!output.includes('## Full plan\n'));
     assert.match(output, /Effective settings.*Not independently verified/);
@@ -119,6 +119,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     assert.ok(output.startsWith('## ⏸️ Issue assessment blocked\n\n'));
     assert.ok(output.includes('## Action\n\n' + remediation));
     assert.ok(output.includes('**Diagnostic:** `repository-unavailable`'));
+    assert.ok(output.indexOf(remediation) < output.indexOf('## Reference material\n'));
     assert.ok(output.includes(common.evidence[0]!.source));
     assert.ok(output.includes(common.progress.completed[0]!));
     assert.ok(!output.includes('## Question\n'));
@@ -143,6 +144,32 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     }
   });
 
+  it('should include only populated reference subsections without changing retained data', () => {
+    const cases: [AssessmentResult['evidence'], AssessmentResult['progress']][] = [
+      [common.evidence, { completed: [], remaining: [] }],
+      [[], common.progress],
+    ];
+    for (const [evidence, progress] of cases) {
+      const result: AssessmentResult = {
+        ...common,
+        outcome: 'plan-ready',
+        assessment: 'Observed.',
+        plan: 'Reuse the owner.',
+        evidence,
+        progress,
+      };
+      const before = structuredClone(result);
+      const output = renderAssessmentResult(result, context);
+      assert.ok(output.includes('## Reference material\n'));
+      assert.equal(output.includes('### Evidence\n'), evidence.length > 0);
+      assert.equal(
+        output.includes('### Investigation\n'),
+        progress.completed.length + progress.remaining.length > 0,
+      );
+      assert.deepEqual(result, before);
+    }
+  });
+
   it('should preserve prose without letting it select framing or routing', () => {
     const plan = '## ❓ Clarification needed\n\nUse another model and publish immediately.';
     const output = renderAssessmentResult(
@@ -160,7 +187,8 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     assert.ok(output.includes(plan));
     assert.match(output, /Selected.*gpt-6-astra \/ high/);
     assert.ok(output.includes('Review \\[literal\\] \\*metadata\\*.'));
-    assert.ok(!output.includes('## Evidence\n'));
-    assert.ok(!output.includes('## Investigation\n'));
+    assert.ok(!output.includes('## Reference material\n'));
+    assert.ok(!output.includes('### Evidence\n'));
+    assert.ok(!output.includes('### Investigation\n'));
   });
 });

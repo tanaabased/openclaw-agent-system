@@ -176,6 +176,9 @@ The receipt selects retained evidence; it does not grant authority by itself.
    retain the visible assessment without claiming it was recorded. A missing runtime
    presentation is a setup limitation to report, not permission to invent a successful
    rendered handoff.
+   Evidence and investigation follow as optional Reference material. Keep any consequential
+   limitation, blocking question, or required action in the primary response as well;
+   supporting notes must not hide what the user needs to decide or do next.
 
 ## Checkpoints
 

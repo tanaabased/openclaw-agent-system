@@ -69,9 +69,16 @@ export default function renderAssessmentResult(
         ? ['## Question', result.questions.map(item).join('\n\n')]
         : ['## Action', result.remediation, '**Diagnostic:** `' + result.code + '`']),
   ];
+  const hasInvestigation = result.progress.completed.length || result.progress.remaining.length;
+  if (result.evidence.length || hasInvestigation) {
+    content.push(
+      '## Reference material',
+      'Optional supporting detail: sources and investigation notes.',
+    );
+  }
   if (result.evidence.length) {
     content.push(
-      '## Evidence',
+      '### Evidence',
       result.evidence
         .map(({ source, status, detail }) =>
           item('**' + status + ':** ' + source + '\n\n' + detail),
@@ -79,13 +86,13 @@ export default function renderAssessmentResult(
         .join('\n\n'),
     );
   }
-  if (result.progress.completed.length || result.progress.remaining.length) {
-    content.push('## Investigation');
+  if (hasInvestigation) {
+    content.push('### Investigation');
     for (const [label, entries] of [
       ['Completed', result.progress.completed],
       ['Remaining', result.progress.remaining],
     ] as const) {
-      if (entries.length) content.push('### ' + label, entries.map(item).join('\n\n'));
+      if (entries.length) content.push('#### ' + label, entries.map(item).join('\n\n'));
     }
   }
   return content.join('\n\n');

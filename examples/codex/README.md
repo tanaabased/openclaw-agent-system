@@ -44,6 +44,9 @@ Check that full-plan sections pair each change with its files instead of repeati
 the work in a separate inventory. Required decisions and meaningful validation must
 survive the shorter presentation; grouped test cases must still identify the behavior
 being checked. Do not invent file edits for sections that only describe operations.
+Verify that retained Evidence and Investigation appear under optional Reference material
+after the primary result. Questions, setup actions, and consequential uncertainty must
+remain visible before that section; omit the section when no supporting detail exists.
 For readability acceptance, review the assessment and summary without reading the full
 plan: identify the affected user, their task and current friction, the proposed change,
 and any consequential choice or limitation. Reject an opening that only lists internal

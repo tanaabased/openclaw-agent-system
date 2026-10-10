@@ -225,9 +225,13 @@ invented file list.
 The private routing card follows the assessment. Its values come from saved routing and
 native readback, with requested selection distinct from effective execution. Preserve
 the model, effort, selection rationale, and provenance; use readable Markdown rather
-than assuming native card styling. Retained evidence and completed/remaining investigation
-may follow the plan or questions under **Evidence** and **Investigation**, omitting empty
-sections. The framing follows the structured result; prose headings never select state.
+than assuming native card styling. Place retained **Evidence** and **Investigation**
+under one **Reference material** section after the full plan, questions, or setup action.
+Introduce it as optional supporting detail; nest **Completed** and **Remaining** beneath
+Investigation. Omit empty subsections and omit Reference material when both are empty.
+Keep consequential uncertainty, blocking questions, and required actions in the primary
+assessment, questions, or action; the reference section must not be their only home.
+The framing follows the structured result; prose headings never select state.
 
 ## Question
 
