@@ -7,7 +7,6 @@ import {
   writeCliJson,
   writeCliSummary,
 } from './output.ts';
-import lifecyclePresentationLines from '../core/lifecycle-presentation.ts';
 import { formatManifestDiagnostics, formatManifestFailure } from '../core/logger.ts';
 
 export interface ValidateAgentSystemOptions {
@@ -17,6 +16,7 @@ export interface ValidateAgentSystemOptions {
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -57,14 +57,27 @@ async function validateAgentSystem(options: ValidateAgentSystemOptions): Promise
     writeCliSummary(
       options.output,
       [
-        ...lifecyclePresentationLines(checks),
+        ...checks.map(({ component, message, status }) => ({
+          component,
+          label: status,
+          quiet: status === 'valid',
+          style: 'status' as const,
+          value: message ? message[0]!.toLowerCase() + message.slice(1) : message,
+        })),
+        {
+          label: 'agent',
+          style: 'field',
+          value: result.manifest.agent.id,
+        },
         {
           label: 'manifest',
-          style: 'target',
+          style: 'field',
           value: result.path,
         },
+        { label: 'workspace', style: 'field', value: result.scope.workspaceDir },
       ],
       options.styles,
+      { rowPadding: 1, terminalColumns: options.terminalColumns ?? process.stdout.columns },
     );
   }
   writeCliDiagnosticNotices(

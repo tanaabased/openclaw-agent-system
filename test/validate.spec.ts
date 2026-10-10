@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import validateAgentSystem from '../cli/validate.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { createCliStyles } from '../cli/output.ts';
+import { captureValidatePreview } from './validate-presentation-fixtures.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -65,7 +66,7 @@ describe('cli/validate', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(output, [
-      'valid     manifest  Agent System manifest for tanaabot\nmanifest            /workspace/agent.yaml\n',
+      'valid     manifest  agent system manifest for tanaabot\n\nagent               tanaabot\n\nmanifest            /workspace/agent.yaml\n\nworkspace           /workspace\n',
     ]);
   });
 
@@ -198,5 +199,60 @@ describe('cli/validate', () => {
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
     assert.match(diagnostics.join(''), /invalid Agent System manifest/u);
+  });
+
+  it('should provide fixture-backed valid, warning, invalid, and unmanaged previews', async () => {
+    const valid = await captureValidatePreview({
+      ...validResult,
+      manifest: { ...validResult.manifest, agent: { id: 'Agent-Mixed' } },
+      path: '/Workspaces/An-Illustrative-Workspace-With-A-Long-Path/agent.yaml',
+      scope: { workspaceDir: '/Workspaces/An-Illustrative-Workspace-With-A-Long-Path' },
+      validationChecks: [
+        {
+          code: 'agent-declaration-valid',
+          component: 'agent',
+          message: 'OpenClaw agent declaration',
+          status: 'valid',
+        },
+      ],
+    });
+    assert.equal(valid.exitCode, 0);
+    assert.match(valid.events[0]!.text, /Agent-Mixed/u);
+    assert.match(valid.events[0]!.text, /workspace/u);
+    assert.match(valid.events[0]!.text, /agent declaration/u);
+    assert.equal((valid.events[0]!.text.match(/Agent-Mixed/gu) ?? []).length, 1);
+
+    const warning = await captureValidatePreview({
+      ...validResult,
+      diagnostics: [
+        {
+          code: 'illustrative-warning',
+          component: 'manifest',
+          message: 'Optional field is absent.',
+          severity: 'warning',
+        },
+      ],
+    });
+    assert.equal(warning.exitCode, 0);
+    assert.match(warning.events.at(-1)!.text, /warning/u);
+    assert.match(warning.events.at(-1)!.text, /illustrative-warning/u);
+
+    const invalid = await captureValidatePreview({
+      status: 'invalid',
+      scope: { workspaceDir: '/fixture' },
+      path: '/fixture/agent.yaml',
+      diagnostics: [],
+    });
+    assert.equal(invalid.exitCode, 1);
+    assert.match(invalid.events.at(-1)!.text, /error/u);
+    assert.match(invalid.events.at(-1)!.text, /invalid Agent System manifest/u);
+
+    const unmanaged = await captureValidatePreview({
+      status: 'unmanaged',
+      scope: { workspaceDir: '/fixture' },
+      diagnostics: [],
+    });
+    assert.equal(unmanaged.exitCode, 1);
+    assert.match(unmanaged.events.at(-1)!.text, /no Agent System manifest found/u);
   });
 });
