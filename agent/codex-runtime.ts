@@ -1,5 +1,6 @@
 import process from 'node:process';
 
+import codexHeartbeat from './codex-heartbeat.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
 import { inspectCodexIntake, runCodexIntake } from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
@@ -263,14 +264,16 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const action = args[1];
     if (action === '--help') {
       process.stdout.write(
-        'Usage: intake <inspect|scan> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only.\n',
+        'Usage: intake <inspect|scan|quiet-response> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only. Quiet-response formats JSON polling outcomes from stdin without reading or writing state.\n',
       );
       return;
     }
     const pluginData = parsePluginData(args.slice(2));
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
     else if (action === 'scan') writeJson(await runCodexIntake(pluginData));
-    else throw new Error('expected intake inspect or scan');
+    else if (action === 'quiet-response')
+      writeJson(codexHeartbeat(JSON.parse(await readStandardInput())));
+    else throw new Error('expected intake inspect, scan, or quiet-response');
     return;
   }
   if (command === 'setup') return runSetup(args.slice(1));
@@ -361,7 +364,7 @@ runCodexRuntime().catch((error: unknown) => {
           error instanceof RoutingError ||
           error instanceof CodexAutomationError
         ? { code: error.code }
-        : /^(?:dispatch|assessment-result)-[a-z-]+$/u.test(message)
+        : /^(?:dispatch|assessment-result|heartbeat)-[a-z-]+$/u.test(message)
           ? { code: message }
           : {};
   process.stderr.write(`${JSON.stringify({ status: 'error', ...details, message })}\n`);

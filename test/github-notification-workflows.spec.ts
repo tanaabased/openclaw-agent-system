@@ -11,7 +11,7 @@ import { githubNotificationAssignmentCandidate } from '../scenarios/issue-work-a
 import { githubNotificationModelScenarioIds } from '../scripts/github-notification-model-scenarios.ts';
 
 interface ParsedLeiaSuite {
-  tests: Record<string, Array<{ command: string }>>;
+  tests: Record<string, Array<{ command: string; skip: boolean }>>;
 }
 
 const Leia = createRequire(import.meta.url)('@lando/leia') as new () => {
@@ -525,7 +525,25 @@ describe('github notification workflows', () => {
 
     const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
     assert.equal(suites.length, 1);
-    assert.equal(suites[0]?.tests.setup?.length, 3);
-    assert.equal(suites[0]?.tests.test?.length, 22);
+    assert.ok(suites[0]?.tests.setup?.some(({ skip }) => !skip));
+    const heartbeatTests = suites[0]?.tests.test?.filter(
+      ({ command, skip }) => !skip && command.includes('intake quiet-response'),
+    );
+    assert.ok(
+      heartbeatTests?.some(
+        ({ command }) =>
+          command.includes('.status == "quiet"') &&
+          command.includes('<decision>DONT_NOTIFY</decision>') &&
+          command.includes('test ! -e "$root/quiet-data"'),
+      ),
+    );
+    assert.ok(
+      heartbeatTests?.some(
+        ({ command }) =>
+          command.includes('.status == "not-quiet"') &&
+          command.includes('"status":"completed","changed":true') &&
+          command.includes('has("response") | not'),
+      ),
+    );
   });
 });

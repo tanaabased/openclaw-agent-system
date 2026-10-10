@@ -5,6 +5,9 @@ import { join, resolve } from 'node:path';
 
 import { parse, stringify } from 'smol-toml';
 
+import planCodexAutomations, { codexAutomationMarker } from '../agent/codex-automation-plan.ts';
+import type { NativeAutomation } from '../agent/codex-automation-state.ts';
+import { codexQuietHeartbeatInstructions } from '../agent/codex-heartbeat.ts';
 import {
   acknowledgeCodexAutomation,
   inspectCodexAutomations,
@@ -278,5 +281,51 @@ describe('agent/codex-intake', () => {
       codexAutomationSchedule({ kind: 'every', seconds: 1440 * 60, missedRun: 'native' }),
       'FREQ=HOURLY;INTERVAL=24',
     );
+  });
+
+  it('should update the quiet response prompt on the same native schedule and chat', async () => {
+    const { policy } = intakeFixture();
+    const jobs = codexIntakeJobs({
+      schemaVersion: 1,
+      agent: { id: 'receiver' },
+      models,
+      github: { host: 'github.com', username: 'receiver', notifications: policy },
+    });
+    const job = jobs[0]!;
+    if (job.payload.kind !== 'prompt') throw new Error('expected prompt');
+    assert.ok(job.payload.prompt.includes(codexQuietHeartbeatInstructions));
+    const scope = 'a'.repeat(64);
+    const previous: NativeAutomation = {
+      kind: 'heartbeat',
+      destination: 'thread',
+      name: job.displayName!,
+      targetThreadId: 'intake-thread',
+      prompt: `Previously approved intake prompt.\n\n${codexAutomationMarker(scope, job.id)}`,
+      status: 'ACTIVE',
+      rrule: 'FREQ=MINUTELY;INTERVAL=5',
+      notificationPolicy: 'failed_runs_only',
+    };
+    const plan = await planCodexAutomations({
+      scope,
+      workspace,
+      agentId: 'receiver',
+      manifestDigest: 'updated-prompt',
+      jobs,
+      saved: [{ id: 'native-intake-job', definition: previous }],
+      records: [
+        { id: job.id, nativeId: 'native-intake-job', removed: false, definition: previous },
+      ],
+      inputs: {},
+      bindings: new Map([[job.id, { id: 'intake-thread' }]]),
+    });
+    assert.equal(plan.status, 'requires-native-app-sync');
+    assert.equal(plan.actions.length, 1);
+    const action = plan.actions[0]!;
+    assert.equal(action.mode, 'update');
+    assert.equal(action.id, 'native-intake-job');
+    assert.deepEqual(action.expected, {
+      ...previous,
+      prompt: `${job.payload.prompt}\n\n${codexAutomationMarker(scope, job.id)}`,
+    });
   });
 });

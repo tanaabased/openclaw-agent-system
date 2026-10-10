@@ -105,6 +105,23 @@ cp "$root/rebound-workspace/agent.yaml" "$root/rebound-workspace/agent.expected.
 ## Testing
 
 ```bash
+# should format a packaged quiet heartbeat without activating intake or changing its state
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10-09T12:00:00.000Z","intake":{"status":"ready","changed":false},"dispatch":[{"status":"at-capacity","changed":false}]}' \
+  | TZ=UTC node "$runtime" intake quiet-response --plugin-data "$root/quiet-data" \
+  | jq -e '.status == "quiet" and .period == "afternoon" and (.message | length > 0) and .response == ("<heartbeat>\n  <automation_id>fixture-native-intake</automation_id>\n  <decision>DONT_NOTIFY</decision>\n  <message>" + .message + "</message>\n</heartbeat>")'
+test ! -e "$root/quiet-data"
+
+# should preserve an actionable earlier result instead of replacing it with quiet text
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10-09T12:00:00.000Z","intake":{"status":"ready","changed":false},"dispatch":[{"status":"completed","changed":true},{"status":"idle","changed":false}]}' \
+  | node "$runtime" intake quiet-response --plugin-data "$root/quiet-data" \
+  | jq -e '.status == "not-quiet" and (has("response") | not)'
+
 # should expose packaged intake and plan one owned schedule without activating it
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
