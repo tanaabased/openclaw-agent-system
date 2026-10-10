@@ -146,6 +146,13 @@ result while preserving its chat and worktree; only a
 new assignment event after reset permits a fresh dispatch. Reassignment alone does
 not create another chat, and reset never authorizes implementation.
 
+To remove a closed test issue from the queue, pause its schedule and send
+`{"action":"retire","id":"<assessment-receipt>"}` from an operator chat. Repeat
+with the returned `digest` to confirm. This preserves the launch and assessment
+evidence, including failed launches. Archive the native chat and clean up its
+worktree separately; retirement does neither. A fresh assessment requires a new
+assignment event after retirement.
+
 After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
 with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.
 The preview requires the exact native rejected call and no child or pending receipt.

@@ -103,6 +103,9 @@ export const dispatchRecordSchema = Type.Object(
     reset: Type.Optional(
       Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
     ),
+    retired: Type.Optional(
+      Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
+    ),
     notice: Type.Optional(hash),
     // accept journals from the earlier model-mediated title repair.
     renameRequested: Type.Optional(Type.Boolean()),
@@ -144,8 +147,8 @@ export default class CodexDispatchStore {
       !Value.Check(schema, state) ||
       state.scope !== this.scope ||
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
-      new Set(state.records.filter((r) => !r.reset).map((r) => r.issueKey)).size !==
-        state.records.filter((r) => !r.reset).length ||
+      new Set(state.records.filter((r) => !r.reset && !r.retired).map((r) => r.issueKey)).size !==
+        state.records.filter((r) => !r.reset && !r.retired).length ||
       state.records.some(
         (r) =>
           (r.request && (!r.project || !r.context || !r.routing || !r.routingNote)) ||

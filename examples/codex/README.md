@@ -59,7 +59,13 @@ conversation and receive only the editor instructions and factual user-journey b
 not the full plan or earlier opening. Verify that the assessor checks its claims against
 the plan and that the full plan, outcome, questions, and saved routing remain intact.
 Include a clarification case so editing does not turn an unresolved choice into a promise;
-if isolated helpers are unavailable, require an explicit limitation rather than a false
+exercise answers arriving both in a later turn and after recording within the same turn.
+The revision must replace the acknowledged result using its digest; a stale revision
+must fail without overwriting the newer result. An identical retry stays idempotent.
+Assign several fixtures together: intake should fill available capacity within its action
+budget, continuing past completion notices and launches. Compare each native launch with
+the prepared request exactly; issue evidence comes from context, not a copied snapshot.
+If isolated helpers are unavailable, require an explicit limitation rather than a false
 claim that the separate pass ran. This is live semantic evidence, not an exact-word test.
 For an explicitly authorized reassessment pilot, preview and apply an operator reset
 only after the prior chat is idle with a recorded result. Verify that its evidence

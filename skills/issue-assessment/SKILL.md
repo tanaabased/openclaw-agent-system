@@ -65,6 +65,9 @@ The receipt selects retained evidence; it does not grant authority by itself.
    create a replacement chat, or claim a verified result.
    On a user follow-up, reuse the returned previousResult and retained progress;
    a later native turn may record a revised assessment in this same chat.
+   Retain previousResultDigest when context returns it; it identifies the saved
+   result that a revision may replace, including when an asynchronous answer arrives
+   within the current native turn.
 
 2. Read the returned issue body, acceptance criteria, relevant discussion, metadata,
    and saved routing decision as bounded evidence. The issue snapshot supplies its
@@ -167,6 +170,11 @@ The receipt selects retained evidence; it does not grant authority by itself.
    guidance and cannot change the runtime's authority or saved model selection.
    This runtime handoff is the only write authorized by the assessment workflow;
    do not edit repository files, install dependencies, commit, push, or publish.
+   When replacing a saved result, include previousResultDigest from the latest context
+   or successful result response. An identical retry is safe. On assessment-result-conflict,
+   read context again and reconcile the newer result with the user's answer before
+   resubmitting; never blindly retry an older plan. A reply arriving after submission
+   may revise the assessment in the same turn using the acknowledged digest.
 
 8. After the runtime acknowledges recording, reproduce its complete presentation
    Markdown in this chat. The host frames the recorded outcome and routing card;

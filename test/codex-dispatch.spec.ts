@@ -187,6 +187,47 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
+  it('should retire a closed issue with a pending launch while preserving its evidence', async () => {
+    const first = await prepare();
+    const operator = {
+      threadId: 'operator',
+      activation: async (_data: unknown, _options: unknown, paused?: boolean) => {
+        assert.equal(paused, true);
+        return { sourceThreadId: 'intake-thread' };
+      },
+    };
+    await assert.rejects(request('retire', { id: first.id }), /dispatch-operator-caller-required/);
+    await assert.rejects(
+      request('retire', { id: first.id }, operator),
+      /dispatch-retire-closed-issue-required/,
+    );
+    fixture.item.state = 'closed';
+    const before = (await request('inspect')).records as Record<string, unknown>[];
+    const preview = await request('retire', { id: first.id }, operator);
+    assert.equal(preview.status, 'retire-available');
+    assert.deepEqual((await request('inspect')).records, before);
+    await assert.rejects(
+      request('retire', { id: first.id, digest: 'stale' }, operator),
+      /dispatch-recovery-stale/,
+    );
+    assert.equal(
+      (await request('retire', { id: first.id, digest: preview.digest }, operator)).status,
+      'retired',
+    );
+    const after = (await request('inspect')).records as Record<string, unknown>[];
+    assert.deepEqual(after[0], { ...before[0], retired: { at: now, by: 'operator' } });
+    assert.deepEqual(await next(), { status: 'idle', changed: false });
+    await assert.rejects(
+      request('context', { id: first.id }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-retired/,
+    );
+    fixture.item.state = 'open';
+    assert.deepEqual(await next(), { status: 'idle', changed: false });
+    await reassign();
+    const second = await prepare();
+    assert.notEqual(second.id, first.id);
+  });
+
   it('should preserve a completed assessment and dispatch once after an explicit reset and new assignment', async () => {
     const first = await prepare();
     created();
@@ -410,6 +451,7 @@ describe('agent/codex-dispatch', () => {
   it('should emit one exact launch and recover uncertain creation instead of issuing another', async () => {
     const prepared = await prepare();
     const launch = prepared.request as {
+      prompt: string;
       model: string;
       thinking: string;
       target: { projectId: string; environment: { startingState: { branchName: string } } };
@@ -418,6 +460,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(launch.thinking, 'high');
     assert.equal(launch.target.projectId, 'saved-project');
     assert.equal(launch.target.environment.startingState.branchName, commit);
+    assert.ok(!launch.prompt.includes('The acceptance criteria require a safe plan.'));
     const retry = await request('prepare', {
       id: prepared.id,
       title: 'repair contained behavior',
@@ -436,6 +479,11 @@ describe('agent/codex-dispatch', () => {
     const recovered = await next();
     assert.equal(recovered.status, 'assessing');
     assert.equal(recovered.threadId, 'issue-thread');
+    const retained = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    assert.equal(
+      (retained.evidence as { body: string }).body,
+      'The acceptance criteria require a safe plan.',
+    );
     const records = (await request('inspect')).records as {
       clientThreadId: string;
       threadId: string;
@@ -501,12 +549,44 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await request('result', { id: prepared.id, result }, child), recorded);
     await assert.rejects(
       request('result', { id: prepared.id, result: { ...result, plan: 'Changed.' } }, child),
-      /assessment-result-already-recorded/,
+      /assessment-result-conflict/,
+    );
+    const sameTurn = await request(
+      'result',
+      {
+        id: prepared.id,
+        previousResultDigest: recorded.previousResultDigest,
+        result: { ...result, plan: 'Refined from an answer in this turn.' },
+      },
+      child,
+    );
+    assert.equal(sameTurn.status, 'recorded');
+    await assert.rejects(
+      request(
+        'result',
+        {
+          id: prepared.id,
+          previousResultDigest: recorded.previousResultDigest,
+          result: { ...result, plan: 'Stale revision.' },
+        },
+        child,
+      ),
+      /assessment-result-conflict/,
+    );
+    const current = await request('context', { id: prepared.id }, child);
+    assert.equal(current.previousResultDigest, sameTurn.previousResultDigest);
+    assert.equal(
+      (current.previousResult as { plan: string }).plan,
+      'Refined from an answer in this turn.',
     );
     native!.turnId = 'user-follow-up';
     const revised = await request(
       'result',
-      { id: prepared.id, result: { ...result, plan: 'Refined after clarification.' } },
+      {
+        id: prepared.id,
+        previousResultDigest: current.previousResultDigest,
+        result: { ...result, plan: 'Refined after clarification.' },
+      },
       child,
     );
     assert.equal(revised.status, 'recorded');
@@ -545,7 +625,16 @@ describe('agent/codex-dispatch', () => {
       },
     ]) {
       native!.turnId = outcome.outcome;
-      const recorded = await request('result', { id: prepared.id, result: outcome }, child);
+      const prior = await request('context', { id: prepared.id }, child);
+      const recorded = await request(
+        'result',
+        {
+          id: prepared.id,
+          previousResultDigest: prior.previousResultDigest,
+          result: outcome,
+        },
+        child,
+      );
       assert.equal(recorded.status, 'recorded');
       assert.equal(recorded.outcome, outcome.outcome);
       assert.match(String(recorded.presentation), /Selected.*gpt-6\.1-sol \/ high/);
