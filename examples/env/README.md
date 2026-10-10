@@ -36,13 +36,26 @@ if printf '%s\n' "$output" | grep -Fq -e 'leia-agent-system-reference' -e 'leia-
 # should report human environment metadata across wrapped lines without exposing values
 cd "$GITHUB_WORKSPACE/examples/env/data"
 output="$(AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env)"
-printf '%s\n' "$output" | grep -F 'AGENT_SYSTEM_LEIA_LAYERED' | grep -F 'source=environment.dotenv[1]'
-printf '%s\n' "$output" | grep -F 'AGENT_SYSTEM_LEIA_SET_OVERRIDE' | grep -F 'source=environment.set'
-printf '%s\n' "$output" | grep -F 'AGENT_SYSTEM_LEIA_FROM_DOTENV' | grep -F 'source=environment.set'
-printf '%s\n' "$output" | grep -F 'required=false'
-printf '%s\n' "$output" | grep -F 'required=true'
-printf '%s\n' "$output" | grep -F 'overridden=1'
-printf '%s\n' "$output" | grep -F 'overridden=0'
+# The table header is present when rows fit; narrow terminals label each field instead.
+if ! printf '%s\n' "$output" | grep -Eq 'variable[[:space:]]+source[[:space:]]+required[[:space:]]+overrides'; then
+  printf '%s\n' "$output" | grep -F 'variable:'
+fi
+assert_env_metadata() {
+  printf '%s\n' "$output" | awk -v name="$1" -v source="$2" -v required="$3" -v overrides="$4" '
+    $1 == name && $2 == source && $3 == required && $4 == overrides { found = 1 }
+    $1 == "variable:" { in_record = ($2 == name); next }
+    in_record && $1 == "source:" { actual_source = $2; next }
+    in_record && $1 == "required:" { actual_required = $2; next }
+    in_record && $1 == "overrides:" {
+      if (actual_source == source && actual_required == required && $2 == overrides) found = 1
+      in_record = 0
+    }
+    END { exit !found }
+  '
+}
+assert_env_metadata AGENT_SYSTEM_LEIA_LAYERED 'environment.dotenv[1]' false 1
+assert_env_metadata AGENT_SYSTEM_LEIA_SET_OVERRIDE environment.set false 1
+assert_env_metadata AGENT_SYSTEM_LEIA_FROM_DOTENV environment.set true 0
 if printf '%s\n' "$output" | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-private-'; then exit 1; fi
 
 # should inspect a registered agent without current workspace discovery
