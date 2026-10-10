@@ -62,7 +62,7 @@ async function validateAgentSystem(options: ValidateAgentSystemOptions): Promise
           label: status,
           quiet: status === 'valid',
           style: 'status' as const,
-          value: message ? message[0]!.toLowerCase() + message.slice(1) : message,
+          value: component === 'manifest' ? 'agent system manifest' : message,
         })),
         {
           label: 'agent',

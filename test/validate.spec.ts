@@ -66,7 +66,7 @@ describe('cli/validate', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(output, [
-      'valid      manifest  agent System manifest\n\nagent                tanaabot\n\nmanifest             /workspace/agent.yaml\n\nworkspace            /workspace\n',
+      'valid      manifest  agent system manifest\n\nagent                tanaabot\n\nmanifest             /workspace/agent.yaml\n\nworkspace            /workspace\n',
     ]);
   });
 
@@ -147,6 +147,31 @@ describe('cli/validate', () => {
     assert.match(output.join(''), /valid\s+agent/u);
     assert.match(output.join(''), /valid\s+path/u);
     assert.match(output.join(''), /valid\s+github/u);
+  });
+
+  it('should preserve shared lifecycle messages in human and json output', async () => {
+    const validationChecks = [
+      {
+        code: 'git-config-valid',
+        component: 'git',
+        message: 'Git tool identity and policy configuration',
+        status: 'valid' as const,
+      },
+      {
+        code: 'github-config-valid',
+        component: 'github',
+        message: 'GitHub tool and account key configuration',
+        status: 'valid' as const,
+      },
+    ];
+    const human = createHarness({ workspace: { ...validResult, validationChecks } });
+    await human.run();
+    assert.match(human.output.join(''), /Git tool identity and policy configuration/u);
+    assert.match(human.output.join(''), /GitHub tool and account key configuration/u);
+
+    const json = createHarness({ json: true, workspace: { ...validResult, validationChecks } });
+    await json.run();
+    assert.deepEqual(JSON.parse(json.output.join('')).checks.slice(1), validationChecks);
   });
 
   it('should write the same checks as structured json', async () => {
