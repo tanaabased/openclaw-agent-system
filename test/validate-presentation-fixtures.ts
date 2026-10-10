@@ -13,14 +13,20 @@ export async function captureValidatePreview(
     agentId,
     json: false,
     manifestService: {
-      async loadForAgentId() { return result; },
-      async loadForCommandDirectory() { return result; },
+      async loadForAgentId() {
+        return result;
+      },
+      async loadForCommandDirectory() {
+        return result;
+      },
     },
     output: {
       writeStdout: (text) => events.push({ stream: 'stdout', text }),
       writeStderr: (text) => events.push({ stream: 'stderr', text }),
     },
-    setExitCode: (code) => { exitCode = code; },
+    setExitCode: (code) => {
+      exitCode = code;
+    },
     styles: createCliStyles({ NO_COLOR: '1' }),
     terminalColumns: 52,
     workspaceDir: '/Workspace/Agent-With-A-Very-Long-Path',

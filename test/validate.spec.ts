@@ -66,7 +66,7 @@ describe('cli/validate', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(output, [
-      'valid     manifest  agent system manifest for tanaabot\n\nagent               tanaabot\n\nmanifest            /workspace/agent.yaml\n\nworkspace           /workspace\n',
+      'valid      manifest  agent System manifest\n\nagent                tanaabot\n\nmanifest             /workspace/agent.yaml\n\nworkspace            /workspace\n',
     ]);
   });
 
@@ -144,9 +144,9 @@ describe('cli/validate', () => {
 
     await run();
 
-    assert.equal(output.join('').includes('valid     agent'), true);
-    assert.equal(output.join('').includes('valid     path'), true);
-    assert.equal(output.join('').includes('valid     github'), true);
+    assert.match(output.join(''), /valid\s+agent/u);
+    assert.match(output.join(''), /valid\s+path/u);
+    assert.match(output.join(''), /valid\s+github/u);
   });
 
   it('should write the same checks as structured json', async () => {
@@ -173,7 +173,7 @@ describe('cli/validate', () => {
       {
         code: 'manifest-valid',
         component: 'manifest',
-        message: 'Agent System manifest for tanaabot',
+        message: 'Agent System manifest',
         status: 'valid',
       },
       {

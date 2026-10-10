@@ -39,7 +39,7 @@ async function validateAgentSystem(options: ValidateAgentSystemOptions): Promise
     {
       code: 'manifest-valid',
       component: 'manifest',
-      message: `Agent System manifest for ${result.manifest.agent.id}`,
+      message: 'Agent System manifest',
       status: 'valid' as const,
     },
     ...result.validationChecks,
