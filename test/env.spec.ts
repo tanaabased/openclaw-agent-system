@@ -142,7 +142,7 @@ describe('cli/env', () => {
         variables: [
           {
             name: variableName,
-            source: 'dotenv:/Exact/Path.env',
+            source: 'environment.dotenv[12]',
             required: true,
             overriddenSources: ['environment.set'],
           },
@@ -154,7 +154,7 @@ describe('cli/env', () => {
     const text = narrow.output.join('');
     const compact = text.replace(/\s/gu, '');
     assert.ok(compact.includes(variableName));
-    assert.ok(compact.includes('dotenv:/Exact/Path.env'));
+    assert.ok(compact.includes('environment.dotenv[12]'));
     assert.match(text, /overrides: 1/u);
     assert.equal(text.includes('private-token'), false);
     assert.equal(text.includes('green'), false);
