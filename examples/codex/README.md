@@ -91,6 +91,12 @@ and configuration only.
 Verify that a fresh assessment uses the launch prompt's exact context request on stdin
 with the trusted dispatch runtime and plugin-data arguments, without guessing action
 flags. Apply the same transport when recording its result.
+Keep the prepared request as parsed data through native creation, and compare the
+actual launch prompt with the retained request. After retiring a closed fixture and
+admitting a new assignment, verify that reusing its old native receipt is rejected
+without retaining either supplied identity or creating another chat. Use distinctive
+cat-themed skill and guidance markers to distinguish both inputs in the retained
+assessment; these markers must not grant implementation or publication authority.
 
 ## Setup
 

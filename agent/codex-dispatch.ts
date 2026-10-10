@@ -82,6 +82,8 @@ function code(error: unknown) {
   return /^[a-z][a-z0-9-]{0,127}$/u.test(value) ? value : 'dispatch-host-unavailable';
 }
 function remediation(value: string) {
+  if (value === 'dispatch-native-receipt-reused')
+    return "This native receipt belongs to another assessment, including a retired attempt. Reconcile only the receipt returned by this prepared request's create_thread call, or omit receipt to recover its actual creation. Do not create again or reuse history.";
   if (value.startsWith('dispatch-assessment-skill-'))
     return 'Check issue-assignment.assessment.skill against the enabled Codex skills. Use a qualified plugin:skill id to resolve ambiguity, and restore the selected skill if it changed. Retry this retained assignment or resume its existing chat; do not create a replacement chat.';
   if (value.startsWith('dispatch-assessment-guidance-'))
@@ -846,7 +848,7 @@ export async function runCodexDispatch(
             id: record.id,
             request: record.request,
             instruction:
-              'Call native create_thread once with request unchanged, including its full title. Do not reuse the short title supplied to prepare. Reconcile the returned receipt; never repeat an uncertain creation.',
+              'This fresh prepared response requires one native create_thread call with this request unchanged. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
             ...(record.deniedCreations?.length
               ? {
                   recovery: {
@@ -903,9 +905,21 @@ export async function runCodexDispatch(
                     record[key === 'threadId' ? 'receiptThreadId' : key] !== value)
                 )
                   throw new Error('dispatch-native-receipt-invalid');
-                record[key === 'threadId' ? 'receiptThreadId' : key] = value;
+                if (
+                  state.records.some(
+                    (other) =>
+                      other.id !== record.id &&
+                      [other.threadId, other.receiptThreadId, other.clientThreadId].includes(value),
+                  )
+                )
+                  throw new Error('dispatch-native-receipt-reused');
               }
             }
+            // validate the entire receipt before retaining either identity.
+            if (input.receipt.threadId !== undefined)
+              record.receiptThreadId = input.receipt.threadId as string;
+            if (input.receipt.clientThreadId !== undefined)
+              record.clientThreadId = input.receipt.clientThreadId as string;
             await save();
           }
           await revalidate(current, intake, deps, signal);

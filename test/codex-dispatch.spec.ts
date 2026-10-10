@@ -696,6 +696,39 @@ describe('agent/codex-dispatch', () => {
     assert.equal(unknown.changed, true);
   });
 
+  for (const key of ['threadId', 'clientThreadId'] as const) {
+    it(
+      'should reject reused ' +
+        key.toLowerCase() +
+        ' from a retired assessment without retaining partial receipts',
+      async () => {
+        const first = await prepare();
+        await request('reconcile', { id: first.id, receipt: { [key]: 'old-native-receipt' } });
+        fixture.item.state = 'closed';
+        const operator = { threadId: 'operator' };
+        const preview = await request('retire', { id: first.id }, operator);
+        await request('retire', { id: first.id, digest: preview.digest }, operator);
+        const before = ((await request('inspect')).records as Record<string, unknown>[])[0];
+        fixture.item.state = 'open';
+        await reassign();
+        const second = await prepare();
+        const blocked = await request('reconcile', {
+          id: second.id,
+          receipt: { threadId: 'fresh-native-receipt', clientThreadId: 'old-native-receipt' },
+        });
+        assert.equal(blocked.code, 'dispatch-native-receipt-reused');
+        assert.equal(blocked.status, 'blocked');
+        const records = (await request('inspect')).records as Record<string, unknown>[];
+        assert.deepEqual(records[0], before);
+        assert.equal(records[1]!.receiptThreadId, undefined);
+        assert.equal(records[1]!.clientThreadId, undefined);
+        assert.deepEqual(records[1]!.request, second.request);
+        created();
+        assert.equal((await request('reconcile', { id: second.id })).status, 'assessing');
+      },
+    );
+  }
+
   it('should bind results to the verified child and retain one complete outcome without replay', async () => {
     const prepared = await prepare();
     created();
