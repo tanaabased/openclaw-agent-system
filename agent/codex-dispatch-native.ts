@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises';
 
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
+import codexAssessmentSkill from './codex-assessment-skill.ts';
 import { CodexThreadRpcError, type CodexThreadRequest } from './codex-thread-client.ts';
 
 export interface DispatchNativeThread {
@@ -94,6 +95,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     };
   }
   return {
+    assessmentSkill: (cwd: string, id: string) => codexAssessmentSkill(request, cwd, id),
     async rename(threadId: string, title: string) {
       await request('thread/name/set', { threadId, name: title });
       if ((await read(threadId))?.name !== title) throw new Error('dispatch-native-title-diverged');

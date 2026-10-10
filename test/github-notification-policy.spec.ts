@@ -29,6 +29,42 @@ function parsed(notifications: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
+  it('should normalize assessment skill ids and retain optional guidance forms', () => {
+    for (const skill of ['assess', '$assess', 'company:assess', ' $company:assess ']) {
+      for (const guidance of [
+        undefined,
+        'Prefer small fixes.',
+        'First investigate.\nThen plan.',
+        { file: 'guidance/assessment.md' },
+      ]) {
+        const assessment = parsed({
+          ...policy,
+          'issue-assignment': {
+            assessment: { skill, ...(guidance === undefined ? {} : { guidance }) },
+          },
+        }).issueAssignment!.assessment!;
+        assert.equal(assessment.skill, skill.trim().replace(/^\$/u, ''));
+        assert.deepEqual(assessment.guidance, guidance);
+      }
+    }
+    assert.deepEqual(
+      parsed({ ...policy, 'issue-assignment': { assessment: { guidance: 'Be concise.' } } })
+        .issueAssignment!.assessment,
+      { guidance: 'Be concise.' },
+    );
+    for (const assessment of [
+      { skill: 'run arbitrary instructions' },
+      { skill: { file: 'SKILL.md' } },
+      { skill: { inline: 'Assess.' } },
+      { skill: '$' },
+      { skill: 'a\nb' },
+      { skill: '../skill' },
+      { guidance: '' },
+      { guidance: { file: 'guide.md', inline: 'Also this' } },
+      { implementation: {} },
+    ])
+      assert.equal(parse({ ...policy, 'issue-assignment': { assessment } }).status, 'invalid');
+  });
   it('should decode portable defaults without manufacturing trigger authority', () => {
     assert.deepEqual(parsed(policy), {
       schemaVersion: 2,

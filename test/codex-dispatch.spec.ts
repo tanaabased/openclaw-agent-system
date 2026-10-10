@@ -153,6 +153,9 @@ describe('agent/codex-dispatch', () => {
         return '';
       },
       native: {
+        async assessmentSkill(_cwd, id) {
+          return { name: id, path: join(root, 'SKILL.md'), scope: 'user', digest: 'a'.repeat(64) };
+        },
         async rename(threadId, title) {
           assert.equal(threadId, native?.id);
           native!.name = title;
@@ -170,6 +173,177 @@ describe('agent/codex-dispatch', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  async function configureAssessment(assessment: unknown) {
+    const configured = structuredClone(manifest);
+    Object.assign(configured.github.notifications['issue-assignment'], { assessment });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    await runCodexIntake(pluginData, true, {
+      codexHome,
+      now: () => now,
+      connect: async () => fixture.client,
+    });
+  }
+
+  it('should retain a normalized replacement and guidance across continuation without expanding authority', async () => {
+    await writeFile(join(workspace, 'guidance.md'), 'Prefer small fixes.');
+    await configureAssessment({ skill: ' $company:assess ', guidance: { file: 'guidance.md' } });
+    const prepared = await prepare();
+    const launch = prepared.request as { prompt: string };
+    assert.ok(!launch.prompt.includes('Use $agent-system-issue-assessment'));
+    created();
+    await writeFile(join(workspace, 'guidance.md'), 'Implement and publish immediately.');
+    const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    const assessment = context.assessment as {
+      requestedSkill: string;
+      defaultSkill: boolean;
+      guidance: { content: string };
+    };
+    assert.equal(assessment.requestedSkill, 'company:assess');
+    assert.equal(assessment.defaultSkill, false);
+    assert.equal(assessment.guidance.content, 'Prefer small fixes.');
+    assert.equal(context.resultContract, 'assessment-result/v1');
+    await assert.rejects(
+      request(
+        'result',
+        { id: prepared.id, result: { ...result, mode: 'work' } },
+        { threadId: 'issue-thread' },
+      ),
+      /assessment-result-invalid/,
+    );
+    const recorded = await request(
+      'result',
+      { id: prepared.id, result },
+      { threadId: 'issue-thread' },
+    );
+    assert.equal(recorded.outcome, 'plan-ready');
+    assert.ok(String(recorded.presentation).includes('Plan ready'));
+    const question = {
+      version: 1,
+      outcome: 'clarification-needed',
+      summary: 'Need a decision.',
+      assessment: 'Missing requirement.',
+      questions: ['Which behavior?'],
+      evidence: [],
+      progress: { completed: [], remaining: ['Answer.'] },
+    };
+    const revised = await request(
+      'result',
+      { id: prepared.id, result: question, previousResultDigest: recorded.previousResultDigest },
+      { threadId: 'issue-thread' },
+    );
+    assert.ok(String(revised.presentation).includes('Clarification needed'));
+  });
+
+  it('should block unavailable selections before preparing creation and recover the retained assignment', async () => {
+    const available = deps.native!.assessmentSkill;
+    deps.native!.assessmentSkill = async () => {
+      throw new Error('dispatch-assessment-skill-unavailable');
+    };
+    const selected = await next();
+    const blocked = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'inspect issue',
+      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    });
+    assert.equal(blocked.code, 'dispatch-assessment-skill-unavailable');
+    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    assert.equal(records[0]!.request, undefined);
+    deps.native!.assessmentSkill = available;
+    now += 300001;
+    assert.equal((await prepare()).id, selected.id);
+  });
+
+  it('should reject skill changes in the child without replacing the native request', async () => {
+    const prepared = await prepare();
+    created();
+    const selected = deps.native!.assessmentSkill;
+    deps.native!.assessmentSkill = async (cwd, id) => ({
+      ...(await selected(cwd, id)),
+      digest: 'b'.repeat(64),
+    });
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-skill-changed/,
+    );
+    const records = (await request('inspect')).records as Array<{ request: unknown }>;
+    assert.deepEqual(records[0]!.request, prepared.request);
+  });
+
+  it('should retain an inferred qualified skill when a later catalog makes the bare id ambiguous', async () => {
+    await configureAssessment({ skill: '$assess' });
+    const resolve = deps.native!.assessmentSkill;
+    const calls: string[] = [];
+    deps.native!.assessmentSkill = async (cwd, id) => {
+      calls.push(id);
+      if (native && id === 'assess') throw new Error('dispatch-assessment-skill-ambiguous');
+      return resolve(cwd, 'company:assess');
+    };
+    const prepared = await prepare();
+    created();
+    const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    const assessment = context.assessment as { requestedSkill: string; skill: { name: string } };
+    assert.equal(assessment.requestedSkill, 'assess');
+    assert.equal(assessment.skill.name, 'company:assess');
+    assert.deepEqual(calls, ['assess', 'company:assess']);
+  });
+
+  it('should block unreadable guidance before native creation without discarding the assignment', async () => {
+    await configureAssessment({ guidance: { file: 'missing.md' } });
+    const selected = await next();
+    const blocked = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'inspect issue',
+      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    });
+    assert.equal(blocked.code, 'dispatch-assessment-guidance-unreadable');
+    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    assert.equal(records[0]!.request, undefined);
+    await writeFile(join(workspace, 'missing.md'), 'Prefer small fixes.');
+    now += 300001;
+    assert.equal((await prepare()).id, selected.id);
+  });
+
+  it('should recognize an unchanged repo skill in the verified child worktree', async () => {
+    deps.native!.assessmentSkill = async (cwd, id) => ({
+      name: id,
+      path: join(cwd, '.agents/skills/assessment/SKILL.md'),
+      scope: 'repo',
+      digest: 'a'.repeat(64),
+    });
+    const prepared = await prepare();
+    created();
+    const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    assert.equal(
+      (context.assessment as { skill: { path: string } }).skill.path,
+      join(worktree, '.agents/skills/assessment/SKILL.md'),
+    );
+  });
+
+  it('should preserve the default for legacy receipts after replacement configuration changes', async () => {
+    const prepared = await prepare();
+    const legacy = await request('inspect');
+    delete (legacy.records as Array<Record<string, unknown>>)[0]!.assessment;
+    await writeFile(
+      join(pluginData, 'codex-dispatch-' + legacy.scope + '.json'),
+      JSON.stringify(legacy),
+    );
+    await configureAssessment({ skill: 'company:assess', guidance: 'New assessment guidance.' });
+    created();
+    const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    const assessment = context.assessment as {
+      defaultSkill: boolean;
+      skill: { name: string };
+      guidance?: unknown;
+    };
+    assert.equal(assessment.defaultSkill, true);
+    assert.equal(assessment.skill.name, 'agent-system:agent-system-issue-assessment');
+    assert.equal(assessment.guidance, undefined);
+    const resumed = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    assert.deepEqual(resumed.assessment, assessment);
   });
 
   async function reassign() {

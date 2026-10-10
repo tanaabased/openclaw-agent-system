@@ -4,6 +4,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { assessmentResultSchema } from './assessment-result.ts';
+import { assessmentSelectionSchema } from './assessment-selection.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
@@ -63,6 +64,7 @@ export const dispatchRecordSchema = Type.Object(
     ]),
     createdAt: Type.Integer({ minimum: 0 }),
     manifestDigest: text,
+    assessment: Type.Optional(assessmentSelectionSchema),
     project: Type.Optional(dispatchProjectSchema),
     context: Type.Optional(Type.String({ maxLength: 96000 })),
     routing: Type.Optional(Type.String({ maxLength: 32000 })),

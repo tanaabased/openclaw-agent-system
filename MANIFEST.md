@@ -447,9 +447,9 @@ An unversioned block retains the existing [OpenClaw channel contract](./channels
 A block with `schema-version: 2` declares portable notification policy. The outer
 manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix.
 
-**Current support:** v2 parsing, defaults, identity validation, and Codex issue-assignment
-intake are implemented. Authorized Install reconciles the owned schedule; intake
-stops at durable records. Dispatch, assessment, review requests, feedback, and
+**Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
+intake, and assessment dispatch are implemented. Authorized Install reconciles the
+owned assessment schedule. Review requests, feedback, implementation, and
 OpenClaw v2 execution remain unavailable. OpenClaw rejects selected v2 execution
 before legacy routing or authority is used. A Codex-only declaration does not
 enable the OpenClaw channel. Binding and passive discovery never activate work.
@@ -504,9 +504,56 @@ No mode grants merge, deployment, expanded repository scope, or authority to
 change its own mode. Feedback continues the existing work's trusted mode and
 cannot turn planning into implementation. `review-request` and `feedback` do not
 accept a separate mode in this contract. Review behavior will be specified with
-its lifecycle, not borrowed from issue Work mode. The first Codex execution slice
-will support intake only; assessment dispatch follows separately. Accepting all
-three mode values here does not implement their workflows.
+its lifecycle, not borrowed from issue Work mode. Codex assessment dispatch requires
+`plan`; accepting all three mode values here does not implement their workflows.
+
+#### Assessment selection
+
+Configure `github.notifications.issue-assignment.assessment` to select one assessment
+skill and optionally supplement it with trusted profile guidance. Neither field grants
+implementation or publication authority. Applicable repository instructions and runtime
+boundaries remain controlling.
+
+| Field      | Type               | Required | Default                                      | Description                                                                |
+| ---------- | ------------------ | -------- | -------------------------------------------- | -------------------------------------------------------------------------- |
+| `guidance` | string or `{file}` | no       | none                                         | Nonempty single-line or multiline text, or one UTF-8 file; at most 32 KiB. |
+| `skill`    | string             | no       | `agent-system:agent-system-issue-assessment` | ID of one enabled, host-discoverable skill.                                |
+
+Skill IDs accept `skill-name`, `$skill-name`, `plugin:skill-name`, and
+`$plugin:skill-name`. Surrounding spaces and the optional `$` are removed; case is
+preserved. An unqualified name must identify exactly one enabled skill. Use its
+plugin-qualified name to disambiguate. Paths, URLs, inline workflows, and automatic
+skill installation are unsupported. Repository-owned skills are eligible when the
+host discovers them; a skill file path is not a manifest selection mechanism.
+
+```yaml
+issue-assignment:
+  mode: plan
+  assessment:
+    skill: $agent-system:agent-system-issue-assessment
+    guidance: |
+      Challenge unnecessary scope.
+      Prefer small, independently reviewable changes.
+```
+
+Alternatively, use `guidance: {file: guidance/assessment.md}`. Paths resolve from the
+stable bound agent workspace, not the issue worktree or manifest directory. Absolute
+paths, traversal, symlinks, nonregular files, invalid UTF-8, empty text, and NULs are
+rejected. Inline and file forms are mutually exclusive. Guidance files contain
+instructions, not secrets; their contents are retained privately with the assessment.
+
+Omitting both fields uses the default skill. Guidance alone supplements that default;
+a replacement runs alone, with guidance when supplied. Agent System owns generic
+defaults, company skills may live in Canon, and the bound workspace owns selection
+and preferences. A replacement must consume the verified context and return the same
+`assessment-result/v1` contract; the host owns result framing and verified links.
+
+Selection and guidance are captured when native creation is prepared. Continuation
+uses the saved guidance; a fresh assessment observes later guidance-file edits without
+reinstallation. Manifest changes follow the existing Install reconciliation contract.
+Missing, disabled, ambiguous, or changed skills and invalid guidance stop the affected
+assessment with an actionable diagnostic instead of silently changing its procedure.
+Currently, skill resolution supports host-discovered local `SKILL.md` sources.
 
 #### Issue-only profile example
 
@@ -547,7 +594,7 @@ Policy declares desired monitoring; binding and passive discovery do not activat
 it. Install reconciles the selected runtime. Empty authority lists admit no work;
 removing policy stops admission and requires reconciliation to pause the owned job.
 See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
-Future dispatch, assessment, and customization remain outside this contract.
+Review, feedback, and implementation execution remain outside the current Codex support.
 
 #### Legacy compatibility
 
