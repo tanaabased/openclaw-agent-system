@@ -28,6 +28,66 @@ const common = {
 };
 
 describe('channels/github/conversation/presentation/assessment-result', () => {
+  it('should show only configured instructions below routing across result outcomes', () => {
+    const results: AssessmentResult[] = [
+      { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
+      {
+        ...common,
+        outcome: 'clarification-needed',
+        assessment: 'Observed.',
+        questions: ['Which?'],
+      },
+      {
+        ...common,
+        outcome: 'operator-setup-blocker',
+        code: 'blocked',
+        remediation: 'Restore access.',
+      },
+    ];
+    for (const result of results) {
+      for (const custom of [false, true]) {
+        for (const guidance of [
+          undefined,
+          { source: 'inline' as const, content: 'Use cat names.' },
+          { source: 'inline' as const, content: 'Use [cat] names.\n\nKeep **evidence**.' },
+          {
+            source: 'file' as const,
+            path: '.agent-system/cats.md',
+            content: 'File content stays private.',
+          },
+        ]) {
+          const output = renderAssessmentResult(result, {
+            ...context,
+            assessment: { defaultSkill: !custom, skill: { name: 'cats:assess' }, guidance },
+          });
+          assert.equal(output.includes('Assessment instructions'), custom || !!guidance);
+          assert.equal(output.includes('cats:assess'), custom);
+          assert.equal(output.includes('**Guidance:**'), !!guidance);
+          if (custom || guidance) {
+            const position = output.indexOf('> ## 🧩 Assessment instructions');
+            assert.ok(position > output.indexOf('Effective settings'));
+            assert.ok(position < output.indexOf('## Reference material'));
+          }
+          if (guidance?.source === 'inline') {
+            assert.ok(output.includes('**Guidance:** Inline guidance'));
+            assert.ok(
+              output.includes(
+                guidance.content.includes('\n')
+                  ? '> Use \\[cat\\] names.\n> \n> Keep \\*\\*evidence\\*\\*.'
+                  : '> Use cat names.',
+              ),
+            );
+          }
+          if (guidance?.source === 'file') {
+            assert.ok(output.includes('**Guidance:** .agent-system/cats.md'));
+            assert.ok(!output.includes(guidance.content));
+          }
+        }
+      }
+    }
+    assert.ok(!renderAssessmentResult(results[0]!, context).includes('Assessment instructions'));
+  });
+
   it('should preserve a complete markdown plan and frame routing from trusted context', () => {
     const assessment = 'Current behavior loses context.\n\n> Evidence includes **formatting**.';
     const planSummary = 'Preserve the shared result and verify its public boundary.';

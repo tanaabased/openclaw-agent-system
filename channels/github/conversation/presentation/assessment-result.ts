@@ -9,6 +9,11 @@ interface AssessmentPresentationContext {
     effort: string;
   };
   effective?: { status: 'verified' | 'unverified'; model?: string; effort?: string };
+  assessment?: {
+    defaultSkill: boolean;
+    skill: { name: string };
+    guidance?: { source: 'inline' | 'file'; path?: string; content: string };
+  };
 }
 
 function item(markdown: string): string {
@@ -25,7 +30,7 @@ export default function renderAssessmentResult(
     'clarification-needed': '❓ Clarification needed',
     'operator-setup-blocker': '⏸️ Issue assessment blocked',
   };
-  const { routing, effective } = context;
+  const { routing, effective, assessment } = context;
   const text = githubNotificationMarkdownText;
   const routingCard = githubNotificationCard({
     emoji: '🧠',
@@ -53,12 +58,45 @@ export default function renderAssessmentResult(
     .split('\n')
     .map((line) => '> ' + line)
     .join('\n');
+  const instructionFacts = [
+    ...(assessment && !assessment.defaultSkill
+      ? [{ label: 'Skill', value: text(assessment.skill.name) }]
+      : []),
+    ...(assessment?.guidance
+      ? [
+          {
+            label: 'Guidance',
+            value:
+              assessment.guidance.source === 'file'
+                ? text(assessment.guidance.path ?? 'Guidance file')
+                : 'Inline guidance',
+          },
+        ]
+      : []),
+  ];
+  const instructionsCard = instructionFacts.length
+    ? [
+        githubNotificationCard({
+          emoji: '🧩',
+          title: 'Assessment instructions',
+          facts: instructionFacts,
+        }),
+        ...(assessment?.guidance?.source === 'inline'
+          ? [assessment.guidance.content.split(/\r?\n/u).map(text).join('\n')]
+          : []),
+      ]
+        .join('\n\n')
+        .split('\n')
+        .map((line) => '> ' + line)
+        .join('\n')
+    : undefined;
   const content = [
     '## ' + titles[result.outcome],
     result.summary,
     '**Issue:** [' + text(context.issue.label) + '](' + context.issue.url + ')',
     ...('assessment' in result ? ['## Assessment', result.assessment] : []),
     routingCard,
+    ...(instructionsCard ? [instructionsCard] : []),
     ...(result.outcome === 'plan-ready'
       ? [
           ...(result.planSummary ? ['## Plan summary', result.planSummary] : []),

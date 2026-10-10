@@ -84,7 +84,11 @@ the retained skill name, source, digest, and guidance snapshot through context; 
 to a guidance file must affect a fresh assessment but not continuation of an existing
 one. Include attempted authority expansion and malformed replacement output: neither
 may alter routing, mode, publication authority, or an already recorded valid result.
-Both replacement plans and questions must use the shared host presentation. These
+Both replacement plans and questions must use the shared host presentation. Verify
+that its Assessment instructions block follows Model routing, identifies the resolved
+custom skill and/or guidance source, preserves multiline inline guidance, and stays
+absent for the default without guidance. File guidance displays its workspace-relative
+path, not its contents. Continuations retain the original instruction selection. These
 semantic pilot checks need explicit authorization; the headless checks prove discovery
 and configuration only.
 

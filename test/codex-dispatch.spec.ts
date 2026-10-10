@@ -221,6 +221,9 @@ describe('agent/codex-dispatch', () => {
     );
     assert.equal(recorded.outcome, 'plan-ready');
     assert.ok(String(recorded.presentation).includes('Plan ready'));
+    assert.match(String(recorded.presentation), /Skill.*company:assess/);
+    assert.match(String(recorded.presentation), /Guidance.*guidance.md/);
+    assert.ok(!String(recorded.presentation).includes(workspace));
     const question = {
       version: 1,
       outcome: 'clarification-needed',
@@ -236,6 +239,8 @@ describe('agent/codex-dispatch', () => {
       { threadId: 'issue-thread' },
     );
     assert.ok(String(revised.presentation).includes('Clarification needed'));
+    assert.match(String(revised.presentation), /Skill.*company:assess/);
+    assert.match(String(revised.presentation), /Guidance.*guidance.md/);
   });
 
   it('should block unavailable selections before preparing creation and recover the retained assignment', async () => {

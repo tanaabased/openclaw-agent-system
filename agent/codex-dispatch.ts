@@ -993,6 +993,15 @@ export async function runCodexDispatch(
                 effort: record.request!.thinking,
               },
               effective: record.effective,
+              assessment: record.assessment && {
+                ...record.assessment,
+                guidance: record.assessment.guidance && {
+                  ...record.assessment.guidance,
+                  ...(record.assessment.guidance.path
+                    ? { path: relative(current.workspace, record.assessment.guidance.path) }
+                    : {}),
+                },
+              },
             });
             record.result = result;
             record.resultTurnId = native.turnId;
