@@ -66,6 +66,17 @@ export const dispatchRecordSchema = Type.Object(
     manifestDigest: text,
     assessment: Type.Optional(assessmentSelectionSchema),
     project: Type.Optional(dispatchProjectSchema),
+    repositoryPreparation: Type.Optional(
+      Type.Object(
+        {
+          path: text,
+          source: text,
+          identity: text,
+          checkout: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     context: Type.Optional(Type.String({ maxLength: 96000 })),
     routing: Type.Optional(Type.String({ maxLength: 32000 })),
     routingNote: Type.Optional(text),

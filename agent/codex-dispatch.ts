@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { relative } from 'node:path';
+import { join, relative } from 'node:path';
 
 import { Value } from 'typebox/value';
 
@@ -20,6 +20,9 @@ import {
   verifyDispatchWorktree,
   type DispatchGit,
 } from './codex-dispatch-project.ts';
+import prepareDispatchRepository from './codex-dispatch-repository.ts';
+import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
+import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import {
   connectCodexGitHub,
@@ -55,6 +58,7 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   activation?: typeof inspectCodexDispatchActivation;
   native?: Native;
   git?: DispatchGit;
+  prepareRepository?: typeof prepareDispatchRepository;
   threadId?: string;
 }
 
@@ -104,13 +108,36 @@ function remediation(value: string) {
     return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat to finish the assessment and submit its structured result; do not launch a replacement.';
   return 'Inspect the retained native creation receipt, chat, and worktree. Restore host access or reconcile the existing creation; never repeat an uncertain create.';
 }
-function blocker(record: DispatchRecord, value: string): AssessmentResult {
+function blocker(record: DispatchRecord, value: string, error?: unknown): AssessmentResult {
+  const preparation = record.repositoryPreparation;
+  const path =
+    error instanceof RepositoryPreparationError
+      ? error.path
+      : (preparation?.checkout ?? preparation?.path);
+  const detail = path
+    ? ' Repository: ' +
+      githubNotificationMarkdownText(
+        preparation?.identity ??
+          (error instanceof RepositoryPreparationError ? (error.identity ?? '') : ''),
+      ) +
+      '. Path: ' +
+      githubNotificationMarkdownText(path) +
+      '.'
+    : '';
+  const action =
+    value === 'dispatch-project-registration-unavailable'
+      ? 'No supported native project registration action is available. Add this exact checkout as the primary folder of one saved local Codex project, then let the next scheduled occurrence verify it and resume the retained assignment.'
+      : value === 'repository-clone-interrupted'
+        ? 'Inspect this retained temporary clone. Repair it, or remove only this confirmed preparation-owned temporary directory, then retry; the runtime will not clone over it.'
+        : value.startsWith('repository-')
+          ? 'Resolve the repository path or identity conflict, or restore access. Use an explicit local repository mapping for same-name repositories. Do not overwrite user work or change storage to bypass the failure.'
+          : remediation(value);
   return {
     version: 1,
     outcome: 'operator-setup-blocker',
     code: value,
     summary: 'The issue assessment needs setup or recovery.',
-    remediation: remediation(value),
+    remediation: action + detail,
     evidence: [{ source: 'Agent System dispatch', status: 'observed', detail: value }],
     progress: record.result?.progress ?? {
       completed: record.threadId ? ['Retained native issue chat ' + record.threadId + '.'] : [],
@@ -130,6 +157,11 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
   const changed = digest !== record.notice;
   record.notice = digest;
   const result = record.result;
+  const registration =
+    result?.outcome === 'operator-setup-blocker' &&
+    result.code === 'dispatch-project-registration-unavailable' &&
+    intake &&
+    record.repositoryPreparation?.checkout;
   return {
     id: record.id,
     status: record.phase,
@@ -139,9 +171,28 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
       ? {
           code: result.code,
           message: githubNotificationCard({
-            emoji: '⏸️',
-            title: 'Issue assessment blocked',
+            emoji: registration ? '⚠️' : '⏸️',
+            title: registration
+              ? 'Action required: add a Codex project'
+              : 'Issue assessment blocked',
             facts: [
+              ...(registration
+                ? [
+                    {
+                      label: 'Project name',
+                      value: githubNotificationMarkdownText(intake.repository.name),
+                    },
+                    {
+                      label: 'Folder path',
+                      value: githubNotificationMarkdownText(registration),
+                    },
+                    {
+                      label: 'Action',
+                      value:
+                        'Add a local Codex project with this exact folder as its primary folder. The project name above is suggested; the folder must match. Scheduled checks will verify the folder and resume this assignment automatically.',
+                    },
+                  ]
+                : []),
               ...(intake
                 ? [
                     {
@@ -166,7 +217,9 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
                     },
                   ]
                 : []),
-              { label: 'Action', value: githubNotificationMarkdownText(result.remediation) },
+              ...(!registration
+                ? [{ label: 'Action', value: githubNotificationMarkdownText(result.remediation) }]
+                : []),
               { label: 'Diagnostic', value: githubNotificationMarkdownText(result.code) },
             ],
           }),
@@ -410,7 +463,7 @@ export async function runCodexDispatch(
           return { id: record.id, status: 'creating', changed: false };
         }
         record.phase = 'blocked';
-        record.result = blocker(record, code(error));
+        record.result = blocker(record, code(error), error);
         record.retryAfter = now + 300000;
         const result = notice(
           record,
@@ -502,17 +555,72 @@ export async function runCodexDispatch(
         try {
           record.intakeId = intake.id;
           const { client, repo } = await revalidate(current, intake, deps, signal);
-          const project = await resolveDispatchProject(
-            {
-              projects: input.projects,
-              repository: repository(intake),
-              defaultBranch: repo.defaultBranch,
-              workspace: current.workspace,
-              explicitPath:
-                current.manifest.git?.worktrees?.repositories?.local?.['github-' + repo.databaseId],
-            },
-            deps.git ?? dispatchGit,
-          );
+          const configuration = current.manifest.git?.worktrees ?? {};
+          const repositoryId = 'github-' + repo.databaseId;
+          const layout = resolveGitWorktreeLayout(current.workspace, configuration);
+          const explicitPath = Object.hasOwn(layout.localRepositories, repositoryId)
+            ? layout.localRepositories[repositoryId]
+            : layout.workingDirectory
+              ? join(layout.workingDirectory, repo.name)
+              : undefined;
+          const projectInput = {
+            projects: input.projects,
+            repository: repository(intake),
+            defaultBranch: repo.defaultBranch,
+            workspace: current.workspace,
+            explicitPath,
+          };
+          const prepareRepository = async () => {
+            await fresh();
+            await revalidate(current, intake, deps, signal);
+            return (deps.prepareRepository ?? prepareDispatchRepository)(
+              {
+                workspace: current.workspace,
+                configuration,
+                repositoryId,
+                repository: repository(intake),
+                cloneUrl: repo.cloneUrl,
+                defaultBranch: repo.defaultBranch,
+                previous: record.repositoryPreparation,
+              },
+              {
+                git: deps.git,
+                signal,
+                authorize: fresh,
+                retain: async (value) => {
+                  record.repositoryPreparation = value;
+                  await save();
+                },
+              },
+            );
+          };
+          let project;
+          if (record.repositoryPreparation) projectInput.explicitPath = await prepareRepository();
+          try {
+            project = await resolveDispatchProject(projectInput, deps.git ?? dispatchGit);
+          } catch (error) {
+            if (
+              !['dispatch-project-missing', 'dispatch-configured-project-missing'].includes(
+                code(error),
+              )
+            )
+              throw error;
+            const checkout = record.repositoryPreparation?.checkout ?? (await prepareRepository());
+            try {
+              project = await resolveDispatchProject(
+                { ...projectInput, explicitPath: checkout },
+                deps.git ?? dispatchGit,
+              );
+            } catch (selectionError) {
+              if (code(selectionError) === 'dispatch-project-missing')
+                throw new RepositoryPreparationError(
+                  'dispatch-project-registration-unavailable',
+                  checkout,
+                  'github.com/' + repository(intake),
+                );
+              throw selectionError;
+            }
+          }
           const context = await client.getItemContext(
             repo.owner.login,
             repo.name,

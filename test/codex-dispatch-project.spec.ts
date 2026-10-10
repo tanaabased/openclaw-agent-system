@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,6 +31,8 @@ describe('agent/codex-dispatch-project', () => {
       if (argv.length === 1 && argv[0] === 'remote') return 'origin';
       if (argv[0] === 'remote') return 'https://github.com/owner/repo.git';
       if (argv.includes('--git-common-dir')) return commonDir;
+      if (argv.includes('--is-bare-repository')) return 'false';
+      if (argv.includes('--show-toplevel')) return _cwd;
       if (argv[0] === 'rev-parse') return commit;
       return '';
     };
@@ -58,6 +60,12 @@ describe('agent/codex-dispatch-project', () => {
     assert.equal(githubOrigin('git@github.com:Owner/Repo.git'), 'owner/repo');
     assert.equal(githubOrigin('https://github.com.evil/owner/repo'), undefined);
     assert.equal(githubOrigin('https://github.com/owner/repo/extra'), undefined);
+    const alias = join(root, 'alias');
+    await symlink(source, alias);
+    await assert.rejects(
+      resolveDispatchProject({ ...input, explicitPath: alias }, git),
+      /dispatch-project-path-unsafe/,
+    );
   });
 
   it('should reject unsafe refs and changed or unrelated assessment worktrees', async () => {

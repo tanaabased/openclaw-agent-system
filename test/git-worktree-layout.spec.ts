@@ -4,6 +4,40 @@ import { resolve } from 'node:path';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 
 describe('tools/git/worktree-layout', () => {
+  it('should resolve a catch-all working directory separately from managed storage', () => {
+    const layout = resolveGitWorktreeLayout(
+      '/workspace',
+      {
+        repositories: {
+          workingDirectory: '~/checkouts',
+          local: { 'github-10': '../explicit' },
+        },
+      },
+      '/home/test',
+    );
+    assert.equal(layout.workingDirectory, '/home/test/checkouts');
+    assert.equal(layout.localRepositories['github-10'], '/explicit');
+    assert.equal(layout.repositoryRoot, '/workspace/.agent-system/repositories');
+    assert.equal(
+      resolveGitWorktreeLayout(
+        '/home/test/tanaab/me',
+        {
+          repositories: { workingDirectory: '~/tanaab' },
+        },
+        '/home/test',
+      ).workingDirectory,
+      '/home/test/tanaab',
+    );
+    assert.throws(
+      () =>
+        resolveGitWorktreeLayout('/workspace', {
+          repositories: {
+            workingDirectory: '.agent-system/repositories/checkouts',
+          },
+        }),
+      /separate directories/u,
+    );
+  });
   it('should resolve workspace defaults and local repository overrides', () => {
     assert.deepEqual(
       resolveGitWorktreeLayout(

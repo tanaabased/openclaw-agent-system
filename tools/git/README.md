@@ -221,11 +221,12 @@ readiness.
 
 ### `git.worktrees`
 
-| Field                | Type                                        | Required | Default                      |
-| -------------------- | ------------------------------------------- | -------- | ---------------------------- |
-| `repositories.local` | repository-id-to-authoritative-path mapping | no       | none                         |
-| `repositories.root`  | path                                        | no       | `.agent-system/repositories` |
-| `root`               | path                                        | no       | `.agent-system/worktrees`    |
+| Field                            | Type                                        | Required | Default                      |
+| -------------------------------- | ------------------------------------------- | -------- | ---------------------------- |
+| `repositories.local`             | repository-id-to-authoritative-path mapping | no       | none                         |
+| `repositories.root`              | path                                        | no       | `.agent-system/repositories` |
+| `repositories.working-directory` | path                                        | no       | none                         |
+| `root`                           | path                                        | no       | `.agent-system/worktrees`    |
 
 An empty object enables workspace-local managed repositories and worktrees.
 Custom roots and local repository overrides are optional:
@@ -240,14 +241,30 @@ git:
         agent-system: ~/tanaab/openclaw-agent-system
 ```
 
-Managed repositories are bare clones selected by a stable repository id. Agent
-System accepts supported network remotes but rejects local or credential-bearing
-clone URLs. Ordinary worktree preparation pins a repository id to its first
-source. A declared local override is authoritative: `install` preserves a
+An explicit `repositories.local` mapping wins. Otherwise, setting
+`repositories.working-directory` selects a normal checkout at
+`<directory>/<repository-name>`: preparation verifies and reuses an existing checkout
+or clones it if missing. Relative paths resolve from the workspace, and `~/` resolves
+from the host home. The directory may contain the agent workspace; it cannot be
+inside either managed root. Same-name repositories from different owners require
+explicit local mappings to separate paths. Full remote host, owner, and repository
+identity must match; dirty files are preserved, and failures never fall back to a
+different location or overwrite an existing checkout.
+
+Without either setting, managed repositories remain bare clones selected by a
+stable repository id. Agent System accepts supported network remotes but rejects
+local or credential-bearing clone URLs. Ordinary worktree preparation pins a
+repository id to its first source. A declared local override is authoritative: `install` preserves a
 missing path as drift so ordered setup can create it, while non-repositories,
 symlinks, and other unsafe paths fail closed. Managed worktree preparation
 still requires every declared local override to be a ready repository. Use a
 remote base such as `origin/main` to start from the latest fetched branch.
+
+Install creates a missing working directory and inspects existing ownership and
+permissions without changing them. Preparation retains interrupted clone state for
+retry; an incomplete temporary clone requires operator inspection before retrying.
+OpenClaw uses its managed Git runner. [Standalone Codex](../../CODEX.md#issue-assessment)
+uses native host authorization and separately verifies saved project registration.
 
 Preparation is serialized per repository; concurrent callers reuse the same
 worktree, while different repositories can prepare independently. Waiting callers

@@ -12,6 +12,7 @@ export interface GitWorktreeLayout {
   localRepositories: Record<string, string>;
   repositoryRoot: string;
   worktreeRoot: string;
+  workingDirectory?: string;
   workspaceDir: string;
 }
 
@@ -65,6 +66,24 @@ export default function resolveGitWorktreeLayout(
       resolveConfiguredPath(path, workspace, homeDirectory),
     ]),
   );
+  const workingDirectory =
+    configuration.repositories?.workingDirectory === undefined
+      ? undefined
+      : resolveConfiguredPath(
+          configuration.repositories.workingDirectory,
+          workspace,
+          homeDirectory,
+        );
+  if (
+    workingDirectory !== undefined &&
+    [repositoryRoot, worktreeRoot].some(
+      (root) => workingDirectory === root || isPathContained(root, workingDirectory),
+    )
+  ) {
+    throw new Error(
+      'Git working checkout directory and managed roots must be separate directories.',
+    );
+  }
   if (
     Object.values(localRepositories).some(
       (path) => isPathContained(repositoryRoot, path) || isPathContained(worktreeRoot, path),
@@ -75,6 +94,7 @@ export default function resolveGitWorktreeLayout(
   const ignoreEntries = [
     ignoreEntry(workspace, repositoryRoot),
     ignoreEntry(workspace, worktreeRoot),
+    ...(workingDirectory === undefined ? [] : [ignoreEntry(workspace, workingDirectory)]),
   ].filter((entry): entry is string => entry !== undefined);
 
   return {
@@ -82,6 +102,7 @@ export default function resolveGitWorktreeLayout(
     localRepositories,
     repositoryRoot,
     worktreeRoot,
+    ...(workingDirectory === undefined ? {} : { workingDirectory }),
     workspaceDir: workspace,
   };
 }

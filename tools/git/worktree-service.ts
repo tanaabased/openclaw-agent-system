@@ -1,20 +1,16 @@
-import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { lstat, mkdir, readdir, realpath } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import {
   assertPrivateStateLocksHeld,
   withPrivateStateLock,
   privateStateLockSignal,
 } from '../../core/private-state-lock-context.ts';
-import acquirePrivateStateFileLock, {
-  privateStateFileLockBusyErrorCode,
-  type PrivateStateFileLockHandle,
-} from '../../core/private-state-file-lock.ts';
-import abortableDelay from '../../utils/abortable-delay.ts';
+import type acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import GitCommandError from './command-error.ts';
+import GitRepositoryService, { type ResolvedRepository } from './repository-service.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 import type { GitWorktreeLayout } from './worktree-layout.ts';
@@ -66,12 +62,6 @@ export interface GitWorktreeCleanupResult {
   repositoryId: string;
   status: 'dirty' | 'failed' | 'missing' | 'removed' | 'unsafe';
   workId: string;
-}
-
-interface ResolvedRepository {
-  path: string;
-  refreshBeforeCreate: boolean;
-  repositoryId: string;
 }
 
 interface RegisteredWorktree {
@@ -132,14 +122,14 @@ function parseWorktrees(source: string): RegisteredWorktree[] {
 
 /** Prepare, discover, and remove deterministic worktrees while leaving state to Git. */
 export default class GitWorktreeService {
-  readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
+  readonly #repositoryService: GitRepositoryService;
   readonly #layoutService: Pick<GitWorktreeLayoutService, 'inspect'>;
 
   constructor(dependencies: {
     acquireFileLock?: typeof acquirePrivateStateFileLock;
     layoutService: Pick<GitWorktreeLayoutService, 'inspect'>;
   }) {
-    this.#acquireFileLock = dependencies.acquireFileLock ?? acquirePrivateStateFileLock;
+    this.#repositoryService = new GitRepositoryService(dependencies);
     this.#layoutService = dependencies.layoutService;
   }
 
@@ -149,7 +139,12 @@ export default class GitWorktreeService {
   ): Promise<GitWorktreeResult> {
     this.#validatePrepareInput(input);
     const layout = await this.#readyLayout(context);
-    const lease = await this.#acquirePreparationLock(context, layout, input.repositoryId);
+    const lease = await this.#repositoryService.acquire(
+      context,
+      layout,
+      input.repositoryId,
+      input.cloneUrl,
+    );
     try {
       context.signal?.throwIfAborted();
       return await withPrivateStateLock(lease, () =>
@@ -164,48 +159,12 @@ export default class GitWorktreeService {
     }
   }
 
-  async #acquirePreparationLock(
-    context: GitWorktreeServiceContext,
-    layout: GitWorktreeLayout,
-    repositoryId: string,
-  ): Promise<PrivateStateFileLockHandle> {
-    context.signal?.throwIfAborted();
-    const localPath = getOwn(layout.localRepositories, repositoryId);
-    let targetPath = join(layout.repositoryRoot, gitWorktreeRepositoryDirectoryName(repositoryId));
-    if (localPath) {
-      const result = requireGitSuccess(
-        'common-directory inspection',
-        await this.#run(context, localPath, ['rev-parse', '--git-common-dir']),
-      );
-      if (!result.stdout.trim()) throw new Error('Git returned no shared repository directory.');
-      const commonDir = await realpath(resolve(localPath, result.stdout.trim()));
-      targetPath = join(commonDir, 'agent-system-worktree-preparation');
-    }
-    const deadline = Date.now() + 10 * 60 * 1000;
-    while (true) {
-      context.signal?.throwIfAborted();
-      try {
-        return await this.#acquireFileLock(targetPath, {
-          retries: { factor: 1, maxTimeout: 0, minTimeout: 0, retries: 0 },
-          staleMs: 30_000,
-        });
-      } catch (error) {
-        if (nodeErrorCode(error) !== privateStateFileLockBusyErrorCode) throw error;
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) {
-          throw new Error('Git worktree repository preparation is busy.', { cause: error });
-        }
-        await abortableDelay(Math.min(250, remaining), context.signal);
-      }
-    }
-  }
-
   async #prepare(
     context: GitWorktreeServiceContext,
     input: GitWorktreePrepareInput,
     layout: GitWorktreeLayout,
   ): Promise<GitWorktreeResult> {
-    const repository = await this.#resolveRepository(
+    const repository = await this.#repositoryService.resolve(
       context,
       layout,
       input.repositoryId,
@@ -332,7 +291,7 @@ export default class GitWorktreeService {
     validateIdentifier(repositoryId, 'repository id');
     validateIdentifier(workId, 'work id');
     const layout = await this.#readyLayout(context);
-    const repository = await this.#resolveRepository(context, layout, repositoryId);
+    const repository = await this.#repositoryService.resolve(context, layout, repositoryId);
     const path = this.#worktreePath(
       layout,
       repositoryId,
@@ -363,7 +322,7 @@ export default class GitWorktreeService {
     const branch = expectedBranch ?? stableName;
     const path = this.#worktreePath(layout, repositoryId, stableName);
     const base = { branch, path, repositoryId, workId };
-    const repository = await this.#resolveRepository(context, layout, repositoryId);
+    const repository = await this.#repositoryService.resolve(context, layout, repositoryId);
     const existing = (await this.#registeredWorktrees(context, repository)).find(
       (worktree) => worktree.path === path,
     );
@@ -434,6 +393,7 @@ export default class GitWorktreeService {
       inspection.repositoryRoot !== 'ready' ||
       inspection.worktreeRoot !== 'ready' ||
       !inspection.gitignored ||
+      (inspection.workingDirectory !== undefined && inspection.workingDirectory !== 'ready') ||
       Object.values(inspection.localRepositories).some((status) => status !== 'ready')
     ) {
       throw new Error('Git worktree roots are not installed.');
@@ -451,12 +411,15 @@ export default class GitWorktreeService {
       if (localPath) {
         return [{ path: localPath, refreshBeforeCreate: false, repositoryId: selectedId }];
       }
+      if (layout.workingDirectory) {
+        return this.#repositoryService.workingRepositories(context, layout, selectedId);
+      }
       const managedPath = join(
         layout.repositoryRoot,
         gitWorktreeRepositoryDirectoryName(selectedId),
       );
       if ((await pathKind(managedPath)) === 'absent') return [];
-      return [await this.#resolveRepository(context, layout, selectedId)];
+      return [await this.#repositoryService.resolve(context, layout, selectedId)];
     }
     const local = Object.entries(layout.localRepositories).map(([repositoryId, path]) => ({
       path,
@@ -477,113 +440,12 @@ export default class GitWorktreeService {
           return repositoryId ? { path, refreshBeforeCreate: true, repositoryId } : undefined;
         }),
     );
-    return [...local, ...managed.filter((value): value is ResolvedRepository => Boolean(value))];
-  }
-
-  async #resolveRepository(
-    context: GitWorktreeServiceContext,
-    layout: GitWorktreeLayout,
-    repositoryId: string,
-    cloneUrl?: string,
-    reconcileOrigin = false,
-  ): Promise<ResolvedRepository> {
-    const localPath = getOwn(layout.localRepositories, repositoryId);
-    if (localPath) return { path: localPath, refreshBeforeCreate: false, repositoryId };
-
-    const source = cloneUrl === undefined ? undefined : normalizeGitWorktreeRemote(cloneUrl);
-    const path = join(layout.repositoryRoot, gitWorktreeRepositoryDirectoryName(repositoryId));
-    const kind = await pathKind(path);
-    if (kind === 'unsafe') throw new Error('The managed Git repository path is unsafe.');
-    if (kind === 'directory') {
-      const identity = requireGitSuccess(
-        'repository identity inspection',
-        await this.#run(context, path, ['config', '--get', 'agent-system.repository-id']),
-      ).stdout.trim();
-      if (identity !== repositoryId) {
-        throw new Error('The managed Git repository has another identity.');
-      }
-      if (source !== undefined) {
-        const origin = requireGitSuccess(
-          'origin inspection',
-          await this.#run(context, path, ['remote', 'get-url', 'origin']),
-        ).stdout.trim();
-        if (normalizeGitWorktreeRemote(origin) !== source) {
-          if (!reconcileOrigin) {
-            throw new Error('The managed Git repository uses another origin.');
-          }
-          await this.#reconcileManagedOrigin(context, path, origin, source);
-          return { path, refreshBeforeCreate: false, repositoryId };
-        }
-      }
-      return { path, refreshBeforeCreate: true, repositoryId };
-    }
-    if (!source) throw new Error('A clone URL is required to create this managed repository.');
-
-    const temporaryPath = `${path}.${randomUUID()}.tmp`;
-    try {
-      requireGitSuccess(
-        'clone',
-        await this.#run(context, layout.repositoryRoot, [
-          'clone',
-          '--bare',
-          '--config',
-          'remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*',
-          '--',
-          source,
-          temporaryPath,
-        ]),
-      );
-      requireGitSuccess(
-        'repository identity',
-        await this.#run(context, temporaryPath, [
-          'config',
-          'agent-system.repository-id',
-          repositoryId,
-        ]),
-      );
-      assertPrivateStateLocksHeld();
-      await rename(temporaryPath, path);
-      return { path, refreshBeforeCreate: false, repositoryId };
-    } catch (error) {
-      await rm(temporaryPath, { force: true, recursive: true }).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  async #reconcileManagedOrigin(
-    context: GitWorktreeServiceContext,
-    path: string,
-    currentOrigin: string,
-    nextOrigin: string,
-  ): Promise<void> {
-    const previous = normalizeGitWorktreeRemote(currentOrigin);
-    requireGitSuccess(
-      'origin reconciliation',
-      await this.#run(context, path, ['remote', 'set-url', 'origin', nextOrigin]),
-    );
-    try {
-      const verified = requireGitSuccess(
-        'origin reconciliation verification',
-        await this.#run(context, path, ['remote', 'get-url', 'origin']),
-      ).stdout.trim();
-      if (normalizeGitWorktreeRemote(verified) !== nextOrigin) {
-        throw new Error('Git retained an unexpected managed repository origin.');
-      }
-      requireGitSuccess(
-        'origin reconciliation fetch',
-        await this.#run(context, path, ['fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*']),
-      );
-    } catch (error) {
-      const rollback = await this.#run(context, path, ['remote', 'set-url', 'origin', previous]);
-      if (rollback.exitCode !== 0) {
-        throw new Error('The managed Git repository origin could not be restored.', {
-          cause: error,
-        });
-      }
-      throw new Error('The managed Git repository origin could not be reconciled.', {
-        cause: error,
-      });
-    }
+    const working = await this.#repositoryService.workingRepositories(context, layout);
+    return [
+      ...local,
+      ...working,
+      ...managed.filter((value): value is ResolvedRepository => Boolean(value)),
+    ];
   }
 
   async #registeredWorktrees(

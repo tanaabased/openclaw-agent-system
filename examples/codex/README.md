@@ -178,6 +178,8 @@ printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$
 if output=$(printf '%s\n' '{"action":"next","projects":[]}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
 test ! -d "$CODEX_HOME/automations"
+test ! -d "$root/notification-workspace/checkouts"
+test ! -d "$root/notification-workspace/.agent-system/repositories"
 
 # should preview a valid workspace without persisting a binding
 root="$TMPDIR/agent-system-codex-example"

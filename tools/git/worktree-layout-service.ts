@@ -5,6 +5,7 @@ import type { AgentSystemCliRunner } from '../../api/types.ts';
 import WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
+import { ensureRepositoryDirectory } from './repository-service.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import resolveGitWorktreeLayout, { type GitWorktreeLayout } from './worktree-layout.ts';
 
@@ -17,10 +18,16 @@ export interface GitWorktreeLayoutInspection {
   repositoryRoot: GitManagedDirectoryStatus;
   tracked: boolean;
   worktreeRoot: GitManagedDirectoryStatus;
+  workingDirectory?: GitManagedDirectoryStatus;
 }
 
 export interface GitWorktreeLayoutReconcileResult extends GitWorktreeLayoutInspection {
-  actions: Array<'create-repository-root' | 'create-worktree-root' | 'update-gitignore'>;
+  actions: Array<
+    | 'create-repository-root'
+    | 'create-worktree-root'
+    | 'create-working-directory'
+    | 'update-gitignore'
+  >;
 }
 
 export interface GitWorktreeLayoutServiceDependencies {
@@ -50,7 +57,11 @@ async function directoryStatus(
 }
 
 function workspaceManagedPaths(workspaceDir: string, layout: GitWorktreeLayout): string[] {
-  return [layout.repositoryRoot, layout.worktreeRoot]
+  return [
+    layout.repositoryRoot,
+    layout.worktreeRoot,
+    ...(layout.workingDirectory ? [layout.workingDirectory] : []),
+  ]
     .filter((path) => path !== workspaceDir && isPathContained(workspaceDir, path))
     .map((path) => relative(workspaceDir, path));
 }
@@ -96,6 +107,9 @@ export default class GitWorktreeLayoutService {
       repositoryRoot: await directoryStatus(layout.repositoryRoot, this.#currentUid, true),
       tracked: gitPaths.tracked,
       worktreeRoot: await directoryStatus(layout.worktreeRoot, this.#currentUid, true),
+      ...(layout.workingDirectory
+        ? { workingDirectory: await directoryStatus(layout.workingDirectory, this.#currentUid) }
+        : {}),
     };
   }
 
@@ -115,7 +129,14 @@ export default class GitWorktreeLayoutService {
     }
     const beforeRepository = await directoryStatus(layout.repositoryRoot, this.#currentUid, true);
     const beforeWorktree = await directoryStatus(layout.worktreeRoot, this.#currentUid, true);
-    if (beforeRepository === 'unsafe' || beforeWorktree === 'unsafe') {
+    const beforeWorking = layout.workingDirectory
+      ? await directoryStatus(layout.workingDirectory, this.#currentUid)
+      : undefined;
+    if (
+      beforeRepository === 'unsafe' ||
+      beforeWorktree === 'unsafe' ||
+      beforeWorking === 'unsafe'
+    ) {
       throw new Error('Git worktree managed roots are unavailable or unsafe.');
     }
     const localRepositories = await Promise.all(
@@ -143,6 +164,11 @@ export default class GitWorktreeLayoutService {
       await mkdir(layout.worktreeRoot, { mode: 0o700, recursive: true });
       await chmod(layout.worktreeRoot, 0o700);
       actions.push('create-worktree-root');
+    }
+
+    if (layout.workingDirectory) {
+      await ensureRepositoryDirectory(layout.workingDirectory);
+      if (beforeWorking === 'missing') actions.push('create-working-directory');
     }
 
     const inspection = await this.inspect(workspace, configuration);

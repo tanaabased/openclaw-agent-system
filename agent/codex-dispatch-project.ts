@@ -5,17 +5,20 @@ import { resolve } from 'node:path';
 import { nativeObject } from './automation-gateway.ts';
 import type { DispatchProject } from './codex-dispatch-state.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
+import { ensureRepositoryDirectory } from '../tools/git/repository-service.ts';
+import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
 import { resolveToolExecutable } from '../api/cli-runner.ts';
 
-export type DispatchGit = (cwd: string, argv: string[]) => Promise<string>;
+export type DispatchGit = (cwd: string, argv: string[], signal?: AbortSignal) => Promise<string>;
 
-export const dispatchGit: DispatchGit = async (cwd, argv) => {
+export const dispatchGit: DispatchGit = async (cwd, argv, signal) => {
   const executable = await resolveToolExecutable('git', process.env.PATH ?? '');
   const result = await runCodexSetupProcess([executable, ...argv], {
     cwd,
     baseEnv: process.env,
     env: { GIT_TERMINAL_PROMPT: '0' },
     input: '',
+    ...(signal ? { signal } : {}),
     timeoutMs: 60000,
     maxOutputBytes: 65536,
     maxCombinedOutputBytes: 131072,
@@ -29,14 +32,17 @@ export const dispatchGit: DispatchGit = async (cwd, argv) => {
 };
 
 export function githubOrigin(value: string): string | undefined {
-  const match =
-    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/)([A-Za-z0-9-]+\/[A-Za-z0-9._-]+?)(?:\.git)?\/?$/iu.exec(
-      value,
-    );
-  return match?.[1]?.toLowerCase();
+  try {
+    const identity = gitRemoteIdentity(value);
+    return identity.startsWith('github.com/') && identity.split('/').length === 3
+      ? identity.slice('github.com/'.length)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
-/** saved projects select the source; explicit paths constrain matches and never register or clone. */
+/** verify one saved project's primary checkout; repository preparation remains a separate step. */
 export async function resolveDispatchProject(
   input: {
     projects: unknown;
@@ -50,17 +56,20 @@ export async function resolveDispatchProject(
   if (!Array.isArray(input.projects) || input.projects.length > 1000)
     throw new Error('dispatch-project-inventory-invalid');
   const configured = input.explicitPath;
-  const expected =
+  const expectedPath =
     configured === undefined
       ? undefined
-      : await realpath(
-          resolve(
-            configured.startsWith('~/') ? homedir() : input.workspace,
-            configured.startsWith('~/') ? configured.slice(2) : configured,
-          ),
-        ).catch(() => {
+      : resolve(
+          configured.startsWith('~/') ? homedir() : input.workspace,
+          configured.startsWith('~/') ? configured.slice(2) : configured,
+        );
+  const expected =
+    expectedPath === undefined
+      ? undefined
+      : await realpath(expectedPath).catch(() => {
           throw new Error('dispatch-configured-project-missing');
         });
+  if (expected !== expectedPath) throw new Error('dispatch-project-path-unsafe');
   const matches: { id: string; path: string }[] = [];
   for (const project of input.projects) {
     if (
@@ -74,6 +83,8 @@ export async function resolveDispatchProject(
       continue;
     const path = await realpath(project.path).catch(() => undefined);
     if (!path || (expected && path !== expected)) continue;
+    if (path !== project.path) throw new Error('dispatch-project-path-unsafe');
+    await ensureRepositoryDirectory(path, false);
     let origin: string;
     try {
       if (!(await git(path, ['remote'])).split('\n').includes('origin')) continue;
@@ -87,6 +98,11 @@ export async function resolveDispatchProject(
   if (matches.length !== 1)
     throw new Error(matches.length ? 'dispatch-project-ambiguous' : 'dispatch-project-missing');
   const project = matches[0]!;
+  if (
+    (await git(project.path, ['rev-parse', '--is-bare-repository'])) !== 'false' ||
+    (await git(project.path, ['rev-parse', '--show-toplevel'])) !== project.path
+  )
+    throw new Error('dispatch-project-workspace-required');
   const branch = input.defaultBranch;
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(branch))
     throw new Error('dispatch-starting-ref-invalid');

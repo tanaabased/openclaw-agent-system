@@ -19,6 +19,8 @@ cd "$GITHUB_WORKSPACE/examples/worktree/rootsbot"
 openclaw agent-system install
 cd "$GITHUB_WORKSPACE/examples/worktree/localbot"
 openclaw agent-system install
+cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
+openclaw agent-system install
 ```
 
 ## Testing
@@ -100,6 +102,32 @@ test -d .agent-system/custom/repositories/*.git
 cd "$GITHUB_WORKSPACE/examples/worktree/localbot"
 openclaw agent-system doctor | grep -F 'healthy' | grep -F 'Git local repository override agent-system is ready'
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system 789-verify-local-override HEAD | grep -F '"status": "created"'
+
+# should clone a normal repository into the configured working directory
+cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
+openclaw agent-system tool worktree -- prepare agent-system 791-working-directory origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | jq -e '.status == "created"'
+git -C checkouts/openclaw-agent-system rev-parse --is-bare-repository | grep -Fx 'false'
+git -C checkouts/openclaw-agent-system remote get-url origin | grep -Fx 'https://github.com/tanaabased/openclaw-agent-system.git'
+
+# should reuse the normal repository across processes and preserve uncommitted work
+cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
+printf '%s\n' 'preserve this work' > checkouts/openclaw-agent-system/user-work.txt
+openclaw agent-system tool worktree -- prepare agent-system 791-working-directory origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | jq -e '.status == "existing"'
+grep -Fx 'preserve this work' checkouts/openclaw-agent-system/user-work.txt
+openclaw agent-system tool worktree -- list agent-system | jq -e 'length == 1 and .[0].status == "active"'
+
+# should reject a same-name repository from another owner without changing the checkout
+cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
+if output=$(openclaw agent-system tool worktree -- prepare another 792-wrong-owner origin/main --clone-url https://github.com/another-owner/openclaw-agent-system.git 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'repository-identity-conflict'
+git -C checkouts/openclaw-agent-system remote get-url origin | grep -Fx 'https://github.com/tanaabased/openclaw-agent-system.git'
+grep -Fx 'preserve this work' checkouts/openclaw-agent-system/user-work.txt
+
+# should remove the issue worktree while retaining the normal source checkout
+cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
+openclaw agent-system tool worktree -- remove agent-system 791-working-directory | jq -e '.status == "removed"'
+openclaw agent-system tool worktree -- list agent-system | jq -e 'length == 0'
+grep -Fx 'preserve this work' checkouts/openclaw-agent-system/user-work.txt
 
 # should route the packaged shim from the managed worktree to tanaabot
 cd "$(jq -r .path "$TMPDIR/agent-system-worktree.json")"

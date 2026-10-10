@@ -219,6 +219,21 @@ describe('agent/codex-intake', () => {
       /dispatch-activation-required/,
     );
     await saveNative(prepared.request);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        git: { worktrees: { repositories: { 'working-directory': '../checkouts' } } },
+      }),
+    );
+    await assert.rejects(
+      inspectCodexDispatchActivation(pluginData, deps),
+      /dispatch-activation-required/,
+    );
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    assert.deepEqual(await inspectCodexDispatchActivation(pluginData, deps), {
+      sourceThreadId: 'intake-thread',
+    });
     assert.equal(creates, 1);
     assert.equal(conversations.get('intake-thread')!.name, 'ISSUE ASSIGNMENTS');
     assert.equal(conversations.get('intake-thread')!.model, 'gpt-6-luna');

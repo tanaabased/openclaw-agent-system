@@ -85,8 +85,8 @@ intake through one managed `github-issue-assignment` schedule and one retained c
 `📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
 `interval-minutes`; the automation ID is reserved. Intake records eligible
 assignments durably. After explicit reconciliation of the assessment-enabled
-schedule, `plan` assignments can create native issue chats and worktrees in existing
-saved local Git-backed projects. Review requests, feedback, implementation, GitHub
+schedule, `plan` assignments can prepare repositories and create native issue chats
+and worktrees in saved local Git-backed projects. Review requests, feedback, implementation, GitHub
 publication, and OpenClaw v2 execution remain unavailable through this Codex path.
 
 Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
@@ -110,12 +110,32 @@ authorization before execution; previous intake-only consent does not enable dis
 
 ### Issue Assessment
 
-Add the source checkout as a saved local Codex project before assigning an issue.
-Dispatch verifies its GitHub origin and, when configured, constrains it to
-`git.worktrees.repositories.local.github-<repository-database-id>`. It refreshes the
-repository's default branch and pins the exact starting commit for the native
-worktree. Missing or ambiguous projects retain one actionable blocker for retry;
-this path does not clone repositories or register projects.
+Dispatch verifies the repository's full GitHub identity before selecting a saved
+local project. An explicit
+`git.worktrees.repositories.local.github-<repository-database-id>` mapping wins;
+otherwise, optional `git.worktrees.repositories.working-directory` selects
+`<directory>/<repository-name>`. A matching normal checkout is reused without
+resetting user work; a missing checkout is cloned with native host Git authorization.
+See [Git repository locations](./tools/git/README.md#gitworktrees) for path rules.
+
+Without either location, dispatch first reuses a matching saved project. If none
+exists, it prepares the managed bare repository and one stable detached base
+checkout beneath the configured worktree root. That base is the project folder;
+native Codex still creates the separate issue worktree. A configured path or clone
+failure blocks preparation rather than choosing a different storage location.
+
+The native interface currently has no supported saved-project registration action.
+When registration is needed, dispatch reports the exact prepared checkout to add as
+the primary folder of one saved local Codex project. The next scheduled occurrence
+verifies it and resumes the retained assignment. Until that manual step, new-repository
+dispatch is not unattended. Ambiguous projects, identity conflicts, and interrupted
+clones retain actionable blockers rather than creating replacements.
+
+Use Install to authorize and reconcile the repository-preparation schedule before
+using this behavior; an older assessment schedule is insufficient. Changing repository
+locations requires reconciliation again. Repository and checkout records survive
+retries and restarts. Once the saved project is verified, dispatch refreshes the
+default branch and pins the exact starting commit for the native issue worktree.
 
 Bounded issue evidence and structured metadata inform the shared model router.
 The saved model and effort are passed explicitly to native creation and retained

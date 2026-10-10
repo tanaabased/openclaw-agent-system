@@ -1,0 +1,11 @@
+schema-version: 1
+
+agent:
+  id: workingbot
+  name: Workingbot
+  email: workingbot@tanaab.dev
+
+git:
+  worktrees:
+    repositories:
+      working-directory: checkouts

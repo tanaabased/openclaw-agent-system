@@ -36,6 +36,9 @@ export default function createGitLifecycleContribution(
           for (const [kind, status] of [
             ['repositories', inspection.repositoryRoot],
             ['worktrees', inspection.worktreeRoot],
+            ...(inspection.workingDirectory
+              ? [['working-directory', inspection.workingDirectory]]
+              : []),
           ] as const) {
             diagnostics.push(
               status === 'ready'

@@ -1,6 +1,10 @@
 schema-version: 1
 agent:
   id: codex-notification-policy
+git:
+  worktrees:
+    repositories:
+      working-directory: checkouts
 models:
   default: { model: openai/gpt-6-astra, effort: high }
   low: { model: openai/gpt-6-luna, effort: medium }

@@ -2,10 +2,38 @@ import assert from 'node:assert/strict';
 
 import normalizeGitWorktreeRemote, {
   githubSshWorktreeRemote,
+  gitRemoteIdentity,
   preferGitHubSshWorktreeRemote,
 } from '../tools/git/worktree-remote.ts';
 
 describe('tools/git/worktree-remote', () => {
+  it('should compare full remote identities across supported transports', () => {
+    for (const remote of [
+      'https://github.com/Owner/Repo.git',
+      'git@github.com:owner/repo.git',
+      'ssh://git@github.com/owner/repo.git',
+    ]) {
+      assert.equal(gitRemoteIdentity(remote), 'github.com/owner/repo');
+    }
+    assert.notEqual(
+      gitRemoteIdentity('https://elsewhere.example/owner/repo.git'),
+      'github.com/owner/repo',
+    );
+    assert.notEqual(
+      gitRemoteIdentity('https://github.com/another/repo.git'),
+      'github.com/owner/repo',
+    );
+    assert.equal(
+      gitRemoteIdentity('https://github.com/Owner/.github.git'),
+      'github.com/owner/.github',
+    );
+    assert.equal(gitRemoteIdentity('git@github.com:Owner/_repo.git'), 'github.com/owner/_repo');
+    for (const remote of [
+      'https://github.com/owner/repo%2fother',
+      'ssh://git@github.com:2222/owner/repo.git',
+    ])
+      assert.throws(() => gitRemoteIdentity(remote));
+  });
   it('should accept supported network remotes without a repository allowlist', () => {
     for (const remote of [
       'https://example.com/any/where.git',

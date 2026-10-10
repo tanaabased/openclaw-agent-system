@@ -124,6 +124,16 @@ describe('agent/codex-dispatch', () => {
       now: () => now,
       threadId: 'intake-thread',
       activation: async () => ({ sourceThreadId: 'intake-thread' }),
+      prepareRepository: async (_input, dependencies) => {
+        await dependencies.authorize();
+        await dependencies.retain({
+          path: source,
+          source: 'https://github.com/owner/repo.git',
+          identity: 'github.com/owner/repo',
+          checkout: source,
+        });
+        return source;
+      },
       connect: async () =>
         Object.assign({}, fixture.client, {
           async getItemContext() {
@@ -149,6 +159,8 @@ describe('agent/codex-dispatch', () => {
         if (argv.length === 1 && argv[0] === 'remote') return 'origin';
         if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
         if (argv.includes('--git-common-dir')) return commonDir;
+        if (argv.includes('--is-bare-repository')) return 'false';
+        if (argv.includes('--show-toplevel')) return _cwd;
         if (argv[0] === 'rev-parse') return commit;
         return '';
       },
@@ -608,10 +620,15 @@ describe('agent/codex-dispatch', () => {
   it('should retain one quiet setup blocker and resume the same assignment after project setup', async () => {
     projects = [];
     const blocked = await next();
-    assert.equal(blocked.code, 'dispatch-project-missing');
+    assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
     assert.equal(blocked.changed, true);
+    assert.match(String(blocked.message), /^## ⚠️ Action required: add a Codex project\n/u);
+    assert.ok(String(blocked.message).includes('- **Project name:** repo\n'));
+    assert.ok(String(blocked.message).includes('- **Folder path:** ' + source + '\n'));
     assert.match(String(blocked.message), /https:\/\/github.com\/owner\/repo\/issues\/3/u);
     assert.match(String(blocked.message), /https:\/\/github.com\/receiver/u);
+    assert.ok(String(blocked.message).includes(source));
+    assert.match(String(blocked.message), /primary folder/u);
     now += 300001;
     assert.equal((await next()).changed, false);
     projects = [
@@ -627,6 +644,36 @@ describe('agent/codex-dispatch', () => {
     const resumed = await next();
     assert.equal(resumed.status, 'routing-required');
     assert.equal(resumed.id, blocked.id);
+  });
+
+  it('should honor a configured directory instead of using another saved checkout', async () => {
+    const path = join(root, 'checkouts', 'repo');
+    await mkdir(path, { recursive: true });
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        git: { worktrees: { repositories: { 'working-directory': '../checkouts' } } },
+      }),
+    );
+    let preparations = 0;
+    deps.prepareRepository = async (input, dependencies) => {
+      preparations++;
+      assert.equal(input.configuration.repositories?.workingDirectory, '../checkouts');
+      await dependencies.authorize();
+      await dependencies.retain({
+        path,
+        source: 'https://github.com/owner/repo.git',
+        identity: 'github.com/owner/repo',
+        checkout: path,
+      });
+      return path;
+    };
+    const blocked = await next();
+    assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
+    assert.ok(String(blocked.message).includes(path));
+    assert.equal(preparations, 1);
+    assert.ok(!gitCalls.some((argv) => argv[0] === 'fetch'));
   });
 
   it('should emit one exact launch and recover uncertain creation instead of issuing another', async () => {

@@ -99,6 +99,7 @@ export const externalGitSectionSchema = Type.Object(
                   }),
                 ),
                 root: Type.Optional(externalGitWorktreePathSchema),
+                'working-directory': Type.Optional(externalGitWorktreePathSchema),
               },
               { additionalProperties: false },
             ),
@@ -136,6 +137,7 @@ export interface GitWorktreeConfiguration {
   repositories?: {
     local?: Record<string, string>;
     root?: string;
+    workingDirectory?: string;
   };
   root?: string;
 }
@@ -229,6 +231,9 @@ export function decodeGitSection(value: ExternalGitSection): GitManifestConfigur
                     ...(value.worktrees.repositories.root === undefined
                       ? {}
                       : { root: value.worktrees.repositories.root }),
+                    ...(value.worktrees.repositories['working-directory'] === undefined
+                      ? {}
+                      : { workingDirectory: value.worktrees.repositories['working-directory'] }),
                   },
                 }),
             ...(value.worktrees.root === undefined ? {} : { root: value.worktrees.root }),

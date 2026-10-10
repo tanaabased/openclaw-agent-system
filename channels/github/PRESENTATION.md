@@ -262,6 +262,9 @@ supplied instructions, not proof of compliance.
 Preserve each question and its context. Setup obstacles use **Issue assessment blocked**
 with **Action** and **Diagnostic**, plus retained evidence and investigation; keep them
 distinct from missing requirements. Show the routing card when saved routing is available.
+For manual Codex project registration, use **⚠️ Action required: add a Codex project**,
+leading with separate **Project name**, **Folder path**, and **Action** facts. Distinguish
+the suggested name from the exact required primary folder; retain issue and diagnostic context.
 
 ## To GitHub
 
