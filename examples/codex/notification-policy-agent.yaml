@@ -19,5 +19,9 @@ github:
           node-id: U_operator
           operator-owner: true
       mode: auto
+      assessment:
+        skill: $agent-system:agent-system-issue-assessment
+        guidance:
+          file: assessment-guidance.md
 setup-agent:
   apply: touch .setup-applied

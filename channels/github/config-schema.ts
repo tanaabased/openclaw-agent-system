@@ -1,5 +1,11 @@
 import { Type, type Static } from 'typebox';
 
+import {
+  assessmentConfigurationSchema,
+  decodeAssessmentConfiguration,
+  type AssessmentConfiguration,
+} from '../../manifest/assessment-schema.ts';
+
 const externalGitHubIdentitySchema = Type.Object(
   {
     login: Type.String({
@@ -94,6 +100,7 @@ const externalGitHubNotificationPolicySchema = Type.Object(
       Type.Object(
         {
           ...externalNotificationTriggerSchema.properties,
+          assessment: Type.Optional(assessmentConfigurationSchema),
           mode: Type.Optional(
             Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
           ),
@@ -145,7 +152,11 @@ export interface GitHubNotificationPolicy {
   intervalMinutes: number;
   maxConcurrentItems: number;
   allowedRepositoryOwners: GitHubIdentityPin[];
-  issueAssignment?: { allowed: GitHubApprovedActor[]; mode: 'plan' | 'work' | 'auto' };
+  issueAssignment?: {
+    allowed: GitHubApprovedActor[];
+    mode: 'plan' | 'work' | 'auto';
+    assessment?: AssessmentConfiguration;
+  };
   reviewRequest?: { allowed: GitHubApprovedActor[] };
   feedback?: { allowed: GitHubApprovedActor[] };
 }
@@ -189,6 +200,11 @@ export function decodeGitHubNotifications(
             issueAssignment: {
               allowed: actors(value['issue-assignment']),
               mode: value['issue-assignment'].mode ?? 'plan',
+              ...(value['issue-assignment'].assessment === undefined
+                ? {}
+                : {
+                    assessment: decodeAssessmentConfiguration(value['issue-assignment'].assessment),
+                  }),
             },
           }),
       ...(value['review-request'] === undefined

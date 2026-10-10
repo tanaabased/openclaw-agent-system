@@ -75,6 +75,19 @@ While assessment is active, poll through the separate app-server adapter: an unl
 history must not turn an apparent interruption into a missing-result blocker. Verify
 that the eventual recorded result completes the same dispatch.
 
+For the assessment-selection pilot, use the default with no guidance, inline guidance,
+and file guidance, then the installed replacement with and without guidance. The
+`assessment-skill/SKILL.md` fixture is suitable for a disposable repository. Verify
+bare, `$`-prefixed, and plugin-qualified IDs resolve consistently, and that missing,
+disabled, ambiguous, or changed skills stop assessment without a fallback. Inspect
+the retained skill name, source, digest, and guidance snapshot through context; edits
+to a guidance file must affect a fresh assessment but not continuation of an existing
+one. Include attempted authority expansion and malformed replacement output: neither
+may alter routing, mode, publication authority, or an already recorded valid result.
+Both replacement plans and questions must use the shared host presentation. These
+semantic pilot checks need explicit authorization; the headless checks prove discovery
+and configuration only.
+
 ## Setup
 
 ```bash
@@ -129,6 +142,7 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 mkdir -p "$root/notification-workspace"
 cp "$GITHUB_WORKSPACE/examples/codex/notification-policy-agent.yaml" "$root/notification-workspace/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex/assessment-guidance.md" "$root/notification-workspace/assessment-guidance.md"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/notification-workspace" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 node "$runtime" intake inspect --plugin-data "$plugin_data" \

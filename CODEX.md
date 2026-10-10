@@ -125,6 +125,17 @@ The issue chat performs read-only assessment and records one of three outcomes:
 completed/remaining investigation. A user follow-up may revise the assessment in
 the same chat. A result never authorizes implementation or publication.
 
+Use [assessment selection](./MANIFEST.md#assessment-selection) under
+`github.notifications.issue-assignment` to select an active skill and optional inline
+or file guidance. Dispatch resolves the ID through native skill discovery and retains
+the selected name, source path, instruction digest, and guidance snapshot. The child
+verifies that same skill in its actual worktree before beginning. A missing or changed
+skill blocks assessment; restore it and resume the retained chat rather than launching
+another. The dispatch `context` response exposes the retained selection and guidance.
+Replacement skills submit the same result contract and receive the same host-rendered
+plan or questions. Guidance cannot widen the assessment's authority. Implementation
+and review do not yet consume this selection.
+
 Native creation receipts, chat identity, worktree, and results survive interrupted
 polls. An uncertain creation is reconciled against native creation history; it is
 never blindly repeated. Preserve the retained evidence when repairing access,
