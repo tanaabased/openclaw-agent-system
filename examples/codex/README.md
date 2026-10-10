@@ -86,11 +86,11 @@ one. Include attempted authority expansion and malformed replacement output: nei
 may alter routing, mode, publication authority, or an already recorded valid result.
 Both replacement plans and questions must use the shared host presentation. Verify
 that its Assessment instructions block follows Model routing, identifies the resolved
-custom skill and/or guidance source, preserves multiline inline guidance, and stays
-absent for the default without guidance. File guidance displays its workspace-relative
-path, not its contents. Continuations retain the original instruction selection. These
-semantic pilot checks need explicit authorization; the headless checks prove discovery
-and configuration only.
+custom skill and/or guidance source, preserves inline guidance's indentation and literal
+Markdown characters, and stays absent for the default without guidance. File guidance
+displays its workspace-relative path, not its contents. Continuations retain the original
+instruction selection. These semantic pilot checks need explicit authorization; the
+headless checks prove discovery and configuration only.
 
 Verify that a fresh assessment uses the launch prompt's exact context request on stdin
 with the trusted dispatch runtime and plugin-data arguments, without guessing action

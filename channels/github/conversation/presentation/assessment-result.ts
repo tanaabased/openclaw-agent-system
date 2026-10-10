@@ -20,6 +20,20 @@ function item(markdown: string): string {
   return '- ' + markdown.replace(/\n/g, '\n  ');
 }
 
+function quote(markdown: string): string {
+  return markdown
+    .split('\n')
+    .map((line) => '> ' + line)
+    .join('\n');
+}
+
+function literalText(value: string): string {
+  const fence = '`'.repeat(
+    (value.match(/`+/gu) ?? []).reduce((size, run) => Math.max(size, run.length + 1), 3),
+  );
+  return [fence + 'text', value.replace(/\r\n?/gu, '\n'), fence].join('\n');
+}
+
 /** frame a validated result without interpreting its prose as state or routing authority. */
 export default function renderAssessmentResult(
   result: AssessmentResult,
@@ -32,32 +46,31 @@ export default function renderAssessmentResult(
   };
   const { routing, effective, assessment } = context;
   const text = githubNotificationMarkdownText;
-  const routingCard = githubNotificationCard({
-    emoji: '🧠',
-    title: 'Model routing',
-    facts: [
-      { label: 'Selected', value: text(routing.model + ' / ' + routing.effort) },
-      { label: 'Basis', value: text(routing.complexity + ' complexity. ' + routing.reason) },
-      {
-        label: 'Source',
-        value: text(
-          (routing.profile ? routing.profile + ' profile' : 'Explicit selection') +
-            '; ' +
-            routing.source,
-        ),
-      },
-      {
-        label: 'Effective settings',
-        value:
-          effective?.status === 'verified' && effective.model && effective.effort
-            ? 'Verified: ' + text(effective.model + ' / ' + effective.effort)
-            : 'Not independently verified.',
-      },
-    ],
-  })
-    .split('\n')
-    .map((line) => '> ' + line)
-    .join('\n');
+  const routingCard = quote(
+    githubNotificationCard({
+      emoji: '🧠',
+      title: 'Model routing',
+      facts: [
+        { label: 'Selected', value: text(routing.model + ' / ' + routing.effort) },
+        { label: 'Basis', value: text(routing.complexity + ' complexity. ' + routing.reason) },
+        {
+          label: 'Source',
+          value: text(
+            (routing.profile ? routing.profile + ' profile' : 'Explicit selection') +
+              '; ' +
+              routing.source,
+          ),
+        },
+        {
+          label: 'Effective settings',
+          value:
+            effective?.status === 'verified' && effective.model && effective.effort
+              ? 'Verified: ' + text(effective.model + ' / ' + effective.effort)
+              : 'Not independently verified.',
+        },
+      ],
+    }),
+  );
   const instructionFacts = [
     ...(assessment && !assessment.defaultSkill
       ? [{ label: 'Skill', value: text(assessment.skill.name) }]
@@ -75,20 +88,18 @@ export default function renderAssessmentResult(
       : []),
   ];
   const instructionsCard = instructionFacts.length
-    ? [
-        githubNotificationCard({
-          emoji: '🧩',
-          title: 'Assessment instructions',
-          facts: instructionFacts,
-        }),
-        ...(assessment?.guidance?.source === 'inline'
-          ? [assessment.guidance.content.split(/\r?\n/u).map(text).join('\n')]
-          : []),
-      ]
-        .join('\n\n')
-        .split('\n')
-        .map((line) => '> ' + line)
-        .join('\n')
+    ? quote(
+        [
+          githubNotificationCard({
+            emoji: '🧩',
+            title: 'Assessment instructions',
+            facts: instructionFacts,
+          }),
+          ...(assessment?.guidance?.source === 'inline'
+            ? [literalText(assessment.guidance.content)]
+            : []),
+        ].join('\n\n'),
+      )
     : undefined;
   const content = [
     '## ' + titles[result.outcome],

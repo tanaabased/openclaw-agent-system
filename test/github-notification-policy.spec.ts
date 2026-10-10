@@ -30,7 +30,12 @@ function parsed(notifications: unknown) {
 
 describe('channels/github/notification-policy', () => {
   it('should normalize assessment skill ids and retain optional guidance forms', () => {
-    for (const skill of ['assess', '$assess', 'company:assess', ' $company:assess ']) {
+    for (const [skill, normalized] of [
+      ['assess', 'assess'],
+      ['$assess', 'assess'],
+      ['company:assess', 'company:assess'],
+      [' $company:assess ', 'company:assess'],
+    ]) {
       for (const guidance of [
         undefined,
         'Prefer small fixes.',
@@ -43,7 +48,7 @@ describe('channels/github/notification-policy', () => {
             assessment: { skill, ...(guidance === undefined ? {} : { guidance }) },
           },
         }).issueAssignment!.assessment!;
-        assert.equal(assessment.skill, skill.trim().replace(/^\$/u, ''));
+        assert.equal(assessment.skill, normalized);
         assert.deepEqual(assessment.guidance, guidance);
       }
     }

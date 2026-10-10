@@ -73,7 +73,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
             assert.ok(
               output.includes(
                 guidance.content.includes('\n')
-                  ? '> Use \\[cat\\] names.\n> \n> Keep \\*\\*evidence\\*\\*.'
+                  ? '> Use [cat] names.\n> \n> Keep **evidence**.'
                   : '> Use cat names.',
               ),
             );
@@ -86,6 +86,34 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       }
     }
     assert.ok(!renderAssessmentResult(results[0]!, context).includes('Assessment instructions'));
+  });
+
+  it('should preserve inline guidance as literal text without interpreting its markdown', () => {
+    const guidance = {
+      source: 'inline' as const,
+      content: '# Keep this heading literal\r\n  whiskers  =  1\r\n\t<cat>\r\n\r\n```\r> meow',
+    };
+    const before = structuredClone(guidance);
+    const output = renderAssessmentResult(
+      { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
+      { ...context, assessment: { defaultSkill: true, skill: { name: 'default' }, guidance } },
+    );
+    assert.ok(
+      output.includes(
+        [
+          '> ````text',
+          '> # Keep this heading literal',
+          '>   whiskers  =  1',
+          '> \t<cat>',
+          '> ',
+          '> ```',
+          '> > meow',
+          '> ````',
+        ].join('\n'),
+      ),
+    );
+    assert.deepEqual(guidance, before);
+    assert.ok(output.indexOf('Assessment instructions') < output.indexOf('## Full plan'));
   });
 
   it('should preserve a complete markdown plan and frame routing from trusted context', () => {

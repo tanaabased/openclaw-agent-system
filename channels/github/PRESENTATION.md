@@ -236,9 +236,10 @@ The framing follows the structured result; prose headings never select state.
 When custom assessment instructions were selected, follow Model routing with a quoted
 **🧩 Assessment instructions** card. Show the resolved custom **Skill** name and/or
 **Guidance**: the workspace-relative file path for file guidance, or “Inline guidance”
-followed by its text with line breaks preserved. Use the retained runtime selection,
-not model-authored claims. Omit default skill metadata and omit the card entirely when
-neither override is present. This identifies supplied instructions, not proof of compliance.
+followed by a literal text block preserving whitespace and Markdown characters.
+Use the retained runtime selection, not model-authored claims. Omit default skill
+metadata and omit the card entirely when neither override is present. This identifies
+supplied instructions, not proof of compliance.
 
 ## Question
 
