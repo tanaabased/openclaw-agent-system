@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import validateAgentSystem from '../cli/validate.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { createCliStyles } from '../cli/output.ts';
+import { captureValidatePreview } from './validate-presentation-fixtures.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -65,7 +66,7 @@ describe('cli/validate', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(output, [
-      'valid     manifest  Agent System manifest for tanaabot\nmanifest            /workspace/agent.yaml\n',
+      'valid      manifest  agent system manifest\n\nagent                tanaabot\n\nmanifest             /workspace/agent.yaml\n\nworkspace            /workspace\n',
     ]);
   });
 
@@ -143,9 +144,34 @@ describe('cli/validate', () => {
 
     await run();
 
-    assert.equal(output.join('').includes('valid     agent'), true);
-    assert.equal(output.join('').includes('valid     path'), true);
-    assert.equal(output.join('').includes('valid     github'), true);
+    assert.match(output.join(''), /valid\s+agent/u);
+    assert.match(output.join(''), /valid\s+path/u);
+    assert.match(output.join(''), /valid\s+github/u);
+  });
+
+  it('should preserve shared lifecycle messages in human and json output', async () => {
+    const validationChecks = [
+      {
+        code: 'git-config-valid',
+        component: 'git',
+        message: 'Git tool identity and policy configuration',
+        status: 'valid' as const,
+      },
+      {
+        code: 'github-config-valid',
+        component: 'github',
+        message: 'GitHub tool and account key configuration',
+        status: 'valid' as const,
+      },
+    ];
+    const human = createHarness({ workspace: { ...validResult, validationChecks } });
+    await human.run();
+    assert.match(human.output.join(''), /Git tool identity and policy configuration/u);
+    assert.match(human.output.join(''), /GitHub tool and account key configuration/u);
+
+    const json = createHarness({ json: true, workspace: { ...validResult, validationChecks } });
+    await json.run();
+    assert.deepEqual(JSON.parse(json.output.join('')).checks.slice(1), validationChecks);
   });
 
   it('should write the same checks as structured json', async () => {
@@ -172,7 +198,7 @@ describe('cli/validate', () => {
       {
         code: 'manifest-valid',
         component: 'manifest',
-        message: 'Agent System manifest for tanaabot',
+        message: 'Agent System manifest',
         status: 'valid',
       },
       {
@@ -198,5 +224,60 @@ describe('cli/validate', () => {
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
     assert.match(diagnostics.join(''), /invalid Agent System manifest/u);
+  });
+
+  it('should provide fixture-backed valid, warning, invalid, and unmanaged previews', async () => {
+    const valid = await captureValidatePreview({
+      ...validResult,
+      manifest: { ...validResult.manifest, agent: { id: 'Agent-Mixed' } },
+      path: '/Workspaces/An-Illustrative-Workspace-With-A-Long-Path/agent.yaml',
+      scope: { workspaceDir: '/Workspaces/An-Illustrative-Workspace-With-A-Long-Path' },
+      validationChecks: [
+        {
+          code: 'agent-declaration-valid',
+          component: 'agent',
+          message: 'OpenClaw agent declaration',
+          status: 'valid',
+        },
+      ],
+    });
+    assert.equal(valid.exitCode, 0);
+    assert.match(valid.events[0]!.text, /Agent-Mixed/u);
+    assert.match(valid.events[0]!.text, /workspace/u);
+    assert.match(valid.events[0]!.text, /agent declaration/u);
+    assert.equal((valid.events[0]!.text.match(/Agent-Mixed/gu) ?? []).length, 1);
+
+    const warning = await captureValidatePreview({
+      ...validResult,
+      diagnostics: [
+        {
+          code: 'illustrative-warning',
+          component: 'manifest',
+          message: 'Optional field is absent.',
+          severity: 'warning',
+        },
+      ],
+    });
+    assert.equal(warning.exitCode, 0);
+    assert.match(warning.events.at(-1)!.text, /warning/u);
+    assert.match(warning.events.at(-1)!.text, /illustrative-warning/u);
+
+    const invalid = await captureValidatePreview({
+      status: 'invalid',
+      scope: { workspaceDir: '/fixture' },
+      path: '/fixture/agent.yaml',
+      diagnostics: [],
+    });
+    assert.equal(invalid.exitCode, 1);
+    assert.match(invalid.events.at(-1)!.text, /error/u);
+    assert.match(invalid.events.at(-1)!.text, /invalid Agent System manifest/u);
+
+    const unmanaged = await captureValidatePreview({
+      status: 'unmanaged',
+      scope: { workspaceDir: '/fixture' },
+      diagnostics: [],
+    });
+    assert.equal(unmanaged.exitCode, 1);
+    assert.match(unmanaged.events.at(-1)!.text, /no Agent System manifest found/u);
   });
 });
