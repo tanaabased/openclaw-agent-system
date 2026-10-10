@@ -34,9 +34,13 @@ interface PackageMetadata {
   description?: string;
   name?: string;
   optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   version?: string;
   openclaw?: {
     agentSystem?: { codexPlugin?: string };
+    build?: { openclawVersion?: string; pluginSdkVersion?: string };
+    compat?: { minGatewayVersion?: string; pluginApi?: string };
     runtimeExtensions?: string[];
   };
 }
@@ -84,16 +88,17 @@ async function run(command: string, args: string[], options: RunOptions = {}): P
     stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
   });
   let output = '';
+  let errorOutput = '';
   child.stdout!.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  child.stderr!.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr!.on('data', (chunk: Buffer) => (errorOutput += chunk.toString()));
   if (options.input !== undefined) child.stdin!.end(options.input);
   const code = await new Promise<number>((resolveExit, reject) => {
     child.once('error', reject);
-    child.once('exit', (exitCode) => resolveExit(exitCode ?? 1));
+    child.once('close', (exitCode) => resolveExit(exitCode ?? 1));
   });
 
   if (code !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed (${code})\n${output}`);
+    throw new Error(`${command} ${args.join(' ')} failed (${code})\n${output}${errorOutput}`);
   }
 
   return { output };
@@ -176,8 +181,11 @@ try {
       ]),
       run('git', ['ls-files', '--deleted', '-z', '--', ...sourceDirectories]),
     ]);
-    const deletedPaths = new Set(deleted.output.split('\0').filter(Boolean));
-    const paths = candidates.output.split('\0').filter((path) => path && !deletedPaths.has(path));
+    const deletedPaths = new Set(deleted.output.trimEnd().split('\0').filter(Boolean));
+    const paths = candidates.output
+      .trimEnd()
+      .split('\0')
+      .filter((path) => path && !deletedPaths.has(path));
     assert.notEqual(paths.length, 0, 'package source inventory must not be empty');
     return paths;
   });
@@ -289,7 +297,17 @@ try {
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
     assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
-    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.8');
+    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.9');
+    assert.deepEqual(packageMetadata.openclaw?.build, {
+      openclawVersion: '2026.9.9',
+      pluginSdkVersion: '2026.9.9',
+    });
+    assert.deepEqual(packageMetadata.openclaw?.compat, {
+      pluginApi: '>=2026.9.9',
+      minGatewayVersion: '2026.9.9',
+    });
+    assert.equal(packageMetadata.peerDependencies?.openclaw, '>=2026.9.9');
+    assert.equal(packageMetadata.devDependencies?.openclaw, '2026.9.9');
     assert.equal(packageMetadata.dependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.optionalDependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.version, manifest.version);
