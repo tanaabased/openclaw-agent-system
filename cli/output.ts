@@ -75,7 +75,16 @@ export interface CliTableOptions {
   terminalColumns?: number;
 }
 
-interface CliTableRow {
+export interface CliTableCell {
+  value: string;
+  style?: keyof CliStyles;
+}
+
+export interface CliTableRow {
+  cells: CliTableCell[];
+}
+
+interface CliRenderedTableRow {
   cells: Array<{ value: string; style?: keyof CliStyles }>;
   value: string;
   quiet?: boolean;
@@ -84,7 +93,7 @@ interface CliTableRow {
 
 /** share terminal-cell alignment and wrapping; padding separates rows, not wrapped lines. */
 function renderCliTable(
-  rows: readonly CliTableRow[],
+  rows: readonly CliRenderedTableRow[],
   styles: CliStyles,
   { rowPadding = 0, terminalColumns = 80 }: CliTableOptions,
 ): string[] {
@@ -125,6 +134,45 @@ function renderCliTable(
       ),
     ];
   });
+}
+
+/** render a compact aligned table using the shared terminal-cell layout. */
+export function renderCliTableRows(
+  rows: readonly CliTableRow[],
+  styles: CliStyles = defaultCliStyles,
+  options: CliTableOptions = {},
+): string[] {
+  if (rows.length === 0) return [];
+  const columns = Math.max(1, Math.floor(options.terminalColumns ?? 80));
+  const count = Math.max(0, ...rows.map(({ cells }) => cells.length));
+  const widths = Array.from({ length: count }, (_, index) =>
+    Math.max(0, ...rows.map(({ cells }) => stringWidth(cells[index]?.value ?? ''))),
+  );
+  const wideEnough = widths.reduce((total, width) => total + width, 0) + count * 2 <= columns;
+  const header = rows[0]!.cells;
+  if (!wideEnough) {
+    if (rows.length === 1) {
+      return wrapAnsi(header.map(({ value }) => value).join('  '), columns, { hard: true }).split('\n');
+    }
+    return rows.slice(1).flatMap(({ cells }) =>
+      cells.flatMap((cell, index) => {
+        const label = header[index]?.value ?? '';
+        const line = `${label}: ${cell.value}`;
+        return wrapAnsi(line, columns, { hard: true })
+          .split('\n')
+          .map((part) => (cell.style ? styles[cell.style](part) : part));
+      }),
+    );
+  }
+  return rows.map(({ cells }) =>
+    cells
+      .map((cell, index) => {
+        const value = cell.style ? styles[cell.style](cell.value) : cell.value;
+        return `${value}${' '.repeat(widths[index]! - stringWidth(cell.value) + 2)}`;
+      })
+      .join('')
+      .trimEnd(),
+  );
 }
 
 export function renderCliSummary(

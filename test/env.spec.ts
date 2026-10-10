@@ -44,6 +44,7 @@ function createHarness(
     agentId?: string;
     json?: boolean;
     loadResult?: AgentEnvironmentLoadResult;
+    terminalColumns?: number;
   } = {},
 ) {
   const calls = { agent: [] as string[], workspace: [] as string[] };
@@ -75,6 +76,7 @@ function createHarness(
         },
         setExitCode: (code) => exitCodes.push(code),
         styles: createCliStyles({ NO_COLOR: '1' }),
+        terminalColumns: options.terminalColumns,
         workspaceDir: '/current',
       }),
   };
@@ -107,15 +109,53 @@ describe('cli/env', () => {
     assert.equal(serialized.includes('sensitiveNames'), false);
   });
 
-  it('should report required state in human output', async () => {
+  it('should show a compact metadata table and the selected workspace', async () => {
     const { output, run } = createHarness();
 
     await run();
 
-    assert.equal(
-      output.join('').includes('AGENT_COLOR   source=environment.set required=true overridden=0'),
-      true,
-    );
+    assert.match(output.join(''), /AGENT_COLOR\s+environment\.set\s+true\s+0/u);
+    assert.match(output.join(''), /agent\s+data[\s\S]*manifest\s+\/workspace\/agent\.yaml[\s\S]*workspace\s+\/workspace/u);
+    assert.match(output.join(''), /variable\s+source\s+required\s+overrides/u);
+    assert.equal(output.join('').includes('green'), false);
+    assert.equal(output.join('').includes('private-token'), false);
+  });
+
+  it('should show an explicit empty result and preserve long literal names in narrow previews', async () => {
+    const empty: AgentEnvironmentLoadResult = {
+      ...loaded,
+      environment: { ...loaded.environment, variables: [] },
+    };
+    const emptyFixture = createHarness({ loadResult: empty });
+    await emptyFixture.run();
+    assert.match(emptyFixture.output.join(''), /no environment variables/u);
+    assert.match(emptyFixture.output.join(''), /variable\s+source\s+required\s+overrides/u);
+
+    const variableName = 'MiXeD_CASE_VERY_LONG_ENVIRONMENT_VARIABLE_NAME';
+    const overridden: AgentEnvironmentLoadResult = {
+      ...loaded,
+      environment: {
+        ...loaded.environment,
+        variables: [
+          {
+            name: variableName,
+            source: 'dotenv:/Exact/Path.env',
+            required: true,
+            overriddenSources: ['environment.set'],
+          },
+        ],
+      },
+    };
+    const narrow = createHarness({ loadResult: overridden, terminalColumns: 24 });
+    await narrow.run();
+    const text = narrow.output.join('');
+    const compact = text.replace(/\s/gu, '');
+    assert.ok(compact.includes(variableName));
+    assert.ok(compact.includes('dotenv:/Exact/Path.env'));
+    assert.match(text, /overrides: 1/u);
+    assert.equal(text.includes('private-token'), false);
+    assert.equal(text.includes('green'), false);
+    assert.ok(text.split('\n').every((line) => line.length <= 24));
   });
 
   it('should inspect an explicit agent without using workspace discovery', async () => {

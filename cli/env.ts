@@ -3,6 +3,7 @@ import type AgentEnvironmentService from '../environment/service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  renderCliTableRows,
   writeCliDiagnosticNotices,
   writeCliJson,
   writeCliSummary,
@@ -18,6 +19,7 @@ export interface EnvAgentSystemOptions {
   setExitCode(code: number): void;
   styles?: CliStyles;
   workspaceDir: string;
+  terminalColumns?: number;
 }
 
 interface EnvironmentView {
@@ -27,22 +29,37 @@ interface EnvironmentView {
   workspaceDir: string;
 }
 
-function writeHuman(output: CliOutput, view: EnvironmentView, styles?: CliStyles): void {
+function writeHuman(
+  output: CliOutput,
+  view: EnvironmentView,
+  styles?: CliStyles,
+  terminalColumns = process.stdout.columns,
+): void {
   writeCliSummary(
     output,
     [
-      { label: 'environment', style: 'target', value: view.agentId },
-      { label: 'manifest', style: 'target', value: view.manifestPath },
-      ...(view.variables.length === 0
-        ? [{ label: 'variables', style: 'field' as const, value: 'none' }]
-        : view.variables.map((variable) => ({
-            label: variable.name,
-            style: 'field' as const,
-            value: `source=${variable.source} required=${variable.required} overridden=${variable.overriddenSources.length}`,
-          }))),
+      { label: 'agent', style: 'field', value: view.agentId },
+      { label: 'manifest', style: 'field', value: view.manifestPath },
+      { label: 'workspace', style: 'field', value: view.workspaceDir },
     ],
     styles,
+    { terminalColumns },
   );
+  const headers = ['variable', 'source', 'required', 'overrides'];
+  const rows = [
+    { cells: headers.map((value) => ({ value, style: 'bold' as const })) },
+    ...view.variables.map((variable) => ({
+      cells: [
+        { value: variable.name, style: 'field' as const },
+        { value: variable.source },
+        { value: String(variable.required) },
+        { value: String(variable.overriddenSources.length) },
+      ],
+    })),
+  ];
+  const table = renderCliTableRows(rows, styles, { terminalColumns });
+  output.writeStdout(`\n${table.join('\n')}\n`);
+  if (view.variables.length === 0) output.writeStdout('no environment variables\n');
 }
 
 /** Inspect Agent System environment metadata without exposing values. */
@@ -71,7 +88,7 @@ async function envAgentSystem(options: EnvAgentSystemOptions): Promise<void> {
     workspaceDir: result.scope.workspaceDir,
   };
   if (options.json) writeCliJson(options.output, view);
-  else writeHuman(options.output, view, options.styles);
+  else writeHuman(options.output, view, options.styles, options.terminalColumns);
 }
 
 export default presentCliCommand(envAgentSystem);
