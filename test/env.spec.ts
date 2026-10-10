@@ -115,7 +115,10 @@ describe('cli/env', () => {
     await run();
 
     assert.match(output.join(''), /AGENT_COLOR\s+environment\.set\s+true\s+0/u);
-    assert.match(output.join(''), /agent\s+data[\s\S]*manifest\s+\/workspace\/agent\.yaml[\s\S]*workspace\s+\/workspace/u);
+    assert.match(
+      output.join(''),
+      /agent\s+data[\s\S]*manifest\s+\/workspace\/agent\.yaml[\s\S]*workspace\s+\/workspace/u,
+    );
     assert.match(output.join(''), /variable\s+source\s+required\s+overrides/u);
     assert.equal(output.join('').includes('green'), false);
     assert.equal(output.join('').includes('private-token'), false);

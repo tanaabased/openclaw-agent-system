@@ -152,7 +152,9 @@ export function renderCliTableRows(
   const header = rows[0]!.cells;
   if (!wideEnough) {
     if (rows.length === 1) {
-      return wrapAnsi(header.map(({ value }) => value).join('  '), columns, { hard: true }).split('\n');
+      return wrapAnsi(header.map(({ value }) => value).join('  '), columns, { hard: true }).split(
+        '\n',
+      );
     }
     return rows.slice(1).flatMap(({ cells }) =>
       cells.flatMap((cell, index) => {
