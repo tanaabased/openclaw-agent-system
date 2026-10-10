@@ -88,6 +88,10 @@ Both replacement plans and questions must use the shared host presentation. Thes
 semantic pilot checks need explicit authorization; the headless checks prove discovery
 and configuration only.
 
+Verify that a fresh assessment uses the launch prompt's exact context request on stdin
+with the trusted dispatch runtime and plugin-data arguments, without guessing action
+flags. Apply the same transport when recording its result.
+
 ## Setup
 
 ```bash

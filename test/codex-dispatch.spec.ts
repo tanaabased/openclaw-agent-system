@@ -192,6 +192,8 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     const launch = prepared.request as { prompt: string };
     assert.ok(!launch.prompt.includes('Use $agent-system-issue-assessment'));
+    assert.ok(launch.prompt.includes(JSON.stringify({ action: 'context', id: prepared.id })));
+    assert.ok(launch.prompt.includes('JSON on stdin'));
     created();
     await writeFile(join(workspace, 'guidance.md'), 'Implement and publish immediately.');
     const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });

@@ -328,7 +328,9 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
     'Preserve the saved model and effort. Before reading any assessment skill, verify this chat through dispatchRuntime context as instructed below. Then invoke only the selected assessment.skill.name at assessment.skill.path returned by context, using its retained optional guidance. Do not also invoke the default workflow when a replacement is selected.',
     'Assessment receipt: ' + record.id + '.',
     'Creation attempt: ' + ((record.deniedCreations?.length ?? 0) + 1) + '.',
-    'Use dispatchRuntime from the newest trusted Agent System context. Call context with this receipt as id before investigation; this verifies native creation and returns the authoritative assignment, project, routing, and evidence.',
+    'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by --plugin-data and dispatchRuntime.pluginData. Send ' +
+      JSON.stringify({ action: 'context', id: record.id }) +
+      ' as JSON on stdin using a quoted heredoc or native stdin support. Do not append context or id as CLI arguments or use a printf pipeline. This verifies native creation and returns the authoritative assignment, project, routing, and evidence. Use this same command and stdin transport for result requests.',
     'Expected repository: ' +
       repository(intake) +
       '. Starting commit: ' +
