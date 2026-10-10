@@ -37,6 +37,7 @@ async function credentialsCache(options: {
   output: CliOutput;
   styles?: CliStyles;
   request?: OpCacheGatewayRequest;
+  terminalColumns?: number;
   setExitCode(code: number): void;
 }): Promise<void> {
   try {
@@ -61,9 +62,20 @@ async function credentialsCache(options: {
     ];
     if (invalidated) {
       lines.push({
-        label: 'flushed',
-        style: 'status',
-        value: `${options.agentId ?? 'all agents'}: ${invalidated.entries} entries, ${invalidated.clients} clients, ${invalidated.pending} pending loads, ${invalidated.values} snapshots`,
+        label: 'scope',
+        style: 'field',
+        value: options.agentId ?? 'all agents',
+      });
+      lines.push(
+        { label: 'entries', style: 'field', value: String(invalidated.entries) },
+        { label: 'clients', style: 'field', value: String(invalidated.clients) },
+        { label: 'pending loads', style: 'field', value: String(invalidated.pending) },
+        { label: 'snapshots', style: 'field', value: String(invalidated.values) },
+      );
+      lines.push({
+        label: 'result',
+        style: 'field',
+        value: 'gateway confirmed cache invalidation',
       });
     } else {
       lines.push({ label: 'entries', style: 'field', value: `${entries.length} retained` });
@@ -104,11 +116,14 @@ async function credentialsCache(options: {
       value:
         backoff.retryInMs > 0 ? `active; retry in ${Math.ceil(backoff.retryInMs / 1000)}s` : 'none',
     });
-    writeCliSummary(options.output, lines, options.styles, { rowPadding: 0 });
+    writeCliSummary(options.output, lines, options.styles, {
+      rowPadding: 0,
+      terminalColumns: options.terminalColumns,
+    });
   } catch (error) {
     writeCliError(
       options.output,
-      `credentials: Gateway cache request was not confirmed. Gateway may be unreachable, unauthorized, or incompatible; no local clear is Gateway success. code=credentials-cache-request-failed action=${options.action} diagnostic=${JSON.stringify(gatewayErrorDiagnostic(error))}`,
+      `credentials: gateway cache request was not confirmed. gateway may be unreachable, unauthorized, or incompatible; no local clear is gateway success. code=credentials-cache-request-failed action=${options.action} diagnostic=${JSON.stringify(gatewayErrorDiagnostic(error))}`,
       options,
     );
     options.setExitCode(1);

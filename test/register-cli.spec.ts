@@ -406,7 +406,7 @@ describe('cli/command-family-fixtures', () => {
     'valid',
     'removed',
     'gateway',
-    'flushed',
+    'scope',
     'preview',
     'prune',
     'verified',
@@ -761,10 +761,7 @@ describe('cli/register', () => {
         assert.deepEqual(diagnostics, []);
         assert.equal(output.length, 1);
         assert.match(output[0]!, /gateway.*pid/);
-        assert.match(
-          output[0]!,
-          action === 'flush' ? /flushed.*all agents/ : /entries.*0 retained/,
-        );
+        assert.match(output[0]!, action === 'flush' ? /scope.*all agents/ : /entries.*0 retained/);
         assert.throws(() => JSON.parse(output[0]!));
       }
     }
