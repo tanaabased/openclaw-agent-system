@@ -112,6 +112,9 @@ setting: preparation must repair the owned configuration without replacing check
 An unrelated saved project with invalid Git configuration must remain a blocker.
 Verify that the launch carries its receipt once, context supplies the assessment
 instructions, and an altered native launch is still rejected before investigation.
+Have the child request context while intake is reconciling its creation receipt;
+the child must wait for the journal lease and continue, rather than stopping on
+transient contention. Result submission must use the same bounded waiting behavior.
 
 ## Setup
 

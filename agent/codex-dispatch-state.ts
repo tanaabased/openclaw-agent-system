@@ -175,6 +175,7 @@ export default class CodexDispatchStore {
   }
   async exclusive<T>(
     run: (state: DispatchState, save: () => Promise<void>, signal: AbortSignal) => Promise<T>,
+    waitForLock = false,
   ): Promise<T> {
     await ensurePrivateStateDirectories({
       directories: [this.root],
@@ -183,7 +184,9 @@ export default class CodexDispatchStore {
     });
     const lock = await acquirePrivateStateFileLock(this.path, {
       staleMs: 30000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
+      retries: waitForLock
+        ? { retries: 40, factor: 1, minTimeout: 250, maxTimeout: 250 }
+        : { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
     });
     try {
       return await withPrivateStateLock(lock, async () => {

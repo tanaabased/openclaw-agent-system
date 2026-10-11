@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import properLockfile from 'proper-lockfile';
+
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
@@ -1042,6 +1044,35 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'busy', changed: false });
     release();
     assert.equal((await first).status, 'routing-required');
+  });
+
+  it('should let child context and result wait for the intake journal lease', async () => {
+    const prepared = await prepare();
+    created();
+    const lock = properLockfile.lock;
+    let contenders = 0;
+    properLockfile.lock = async (path, options) => {
+      if (String(path).includes('codex-dispatch-')) {
+        contenders++;
+        const retries = options?.retries;
+        if (!retries || typeof retries === 'number' || !retries.retries)
+          throw Object.assign(new Error('The intake journal lease is held.'), { code: 'ELOCKED' });
+      }
+      return lock(path, options);
+    };
+    try {
+      assert.equal(
+        (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
+        'verified',
+      );
+      assert.equal(
+        (await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' })).status,
+        'recorded',
+      );
+      assert.equal(contenders, 2);
+    } finally {
+      properLockfile.lock = lock;
+    }
   });
 
   it('should normalize a title before the first child assessment without an intake repair race', async () => {

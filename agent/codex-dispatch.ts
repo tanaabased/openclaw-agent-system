@@ -1161,10 +1161,19 @@ export async function runCodexDispatch(
         }
       }
       throw new Error('dispatch-action-invalid');
-    })
+    }, childAction)
     .catch((error: unknown) => {
       if (nativeObject(error) && error.code === 'private-state-file-lock-busy')
-        return { status: 'busy', changed: false };
+        return {
+          status: 'busy',
+          changed: false,
+          ...(childAction
+            ? {
+                instruction:
+                  'The dispatch journal is temporarily busy. Retry this same request; do not investigate or create another chat.',
+              }
+            : {}),
+        };
       throw error;
     });
 }
