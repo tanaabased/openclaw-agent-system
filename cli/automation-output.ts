@@ -10,9 +10,11 @@ import {
   createCliStyles,
   type CliOutput,
   type CliStyles,
+  renderCliSummary,
+  renderCliTableRows,
   writeCliDiagnosticNotices,
-  writeCliJson,
   writeCliLines,
+  writeCliJson,
 } from './output.ts';
 
 export interface AutomationCommandOptions {
@@ -31,13 +33,65 @@ export interface AutomationCommandOptions {
 async function automationOperation(
   options: AutomationCommandOptions,
   operation: (manifest: AgentManifest, workspace: string) => Promise<Record<string, unknown>>,
+  history?: { id: string; runId?: string },
 ) {
   const loaded = await loadCommandManifest(options);
   if (!loaded) return;
   try {
     const result = await operation(loaded.manifest, loaded.scope.workspaceDir);
     if (options.json) writeCliJson(options.output, result);
-    else {
+    else if (history) {
+      const styles = options.styles;
+      const entries = (result.entries ?? []) as Record<string, unknown>[];
+      const rows = [
+        { cells: ['run id', 'time', 'execution', 'delivery'].map((value) => ({ value })) },
+        ...entries.map(({ runId, ts, execution, delivery }) => ({
+          cells: [
+            { value: typeof runId === 'string' ? runId : 'unavailable', style: 'action' as const },
+            { value: new Date(Number(ts)).toISOString() },
+            {
+              value: String(execution),
+              style:
+                execution === 'ok'
+                  ? ('status' as const)
+                  : execution === 'error'
+                    ? ('error' as const)
+                    : ('field' as const),
+            },
+            {
+              value: String(delivery),
+              style:
+                delivery === 'delivered'
+                  ? ('status' as const)
+                  : delivery === 'not-delivered'
+                    ? ('warning' as const)
+                    : ('field' as const),
+            },
+          ],
+        })),
+      ];
+      const query = `limit=${result.limit}  offset=${result.offset}  run-id=${history.runId ?? 'all'}`;
+      const columns = options.terminalColumns ?? process.stdout.columns;
+      writeCliLines(options.output, [
+        `${styles?.bold('automation') ?? 'automation'}  ${styles?.target(history.id) ?? history.id}`,
+        ...renderCliSummary(
+          [
+            { label: 'query', style: 'field', value: query },
+            { label: 'runs', style: 'field', value: `${entries.length} of ${result.total}` },
+          ],
+          styles,
+          { rowPadding: 0, terminalColumns: columns },
+        ),
+        '',
+        ...renderCliTableRows(rows, styles, {
+          rowPadding: 0,
+          terminalColumns: columns,
+        }),
+        '',
+        ...(entries.length === 0 ? ['no matching runs'] : []),
+        ...(result.hasMore ? [`next page: --offset ${result.nextOffset}`] : []),
+      ]);
+    } else {
       writeCliLines(
         options.output,
         automationPresentation(

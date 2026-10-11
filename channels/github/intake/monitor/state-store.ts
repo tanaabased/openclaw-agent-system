@@ -106,7 +106,8 @@ export default class GitHubNotificationMonitorStateStore {
     });
     // this lock is independent of the long-lived monitor cycle lease.
     const lock = await this.#acquireFileLock(join(stateDir, 'github-notifications.json'), {
-      retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
+      // Eight independent state updates can contend here; allow a bounded 3s acquisition window.
+      retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 120 },
       staleMs: 30_000,
     });
     try {
