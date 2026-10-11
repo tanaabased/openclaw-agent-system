@@ -251,6 +251,11 @@ explicit local mappings to separate paths. Full remote host, owner, and reposito
 identity must match; dirty files are preserved, and failures never fall back to a
 different location or overwrite an existing checkout.
 
+A later configuration change may select another location for the same repository;
+previous checkouts are preserved. An interrupted temporary clone must first be
+recovered at its original location. Codex assignments already preparing a repository
+retain their original path; see [issue assessment recovery](../../CODEX.md#issue-assessment).
+
 Without either setting, managed repositories remain bare clones selected by a
 stable repository id. Agent System accepts supported network remotes but rejects
 local or credential-bearing clone URLs. Ordinary worktree preparation pins a

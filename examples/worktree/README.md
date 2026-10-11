@@ -129,6 +129,18 @@ openclaw agent-system tool worktree -- remove agent-system 791-working-directory
 openclaw agent-system tool worktree -- list agent-system | jq -e 'length == 0'
 grep -Fx 'preserve this work' checkouts/openclaw-agent-system/user-work.txt
 
+# should honor a changed checkout directory while preserving the earlier checkout
+cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
+cp agent.yaml "$TMPDIR/workingbot-agent.yaml"
+trap 'cp "$TMPDIR/workingbot-agent.yaml" agent.yaml' EXIT
+node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync("agent.yaml", fs.readFileSync("agent.yaml", "utf8").replace("working-directory: checkouts", "working-directory: reconfigured"));'
+openclaw agent-system tool worktree -- prepare agent-system 793-reconfigured origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | jq -e '.status == "created"'
+git -C reconfigured/openclaw-agent-system remote get-url origin | grep -Fx 'https://github.com/tanaabased/openclaw-agent-system.git'
+grep -Fx 'preserve this work' checkouts/openclaw-agent-system/user-work.txt
+openclaw agent-system tool worktree -- remove agent-system 793-reconfigured | jq -e '.status == "removed"'
+cp "$TMPDIR/workingbot-agent.yaml" agent.yaml
+trap - EXIT
+
 # should route the packaged shim from the managed worktree to tanaabot
 cd "$(jq -r .path "$TMPDIR/agent-system-worktree.json")"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git --agent-system | grep -Fx 'agent-system'

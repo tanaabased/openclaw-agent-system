@@ -145,6 +145,10 @@ describe('tools/git/repository-service', () => {
       { mode: 0o600 },
     );
     await assert.rejects(prepare(), /repository-clone-interrupted/u);
+    const originalWorkingDirectory = fixture.layout.workingDirectory;
+    fixture.layout.workingDirectory = join(fixture.workspaceDir, 'changed');
+    await assert.rejects(prepare(), /repository-preparation-changed/u);
+    fixture.layout.workingDirectory = originalWorkingDirectory;
     await fixture.git.seed(temporaryPath);
     assert.equal((await prepare()).path, path);
     assert.equal(
@@ -169,13 +173,24 @@ describe('tools/git/repository-service', () => {
     await assert.rejects(prepare(), /repository-identity-conflict/u);
   });
 
-  it('should block a changed destination after retained preparation', async () => {
+  it('should honor a new configured location while preserving the previous checkout', async () => {
     const first = await prepare();
+    await writeFile(join(first.path, 'user-work'), 'preserve');
     fixture.layout.workingDirectory = join(fixture.workspaceDir, 'changed');
-    await assert.rejects(
-      prepare(),
-      (error: unknown) => error instanceof RepositoryPreparationError && error.path === first.path,
+    const second = await prepare();
+    assert.equal(second.path, join(fixture.layout.workingDirectory, 'repo'));
+    assert.equal(await readFile(join(first.path, 'user-work'), 'utf8'), 'preserve');
+    fixture.layout.localRepositories[id] = first.path;
+    assert.equal((await prepare()).path, first.path);
+    delete fixture.layout.localRepositories[id];
+    delete fixture.layout.workingDirectory;
+    assert.equal(
+      (await prepare()).path,
+      join(fixture.layout.repositoryRoot, gitWorktreeRepositoryDirectoryName(id)),
     );
-    assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
+    await assert.rejects(prepare(id, 'https://github.com/another/repo.git'), {
+      code: 'repository-preparation-changed',
+    });
+    assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 3);
   });
 });

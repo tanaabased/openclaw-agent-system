@@ -107,5 +107,23 @@ describe('agent/codex-dispatch-repository', () => {
     await assert.rejects(prepare(), /repository-preparation-changed/u);
     assert.equal(retained?.checkout, checkout);
     assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
+    Object.assign(fixture.configuration.repositories, { local: { 'github-10': checkout } });
+    assert.equal(await prepare(), checkout);
+    assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
+  });
+
+  it('should use the bare fallback for a new assignment after removing a working directory', async () => {
+    const previousCheckout = await prepare();
+    await writeFile(join(previousCheckout, 'user-work'), 'preserve');
+    retained = undefined;
+    const checkout = await prepare(true);
+    assert.notEqual(checkout, previousCheckout);
+    assert.equal(await prepare(true), checkout);
+    assert.equal(await readFile(join(previousCheckout, 'user-work'), 'utf8'), 'preserve');
+    assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 2);
+    assert.equal(
+      fixture.git.calls.filter(({ argv }) => argv[0] === 'worktree' && argv[1] === 'add').length,
+      1,
+    );
   });
 });

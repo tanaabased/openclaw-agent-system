@@ -108,7 +108,12 @@ function remediation(value: string) {
     return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat to finish the assessment and submit its structured result; do not launch a replacement.';
   return 'Inspect the retained native creation receipt, chat, and worktree. Restore host access or reconcile the existing creation; never repeat an uncertain create.';
 }
-function blocker(record: DispatchRecord, value: string, error?: unknown): AssessmentResult {
+function blocker(
+  record: DispatchRecord,
+  value: string,
+  error?: unknown,
+  repositoryId?: number,
+): AssessmentResult {
   const preparation = record.repositoryPreparation;
   const path =
     error instanceof RepositoryPreparationError
@@ -127,11 +132,19 @@ function blocker(record: DispatchRecord, value: string, error?: unknown): Assess
   const action =
     value === 'dispatch-project-registration-unavailable'
       ? 'No supported native project registration action is available. Add this exact checkout as the primary folder of one saved local Codex project, then let the next scheduled occurrence verify it and resume the retained assignment.'
-      : value === 'repository-clone-interrupted'
-        ? 'Inspect this retained temporary clone. Repair it, or remove only this confirmed preparation-owned temporary directory, then retry; the runtime will not clone over it.'
-        : value.startsWith('repository-')
-          ? 'Resolve the repository path or identity conflict, or restore access. Use an explicit local repository mapping for same-name repositories. Do not overwrite user work or change storage to bypass the failure.'
-          : remediation(value);
+      : value === 'repository-preparation-changed'
+        ? 'This assignment or interrupted clone is pinned to its retained repository location. Restore the previous working-directory and roots. For a normal checkout outside the managed roots, you can instead set git.worktrees.repositories.local.' +
+          (repositoryId === undefined
+            ? 'github-<repository-database-id>'
+            : 'github-' + repositoryId) +
+          ' to ' +
+          githubNotificationMarkdownText(JSON.stringify(preparation?.path ?? path)) +
+          '. If the base checkout location changed, restore the previous worktree root too. Reconcile through Install, then let the next scheduled occurrence resume this assignment. New assignments may use a different configured location; do not delete the retained journal or checkout.'
+        : value === 'repository-clone-interrupted'
+          ? 'Inspect this retained temporary clone. Repair it, or remove only this confirmed preparation-owned temporary directory, then retry; the runtime will not clone over it.'
+          : value.startsWith('repository-')
+            ? 'Resolve the repository path or identity conflict, or restore access. Use an explicit local repository mapping for same-name repositories. Do not overwrite user work or change storage to bypass the failure.'
+            : remediation(value);
   return {
     version: 1,
     outcome: 'operator-setup-blocker',
@@ -463,7 +476,12 @@ export async function runCodexDispatch(
           return { id: record.id, status: 'creating', changed: false };
         }
         record.phase = 'blocked';
-        record.result = blocker(record, code(error), error);
+        record.result = blocker(
+          record,
+          code(error),
+          error,
+          admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
+        );
         record.retryAfter = now + 300000;
         const result = notice(
           record,

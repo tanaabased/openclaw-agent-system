@@ -8,6 +8,7 @@ import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
+import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 
 const models = {
   default: { model: 'openai/gpt-6-astra', effort: 'high' },
@@ -644,6 +645,24 @@ describe('agent/codex-dispatch', () => {
     const resumed = await next();
     assert.equal(resumed.status, 'routing-required');
     assert.equal(resumed.id, blocked.id);
+  });
+
+  it('should give the exact retained location and mapping key for configuration recovery', async () => {
+    projects = [];
+    deps.prepareRepository = async (input) => {
+      throw new RepositoryPreparationError(
+        'repository-preparation-changed',
+        source,
+        'github.com/' + input.repository,
+      );
+    };
+    const blocked = await next();
+    assert.equal(blocked.code, 'repository-preparation-changed');
+    assert.ok(String(blocked.message).includes('git.worktrees.repositories.local.github-10'));
+    assert.ok(String(blocked.message).includes(source));
+    assert.match(String(blocked.message), /Reconcile through Install/u);
+    assert.match(String(blocked.message), /do not delete/u);
+    assert.equal(gitCalls.length, 0);
   });
 
   it('should honor a configured directory instead of using another saved checkout', async () => {

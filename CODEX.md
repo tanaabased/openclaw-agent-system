@@ -134,7 +134,11 @@ clones retain actionable blockers rather than creating replacements.
 Use Install to authorize and reconcile the repository-preparation schedule before
 using this behavior; an older assessment schedule is insufficient. Changing repository
 locations requires reconciliation again. Repository and checkout records survive
-retries and restarts. Once the saved project is verified, dispatch refreshes the
+retries and restarts. New assignments use the reconciled location without moving
+or deleting earlier checkouts. An assignment already preparing a repository remains
+pinned to its retained path: restore its explicit local mapping or previous directory
+and roots, then reconcile through Install. Interrupted clones also require recovery
+at their original location before selecting another destination. Once the saved project is verified, dispatch refreshes the
 default branch and pins the exact starting commit for the native issue worktree.
 
 Bounded issue evidence and structured metadata inform the shared model router.

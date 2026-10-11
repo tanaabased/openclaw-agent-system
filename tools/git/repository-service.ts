@@ -289,7 +289,12 @@ export default class GitRepositoryService {
       (layout.workingDirectory
         ? join(layout.workingDirectory, gitRemoteRepositoryName(source))
         : join(layout.repositoryRoot, gitWorktreeRepositoryDirectoryName(repositoryId)));
-    if (retained && (retained.path !== path || gitRemoteIdentity(retained.source) !== identity))
+    // a new configured location is authoritative; an interrupted clone remains pinned.
+    if (
+      retained &&
+      (gitRemoteIdentity(retained.source) !== identity ||
+        (retained.path !== path && retained.temporaryPath !== undefined))
+    )
       throw new RepositoryPreparationError(
         'repository-preparation-changed',
         retained.path,
