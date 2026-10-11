@@ -184,7 +184,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, []);
     assert.deepEqual(test.records.output, [
-      'valid         op credential for data\nsource        store:file\nenvironments  1\nsecrets       2\n',
+      'status               valid\nagent                data\nstore                file\nenvironments checked  1\nsecrets checked       2\n',
     ]);
   });
 
@@ -214,7 +214,8 @@ describe('cli/credentials', () => {
     });
 
     assert.deepEqual(test.exitCodes, []);
-    assert.equal(test.records.output.join('').includes('process-environment'), true);
+    assert.equal(test.records.output.join('').includes('source  process-environment'), true);
+    assert.doesNotMatch(test.records.output.join(''), /store/u);
   });
 
   it('should reject conflicting validation selectors before loading the manifest', async () => {

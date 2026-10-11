@@ -2,7 +2,14 @@ import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
-import { type CliOutput, type CliStyles, writeCliError, writeCliSummary } from './output.ts';
+import {
+  type CliOutput,
+  type CliNotice,
+  type CliStyles,
+  writeCliDiagnosticNotices,
+  writeCliError,
+  writeCliSummary,
+} from './output.ts';
 import { formatDiagnostic } from '../core/logger.ts';
 
 export interface ValidateCredentialsAgentSystemOptions {
@@ -48,29 +55,41 @@ async function validateCredentialsAgentSystem(
     ...(options.storeId ? { storeId: options.storeId } : {}),
   });
   if (result.status === 'invalid') {
+    const notices: CliNotice[] = [];
     if (result.gatewayInvalidation === 'pending') {
-      writeCliError(
-        options.output,
-        'credentials: Gateway invalidation is pending. Restore Gateway access and run openclaw agent-system credentials cache flush.',
-        options,
-      );
+      notices.push({
+        severity: 'warning',
+        message:
+          'credentials: Gateway invalidation is pending; restore Gateway access and run openclaw agent-system credentials cache flush. code=credentials-gateway-invalidation-pending',
+      });
     }
 
-    writeCliError(
-      options.output,
-      formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),
-      options,
-    );
+    notices.push({
+      severity: 'error',
+      message: formatDiagnostic({
+        code: result.code,
+        component: 'credentials',
+        message: result.message,
+      }),
+    });
+    writeCliDiagnosticNotices(options, notices);
     options.setExitCode(1);
     return;
   }
   writeCliSummary(
     options.output,
     [
-      { label: 'valid', style: 'status', value: `op credential for ${result.agentId}` },
-      { label: 'source', style: 'target', value: result.source },
-      { label: 'environments', style: 'field', value: String(result.environmentCount) },
-      { label: 'secrets', style: 'field', value: String(result.secretCount) },
+      { label: 'status', style: 'status', value: 'valid' },
+      { label: 'agent', style: 'target', value: result.agentId },
+      {
+        label: result.source === 'process-environment' ? 'source' : 'store',
+        style: 'target',
+        value: result.source.startsWith('store:')
+          ? result.source.slice('store:'.length)
+          : result.source,
+      },
+      { label: 'environments checked', style: 'field', value: String(result.environmentCount) },
+      { label: 'secrets checked', style: 'field', value: String(result.secretCount) },
     ],
     options.styles,
   );
