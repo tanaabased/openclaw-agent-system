@@ -77,7 +77,8 @@ describe('cli/operation-diagnostics', () => {
           assert.deepEqual(test.stderr, []);
         } else {
           assert.ok(test.stderr.join('').includes(label!));
-          assert.equal(test.stdout.join(''), 'skipped\n');
+          assert.match(test.stdout.join(''), /result +skipped/u);
+          assert.match(test.stdout.join(''), /workspace +\/workspace/u);
         }
       }
     }

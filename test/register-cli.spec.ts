@@ -702,6 +702,9 @@ describe('cli/automation-commands', () => {
     const result = createProgram(undefined, {
       automations: {
         run: async () => ({
+          runtime: 'openclaw',
+          id: 'review',
+          nativeId: 'Native-Review',
           status: 'queued',
           runId: 'occurrence',
           execution: 'unavailable',
@@ -710,7 +713,10 @@ describe('cli/automation-commands', () => {
       } as never,
     });
     await result.program.parseAsync(['node', 'openclaw', 'as', 'automations', 'run', 'review']);
-    assert.match(result.output.join(''), /queued.*run=occurrence/su);
+    assert.match(
+      result.output.join(''),
+      /review +queued[\s\S]*native-id=Native-Review[\s\S]*run=occurrence/u,
+    );
     const failed = createProgram(undefined, {
       automations: {
         reconcile: async () => {
