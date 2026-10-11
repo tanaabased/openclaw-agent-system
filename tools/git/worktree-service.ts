@@ -291,7 +291,8 @@ export default class GitWorktreeService {
     validateIdentifier(repositoryId, 'repository id');
     validateIdentifier(workId, 'work id');
     const layout = await this.#readyLayout(context);
-    const repository = await this.#repositoryService.resolve(context, layout, repositoryId);
+    const [repository] = await this.#repositories(context, layout, repositoryId);
+    if (!repository) throw new Error('The deterministic Git worktree is unavailable.');
     const path = this.#worktreePath(
       layout,
       repositoryId,
@@ -322,12 +323,15 @@ export default class GitWorktreeService {
     const branch = expectedBranch ?? stableName;
     const path = this.#worktreePath(layout, repositoryId, stableName);
     const base = { branch, path, repositoryId, workId };
-    const repository = await this.#repositoryService.resolve(context, layout, repositoryId);
-    const existing = (await this.#registeredWorktrees(context, repository)).find(
-      (worktree) => worktree.path === path,
-    );
+    const [repository] = await this.#repositories(context, layout, repositoryId);
+    const existing = repository
+      ? (await this.#registeredWorktrees(context, repository)).find(
+          (worktree) => worktree.path === path,
+        )
+      : undefined;
     const kind = await pathKind(path);
-    if (!existing) return { ...base, status: kind === 'absent' ? 'missing' : 'unsafe' };
+    if (!existing || !repository)
+      return { ...base, status: kind === 'absent' ? 'missing' : 'unsafe' };
     if (
       existing.branch !== branch ||
       kind !== 'directory' ||

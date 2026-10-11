@@ -129,6 +129,16 @@ openclaw agent-system tool worktree -- remove agent-system 791-working-directory
 openclaw agent-system tool worktree -- list agent-system | jq -e 'length == 0'
 grep -Fx 'preserve this work' checkouts/openclaw-agent-system/user-work.txt
 
+# should refuse removal from a missing source checkout without cloning it again
+cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
+mv checkouts/openclaw-agent-system "$TMPDIR/workingbot-source-checkout"
+trap 'mv "$TMPDIR/workingbot-source-checkout" checkouts/openclaw-agent-system' EXIT
+if output=$(openclaw agent-system tool worktree -- remove agent-system 791-working-directory 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'The deterministic Git worktree is unavailable'
+test ! -e checkouts/openclaw-agent-system
+mv "$TMPDIR/workingbot-source-checkout" checkouts/openclaw-agent-system
+trap - EXIT
+
 # should honor a changed checkout directory while preserving the earlier checkout
 cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
 cp agent.yaml "$TMPDIR/workingbot-agent.yaml"
