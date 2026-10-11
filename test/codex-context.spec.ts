@@ -284,6 +284,11 @@ describe('agent/codex-context', () => {
       pluginData,
     });
     assert.match(context, /explicit selections/);
+    assert.match(
+      context,
+      /Scheduled issue assessments submit their assessment through dispatchRuntime action:"prepare"/u,
+    );
+    assert.match(context, /do not make a separate routingRuntime call/u);
     assert.match(context, /invalid or unsupported selections never authorize substitution/);
     assert.match(context, /Preserve saved selections/);
     assert.match(context, /never launches work or changes a model/);

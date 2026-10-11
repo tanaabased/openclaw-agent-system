@@ -24,6 +24,63 @@ function code(expected: string) {
 }
 
 describe('shared model routing', () => {
+  it('should accept issue title and body context with the same result as text', () => {
+    const context = {
+      title: 'enable or disable individual v2 notification workflows',
+      body: 'Add optional enabled booleans while preserving assignment progress.',
+    };
+    for (const runtime of ['codex', 'openclaw'] as const) {
+      assert.deepEqual(
+        resolveModelRoutingRequest(profiles, 'digest', { ...request, context }, runtime),
+        resolveModelRoutingRequest(
+          profiles,
+          'digest',
+          { ...request, context: `${context.title}\n\n${context.body}` },
+          runtime,
+        ),
+      );
+    }
+    assert.equal(
+      context.body,
+      'Add optional enabled booleans while preserving assignment progress.',
+    );
+  });
+
+  it('should identify invalid context without echoing its contents', () => {
+    for (const context of [
+      null,
+      42,
+      ['private-input'],
+      {},
+      { title: 'task' },
+      { title: '', body: 'private-input' },
+      { title: 'task', body: { text: 'private-input' } },
+      { title: 'task', body: 'private-input', workspace: '/other' },
+      'private-input'.repeat(18000),
+      { title: 'task', body: 'x'.repeat(17995) },
+    ]) {
+      assert.throws(
+        () => resolveModelRoutingRequest(profiles, 'digest', { ...request, context }, 'codex'),
+        (error: unknown) => {
+          assert.ok(error instanceof RoutingError);
+          assert.equal(error.code, 'model-routing-request-invalid');
+          assert.match(error.message, /context/u);
+          assert.doesNotMatch(error.message, /private-input|\/other/u);
+          return true;
+        },
+      );
+    }
+    assert.equal(
+      resolveModelRoutingRequest(
+        profiles,
+        'digest',
+        { ...request, context: { title: 'task', body: 'x'.repeat(17994) } },
+        'codex',
+      ).status,
+      'resolved',
+    );
+  });
+
   it('should use declared efforts rather than infer effort from complexity', () => {
     for (const complexity of ['low', 'medium', 'high'] as const) {
       const result = resolveModelRouting(profiles, { ...assessment, complexity });

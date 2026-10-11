@@ -213,7 +213,7 @@ export async function createCodexSessionContext(
     JSON.stringify(envelope, null, 2),
     ...(modelRoutingAvailable
       ? [
-          'For new routed work, use $agent-system-model-routing with bounded context and explicit selections through routingRuntime. The calling model assesses; the helper validates without a classifier call. Apply candidates only through native task controls. Missing routing capability permits explicit/default settings; invalid or unsupported selections never authorize substitution. Preserve saved selections on ordinary follow-ups, resume, and compaction; this hook never launches work or changes a model.',
+          'For new routed work, use $agent-system-model-routing with bounded context and explicit selections through routingRuntime, except for scheduled issue assessments. Scheduled issue assessments submit their assessment through dispatchRuntime action:"prepare", which invokes the shared model-routing resolver; do not make a separate routingRuntime call for that flow. The calling model assesses; the helper validates without a classifier call. Apply candidates only through native task controls. Missing routing capability permits explicit/default settings; invalid or unsupported selections never authorize substitution. Preserve saved selections on ordinary follow-ups, resume, and compaction; this hook never launches work or changes a model.',
         ]
       : []),
     '</agent-system-context>',

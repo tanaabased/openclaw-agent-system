@@ -369,6 +369,17 @@ jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
+# should accept issue objects as bounded routing context through the installed cache
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
+digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
+jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
+  | node "$runtime" model-routing --plugin-data "$plugin_data" \
+  | jq -e '.status == "resolved" and .profile == "medium" and .candidate.model == "gpt-5.6-sol" and .candidate.thinking == "high" and .execution == "unverified"'
+
 # should plan intake conversation setup without a global scanner rule or reload acknowledgment
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
