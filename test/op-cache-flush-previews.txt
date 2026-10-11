@@ -1,0 +1,23 @@
+illustrative fixture data; no gateway operations
+
+## targeted
+gateway        pid 42 (process-local)
+policy         timed (300s); max entries 10
+scope          data
+entries        1
+clients        1
+pending loads  0
+snapshots      1
+result         gateway confirmed cache invalidation
+backoff        none
+
+## all agents with zero counts
+gateway        pid 42 (process-local)
+policy         timed (300s); max entries 10
+scope          all agents
+entries        0
+clients        0
+pending loads  0
+snapshots      0
+result         gateway confirmed cache invalidation
+backoff        none

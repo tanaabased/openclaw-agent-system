@@ -199,11 +199,11 @@ describe('cli/output', () => {
 
     writeCliSummary(
       { writeStderr() {}, writeStdout: (value) => written.push(value) },
-      [{ label: 'valid', style: 'status', value: 'Agent System manifest for data' }],
+      [{ label: 'valid', style: 'status', value: 'agent system manifest' }],
       plainStyles,
     );
 
-    assert.deepEqual(written, ['valid  Agent System manifest for data\n']);
+    assert.deepEqual(written, ['valid  agent system manifest\n']);
   });
 
   it('should keep json output undecorated', () => {

@@ -406,7 +406,7 @@ describe('cli/command-family-fixtures', () => {
     'valid',
     'removed',
     'gateway',
-    'flushed',
+    'scope',
     'preview',
     'prune',
     'verified',
@@ -658,7 +658,11 @@ describe('cli/automation-commands', () => {
           assert.equal(output.diagnostic.method, 'sessions.create');
           assert.equal(output.diagnostic.category, 'rejected');
           assert.equal(output.diagnostic.gatewayCode, 'INVALID_REQUEST');
-        } else assert.deepEqual(result.output, []);
+        } else {
+          assert.match(result.output.join(''), /sync +failed/u);
+          assert.match(result.output.join(''), /automations +blocked/u);
+          assert.ok(result.output.join('').includes('workspace  /workspace'));
+        }
         assert.match(result.diagnostics.join(''), /sessions\.create/u);
         assert.match(result.diagnostics.join(''), /INVALID_REQUEST/u);
         assert.ok(![...result.output, ...result.diagnostics].join('').includes('secret'));
@@ -761,10 +765,7 @@ describe('cli/register', () => {
         assert.deepEqual(diagnostics, []);
         assert.equal(output.length, 1);
         assert.match(output[0]!, /gateway.*pid/);
-        assert.match(
-          output[0]!,
-          action === 'flush' ? /flushed.*all agents/ : /entries.*0 retained/,
-        );
+        assert.match(output[0]!, action === 'flush' ? /scope.*all agents/ : /entries.*0 retained/);
         assert.throws(() => JSON.parse(output[0]!));
       }
     }

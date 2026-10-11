@@ -16,8 +16,8 @@ openclaw-setup \
 ```bash
 # should validate the current workspace through the canonical command
 cd "$GITHUB_WORKSPACE/examples/validate/valid"
-openclaw agent-system validate | grep -F 'valid' | grep -F 'Agent System manifest for data'
-openclaw agent-system validate | grep -F 'valid' | grep -F 'agent'
+openclaw agent-system validate | grep -F 'valid' | grep -F 'agent system manifest'
+openclaw agent-system validate | grep -F 'agent' | grep -F 'data'
 openclaw agent-system validate | grep -F 'valid' | grep -F 'path'
 
 # should expose foundational validation checks as structured json
@@ -26,7 +26,8 @@ openclaw agent-system validate --json | jq -e '.status == "valid" and (.checks |
 
 # should prefer the hidden manifest and report the ignored shorthand
 cd "$GITHUB_WORKSPACE/examples/validate/preferred"
-openclaw agent-system validate 2>&1 | grep -F 'valid' | grep -F 'Agent System manifest for data'
+openclaw agent-system validate 2>&1 | grep -F 'valid' | grep -F 'agent system manifest'
+openclaw agent-system validate 2>&1 | grep -F 'agent' | grep -F 'data'
 openclaw agent-system validate 2>&1 | grep -F 'code=manifest-shadowed'
 
 # should reject an unknown schema key with a failing exit code

@@ -46,6 +46,9 @@ cd "$TMPDIR/automation-agent"
 if NO_COLOR=1 OPENCLAW_LOG_LEVEL=debug openclaw agent-system automations sync > "$TMPDIR/automation-offline.stdout" 2> "$TMPDIR/automation-offline.stderr"; then exit 1; fi
 grep -F 'messages' "$TMPDIR/automation-offline.stderr"
 grep -F 'automation-gateway-unavailable' "$TMPDIR/automation-offline.stderr"
+grep -F 'automations' "$TMPDIR/automation-offline.stdout" | grep -F 'pending'
+grep -F 'workspace' "$TMPDIR/automation-offline.stdout" | grep -F "$TMPDIR/automation-agent"
+grep -F 'restore gateway connectivity' "$TMPDIR/automation-offline.stderr"
 
 # should reject malformed scheduler options without contaminating machine stdout
 if OPENCLAW_LOG_LEVEL=debug openclaw as automation-execute --id review --hash invalid > "$TMPDIR/automation-options.stdout" 2> "$TMPDIR/automation-options.stderr"; then exit 1; fi
@@ -61,6 +64,13 @@ openclaw gateway call cron.list --params '{"includeDisabled":true}' --json | jq 
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "unchanged")'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 test ! -e offline-ran
+
+# should show scoped unchanged sync outcomes through both public aliases
+cd "$TMPDIR/automation-agent"
+for alias in agent-system as; do
+  NO_COLOR=1 openclaw "$alias" automations sync | grep -F 'automations/offline' | grep -F 'unchanged'
+  NO_COLOR=1 openclaw "$alias" automations sync | grep -F 'workspace' | grep -F "$TMPDIR/automation-agent"
+done
 
 # should run plain git and gh under the scheduled agent without a model
 cd "$TMPDIR/automation-agent"

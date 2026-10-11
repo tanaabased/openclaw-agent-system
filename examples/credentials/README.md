@@ -66,7 +66,13 @@ printf '%s\n' "$output" | grep -F 'policy' | grep -F 'process-lifetime'
 printf '%s\n' "$output" | grep -F 'counts' | grep -F '0 reads'
 
 # should summarize an empty agent flush without json
-NO_COLOR=1 openclaw as credentials cache flush --agent credential-data | grep -F 'flushed' | grep -F 'credential-data: 0 entries'
+output=$(NO_COLOR=1 openclaw as credentials cache flush --agent credential-data)
+printf '%s\n' "$output" | grep -F 'scope' | grep -F 'credential-data'
+printf '%s\n' "$output" | grep -F 'entries' | grep -w '0'
+printf '%s\n' "$output" | grep -F 'clients' | grep -w '0'
+printf '%s\n' "$output" | grep -F 'pending loads' | grep -w '0'
+printf '%s\n' "$output" | grep -F 'snapshots' | grep -w '0'
+printf '%s\n' "$output" | grep -F 'result' | grep -F 'gateway confirmed cache invalidation'
 
 # should flush an empty gateway through both command spellings without provider reads
 openclaw agent-system credentials cache flush --agent credential-data --json | jq -e '.runtime == "gateway" and .invalidated.entries == 0 and .counts.resourceReads == 0'
