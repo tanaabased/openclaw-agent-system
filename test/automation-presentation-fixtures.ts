@@ -242,13 +242,13 @@ export async function captureAutomationPreview(
               runId: undefined,
             }
           : name === 'skipped'
-          ? {
-              ...automationRunFixture,
-              status: 'skipped' as const,
-              reason: 'invalid-spec',
-              runId: undefined,
-            }
-          : automationRunFixture;
+            ? {
+                ...automationRunFixture,
+                status: 'skipped' as const,
+                reason: 'invalid-spec',
+                runId: undefined,
+              }
+            : automationRunFixture;
       },
       runs: async () => {
         calls.push('runs');
