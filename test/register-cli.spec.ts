@@ -365,7 +365,19 @@ describe('cli/command-family-fixtures', () => {
     }),
     runs: async () => ({
       status: 'ok',
-      entries: [{ runId: 'occurrence', execution: 'ok', delivery: 'delivered' }],
+      entries: [
+        {
+          runId: 'occurrence',
+          ts: 1_791_720_000_000,
+          execution: 'ok',
+          delivery: 'delivered',
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+      hasMore: false,
+      nextOffset: null,
     }),
   } as never;
 
@@ -561,7 +573,22 @@ describe('cli/automation-commands', () => {
       },
       runs: async (...args: unknown[]) => {
         calls.push(['runs', ...args]);
-        return { status: 'ok', entries: [], hasMore: false };
+        return {
+          status: 'ok',
+          entries: [
+            {
+              runId: 'occurrence',
+              ts: 1_791_720_000_000,
+              execution: 'ok',
+              delivery: 'delivered',
+            },
+          ],
+          total: 3,
+          offset: 2,
+          limit: 7,
+          hasMore: false,
+          nextOffset: null,
+        };
       },
     } as never;
     for (const alias of ['agent-system', 'as']) {

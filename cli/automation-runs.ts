@@ -6,8 +6,9 @@ export default async function automationRuns(
   id: string,
   history: AutomationHistoryOptions,
 ) {
-  await automationOperation(options, (manifest, workspace) =>
-    options.automations.runs(manifest, workspace, id, history),
-  { id, ...(history.runId !== undefined ? { runId: history.runId } : {}) },
+  await automationOperation(
+    options,
+    (manifest, workspace) => options.automations.runs(manifest, workspace, id, history),
+    { id, ...(history.runId !== undefined ? { runId: history.runId } : {}) },
   );
 }

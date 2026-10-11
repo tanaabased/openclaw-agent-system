@@ -11,7 +11,9 @@ describe('cli/automation-runs', () => {
       ['filtered empty', { columns: 80, empty: true }],
     ] as const) {
       const events = await captureAutomationRuns(options);
-      previews.push(`## ${name}\n${events.map(({ stream, text }) => `[${stream}]\n${text}`).join('')}`);
+      previews.push(
+        `## ${name}\n${events.map(({ stream, text }) => `[${stream}]\n${text}`).join('')}`,
+      );
     }
     assert.equal(
       previews.join('\n'),
@@ -21,7 +23,10 @@ describe('cli/automation-runs', () => {
 
   it('should preserve query context, mixed outcomes, and exact timestamps in no-color output', async () => {
     const events = await captureAutomationRuns({ columns: 80 });
-    const primary = events.filter(({ stream }) => stream === 'stdout').map(({ text }) => text).join('');
+    const primary = events
+      .filter(({ stream }) => stream === 'stdout')
+      .map(({ text }) => text)
+      .join('');
     assert.match(primary, /automation +review/u);
     assert.match(primary, /query +limit=2 +offset=2/u);
     assert.match(primary, /run-id=all/u);
@@ -30,7 +35,10 @@ describe('cli/automation-runs', () => {
     assert.match(primary, /run-current/u);
     assert.match(primary, /next page: --offset 4/u);
     assert.ok(!primary.includes('no matching runs'));
-    assert.deepEqual(events.filter(({ stream }) => stream === 'stderr'), []);
+    assert.deepEqual(
+      events.filter(({ stream }) => stream === 'stderr'),
+      [],
+    );
   });
 
   it('should show the requested run filter and omit pagination hints for empty results', async () => {
