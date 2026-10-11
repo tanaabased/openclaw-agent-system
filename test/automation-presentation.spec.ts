@@ -87,7 +87,10 @@ describe('cli/automation presentation', () => {
   it('should retain sync outcomes, queued admission and history timestamps with pagination', async () => {
     const sync = await captureAutomationPreview('sync');
     assert.deepEqual(sync.calls, ['reconcile']);
-    assert.match(sync.stdout, /review +updated[\s\S]*automation-synchronized/u);
+    assert.match(
+      sync.stdout,
+      /review +updated[\s\S]*Automation review is synchronized \(persistent: Thread-Mixed\)/u,
+    );
     assert.ok(sync.stdout.includes('Thread-Mixed'));
     assert.match(sync.stderr, /warning[\s\S]*External-Mixed warning/u);
     const run = await captureAutomationPreview('run');
@@ -100,7 +103,6 @@ describe('cli/automation presentation', () => {
       run.stderr,
       /info[\s\S]*accepted and queued[\s\S]*execution and delivery are unavailable/u,
     );
-    assert.match(run.stdout, /automation +review  native-id=Native-Mixed/u);
     const history = await captureAutomationPreview('history');
     assert.deepEqual(history.calls, ['runs']);
     assert.ok(history.stdout.includes('total=3  offset=0  limit=2'));

@@ -65,7 +65,7 @@ async function automationOperation(
       if (result.status === 'queued')
         writeCliDiagnosticNotices(options, [
           {
-            severity: 'info',
+            severity: 'notice',
             message:
               'automation run was accepted and queued; execution and delivery are unavailable until separately confirmed.',
           },
