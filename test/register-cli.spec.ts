@@ -658,7 +658,11 @@ describe('cli/automation-commands', () => {
           assert.equal(output.diagnostic.method, 'sessions.create');
           assert.equal(output.diagnostic.category, 'rejected');
           assert.equal(output.diagnostic.gatewayCode, 'INVALID_REQUEST');
-        } else assert.deepEqual(result.output, []);
+        } else {
+          assert.match(result.output.join(''), /sync +failed/u);
+          assert.match(result.output.join(''), /automations +blocked/u);
+          assert.ok(result.output.join('').includes('workspace  /workspace'));
+        }
         assert.match(result.diagnostics.join(''), /sessions\.create/u);
         assert.match(result.diagnostics.join(''), /INVALID_REQUEST/u);
         assert.ok(![...result.output, ...result.diagnostics].join('').includes('secret'));
