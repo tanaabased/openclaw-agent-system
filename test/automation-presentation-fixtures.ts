@@ -234,7 +234,14 @@ export async function captureAutomationPreview(
       },
       run: async () => {
         calls.push('run');
-        return name === 'skipped'
+        return name === 'disabled'
+          ? {
+              ...automationRunFixture,
+              status: 'skipped' as const,
+              reason: 'disabled',
+              runId: undefined,
+            }
+          : name === 'skipped'
           ? {
               ...automationRunFixture,
               status: 'skipped' as const,
@@ -255,7 +262,8 @@ export async function captureAutomationPreview(
     if (options.notices)
       writeCliDiagnosticNotices(presented, [{ severity: 'notice', message: 'MixedCaseInfo' }]);
     if (name === 'sync') await automationSync(presented);
-    else if (name === 'run' || name === 'skipped') await automationRun(presented, 'review');
+    else if (['run', 'skipped', 'disabled'].includes(name))
+      await automationRun(presented, 'review');
     else if (name === 'history' || name === 'history-empty')
       await automationRuns(presented, 'review', { limit: 2, offset: 0 });
     else await automationList(presented);

@@ -96,6 +96,11 @@ describe('cli/automation presentation', () => {
       run.stdout,
       /review +queued[\s\S]*native-id=Native-Mixed +run=Run-Mixed +execution=unavailable +delivery=unavailable/u,
     );
+    assert.match(
+      run.stderr,
+      /info[\s\S]*accepted and queued[\s\S]*execution and delivery are unavailable/u,
+    );
+    assert.match(run.stdout, /automation +review  native-id=Native-Mixed/u);
     const history = await captureAutomationPreview('history');
     assert.deepEqual(history.calls, ['runs']);
     assert.ok(history.stdout.includes('total=3  offset=0  limit=2'));
@@ -115,13 +120,19 @@ describe('cli/automation presentation', () => {
     assert.equal(skipped.stderr.match(/messages/gu)?.length, 1);
     assert.match(
       skipped.stderr,
-      /error[\s\S]*reason=invalid-spec[\s\S]*warning[\s\S]*MixedCaseWarning[\s\S]*info[\s\S]*MixedCaseInfo/u,
+      /error[\s\S]*automation run was invalid-spec[\s\S]*review the automation specification[\s\S]*warning[\s\S]*MixedCaseWarning[\s\S]*info[\s\S]*MixedCaseInfo/u,
     );
+    assert.match(skipped.stdout, /reason=invalid-spec/u);
+    const disabled = await captureAutomationPreview('disabled');
+    assert.equal(disabled.exitCode, 1);
+    assert.match(disabled.stdout, /reason=disabled/u);
+    assert.match(disabled.stderr, /enable the automation before requesting another run/u);
     const failure = await captureAutomationPreview('failure', { notices: true });
     assert.equal(failure.exitCode, 1);
     assert.equal(failure.stdout, '');
     assert.equal(failure.stderr.match(/messages/gu)?.length, 1);
     assert.match(failure.stderr, /automation-gateway-unavailable/u);
+    assert.match(failure.stderr, /check automation configuration and runtime availability/u);
   });
 
   it('should preserve exact literal content and width in wide, narrow, colored and plain previews', async () => {
@@ -133,6 +144,7 @@ describe('cli/automation presentation', () => {
       'sync',
       'run',
       'skipped',
+      'disabled',
       'history',
       'empty',
       'failure',

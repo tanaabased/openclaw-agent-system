@@ -10,6 +10,7 @@ for (const name of [
   'sync',
   'run',
   'skipped',
+  'disabled',
   'history',
   'history-empty',
   'failure',
