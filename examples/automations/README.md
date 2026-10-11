@@ -99,13 +99,23 @@ for alias in agent-system as; do
   openclaw "$alias" automation-execute --help | grep -F -- '--hash'
 done
 
-# should reconcile list and run exact manifest ids with native history
+# should reconcile exact manifest ids with disabled native state
 cd "$TMPDIR/automation-agent"
 cp "$GITHUB_WORKSPACE/examples/automations/operators.yaml" automations.yaml
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw as automations sync --json | jq -e 'all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -e '.jobs | any(.id == "paused-review" and .nativeEnabled == false)'
-openclaw as automations list | grep -F 'paused-review' | grep -F 'automation-disabled'
+
+# should distinguish desired disabled state from native observation in the human table
+cd "$TMPDIR/automation-agent"
+output=$(NO_COLOR=1 openclaw as automations list)
+printf '%s\n' "$output" | grep -F 'paused-review' | grep -F 'disabled'
+printf '%s\n' "$output" | grep -F 'desired=disabled'
+printf '%s\n' "$output" | grep -F 'applicable=yes'
+printf '%s\n' "$output" | grep -F 'native=disabled'
+
+# should queue exact manifest ids and retain native history
+cd "$TMPDIR/automation-agent"
 run_id=$(openclaw as automations run identity --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId')
 bun "$GITHUB_WORKSPACE/scripts/automation-example-task.ts" wait-run identity "$run_id"
 openclaw agent-system automations runs identity --run-id "$run_id" --limit 1 --offset 0 --json | jq -e '.entries[0].execution == "ok" and .entries[0].delivery != "not-delivered"'
@@ -118,6 +128,9 @@ openclaw gateway call cron.get --params "{\"id\":\"$unmanaged_id\"}" --json | jq
 printf 'Review the latest repository changes.\n' >> prompt.md
 if openclaw agent-system automations list --json > drift.json; then exit 1; fi
 jq -e '.findings | any(.stepId == "paused-review" and .code == "automation-drift")' drift.json
+if NO_COLOR=1 openclaw agent-system automations list > "$TMPDIR/automation-drift.txt"; then exit 1; fi
+grep -F 'paused-review' "$TMPDIR/automation-drift.txt" | grep -F 'drift'
+grep -F 'automation-drift' "$TMPDIR/automation-drift.txt"
 openclaw agent-system automations sync --json | jq -e '.outcomes | any(.stepId == "paused-review" and .status == "updated")'
 openclaw gateway call cron.get --params "{\"id\":\"$unmanaged_id\"}" --json | jq -S '(.job // .) | {id, enabled, schedule, sessionTarget, wakeMode, payload, delivery}' | diff - unmanaged-before.json
 openclaw gateway call cron.remove --params "{\"id\":\"$unmanaged_id\"}" --json | jq -e '.ok == true'
