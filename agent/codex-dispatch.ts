@@ -397,7 +397,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
     'Creation attempt: ' + ((record.deniedCreations?.length ?? 0) + 1) + '.',
     'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by --plugin-data and dispatchRuntime.pluginData. Send ' +
       JSON.stringify({ action: 'context', id: record.id }) +
-      ' as JSON on stdin using a quoted heredoc or native stdin support. Follow the verified context instructions and selected assessment skill. Preserve the saved model and effort. Stop on verification failure.',
+      ' as JSON on stdin using a quoted heredoc or native stdin support. This runtime writes private plugin state. If the filesystem sandbox blocks that access with EPERM or EACCES, request native host approval for this exact fixed command and retry the same request; do not change profile permissions or bypass an approval denial. A busy response is transient: pause briefly and retry the same request up to three times. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Stop on an actual verification failure, approval denial, or persistent busy response. Use these same transport and approval rules for result submission.',
   ].join('\n\n');
 }
 

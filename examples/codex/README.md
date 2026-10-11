@@ -115,6 +115,11 @@ instructions, and an altered native launch is still rejected before investigatio
 Have the child request context while intake is reconciling its creation receipt;
 the child must wait for the journal lease and continue, rather than stopping on
 transient contention. Result submission must use the same bounded waiting behavior.
+Run a fresh assessment without follow-up coaching: if its sandbox blocks private
+plugin-state access, it must request native approval for the exact runtime command
+and continue only after approval and verified context. An actual approval denial or
+verification failure must stop it. Verify the retained plan, one completion notice,
+and a subsequent quiet poll without duplicate chats or worktrees.
 
 ## Setup
 
