@@ -102,6 +102,17 @@ without retaining either supplied identity or creating another chat. Use distinc
 cat-themed skill and guidance markers to distinguish both inputs in the retained
 assessment; these markers must not grant implementation or publication authority.
 
+For the native fallback pilot, omit both checkout mappings and the working directory.
+With no saved project, verify one bare source and one detached base checkout, then
+register that exact base and resume the retained assignment. After native worktree
+creation enables per-worktree Git configuration, the source must remain bare while
+both the base and assessment checkout still accept ordinary `git status`. Repeat
+with an already registered managed base carrying the old shared `core.bare=true`
+setting: preparation must repair the owned configuration without replacing checkouts.
+An unrelated saved project with invalid Git configuration must remain a blocker.
+Verify that the launch carries its receipt once, context supplies the assessment
+instructions, and an altered native launch is still rejected before investigation.
+
 ## Setup
 
 ```bash

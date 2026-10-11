@@ -5,7 +5,10 @@ import { resolve } from 'node:path';
 import { nativeObject } from './automation-gateway.ts';
 import type { DispatchProject } from './codex-dispatch-state.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
-import { ensureRepositoryDirectory } from '../tools/git/repository-service.ts';
+import {
+  ensureRepositoryDirectory,
+  RepositoryPreparationError,
+} from '../tools/git/repository-service.ts';
 import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
 import { resolveToolExecutable } from '../api/cli-runner.ts';
 
@@ -102,7 +105,7 @@ export async function resolveDispatchProject(
     (await git(project.path, ['rev-parse', '--is-bare-repository'])) !== 'false' ||
     (await git(project.path, ['rev-parse', '--show-toplevel'])) !== project.path
   )
-    throw new Error('dispatch-project-workspace-required');
+    throw new RepositoryPreparationError('dispatch-project-workspace-required', project.path);
   const branch = input.defaultBranch;
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(branch))
     throw new Error('dispatch-starting-ref-invalid');

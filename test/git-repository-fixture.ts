@@ -52,6 +52,7 @@ export class RepositoryGit implements GitWorktreeGitRunner {
       return ok(this.commit);
     }
     if (argv[0] === 'config') {
+      if (argv.includes('core.bare') || argv.includes('extensions.worktreeConfig')) return ok();
       if (argv.includes('--get')) return ok(repo.id);
       repo.id = argv.at(-1);
       await writeFile(join(cwd, '.fake-git.json'), JSON.stringify(repo));

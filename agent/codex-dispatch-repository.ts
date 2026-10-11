@@ -107,6 +107,12 @@ export default async function prepareDispatchRepository(
       const form = await service.verify(context, repository.path, input.cloneUrl);
       let checkout = repository.path;
       if (form === 'bare') {
+        const run = async (cwd: string, argv: string[]) =>
+          (await context.git.run({ cwd, argv, signal: context.signal })).stdout.trim();
+        // native codex enables worktree config; keep bare=true local to the bare source.
+        await run(repository.path, ['config', 'extensions.worktreeConfig', 'true']);
+        await run(repository.path, ['config', '--worktree', 'core.bare', 'true']);
+        await run(repository.path, ['config', '--local', 'core.bare', 'false']);
         checkout = join(
           layout.worktreeRoot,
           gitWorktreeRepositoryDirectoryName(input.repositoryId).replace(/\.git$/u, ''),
@@ -122,8 +128,6 @@ export default async function prepareDispatchRepository(
         await dependencies.retain(preparation);
         await ensureRepositoryDirectory(layout.worktreeRoot, true, true);
         await ensureRepositoryDirectory(dirname(checkout), true, true);
-        const run = async (cwd: string, argv: string[]) =>
-          (await context.git.run({ cwd, argv, signal: context.signal })).stdout.trim();
         if ((await repositoryPathKind(checkout)) === 'absent') {
           const registered = await run(repository.path, ['worktree', 'list', '--porcelain']);
           if (registered.split('\n').includes('worktree ' + checkout))

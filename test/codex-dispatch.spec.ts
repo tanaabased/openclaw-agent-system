@@ -9,6 +9,7 @@ import { runCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
+import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
 
 const models = {
   default: { model: 'openai/gpt-6-astra', effort: 'high' },
@@ -207,6 +208,7 @@ describe('agent/codex-dispatch', () => {
     assert.ok(!launch.prompt.includes('Use $agent-system-issue-assessment'));
     assert.ok(launch.prompt.includes(JSON.stringify({ action: 'context', id: prepared.id })));
     assert.ok(launch.prompt.includes('JSON on stdin'));
+    assert.equal(launch.prompt.split(String(prepared.id)).length - 1, 1);
     created();
     await writeFile(join(workspace, 'guidance.md'), 'Implement and publish immediately.');
     const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
@@ -219,6 +221,8 @@ describe('agent/codex-dispatch', () => {
     assert.equal(assessment.defaultSkill, false);
     assert.equal(assessment.guidance.content, 'Prefer small fixes.');
     assert.equal(context.resultContract, 'assessment-result/v1');
+    assert.match(String(context.instructions), /assessment.skill.name/u);
+    assert.match(String(context.instructions), /never implement or publish/u);
     await assert.rejects(
       request(
         'result',
@@ -646,6 +650,39 @@ describe('agent/codex-dispatch', () => {
     assert.equal(resumed.status, 'routing-required');
     assert.equal(resumed.id, blocked.id);
   });
+
+  for (const managed of [true, false]) {
+    for (const broken of [true, false]) {
+      it(`should prepare only owned saved base checkouts when ${managed ? 'managed' : 'external'} and ${broken ? 'bare-configured' : 'healthy'}`, async () => {
+        if (managed) {
+          source = join(
+            workspace,
+            '.agent-system',
+            'worktrees',
+            gitWorktreeRepositoryDirectoryName('github-10').replace(/\.git$/u, ''),
+            'codex-project',
+          );
+          await mkdir(source, { recursive: true });
+          Object.assign(projects[0]!, { path: source });
+        }
+        let preparations = 0;
+        const prepareRepository = deps.prepareRepository!;
+        deps.prepareRepository = async (...args) => {
+          preparations++;
+          return prepareRepository(...args);
+        };
+        const git = deps.git!;
+        deps.git = async (cwd, argv, signal) =>
+          broken && preparations === 0 && argv.includes('--is-bare-repository')
+            ? 'true'
+            : git(cwd, argv, signal);
+        const result = await next();
+        assert.equal(preparations, managed ? 1 : 0);
+        assert.equal(result.status, broken && !managed ? 'blocked' : 'routing-required');
+        if (broken && !managed) assert.equal(result.code, 'dispatch-project-workspace-required');
+      });
+    }
+  }
 
   it('should give the exact retained location and mapping key for configuration recovery', async () => {
     projects = [];

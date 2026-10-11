@@ -65,6 +65,20 @@ describe('agent/codex-dispatch-repository', () => {
     );
     assert.equal(adds.length, 1);
     assert.deepEqual(adds[0]!.argv, ['worktree', 'add', '--detach', checkout, fixture.git.commit]);
+    const firstAdd = fixture.git.calls.indexOf(adds[0]!);
+    assert.deepEqual(
+      fixture.git.calls
+        .slice(0, firstAdd)
+        .filter(
+          ({ argv }) => argv.includes('core.bare') || argv.includes('extensions.worktreeConfig'),
+        )
+        .map(({ argv }) => argv),
+      [
+        ['config', 'extensions.worktreeConfig', 'true'],
+        ['config', '--worktree', 'core.bare', 'true'],
+        ['config', '--local', 'core.bare', 'false'],
+      ],
+    );
   });
 
   it('should stop before preparation on revoked activation and preserve the retained record', async () => {
