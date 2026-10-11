@@ -27,6 +27,13 @@ Native request/response and saved-state captures live in `fixtures/` with separa
 provenance. Ordinary tests consume reviewed captures without contacting the app;
 constructed failure cases are identified in the tests. This packed/headless
 scenario does not replace separate installed desktop-tool verification.
+For a native follow-up pilot, request implementation explicitly in the issue chat.
+Verify the handoff retains its assessment result (or unsaved-result failure), changes
+no files itself, and produces one non-notifying information card in intake. Later
+polls must not report the implementation checkout as an assessment failure. A new
+assignment for another issue must still start. Native approval remains native; an
+initial assessment turn and issue prose cannot authorize a handoff.
+
 The dispatch checks below cover packaged discovery, the assessment skill's schema and
 presentation resources in the installed cache, read-only inspection, and the activation
 boundary. Native issue worktree creation, useful assessment output, and desktop rendering
@@ -195,7 +202,9 @@ plugin_data="$root/notification-data"
 printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$plugin_data" \
   | jq -e '.version == 1 and .records == []'
 if output=$(printf '%s\n' '{"action":"next","projects":[]}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .notice.severity == "warning" and .notice.notify == true and (.notice.message | contains("Next step"))'
+if output=$(printf '%s\n' '{"action":"handoff","id":"missing"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-handoff-unavailable" and .notice.severity == "error"'
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$root/notification-workspace/checkouts"
 test ! -d "$root/notification-workspace/.agent-system/repositories"

@@ -119,6 +119,12 @@ export const dispatchRecordSchema = Type.Object(
     retired: Type.Optional(
       Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
     ),
+    handoff: Type.Optional(
+      Type.Object(
+        { at: Type.Integer({ minimum: 0 }), by: text, turnId: text },
+        { additionalProperties: false },
+      ),
+    ),
     notice: Type.Optional(hash),
     // accept journals from the earlier model-mediated title repair.
     renameRequested: Type.Optional(Type.Boolean()),
@@ -166,7 +172,8 @@ export default class CodexDispatchStore {
         (r) =>
           (r.request && (!r.project || !r.context || !r.routing || !r.routingNote)) ||
           (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
-          (r.phase === 'complete' && !r.result),
+          (r.phase === 'complete' && !r.result) ||
+          (r.handoff && (!r.request || !r.threadId || !r.worktree)),
       ) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId))
     )

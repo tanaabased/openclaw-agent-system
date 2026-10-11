@@ -1,6 +1,7 @@
 import process from 'node:process';
 
 import codexHeartbeat from './codex-heartbeat.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
 import { inspectCodexIntake, runCodexIntake } from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
@@ -228,7 +229,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, retry-denied, reset, or retire. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a paused schedule and a closed issue; it preserves evidence but does not archive chats or remove worktrees. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, handoff, retry-denied, reset, or retire. Handoff previews a digest-bound end to assessment monitoring after a user follow-up; it never authorizes implementation. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a paused schedule and a closed issue; it preserves evidence but does not archive chats or remove worktrees. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }
@@ -246,6 +247,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         'reconcile',
         'context',
         'result',
+        'handoff',
         'retry-denied',
         'reset',
         'retire',
@@ -367,6 +369,15 @@ runCodexRuntime().catch((error: unknown) => {
         : /^(?:dispatch|assessment-result|heartbeat)-[a-z-]+$/u.test(message)
           ? { code: message }
           : {};
-  process.stderr.write(`${JSON.stringify({ status: 'error', ...details, message })}\n`);
+  const notice = ['intake', 'dispatch', 'model-routing'].includes(process.argv[2] ?? '')
+    ? codexIssueNotice({
+        event: 'failure',
+        changed: true,
+        code: 'code' in details ? details.code : undefined,
+      })
+    : undefined;
+  process.stderr.write(
+    `${JSON.stringify({ status: 'error', ...details, message, ...(notice ? { notice } : {}) })}\n`,
+  );
   process.exitCode = 1;
 });

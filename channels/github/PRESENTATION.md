@@ -34,6 +34,33 @@ Use a short bulleted fact list when a card primarily presents metadata. A
 summary sentence may replace the list when the component primarily presents an
 outcome or call to action.
 
+## Codex Issue Assignment Notices
+
+Use the shared card format for intake and assessment notices:
+
+- **ℹ️ Information:** a normal transition or recovery.
+- **⚠️ Warning:** a decision, setup action, or temporary provider delay.
+- **❌ Error:** an operation failed or retained work could not be verified.
+
+Lead with a concrete title, then **Issue** and **Chat** links when available,
+**What happened**, and **Next step**. Include necessary project, folder, or actor
+facts. Put a bounded **Technical detail** code last; never use raw provider errors
+as the visible explanation. Keep the text meaningful without emoji or color.
+Severity describes the situation; it does not decide whether to notify the user.
+The runtime supplies change and notification flags. Repeated unchanged outcomes
+need no additional card. Native approval requests keep their native UI.
+
+```markdown
+## ℹ️ Work continuing in the issue chat
+
+- **Issue:** [example#7](https://github.com/example/project/issues/7)
+- **Chat:** [Open issue chat](codex://threads/example)
+- **What happened:** The assessment watcher has stopped checking this chat. Your conversation and local changes are retained.
+- **Next step:** Continue in the existing issue chat. No reset or reassignment is needed.
+```
+
+This card reports a monitoring transition, not completion of the issue.
+
 ## Session Appearance
 
 Use the routed OpenClaw agent for the session's visible owner. Prefer red for
@@ -262,8 +289,8 @@ supplied instructions, not proof of compliance.
 Preserve each question and its context. Setup obstacles use **Issue assessment blocked**
 with **Action** and **Diagnostic**, plus retained evidence and investigation; keep them
 distinct from missing requirements. Show the routing card when saved routing is available.
-For manual Codex project registration, use **⚠️ Action required: add a Codex project**,
-leading with separate **Project name**, **Folder path**, and **Action** facts. Distinguish
+For manual Codex project registration in issue intake, use **⚠️ Add the project to continue**,
+including separate **Project name**, **Folder path**, and **Next step** facts. Distinguish
 the suggested name from the exact required primary folder; retain issue and diagnostic context.
 
 ## To GitHub

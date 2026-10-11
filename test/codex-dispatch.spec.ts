@@ -69,7 +69,7 @@ describe('agent/codex-dispatch', () => {
   const next = () => request('next', { projects });
   async function prepare() {
     const selected = await next();
-    assert.equal(selected.status, 'routing-required');
+    assert.equal(selected.status, 'routing-required', JSON.stringify(selected));
     const prepared = await request('prepare', {
       id: selected.id,
       digest: selected.digest,
@@ -189,6 +189,103 @@ describe('agent/codex-dispatch', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should end assessment monitoring after authorized continuation without rewriting the result or checkout', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    now += 300001;
+    const missing = await next();
+    assert.equal(missing.code, 'dispatch-assessment-result-missing');
+    const before = (await request('inspect')).records as Record<string, unknown>[];
+    native!.turnId = 'authorized-follow-up';
+    native!.followUpUserTurn = true;
+    const ordinaryGit = deps.git!;
+    deps.git = async (cwd, argv) =>
+      argv.includes('HEAD')
+        ? '2'.repeat(40)
+        : argv[0] === 'status'
+          ? ' M implementation.ts'
+          : ordinaryGit(cwd, argv);
+    const operator = {
+      threadId: 'operator',
+      activation: async () => {
+        throw new Error('schedule changed');
+      },
+    };
+    const preview = await request('handoff', { id: prepared.id }, operator);
+    assert.equal(preview.status, 'handoff-available');
+    await assert.rejects(
+      request('handoff', { id: prepared.id, digest: 'stale' }, operator),
+      /dispatch-recovery-stale/,
+    );
+    const transitioned = await request(
+      'handoff',
+      { id: prepared.id, digest: preview.digest },
+      operator,
+    );
+    assert.equal(transitioned.status, 'handed-off');
+    assert.equal(transitioned.severity, 'info');
+    assert.equal(transitioned.notify, false);
+    assert.equal(transitioned.outcome, undefined);
+    const after = (await request('inspect')).records as Record<string, unknown>[];
+    assert.deepEqual(after[0]!.result, before[0]!.result);
+    assert.equal(after[0]!.worktree, worktree);
+    assert.equal((await request('handoff', { id: prepared.id }, operator)).changed, false);
+    deps.native!.find = async () => {
+      throw new Error('must not poll handed-off chat');
+    };
+    const notice = await next();
+    assert.equal(notice.status, 'handed-off');
+    assert.equal(notice.changed, true);
+    assert.equal(notice.notify, false);
+    assert.deepEqual(await next(), { status: 'idle', changed: false });
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-handed-off/,
+    );
+    fixture.item.state = 'closed';
+    const retire = await request('retire', { id: prepared.id }, { threadId: 'operator' });
+    assert.equal(retire.status, 'retire-available');
+  });
+
+  it('should require a later user turn and preserve native chat and repository checks for handoff', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const child = { threadId: 'issue-thread' };
+    await assert.rejects(
+      request('handoff', { id: prepared.id }),
+      /dispatch-handoff-caller-mismatch/,
+    );
+    await assert.rejects(
+      request('handoff', { id: prepared.id }, child),
+      /dispatch-handoff-user-turn-required/,
+    );
+    native!.followUpUserTurn = true;
+    native!.turnId = 'follow-up';
+    const preview = await request('handoff', { id: prepared.id }, child);
+    native!.turnId = 'newer-follow-up';
+    await assert.rejects(
+      request('handoff', { id: prepared.id, digest: preview.digest }, child),
+      /dispatch-recovery-stale/,
+    );
+    const original = deps.git!;
+    deps.git = async (cwd, argv) =>
+      argv[0] === 'remote' ? 'https://github.com/other/repo.git' : original(cwd, argv);
+    await assert.rejects(
+      request('handoff', { id: prepared.id }, child),
+      /dispatch-worktree-diverged/,
+    );
+    deps.git = original;
+    native!.cwd = source;
+    await assert.rejects(
+      request('handoff', { id: prepared.id }, child),
+      /dispatch-native-readback-diverged/,
+    );
   });
 
   async function configureAssessment(assessment: unknown) {
@@ -629,7 +726,7 @@ describe('agent/codex-dispatch', () => {
     const blocked = await next();
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
     assert.equal(blocked.changed, true);
-    assert.match(String(blocked.message), /^## ⚠️ Action required: add a Codex project\n/u);
+    assert.match(String(blocked.message), /^## ⚠️ Add the project to continue\n/u);
     assert.ok(String(blocked.message).includes('- **Project name:** repo\n'));
     assert.ok(String(blocked.message).includes('- **Folder path:** ' + source + '\n'));
     assert.match(String(blocked.message), /https:\/\/github.com\/owner\/repo\/issues\/3/u);

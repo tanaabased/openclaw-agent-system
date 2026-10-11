@@ -68,6 +68,38 @@ describe('agent/codex-dispatch-project', () => {
     );
   });
 
+  it('should retain changed implementation work at handoff while still requiring repository ownership', async () => {
+    const selected = await resolveDispatchProject(
+      {
+        projects: [project(source)],
+        repository: 'owner/repo',
+        defaultBranch: 'main',
+        workspace: root,
+      },
+      git,
+    );
+    const changed: DispatchGit = async (cwd, argv) =>
+      argv.includes('HEAD')
+        ? '2'.repeat(40)
+        : argv[0] === 'status'
+          ? ' M implementation.ts'
+          : git(cwd, argv);
+    assert.equal(
+      await verifyDispatchWorktree(selected, other, 'owner/repo', changed, 'handoff'),
+      other,
+    );
+    await assert.rejects(
+      verifyDispatchWorktree(
+        selected,
+        other,
+        'owner/repo',
+        async (cwd, argv) => (argv.includes('--git-common-dir') ? other : changed(cwd, argv)),
+        'handoff',
+      ),
+      /dispatch-worktree-diverged/,
+    );
+  });
+
   it('should reject unsafe refs and changed or unrelated assessment worktrees', async () => {
     const input = {
       projects: [project(source)],

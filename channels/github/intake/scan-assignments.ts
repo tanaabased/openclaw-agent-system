@@ -161,6 +161,7 @@ export default async function scanAssignments(input: AssignmentScanInput) {
         status: 'ready',
         changed: records.length > 0 || recovered,
         admitted: records.length,
+        ...(recovered ? { recovered: true } : {}),
         baselineAt: state.baselineAt,
         checkpoint: state.checkpoint,
       };

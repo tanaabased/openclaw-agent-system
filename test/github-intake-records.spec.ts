@@ -50,6 +50,7 @@ describe('channels/github/intake/records', () => {
       assert.equal((await store.read())!.records.length, 0);
       events[0]!.createdAt = future;
       const accepted = await scanAssignments({ ...input, now: baseline + 120_000 });
+      assert.ok('admitted' in accepted);
       assert.equal(accepted.admitted, 1);
       const state = (await store.read())!;
       assert.equal(state.records[0]!.assignment.nodeId, 'E_assignment');

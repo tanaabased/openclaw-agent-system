@@ -2,6 +2,7 @@ import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import codexIssueNotice from './codex-issue-notice.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
@@ -187,7 +188,7 @@ export async function runCodexIntake(
     const current = await selectCodexIntake(pluginData, deps);
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const { policy, digest } = current.policy;
-    return await scanAssignments({
+    const result = await scanAssignments({
       store: current.store,
       workspaceDir: current.workspace,
       agentId: current.agentId,
@@ -211,6 +212,20 @@ export async function runCodexIntake(
           throw new IntakeError('intake-policy-changed');
       },
     });
+    return {
+      ...result,
+      ...(result.status === 'blocked'
+        ? {
+            notice: codexIssueNotice({
+              event: 'failure',
+              changed: result.changed,
+              code: result.code,
+            }),
+          }
+        : 'recovered' in result && result.recovered
+          ? { notice: codexIssueNotice({ event: 'intake-recovered', changed: true }) }
+          : {}),
+    };
   } catch (error) {
     if (
       !activate &&
@@ -239,7 +254,12 @@ export async function runCodexIntake(
       const changed = state.blocker?.code !== error.code;
       if (changed)
         await save({ ...state, blocker: { code: error.code, since: now, retryAfter: now } });
-      return { status: 'blocked', code: error.code, changed };
+      return {
+        status: 'blocked',
+        code: error.code,
+        changed,
+        notice: codexIssueNotice({ event: 'failure', code: error.code, changed }),
+      };
     });
   }
 }

@@ -173,6 +173,9 @@ describe('agent/codex-dispatch-native', () => {
     const found = await native.find({ ...input, threadId: 'matching' });
     assert.equal(found?.turnId, 'follow-up');
     assert.equal(found?.turnStatus, 'inProgress');
+    assert.equal(found?.followUpUserTurn, false);
+    latest = { id: 'human', status: 'inProgress', items: [{ type: 'userMessage', content: [] }] };
+    assert.equal((await native.find({ ...input, threadId: 'matching' }))?.followUpUserTurn, true);
     latest = null;
     const unavailable = await native.find({ ...input, threadId: 'matching' });
     assert.equal(unavailable?.turnId, undefined);

@@ -173,6 +173,24 @@ After verifying creation provenance, worktree,
 and model settings, the runtime corrects a changed native title and verifies the rename
 before assessment; the display title does not establish chat identity.
 
+When you explicitly ask the issue chat to continue with implementation, its agent
+records a `handoff` before changing the checkout. This ends assessment monitoring;
+it does not mark the issue complete or grant permission to publish. The existing
+chat, worktree, and recorded outcome are retained. If an unsaved assessment is still
+being checked after you approved further work, recover from the issue or operator
+chat with `dispatchRuntime` input `{"action":"handoff","id":"<assessment-receipt>"}`,
+then repeat with the returned `digest`. The runtime verifies the existing native
+chat and repository and a later user turn; the agent must establish the human's
+explicit authorization from the conversation. Keep the existing work rather than
+resetting and reassigning it.
+
+Intake shows information cards for progress and recovery, warnings for decisions or
+setup, and errors for failed operations. Each includes what happened and the next
+step, with technical details last. A handoff produces one non-notifying information
+card. Unchanged polling and already-reported blockers produce no new card. Failures
+that prevent reading or saving the tracking records cannot be deduplicated safely;
+they remain visible. Native approval requests retain their native UI.
+
 To repeat assessment through assignment intake, use `dispatchRuntime` with
 `{"action":"reset","id":"<assessment-receipt>"}` from an operator chat, then repeat
 with the returned `digest`. Reset requires a completed assessment and native confirmation

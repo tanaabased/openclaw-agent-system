@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
 import { Value } from 'typebox/value';
@@ -11,6 +12,7 @@ import {
   type AssessmentResult,
 } from './assessment-result.ts';
 import { automationHash } from './automation-hash.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -35,9 +37,7 @@ import { assessmentSchema, type RoutingDecision } from './model-routing.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import assignmentCard from '../channels/github/conversation/presentation/assignment-card.ts';
 import renderAssessmentResult from '../channels/github/conversation/presentation/assessment-result.ts';
-import githubNotificationCard, {
-  githubNotificationMarkdownText,
-} from '../channels/github/conversation/presentation/card.ts';
+import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
 import {
   nativeRoutingMetadata,
   routingMetadata,
@@ -164,83 +164,76 @@ function noticeDigest(record: DispatchRecord) {
     phase: record.phase,
     threadId: record.threadId,
     result: record.result,
+    handoff: record.handoff,
   });
 }
 function notice(record: DispatchRecord, intake?: IntakeRecord) {
   const digest = noticeDigest(record);
   const changed = digest !== record.notice;
+  const hadNotice = record.notice !== undefined;
   record.notice = digest;
   const result = record.result;
-  const registration =
-    result?.outcome === 'operator-setup-blocker' &&
-    result.code === 'dispatch-project-registration-unavailable' &&
-    intake &&
-    record.repositoryPreparation?.checkout;
+  const failure = !record.handoff && result?.outcome === 'operator-setup-blocker';
+  const event = record.handoff
+    ? 'handoff'
+    : result?.outcome === 'operator-setup-blocker'
+      ? 'failure'
+      : result
+        ? result.outcome
+        : hadNotice && changed
+          ? 'recovered'
+          : 'started';
+  const registration = failure && result.code === 'dispatch-project-registration-unavailable';
   return {
     id: record.id,
-    status: record.phase,
+    status: record.handoff ? 'handed-off' : record.phase,
     changed,
     threadId: record.threadId,
-    ...(result?.outcome === 'operator-setup-blocker'
-      ? {
-          code: result.code,
-          message: githubNotificationCard({
-            emoji: registration ? '⚠️' : '⏸️',
-            title: registration
-              ? 'Action required: add a Codex project'
-              : 'Issue assessment blocked',
-            facts: [
-              ...(registration
-                ? [
-                    {
-                      label: 'Project name',
-                      value: githubNotificationMarkdownText(intake.repository.name),
-                    },
-                    {
-                      label: 'Folder path',
-                      value: githubNotificationMarkdownText(registration),
-                    },
-                    {
-                      label: 'Action',
-                      value:
-                        'Add a local Codex project with this exact folder as its primary folder. The project name above is suggested; the folder must match. Scheduled checks will verify the folder and resume this assignment automatically.',
-                    },
-                  ]
-                : []),
-              ...(intake
-                ? [
-                    {
-                      label: 'Issue',
-                      value:
-                        '[' +
-                        githubNotificationMarkdownText(
-                          repository(intake) + '#' + intake.issue.number,
-                        ) +
-                        '](' +
-                        issueUrl(intake) +
-                        ')',
-                    },
-                    {
-                      label: 'Assigned by',
-                      value:
-                        '[' +
-                        githubNotificationMarkdownText(intake.assignment.actor.login) +
-                        '](https://github.com/' +
-                        intake.assignment.actor.login +
-                        ')',
-                    },
-                  ]
-                : []),
-              ...(!registration
-                ? [{ label: 'Action', value: githubNotificationMarkdownText(result.remediation) }]
-                : []),
-              { label: 'Diagnostic', value: githubNotificationMarkdownText(result.code) },
-            ],
-          }),
-        }
-      : result
-        ? { outcome: result.outcome, summary: result.summary }
+    ...(result && !record.handoff ? { outcome: result.outcome, summary: result.summary } : {}),
+    ...(failure ? { code: result.code } : {}),
+    ...codexIssueNotice({
+      event,
+      changed,
+      ...(failure ? { code: result.code } : {}),
+      ...(intake
+        ? {
+            issue: { label: repository(intake) + '#' + intake.issue.number, url: issueUrl(intake) },
+          }
         : {}),
+      threadId: record.threadId,
+      ...(failure &&
+      (result.code.startsWith('repository-') ||
+        !/^(dispatch|intake|model-routing|assessment-result)-/u.test(result.code))
+        ? { action: result.remediation }
+        : {}),
+      facts: [
+        ...(intake
+          ? [
+              {
+                label: 'Assigned by',
+                value:
+                  '[' +
+                  githubNotificationMarkdownText(intake.assignment.actor.login) +
+                  '](https://github.com/' +
+                  intake.assignment.actor.login +
+                  ')',
+              },
+            ]
+          : []),
+        ...(registration && record.repositoryPreparation?.checkout
+          ? [
+              {
+                label: 'Project name',
+                value: githubNotificationMarkdownText(intake!.repository.name),
+              },
+              {
+                label: 'Folder path',
+                value: githubNotificationMarkdownText(record.repositoryPreparation.checkout),
+              },
+            ]
+          : []),
+      ],
+    }),
   };
 }
 
@@ -417,6 +410,79 @@ export async function runCodexDispatch(
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
+  if (action === 'handoff') {
+    if (
+      Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||
+      typeof input.id !== 'string' ||
+      (input.digest !== undefined && typeof input.digest !== 'string')
+    )
+      throw new Error('dispatch-request-invalid');
+    return store.exclusive(async (state, save) => {
+      const record = state.records.find((entry) => entry.id === input.id);
+      if (
+        !record?.request ||
+        !record.project ||
+        !record.threadId ||
+        !record.worktree ||
+        record.reset ||
+        record.retired
+      )
+        throw new Error('dispatch-handoff-unavailable');
+      if (
+        caller === record.sourceThreadId ||
+        state.records.some(
+          (entry) =>
+            entry.id !== record.id && [entry.threadId, entry.receiptThreadId].includes(caller),
+        )
+      )
+        throw new Error('dispatch-handoff-caller-mismatch');
+      const admitted = await current.store.read();
+      const intake = admitted?.records.find((entry) => entry.id === record.intakeId);
+      if (!intake) throw new Error('dispatch-intake-record-missing');
+      const native = await withNative(current, deps, (host) =>
+        host.find({
+          sourceThreadId: record.sourceThreadId,
+          prompt: record.request!.prompt,
+          createdAfter: record.createdAt,
+          threadId: record.threadId,
+        }),
+      );
+      if (
+        !native ||
+        native.id !== record.threadId ||
+        (await realpath(native.cwd)) !== (await realpath(record.worktree))
+      )
+        throw new Error('dispatch-native-readback-diverged');
+      await verifyDispatchWorktree(
+        record.project,
+        native.cwd,
+        repository(intake),
+        deps.git,
+        'handoff',
+      );
+      if (record.handoff)
+        return { status: 'handed-off', changed: false, id: record.id, threadId: record.threadId };
+      if (!native.turnId || !native.followUpUserTurn)
+        throw new Error('dispatch-handoff-user-turn-required');
+      const digest = automationHash({ record, manifest: current.digest, turnId: native.turnId });
+      if (input.digest === undefined)
+        return {
+          status: 'handoff-available',
+          id: record.id,
+          digest,
+          threadId: record.threadId,
+          instruction:
+            'Only after the user requests continuation outside assessment, apply this handoff to end assessment monitoring. It preserves all results and files and grants no implementation or publication authority.',
+        };
+      if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+      record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
+      const previousNotice = record.notice;
+      const response = notice(record, intake);
+      record.notice = previousNotice;
+      await save();
+      return response;
+    }, true);
+  }
   const operatorRecovery = action === 'retry-denied';
   const operatorReset = action === 'reset';
   const operatorRetire = action === 'retire';
@@ -484,10 +550,22 @@ export async function runCodexDispatch(
       if (action === 'next') {
         if (Object.keys(input).some((key) => key !== 'projects'))
           throw new Error('dispatch-request-invalid');
+        const handedOff = state.records.find(
+          (entry) => !entry.retired && entry.handoff && entry.notice !== noticeDigest(entry),
+        );
+        if (handedOff) {
+          const response = notice(
+            handedOff,
+            admitted.records.find((entry) => entry.id === handedOff.intakeId),
+          );
+          await save();
+          return response;
+        }
         const completed = state.records.find(
           (record) =>
             !record.reset &&
             !record.retired &&
+            !record.handoff &&
             record.phase === 'complete' &&
             record.notice !== noticeDigest(record),
         );
@@ -502,6 +580,7 @@ export async function runCodexDispatch(
         const pending = state.records.find(
           (record) =>
             !record.retired &&
+            !record.handoff &&
             record.request &&
             record.phase !== 'complete' &&
             (record.retryAfter ?? 0) <= now,
@@ -530,7 +609,8 @@ export async function runCodexDispatch(
         }
         if (
           state.records.filter(
-            (record) => !record.retired && record.request && record.phase !== 'complete',
+            (record) =>
+              !record.retired && !record.handoff && record.request && record.phase !== 'complete',
           ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
         )
           return { status: 'at-capacity', changed: false };
@@ -538,6 +618,7 @@ export async function runCodexDispatch(
         for (const entry of admitted.records) latest.set(issueKey(entry), entry);
         const intake = [...latest.values()].find((entry) => {
           const previous = state.records.findLast((record) => record.issueKey === issueKey(entry));
+          if (previous?.handoff && !previous.retired && !previous.reset) return false;
           const retiredAt = previous?.retired?.at ?? previous?.reset?.at;
           if (previous && retiredAt !== undefined)
             return (
@@ -716,6 +797,7 @@ export async function runCodexDispatch(
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
       if (record.reset) throw new Error('dispatch-assessment-reset');
       if (record.retired) throw new Error('dispatch-assessment-retired');
+      if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
       if (operatorRetire) {
         if (
           Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||

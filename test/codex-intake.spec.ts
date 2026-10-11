@@ -60,6 +60,37 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
+  it('should report provider failure once and recovery once without losing new assignments', async () => {
+    const fixture = intakeFixture();
+    let now = baseline;
+    let unavailable = false;
+    const deps = {
+      codexHome,
+      now: () => now,
+      connect: async () => {
+        if (unavailable) throw new Error('sensitive provider output');
+        return fixture.client;
+      },
+    };
+    await runCodexIntake(pluginData, true, deps);
+    unavailable = true;
+    const first = await runCodexIntake(pluginData, false, deps);
+    assert.ok('notice' in first);
+    assert.equal(first.notice?.severity, 'warning');
+    assert.equal(first.notice?.notify, true);
+    assert.doesNotMatch(first.notice!.message, /sensitive provider output/);
+    const repeat = await runCodexIntake(pluginData, false, deps);
+    assert.ok('notice' in repeat);
+    assert.equal(repeat.notice?.notify, false);
+    now += 300001;
+    unavailable = false;
+    const recovered = await runCodexIntake(pluginData, false, deps);
+    assert.ok('notice' in recovered);
+    assert.equal(recovered.notice?.severity, 'info');
+    assert.equal(recovered.notice?.notify, true);
+    assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
+  });
+
   it('should validate native account responses through the shared provider boundary', async () => {
     await symlink('/usr/bin/true', join(root, 'gh'));
     const originalPath = process.env.PATH;

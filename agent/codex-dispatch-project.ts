@@ -120,12 +120,13 @@ export async function resolveDispatchProject(
   return { ...project, commonDir, ref, commit };
 }
 
-/** prove the detached worktree belongs to the selected checkout and exact starting commit. */
+/** prove worktree ownership; assessments additionally require the unchanged starting checkout. */
 export async function verifyDispatchWorktree(
   project: DispatchProject,
   cwd: string,
   repository: string,
   git: DispatchGit = dispatchGit,
+  purpose: 'assessment' | 'handoff' = 'assessment',
 ) {
   const path = await realpath(cwd);
   if (path === project.path) throw new Error('dispatch-worktree-required');
@@ -134,10 +135,10 @@ export async function verifyDispatchWorktree(
     (await realpath(
       await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
     )) !== project.commonDir ||
-    (await git(path, ['rev-parse', 'HEAD'])) !== project.commit
+    (purpose === 'assessment' && (await git(path, ['rev-parse', 'HEAD'])) !== project.commit)
   )
     throw new Error('dispatch-worktree-diverged');
-  if (await git(path, ['status', '--porcelain=v1']))
+  if (purpose === 'assessment' && (await git(path, ['status', '--porcelain=v1'])))
     throw new Error('dispatch-assessment-worktree-changed');
   return path;
 }

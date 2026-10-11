@@ -69,11 +69,14 @@ export default function codexHeartbeat(request: unknown, timeZone?: string) {
 
   const dispatch = request.dispatch;
   if (
-    request.intake.status !== 'ready' ||
+    !['ready', 'blocked'].includes(request.intake.status) ||
     request.intake.changed ||
     dispatch.some(
       (result) =>
-        result.changed || !['idle', 'at-capacity', 'creating', 'busy'].includes(result.status),
+        result.changed ||
+        !['idle', 'at-capacity', 'creating', 'busy', 'assessing', 'handed-off', 'blocked'].includes(
+          result.status,
+        ),
     ) ||
     dispatch.at(-1)!.status === 'busy'
   )

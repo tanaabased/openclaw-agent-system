@@ -14,6 +14,7 @@ export interface DispatchNativeThread {
   status: string;
   turnStatus?: string;
   turnId?: string;
+  followUpUserTurn?: boolean;
 }
 
 function escaped(value: string) {
@@ -83,6 +84,12 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       id: thread.id,
       cwd: await realpath(thread.cwd),
       status: thread.status.type,
+      followUpUserTurn:
+        Array.isArray(thread.turns) &&
+        thread.turns.length > 1 &&
+        nativeObject(latestTurn) &&
+        Array.isArray(latestTurn.items) &&
+        latestTurn.items.some((item) => nativeObject(item) && item.type === 'userMessage'),
       ...(nativeObject(latestTurn) && typeof latestTurn.id === 'string'
         ? { turnId: latestTurn.id }
         : {}),

@@ -92,7 +92,7 @@ export class IntakeError extends Error {
 
 export function intakeRemediation(code: string): string {
   if (code.includes('permission'))
-    return 'Use authorized Install to review the exact scanner command, save native recurring consent, restart Codex, and acknowledge the reload. A saved rule does not prove unattended execution.';
+    return 'Review the exact operation in the native approval prompt. Approval does not prove successful or unattended execution; verify the next run.';
   if (code.includes('profile') || code.includes('model'))
     return 'Configure a supported low model and effort profile, then retry authorized Install; no substitute is selected.';
   if (code.includes('state'))
