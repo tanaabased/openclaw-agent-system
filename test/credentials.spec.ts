@@ -264,9 +264,9 @@ describe('cli/credentials', () => {
       workspaceDir: '/workspace',
     });
 
-    assert.deepEqual(test.records.output, [
-      'unchanged  op credential for data is not stored\nstore      file\n',
-    ]);
+    assert.match(test.records.output.join(''), /scope +one store \(file\)/u);
+    assert.match(test.records.output.join(''), /unchanged +file +op credential is not stored/u);
+    assert.deepEqual(test.exitCodes, []);
   });
 
   it('should reject unsupported credential targets', async () => {

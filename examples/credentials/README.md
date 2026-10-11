@@ -152,12 +152,14 @@ openclaw-aimock evidence \
 # should remove every persisted credential copy
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op)
-printf '%s\n' "$output" | grep -F 'removed' | grep -F 'op credential for credential-data'
+printf '%s\n' "$output" | grep -F 'agent' | grep -F 'credential-data'
+printf '%s\n' "$output" | grep -F 'scope' | grep -F 'all stores'
+printf '%s\n' "$output" | grep -F 'removed'
 printf '%s\n' "$output" | grep -F 'gateway cache' | grep -F 'invalidation confirmed'
 
 # should leave the credential absent when removal is repeated
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'unchanged' | grep -F 'op credential for credential-data is not stored'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'unchanged' | grep -F 'op credential is not stored'
 
 # should reject exact native-store validation after the credential is removed
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -173,7 +175,9 @@ printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should remove the explicitly selected file credential
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file | grep -F 'removed' | grep -F 'op credential for credential-data'
+output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file)
+printf '%s\n' "$output" | grep -F 'scope' | grep -F 'one store (file)'
+printf '%s\n' "$output" | grep -F 'removed' | grep -F 'file'
 
 # should reject exact file-store validation after the credential is removed
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -195,7 +199,7 @@ openclaw-gateway stop
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file 2>&1)
 printf '%s\n' "$output" | grep -F 'unchanged'
-printf '%s\n' "$output" | grep -F 'Gateway invalidation is pending'
+printf '%s\n' "$output" | grep -F 'gateway invalidation is pending'
 
 # should fail cache controls with bounded protocol evidence and empty machine stdout at normal and debug levels
 for level in info debug; do
