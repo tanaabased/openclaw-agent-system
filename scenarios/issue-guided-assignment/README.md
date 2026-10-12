@@ -48,6 +48,9 @@ output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
+
+# should activate the repaired hook policy before checking the running route
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data
