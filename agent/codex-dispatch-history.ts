@@ -46,14 +46,26 @@ export default async function dispatchHistory(
       if (turn && !turns.some((entry) => entry.id === turn.id)) turns.push(turn);
     }
   }
+  const turnIds = new Set<string>();
   for (const turn of turns) {
-    if (typeof turn.id !== 'string') throw new Error('dispatch-native-response-invalid');
+    if (typeof turn.id !== 'string' || turnIds.has(turn.id))
+      throw new Error('dispatch-native-response-invalid');
+    turnIds.add(turn.id);
   }
   if (all) {
     const items = await dispatchHistoryPages(request, 'thread/items/list', {
       threadId,
       sortDirection: 'desc',
     });
+    if (
+      items.some(
+        (entry) =>
+          typeof entry.turnId !== 'string' ||
+          !turnIds.has(entry.turnId) ||
+          !nativeObject(entry.item),
+      )
+    )
+      throw new Error('dispatch-native-history-changed');
     for (const turn of turns)
       turn.items = items.filter((entry) => entry.turnId === turn.id).map((entry) => entry.item);
   } else {
@@ -63,6 +75,8 @@ export default async function dispatchHistory(
         turnId: turn.id,
         sortDirection: 'asc',
       });
+      if (items.some((entry) => entry.turnId !== turn.id || !nativeObject(entry.item)))
+        throw new Error('dispatch-native-history-changed');
       turn.items = items.map((entry) => entry.item);
     }
   }

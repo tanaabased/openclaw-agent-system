@@ -14,7 +14,10 @@ export default function prepareDispatchReport(input: {
   now: number;
 }) {
   const ids = new Set(input.cards.map((card) => card.id));
-  const retained = input.reports.find((report) => report.notices.some((id) => ids.has(id)));
+  const retained = input.reports.find(
+    (report) =>
+      report.automationId === input.automationId && report.notices.some((id) => ids.has(id)),
+  );
   if (retained) return retained;
   const batch: CodexNotice[] = [];
   let response = '';
@@ -33,5 +36,10 @@ export default function prepareDispatchReport(input: {
     response = rendered;
   }
   if (!batch.length) throw new Error('dispatch-report-capacity');
-  return { response, createdAt: input.now, notices: batch.map((card) => card.id) };
+  return {
+    response,
+    automationId: input.automationId,
+    createdAt: input.now,
+    notices: batch.map((card) => card.id),
+  };
 }

@@ -151,6 +151,7 @@ const schema = Type.Object(
         Type.Object(
           {
             response: Type.String({ minLength: 1, maxLength: 128000 }),
+            automationId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
             createdAt: Type.Integer({ minimum: 0 }),
             notices: Type.Array(hash, { maxItems: 100 }),
           },

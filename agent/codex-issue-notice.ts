@@ -74,11 +74,11 @@ function failure(code: string): NoticeCopy {
       summary: 'This run has not verified whether more assigned work needs attention.',
       next: 'Complete the current scan and dispatch checks before reporting no updates. Keep existing chats and saved work; do not reset assignments.',
     };
-  if (code === 'dispatch-native-history-incomplete')
+  if (code === 'dispatch-native-history-incomplete' || code === 'dispatch-native-history-changed')
     return {
       severity: 'warning',
       title: 'Codex could not verify the chat history',
-      summary: 'The available history exceeded the bounded recovery check.',
+      summary: 'Codex could not provide a complete, consistent view of the relevant history.',
       next: 'Inspect the existing chat and retained creation receipt before continuing. Do not repeat an uncertain chat creation.',
     };
 

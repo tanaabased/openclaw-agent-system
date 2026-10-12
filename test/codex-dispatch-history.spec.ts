@@ -47,4 +47,17 @@ describe('agent/codex-dispatch-history', () => {
     );
     assert.equal(page, 20);
   });
+  it('should reject item pages that refer to a turn absent from the metadata snapshot', async () => {
+    await assert.rejects(
+      dispatchHistory(
+        async (method) =>
+          method === 'thread/turns/list'
+            ? { data: [{ id: 'old', status: 'completed' }], nextCursor: null }
+            : { data: [{ turnId: 'new', item: { type: 'mcpToolCall' } }], nextCursor: null },
+        'chat',
+        true,
+      ),
+      /dispatch-native-history-changed/,
+    );
+  });
 });

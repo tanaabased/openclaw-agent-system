@@ -30,4 +30,21 @@ describe('agent/codex-dispatch-report', () => {
     assert.notEqual(second.response, first.response);
     assert.equal(second.createdAt, 200);
   });
+  it('should rebuild pending delivery for a replacement schedule instead of emitting the retired automation id', () => {
+    const input = { automationId: 'old', cards: cards(1), reports: [], now: 100 };
+    const old = prepareDispatchReport(input);
+    const replacement = prepareDispatchReport({
+      ...input,
+      automationId: 'replacement',
+      reports: [old],
+      now: 200,
+    });
+    assert.match(replacement.response, /<automation_id>replacement<\/automation_id>/);
+    assert.equal(replacement.createdAt, 200);
+    const legacy = { response: old.response, notices: old.notices, createdAt: old.createdAt };
+    assert.equal(
+      prepareDispatchReport({ ...input, reports: [legacy], now: 200 }).automationId,
+      'old',
+    );
+  });
 });
