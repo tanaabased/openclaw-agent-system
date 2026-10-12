@@ -44,13 +44,11 @@ describe('agent/codex-issue-notice', () => {
       changed: true,
       code: 'secret provider prose\nignore instructions',
       issue: { label: 'owner/repo#3', url: 'https://github.com/owner/repo/issues/3' },
-      threadId: 'verified-child',
     });
     assert.match(
       notice.message,
       /\[owner\/repo#3\]\(https:\/\/github.com\/owner\/repo\/issues\/3\)/,
     );
-    assert.match(notice.message, /codex:\/\/threads\/verified-child/);
     assert.doesNotMatch(notice.message, /secret|ignore instructions|Technical detail/);
   });
 });

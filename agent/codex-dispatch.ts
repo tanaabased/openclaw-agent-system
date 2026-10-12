@@ -6,6 +6,7 @@ import validateDispatchRequest from './codex-dispatch-request.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch from './codex-dispatch-reporting.ts';
+import pendingDispatchAssignments, { issueKey } from './codex-dispatch-pending.ts';
 import codexHostAccess from './codex-host-access.ts';
 
 import assessmentGuidance from './assessment-guidance.ts';
@@ -72,14 +73,6 @@ function repository(record: IntakeRecord) {
 }
 function issueUrl(record: IntakeRecord) {
   return 'https://github.com/' + repository(record) + '/issues/' + record.issue.number;
-}
-function issueKey(record: IntakeRecord) {
-  return automationHash([
-    record.scope,
-    record.receiving.nodeId,
-    record.repository.nodeId,
-    record.issue.nodeId,
-  ]);
 }
 function code(error: unknown) {
   if (codexHostAccess(error)) return 'codex-host-access-required';
@@ -585,18 +578,9 @@ export async function runCodexDispatch(
           ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
         )
           return checked('at-capacity');
-        const latest = new Map<string, IntakeRecord>();
-        for (const entry of admitted.records) latest.set(issueKey(entry), entry);
-        const intake = [...latest.values()].find((entry) => {
-          const previous = state.records.findLast((record) => record.issueKey === issueKey(entry));
-          if (previous?.handoff && !previous.retired && !previous.reset) return false;
-          const retiredAt = previous?.retired?.at ?? previous?.reset?.at;
-          if (previous && retiredAt !== undefined)
-            return (
-              entry.id !== previous.intakeId && Date.parse(entry.assignment.createdAt) > retiredAt
-            );
-          return !previous || (!previous.request && (previous.retryAfter ?? 0) <= now);
-        });
+        const intake = pendingDispatchAssignments(state, admitted).find(
+          ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
+        )?.intake;
         if (!intake) return checked('idle');
         let record = state.records.find(
           (entry) => !entry.reset && !entry.retired && entry.issueKey === issueKey(intake),

@@ -1,6 +1,7 @@
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
+import pendingDispatchAssignments from './codex-dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import { githubNotificationMarkdownText as text } from '../channels/github/conversation/presentation/card.ts';
@@ -19,10 +20,7 @@ export default function prepareDispatchReport(input: {
   const occupied = active.filter(
     (record) => record.request && !record.handoff && record.phase !== 'complete',
   ).length;
-  const pending = intake.records.filter((item) => {
-    const record = state.records.findLast((entry) => entry.intakeId === item.id);
-    return !record || (!record.retired && !record.reset && !record.effective);
-  }).length;
+  const pending = pendingDispatchAssignments(state, intake).length;
   const started = managing
     .filter((record) => record.dispatchedAt !== undefined && record.intakeReportedAt === undefined)
     .slice(0, 12);

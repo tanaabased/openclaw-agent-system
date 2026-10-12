@@ -165,10 +165,6 @@ polls. An uncertain creation is reconciled against native creation history; it i
 never blindly repeated. Preserve the retained evidence when repairing access,
 project setup, or host failures. Unresolved creations continue to consume capacity
 until reconciled, preventing a succession of potentially live duplicate chats.
-An unloaded app-server history is not live chat status. Dispatch retains pending
-work rather than declaring a missing result from that history; it reports that
-blocker only when native readback positively shows an idle chat with a terminal turn.
-An abandoned chat whose live status is unavailable therefore needs operator inspection.
 After verifying creation provenance, worktree,
 and model settings, the runtime corrects a changed native title and verifies the rename
 before assessment; the display title does not establish chat identity.

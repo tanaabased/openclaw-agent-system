@@ -189,7 +189,13 @@ function serializeState(state: DispatchState) {
   const contents = JSON.stringify(state);
   if (
     Buffer.byteLength(contents) > journalBytes ||
-    Buffer.byteLength(JSON.stringify({ ...state, reports: undefined })) > contentBytes
+    Buffer.byteLength(
+      JSON.stringify({
+        ...state,
+        reports: undefined,
+        run: state.run && { ...state.run, response: undefined },
+      }),
+    ) > contentBytes
   )
     throw new Error('dispatch-state-capacity');
   return contents;

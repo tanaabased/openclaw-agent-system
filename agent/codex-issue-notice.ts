@@ -165,7 +165,6 @@ export default function codexIssueNotice(input: {
   changed: boolean;
   code?: string;
   issue?: { label: string; url: string };
-  threadId?: string;
   action?: string;
   facts?: { label: string; value: string }[];
 }) {
@@ -174,14 +173,6 @@ export default function codexIssueNotice(input: {
   const facts = [
     ...(input.issue
       ? [{ label: 'Issue', value: `[${text(input.issue.label)}](${input.issue.url})` }]
-      : []),
-    ...(input.threadId
-      ? [
-          {
-            label: 'Chat',
-            value: `[Open issue chat](codex://threads/${encodeURIComponent(input.threadId)})`,
-          },
-        ]
       : []),
     { label: 'What happened', value: copy.summary },
     { label: 'Next step', value: input.action ? text(input.action) : copy.next },

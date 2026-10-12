@@ -1474,6 +1474,31 @@ describe('agent/codex-dispatch', () => {
     assert.ok(context.fallbackMetadata);
   });
 
+  it('should count reassignment once before launch and never queue an already started issue', async () => {
+    const reassign = async () => {
+      now += 60000;
+      fixture.events.push({
+        ...fixture.events[0]!,
+        nodeId: 'assignment-' + now,
+        databaseId: now,
+        createdAt: new Date(now).toISOString(),
+      });
+      await runCodexIntake(pluginData, false, deps);
+    };
+    await reassign();
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+    await next();
+    assert.match(String((await report()).response), /\*\*Pending:\*\* 0/);
+    await reassign();
+    assert.equal((await next()).status, 'idle');
+    const response = String((await report()).response);
+    assert.match(response, /\*\*Managing:\*\* 1 issues · \*\*Pending:\*\* 0/);
+    assert.doesNotMatch(response, /issues? pending/);
+    assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+  });
+
   it('should discard legacy report backlogs without losing records or blocking admission', async () => {
     const { default: Store } = await import('../agent/codex-dispatch-state.ts');
     const current = await selectCodexIntake(pluginData, deps);

@@ -1,4 +1,4 @@
-import { Type, type Static } from 'typebox';
+import { Type } from 'typebox';
 
 export const codexNoticeLimit = 100;
 // accepted only when reading pre-summary journals; readers discard these fields.
@@ -10,4 +10,3 @@ export const codexNoticeSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type CodexNotice = Static<typeof codexNoticeSchema>;
