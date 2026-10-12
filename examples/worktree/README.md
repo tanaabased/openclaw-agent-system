@@ -144,6 +144,7 @@ cd "$GITHUB_WORKSPACE/examples/worktree/workingbot"
 cp agent.yaml "$TMPDIR/workingbot-agent.yaml"
 trap 'cp "$TMPDIR/workingbot-agent.yaml" agent.yaml' EXIT
 node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync("agent.yaml", fs.readFileSync("agent.yaml", "utf8").replace("working-directory: checkouts", "working-directory: reconfigured"));'
+openclaw agent-system install
 openclaw agent-system tool worktree -- prepare agent-system 793-reconfigured origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | jq -e '.status == "created"'
 git -C reconfigured/openclaw-agent-system remote get-url origin | grep -Fx 'https://github.com/tanaabased/openclaw-agent-system.git'
 grep -Fx 'preserve this work' checkouts/openclaw-agent-system/user-work.txt
