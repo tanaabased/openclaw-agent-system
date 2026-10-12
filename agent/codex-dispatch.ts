@@ -243,6 +243,13 @@ function notice(record: DispatchRecord, intake?: IntakeRecord, state?: DispatchS
           : []),
       ],
     }),
+    ...(state && !failure
+      ? {
+          nextAction: 'next',
+          instruction:
+            'This is an issue update, not the end of the queue. Call dispatchRuntime action:next with the saved projects array now, while the twelve-action budget remains. Do not wait for this assessment or call report yet. Continue until idle, at-capacity, required approval, a failed tool call, or the action budget; then call report once.',
+        }
+      : {}),
   };
   if (changed && state) {
     const id = automationHash({ record: record.id, digest });

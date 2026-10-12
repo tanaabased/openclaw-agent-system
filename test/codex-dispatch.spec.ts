@@ -241,7 +241,11 @@ describe('agent/codex-dispatch', () => {
       native!.id = 'issue-thread-' + number;
       native!.name = '#' + number + ': REPAIR CONTAINED BEHAVIOR';
       children.set(native!.id, native!);
-      await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+      const launched = await request('reconcile', {
+        id: prepared.id,
+        receipt: { threadId: native!.id },
+      });
+      assert.equal(launched.nextAction, 'next');
       return prepared;
     };
     const first = await launch(3);
@@ -260,7 +264,9 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await report()).pendingNotices, 0);
 
     await request('result', { id: first.id, result }, { threadId: 'issue-thread-3' });
-    assert.equal((await next()).outcome, 'plan-ready');
+    const completion = await next();
+    assert.equal(completion.outcome, 'plan-ready');
+    assert.equal(completion.nextAction, 'next');
     const third = await launch(5);
     assert.notEqual(third.id, second.id);
     assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
