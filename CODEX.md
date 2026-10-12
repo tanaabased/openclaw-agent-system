@@ -189,7 +189,15 @@ setup, and errors for failed operations. Each includes what happened and the nex
 step, with technical details last. A handoff produces one non-notifying information
 card. Unchanged polling and already-reported blockers produce no new card. Failures
 that prevent reading or saving the tracking records cannot be deduplicated safely;
-they remain visible. Native approval requests retain their native UI.
+they remain visible. Cards remain saved until a later run verifies the exact final
+heartbeat in recent native chat history. Interrupted runs can therefore repeat a
+card rather than lose it. Each run posts one heartbeat containing its cards.
+
+An `EPERM` or `EACCES` failure can mean the sandbox cannot write private tracking
+files under the plugin data directory. The agent retries the same command once
+through native host approval. If access is denied, it reports the reason and keeps
+the work intact; it does not delete locks or loosen directory permissions. Native
+approval requests retain their native UI.
 
 To repeat assessment through assignment intake, use `dispatchRuntime` with
 `{"action":"reset","id":"<assessment-receipt>"}` from an operator chat, then repeat

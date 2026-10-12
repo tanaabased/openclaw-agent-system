@@ -4,6 +4,10 @@ import { join, relative } from 'node:path';
 
 import { Value } from 'typebox/value';
 
+import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
+import appendCodexNotice from './codex-notice-outbox.ts';
+import codexHostAccess from './codex-host-access.ts';
+
 import assessmentGuidance from './assessment-guidance.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
@@ -26,7 +30,10 @@ import prepareDispatchRepository from './codex-dispatch-repository.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
-import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import CodexDispatchStore, {
+  type DispatchRecord,
+  type DispatchState,
+} from './codex-dispatch-state.ts';
 import {
   connectCodexGitHub,
   selectCodexIntake,
@@ -78,6 +85,7 @@ function issueKey(record: IntakeRecord) {
   ]);
 }
 function code(error: unknown) {
+  if (codexHostAccess(error)) return 'codex-host-access-required';
   const value =
     nativeObject(error) && typeof error.code === 'string'
       ? error.code
@@ -167,7 +175,7 @@ function noticeDigest(record: DispatchRecord) {
     handoff: record.handoff,
   });
 }
-function notice(record: DispatchRecord, intake?: IntakeRecord) {
+function notice(record: DispatchRecord, intake?: IntakeRecord, state?: DispatchState) {
   const digest = noticeDigest(record);
   const changed = digest !== record.notice;
   const hadNotice = record.notice !== undefined;
@@ -184,7 +192,7 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
           ? 'recovered'
           : 'started';
   const registration = failure && result.code === 'dispatch-project-registration-unavailable';
-  return {
+  const resultNotice = {
     id: record.id,
     status: record.handoff ? 'handed-off' : record.phase,
     changed,
@@ -235,6 +243,15 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
       ],
     }),
   };
+  if (changed && state) {
+    const id = automationHash({ record: record.id, digest });
+    state.notices = appendCodexNotice(state.notices, {
+      id,
+      message: resultNotice.message,
+      notify: resultNotice.notify,
+    });
+  }
+  return resultNotice;
 }
 
 async function revalidate(
@@ -518,7 +535,7 @@ export async function runCodexDispatch(
           throw new Error('dispatch-policy-changed');
       };
       const fail = async (record: DispatchRecord, error: unknown) => {
-        if (record.phase === 'complete') throw error;
+        if (codexHostAccess(error) || record.phase === 'complete') throw error;
         // Native worktree setup returns a client receipt before the child is readable.
         if (
           code(error) === 'dispatch-creation-unresolved' &&
@@ -543,10 +560,72 @@ export async function runCodexDispatch(
         const result = notice(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
+          state,
         );
         await save();
         return result;
       };
+      if (action === 'report') {
+        if (
+          Object.keys(input).some((key) => !['automationId', 'currentTimeIso'].includes(key)) ||
+          typeof input.automationId !== 'string' ||
+          typeof input.currentTimeIso !== 'string'
+        )
+          throw new Error('dispatch-request-invalid');
+        const quiet = codexHeartbeat({
+          automationId: input.automationId,
+          currentTimeIso: input.currentTimeIso,
+          intake: { status: 'ready', changed: false },
+          dispatch: [{ status: 'idle', changed: false }],
+        });
+        if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
+        const reports = state.reports ?? [];
+        if (reports.length) {
+          const delivered = await withNative(current, deps, (host) =>
+            host.deliveredReports(caller, reports),
+          );
+          const ids = new Set(
+            reports
+              .filter((entry) => delivered.includes(entry.response))
+              .flatMap((entry) => entry.notices),
+          );
+          state.notices = (state.notices ?? []).filter((entry) => !ids.has(entry.id));
+          state.reports = reports.filter((entry) => !delivered.includes(entry.response));
+          if (ids.size)
+            await current.store.exclusive(async (scan, saveScan) => {
+              if (scan?.notices)
+                await saveScan({
+                  ...scan,
+                  notices: scan.notices.filter((entry) => !ids.has(entry.id)),
+                });
+            });
+        }
+        const scan = await current.store.read();
+        if (!scan) throw new Error('dispatch-intake-record-missing');
+        const cards = [...(state.notices ?? []), ...(scan.notices ?? [])];
+        state.reports = (state.reports ?? []).filter((report) =>
+          report.notices.some((id) => cards.some((card) => card.id === id)),
+        );
+        const response = cards.length
+          ? codexHeartbeatEnvelope(
+              input.automationId,
+              cards.map((entry) => entry.message).join('\n\n'),
+              cards.some((entry) => entry.notify),
+            )
+          : quiet.response;
+        if (cards.length) {
+          state.reports = [
+            ...(state.reports ?? []).filter((entry) => entry.response !== response),
+            {
+              response,
+              createdAt: reports.find((entry) => entry.response === response)?.createdAt ?? now,
+              notices: cards.map((entry) => entry.id),
+            },
+          ].slice(-8);
+        }
+        await save();
+        return { status: 'report', response, pendingNotices: cards.length };
+      }
       if (action === 'next') {
         if (Object.keys(input).some((key) => key !== 'projects'))
           throw new Error('dispatch-request-invalid');
@@ -557,6 +636,7 @@ export async function runCodexDispatch(
           const response = notice(
             handedOff,
             admitted.records.find((entry) => entry.id === handedOff.intakeId),
+            state,
           );
           await save();
           return response;
@@ -573,6 +653,7 @@ export async function runCodexDispatch(
           const result = notice(
             completed,
             admitted.records.find((entry) => entry.id === completed.intakeId),
+            state,
           );
           await save();
           return result;
@@ -600,7 +681,7 @@ export async function runCodexDispatch(
               throw new Error('dispatch-assessment-result-missing');
             pending.retryAfter = now + 300000;
             await fresh();
-            const result = notice(pending, intake);
+            const result = notice(pending, intake, state);
             await save();
             return result;
           } catch (error) {
@@ -1234,7 +1315,7 @@ export async function runCodexDispatch(
               presentation,
             };
           }
-          const result = notice(record, intake);
+          const result = notice(record, intake, state);
           await save();
           return result;
         } catch (error) {

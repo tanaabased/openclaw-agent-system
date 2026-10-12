@@ -16,7 +16,12 @@ import {
   syncCodexAutomationThreads,
 } from '../agent/codex-automations.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { connectCodexGitHub, inspectCodexIntake, runCodexIntake } from '../agent/codex-intake.ts';
+import {
+  connectCodexGitHub,
+  inspectCodexIntake,
+  runCodexIntake,
+  selectCodexIntake,
+} from '../agent/codex-intake.ts';
 import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
@@ -89,6 +94,11 @@ describe('agent/codex-intake', () => {
     assert.equal(recovered.notice?.severity, 'info');
     assert.equal(recovered.notice?.notify, true);
     assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
+    const current = await selectCodexIntake(pluginData, deps);
+    const saved = await current.store.read();
+    assert.equal(saved?.notices?.length, 2);
+    assert.ok(saved.notices.every((notice) => notice.notify));
+    assert.notEqual(saved.notices[0]!.id, saved.notices[1]!.id);
   });
 
   it('should validate native account responses through the shared provider boundary', async () => {

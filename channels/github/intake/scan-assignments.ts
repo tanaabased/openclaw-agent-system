@@ -24,10 +24,26 @@ export interface AssignmentScanInput {
   activate?: boolean;
   connect(signal: AbortSignal): Promise<GitHubNotificationIntakeClient>;
   assertCurrent(): Promise<void>;
+  retainNotice?(
+    state: IntakeState,
+    result: { status: string; changed: boolean; code?: string; recovered?: boolean },
+  ): void;
+}
+
+interface AssignmentScanResult {
+  status: 'ready' | 'blocked';
+  changed: boolean;
+  code?: string;
+  recovered?: boolean;
+  admitted?: number;
+  baselineAt?: number;
+  checkpoint?: number;
 }
 
 /** admission evidence only: no workspaces, chats, model decisions, or publication. */
-export default async function scanAssignments(input: AssignmentScanInput) {
+export default async function scanAssignments(
+  input: AssignmentScanInput,
+): Promise<AssignmentScanResult> {
   return input.store.exclusive(async (previous, save, signal) => {
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
     if (!input.activate && previous?.policyDigest !== input.policyDigest)
@@ -156,15 +172,17 @@ export default async function scanAssignments(input: AssignmentScanInput) {
       state.records.push(...records);
       const recovered = Boolean(state.blocker);
       delete state.blocker;
-      await save(state);
-      return {
-        status: 'ready',
+      const result = {
+        status: 'ready' as const,
         changed: records.length > 0 || recovered,
         admitted: records.length,
         ...(recovered ? { recovered: true } : {}),
         baselineAt: state.baselineAt,
         checkpoint: state.checkpoint,
       };
+      input.retainNotice?.(state, result);
+      await save(state);
+      return result;
     } catch (error) {
       const diagnostic =
         error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
@@ -184,7 +202,7 @@ export default async function scanAssignments(input: AssignmentScanInput) {
       );
       if (previous) {
         const changed = previous.blocker?.code !== code;
-        await save({
+        const state = {
           ...previous,
           lastAttemptAt: input.now,
           blocker: {
@@ -192,8 +210,11 @@ export default async function scanAssignments(input: AssignmentScanInput) {
             since: changed ? input.now : previous.blocker!.since,
             retryAfter,
           },
-        });
-        return { status: 'blocked', code, changed };
+        };
+        const result = { status: 'blocked' as const, code, changed };
+        input.retainNotice?.(state, result);
+        await save(state);
+        return result;
       }
       throw new IntakeError(code);
     }

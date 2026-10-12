@@ -1,6 +1,7 @@
 import process from 'node:process';
 
-import codexHeartbeat from './codex-heartbeat.ts';
+import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
+import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
 import { inspectCodexIntake, runCodexIntake } from './codex-intake.ts';
@@ -229,7 +230,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, handoff, retry-denied, reset, or retire. Handoff previews a digest-bound end to assessment monitoring after a user follow-up; it never authorizes implementation. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a paused schedule and a closed issue; it preserves evidence but does not archive chats or remove worktrees. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, handoff, report, retry-denied, reset, or retire. Handoff previews a digest-bound end to assessment monitoring after a user follow-up; it never authorizes implementation. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a paused schedule and a closed issue; it preserves evidence but does not archive chats or remove worktrees. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }
@@ -248,6 +249,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         'context',
         'result',
         'handoff',
+        'report',
         'retry-denied',
         'reset',
         'retire',
@@ -266,16 +268,32 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const action = args[1];
     if (action === '--help') {
       process.stdout.write(
-        'Usage: intake <inspect|scan|quiet-response> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only. Quiet-response formats JSON polling outcomes from stdin without reading or writing state.\n',
+        'Usage: intake <inspect|scan|quiet-response|failure-response> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only. Quiet-response formats JSON polling outcomes from stdin without reading or writing state.\n',
       );
       return;
     }
     const pluginData = parsePluginData(args.slice(2));
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
     else if (action === 'scan') writeJson(await runCodexIntake(pluginData));
-    else if (action === 'quiet-response')
+    else if (action === 'failure-response') {
+      const input = JSON.parse(await readStandardInput()) as Record<string, unknown>;
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        Object.keys(input).some((key) => !['automationId', 'code'].includes(key)) ||
+        typeof input.automationId !== 'string' ||
+        typeof input.code !== 'string' ||
+        !/^[a-z][a-z0-9-]{0,127}$/u.test(input.code)
+      )
+        throw new Error('heartbeat-request-invalid');
+      const notice = codexIssueNotice({ event: 'failure', changed: true, code: input.code });
+      writeJson({
+        status: 'failure',
+        response: codexHeartbeatEnvelope(input.automationId, notice.message, true),
+      });
+    } else if (action === 'quiet-response')
       writeJson(codexHeartbeat(JSON.parse(await readStandardInput())));
-    else throw new Error('expected intake inspect, scan, or quiet-response');
+    else throw new Error('expected intake inspect, scan, quiet-response, or failure-response');
     return;
   }
   if (command === 'setup') return runSetup(args.slice(1));
@@ -354,8 +372,9 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
 
 runCodexRuntime().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'unknown Agent System Codex failure';
-  const details =
-    error instanceof AgentSystemLifecycleError
+  const details = codexHostAccess(error)
+    ? { code: 'codex-host-access-required' }
+    : error instanceof AgentSystemLifecycleError
       ? {
           component: error.component,
           code: error.code,
@@ -377,7 +396,7 @@ runCodexRuntime().catch((error: unknown) => {
       })
     : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...details, message, ...(notice ? { notice } : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? { notice } : {}) })}\n`,
   );
   process.exitCode = 1;
 });

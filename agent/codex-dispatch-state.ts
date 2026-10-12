@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { codexNoticeSchema } from './codex-notice-outbox.ts';
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
@@ -134,7 +135,25 @@ export const dispatchRecordSchema = Type.Object(
 );
 export type DispatchRecord = Static<typeof dispatchRecordSchema>;
 const schema = Type.Object(
-  { version: Type.Literal(1), scope: hash, records: Type.Array(dispatchRecordSchema) },
+  {
+    version: Type.Literal(1),
+    scope: hash,
+    records: Type.Array(dispatchRecordSchema),
+    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: 100 })),
+    reports: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            response: Type.String({ minLength: 1, maxLength: 128000 }),
+            createdAt: Type.Integer({ minimum: 0 }),
+            notices: Type.Array(hash, { maxItems: 100 }),
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: 8 },
+      ),
+    ),
+  },
   { additionalProperties: false },
 );
 export type DispatchState = Static<typeof schema>;

@@ -2,7 +2,7 @@ import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 
 export const codexQuietHeartbeatInstructions =
-  'For quiet issue-intake heartbeats, use intakeRuntime.argvPrefix from the newest trusted Agent System context followed by quiet-response --plugin-data and intakeRuntime.pluginData. Send JSON on stdin with automationId and currentTimeIso copied from the current native trigger automation_id and current_time_iso, intake as an object with status and changed from the scan, and dispatch as an array of objects with status and changed from every dispatch outcome in the entire loop. Never use the manifest job key as automationId or the completion clock as currentTimeIso. When status is quiet, copy response verbatim as the entire final response: it preserves DONT_NOTIFY and puts the chosen text only inside the native heartbeat message. Emit no prose outside that envelope. When status is not-quiet, keep the existing reporting rules and native heartbeat contract; never replace required approval, failures, recovery, or changed-work notices with playful text. A final idle result never cancels earlier notices. Do not invoke the formatter after a failed tool call or interruption.';
+  'For dispatch-enabled issue-intake heartbeats, always finish a successful occurrence with dispatchRuntime action:report using automationId and currentTimeIso copied from this native trigger. Copy its response verbatim as the entire final answer, with no prose or duplicate card outside the heartbeat. The report reads durable pending cards and owns quiet-message selection. Never replace it with remembered polling outcomes, including after compaction. After a failed runtime command, never use quiet-response or claim success; follow the bounded host-access retry, then use intakeRuntime failure-response with the stable code when needed. The legacy quiet-response route accepts JSON polling outcomes only for callers without durable dispatch reporting';
 
 const messages = {
   morning: [
@@ -46,6 +46,19 @@ function outcome(value: unknown): value is { status: string; changed: boolean } 
 
 function escaped(value: string) {
   return value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;');
+}
+
+/** render exactly one native envelope for both quiet updates and actionable cards. */
+export function codexHeartbeatEnvelope(automationId: string, message: string, notify: boolean) {
+  if (!automationId.trim() || automationId.length > 256)
+    throw new Error('heartbeat-request-invalid');
+  return [
+    '<heartbeat>',
+    `  <automation_id>${escaped(automationId)}</automation_id>`,
+    `  <decision>${notify ? 'NOTIFY' : 'DONT_NOTIFY'}</decision>`,
+    `  <message>${message}</message>`,
+    '</heartbeat>',
+  ].join('\n');
 }
 
 /** format successful quiet polling only; the caller still owns notices and workflow decisions. */
@@ -117,12 +130,6 @@ export default function codexHeartbeat(request: unknown, timeZone?: string) {
     status: 'quiet' as const,
     period,
     message,
-    response: [
-      '<heartbeat>',
-      `  <automation_id>${escaped(request.automationId)}</automation_id>`,
-      '  <decision>DONT_NOTIFY</decision>',
-      `  <message>${escaped(message)}</message>`,
-      '</heartbeat>',
-    ].join('\n'),
+    response: codexHeartbeatEnvelope(request.automationId, message, false),
   };
 }

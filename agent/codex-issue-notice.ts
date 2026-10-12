@@ -59,6 +59,15 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'codex-host-access-required')
+    return {
+      severity: 'warning',
+      title: 'Codex needs access to its tracking files',
+      summary:
+        'The filesystem denied access to private plugin state outside this chat’s writable sandbox. The tracking lock prevents concurrent updates; this is not a password failure.',
+      next: 'Retry this exact runtime command once through native host approval, retaining its JSON input and fixed plugin-data path. If approval is denied, stop and report the reason. If host access still fails, inspect directory ownership and host restrictions. Do not delete the lock, change permissions, reset the issue, or create a replacement chat.',
+    };
+
   if (code === 'dispatch-assignment-authority-revoked')
     return {
       severity: 'warning',

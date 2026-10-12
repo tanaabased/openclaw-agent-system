@@ -2,6 +2,8 @@ import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { automationHash } from './automation-hash.ts';
+import appendCodexNotice from './codex-notice-outbox.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -196,6 +198,23 @@ export async function runCodexIntake(
       policyDigest: digest,
       now: (deps.now ?? Date.now)(),
       activate,
+      retainNotice(state, result) {
+        if (!result.changed || (result.status !== 'blocked' && !result.recovered)) return;
+        const notice = codexIssueNotice({
+          event: result.recovered ? 'intake-recovered' : 'failure',
+          changed: true,
+          code: result.code,
+        });
+        state.notices = appendCodexNotice(state.notices, {
+          id: automationHash({
+            scope: state.scope,
+            time: state.lastAttemptAt,
+            code: result.code ?? 'recovered',
+          }),
+          message: notice.message,
+          notify: notice.notify,
+        });
+      },
       async connect(signal) {
         return connectSelected(
           current,
@@ -219,7 +238,7 @@ export async function runCodexIntake(
             notice: codexIssueNotice({
               event: 'failure',
               changed: result.changed,
-              code: result.code,
+              code: 'code' in result ? result.code : undefined,
             }),
           }
         : 'recovered' in result && result.recovered
@@ -252,13 +271,22 @@ export async function runCodexIntake(
       if (!state) throw error;
       const now = (deps.now ?? Date.now)();
       const changed = state.blocker?.code !== error.code;
+      const notice = codexIssueNotice({ event: 'failure', code: error.code, changed });
       if (changed)
-        await save({ ...state, blocker: { code: error.code, since: now, retryAfter: now } });
+        await save({
+          ...state,
+          blocker: { code: error.code, since: now, retryAfter: now },
+          notices: appendCodexNotice(state.notices, {
+            id: automationHash({ scope: state.scope, time: now, code: error.code }),
+            message: notice.message,
+            notify: notice.notify,
+          }),
+        });
       return {
         status: 'blocked',
         code: error.code,
         changed,
-        notice: codexIssueNotice({ event: 'failure', code: error.code, changed }),
+        notice,
       };
     });
   }
