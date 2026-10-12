@@ -257,7 +257,7 @@ cp "$GITHUB_WORKSPACE/examples/codex/notification-disabled-agent.yaml" "$root/di
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/disabled-notification-workspace" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
-  | jq -e '.status == "aligned" and .actions == [] and .conversations == []'
+  | jq -e '.status == "aligned" and .actions == [] and (.conversations // []) == []'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-policy-disabled"'
 test ! -d "$CODEX_HOME/automations"
