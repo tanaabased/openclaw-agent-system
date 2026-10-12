@@ -79,7 +79,9 @@ describe('cli/credentials', () => {
     assert.deepEqual(calls, ['read:environment', 'set:data:private-token:automatic']);
     assert.deepEqual(test.records.manifestDirectories, ['/workspace']);
     assert.deepEqual(test.exitCodes, []);
-    assert.deepEqual(test.records.output, ['stored  op credential for data\nstore   file\n']);
+    assert.deepEqual(test.records.output, [
+      'credential     op for data stored\nstore          file\ninput source   environment\ngateway cache  invalidation not required\n',
+    ]);
   });
 
   it('should warn about pending invalidation after successful credential writes', async () => {
@@ -121,10 +123,86 @@ describe('cli/credentials', () => {
         });
       assert.deepEqual(test.exitCodes, []);
       assert.match(test.records.diagnostics.join(''), /warning/u);
+      assert.ok(test.records.diagnostics.join('').indexOf('messages') > -1);
       assert.doesNotMatch(test.records.diagnostics.join(''), /error|private-token/u);
       assert.match(test.records.output.join(''), /stored|removed/u);
       assert.doesNotMatch(test.records.output.join(''), /warning/u);
     }
+  });
+
+  it('should show confirmed cache invalidation with the stored result', async () => {
+    const test = harness();
+    await setCredentialsAgentSystem({
+      ...test,
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: true,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'read', source: 'stdin', token: 'private-token' }),
+      },
+      credentialManager: {
+        set: async () => ({
+          status: 'unchanged',
+          agentId: 'data',
+          storeId: 'keychain',
+          gatewayInvalidation: 'confirmed',
+        }),
+      },
+    });
+    assert.deepEqual(test.records.output, [
+      'credential     op for data unchanged\nstore          keychain\ninput source   stdin\ngateway cache  invalidation confirmed\n',
+    ]);
+    assert.doesNotMatch(test.records.output.join(''), /private-token/u);
+  });
+
+  it('should keep input and validation failures as sorted trailing diagnostics', async () => {
+    const inputFailure = harness();
+    await setCredentialsAgentSystem({
+      ...inputFailure,
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: false,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'invalid', code: 'z-input', message: 'input failed' }),
+      },
+      credentialManager: {
+        set: async () => {
+          throw new Error('not expected');
+        },
+      },
+    });
+    assert.deepEqual(inputFailure.records.output, []);
+    assert.match(inputFailure.records.diagnostics.join(''), /input failed/u);
+    assert.deepEqual(inputFailure.exitCodes, [1]);
+
+    const validationFailure = harness();
+    await setCredentialsAgentSystem({
+      ...validationFailure,
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: true,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'read', source: 'stdin', token: 'private-token' }),
+      },
+      credentialManager: {
+        set: async () => ({
+          status: 'invalid',
+          code: 'z-validation',
+          message: 'validation failed',
+          gatewayInvalidation: 'pending',
+        }),
+      },
+    });
+    const diagnostics = validationFailure.records.diagnostics.join('');
+    assert.ok(diagnostics.indexOf('error') < diagnostics.indexOf('warning'));
+    assert.match(diagnostics, /validation failed/u);
+    assert.match(diagnostics, /invalidation is pending/u);
+    assert.doesNotMatch(diagnostics, /private-token/u);
+    assert.deepEqual(validationFailure.records.output, []);
+    assert.deepEqual(validationFailure.exitCodes, [1]);
   });
 
   it('should reject conflicting set input sources before loading the manifest', async () => {
