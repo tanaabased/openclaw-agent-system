@@ -314,6 +314,13 @@ describe('agent/codex-dispatch', () => {
     }
   });
 
+  it('should refuse a quiet report based on a previous occurrence until a fresh scan completes', async () => {
+    now += 60000;
+    await assert.rejects(report(), /dispatch-scan-required/);
+    await runCodexIntake(pluginData, false, deps);
+    assert.equal((await report()).pendingNotices, 0);
+  });
+
   it('should retain scan failure and recovery until their combined report is delivered', async () => {
     const unavailable = {
       ...deps,

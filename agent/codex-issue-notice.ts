@@ -59,6 +59,14 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'dispatch-scan-required')
+    return {
+      severity: 'warning',
+      title: 'Check GitHub before reporting',
+      summary:
+        'This scheduled run has no fresh scan result, so it cannot yet report that nothing changed.',
+      next: 'Run the deterministic intake scan, then request the report again. Do not reuse a previous run’s result.',
+    };
   if (code === 'codex-host-access-required')
     return {
       severity: 'warning',

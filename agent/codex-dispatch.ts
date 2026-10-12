@@ -579,6 +579,14 @@ export async function runCodexDispatch(
           dispatch: [{ status: 'idle', changed: false }],
         });
         if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
+        const occurrence = Date.parse(input.currentTimeIso);
+        if (!Number.isFinite(occurrence)) throw new Error('heartbeat-request-invalid');
+        // An unchanged provider cooldown is current evidence; otherwise this occurrence must scan.
+        if (
+          (admitted.lastAttemptAt ?? 0) < occurrence &&
+          (admitted.blocker?.retryAfter ?? 0) <= occurrence
+        )
+          throw new Error('dispatch-scan-required');
         const reports = state.reports ?? [];
         if (reports.length) {
           const delivered = await withNative(current, deps, (host) =>
