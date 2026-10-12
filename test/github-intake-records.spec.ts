@@ -56,6 +56,29 @@ describe('channels/github/intake/records', () => {
       assert.deepEqual(await store.read(), before);
     }
   });
+  it('should propagate local save and notice failures without inventing a provider outage', async () => {
+    const { input, store } = setup();
+    await scanAssignments({ ...input, activate: true });
+    const before = await store.read();
+    const failure = new Error('local persistence failed');
+    await assert.rejects(
+      scanAssignments({
+        ...input,
+        retainNotice: () => {
+          throw failure;
+        },
+      }),
+      (error: unknown) => error === failure,
+    );
+    let writes = 0;
+    store.file.write = async () => {
+      writes++;
+      throw failure;
+    };
+    await assert.rejects(scanAssignments(input), (error: unknown) => error === failure);
+    assert.equal(writes, 1);
+    assert.deepEqual(await store.read(), before);
+  });
   it('should require activation and persist one immutable record across polls and restart for both host mappings', async () => {
     for (const runtime of ['codex', 'openclaw'] as const) {
       const { input, store, events } = setup(runtime);

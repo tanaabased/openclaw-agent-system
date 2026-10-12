@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,6 +9,7 @@ import {
   verifyDispatchWorktree,
   type DispatchGit,
 } from '../agent/codex-dispatch-project.ts';
+import codexHostAccess from '../agent/codex-host-access.ts';
 
 describe('agent/codex-dispatch-project', () => {
   let root: string, source: string, other: string, commonDir: string;
@@ -39,6 +40,56 @@ describe('agent/codex-dispatch-project', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should preserve permission errors from configured and discovered project paths', async function () {
+    if (process.platform === 'win32' || process.getuid?.() === 0) this.skip();
+    const parent = join(root, 'restricted');
+    const path = join(parent, 'repo');
+    await mkdir(path, { recursive: true });
+    await chmod(parent, 0);
+    try {
+      for (const explicitPath of [undefined, path])
+        await assert.rejects(
+          resolveDispatchProject(
+            {
+              projects: [project(path)],
+              repository: 'owner/repo',
+              defaultBranch: 'main',
+              workspace: root,
+              explicitPath,
+            },
+            git,
+          ),
+          (error: unknown) => codexHostAccess(error),
+        );
+    } finally {
+      await chmod(parent, 0o700);
+    }
+  });
+
+  it('should preserve git access denials while classifying other lookup failures', async () => {
+    const input = {
+      projects: [project(source)],
+      repository: 'owner/repo',
+      defaultBranch: 'main',
+      workspace: root,
+    };
+    for (const code of ['EPERM', 'EACCES']) {
+      const denial = Object.assign(new Error('denied'), { code });
+      await assert.rejects(
+        resolveDispatchProject(input, async () => {
+          throw denial;
+        }),
+        (error: unknown) => error === denial,
+      );
+    }
+    await assert.rejects(
+      resolveDispatchProject(input, async () => {
+        throw new Error('failed');
+      }),
+      /dispatch-project-inventory-unavailable/,
+    );
   });
 
   it('should require exact repository identity and use explicit paths only to constrain saved projects', async () => {

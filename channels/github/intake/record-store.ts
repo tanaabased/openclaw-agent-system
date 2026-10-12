@@ -81,6 +81,7 @@ const stateSchema = Type.Object(
     ),
     records: Type.Array(intakeRecordSchema),
     notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
+    noticePending: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

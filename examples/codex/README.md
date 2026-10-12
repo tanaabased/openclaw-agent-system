@@ -142,6 +142,10 @@ remain available, pending cards must survive a restart, and new card production
 must pause on byte capacity before reaching 100 cards. Deny access to a disposable
 assessment skill or guidance fixture and verify the native host-access retry is
 requested without replacing the selected skill or diagnosing corrupt configuration.
+Reactivate with a full queue and a recovered provider: activation must succeed,
+preserve queued cards, and report recovery once after space is available. A real
+provider failure must retain its own diagnostic. Denied access to a saved project
+must request host access instead of treating the checkout as missing.
 A fresh scan without a terminal dispatch check
 must refuse a quiet report. Repeat after only part of the assignment queue is processed.
 For native recovery, verify creation and latest-turn evidence through paged history on a

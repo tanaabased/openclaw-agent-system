@@ -11,6 +11,7 @@ import {
 } from '../tools/git/repository-service.ts';
 import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
 import { resolveToolExecutable } from '../api/cli-runner.ts';
+import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 
 export type DispatchGit = (cwd: string, argv: string[], signal?: AbortSignal) => Promise<string>;
 
@@ -69,8 +70,9 @@ export async function resolveDispatchProject(
   const expected =
     expectedPath === undefined
       ? undefined
-      : await realpath(expectedPath).catch(() => {
-          throw new Error('dispatch-configured-project-missing');
+      : await realpath(expectedPath).catch((error: unknown) => {
+          if (isFilesystemAccessError(error)) throw error;
+          throw new Error('dispatch-configured-project-missing', { cause: error });
         });
   if (expected !== expectedPath) throw new Error('dispatch-project-path-unsafe');
   const matches: { id: string; path: string }[] = [];
@@ -84,7 +86,10 @@ export async function resolveDispatchProject(
       typeof project.projectId !== 'string'
     )
       continue;
-    const path = await realpath(project.path).catch(() => undefined);
+    const path = await realpath(project.path).catch((error: unknown) => {
+      if (isFilesystemAccessError(error)) throw error;
+      return undefined;
+    });
     if (!path || (expected && path !== expected)) continue;
     if (path !== project.path) throw new Error('dispatch-project-path-unsafe');
     await ensureRepositoryDirectory(path, false);
@@ -92,8 +97,9 @@ export async function resolveDispatchProject(
     try {
       if (!(await git(path, ['remote'])).split('\n').includes('origin')) continue;
       origin = await git(path, ['remote', 'get-url', 'origin']);
-    } catch {
-      throw new Error('dispatch-project-inventory-unavailable');
+    } catch (error) {
+      if (isFilesystemAccessError(error)) throw error;
+      throw new Error('dispatch-project-inventory-unavailable', { cause: error });
     }
     if (githubOrigin(origin) === input.repository.toLowerCase())
       matches.push({ id: project.projectId, path });

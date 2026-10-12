@@ -65,6 +65,116 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
+  it('should reactivate with full cards and publish deferred recovery once after draining', async () => {
+    const { client } = intakeFixture();
+    let now = baseline;
+    const deps = { codexHome, now: () => now, connect: async () => client };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    const cards = Array.from({ length: 100 }, (_, i) => ({
+      id: i.toString(16).padStart(64, '0'),
+      message: 'pending card',
+      notify: false,
+    }));
+    await store.exclusive(async (state, save) => {
+      state!.notices = cards;
+      state!.blocker = {
+        code: 'intake-provider-unavailable',
+        since: now,
+        retryAfter: now + 300000,
+      };
+      await save(state!);
+    });
+    now += 1;
+    const result = await runCodexIntake(pluginData, true, deps);
+    assert.equal(result.status, 'ready');
+    assert.equal('recovered' in result && result.recovered, true);
+    const activated = (await store.read())!;
+    assert.equal(activated.blocker, undefined);
+    assert.equal(activated.noticePending, true);
+    assert.deepEqual(activated.notices, cards);
+    await store.exclusive(async (state, save) => {
+      state!.notices = [];
+      await save(state!);
+    });
+    const resumed = await runCodexIntake(pluginData, false, deps);
+    assert.equal('recovered' in resumed && resumed.recovered, true);
+    assert.equal((await store.read())!.noticePending, undefined);
+    assert.equal((await store.read())!.notices!.length, 1);
+    assert.match((await store.read())!.notices![0]!.message, /Issue checks resumed/);
+    assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
+    assert.equal((await store.read())!.notices!.length, 1);
+  });
+
+  it('should retain a real activation failure and flush its deferred notice during cooldown', async () => {
+    const { client } = intakeFixture();
+    const deps = { codexHome, now: () => baseline, connect: async () => client };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    await store.exclusive(async (state, save) => {
+      state!.notices = Array.from({ length: 100 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: 'pending card',
+        notify: false,
+      }));
+      await save(state!);
+    });
+    const failure = await runCodexIntake(pluginData, true, {
+      ...deps,
+      connect: async () => {
+        throw new Error('provider down');
+      },
+    });
+    assert.equal(failure.status, 'blocked');
+    assert.equal('code' in failure && failure.code, 'intake-provider-unavailable');
+    assert.equal((await store.read())!.noticePending, true);
+    await store.exclusive(async (state, save) => {
+      state!.notices = [];
+      await save(state!);
+    });
+    const cooldown = await runCodexIntake(pluginData, false, {
+      ...deps,
+      connect: async () => {
+        assert.fail('cooldown must not contact the provider');
+      },
+    });
+    assert.equal(cooldown.changed, true);
+    assert.equal((await store.read())!.noticePending, undefined);
+    assert.equal((await store.read())!.notices!.length, 1);
+  });
+
+  it('should defer policy notices in a full queue without admitting or losing work', async () => {
+    const { client } = intakeFixture();
+    const deps = { codexHome, now: () => baseline, connect: async () => client };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    await store.exclusive(async (state, save) => {
+      state!.notices = Array.from({ length: 100 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: 'pending card',
+        notify: false,
+      }));
+      await save(state!);
+    });
+    const before = (await store.read())!;
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
+    );
+    const denied = await runCodexIntake(pluginData, false, {
+      ...deps,
+      connect: async () => {
+        assert.fail('disabled policy must not contact the provider');
+      },
+    });
+    assert.equal('code' in denied && denied.code, 'intake-policy-disabled');
+    const after = (await store.read())!;
+    assert.equal(after.noticePending, true);
+    assert.deepEqual(after.records, before.records);
+    assert.deepEqual(after.notices, before.notices);
+    assert.equal(after.checkpoint, before.checkpoint);
+  });
+
   it('should report provider failure once and recovery once without losing new assignments', async () => {
     const fixture = intakeFixture();
     let now = baseline;

@@ -51,10 +51,18 @@ export default async function scanAssignments(
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
     if (!input.activate && previous?.policyDigest !== input.policyDigest)
       throw new IntakeError('intake-policy-reconciliation-required');
-    if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now)
-      return { status: 'blocked', changed: false, code: previous.blocker.code };
+    if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now) {
+      const result = { status: 'blocked' as const, changed: false, code: previous.blocker.code };
+      if (previous.noticePending && !codexNoticeQueueFull(previous.notices)) {
+        input.retainNotice?.(previous, result);
+        await save(previous);
+      }
+      return result;
+    }
     if (!input.activate && codexNoticeQueueFull(previous?.notices))
       return { status: 'blocked', changed: false, code: 'intake-notice-capacity' };
+    let next: IntakeState;
+    let result: AssignmentScanResult;
     try {
       const client = await input.connect(signal);
       const account: GitHubIdentity = client.identity;
@@ -177,7 +185,7 @@ export default async function scanAssignments(
       state.records.push(...records);
       const recovered = Boolean(state.blocker);
       delete state.blocker;
-      const result = {
+      result = {
         status: 'ready' as const,
         changed: records.length > 0 || recovered,
         admitted: records.length,
@@ -185,9 +193,7 @@ export default async function scanAssignments(
         baselineAt: state.baselineAt,
         checkpoint: state.checkpoint,
       };
-      input.retainNotice?.(state, result);
-      await save(state);
-      return result;
+      next = state;
     } catch (error) {
       if (isFilesystemAccessError(error)) throw error;
       const diagnostic =
@@ -208,7 +214,7 @@ export default async function scanAssignments(
       );
       if (previous) {
         const changed = previous.blocker?.code !== code;
-        const state = {
+        next = {
           ...previous,
           lastAttemptAt: input.now,
           blocker: {
@@ -217,12 +223,12 @@ export default async function scanAssignments(
             retryAfter,
           },
         };
-        const result = { status: 'blocked' as const, code, changed };
-        input.retainNotice?.(state, result);
-        await save(state);
-        return result;
-      }
-      throw new IntakeError(code);
+        result = { status: 'blocked' as const, code, changed };
+      } else throw new IntakeError(code);
     }
+    // local persistence failures must not be mistaken for provider failures.
+    input.retainNotice?.(next, result);
+    await save(next);
+    return result;
   });
 }
