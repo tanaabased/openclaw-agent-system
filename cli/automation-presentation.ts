@@ -121,6 +121,7 @@ export default function automationPresentation(
         [
           result.nativeId && `native-id=${result.nativeId}`,
           result.runId && `run=${result.runId}`,
+          result.reason && `reason=${result.reason}`,
           result.execution && `execution=${result.execution}`,
           result.delivery && `delivery=${result.delivery}`,
         ]

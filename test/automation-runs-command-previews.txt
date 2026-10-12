@@ -1,0 +1,29 @@
+illustrative fixture data; no host operations
+
+## narrow page
+[stdout]
+automation  review
+query  limit=2  offset=2
+       run-id=all
+runs   2 of 4
+
+run id: run-older
+time: 2026-10-10T03:30:00.123Z
+execution: ok
+delivery: delivered
+run id: run-current
+time: 2026-10-10T03:31:00.456Z
+execution: error
+delivery: not-delivered
+
+next page: --offset 4
+
+## filtered empty
+[stdout]
+automation  review
+query  limit=2  offset=0  run-id=run-missing
+runs   0 of 0
+
+run id  time  execution  delivery
+
+no matching runs

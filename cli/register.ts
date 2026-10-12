@@ -573,6 +573,7 @@ export default function registerAgentSystemCli(
         output,
         setExitCode,
         styles: options.styles,
+        terminalColumns: process.stdout.columns,
         ...(typeof storeId === 'string' ? { storeId } : {}),
         workspaceDir: cwd(),
       });

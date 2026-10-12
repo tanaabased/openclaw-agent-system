@@ -182,7 +182,9 @@ describe('cli/automation-sync presentation', () => {
         assert.equal(
           messages,
           manifestWarning +
-            `automation operation stopped (${code}).\n` +
+            (result instanceof AgentSystemLifecycleError
+              ? `automation operation stopped (${code}).\n`
+              : `automations: operation failed; upstream details withheld. cause=unknown code=${code}\n`) +
             (progress
               ? `partial progress: completed=${progress.outcomes.length} warnings=${progress.warnings.length} unattempted=${progress.unattempted.length}; ${progress.outcomes.length > 0 ? 'completed changes remain applied' : 'no completed changes reported'}; the stopped operation may have partial effects.\n`
               : '') +

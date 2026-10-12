@@ -39,7 +39,7 @@ printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CO
 # should validate only the selected platform-native store
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE")
-printf '%s\n' "$output" | grep -F "store:$DEFAULT_CREDENTIAL_STORE"
+printf '%s\n' "$output" | grep -F 'store' | grep -F "$DEFAULT_CREDENTIAL_STORE"
 printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should resolve stored op environment values without the process token
@@ -152,12 +152,14 @@ openclaw-aimock evidence \
 # should remove every persisted credential copy
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op)
-printf '%s\n' "$output" | grep -F 'removed' | grep -F 'op credential for credential-data'
+printf '%s\n' "$output" | grep -F 'agent' | grep -F 'credential-data'
+printf '%s\n' "$output" | grep -F 'scope' | grep -F 'all stores'
+printf '%s\n' "$output" | grep -F 'removed'
 printf '%s\n' "$output" | grep -F 'gateway cache' | grep -F 'invalidation confirmed'
 
 # should leave the credential absent when removal is repeated
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'unchanged' | grep -F 'op credential for credential-data is not stored'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'unchanged' | grep -F 'op credential is not stored'
 
 # should reject exact native-store validation after the credential is removed
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -168,12 +170,14 @@ printf '%s\n' "$output" | grep -F 'code=op-credential-missing'
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin --store file | grep -F 'file'
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file)
-printf '%s\n' "$output" | grep -F 'store:file'
+printf '%s\n' "$output" | grep -F 'store' | grep -F 'file'
 printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should remove the explicitly selected file credential
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file | grep -F 'removed' | grep -F 'op credential for credential-data'
+output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file)
+printf '%s\n' "$output" | grep -F 'scope' | grep -F 'one store (file)'
+printf '%s\n' "$output" | grep -F 'removed' | grep -F 'file'
 
 # should reject exact file-store validation after the credential is removed
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -191,11 +195,19 @@ XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | gr
 # should stop the isolated gateway
 openclaw-gateway stop
 
-# should report pending invalidation after a store command when the gateway is unavailable
+# should retain stored success and pending cache invalidation when the gateway is unavailable
+cd "$GITHUB_WORKSPACE/examples/credentials/data"
+output=$(printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin --store file 2> "$TMPDIR/credential-set-offline.stderr")
+printf '%s\n' "$output" | grep -F 'credential' | grep -F 'stored'
+printf '%s\n' "$output" | grep -F 'gateway cache' | grep -F 'invalidation pending'
+if printf '%s\n' "$output" | grep -F 'invalidation not required'; then exit 1; fi
+grep -F 'invalidation is pending' "$TMPDIR/credential-set-offline.stderr"
+
+# should report pending invalidation after removal when the gateway is unavailable
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file 2>&1)
-printf '%s\n' "$output" | grep -F 'unchanged'
-printf '%s\n' "$output" | grep -F 'Gateway invalidation is pending'
+printf '%s\n' "$output" | grep -F 'removed'
+printf '%s\n' "$output" | grep -F 'gateway invalidation is pending'
 
 # should fail cache controls with bounded protocol evidence and empty machine stdout at normal and debug levels
 for level in info debug; do
