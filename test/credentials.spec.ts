@@ -143,7 +143,10 @@ describe('cli/credentials', () => {
       },
       credentialManager: {
         set: async () => ({
-          status: 'unchanged', agentId: 'data', storeId: 'keychain', gatewayInvalidation: 'confirmed',
+          status: 'unchanged',
+          agentId: 'data',
+          storeId: 'keychain',
+          gatewayInvalidation: 'confirmed',
         }),
       },
     });
@@ -157,9 +160,18 @@ describe('cli/credentials', () => {
     const inputFailure = harness();
     await setCredentialsAgentSystem({
       ...inputFailure,
-      credential: 'op', fromEnvironment: false, fromStdin: false, workspaceDir: '/workspace',
-      credentialInput: { read: async () => ({ status: 'invalid', code: 'z-input', message: 'input failed' }) },
-      credentialManager: { set: async () => { throw new Error('not expected'); } },
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: false,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'invalid', code: 'z-input', message: 'input failed' }),
+      },
+      credentialManager: {
+        set: async () => {
+          throw new Error('not expected');
+        },
+      },
     });
     assert.deepEqual(inputFailure.records.output, []);
     assert.match(inputFailure.records.diagnostics.join(''), /input failed/u);
@@ -168,9 +180,21 @@ describe('cli/credentials', () => {
     const validationFailure = harness();
     await setCredentialsAgentSystem({
       ...validationFailure,
-      credential: 'op', fromEnvironment: false, fromStdin: true, workspaceDir: '/workspace',
-      credentialInput: { read: async () => ({ status: 'read', source: 'stdin', token: 'private-token' }) },
-      credentialManager: { set: async () => ({ status: 'invalid', code: 'z-validation', message: 'validation failed', gatewayInvalidation: 'pending' }) },
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: true,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'read', source: 'stdin', token: 'private-token' }),
+      },
+      credentialManager: {
+        set: async () => ({
+          status: 'invalid',
+          code: 'z-validation',
+          message: 'validation failed',
+          gatewayInvalidation: 'pending',
+        }),
+      },
     });
     const diagnostics = validationFailure.records.diagnostics.join('');
     assert.ok(diagnostics.indexOf('error') < diagnostics.indexOf('warning'));
