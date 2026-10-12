@@ -191,7 +191,9 @@ card. Unchanged polling and already-reported blockers produce no new card. Failu
 that prevent reading or saving the tracking records cannot be deduplicated safely;
 they remain visible. Cards remain saved until a later run verifies the exact final
 heartbeat in recent native chat history. Interrupted runs can therefore repeat a
-card rather than lose it. Each run posts one heartbeat containing its cards.
+card rather than lose it. Each run posts one bounded batch; additional cards remain queued for later runs.
+A quiet report requires both a current scan and a completed dispatch check; unfinished
+checks cannot be reported as no updates.
 
 An `EPERM` or `EACCES` failure can mean the sandbox cannot write private tracking
 files under the plugin data directory. The agent retries the same command once

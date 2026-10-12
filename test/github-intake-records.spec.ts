@@ -40,6 +40,22 @@ describe('channels/github/intake/records', () => {
       },
     };
   }
+  it('should preserve a filesystem denial during scan persistence without recording a provider failure', async () => {
+    const { input, store } = setup();
+    await scanAssignments({ ...input, activate: true });
+    const before = await store.read();
+    for (const code of ['EPERM', 'EACCES']) {
+      const denial = Object.assign(new Error('denied'), { code });
+      store.file.write = async () => {
+        throw denial;
+      };
+      await assert.rejects(
+        scanAssignments({ ...input, now: baseline + 120000 }),
+        (error: unknown) => error === denial,
+      );
+      assert.deepEqual(await store.read(), before);
+    }
+  });
   it('should require activation and persist one immutable record across polls and restart for both host mappings', async () => {
     for (const runtime of ['codex', 'openclaw'] as const) {
       const { input, store, events } = setup(runtime);

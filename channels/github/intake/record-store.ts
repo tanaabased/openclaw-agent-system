@@ -144,9 +144,9 @@ export default class IntakeRecordStore {
     });
   }
   async read(): Promise<IntakeState | undefined> {
+    const contents = await this.file.read();
+    if (contents === undefined) return;
     try {
-      const contents = await this.file.read();
-      if (contents === undefined) return;
       const value: unknown = JSON.parse(contents);
       if (
         !Value.Check(stateSchema, value) ||

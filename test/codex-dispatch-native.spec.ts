@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { realpath } from 'node:fs/promises';
 
+import type { CodexThreadRequest } from '../agent/codex-thread-client.ts';
 import { codexDispatchNative, matchesDispatchCreation } from '../agent/codex-dispatch-native.ts';
 
 const output =
@@ -17,13 +18,49 @@ const input = {
   createdAfter: 100000,
 };
 
+function fixtureNative(request: CodexThreadRequest) {
+  return codexDispatchNative(async (method, params) => {
+    if (method === 'thread/read') {
+      assert.equal(params.includeTurns, false);
+      return request(method, params);
+    }
+    if (method === 'thread/turns/list' || (method === 'thread/items/list' && params.limit === 50)) {
+      const response = await request('thread/read', {
+        threadId: params.threadId,
+        includeTurns: false,
+      });
+      const thread = response.thread as { turns: Record<string, unknown>[] };
+      const turns = thread.turns.map((turn, index) => ({
+        ...turn,
+        id: turn?.id ?? `turn-${index}`,
+      }));
+      if (method === 'thread/turns/list') {
+        const ordered = params.sortDirection === 'desc' ? [...turns].reverse() : turns;
+        return { data: ordered.slice(0, Number(params.limit)), nextCursor: null };
+      }
+      return {
+        data: turns
+          .filter((turn) => !params.turnId || params.turnId === turn.id)
+          .flatMap((turn) =>
+            (((turn as Record<string, unknown>).items as unknown[]) ?? []).map((item) => ({
+              turnId: turn.id,
+              item,
+            })),
+          ),
+        nextCursor: null,
+      };
+    }
+    return request(method, params);
+  });
+}
+
 describe('agent/codex-dispatch-native', () => {
   it('should acknowledge only exact native final responses through a bounded history read', async () => {
     const response = '<heartbeat>retained card</heartbeat>';
     const item = { type: 'agentMessage', phase: 'final_answer', text: response };
     const reports = [{ response, createdAt: 100 }];
     let data: unknown = [];
-    const native = codexDispatchNative(async (method, params) => {
+    const native = fixtureNative(async (method, params) => {
       assert.equal(method, 'thread/items/list');
       assert.deepEqual(params, { threadId: 'intake', sortDirection: 'desc', limit: 100 });
       return { data };
@@ -64,7 +101,7 @@ describe('agent/codex-dispatch-native', () => {
       error: { message: 'user rejected MCP tool call' },
     };
     const make = (items: unknown[], status = 'idle', turnStatus = 'completed') =>
-      codexDispatchNative(async () => ({
+      fixtureNative(async () => ({
         thread: {
           id: 'intake',
           status: { type: status },
@@ -139,7 +176,7 @@ describe('agent/codex-dispatch-native', () => {
   it('should recover a lost receipt across pages without using mutable titles', async () => {
     const cwd = await realpath('.');
     const calls: string[] = [];
-    const native = codexDispatchNative(async (method, params) => {
+    const native = fixtureNative(async (method, params) => {
       calls.push(method);
       if (method === 'thread/list') {
         assert.equal(params.sortDirection, 'desc');
@@ -171,13 +208,13 @@ describe('agent/codex-dispatch-native', () => {
       };
     });
     assert.equal((await native.find(input))?.id, 'matching');
-    assert.deepEqual(calls, ['thread/list', 'thread/read', 'thread/list', 'thread/read']);
+    assert.equal(calls.filter((method) => method === 'thread/list').length, 2);
   });
 
   it('should verify native title writes by reading the exact chat back', async () => {
     let name = 'shortened title';
     let apply = true;
-    const native = codexDispatchNative(async (method, params) => {
+    const native = fixtureNative(async (method, params) => {
       assert.equal(params.threadId, 'known');
       if (method === 'thread/name/set') {
         if (apply) name = String(params.name);
@@ -195,7 +232,7 @@ describe('agent/codex-dispatch-native', () => {
   it('should read lifecycle status from the latest turn while preserving creation provenance', async () => {
     const cwd = await realpath('.');
     let latest: unknown = { id: 'follow-up', status: 'inProgress', items: [] };
-    const native = codexDispatchNative(async () => ({
+    const native = fixtureNative(async () => ({
       thread: {
         id: 'matching',
         cwd,
@@ -211,13 +248,13 @@ describe('agent/codex-dispatch-native', () => {
     assert.equal((await native.find({ ...input, threadId: 'matching' }))?.followUpUserTurn, true);
     latest = null;
     const unavailable = await native.find({ ...input, threadId: 'matching' });
-    assert.equal(unavailable?.turnId, undefined);
+    assert.equal(unavailable?.turnId, 'turn-1');
     assert.equal(unavailable?.turnStatus, undefined);
   });
 
   it('should retain uncertainty on duplicate creation evidence or unavailable history', async () => {
     const cwd = await realpath('.');
-    const duplicate = codexDispatchNative(async (method, params) =>
+    const duplicate = fixtureNative(async (method, params) =>
       method === 'thread/list'
         ? {
             data: [
@@ -236,7 +273,7 @@ describe('agent/codex-dispatch-native', () => {
           },
     );
     await assert.rejects(duplicate.find(input), /dispatch-native-identity-ambiguous/);
-    const unavailable = codexDispatchNative(async () => {
+    const unavailable = fixtureNative(async () => {
       throw new Error('transport failed');
     });
     await assert.rejects(unavailable.find({ ...input, threadId: 'known' }), /transport failed/);

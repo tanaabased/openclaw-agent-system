@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
-import { Value } from 'typebox/value';
-
-import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
+import validateDispatchRequest from './codex-dispatch-request.ts';
+import { dispatchCheckDigest } from './codex-dispatch-check.ts';
+import recoverDispatch from './codex-dispatch-recovery.ts';
+import reportDispatch from './codex-dispatch-reporting.ts';
 import appendCodexNotice from './codex-notice-outbox.ts';
 import codexHostAccess from './codex-host-access.ts';
 
@@ -418,22 +419,15 @@ export async function runCodexDispatch(
   input: unknown,
   deps: CodexDispatchDependencies = {},
 ) {
-  if (!nativeObject(input)) throw new Error('dispatch-request-invalid');
+  validateDispatchRequest(action, input);
   const current = await selectCodexIntake(pluginData, deps);
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
-    if (Object.keys(input).length) throw new Error('dispatch-request-invalid');
     return store.read();
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
   if (action === 'handoff') {
-    if (
-      Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||
-      typeof input.id !== 'string' ||
-      (input.digest !== undefined && typeof input.digest !== 'string')
-    )
-      throw new Error('dispatch-request-invalid');
     return store.exclusive(async (state, save) => {
       const record = state.records.find((entry) => entry.id === input.id);
       if (
@@ -565,78 +559,22 @@ export async function runCodexDispatch(
         await save();
         return result;
       };
-      if (action === 'report') {
-        if (
-          Object.keys(input).some((key) => !['automationId', 'currentTimeIso'].includes(key)) ||
-          typeof input.automationId !== 'string' ||
-          typeof input.currentTimeIso !== 'string'
-        )
-          throw new Error('dispatch-request-invalid');
-        const quiet = codexHeartbeat({
-          automationId: input.automationId,
-          currentTimeIso: input.currentTimeIso,
-          intake: { status: 'ready', changed: false },
-          dispatch: [{ status: 'idle', changed: false }],
+      if (action === 'report')
+        return reportDispatch(input, {
+          state,
+          admitted,
+          intakeStore: current.store,
+          now,
+          save,
+          deliveredReports: (reports) =>
+            withNative(current, deps, (host) => host.deliveredReports(caller, reports)),
         });
-        if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
-        const occurrence = Date.parse(input.currentTimeIso);
-        if (!Number.isFinite(occurrence)) throw new Error('heartbeat-request-invalid');
-        // An unchanged provider cooldown is current evidence; otherwise this occurrence must scan.
-        if (
-          (admitted.lastAttemptAt ?? 0) < occurrence &&
-          (admitted.blocker?.retryAfter ?? 0) <= occurrence
-        )
-          throw new Error('dispatch-scan-required');
-        const reports = state.reports ?? [];
-        if (reports.length) {
-          const delivered = await withNative(current, deps, (host) =>
-            host.deliveredReports(caller, reports),
-          );
-          const ids = new Set(
-            reports
-              .filter((entry) => delivered.includes(entry.response))
-              .flatMap((entry) => entry.notices),
-          );
-          state.notices = (state.notices ?? []).filter((entry) => !ids.has(entry.id));
-          state.reports = reports.filter((entry) => !delivered.includes(entry.response));
-          if (ids.size)
-            await current.store.exclusive(async (scan, saveScan) => {
-              if (scan?.notices)
-                await saveScan({
-                  ...scan,
-                  notices: scan.notices.filter((entry) => !ids.has(entry.id)),
-                });
-            });
-        }
-        const scan = await current.store.read();
-        if (!scan) throw new Error('dispatch-intake-record-missing');
-        const cards = [...(state.notices ?? []), ...(scan.notices ?? [])];
-        state.reports = (state.reports ?? []).filter((report) =>
-          report.notices.some((id) => cards.some((card) => card.id === id)),
-        );
-        const response = cards.length
-          ? codexHeartbeatEnvelope(
-              input.automationId,
-              cards.map((entry) => entry.message).join('\n\n'),
-              cards.some((entry) => entry.notify),
-            )
-          : quiet.response;
-        if (cards.length) {
-          state.reports = [
-            ...(state.reports ?? []).filter((entry) => entry.response !== response),
-            {
-              response,
-              createdAt: reports.find((entry) => entry.response === response)?.createdAt ?? now,
-              notices: cards.map((entry) => entry.id),
-            },
-          ].slice(-8);
-        }
-        await save();
-        return { status: 'report', response, pendingNotices: cards.length };
-      }
       if (action === 'next') {
-        if (Object.keys(input).some((key) => key !== 'projects'))
-          throw new Error('dispatch-request-invalid');
+        const checked = async (status: 'idle' | 'at-capacity') => {
+          state.checked = { at: now, digest: dispatchCheckDigest(state, admitted) };
+          await save();
+          return { status, changed: false };
+        };
         const handedOff = state.records.find(
           (entry) => !entry.retired && entry.handoff && entry.notice !== noticeDigest(entry),
         );
@@ -702,7 +640,7 @@ export async function runCodexDispatch(
               !record.retired && !record.handoff && record.request && record.phase !== 'complete',
           ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
         )
-          return { status: 'at-capacity', changed: false };
+          return checked('at-capacity');
         const latest = new Map<string, IntakeRecord>();
         for (const entry of admitted.records) latest.set(issueKey(entry), entry);
         const intake = [...latest.values()].find((entry) => {
@@ -715,7 +653,7 @@ export async function runCodexDispatch(
             );
           return !previous || (!previous.request && (previous.retryAfter ?? 0) <= now);
         });
-        if (!intake) return { status: 'idle', changed: false };
+        if (!intake) return checked('idle');
         let record = state.records.find(
           (entry) => !entry.reset && !entry.retired && entry.issueKey === issueKey(intake),
         );
@@ -887,185 +825,24 @@ export async function runCodexDispatch(
       if (record.reset) throw new Error('dispatch-assessment-reset');
       if (record.retired) throw new Error('dispatch-assessment-retired');
       if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
-      if (operatorRetire) {
-        if (
-          Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||
-          (input.digest !== undefined && typeof input.digest !== 'string')
-        )
-          throw new Error('dispatch-request-invalid');
-        if (
-          state.records.some(
-            (entry) => entry.threadId === caller || entry.receiptThreadId === caller,
-          )
-        )
-          throw new Error('dispatch-operator-caller-required');
-        if (record.sourceThreadId !== activation.sourceThreadId)
-          throw new Error('dispatch-retire-unavailable');
-        const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-        const item = await client.getItem(
-          intake.repository.owner.login,
-          intake.repository.name,
-          intake.issue.number,
-        );
-        if (
-          !githubIdentityMatches(client.identity, intake.receiving) ||
-          item.nodeId !== intake.issue.nodeId ||
-          item.databaseId !== intake.issue.databaseId ||
-          item.itemType !== 'issue' ||
-          item.state !== 'closed'
-        )
-          throw new Error('dispatch-retire-closed-issue-required');
-        const digest = automationHash({ record, manifest: current.digest });
-        await fresh();
-        if (input.digest === undefined)
-          return {
-            status: 'retire-available',
-            id: record.id,
-            digest,
-            issue: issueUrl(intake),
-            threadId: record.threadId ?? record.receiptThreadId,
-            instruction:
-              'Retire this closed issue from the queue, preserving its evidence. This does not stop or archive a native chat or remove its worktree; clean those up through native controls. Only a new assignment event can admit it again.',
-          };
-        if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-        record.retired = { at: now, by: caller };
-        await save();
-        return { status: 'retired', id: record.id, retired: record.retired };
-      }
-      if (operatorReset) {
-        if (
-          Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||
-          (input.digest !== undefined && typeof input.digest !== 'string')
-        )
-          throw new Error('dispatch-request-invalid');
-        if (
-          state.records.some(
-            (entry) => entry.threadId === caller || entry.receiptThreadId === caller,
-          )
-        )
-          throw new Error('dispatch-operator-caller-required');
-        if (
-          record.sourceThreadId !== activation.sourceThreadId ||
-          record.phase !== 'complete' ||
-          !record.result ||
-          !record.request ||
-          !record.threadId
-        )
-          throw new Error('dispatch-reset-unavailable');
-        const native = await withNative(current, deps, (client) =>
-          client.find({
-            sourceThreadId: record.sourceThreadId,
-            prompt: record.request!.prompt,
-            createdAfter: record.createdAt,
-            threadId: record.threadId,
-          }),
-        );
-        if (
-          !native ||
-          !record.resultTurnId ||
-          native.turnId !== record.resultTurnId ||
-          !['idle', 'notLoaded'].includes(native.status) ||
-          native.turnStatus !== 'completed'
-        )
-          throw new Error('dispatch-reset-chat-active');
-        const digest = automationHash({ record, manifest: current.digest, turnId: native.turnId });
-        await fresh();
-        if (input.digest === undefined)
-          return {
-            status: 'reset-available',
-            id: record.id,
-            digest,
-            issue: issueUrl(intake),
-            threadId: record.threadId,
-            outcome: record.result.outcome,
-            instruction:
-              'Reset preserves this assessment and worktree. Only a new assignment event after reset permits one fresh assessment through normal intake. No implementation is authorized.',
-          };
-        if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-        record.reset = { at: now, by: caller };
-        await save();
-        return {
-          status: 'reset',
-          changed: true,
-          id: record.id,
-          threadId: record.threadId,
-          awaiting: 'new-assignment',
-          reset: record.reset,
-        };
-      }
-      if (operatorRecovery) {
-        if (
-          Object.keys(input).some((key) => !['id', 'digest', 'approvedCallId'].includes(key)) ||
-          (input.digest !== undefined && typeof input.digest !== 'string') ||
-          (input.approvedCallId !== undefined &&
-            (typeof input.approvedCallId !== 'string' || !input.approvedCallId.trim()))
-        )
-          throw new Error('dispatch-request-invalid');
-        if (
-          record.sourceThreadId !== activation.sourceThreadId ||
-          !record.request ||
-          !['creating', 'blocked'].includes(record.phase) ||
-          record.clientThreadId ||
-          record.receiptThreadId ||
-          record.threadId ||
-          record.worktree ||
-          (record.deniedCreations?.length ?? 0) >= 8
-        )
-          throw new Error('dispatch-denial-unverified');
-        await revalidate(current, intake, deps, signal);
-        const denial = await withNative(current, deps, async (native) => {
-          const evidence = await native.deniedCreation(
-            record.sourceThreadId,
-            record.request!,
-            input.approvedCallId as string | undefined,
-          );
-          const found = await native.find({
-            sourceThreadId: record.sourceThreadId,
-            prompt: record.request!.prompt,
-            createdAfter: record.createdAt,
-          });
-          if (found) throw new Error('dispatch-denial-unverified');
-          return evidence;
-        });
-        const digest = automationHash({
+      if (action === 'retire' || action === 'reset' || action === 'retry-denied')
+        return recoverDispatch(input, {
+          action,
+          state,
           record,
-          manifest: current.digest,
-          denial,
-          approvedCallId: input.approvedCallId,
+          intake,
+          sourceThreadId: activation.sourceThreadId,
+          manifestDigest: current.digest,
+          issueUrl: issueUrl(intake),
+          caller,
+          now,
+          save,
+          fresh,
+          revalidate: () => revalidate(current, intake, deps, signal),
+          connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
+          withNative: (operation) => withNative(current, deps, operation),
         });
-        await fresh();
-        if (input.digest === undefined)
-          return { status: 'retry-available', id: record.id, digest, denial };
-        if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-        record.deniedCreations = [
-          ...(record.deniedCreations ?? []),
-          {
-            request: record.request,
-            createdAt: record.createdAt,
-            recoveredAt: now,
-            ...denial,
-            ...(input.approvedCallId ? { approvedBy: caller } : {}),
-          },
-        ];
-        delete record.request;
-        delete record.result;
-        delete record.notice;
-        delete record.retryAfter;
-        record.phase = 'routing';
-        await save();
-        return { status: 'retry-ready', changed: true, id: record.id };
-      }
       if (action === 'prepare') {
-        if (
-          Object.keys(input).some(
-            (key) => !['id', 'digest', 'assessment', 'fallback', 'title'].includes(key),
-          ) ||
-          !Value.Check(assessmentSchema, input.assessment) ||
-          typeof input.title !== 'string' ||
-          !/^[A-Za-z0-9][A-Za-z0-9 -]{2,79}$/u.test(input.title) ||
-          (input.fallback !== undefined && input.fallback !== 'default')
-        )
-          throw new Error('dispatch-request-invalid');
         if (record.request) return { status: 'reconcile-required', changed: false, id: record.id };
         if (
           record.phase !== 'routing' ||
@@ -1132,7 +909,7 @@ export async function runCodexDispatch(
             ' Requested selection; effective settings await native verification.';
           record.createdAt = now;
           record.request = {
-            title: '#' + intake.issue.number + ': ' + input.title.trim().toUpperCase(),
+            title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
             prompt: launchPrompt(record, intake),
             model: decision.candidate.model,
             thinking: decision.candidate.thinking,
@@ -1176,20 +953,6 @@ export async function runCodexDispatch(
         }
       }
       if (action === 'reconcile' || childAction) {
-        if (
-          Object.keys(input).some(
-            (key) =>
-              ![
-                'id',
-                ...(action === 'reconcile'
-                  ? ['receipt']
-                  : action === 'result'
-                    ? ['result', 'previousResultDigest']
-                    : []),
-              ].includes(key),
-          )
-        )
-          throw new Error('dispatch-request-invalid');
         try {
           if (action === 'reconcile' && input.receipt !== undefined) {
             if (

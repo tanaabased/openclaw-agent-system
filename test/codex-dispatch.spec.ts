@@ -266,6 +266,8 @@ describe('agent/codex-dispatch', () => {
     await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
     const started = await report();
     deps.native!.deliveredReports = async () => [String(started.response)];
+    await next();
+    await next();
     assert.equal((await report()).pendingNotices, 0);
     deps.native!.deliveredReports = async () => [];
     native!.turnId = 'authorized-work';
@@ -318,9 +320,24 @@ describe('agent/codex-dispatch', () => {
     now += 60000;
     await assert.rejects(report(), /dispatch-scan-required/);
     await runCodexIntake(pluginData, false, deps);
-    assert.equal((await report()).pendingNotices, 0);
+    await assert.rejects(report(), /dispatch-check-required/);
   });
 
+  it('should require a new terminal dispatch check after each scan occurrence', async () => {
+    const current = await selectCodexIntake(pluginData, deps);
+    await current.store.exclusive(async (state, save) => {
+      state!.records = [];
+      await save(state!);
+    });
+    await assert.rejects(report(), /dispatch-check-required/);
+    await next();
+    assert.equal((await report()).pendingNotices, 0);
+    now += 60000;
+    await runCodexIntake(pluginData, false, deps);
+    await assert.rejects(report(), /dispatch-check-required/);
+    assert.equal((await next()).status, 'routing-required');
+    await assert.rejects(report(), /dispatch-check-required/);
+  });
   it('should retain scan failure and recovery until their combined report is delivered', async () => {
     const unavailable = {
       ...deps,
@@ -337,6 +354,14 @@ describe('agent/codex-dispatch', () => {
     await runCodexIntake(pluginData, false, deps);
     assert.deepEqual(await report(), pending);
     deps.native!.deliveredReports = async () => [String(pending.response)];
+    await assert.rejects(report(), /dispatch-check-required/);
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+    await next();
+    await next();
+    const started = await report();
+    deps.native!.deliveredReports = async () => [String(started.response)];
     assert.equal((await report()).pendingNotices, 0);
     const current = await selectCodexIntake(pluginData, deps);
     assert.deepEqual((await current.store.read())?.notices, []);
@@ -1372,5 +1397,62 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(context.conflicts, ['complexity']);
     assert.ok(context.nativeMetadata);
     assert.ok(context.fallbackMetadata);
+  });
+  it('should retain an identical-looking revised plan until its own report is delivered', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    const first = await request('result', { id: prepared.id, result }, child);
+    await next();
+    const old = await report();
+    now += 60000;
+    await runCodexIntake(pluginData, false, deps);
+    native!.turnId = 'revised-plan';
+    await request(
+      'result',
+      {
+        id: prepared.id,
+        previousResultDigest: first.previousResultDigest,
+        result: { ...result, plan: 'A revised, different implementation plan.' },
+      },
+      child,
+    );
+    await next();
+    deps.native!.deliveredReports = async (_thread, reports) =>
+      reports
+        .filter((r) => r.response === old.response && r.createdAt < now)
+        .map((r) => r.response);
+    const revised = await report();
+    assert.equal(revised.pendingNotices, 1);
+    assert.notEqual(revised.response, old.response);
+    // No final response for the revised report was delivered.
+    const after = await report();
+    assert.equal(after.pendingNotices, 1);
+  });
+  it('should drain separately valid notice queues in bounded reports', async () => {
+    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new Store(current.store.location.root, current.store.location.scope);
+    const cards = (offset: number) =>
+      Array.from({ length: 60 }, (_, i) => ({
+        id: (offset + i).toString(16).padStart(64, '0'),
+        message: 'retained card',
+        notify: false,
+      }));
+    await current.store.exclusive(async (s, save) => {
+      s!.notices = cards(100);
+      await save(s!);
+    });
+    await store.exclusive(async (s, save) => {
+      s.notices = cards(200);
+      await save();
+    });
+    const first = await report();
+    assert.equal(first.pendingNotices, 120);
+    assert.equal((await store.read()).reports![0]!.notices.length, 100);
+    deps.native!.deliveredReports = async () => [String(first.response)];
+    assert.equal((await report()).pendingNotices, 20);
+    assert.equal((await current.store.read())!.notices!.length, 20);
+    assert.equal((await store.read()).notices!.length, 0);
   });
 });

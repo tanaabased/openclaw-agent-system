@@ -139,6 +139,12 @@ const schema = Type.Object(
     version: Type.Literal(1),
     scope: hash,
     records: Type.Array(dispatchRecordSchema),
+    checked: Type.Optional(
+      Type.Object(
+        { at: Type.Integer({ minimum: 0 }), digest: hash },
+        { additionalProperties: false },
+      ),
+    ),
     notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: 100 })),
     reports: Type.Optional(
       Type.Array(

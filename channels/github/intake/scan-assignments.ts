@@ -1,3 +1,5 @@
+import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
+
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../config-schema.ts';
@@ -184,6 +186,7 @@ export default async function scanAssignments(
       await save(state);
       return result;
     } catch (error) {
+      if (isFilesystemAccessError(error)) throw error;
       const diagnostic =
         error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
       const code =

@@ -128,6 +128,17 @@ and continue only after approval and verified context. An actual approval denial
 verification failure must stop it. Verify the retained plan, one completion notice,
 and a subsequent quiet poll without duplicate chats or worktrees.
 
+For delivery recovery, interrupt a run after it prepares a report but before the final
+heartbeat. The next run must retain the same batch. Record a revised plan with identical
+card wording: the previous delivery must not acknowledge that revision. Exercise combined
+intake and dispatch queues over one report's count and size limits; later batches must
+remain saved until their own delivery. A fresh scan without a terminal dispatch check
+must refuse a quiet report. Repeat after only part of the assignment queue is processed.
+For native recovery, verify creation and latest-turn evidence through paged history on a
+long chat; title checks must not request history. Incomplete or cyclic history must retain
+uncertainty without authorizing another creation. These desktop checks remain separate
+from the deterministic unit reproductions and require an explicitly authorized pilot.
+
 ## Setup
 
 ```bash
