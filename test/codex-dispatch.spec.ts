@@ -109,6 +109,7 @@ describe('agent/codex-dispatch', () => {
     now += 60000;
     await runCodexIntake(pluginData, false, {
       codexHome,
+      assertActive: async () => {},
       now: () => now,
       connect: async () => fixture.client,
     });
@@ -201,6 +202,160 @@ describe('agent/codex-dispatch', () => {
       connect: async () => fixture.client,
     });
   }
+
+  async function workflow(enabled: boolean) {
+    const configured = structuredClone(manifest);
+    Object.assign(configured.github.notifications['issue-assignment'], { enabled });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+  }
+
+  it('should stop queued dispatch before credentials and resume the retained assignment', async () => {
+    const selected = await next();
+    await workflow(false);
+    const blocked = {
+      connect: async () => {
+        throw new Error('must not authenticate');
+      },
+    };
+    await assert.rejects(request('next', { projects }, blocked), /dispatch-policy-disabled/);
+    await assert.rejects(
+      request('prepare', { id: selected.id }, blocked),
+      /dispatch-policy-disabled/,
+    );
+    const stopped = await request('inspect');
+    assert.equal((stopped.records as { id: string }[])[0]!.id, selected.id);
+    await workflow(true);
+    await assert.rejects(next(), /dispatch-policy-reconciliation-required/);
+    await runCodexIntake(pluginData, true, {
+      codexHome,
+      now: () => now,
+      connect: async () => fixture.client,
+    });
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, selected.id);
+    fixture.item.state = 'closed';
+    const rejected = await request('prepare', {
+      id: resumed.id,
+      digest: resumed.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    });
+    assert.equal(rejected.code, 'dispatch-assignment-authority-revoked');
+    assert.equal((rejected as { request?: unknown }).request, undefined);
+  });
+
+  it('should discard a creation request when policy changes during preparation', async () => {
+    const selected = await next();
+    const connect = deps.connect!;
+    await assert.rejects(
+      request(
+        'prepare',
+        {
+          id: selected.id,
+          digest: selected.digest,
+          title: 'repair contained behavior',
+          assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+        },
+        {
+          connect: async (workspace, signal) => {
+            await workflow(false);
+            return connect(workspace, signal);
+          },
+        },
+      ),
+      /dispatch-policy-changed/,
+    );
+    const retained = (await request('inspect')).records as { phase: string; request?: unknown }[];
+    assert.equal(retained[0]!.phase, 'routing');
+    assert.equal(retained[0]!.request, undefined);
+  });
+
+  it('should still enforce current authority when a disabled workflow retains a child', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    await request('context', { id: prepared.id }, child);
+    const configured = structuredClone(manifest);
+    Object.assign(configured.github.notifications['issue-assignment'], {
+      enabled: false,
+      allowed: [{ login: 'other', 'node-id': 'U_other' }],
+    });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    await assert.rejects(
+      request('result', { id: prepared.id, result }, child),
+      /dispatch-assignment-authority-revoked/,
+    );
+    const records = (await request('inspect')).records as { phase: string; result?: unknown }[];
+    assert.equal(records[0]!.phase, 'assessing');
+    assert.equal(records[0]!.result, undefined);
+  });
+
+  for (const phase of ['creating', 'assessing', 'complete'] as const)
+    it(`should retain ${phase} work and accept its verified child result while disabled`, async () => {
+      const prepared = await prepare();
+      const child = { threadId: 'issue-thread' };
+      if (phase !== 'creating') {
+        created();
+        assert.equal((await request('context', { id: prepared.id }, child)).status, 'verified');
+      }
+      if (phase === 'complete') await request('result', { id: prepared.id, result }, child);
+      await workflow(false);
+      const activation = deps.activation;
+      deps.activation = async (_root, _deps, _paused, retainedWork) => {
+        assert.equal(retainedWork, true);
+        return { sourceThreadId: 'intake-thread' };
+      };
+      if (phase === 'creating') {
+        const uncertain = await request('reconcile', { id: prepared.id });
+        assert.equal(uncertain.code, 'dispatch-creation-unresolved');
+        created();
+        await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+      }
+      const context = await request('context', { id: prepared.id }, child);
+      assert.equal(context.status, 'verified');
+      await assert.rejects(
+        request('context', { id: prepared.id }, { threadId: 'unrelated-chat' }),
+        /dispatch-assessment-caller-mismatch/,
+      );
+      const recorded = await request(
+        'result',
+        {
+          id: prepared.id,
+          result,
+          previousResultDigest: context.previousResultDigest,
+        },
+        child,
+      );
+      assert.equal(recorded.status, 'recorded');
+      await assert.rejects(
+        request(
+          'result',
+          { id: prepared.id, result: { ...result, plan: 'stale replacement' } },
+          child,
+        ),
+        /assessment-result-conflict/,
+      );
+      await workflow(true);
+      deps.activation = activation;
+      await runCodexIntake(pluginData, true, {
+        codexHome,
+        now: () => now,
+        connect: async () => fixture.client,
+      });
+      const notice = await next();
+      if (phase !== 'creating') assert.equal(notice.outcome, 'plan-ready');
+      assert.deepEqual(await next(), { status: 'idle', changed: false });
+      const records = (await request('inspect')).records as {
+        id: string;
+        result: unknown;
+        threadId: string;
+      }[];
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.id, prepared.id);
+      assert.equal(records[0]!.threadId, 'issue-thread');
+      assert.deepEqual(records[0]!.result, result);
+    });
 
   it('should retain a normalized replacement and guidance across continuation without expanding authority', async () => {
     await writeFile(join(workspace, 'guidance.md'), 'Prefer small fixes.');
@@ -382,6 +537,7 @@ describe('agent/codex-dispatch', () => {
     });
     await runCodexIntake(pluginData, false, {
       codexHome,
+      assertActive: async () => {},
       now: () => now,
       connect: async () => fixture.client,
     });

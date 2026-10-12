@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { codexIntakePolicy } from './codex-intake-policy.ts';
+import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import type { SetupProcessRunner } from './setup-runner.ts';
@@ -23,6 +24,7 @@ import { githubResponseIdentity } from '../channels/github/provider/work-event-n
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
 export interface CodexIntakeDependencies {
+  assertActive?: () => Promise<void>;
   codexHome?: string;
   now?: () => number;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
@@ -187,6 +189,28 @@ export async function runCodexIntake(
     const current = await selectCodexIntake(pluginData, deps);
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const { policy, digest } = current.policy;
+    const assertActive = async () => {
+      if (activate) return;
+      try {
+        if (deps.assertActive) await deps.assertActive();
+        else
+          await inspectCodexDispatchActivation(pluginData, {
+            codexHome: current.codexHome,
+            inspectBinding: deps.inspectBinding,
+          });
+      } catch {
+        throw new IntakeError('intake-activation-required');
+      }
+    };
+    const assertCurrent = async () => {
+      const fresh = await selectCodexIntake(pluginData, deps);
+      if (
+        fresh.digest !== current.digest ||
+        fresh.store.location.scope !== current.store.location.scope
+      )
+        throw new IntakeError('intake-policy-changed');
+      await assertActive();
+    };
     return await scanAssignments({
       store: current.store,
       workspaceDir: current.workspace,
@@ -196,20 +220,14 @@ export async function runCodexIntake(
       now: (deps.now ?? Date.now)(),
       activate,
       async connect(signal) {
+        await assertCurrent();
         return connectSelected(
           current,
           deps,
           AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
         );
       },
-      async assertCurrent() {
-        const fresh = await selectCodexIntake(pluginData, deps);
-        if (
-          fresh.digest !== current.digest ||
-          fresh.store.location.scope !== current.store.location.scope
-        )
-          throw new IntakeError('intake-policy-changed');
-      },
+      assertCurrent,
     });
   } catch (error) {
     if (

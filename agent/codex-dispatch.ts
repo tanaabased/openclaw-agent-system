@@ -13,6 +13,7 @@ import {
 import { automationHash } from './automation-hash.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
+import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import {
   dispatchGit,
@@ -249,8 +250,9 @@ async function revalidate(
   record: IntakeRecord,
   deps: CodexDispatchDependencies,
   signal: AbortSignal,
+  retainedWork = false,
 ) {
-  const policy = current.policy;
+  const policy = retainedWork ? codexIntakePolicy(current.manifest, true) : current.policy;
   if (!policy || policy.policy.issueAssignment?.mode !== 'plan')
     throw new Error('dispatch-plan-mode-required');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
@@ -421,18 +423,21 @@ export async function runCodexDispatch(
   const operatorReset = action === 'reset';
   const operatorRetire = action === 'retire';
   const operatorAction = operatorRecovery || operatorReset || operatorRetire;
+  const childAction = action === 'context' || action === 'result';
+  const retainedWork = childAction || action === 'reconcile';
+  if (!retainedWork && !current.policy) throw new Error('dispatch-policy-disabled');
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
     operatorRecovery || operatorRetire,
+    retainedWork,
   );
-  const childAction = action === 'context' || action === 'result';
   if (operatorAction && caller === activation.sourceThreadId)
     throw new Error('dispatch-operator-caller-required');
   if (!operatorAction && !childAction && caller !== activation.sourceThreadId)
     throw new Error('dispatch-intake-caller-required');
   const admitted = await current.store.read();
-  if (!admitted || admitted.policyDigest !== current.policy?.digest)
+  if (!admitted || (!retainedWork && admitted.policyDigest !== current.policy?.digest))
     throw new Error('dispatch-policy-reconciliation-required');
   const now = (deps.now ?? Date.now)();
   return store
@@ -443,6 +448,7 @@ export async function runCodexDispatch(
           pluginData,
           { codexHome: selected.codexHome, inspectBinding: deps.inspectBinding },
           operatorRecovery || operatorRetire,
+          retainedWork,
         );
         if (
           selected.digest !== current.digest ||
@@ -452,6 +458,14 @@ export async function runCodexDispatch(
           throw new Error('dispatch-policy-changed');
       };
       const fail = async (record: DispatchRecord, error: unknown) => {
+        if (
+          [
+            'dispatch-policy-changed',
+            'dispatch-policy-disabled',
+            'dispatch-activation-required',
+          ].includes(code(error))
+        )
+          throw error;
         if (record.phase === 'complete') throw error;
         // Native worktree setup returns a client receipt before the child is readable.
         if (
@@ -1057,9 +1071,11 @@ export async function runCodexDispatch(
               record.clientThreadId = input.receipt.clientThreadId as string;
             await save();
           }
-          await revalidate(current, intake, deps, signal);
+          if (record.sourceThreadId !== activation.sourceThreadId)
+            throw new Error('dispatch-intake-caller-required');
           if (childAction && record.threadId && record.threadId !== caller)
             throw new Error('dispatch-assessment-caller-mismatch');
+          await revalidate(current, intake, deps, signal, true);
           const native = await recover(
             current,
             record,

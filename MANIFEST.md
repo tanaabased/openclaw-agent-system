@@ -474,6 +474,12 @@ monitored. An issue assigner, review requester, and feedback author are distinct
 roles: membership in one list never implies membership in another. There is no
 `approved-actors` fallback in v2.
 
+Each trigger also accepts optional boolean `enabled`. Omission preserves existing
+trigger behavior. `false` stops that workflow without clearing its allowed identities,
+mode, or assessment settings, and requires no execution adapter for that workflow.
+Explicit `true` requires a supported adapter but never grants authority to an empty
+`allowed` list. Disabled declarations still require valid identity pins.
+
 Every identity record requires `login` and immutable `node-id`, using the existing
 GitHub identity syntax. Logins (case-insensitive) and node IDs must be unique
 within each list. The same identity may appear in separate lists deliberately.
@@ -557,9 +563,9 @@ Currently, skill resolution supports host-discovered local `SKILL.md` sources.
 
 #### Issue-only profile example
 
-This declaration prepares the agreed self-assignment policy; it does not activate
-an automation with the current runtime. Add no feedback or review-request section
-until that authority is wanted and its runtime exists.
+This declaration prepares the agreed self-assignment policy; Install activates it.
+Keep feedback and review-request absent or set `enabled: false` until their execution
+adapters are available.
 
 ```yaml
 schema-version: 1
@@ -592,7 +598,8 @@ github:
 
 Policy declares desired monitoring; binding and passive discovery do not activate
 it. Install reconciles the selected runtime. Empty authority lists admit no work;
-removing policy stops admission and requires reconciliation to pause the owned job.
+disabling a trigger or removing policy stops admission and requires reconciliation
+to pause the owned job.
 See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
 Review, feedback, and implementation execution remain outside the current Codex support.
 

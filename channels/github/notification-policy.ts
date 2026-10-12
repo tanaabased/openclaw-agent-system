@@ -49,10 +49,17 @@ export function githubNotificationRuntimeBlocker(
   runtime: 'openclaw' | 'codex',
 ) {
   if (declaration?.schemaVersion !== 2 || !declaration.runtimes.includes(runtime)) return;
+  const triggers = [declaration.issueAssignment, declaration.reviewRequest, declaration.feedback];
+  if (
+    triggers.some((trigger) => trigger?.enabled === false) &&
+    triggers.every((trigger) => !trigger || trigger.enabled === false)
+  )
+    return;
   if (
     runtime === 'codex' &&
-    !declaration.reviewRequest?.allowed.length &&
-    !declaration.feedback?.allowed.length
+    ![declaration.reviewRequest, declaration.feedback].some(
+      (trigger) => trigger?.enabled ?? Boolean(trigger?.allowed.length),
+    )
   )
     return;
   return {

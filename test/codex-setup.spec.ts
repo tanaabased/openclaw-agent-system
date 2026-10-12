@@ -35,6 +35,43 @@ describe('agent/codex-setup', () => {
     baseEnvironment: { HOME: '/tmp', PATH: '/bin:/usr/bin' },
   };
 
+  it('should install disabled unsupported workflows without models or github access', async () => {
+    await manifest(`github:
+  username: pirog
+  notifications:
+    schema-version: 2
+    runtimes: [codex]
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_owner
+    issue-assignment:
+      enabled: false
+      allowed: [{login: pirog, node-id: U_pirog}]
+    review-request:
+      enabled: false
+      allowed: [{login: pirog, node-id: U_pirog}]
+    feedback:
+      enabled: false
+      allowed: [{login: pirog, node-id: U_pirog}]
+`);
+    const deps = {
+      ...dependencies,
+      codexHome: join(root, 'codex'),
+      intake: {
+        connect: async () => {
+          throw new Error('must not authenticate');
+        },
+      },
+    };
+    const installed = await installCodexSetup(pluginData, undefined, deps);
+    assert.equal(installed.status, 'installed');
+    assert.equal(installed.automations.actions.length, 0);
+    const inspected = await inspectCodexSetup(pluginData, undefined, deps);
+    assert.ok(
+      !inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
+    );
+  });
+
   it('should report unsupported notification execution before applying setup or granting authority', async () => {
     await manifest(`github:
   username: pirog

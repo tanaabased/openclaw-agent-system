@@ -101,6 +101,15 @@ and applicable identity pins. Repository read access is sufficient. The first
 successful activation establishes a historical baseline; reinstall and restart
 retain it and deduplicate assignments by event identity.
 
+To stop issue assignments on this machine, set `enabled: false` under
+`github.notifications.issue-assignment`, then authorize Install to pause and verify
+the owned schedule. Stale scheduled runs cannot admit or dispatch new work. Existing
+chats, assessment results, and checkpoints remain; an already-issued chat creation
+can finish and be reconciled. Re-enable through Install to revalidate access and
+resume the same schedule and chat. The retained baseline permits eligible assignments
+to catch up without repeating recorded events. You choose which machine runs each
+workflow; two active machines do not coordinate or deduplicate work between them.
+
 Use `$agent-system-doctor` to inspect admitted issues, assigning actors, event IDs,
 baseline, checkpoint, and blockers without contacting GitHub. Scheduled scans use
 the trusted `intakeRuntime` from Agent System context. The assessment-enabled

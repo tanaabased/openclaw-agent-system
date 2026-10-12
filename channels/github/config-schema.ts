@@ -77,6 +77,7 @@ const externalLegacyGitHubNotificationsSchema = Type.Object(
 const externalNotificationTriggerSchema = Type.Object(
   {
     allowed: Type.Optional(Type.Array(externalGitHubApprovedActorSchema, { uniqueItems: true })),
+    enabled: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -153,12 +154,13 @@ export interface GitHubNotificationPolicy {
   maxConcurrentItems: number;
   allowedRepositoryOwners: GitHubIdentityPin[];
   issueAssignment?: {
+    enabled?: boolean;
     allowed: GitHubApprovedActor[];
     mode: 'plan' | 'work' | 'auto';
     assessment?: AssessmentConfiguration;
   };
-  reviewRequest?: { allowed: GitHubApprovedActor[] };
-  feedback?: { allowed: GitHubApprovedActor[] };
+  reviewRequest?: { allowed: GitHubApprovedActor[]; enabled?: boolean };
+  feedback?: { allowed: GitHubApprovedActor[]; enabled?: boolean };
 }
 
 export type GitHubNotificationsDeclaration =
@@ -198,6 +200,9 @@ export function decodeGitHubNotifications(
         ? {}
         : {
             issueAssignment: {
+              ...(value['issue-assignment'].enabled === undefined
+                ? {}
+                : { enabled: value['issue-assignment'].enabled }),
               allowed: actors(value['issue-assignment']),
               mode: value['issue-assignment'].mode ?? 'plan',
               ...(value['issue-assignment'].assessment === undefined
@@ -209,8 +214,22 @@ export function decodeGitHubNotifications(
           }),
       ...(value['review-request'] === undefined
         ? {}
-        : { reviewRequest: { allowed: actors(value['review-request']) } }),
-      ...(value.feedback === undefined ? {} : { feedback: { allowed: actors(value.feedback) } }),
+        : {
+            reviewRequest: {
+              allowed: actors(value['review-request']),
+              ...(value['review-request'].enabled === undefined
+                ? {}
+                : { enabled: value['review-request'].enabled }),
+            },
+          }),
+      ...(value.feedback === undefined
+        ? {}
+        : {
+            feedback: {
+              allowed: actors(value.feedback),
+              ...(value.feedback.enabled === undefined ? {} : { enabled: value.feedback.enabled }),
+            },
+          }),
     };
   }
 

@@ -29,6 +29,54 @@ function parsed(notifications: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
+  it('should preserve trigger switches and authority independently of adapter availability', () => {
+    for (const [key, decoded] of [
+      ['issue-assignment', 'issueAssignment'],
+      ['review-request', 'reviewRequest'],
+      ['feedback', 'feedback'],
+    ] as const) {
+      for (const enabled of [undefined, true, false]) {
+        for (const allowed of [undefined, [], [actor]]) {
+          const declaration = parsed({
+            ...policy,
+            [key]: { allowed, ...(enabled === undefined ? {} : { enabled }) },
+          });
+          assert.equal(declaration[decoded]?.enabled, enabled);
+          assert.equal(declaration[decoded]?.allowed.length, allowed?.length ?? 0);
+          assert.equal(
+            githubNotificationRuntimeBlocker(declaration, 'openclaw')?.code,
+            enabled === false ? undefined : 'github-notification-runtime-unsupported',
+          );
+          assert.equal(
+            githubNotificationRuntimeBlocker(declaration, 'codex')?.code,
+            key !== 'issue-assignment' && (enabled ?? Boolean(allowed?.length))
+              ? 'github-notification-runtime-unsupported'
+              : undefined,
+          );
+        }
+      }
+      for (const enabled of ['false', 0, null])
+        assert.equal(parse({ ...policy, [key]: { enabled } }).status, 'invalid');
+      assert.equal(
+        parse({ ...policy, [key]: { enabled: false, allowed: [{ login: 'missing-pin' }] } }).status,
+        'invalid',
+      );
+    }
+    const mixed = parsed({
+      ...policy,
+      runtimes: ['codex'],
+      'issue-assignment': { allowed: [{ ...actor }] },
+      'review-request': { enabled: false, allowed: [{ ...actor }] },
+      feedback: { enabled: false, allowed: [{ ...actor }] },
+    });
+    assert.equal(githubNotificationRuntimeBlocker(mixed, 'codex'), undefined);
+    mixed.feedback!.enabled = true;
+    assert.equal(
+      githubNotificationRuntimeBlocker(mixed, 'codex')?.code,
+      'github-notification-runtime-unsupported',
+    );
+    assert.equal(parse({ 'approved-actors': [actor], enabled: false }).status, 'invalid');
+  });
   it('should normalize assessment skill ids and retain optional guidance forms', () => {
     for (const [skill, normalized] of [
       ['assess', 'assess'],

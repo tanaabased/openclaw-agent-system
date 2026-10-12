@@ -28,6 +28,8 @@ export interface AssignmentScanInput {
 
 /** admission evidence only: no workspaces, chats, model decisions, or publication. */
 export default async function scanAssignments(input: AssignmentScanInput) {
+  if (input.policy.issueAssignment?.enabled === false)
+    throw new IntakeError('intake-policy-disabled');
   return input.store.exclusive(async (previous, save, signal) => {
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
     if (!input.activate && previous?.policyDigest !== input.policyDigest)

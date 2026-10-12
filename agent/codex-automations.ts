@@ -382,11 +382,12 @@ export async function inspectCodexAutomations(
   return (await plan(selected, inputs)).result;
 }
 
-/** dispatch requires the newly approved schedule, not merely historical intake activation. */
+/** new dispatch requires active consent; retained work may verify its owner after a pause. */
 export async function inspectCodexDispatchActivation(
   pluginData: string,
   dependencies: CodexAutomationDependencies = {},
   pausedRecovery = false,
+  retainedWork = false,
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
@@ -394,14 +395,15 @@ export async function inspectCodexDispatchActivation(
   if (
     selected.cleanupOnly ||
     selected.ledger.pending ||
-    !job ||
-    job.payload.kind !== 'prompt' ||
     !record ||
-    record.removed ||
     record.definition.kind !== 'heartbeat' ||
-    record.definition.status !== 'ACTIVE' ||
-    record.definition.prompt !==
-      job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId)
+    (!retainedWork &&
+      (!job ||
+        job.payload.kind !== 'prompt' ||
+        record.removed ||
+        record.definition.status !== 'ACTIVE' ||
+        record.definition.prompt !==
+          job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId)))
   )
     throw new Error('dispatch-activation-required');
   const saved = await readCodexAutomations(selected.codexHome);
@@ -410,7 +412,11 @@ export async function inspectCodexDispatchActivation(
     !actual ||
     !savedMatches(
       actual,
-      pausedRecovery ? { ...record.definition, status: 'PAUSED' } : record.definition,
+      retainedWork
+        ? { ...record.definition, status: actual.definition.status }
+        : pausedRecovery
+          ? { ...record.definition, status: 'PAUSED' }
+          : record.definition,
       selected.workspace,
     )
   )

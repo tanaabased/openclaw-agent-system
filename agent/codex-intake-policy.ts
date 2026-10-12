@@ -7,11 +7,13 @@ import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 export const intakeAutomationId = 'github-issue-assignment';
 
-export function codexIntakePolicy(manifest: AgentManifest) {
+/** retained work still checks authority, but its enable switch only controls new work. */
+export function codexIntakePolicy(manifest: AgentManifest, retainedWork = false) {
   const policy = manifest.github?.notifications;
   if (
     policy?.schemaVersion !== 2 ||
     !policy.runtimes.includes('codex') ||
+    (!retainedWork && policy.issueAssignment?.enabled === false) ||
     !policy.issueAssignment?.allowed.length
   )
     return;
@@ -20,7 +22,18 @@ export function codexIntakePolicy(manifest: AgentManifest) {
   return {
     policy,
     username,
-    digest: automationHash({ username, host: manifest.github?.host, policy }),
+    digest: automationHash({
+      username,
+      host: manifest.github?.host,
+      policy: {
+        schemaVersion: policy.schemaVersion,
+        runtimes: policy.runtimes,
+        intervalMinutes: policy.intervalMinutes,
+        maxConcurrentItems: policy.maxConcurrentItems,
+        allowedRepositoryOwners: policy.allowedRepositoryOwners,
+        issueAssignment: policy.issueAssignment,
+      },
+    }),
   };
 }
 
