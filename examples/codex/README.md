@@ -116,7 +116,9 @@ creation enables per-worktree Git configuration, the source must remain bare whi
 both the base and assessment checkout still accept ordinary `git status`. Repeat
 with an already registered managed base carrying the old shared `core.bare=true`
 setting: preparation must repair the owned configuration without replacing checkouts.
-An unrelated saved project with invalid Git configuration must remain a blocker.
+Without an explicit checkout, a saved project with invalid Git configuration must
+remain a blocker. With an explicit checkout, inaccessible unrelated saved projects
+must not prevent selecting it; access and identity checks still apply to the target.
 Verify that the launch carries its receipt once, context supplies the assessment
 instructions, and an altered native launch is still rejected before investigation.
 Have the child request context while intake is reconciling its creation receipt;

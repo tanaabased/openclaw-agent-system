@@ -86,11 +86,12 @@ export async function resolveDispatchProject(
       typeof project.projectId !== 'string'
     )
       continue;
+    if (expected && project.path !== expected) continue;
     const path = await realpath(project.path).catch((error: unknown) => {
       if (isFilesystemAccessError(error)) throw error;
       return undefined;
     });
-    if (!path || (expected && path !== expected)) continue;
+    if (!path) continue;
     if (path !== project.path) throw new Error('dispatch-project-path-unsafe');
     await ensureRepositoryDirectory(path, false);
     let origin: string;

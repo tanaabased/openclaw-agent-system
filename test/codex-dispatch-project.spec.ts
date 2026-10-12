@@ -68,6 +68,35 @@ describe('agent/codex-dispatch-project', () => {
     }
   });
 
+  it('should exclude inaccessible unrelated projects when an explicit checkout is configured', async function () {
+    if (process.platform === 'win32' || process.getuid?.() === 0) this.skip();
+    const parent = join(root, 'restricted');
+    const path = join(parent, 'repo');
+    await mkdir(path, { recursive: true });
+    await chmod(parent, 0);
+    try {
+      for (const projects of [
+        [project(path), project(source)],
+        [project(source), project(path)],
+      ]) {
+        const selected = await resolveDispatchProject(
+          {
+            projects,
+            repository: 'owner/repo',
+            defaultBranch: 'main',
+            workspace: root,
+            explicitPath: './source',
+          },
+          git,
+        );
+        assert.equal(selected.path, source);
+        assert.equal(selected.commit, commit);
+      }
+    } finally {
+      await chmod(parent, 0o700);
+    }
+  });
+
   it('should preserve git access denials while classifying other lookup failures', async () => {
     const input = {
       projects: [project(source)],
