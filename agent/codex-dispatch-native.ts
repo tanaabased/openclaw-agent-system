@@ -112,6 +112,36 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     };
   }
   return {
+    async occurrence(threadId: string) {
+      const result = await request('thread/turns/list', {
+        threadId,
+        itemsView: 'notLoaded',
+        sortDirection: 'desc',
+        limit: 1,
+      });
+      const turn = Array.isArray(result.data) && result.data[0];
+      if (!nativeObject(turn) || typeof turn.id !== 'string')
+        throw new Error('dispatch-native-turn-unavailable');
+      const items = await request('thread/items/list', {
+        threadId,
+        turnId: turn.id,
+        sortDirection: 'asc',
+        limit: 1,
+      });
+      const entry = Array.isArray(items.data) && items.data[0];
+      const item = nativeObject(entry) && entry.turnId === turn.id && entry.item;
+      const content = nativeObject(item) && item.type === 'userMessage' && item.content;
+      const text = Array.isArray(content) && content[0];
+      const match =
+        nativeObject(text) && text.type === 'text' && typeof text.text === 'string'
+          ? /^<heartbeat>\s*<automation_id>([^<]+)<\/automation_id>\s*<current_time_iso>([^<]+)<\/current_time_iso>/u.exec(
+              text.text,
+            )
+          : null;
+      if (!match || !Number.isFinite(Date.parse(match[2]!)))
+        throw new Error('dispatch-native-occurrence-unavailable');
+      return { id: turn.id, automationId: match[1]!, currentTimeIso: match[2]! };
+    },
     async deliveredReports(threadId: string, reports: { response: string; createdAt: number }[]) {
       const result = await request('thread/items/list', {
         threadId,

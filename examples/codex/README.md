@@ -151,8 +151,15 @@ Reactivate with a full queue and a recovered provider: activation must succeed,
 preserve queued cards, and report recovery once after space is available. A real
 provider failure must retain its own diagnostic. Denied access to a saved project
 must request host access instead of treating the checkout as missing.
-A fresh scan without a terminal dispatch check
-must refuse a quiet report. Repeat after only part of the assignment queue is processed.
+A fresh scan without a terminal dispatch check must return `continue` from report,
+even when an earlier issue has a card ready. Follow its next action until the queue
+is checked, capacity is full, a blocker is retained, or twelve runtime actions are
+spent. A report supplied with the previous trigger's timestamp must return the
+current native occurrence's request without publishing a final response. Repeat
+three fresh multi-issue batches; require each run to fill available slots, retain
+overflow, resume it later without duplicates, and become quiet after delivery.
+Exhaust the action budget after creation but before receipt reconciliation; the
+next occurrence must recover the same chat rather than launch another.
 For native recovery, verify creation and latest-turn evidence through paged history on a
 long chat; title checks must not request history. Incomplete or cyclic history must retain
 uncertainty without authorizing another creation. These desktop checks remain separate

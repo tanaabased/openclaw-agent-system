@@ -524,6 +524,21 @@ export async function runCodexDispatch(
   const now = (deps.now ?? Date.now)();
   return store
     .exclusive(async (state, save, signal) => {
+      if (!operatorAction && !childAction) {
+        const occurrence = await withNative(current, deps, (host) => host.occurrence(caller));
+        if (state.run?.id !== occurrence.id) {
+          state.run = { ...occurrence, actions: 0 };
+          delete state.checked;
+        }
+        if (action !== 'report') {
+          if (state.run.actions >= 12) {
+            await save();
+            return { status: 'budget-exhausted', changed: false, nextAction: 'report' };
+          }
+          state.run.actions++;
+        }
+        await save();
+      }
       const fresh = async () => {
         const selected = await selectCodexIntake(pluginData, deps);
         const allowed = await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -561,6 +576,7 @@ export async function runCodexDispatch(
           admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
         );
         record.retryAfter = now + 300000;
+        if (state.run) state.run.stopped = 'blocked';
         const result = notice(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
@@ -589,14 +605,13 @@ export async function runCodexDispatch(
         });
         const scan = await current.store.read();
         if (!scan) throw new Error('dispatch-intake-record-missing');
-        if (codexNoticeQueueFull(state.notices) || codexNoticeQueueFull(scan.notices))
-          return { status: 'at-capacity', changed: false };
-
         const checked = async (status: 'idle' | 'at-capacity') => {
           state.checked = { at: now, digest: dispatchCheckDigest(state, admitted) };
           await save();
           return { status, changed: false };
         };
+        if (codexNoticeQueueFull(state.notices) || codexNoticeQueueFull(scan.notices))
+          return checked('at-capacity');
         const handedOff = state.records.find(
           (entry) => !entry.retired && entry.handoff && entry.notice !== noticeDigest(entry),
         );

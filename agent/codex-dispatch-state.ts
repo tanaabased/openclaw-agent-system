@@ -139,6 +139,18 @@ const schema = Type.Object(
     version: Type.Literal(1),
     scope: hash,
     records: Type.Array(dispatchRecordSchema),
+    run: Type.Optional(
+      Type.Object(
+        {
+          id: text,
+          automationId: text,
+          currentTimeIso: text,
+          actions: Type.Integer({ minimum: 0, maximum: 12 }),
+          stopped: Type.Optional(Type.Literal('blocked')),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     checked: Type.Optional(
       Type.Object(
         { at: Type.Integer({ minimum: 0 }), digest: hash },

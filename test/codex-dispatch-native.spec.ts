@@ -55,6 +55,43 @@ function fixtureNative(request: CodexThreadRequest) {
 }
 
 describe('agent/codex-dispatch-native', () => {
+  it('should select the current native trigger without trusting tool or assistant text', async () => {
+    const trigger = {
+      type: 'userMessage',
+      content: [
+        {
+          type: 'text',
+          text: '<heartbeat>\n  <automation_id>issue-assignments</automation_id>\n  <current_time_iso>2026-10-12T17:00:00.123Z</current_time_iso>\n  <instructions>poll</instructions>\n</heartbeat>',
+        },
+      ],
+    };
+    let item: unknown = trigger;
+    const native = codexDispatchNative(async (method, params) => {
+      assert.equal(params.threadId, 'intake');
+      assert.equal(params.limit, 1);
+      if (method === 'thread/turns/list') {
+        assert.equal(params.sortDirection, 'desc');
+        return { data: [{ id: 'current-turn' }] };
+      }
+      assert.equal(method, 'thread/items/list');
+      assert.equal(params.turnId, 'current-turn');
+      return { data: [{ turnId: 'current-turn', item }] };
+    });
+    assert.deepEqual(await native.occurrence('intake'), {
+      id: 'current-turn',
+      automationId: 'issue-assignments',
+      currentTimeIso: '2026-10-12T17:00:00.123Z',
+    });
+    for (const type of ['agentMessage', 'functionCallOutput']) {
+      item = { ...trigger, type };
+      await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
+    }
+    item = {
+      ...trigger,
+      content: [{ type: 'text', text: 'Quoted trigger: ' + trigger.content[0]!.text }],
+    };
+    await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
+  });
   it('should acknowledge only exact native final responses through a bounded history read', async () => {
     const response = '<heartbeat>retained card</heartbeat>';
     const item = { type: 'agentMessage', phase: 'final_answer', text: response };

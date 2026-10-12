@@ -4,6 +4,7 @@ import acknowledgeDispatchDelivery, {
 import codexHeartbeat from './codex-heartbeat.ts';
 import prepareDispatchReport from './codex-dispatch-report.ts';
 import requireDispatchCheck from './codex-dispatch-check.ts';
+import { codexNoticeQueueFull } from './codex-notice-outbox.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 
 export default async function reportDispatch(
@@ -20,6 +21,20 @@ export default async function reportDispatch(
     typeof input.currentTimeIso !== 'string'
   )
     throw new Error('dispatch-request-invalid');
+  const run = state.run;
+  if (!run) throw new Error('dispatch-native-occurrence-unavailable');
+  if (input.automationId !== run.automationId || input.currentTimeIso !== run.currentTimeIso)
+    return {
+      status: 'continue',
+      nextAction: 'report',
+      request: {
+        action: 'report',
+        automationId: run.automationId,
+        currentTimeIso: run.currentTimeIso,
+      },
+      instruction:
+        'This report belongs to a different scheduled occurrence. Call report with this exact request; do not finish this turn yet.',
+    };
   const quiet = codexHeartbeat({
     automationId: input.automationId,
     currentTimeIso: input.currentTimeIso,
@@ -37,13 +52,31 @@ export default async function reportDispatch(
     report.notices.some((id) => cards.some((card) => card.id === id)),
   );
   if (!cards.length) {
-    // Pending delivery may drain without another provider scan; quiet completion may not.
     if (
       (admitted.lastAttemptAt ?? 0) < occurrence &&
       (admitted.blocker?.retryAfter ?? 0) <= occurrence
     )
       throw new Error('dispatch-scan-required');
-    requireDispatchCheck(state, scan, occurrence);
+  }
+  if (
+    run.actions < 12 &&
+    !run.stopped &&
+    !codexNoticeQueueFull(state.notices) &&
+    !codexNoticeQueueFull(scan.notices)
+  ) {
+    try {
+      requireDispatchCheck(state, scan, occurrence);
+    } catch {
+      await save();
+      return {
+        status: 'continue',
+        nextAction: 'next',
+        remainingActions: 12 - run.actions,
+        pendingNotices: cards.length,
+        instruction:
+          'The queue has not reached a stopping point in this scheduled run. Keep the pending cards saved. Call next with the saved projects array, then follow routing-required through prepare and native create_thread/reconcile. Finish only when report returns status report and its response. Do not publish a final answer for status continue.',
+      };
+    }
   }
   const batch = cards.length
     ? prepareDispatchReport({
