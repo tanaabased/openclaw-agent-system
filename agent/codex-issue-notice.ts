@@ -67,7 +67,7 @@ function failure(code: string): NoticeCopy {
         'This scheduled run has no fresh scan result, so it cannot yet report that nothing changed.',
       next: 'Run the deterministic intake scan, then request the report again. Do not reuse a previous run’s result.',
     };
-  if (code === 'dispatch-check-required' || code === 'dispatch-scan-required')
+  if (code === 'dispatch-check-required')
     return {
       severity: 'warning',
       title: 'The issue check has not finished',

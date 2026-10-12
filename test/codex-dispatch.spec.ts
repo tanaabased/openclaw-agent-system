@@ -1488,6 +1488,30 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await store.read()).records.length, 1);
   });
 
+  it('should report and drain an existing near-limit journal without losing large cards', async () => {
+    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new Store(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.notices = Array.from({ length: 43 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: '文'.repeat(32000),
+        notify: false,
+      }));
+      await save();
+    });
+    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
+    const first = await report();
+    assert.equal(first.pendingNotices, 43);
+    const saved = await store.read();
+    assert.ok(Buffer.byteLength(JSON.stringify(saved)) > 4 * 1024 * 1024);
+    assert.equal(saved.reports!.length, 1);
+    assert.equal((await report()).response, first.response);
+    deps.native!.deliveredReports = async () => [String(first.response)];
+    assert.equal((await report()).pendingNotices, 42);
+    assert.equal((await store.read()).notices!.length, 42);
+  });
+
   it('should drain a full intake queue without claiming an unperformed scan completed', async () => {
     const current = await selectCodexIntake(pluginData, deps);
     await current.store.exclusive(async (state, save) => {

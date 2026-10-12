@@ -165,6 +165,20 @@ const schema = Type.Object(
 );
 export type DispatchState = Static<typeof schema>;
 
+const contentBytes = 4 * 1024 * 1024;
+// a bounded report may expand under json escaping; producers cannot consume this reserve.
+const journalBytes = contentBytes + 1024 * 1024;
+
+function serializeState(state: DispatchState) {
+  const contents = JSON.stringify(state);
+  if (
+    Buffer.byteLength(contents) > journalBytes ||
+    Buffer.byteLength(JSON.stringify({ ...state, reports: undefined })) > contentBytes
+  )
+    throw new Error('dispatch-state-capacity');
+  return contents;
+}
+
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
 export default class CodexDispatchStore {
   readonly file: PrivateStateFile;
@@ -179,7 +193,7 @@ export default class CodexDispatchStore {
       directories: [root],
       currentUid: process.getuid?.(),
       label: 'Codex issue dispatch',
-      maximumBytes: 4 * 1024 * 1024,
+      maximumBytes: journalBytes,
     });
   }
   async read(): Promise<DispatchState> {
@@ -208,6 +222,7 @@ export default class CodexDispatchStore {
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId))
     )
       throw new Error('dispatch-state-invalid');
+    serializeState(state);
     return state;
   }
   async exclusive<T>(
@@ -233,10 +248,7 @@ export default class CodexDispatchStore {
           async () => {
             lock.assertHeld();
             if (!Value.Check(schema, state)) throw new Error('dispatch-state-invalid');
-            const contents = JSON.stringify(state);
-            if (Buffer.byteLength(contents) > 4 * 1024 * 1024)
-              throw new Error('dispatch-state-capacity');
-            await this.file.write(contents);
+            await this.file.write(serializeState(state));
           },
           lock.signal,
         );

@@ -44,4 +44,29 @@ describe('agent/codex-dispatch-state', () => {
       await assert.rejects(store.read(), (error: unknown) => error === denied);
     }
   });
+
+  it('should reserve report space without allowing other state to consume it', async () => {
+    await store.exclusive(async (state, save) => {
+      state.notices = Array.from({ length: 43 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: '文'.repeat(32000),
+        notify: false,
+      }));
+      await save();
+      state.reports = [
+        { response: '\0'.repeat(128000), createdAt: 1, notices: [state.notices[0]!.id] },
+      ];
+      await save();
+    });
+    const before = await store.read();
+    assert.ok(Buffer.byteLength(JSON.stringify(before)) > 4 * 1024 * 1024);
+    await assert.rejects(
+      store.exclusive(async (state, save) => {
+        state.notices!.push({ ...state.notices![0]!, id: 'f'.repeat(64) });
+        await save();
+      }),
+      /dispatch-state-capacity/,
+    );
+    assert.deepEqual(await store.read(), before);
+  });
 });

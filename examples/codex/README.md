@@ -137,6 +137,11 @@ or dispatch action: it must pause new work and still allow reporting to drain th
 Reconcile an already-created chat while that queue is full; its receipt must survive,
 and its card must appear after earlier delivery frees space. Interrupt acknowledgment
 between the intake and dispatch saves; retry must preserve unrelated pending cards.
+Repeat with large UTF-8 cards near the journal's content limit: report storage must
+remain available, pending cards must survive a restart, and new card production
+must pause on byte capacity before reaching 100 cards. Deny access to a disposable
+assessment skill or guidance fixture and verify the native host-access retry is
+requested without replacing the selected skill or diagnosing corrupt configuration.
 A fresh scan without a terminal dispatch check
 must refuse a quiet report. Repeat after only part of the assignment queue is processed.
 For native recovery, verify creation and latest-turn evidence through paged history on a
