@@ -113,7 +113,29 @@ async function automationOperation(
                 : result.reason === 'stopped'
                   ? 'warning'
                   : 'notice',
-            message: `reason=${result.reason}`,
+            message: `automation run was ${result.reason}; no run was queued.`,
+          },
+        ]);
+      if (result.status === 'queued')
+        writeCliDiagnosticNotices(options, [
+          {
+            severity: 'notice',
+            message:
+              'automation run was accepted and queued; execution and delivery are unavailable until separately confirmed.',
+          },
+        ]);
+      if (result.reason === 'disabled')
+        writeCliDiagnosticNotices(options, [
+          {
+            severity: 'warning',
+            message: 'enable the automation before requesting another run.',
+          },
+        ]);
+      if (result.reason === 'invalid-spec')
+        writeCliDiagnosticNotices(options, [
+          {
+            severity: 'error',
+            message: 'review the automation specification, then retry the run.',
           },
         ]);
     }
@@ -136,6 +158,11 @@ async function automationOperation(
     if (options.json) writeCliJson(options.output, result);
     writeCliDiagnosticNotices(options, [
       { severity: 'error', message: `automation operation stopped (${code}).` },
+      {
+        severity: 'warning',
+        message:
+          'check automation configuration and runtime availability before retrying the operation.',
+      },
       ...(error instanceof AgentSystemLifecycleError && error.progress
         ? [
             {
