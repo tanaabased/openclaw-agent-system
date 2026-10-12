@@ -296,6 +296,33 @@ describe('environment/op-service', () => {
     assert.deepEqual(tokens, ['private-candidate']);
   });
 
+  it('should redact candidate credentials and resource values from provider failures', async () => {
+    const token = 'synthetic-secret-value';
+    const resourceId = 'synthetic-resource-value';
+    const service = new OpEnvironmentService({
+      createClient: async (candidate) => {
+        throw new Error(`provider rejected ${candidate} for ${resourceId}`);
+      },
+      credentialService: {
+        async resolveServiceAccountToken() {
+          return { status: 'missing' } as const;
+        },
+      },
+      integrationVersion: 'test',
+    });
+
+    const result = await service.validateToken(token, {
+      environmentIds: [resourceId],
+      secrets: [],
+    });
+
+    assert.equal(result.status, 'invalid');
+    assert.doesNotMatch(JSON.stringify(result), /synthetic-secret-value|synthetic-resource-value/u);
+    if (result.status !== 'invalid') throw new Error('expected candidate validation failure');
+    assert.equal(result.diagnostics[0]?.code, 'op-authentication-failed');
+    assert.equal(result.diagnostics[0]?.providerDiagnostic?.explanation.includes('withheld'), true);
+  });
+
   it('should resolve direct secrets and environments through one authenticated sdk client', async () => {
     let clientCalls = 0;
     const calls: string[] = [];

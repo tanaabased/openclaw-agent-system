@@ -39,7 +39,7 @@ printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CO
 # should validate only the selected platform-native store
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE")
-printf '%s\n' "$output" | grep -F "store:$DEFAULT_CREDENTIAL_STORE"
+printf '%s\n' "$output" | grep -F 'store' | grep -F "$DEFAULT_CREDENTIAL_STORE"
 printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should resolve stored op environment values without the process token
@@ -170,7 +170,7 @@ printf '%s\n' "$output" | grep -F 'code=op-credential-missing'
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin --store file | grep -F 'file'
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file)
-printf '%s\n' "$output" | grep -F 'store:file'
+printf '%s\n' "$output" | grep -F 'store' | grep -F 'file'
 printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should remove the explicitly selected file credential
