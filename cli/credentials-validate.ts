@@ -22,6 +22,7 @@ export interface ValidateCredentialsAgentSystemOptions {
   setExitCode(code: number): void;
   storeId?: string;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -92,6 +93,7 @@ async function validateCredentialsAgentSystem(
       { label: 'secrets checked', style: 'field', value: String(result.secretCount) },
     ],
     options.styles,
+    { rowPadding: 0, terminalColumns: options.terminalColumns },
   );
 }
 

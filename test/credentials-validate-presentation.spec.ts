@@ -20,7 +20,7 @@ describe('cli/credentials-validate presentation', () => {
     );
   });
 
-  it('should keep invalidation trouble separate from validation failure and redact values', async () => {
+  it('should keep invalidation trouble separate from validation failure and preserve redaction', async () => {
     const { events, exitCode } = await captureCredentialValidationPreview('invalidation');
     assert.equal(exitCode, 1);
     assert.deepEqual(
@@ -32,7 +32,8 @@ describe('cli/credentials-validate presentation', () => {
       output,
       /error[\s\S]*op-credential-invalid[\s\S]*warning[\s\S]*credentials-gateway-invalidation-pending/u,
     );
-    assert.doesNotMatch(output, /value=\[redacted\]/u);
+    assert.match(output, /value=\[redacted\]/u);
+    assert.doesNotMatch(output, /synthetic-secret-value/u);
   });
 
   it('should preserve the environment variable name and avoid implying a stored credential', async () => {

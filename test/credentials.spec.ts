@@ -184,7 +184,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, []);
     assert.deepEqual(test.records.output, [
-      'status               valid\nagent                data\nstore                file\nenvironments checked  1\nsecrets checked       2\n',
+      'status                valid\nagent                 data\nstore                 file\nenvironments checked  1\nsecrets checked       2\n',
     ]);
   });
 
@@ -214,7 +214,7 @@ describe('cli/credentials', () => {
     });
 
     assert.deepEqual(test.exitCodes, []);
-    assert.equal(test.records.output.join('').includes('source  process-environment'), true);
+    assert.match(test.records.output.join(''), /source\s+process-environment/u);
     assert.doesNotMatch(test.records.output.join(''), /store/u);
   });
 
