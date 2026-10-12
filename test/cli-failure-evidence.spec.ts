@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 
 import credentialsCache from '../cli/credentials-cache.ts';
 import automationOperation from '../cli/automation-output.ts';
+import automationList from '../cli/automation-list.ts';
+import automationRun from '../cli/automation-run.ts';
+import automationRuns from '../cli/automation-runs.ts';
+import automationSync from '../cli/automation-sync.ts';
 import statusNotifications from '../channels/github/cli/status.ts';
 import waitNotifications from '../channels/github/cli/wait.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
@@ -36,6 +40,48 @@ function fixture(json: boolean) {
 }
 
 describe('cli/failure-evidence', () => {
+  it('should retain safe system causes for each automation route without exposing upstream prose', async () => {
+    for (const command of ['list', 'run', 'runs', 'sync'] as const) {
+      for (const json of [false, true]) {
+        for (const cause of ['EACCES', 'private-token']) {
+          const f = fixture(json);
+          const fail = async (): Promise<never> => {
+            throw Object.assign(new Error('private-token private-path private-command'), {
+              code: cause,
+            });
+          };
+          const options = {
+            ...f,
+            automations: { list: fail, run: fail, runs: fail, reconcile: fail },
+          };
+          if (command === 'list') await automationList(options);
+          else if (command === 'run') await automationRun(options, 'review');
+          else if (command === 'runs')
+            await automationRuns(options, 'review', { limit: 2, offset: 0 });
+          else await automationSync(options);
+          assert.deepEqual(f.codes, [1]);
+          const stderr = f.events
+            .filter(({ stream }) => stream === 'stderr')
+            .map(({ text }) => text)
+            .join('');
+          assert.match(stderr, /automation-operation-failed/u);
+          assert.ok(stderr.includes(`cause=${cause === 'EACCES' ? cause : 'unknown'}`));
+          assert.doesNotMatch(f.events.map(({ text }) => text).join(''), /private-/u);
+          assert.equal(f.events.at(-1)?.stream, 'stderr');
+          assert.ok(f.events.slice(0, -1).every(({ stream }) => stream === 'stdout'));
+          if (json) {
+            assert.deepEqual(JSON.parse(f.events[0]!.text), {
+              status: 'failed',
+              code: 'automation-operation-failed',
+            });
+            assert.doesNotMatch(stderr, /messages/u);
+            assert.ok(!stderr.includes('\u001b'));
+          } else assert.equal(stderr.match(/messages/gu)?.length, 1);
+        }
+      }
+    }
+  });
+
   it('should preserve cache protocol causes without leaking upstream connection details', async () => {
     for (const json of [false, true]) {
       const f = fixture(json);

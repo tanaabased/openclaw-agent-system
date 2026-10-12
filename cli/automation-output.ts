@@ -3,6 +3,7 @@ import presentCliCommand from './presentation.ts';
 import type AutomationService from '../agent/automation-service.ts';
 import { AutomationError } from '../agent/automation-gateway.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import { formatRedactedErrorDiagnostic } from '../core/logger.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -157,7 +158,13 @@ async function automationOperation(
     };
     if (options.json) writeCliJson(options.output, result);
     writeCliDiagnosticNotices(options, [
-      { severity: 'error', message: `automation operation stopped (${code}).` },
+      {
+        severity: 'error',
+        message:
+          failure instanceof AutomationError || failure === undefined
+            ? `automation operation stopped (${code}).`
+            : formatRedactedErrorDiagnostic('automations', failure, code),
+      },
       {
         severity: 'warning',
         message:
