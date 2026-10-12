@@ -199,6 +199,79 @@ describe('agent/codex-dispatch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should fill available slots past running assessments and retain the remaining queue and notices', async () => {
+    const items = [
+      fixture.item,
+      ...[4, 5].map((number) => ({
+        ...fixture.item,
+        number,
+        nodeId: 'I_' + number,
+        databaseId: 20 + number,
+      })),
+    ];
+    fixture.client.discoverAssigned = async () => ({
+      candidates: items.map((item) => ({ ...item, repositoryPath: '/repos/owner/repo' })),
+      incomplete: false,
+      totalCount: items.length,
+      truncated: false,
+    });
+    fixture.client.getItem = async (_owner, _repo, number) =>
+      items.find((item) => item.number === number)!;
+    fixture.client.listAssignmentEvents = async (_owner, _repo, number) => ({
+      events:
+        number === 3
+          ? fixture.events
+          : fixture.events.map((event) => ({
+              ...event,
+              nodeId: 'E_' + number,
+              databaseId: 30 + number,
+            })),
+      truncated: false,
+    });
+    await runCodexIntake(pluginData, false, deps);
+    const children = new Map<string, DispatchNativeThread>();
+    const checked: string[] = [];
+    deps.native!.find = async ({ threadId }) => {
+      checked.push(threadId!);
+      return children.get(threadId!);
+    };
+    const launch = async (number: number) => {
+      const prepared = await prepare();
+      created();
+      native!.id = 'issue-thread-' + number;
+      native!.name = '#' + number + ': REPAIR CONTAINED BEHAVIOR';
+      children.set(native!.id, native!);
+      await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+      return prepared;
+    };
+    const first = await launch(3);
+    const second = await launch(4);
+    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
+    assert.equal(((await request('inspect')).records as unknown[]).length, 2);
+    const started = await report();
+    assert.equal(started.pendingNotices, 2);
+    deps.native!.deliveredReports = async (_thread, reports) => reports.map((r) => r.response);
+
+    now += 300001;
+    await runCodexIntake(pluginData, false, deps);
+    checked.length = 0;
+    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
+    assert.deepEqual(checked, ['issue-thread-3', 'issue-thread-4']);
+    assert.equal((await report()).pendingNotices, 0);
+
+    await request('result', { id: first.id, result }, { threadId: 'issue-thread-3' });
+    assert.equal((await next()).outcome, 'plan-ready');
+    const third = await launch(5);
+    assert.notEqual(third.id, second.id);
+    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
+    const completed = await report();
+    assert.equal(completed.pendingNotices, 2);
+    assert.match(String(completed.response), /repo#3/);
+    assert.match(String(completed.response), /repo#5/);
+    assert.equal((await report()).pendingNotices, 0);
+    assert.equal(((await request('inspect')).records as unknown[]).length, 3);
+  });
+
   it('should end assessment monitoring after authorized continuation without rewriting the result or checkout', async () => {
     const prepared = await prepare();
     created();
@@ -1321,7 +1394,7 @@ describe('agent/codex-dispatch', () => {
         native!.status = status;
         native!.turnStatus = turnStatus;
         now += 300001;
-        assert.equal((await next()).status, 'assessing');
+        assert.equal((await next()).status, 'idle');
         const records = (await request('inspect')).records as { phase: string; result?: unknown }[];
         assert.equal(records.length, 1);
         assert.equal(records[0]!.phase, 'assessing');

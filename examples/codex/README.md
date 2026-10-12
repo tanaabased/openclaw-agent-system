@@ -70,7 +70,10 @@ exercise answers arriving both in a later turn and after recording within the sa
 The revision must replace the acknowledged result using its digest; a stale revision
 must fail without overwriting the newer result. An identical retry stays idempotent.
 Assign several fixtures together: intake should fill available capacity within its action
-budget, continuing past completion notices and launches. Compare each native launch with
+budget, continuing past completion notices and launches. An unchanged running assessment
+must not delay another queued issue: the next runtime call should offer the next issue or
+an explicit stop. Verify the overflow starts when a slot opens, with no duplicate chats or
+notices. Compare each native launch with
 the prepared request exactly; issue evidence comes from context, not a copied snapshot.
 If isolated helpers are unavailable, require an explicit limitation rather than a false
 claim that the separate pass ran. This is live semantic evidence, not an exact-word test.

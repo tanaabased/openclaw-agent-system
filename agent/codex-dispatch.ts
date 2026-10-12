@@ -621,15 +621,14 @@ export async function runCodexDispatch(
           await save();
           return result;
         }
-        const pending = state.records.find(
+        for (const pending of state.records.filter(
           (record) =>
             !record.retired &&
             !record.handoff &&
             record.request &&
             record.phase !== 'complete' &&
             (record.retryAfter ?? 0) <= now,
-        );
-        if (pending) {
+        )) {
           const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
           if (!intake) return fail(pending, new Error('dispatch-intake-record-missing'));
           try {
@@ -646,7 +645,7 @@ export async function runCodexDispatch(
             await fresh();
             const result = notice(pending, intake, state);
             await save();
-            return result;
+            if (result.changed || result.status !== 'assessing') return result;
           } catch (error) {
             return fail(pending, error);
           }
