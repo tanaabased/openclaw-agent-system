@@ -1455,4 +1455,63 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await current.store.read())!.notices!.length, 20);
     assert.equal((await store.read()).notices!.length, 0);
   });
+  it('should pause a full outbox, retain a late creation receipt, and resume after proven delivery', async () => {
+    const prepared = await prepare();
+    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new Store(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.notices = Array.from({ length: 100 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: 'existing card',
+        notify: false,
+      }));
+      await save();
+    });
+    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
+    created();
+    assert.equal(
+      (await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } }))
+        .status,
+      'assessing',
+    );
+    assert.equal((await store.read()).notices!.length, 100);
+    assert.equal((await store.read()).records[0]!.threadId, 'issue-thread');
+    assert.equal((await store.read()).records[0]!.notice, undefined);
+    const first = await report();
+    deps.native!.deliveredReports = async () => [String(first.response)];
+    assert.equal((await next()).status, 'assessing');
+    assert.equal((await store.read()).notices!.length, 1);
+    assert.ok((await store.read()).records[0]!.notice);
+    const started = await report();
+    assert.match(String(started.response), /Assessment started/);
+    assert.equal((await store.read()).records.length, 1);
+  });
+
+  it('should drain a full intake queue without claiming an unperformed scan completed', async () => {
+    const current = await selectCodexIntake(pluginData, deps);
+    await current.store.exclusive(async (state, save) => {
+      state!.notices = Array.from({ length: 100 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: 'existing intake card',
+        notify: true,
+      }));
+      await save(state!);
+    });
+    now += 60000;
+    const before = (await current.store.read())!.lastAttemptAt;
+    const blocked = await runCodexIntake(pluginData, false, deps);
+    assert.equal(blocked.status, 'blocked');
+    assert.equal('code' in blocked && blocked.code, 'intake-notice-capacity');
+    assert.equal((await current.store.read())!.lastAttemptAt, before);
+    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
+    const pending = await report();
+    assert.equal(pending.pendingNotices, 100);
+    deps.native!.deliveredReports = async () => [String(pending.response)];
+    await assert.rejects(report(), /dispatch-scan-required/);
+    assert.equal((await current.store.read())!.notices!.length, 0);
+    assert.deepEqual((await request('inspect')).reports, []);
+    await runCodexIntake(pluginData, false, deps);
+    assert.equal((await next()).status, 'routing-required');
+  });
 });

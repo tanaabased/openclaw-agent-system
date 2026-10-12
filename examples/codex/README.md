@@ -132,7 +132,12 @@ For delivery recovery, interrupt a run after it prepares a report but before the
 heartbeat. The next run must retain the same batch. Record a revised plan with identical
 card wording: the previous delivery must not acknowledge that revision. Exercise combined
 intake and dispatch queues over one report's count and size limits; later batches must
-remain saved until their own delivery. A fresh scan without a terminal dispatch check
+remain saved until their own delivery. Fill a queue to 100 cards before the next scan
+or dispatch action: it must pause new work and still allow reporting to drain the queue.
+Reconcile an already-created chat while that queue is full; its receipt must survive,
+and its card must appear after earlier delivery frees space. Interrupt acknowledgment
+between the intake and dispatch saves; retry must preserve unrelated pending cards.
+A fresh scan without a terminal dispatch check
 must refuse a quiet report. Repeat after only part of the assignment queue is processed.
 For native recovery, verify creation and latest-turn evidence through paged history on a
 long chat; title checks must not request history. Incomplete or cyclic history must retain

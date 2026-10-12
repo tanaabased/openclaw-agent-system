@@ -1,3 +1,4 @@
+import { codexNoticeQueueFull } from '../../../agent/codex-notice-outbox.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
@@ -52,6 +53,8 @@ export default async function scanAssignments(
       throw new IntakeError('intake-policy-reconciliation-required');
     if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now)
       return { status: 'blocked', changed: false, code: previous.blocker.code };
+    if (!input.activate && codexNoticeQueueFull(previous?.notices))
+      return { status: 'blocked', changed: false, code: 'intake-notice-capacity' };
     try {
       const client = await input.connect(signal);
       const account: GitHubIdentity = client.identity;

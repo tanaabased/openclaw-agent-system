@@ -192,6 +192,8 @@ that prevent reading or saving the tracking records cannot be deduplicated safel
 they remain visible. Cards remain saved until a later run verifies the exact final
 heartbeat in recent native chat history. Interrupted runs can therefore repeat a
 card rather than lose it. Each run posts one bounded batch; additional cards remain queued for later runs.
+When a card queue is full, new work pauses until confirmed delivery frees space.
+Receipts from chats already being created remain saved while their cards wait.
 A quiet report requires both a current scan and a completed dispatch check; unfinished
 checks cannot be reported as no updates.
 

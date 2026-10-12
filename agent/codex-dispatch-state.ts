@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { codexNoticeSchema } from './codex-notice-outbox.ts';
+import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
@@ -145,7 +145,7 @@ const schema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: 100 })),
+    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
     reports: Type.Optional(
       Type.Array(
         Type.Object(
@@ -184,10 +184,14 @@ export default class CodexDispatchStore {
   }
   async read(): Promise<DispatchState> {
     const contents = await this.file.read();
-    const state: unknown =
-      contents === undefined
-        ? { version: 1, scope: this.scope, records: [] }
-        : JSON.parse(contents);
+    let state: unknown = { version: 1, scope: this.scope, records: [] };
+    if (contents !== undefined) {
+      try {
+        state = JSON.parse(contents);
+      } catch {
+        throw new Error('dispatch-state-invalid');
+      }
+    }
     if (
       !Value.Check(schema, state) ||
       state.scope !== this.scope ||

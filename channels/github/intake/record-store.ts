@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { codexNoticeSchema } from '../../../agent/codex-notice-outbox.ts';
+import { codexNoticeSchema, codexNoticeLimit } from '../../../agent/codex-notice-outbox.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
@@ -80,7 +80,7 @@ const stateSchema = Type.Object(
       Type.Object({ code: text, since: time, retryAfter: time }, { additionalProperties: false }),
     ),
     records: Type.Array(intakeRecordSchema),
-    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: 100 })),
+    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
   },
   { additionalProperties: false },
 );

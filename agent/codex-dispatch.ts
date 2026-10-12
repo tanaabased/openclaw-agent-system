@@ -6,7 +6,8 @@ import validateDispatchRequest from './codex-dispatch-request.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch from './codex-dispatch-reporting.ts';
-import appendCodexNotice from './codex-notice-outbox.ts';
+import appendCodexNotice, { codexNoticeQueueFull } from './codex-notice-outbox.ts';
+import acknowledgeDispatchDelivery from './codex-dispatch-delivery.ts';
 import codexHostAccess from './codex-host-access.ts';
 
 import assessmentGuidance from './assessment-guidance.ts';
@@ -180,7 +181,6 @@ function notice(record: DispatchRecord, intake?: IntakeRecord, state?: DispatchS
   const digest = noticeDigest(record);
   const changed = digest !== record.notice;
   const hadNotice = record.notice !== undefined;
-  record.notice = digest;
   const result = record.result;
   const failure = !record.handoff && result?.outcome === 'operator-setup-blocker';
   const event = record.handoff
@@ -246,12 +246,15 @@ function notice(record: DispatchRecord, intake?: IntakeRecord, state?: DispatchS
   };
   if (changed && state) {
     const id = automationHash({ record: record.id, digest });
+    if (codexNoticeQueueFull(state.notices) && !state.notices?.some((entry) => entry.id === id))
+      return resultNotice;
     state.notices = appendCodexNotice(state.notices, {
       id,
       message: resultNotice.message,
       notify: resultNotice.notify,
     });
   }
+  record.notice = digest;
   return resultNotice;
 }
 
@@ -570,6 +573,18 @@ export async function runCodexDispatch(
             withNative(current, deps, (host) => host.deliveredReports(caller, reports)),
         });
       if (action === 'next') {
+        await acknowledgeDispatchDelivery({
+          state,
+          intakeStore: current.store,
+          save,
+          deliveredReports: (reports) =>
+            withNative(current, deps, (host) => host.deliveredReports(caller, reports)),
+        });
+        const scan = await current.store.read();
+        if (!scan) throw new Error('dispatch-intake-record-missing');
+        if (codexNoticeQueueFull(state.notices) || codexNoticeQueueFull(scan.notices))
+          return { status: 'at-capacity', changed: false };
+
         const checked = async (status: 'idle' | 'at-capacity') => {
           state.checked = { at: now, digest: dispatchCheckDigest(state, admitted) };
           await save();
@@ -587,18 +602,20 @@ export async function runCodexDispatch(
           await save();
           return response;
         }
-        const completed = state.records.find(
+        const unreported = state.records.find(
           (record) =>
             !record.reset &&
             !record.retired &&
             !record.handoff &&
-            record.phase === 'complete' &&
+            (record.phase === 'complete' ||
+              record.phase === 'assessing' ||
+              record.phase === 'blocked') &&
             record.notice !== noticeDigest(record),
         );
-        if (completed) {
+        if (unreported) {
           const result = notice(
-            completed,
-            admitted.records.find((entry) => entry.id === completed.intakeId),
+            unreported,
+            admitted.records.find((entry) => entry.id === unreported.intakeId),
             state,
           );
           await save();
