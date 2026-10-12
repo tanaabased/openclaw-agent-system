@@ -183,7 +183,7 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
                   },
                 }
               : {}),
-            action: failure.remediation,
+            actionMarkdown: failure.remediation,
             facts:
               failure.code === 'dispatch-project-registration-unavailable' &&
               record.repositoryPreparation?.checkout

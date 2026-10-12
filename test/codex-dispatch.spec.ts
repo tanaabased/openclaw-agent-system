@@ -9,6 +9,7 @@ import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
@@ -97,7 +98,7 @@ describe('agent/codex-dispatch', () => {
     };
   }
   beforeEach(async () => {
-    root = await realpath(await mkdtemp(join(tmpdir(), 'codex-dispatch-')));
+    root = await realpath(await mkdtemp(join(tmpdir(), 'codex_dispatch-')));
     [workspace, pluginData, codexHome, source, worktree, commonDir] = (
       ['workspace', 'plugin', 'codex', 'source', 'worktree', 'common'] as const
     ).map((name) => join(root, name)) as [string, string, string, string, string, string];
@@ -1133,9 +1134,12 @@ describe('agent/codex-dispatch', () => {
     assert.equal(blocked.changed, true);
     assert.match(String(blocked.message), /^## ⚠️ Add the project to continue\n/u);
     assert.ok(String(blocked.message).includes('- **Project name:** repo\n'));
-    assert.ok(String(blocked.message).includes('- **Folder path:** ' + source + '\n'));
+    assert.ok(
+      String(blocked.message).includes(
+        '- **Folder path:** ' + githubNotificationMarkdownText(source) + '\n',
+      ),
+    );
     assert.match(String(blocked.message), /https:\/\/github.com\/owner\/repo\/issues\/3/u);
-    assert.ok(String(blocked.message).includes(source));
     assert.match(String(blocked.message), /primary folder/u);
     now += 300001;
     assert.equal((await next()).changed, false);
@@ -1199,7 +1203,7 @@ describe('agent/codex-dispatch', () => {
     const blocked = await next();
     assert.equal(blocked.code, 'repository-preparation-changed');
     assert.ok(String(blocked.message).includes('git.worktrees.repositories.local.github-10'));
-    assert.ok(String(blocked.message).includes(source));
+    assert.ok(String(blocked.message).includes(githubNotificationMarkdownText(source)));
     assert.match(String(blocked.message), /Reconcile through Install/u);
     assert.match(String(blocked.message), /do not delete/u);
     assert.equal(gitCalls.length, 0);
@@ -1230,7 +1234,7 @@ describe('agent/codex-dispatch', () => {
     };
     const blocked = await next();
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
-    assert.ok(String(blocked.message).includes(path));
+    assert.ok(String(blocked.message).includes(githubNotificationMarkdownText(path)));
     assert.equal(preparations, 1);
     assert.ok(!gitCalls.some((argv) => argv[0] === 'fetch'));
   });

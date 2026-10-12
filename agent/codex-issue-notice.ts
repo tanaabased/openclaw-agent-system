@@ -165,7 +165,7 @@ export default function codexIssueNotice(input: {
   changed: boolean;
   code?: string;
   issue?: { label: string; url: string };
-  action?: string;
+  actionMarkdown?: string;
   facts?: { label: string; value: string }[];
 }) {
   const code = input.code && /^[a-z][a-z0-9-]{0,127}$/u.test(input.code) ? input.code : undefined;
@@ -175,7 +175,7 @@ export default function codexIssueNotice(input: {
       ? [{ label: 'Issue', value: `[${text(input.issue.label)}](${input.issue.url})` }]
       : []),
     { label: 'What happened', value: copy.summary },
-    { label: 'Next step', value: input.action ? text(input.action) : copy.next },
+    { label: 'Next step', value: input.actionMarkdown ?? copy.next },
     ...(input.facts ?? []),
     ...(code ? [{ label: 'Technical detail', value: '`' + code + '`' }] : []),
   ];

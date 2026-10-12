@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should preserve the owning callers escaped recovery path without escaping it twice', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'repository-preparation-changed',
+      changed: true,
+      actionMarkdown: 'Restore /work/my\\_repo before retrying.',
+    });
+    assert.ok(notice.message.includes('Restore /work/my\\_repo before retrying.'));
+    assert.ok(!notice.message.includes('my\\\\'));
+  });
+
   it('should distinguish normal progress, decisions, and failed operations without letting severity force notifications', () => {
     for (const [code, severity] of [
       ['dispatch-project-registration-unavailable', 'warning'],
