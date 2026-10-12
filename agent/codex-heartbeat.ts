@@ -30,7 +30,7 @@ const messages = {
     '🌙 Night watch complete. No new update needs your attention.',
     '🦉 Night check: nothing new to report. The owl remains on duty.',
     '🔭 The night patrol has no new update for you.',
-    '🛡️ Night gathers. Nothing new to report—and so my watch has ended. Next watch in about five minutes.',
+    '🛡️ Night gathers. Nothing new to report—and so my watch has ended.',
     '🕯️ Night check: no new update. No raging against the dying light required.',
   ],
 } as const;

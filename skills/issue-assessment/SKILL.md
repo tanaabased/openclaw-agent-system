@@ -188,7 +188,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
    limitation, blocking question, or required action in the primary response as well;
    supporting notes must not hide what the user needs to decide or do next.
 
-## Continuing after assessment
+### Continuing after assessment
 
 When the human explicitly requests work beyond assessment in this issue chat, use
 `dispatchRuntime` action `handoff` with the retained receipt `id` before changing
