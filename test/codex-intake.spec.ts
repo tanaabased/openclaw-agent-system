@@ -65,7 +65,7 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
-  it('should reactivate with full cards and publish deferred recovery once after draining', async () => {
+  it('should reactivate despite obsolete full notification queues', async () => {
     const { client } = intakeFixture();
     let now = baseline;
     const deps = { codexHome, now: () => now, connect: async () => client };
@@ -91,22 +91,12 @@ describe('agent/codex-intake', () => {
     assert.equal('recovered' in result && result.recovered, true);
     const activated = (await store.read())!;
     assert.equal(activated.blocker, undefined);
-    assert.equal(activated.noticePending, true);
-    assert.deepEqual(activated.notices, cards);
-    await store.exclusive(async (state, save) => {
-      state!.notices = [];
-      await save(state!);
-    });
-    const resumed = await runCodexIntake(pluginData, false, deps);
-    assert.equal('recovered' in resumed && resumed.recovered, true);
-    assert.equal((await store.read())!.noticePending, undefined);
-    assert.equal((await store.read())!.notices!.length, 1);
-    assert.match((await store.read())!.notices![0]!.message, /Issue checks resumed/);
+    assert.equal(activated.noticePending, undefined);
+    assert.equal(activated.notices, undefined);
     assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
-    assert.equal((await store.read())!.notices!.length, 1);
   });
 
-  it('should retain a real activation failure and flush its deferred notice during cooldown', async () => {
+  it('should retain real activation failures independently of obsolete notifications', async () => {
     const { client } = intakeFixture();
     const deps = { codexHome, now: () => baseline, connect: async () => client };
     await runCodexIntake(pluginData, true, deps);
@@ -127,7 +117,7 @@ describe('agent/codex-intake', () => {
     });
     assert.equal(failure.status, 'blocked');
     assert.equal('code' in failure && failure.code, 'intake-provider-unavailable');
-    assert.equal((await store.read())!.noticePending, true);
+    assert.equal((await store.read())!.noticePending, undefined);
     await store.exclusive(async (state, save) => {
       state!.notices = [];
       await save(state!);
@@ -138,12 +128,12 @@ describe('agent/codex-intake', () => {
         assert.fail('cooldown must not contact the provider');
       },
     });
-    assert.equal(cooldown.changed, true);
+    assert.equal(cooldown.changed, false);
     assert.equal((await store.read())!.noticePending, undefined);
-    assert.equal((await store.read())!.notices!.length, 1);
+    assert.equal((await store.read())!.notices, undefined);
   });
 
-  it('should defer policy notices in a full queue without admitting or losing work', async () => {
+  it('should retain disabled policy evidence without a notification queue', async () => {
     const { client } = intakeFixture();
     const deps = { codexHome, now: () => baseline, connect: async () => client };
     await runCodexIntake(pluginData, true, deps);
@@ -169,7 +159,7 @@ describe('agent/codex-intake', () => {
     });
     assert.equal('code' in denied && denied.code, 'intake-policy-disabled');
     const after = (await store.read())!;
-    assert.equal(after.noticePending, true);
+    assert.equal(after.noticePending, undefined);
     assert.deepEqual(after.records, before.records);
     assert.deepEqual(after.notices, before.notices);
     assert.equal(after.checkpoint, before.checkpoint);
@@ -206,9 +196,7 @@ describe('agent/codex-intake', () => {
     assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
     const current = await selectCodexIntake(pluginData, deps);
     const saved = await current.store.read();
-    assert.equal(saved?.notices?.length, 2);
-    assert.ok(saved.notices.every((notice) => notice.notify));
-    assert.notEqual(saved.notices[0]!.id, saved.notices[1]!.id);
+    assert.equal(saved?.notices, undefined);
   });
 
   it('should validate native account responses through the shared provider boundary', async () => {

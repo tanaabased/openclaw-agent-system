@@ -2,14 +2,7 @@ import githubNotificationCard, {
   githubNotificationMarkdownText as text,
 } from '../channels/github/conversation/presentation/card.ts';
 
-export type IssueNoticeEvent =
-  | 'started'
-  | 'plan-ready'
-  | 'clarification-needed'
-  | 'handoff'
-  | 'recovered'
-  | 'intake-recovered'
-  | 'failure';
+export type IssueNoticeEvent = 'intake-recovered' | 'failure';
 
 interface NoticeCopy {
   severity: 'info' | 'warning' | 'error';
@@ -19,42 +12,11 @@ interface NoticeCopy {
 }
 
 const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
-  started: {
-    severity: 'info',
-    title: 'Assessment started',
-    summary: 'The issue has its own chat for investigation and a plan.',
-    next: 'Follow progress in the issue chat. No action is needed yet.',
-  },
-  'plan-ready': {
-    severity: 'info',
-    title: 'Plan ready for review',
-    summary: 'The assessment and plan have been saved in the issue chat.',
-    next: 'Review the plan there, then request changes or authorize the next step.',
-  },
-  'clarification-needed': {
-    severity: 'warning',
-    title: 'A decision is needed',
-    summary: 'The assessment has a question that needs your answer.',
-    next: 'Answer in the existing issue chat so the assessment can continue.',
-  },
-  handoff: {
-    severity: 'info',
-    title: 'Work continuing in the issue chat',
-    summary:
-      'The assessment watcher has stopped checking this chat. Your conversation and local changes are retained.',
-    next: 'Continue in the existing issue chat. No reset or reassignment is needed.',
-  },
   'intake-recovered': {
     severity: 'info',
     title: 'Issue checks resumed',
     summary: 'The earlier problem checking assignments has cleared.',
     next: 'No action is needed. New assignments will be checked on the normal schedule.',
-  },
-  recovered: {
-    severity: 'info',
-    title: 'Assessment resumed',
-    summary: 'The previously reported obstacle has cleared.',
-    next: 'Follow progress in the existing chat. No action is needed now.',
   },
 };
 
@@ -152,21 +114,6 @@ function failure(code: string): NoticeCopy {
       summary: 'No new automated issue work will start. Existing chats and progress are retained.',
       next: 'If the old schedule is still active, run Agent System Install to pause it. Re-enabling also requires Install.',
     };
-  if (/worktree-diverged|assessment-worktree-changed/u.test(code))
-    return {
-      severity: 'warning',
-      title: 'Confirm how this chat should continue',
-      summary: 'The checkout changed while this issue was still tracked as a read-only assessment.',
-      next: 'If you approved implementation, record the assessment handoff in the existing chat. Otherwise inspect the changes there before resuming assessment. Keep the current worktree.',
-    };
-  if (/assessment-result-missing/u.test(code))
-    return {
-      severity: 'error',
-      title: 'The assessment did not record a result',
-      summary:
-        'The chat stopped without a saved assessment outcome. Its existing conversation is retained.',
-      next: 'Open that chat and resume or retry saving its assessment. If you already approved further work, record a handoff instead.',
-    };
   if (
     /authority|access|binding|authentication|identity|auth-unavailable|permission|forbidden/u.test(
       code,
@@ -242,8 +189,11 @@ export default function codexIssueNotice(input: {
     ...(code ? [{ label: 'Technical detail', value: '`' + code + '`' }] : []),
   ];
   return {
+    title: copy.title,
+    summary: copy.summary,
+    next: copy.next,
     severity: copy.severity,
-    notify: input.changed && input.event !== 'handoff',
+    notify: input.changed,
     message: githubNotificationCard({
       emoji: { info: 'ℹ️', warning: '⚠️', error: '❌' }[copy.severity],
       title: copy.title,

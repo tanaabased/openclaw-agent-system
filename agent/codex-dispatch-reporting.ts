@@ -1,20 +1,21 @@
-import acknowledgeDispatchDelivery, {
-  type DispatchDeliveryContext,
-} from './codex-dispatch-delivery.ts';
-import codexHeartbeat from './codex-heartbeat.ts';
 import prepareDispatchReport from './codex-dispatch-report.ts';
 import requireDispatchCheck from './codex-dispatch-check.ts';
-import { codexNoticeQueueFull } from './codex-notice-outbox.ts';
+import type { DispatchState } from './codex-dispatch-state.ts';
+import type IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 
 export default async function reportDispatch(
   input: Record<string, unknown>,
-  context: DispatchDeliveryContext & {
+  context: {
+    state: DispatchState;
     admitted: IntakeState;
+    intakeStore: IntakeRecordStore;
     now: number;
+    slots: number;
+    save(): Promise<void>;
   },
 ) {
-  const { state, admitted, intakeStore, now, save } = context;
+  const { state, intakeStore, now, save, slots } = context;
   if (
     Object.keys(input).some((key) => !['automationId', 'currentTimeIso'].includes(key)) ||
     typeof input.automationId !== 'string' ||
@@ -32,62 +33,40 @@ export default async function reportDispatch(
         automationId: run.automationId,
         currentTimeIso: run.currentTimeIso,
       },
-      instruction:
-        'This report belongs to a different scheduled occurrence. Call report with this exact request; do not finish this turn yet.',
+      instruction: 'Call report with this scheduled occurrence; do not finish yet.',
     };
-  const quiet = codexHeartbeat({
-    automationId: input.automationId,
-    currentTimeIso: input.currentTimeIso,
-    intake: { status: 'ready', changed: false },
-    dispatch: [{ status: 'idle', changed: false }],
-  });
-  if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
+  if (run.response) return { status: 'report', response: run.response };
   const occurrence = Date.parse(input.currentTimeIso);
   if (!Number.isFinite(occurrence)) throw new Error('heartbeat-request-invalid');
-  await acknowledgeDispatchDelivery(context);
   const scan = await intakeStore.read();
   if (!scan) throw new Error('dispatch-intake-record-missing');
-  const cards = [...(state.notices ?? []), ...(scan.notices ?? [])];
-  state.reports = (state.reports ?? []).filter((report) =>
-    report.notices.some((id) => cards.some((card) => card.id === id)),
-  );
-  if (!cards.length) {
-    if (
-      (admitted.lastAttemptAt ?? 0) < occurrence &&
-      (admitted.blocker?.retryAfter ?? 0) <= occurrence
-    )
-      throw new Error('dispatch-scan-required');
-  }
-  if (
-    run.actions < 12 &&
-    !run.stopped &&
-    !codexNoticeQueueFull(state.notices) &&
-    !codexNoticeQueueFull(scan.notices)
-  ) {
+  if ((scan.lastAttemptAt ?? 0) < occurrence && (scan.blocker?.retryAfter ?? 0) <= occurrence)
+    throw new Error('dispatch-scan-required');
+  if (run.actions < 12 && !run.stopped && !scan.blocker) {
     try {
       requireDispatchCheck(state, scan, occurrence);
     } catch {
-      await save();
       return {
         status: 'continue',
         nextAction: 'next',
         remainingActions: 12 - run.actions,
-        pendingNotices: cards.length,
         instruction:
-          'The queue has not reached a stopping point in this scheduled run. Keep the pending cards saved. Call next with the saved projects array, then follow routing-required through prepare and native create_thread/reconcile. Finish only when report returns status report and its response. Do not publish a final answer for status continue.',
+          'Finish checking pending assignments with next, prepare, and native creation/reconcile before reporting. Do not wait for assessments or announce their progress.',
       };
     }
   }
-  const batch = cards.length
-    ? prepareDispatchReport({
-        automationId: input.automationId,
-        cards,
-        reports: state.reports ?? [],
-        now,
-      })
-    : undefined;
-  const response = batch?.response ?? quiet.response;
-  if (batch) state.reports = [batch];
+  const report = prepareDispatchReport({
+    state,
+    intake: scan,
+    slots,
+    automationId: input.automationId,
+    currentTimeIso: input.currentTimeIso,
+  });
+  for (const record of state.records)
+    if (report.started.includes(record.id)) record.intakeReportedAt = now;
+  state.intakeHealth = report.health;
+  // this is a report attempt, not proof of delivery; prose never gates new assignments.
+  run.response = report.response;
   await save();
-  return { status: 'report', response, pendingNotices: cards.length };
+  return { status: 'report', response: report.response };
 }

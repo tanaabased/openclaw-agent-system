@@ -92,38 +92,6 @@ describe('agent/codex-dispatch-native', () => {
     };
     await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
   });
-  it('should acknowledge only exact native final responses through a bounded history read', async () => {
-    const response = '<heartbeat>retained card</heartbeat>';
-    const item = { type: 'agentMessage', phase: 'final_answer', text: response };
-    const reports = [{ response, createdAt: 100 }];
-    let data: unknown = [];
-    const native = fixtureNative(async (method, params) => {
-      assert.equal(method, 'thread/items/list');
-      assert.deepEqual(params, { threadId: 'intake', sortDirection: 'desc', limit: 100 });
-      return { data };
-    });
-    for (const candidate of [
-      { ...item, type: 'userMessage' },
-      { ...item, type: 'functionCallOutput' },
-      { ...item, phase: 'commentary' },
-      { ...item, text: 'duplicate card\n' + response },
-      { ...item, text: response + '\nextra commentary' },
-    ]) {
-      data = [{ turnId: 'turn', completedAtMs: 101, item: candidate }];
-      assert.deepEqual(await native.deliveredReports('intake', reports), []);
-    }
-    for (const completedAtMs of [null, undefined, 99]) {
-      data = [{ turnId: 'turn', completedAtMs, item }];
-      assert.deepEqual(await native.deliveredReports('intake', reports), []);
-    }
-    data = [{ turnId: 'turn', completedAtMs: 101, item }];
-    assert.deepEqual(await native.deliveredReports('intake', reports), [response]);
-    data = null;
-    await assert.rejects(
-      native.deliveredReports('intake', reports),
-      /dispatch-native-response-invalid/,
-    );
-  });
 
   it('should require one exact terminal native rejection rather than reported denial or uncertainty', async () => {
     const expected = { prompt: 'assess issue', title: 'issue', model: 'selected' };

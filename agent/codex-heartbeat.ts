@@ -2,7 +2,7 @@ import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 
 export const codexQuietHeartbeatInstructions =
-  'For dispatch-enabled issue-intake heartbeats, always finish a successful occurrence with dispatchRuntime action:report using automationId and currentTimeIso copied from this native trigger. If report returns status continue, follow its nextAction and instruction, then report again; do not finish yet. Only status report authorizes copying its response verbatim as the entire final answer, with no prose or duplicate card outside the heartbeat. The report reads durable pending cards and owns quiet-message selection. Never replace it with remembered polling outcomes, including after compaction. After a failed runtime command, never use quiet-response or claim success; follow the bounded host-access retry, then use intakeRuntime failure-response with the stable code when needed. The legacy quiet-response route accepts JSON polling outcomes only for callers without durable dispatch reporting';
+  'For scheduled issue intake, finish the current scan and pending creation work, then call dispatchRuntime action:report with automationId and currentTimeIso from this native trigger. Follow status continue before finishing. For status report, use its response as the final heartbeat. It summarizes intake only: issues started, pending assignments, occupied slots, and intake obstacles. Plans, questions, assessment failures, and implementation progress belong in the individual issue. Quiet reports use DONT_NOTIFY. Presentation differences never change assignment or creation state. After a failed command, follow the bounded native host-access retry; if it still fails, use intakeRuntime failure-response with the actual diagnostic and approval reason. Never describe a failed check as quiet success.';
 
 const messages = {
   morning: [
@@ -30,7 +30,7 @@ const messages = {
     '🌙 Night watch complete. No new update needs your attention.',
     '🦉 Night check: nothing new to report. The owl remains on duty.',
     '🔭 The night patrol has no new update for you.',
-    '🛡️ Night gathers. The Night’s Watch has no new update for you.',
+    '🛡️ Night gathers. Nothing new to report—and so my watch has ended. Next watch in about five minutes.',
     '🕯️ Night check: no new update. No raging against the dying light required.',
   ],
 } as const;

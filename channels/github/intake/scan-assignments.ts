@@ -1,4 +1,3 @@
-import { codexNoticeQueueFull } from '../../../agent/codex-notice-outbox.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
@@ -27,10 +26,6 @@ export interface AssignmentScanInput {
   activate?: boolean;
   connect(signal: AbortSignal): Promise<GitHubNotificationIntakeClient>;
   assertCurrent(): Promise<void>;
-  retainNotice?(
-    state: IntakeState,
-    result: { status: string; changed: boolean; code?: string; recovered?: boolean },
-  ): void;
 }
 
 interface AssignmentScanResult {
@@ -53,14 +48,8 @@ export default async function scanAssignments(
       throw new IntakeError('intake-policy-reconciliation-required');
     if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now) {
       const result = { status: 'blocked' as const, changed: false, code: previous.blocker.code };
-      if (previous.noticePending && !codexNoticeQueueFull(previous.notices)) {
-        input.retainNotice?.(previous, result);
-        await save(previous);
-      }
       return result;
     }
-    if (!input.activate && codexNoticeQueueFull(previous?.notices))
-      return { status: 'blocked', changed: false, code: 'intake-notice-capacity' };
     let next: IntakeState;
     let result: AssignmentScanResult;
     try {
@@ -227,7 +216,6 @@ export default async function scanAssignments(
       } else throw new IntakeError(code);
     }
     // local persistence failures must not be mistaken for provider failures.
-    input.retainNotice?.(next, result);
     await save(next);
     return result;
   });

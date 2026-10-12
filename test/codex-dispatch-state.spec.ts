@@ -45,24 +45,27 @@ describe('agent/codex-dispatch-state', () => {
     }
   });
 
-  it('should reserve report space without allowing other state to consume it', async () => {
+  it('should drop legacy presentation data and retain the storage limit for work records', async () => {
     await store.exclusive(async (state, save) => {
-      state.notices = Array.from({ length: 43 }, (_, i) => ({
-        id: i.toString(16).padStart(64, '0'),
-        message: '文'.repeat(32000),
-        notify: false,
-      }));
-      await save();
-      state.reports = [
-        { response: '\0'.repeat(128000), createdAt: 1, notices: [state.notices[0]!.id] },
-      ];
+      state.notices = [{ id: 'b'.repeat(64), message: 'old report', notify: true }];
+      state.reports = [{ response: 'old final', createdAt: 1, notices: ['b'.repeat(64)] }];
       await save();
     });
     const before = await store.read();
-    assert.ok(Buffer.byteLength(JSON.stringify(before)) > 4 * 1024 * 1024);
+    assert.equal(before.notices, undefined);
+    assert.equal(before.reports, undefined);
     await assert.rejects(
       store.exclusive(async (state, save) => {
-        state.notices!.push({ ...state.notices![0]!, id: 'f'.repeat(64) });
+        state.records = Array.from({ length: 50 }, (_, i) => ({
+          id: i.toString(16).padStart(64, '0'),
+          issueKey: i.toString(16).padStart(64, '0'),
+          intakeId: 'b'.repeat(64),
+          sourceThreadId: 'intake',
+          phase: 'routing',
+          createdAt: 1,
+          manifestDigest: 'manifest',
+          context: 'x'.repeat(96000),
+        }));
         await save();
       }),
       /dispatch-state-capacity/,

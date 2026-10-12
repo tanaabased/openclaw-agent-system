@@ -6,8 +6,6 @@ import validateDispatchRequest from './codex-dispatch-request.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch from './codex-dispatch-reporting.ts';
-import appendCodexNotice, { codexNoticeQueueFull } from './codex-notice-outbox.ts';
-import acknowledgeDispatchDelivery from './codex-dispatch-delivery.ts';
 import codexHostAccess from './codex-host-access.ts';
 
 import assessmentGuidance from './assessment-guidance.ts';
@@ -32,10 +30,7 @@ import prepareDispatchRepository from './codex-dispatch-repository.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
-import CodexDispatchStore, {
-  type DispatchRecord,
-  type DispatchState,
-} from './codex-dispatch-state.ts';
+import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import {
   connectCodexGitHub,
   selectCodexIntake,
@@ -169,100 +164,56 @@ function blocker(
     },
   };
 }
-function noticeDigest(record: DispatchRecord) {
-  return automationHash({
-    phase: record.phase,
-    threadId: record.threadId,
-    result: record.result,
-    handoff: record.handoff,
-  });
-}
-function notice(record: DispatchRecord, intake?: IntakeRecord, state?: DispatchState) {
-  const digest = noticeDigest(record);
-  const changed = digest !== record.notice;
-  const hadNotice = record.notice !== undefined;
-  const result = record.result;
-  const failure = !record.handoff && result?.outcome === 'operator-setup-blocker';
-  const event = record.handoff
-    ? 'handoff'
-    : result?.outcome === 'operator-setup-blocker'
-      ? 'failure'
-      : result
-        ? result.outcome
-        : hadNotice && changed
-          ? 'recovered'
-          : 'started';
-  const registration = failure && result.code === 'dispatch-project-registration-unavailable';
-  const resultNotice = {
+function notice(record: DispatchRecord, intake?: IntakeRecord) {
+  const failure =
+    !record.effective && record.result?.outcome === 'operator-setup-blocker'
+      ? record.result
+      : undefined;
+  return {
     id: record.id,
     status: record.handoff ? 'handed-off' : record.phase,
-    changed,
+    changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
     threadId: record.threadId,
-    ...(result && !record.handoff ? { outcome: result.outcome, summary: result.summary } : {}),
-    ...(failure ? { code: result.code } : {}),
-    ...codexIssueNotice({
-      event,
-      changed,
-      ...(failure ? { code: result.code } : {}),
-      ...(intake
-        ? {
-            issue: { label: repository(intake) + '#' + intake.issue.number, url: issueUrl(intake) },
-          }
-        : {}),
-      threadId: record.threadId,
-      ...(failure &&
-      (result.code.startsWith('repository-') ||
-        !/^(dispatch|intake|model-routing|assessment-result)-/u.test(result.code))
-        ? { action: result.remediation }
-        : {}),
-      facts: [
-        ...(intake
-          ? [
-              {
-                label: 'Assigned by',
-                value:
-                  '[' +
-                  githubNotificationMarkdownText(intake.assignment.actor.login) +
-                  '](https://github.com/' +
-                  intake.assignment.actor.login +
-                  ')',
-              },
-            ]
-          : []),
-        ...(registration && record.repositoryPreparation?.checkout
-          ? [
-              {
-                label: 'Project name',
-                value: githubNotificationMarkdownText(intake!.repository.name),
-              },
-              {
-                label: 'Folder path',
-                value: githubNotificationMarkdownText(record.repositoryPreparation.checkout),
-              },
-            ]
-          : []),
-      ],
-    }),
-    ...(state && !failure
+    ...(failure
       ? {
-          nextAction: 'next',
-          instruction:
-            'This is an issue update, not the end of the queue. Call dispatchRuntime action:next with the saved projects array now, while the twelve-action budget remains. Do not wait for this assessment or call report yet. Continue until idle, at-capacity, required approval, a failed tool call, or the action budget; then call report once.',
+          code: failure.code,
+          ...codexIssueNotice({
+            event: 'failure',
+            changed: true,
+            code: failure.code,
+            ...(intake
+              ? {
+                  issue: {
+                    label: repository(intake) + '#' + intake.issue.number,
+                    url: issueUrl(intake),
+                  },
+                }
+              : {}),
+            action: failure.remediation,
+            facts:
+              failure.code === 'dispatch-project-registration-unavailable' &&
+              record.repositoryPreparation?.checkout
+                ? [
+                    {
+                      label: 'Project name',
+                      value: intake
+                        ? githubNotificationMarkdownText(intake.repository.name)
+                        : 'Repository',
+                    },
+                    {
+                      label: 'Folder path',
+                      value: githubNotificationMarkdownText(record.repositoryPreparation.checkout),
+                    },
+                  ]
+                : [],
+          }),
         }
       : {}),
+    nextAction: failure ? 'report' : 'next',
+    instruction: failure
+      ? 'Report this intake obstacle with any issues already started. Do not repeat an uncertain creation.'
+      : 'Continue checking pending assignments while this run has capacity. Assessment progress belongs only in the issue.',
   };
-  if (changed && state) {
-    const id = automationHash({ record: record.id, digest });
-    if (codexNoticeQueueFull(state.notices) && !state.notices?.some((entry) => entry.id === id))
-      return resultNotice;
-    state.notices = appendCodexNotice(state.notices, {
-      id,
-      message: resultNotice.message,
-      notify: resultNotice.notify,
-    });
-  }
-  record.notice = digest;
-  return resultNotice;
 }
 
 async function revalidate(
@@ -386,6 +337,7 @@ async function recover(
   // titles are presentation, not identity; normalize only after native authority checks.
   if (found.name !== record.request.title)
     await withNative(current, deps, (native) => native.rename(found.id, record.request!.title));
+  if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
   record.effective = {
     status: found.model && found.effort ? 'verified' : 'unverified',
     ...(found.model ? { model: found.model } : {}),
@@ -497,9 +449,7 @@ export async function runCodexDispatch(
         };
       if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
       record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
-      const previousNotice = record.notice;
       const response = notice(record, intake);
-      record.notice = previousNotice;
       await save();
       return response;
     }, true);
@@ -554,6 +504,8 @@ export async function runCodexDispatch(
           throw new Error('dispatch-policy-changed');
       };
       const fail = async (record: DispatchRecord, error: unknown) => {
+        const previousCode =
+          record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined;
         if (codexHostAccess(error) || record.phase === 'complete') throw error;
         // Native worktree setup returns a client receipt before the child is readable.
         if (
@@ -580,8 +532,9 @@ export async function runCodexDispatch(
         const result = notice(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
-          state,
         );
+        result.changed = previousCode !== code(error);
+        if ('notify' in result) result.notify = result.changed;
         await save();
         return result;
       };
@@ -592,17 +545,9 @@ export async function runCodexDispatch(
           intakeStore: current.store,
           now,
           save,
-          deliveredReports: (reports) =>
-            withNative(current, deps, (host) => host.deliveredReports(caller, reports)),
+          slots: current.policy?.policy.maxConcurrentItems ?? 2,
         });
       if (action === 'next') {
-        await acknowledgeDispatchDelivery({
-          state,
-          intakeStore: current.store,
-          save,
-          deliveredReports: (reports) =>
-            withNative(current, deps, (host) => host.deliveredReports(caller, reports)),
-        });
         const scan = await current.store.read();
         if (!scan) throw new Error('dispatch-intake-record-missing');
         const checked = async (status: 'idle' | 'at-capacity') => {
@@ -610,44 +555,12 @@ export async function runCodexDispatch(
           await save();
           return { status, changed: false };
         };
-        if (codexNoticeQueueFull(state.notices) || codexNoticeQueueFull(scan.notices))
-          return checked('at-capacity');
-        const handedOff = state.records.find(
-          (entry) => !entry.retired && entry.handoff && entry.notice !== noticeDigest(entry),
-        );
-        if (handedOff) {
-          const response = notice(
-            handedOff,
-            admitted.records.find((entry) => entry.id === handedOff.intakeId),
-            state,
-          );
-          await save();
-          return response;
-        }
-        const unreported = state.records.find(
-          (record) =>
-            !record.reset &&
-            !record.retired &&
-            !record.handoff &&
-            (record.phase === 'complete' ||
-              record.phase === 'assessing' ||
-              record.phase === 'blocked') &&
-            record.notice !== noticeDigest(record),
-        );
-        if (unreported) {
-          const result = notice(
-            unreported,
-            admitted.records.find((entry) => entry.id === unreported.intakeId),
-            state,
-          );
-          await save();
-          return result;
-        }
         for (const pending of state.records.filter(
           (record) =>
             !record.retired &&
             !record.handoff &&
             record.request &&
+            !record.effective &&
             record.phase !== 'complete' &&
             (record.retryAfter ?? 0) <= now,
         )) {
@@ -655,17 +568,10 @@ export async function runCodexDispatch(
           if (!intake) return fail(pending, new Error('dispatch-intake-record-missing'));
           try {
             await revalidate(current, intake, deps, signal);
-            const native = await recover(current, pending, intake, deps, save);
-            // a separate app-server can reconstruct an active desktop turn as interrupted.
-            // notloaded is absence of live lifecycle evidence, not proof that work stopped.
-            if (
-              native.status === 'idle' &&
-              ['completed', 'failed', 'interrupted'].includes(native.turnStatus ?? '')
-            )
-              throw new Error('dispatch-assessment-result-missing');
+            await recover(current, pending, intake, deps, save);
             pending.retryAfter = now + 300000;
             await fresh();
-            const result = notice(pending, intake, state);
+            const result = notice(pending, intake);
             await save();
             if (result.changed || result.status !== 'assessing') return result;
           } catch (error) {
@@ -1124,7 +1030,7 @@ export async function runCodexDispatch(
               presentation,
             };
           }
-          const result = notice(record, intake, state);
+          const result = notice(record, intake);
           await save();
           return result;
         } catch (error) {

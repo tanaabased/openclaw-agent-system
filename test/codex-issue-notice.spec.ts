@@ -13,8 +13,6 @@ describe('agent/codex-issue-notice', () => {
       ['intake-github-permission', 'warning'],
       ['intake-github-auth-unavailable', 'warning'],
       ['dispatch-assignment-authority-revoked', 'warning'],
-      ['dispatch-worktree-diverged', 'warning'],
-      ['dispatch-assessment-result-missing', 'error'],
       ['intake-github-identity-mismatch', 'error'],
       ['dispatch-native-readback-diverged', 'error'],
       ['dispatch-native-model-diverged', 'error'],
@@ -34,15 +32,7 @@ describe('agent/codex-issue-notice', () => {
       assert.match(first.message, /Next step/);
       assert.ok(first.message.endsWith('`' + code + '`'));
     }
-    const handoff = codexIssueNotice({ event: 'handoff', changed: true });
-    assert.equal(handoff.severity, 'info');
-    assert.equal(handoff.notify, false);
-    assert.doesNotMatch(handoff.message, /blocked|completed|successful plan/iu);
-    assert.equal(
-      codexIssueNotice({ event: 'clarification-needed', changed: true }).severity,
-      'warning',
-    );
-    for (const event of ['started', 'plan-ready', 'recovered', 'intake-recovered'] as const) {
+    for (const event of ['intake-recovered'] as const) {
       assert.equal(codexIssueNotice({ event, changed: true }).severity, 'info');
       assert.equal(codexIssueNotice({ event, changed: true }).notify, true);
     }

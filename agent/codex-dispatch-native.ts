@@ -142,29 +142,6 @@ export function codexDispatchNative(request: CodexThreadRequest) {
         throw new Error('dispatch-native-occurrence-unavailable');
       return { id: turn.id, automationId: match[1]!, currentTimeIso: match[2]! };
     },
-    async deliveredReports(threadId: string, reports: { response: string; createdAt: number }[]) {
-      const result = await request('thread/items/list', {
-        threadId,
-        sortDirection: 'desc',
-        limit: 100,
-      });
-      if (!Array.isArray(result.data)) throw new Error('dispatch-native-response-invalid');
-      const entries = result.data;
-      return reports
-        .filter((report) =>
-          entries.some(
-            (entry: unknown) =>
-              nativeObject(entry) &&
-              nativeObject(entry.item) &&
-              typeof entry.completedAtMs === 'number' &&
-              entry.completedAtMs >= report.createdAt &&
-              entry.item.type === 'agentMessage' &&
-              entry.item.phase === 'final_answer' &&
-              entry.item.text === report.response,
-          ),
-        )
-        .map((report) => report.response);
-    },
     assessmentSkill: (cwd: string, id: string) => codexAssessmentSkill(request, cwd, id),
     async rename(threadId: string, title: string) {
       await request('thread/name/set', { threadId, name: title });

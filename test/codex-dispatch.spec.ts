@@ -181,9 +181,6 @@ describe('agent/codex-dispatch', () => {
             currentTimeIso: new Date(now).toISOString(),
           };
         },
-        async deliveredReports() {
-          return [];
-        },
         async assessmentSkill(_cwd, id) {
           return { name: id, path: join(root, 'SKILL.md'), scope: 'user', digest: 'a'.repeat(64) };
         },
@@ -260,28 +257,26 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
     assert.equal(((await request('inspect')).records as unknown[]).length, 2);
     const started = await report();
-    assert.equal(started.pendingNotices, 2);
-    deps.native!.deliveredReports = async (_thread, reports) => reports.map((r) => r.response);
+    assert.match(String(started.response), /2 issues started/);
 
     now += 300001;
     await runCodexIntake(pluginData, false, deps);
     checked.length = 0;
     assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
-    assert.deepEqual(checked, ['issue-thread-3', 'issue-thread-4']);
-    assert.equal((await report()).pendingNotices, 0);
+    assert.deepEqual(checked, []);
+    assert.equal((await report()).status, 'report');
 
     await request('result', { id: first.id, result }, { threadId: 'issue-thread-3' });
-    const completion = await next();
-    assert.equal(completion.outcome, 'plan-ready');
-    assert.equal(completion.nextAction, 'next');
+    now += 300001;
+    await runCodexIntake(pluginData, false, deps);
     const third = await launch(5);
     assert.notEqual(third.id, second.id);
     assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
     const completed = await report();
-    assert.equal(completed.pendingNotices, 2);
-    assert.match(String(completed.response), /repo#3/);
-    assert.match(String(completed.response), /repo#5/);
-    assert.equal((await report()).pendingNotices, 0);
+    assert.match(String(completed.response), /1 issue started/);
+    assert.doesNotMatch(String(completed.response), /#3|Plan ready/);
+    assert.match(String(completed.response), /repo #5/);
+    assert.equal((await report()).status, 'report');
     assert.equal(((await request('inspect')).records as unknown[]).length, 3);
   });
 
@@ -293,7 +288,7 @@ describe('agent/codex-dispatch', () => {
     native!.turnStatus = 'completed';
     now += 300001;
     const missing = await next();
-    assert.equal(missing.code, 'dispatch-assessment-result-missing');
+    assert.equal(missing.status, 'idle');
     const before = (await request('inspect')).records as Record<string, unknown>[];
     native!.turnId = 'authorized-follow-up';
     native!.followUpUserTurn = true;
@@ -322,8 +317,6 @@ describe('agent/codex-dispatch', () => {
       operator,
     );
     assert.equal(transitioned.status, 'handed-off');
-    assert.equal(transitioned.severity, 'info');
-    assert.equal(transitioned.notify, false);
     assert.equal(transitioned.outcome, undefined);
     const after = (await request('inspect')).records as Record<string, unknown>[];
     assert.deepEqual(after[0]!.result, before[0]!.result);
@@ -332,10 +325,6 @@ describe('agent/codex-dispatch', () => {
     deps.native!.find = async () => {
       throw new Error('must not poll handed-off chat');
     };
-    const notice = await next();
-    assert.equal(notice.status, 'handed-off');
-    assert.equal(notice.changed, true);
-    assert.equal(notice.notify, false);
     assert.deepEqual(await next(), { status: 'idle', changed: false });
     await assert.rejects(
       request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
@@ -344,51 +333,6 @@ describe('agent/codex-dispatch', () => {
     fixture.item.state = 'closed';
     const retire = await request('retire', { id: prepared.id }, { threadId: 'operator' });
     assert.equal(retire.status, 'retire-available');
-  });
-
-  it('should retain a quiet handoff across fresh calls until its exact report is delivered', async () => {
-    const prepared = await prepare();
-    created();
-    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
-    await next();
-    const started = await report();
-    deps.native!.deliveredReports = async () => [String(started.response)];
-    await next();
-    await next();
-    assert.equal((await report()).pendingNotices, 0);
-    deps.native!.deliveredReports = async () => [];
-    native!.turnId = 'authorized-work';
-    native!.followUpUserTurn = true;
-    const operator = { threadId: 'operator' };
-    const preview = await request('handoff', { id: prepared.id }, operator);
-    await request('handoff', { id: prepared.id, digest: preview.digest }, operator);
-    assert.equal((await next()).status, 'handed-off');
-    assert.equal((await next()).status, 'idle');
-    const before = (await request('inspect')).records;
-    const pending = await report();
-    assert.equal(pending.pendingNotices, 1);
-    assert.match(String(pending.response), /DONT_NOTIFY/);
-    assert.match(String(pending.response), /Work continuing in the issue chat/);
-    assert.equal(String(pending.response).split('<heartbeat>').length, 2);
-    assert.deepEqual(await report(), pending);
-    deps.native!.deliveredReports = async () => {
-      throw new Error('history unavailable');
-    };
-    await assert.rejects(report(), /history unavailable/);
-    assert.equal(((await request('inspect')).notices as unknown[]).length, 1);
-    deps.native!.deliveredReports = async (threadId, reports) => {
-      assert.equal(threadId, 'intake-thread');
-      assert.deepEqual(
-        reports.map((entry) => entry.response),
-        [pending.response],
-      );
-      return reports.map((entry) => entry.response);
-    };
-    const delivered = await report();
-    assert.equal(delivered.pendingNotices, 0);
-    assert.doesNotMatch(String(delivered.response), /Work continuing/);
-    assert.deepEqual((await request('inspect')).records, before);
-    assert.deepEqual((await request('inspect')).reports, []);
   });
 
   it('should preserve issue state when native access needs host approval', async () => {
@@ -418,35 +362,12 @@ describe('agent/codex-dispatch', () => {
     });
     assert.equal((await report()).status, 'continue');
     await next();
-    assert.equal((await report()).pendingNotices, 0);
+    assert.equal((await report()).status, 'report');
     now += 60000;
     await runCodexIntake(pluginData, false, deps);
     assert.equal((await report()).status, 'continue');
     assert.equal((await next()).status, 'routing-required');
     assert.equal((await report()).status, 'continue');
-  });
-  it('should retain scan failure and recovery until a checked combined report is delivered', async () => {
-    await runCodexIntake(pluginData, false, {
-      ...deps,
-      connect: async () => {
-        throw new Error('provider unavailable');
-      },
-    });
-    now += 300001;
-    await runCodexIntake(pluginData, false, deps);
-    assert.equal((await report()).status, 'continue');
-    const prepared = await prepare();
-    created();
-    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
-    await next();
-    const pending = await report();
-    assert.equal(pending.pendingNotices, 3);
-    assert.match(String(pending.response), /<decision>NOTIFY<\/decision>/);
-    assert.deepEqual(await report(), pending);
-    deps.native!.deliveredReports = async () => [String(pending.response)];
-    assert.equal((await report()).pendingNotices, 0);
-    const current = await selectCodexIntake(pluginData, deps);
-    assert.deepEqual((await current.store.read())?.notices, []);
   });
 
   it('should retain cards and require continuation after an early report', async () => {
@@ -457,7 +378,6 @@ describe('agent/codex-dispatch', () => {
     assert.equal(premature.status, 'continue');
     assert.equal(premature.nextAction, 'next');
     assert.equal(premature.remainingActions, 9);
-    assert.equal(premature.pendingNotices, 1);
     assert.equal(premature.response, undefined);
     await next();
     assert.equal((await report()).status, 'report');
@@ -522,7 +442,7 @@ describe('agent/codex-dispatch', () => {
       'reconcile-required',
     );
     await next();
-    assert.equal((await report()).pendingNotices, 1);
+    assert.match(String((await report()).response), /1 issue started/);
     assert.equal(((await request('inspect')).records as unknown[]).length, 1);
   });
 
@@ -1004,7 +924,6 @@ describe('agent/codex-dispatch', () => {
     assert.ok(String(blocked.message).includes('- **Project name:** repo\n'));
     assert.ok(String(blocked.message).includes('- **Folder path:** ' + source + '\n'));
     assert.match(String(blocked.message), /https:\/\/github.com\/owner\/repo\/issues\/3/u);
-    assert.match(String(blocked.message), /https:\/\/github.com\/receiver/u);
     assert.ok(String(blocked.message).includes(source));
     assert.match(String(blocked.message), /primary folder/u);
     now += 300001;
@@ -1234,7 +1153,6 @@ describe('agent/codex-dispatch', () => {
       String(recorded.presentation),
       /Effective settings.*Verified: gpt-6\.1-sol \/ high/,
     );
-    assert.equal((await next()).outcome, 'plan-ready');
     assert.deepEqual(await next(), { status: 'idle', changed: false });
     assert.deepEqual(await request('result', { id: prepared.id, result }, child), recorded);
     await assert.rejects(
@@ -1284,7 +1202,7 @@ describe('agent/codex-dispatch', () => {
     assert.ok(!String(revised.presentation).includes(result.plan));
     const resumed = await request('context', { id: prepared.id }, child);
     assert.deepEqual(resumed.previousResult, { ...result, plan: 'Refined after clarification.' });
-    assert.equal((await next()).changed, true);
+    assert.equal((await next()).changed, false);
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
@@ -1350,7 +1268,6 @@ describe('agent/codex-dispatch', () => {
       /dispatch-assignment-authority-revoked/,
     );
     assert.deepEqual({ ...(await request('inspect')), run: completed.run }, completed);
-    assert.equal((await next()).outcome, 'plan-ready');
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
@@ -1459,7 +1376,7 @@ describe('agent/codex-dispatch', () => {
     native!.turnStatus = 'failed';
     native!.status = 'idle';
     now += 300001;
-    assert.equal((await next()).code, 'dispatch-assessment-result-missing');
+    assert.equal((await next()).status, 'idle');
     assert.equal(
       (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
       'verified',
@@ -1488,7 +1405,6 @@ describe('agent/codex-dispatch', () => {
       }
     }
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
-    assert.equal((await next()).outcome, 'plan-ready');
   });
 
   it('should retain verified child identity on rename failure and recover without another creation', async () => {
@@ -1557,149 +1473,80 @@ describe('agent/codex-dispatch', () => {
     assert.ok(context.nativeMetadata);
     assert.ok(context.fallbackMetadata);
   });
-  it('should retain an identical-looking revised plan until its own report is delivered', async () => {
+
+  it('should discard legacy report backlogs without losing records or blocking admission', async () => {
+    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new Store(current.store.location.root, current.store.location.scope);
+    const cards = Array.from({ length: 100 }, (_, i) => ({
+      id: i.toString(16).padStart(64, '0'),
+      message: 'old card with a malformed link',
+      notify: true,
+    }));
+    await current.store.exclusive(async (state, save) => {
+      state!.notices = cards;
+      await save(state!);
+    });
+    await store.exclusive(async (state, save) => {
+      state.notices = cards;
+      state.reports = [{ response: 'wrong url', createdAt: now, notices: cards.map((c) => c.id) }];
+      await save();
+    });
+    assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
     const prepared = await prepare();
     created();
-    const child = { threadId: 'issue-thread' };
-    const first = await request('result', { id: prepared.id, result }, child);
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
     await next();
-    await next();
-    const old = await report();
-    now += 60000;
+    const first = await report();
+    assert.match(String(first.response), /1 issue started/);
+    assert.equal((await store.read()).reports, undefined);
+    assert.equal((await current.store.read())!.notices, undefined);
+    now += 300001;
     await runCodexIntake(pluginData, false, deps);
-    native!.turnId = 'revised-plan';
+    deps.native!.find = async () => {
+      throw new Error('intake must not inspect already started work');
+    };
+    await next();
+    const repeat = await report();
+    assert.match(String(repeat.response), /DONT_NOTIFY/);
+    assert.doesNotMatch(String(repeat.response), /issues? started|wrong url|old card/);
+    assert.equal((await store.read()).records.length, 1);
+  });
+
+  it('should keep revised plans and questions inside the issue while releasing its slot', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+    await next();
+    await report();
+    const child = { threadId: 'issue-thread' };
+    const saved = await request('result', { id: prepared.id, result }, child);
+    now += 300001;
+    await runCodexIntake(pluginData, false, deps);
     await request(
       'result',
       {
         id: prepared.id,
-        previousResultDigest: first.previousResultDigest,
-        result: { ...result, plan: 'A revised, different implementation plan.' },
+        previousResultDigest: saved.previousResultDigest,
+        result: {
+          version: 1,
+          outcome: 'clarification-needed',
+          summary: 'Decide retention.',
+          assessment: 'A choice is needed.',
+          questions: ['How long?'],
+          evidence: result.evidence,
+          progress: result.progress,
+        },
       },
       child,
     );
     await next();
-    deps.native!.deliveredReports = async (_thread, reports) =>
-      reports
-        .filter((r) => r.response === old.response && r.createdAt < now)
-        .map((r) => r.response);
-    await next();
-    const revised = await report();
-    assert.equal(revised.pendingNotices, 1);
-    assert.notEqual(revised.response, old.response);
-    // No final response for the revised report was delivered.
-    const after = await report();
-    assert.equal(after.pendingNotices, 1);
-  });
-  it('should drain separately valid notice queues in bounded reports', async () => {
-    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new Store(current.store.location.root, current.store.location.scope);
-    const cards = (offset: number) =>
-      Array.from({ length: 60 }, (_, i) => ({
-        id: (offset + i).toString(16).padStart(64, '0'),
-        message: 'retained card',
-        notify: false,
-      }));
-    await current.store.exclusive(async (s, save) => {
-      s!.records = [];
-      s!.notices = cards(100);
-      await save(s!);
-    });
-    await store.exclusive(async (s, save) => {
-      s.notices = cards(200);
-      await save();
-    });
-    await next();
-    const first = await report();
-    assert.equal(first.pendingNotices, 120);
-    assert.equal((await store.read()).reports![0]!.notices.length, 100);
-    deps.native!.deliveredReports = async () => [String(first.response)];
-    assert.equal((await report()).pendingNotices, 20);
-    assert.equal((await current.store.read())!.notices!.length, 20);
-    assert.equal((await store.read()).notices!.length, 0);
-  });
-  it('should pause a full outbox, retain a late creation receipt, and resume after proven delivery', async () => {
-    const prepared = await prepare();
-    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new Store(current.store.location.root, current.store.location.scope);
-    await store.exclusive(async (state, save) => {
-      state.notices = Array.from({ length: 100 }, (_, i) => ({
-        id: i.toString(16).padStart(64, '0'),
-        message: 'existing card',
-        notify: false,
-      }));
-      await save();
-    });
-    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
-    created();
-    assert.equal(
-      (await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } }))
-        .status,
-      'assessing',
+    const output = await report();
+    assert.match(String(output.response), /DONT_NOTIFY/);
+    assert.match(String(output.response), /Slots:\*\* 0\/2/);
+    assert.doesNotMatch(
+      String(output.response),
+      /How long|Plan ready|Decide retention|clarification/i,
     );
-    assert.equal((await store.read()).notices!.length, 100);
-    assert.equal((await store.read()).records[0]!.threadId, 'issue-thread');
-    assert.equal((await store.read()).records[0]!.notice, undefined);
-    const first = await report();
-    deps.native!.deliveredReports = async () => [String(first.response)];
-    assert.equal((await next()).status, 'assessing');
-    assert.equal((await store.read()).notices!.length, 1);
-    assert.ok((await store.read()).records[0]!.notice);
-    await next();
-    const started = await report();
-    assert.match(String(started.response), /Assessment started/);
-    assert.equal((await store.read()).records.length, 1);
-  });
-
-  it('should report and drain an existing near-limit journal without losing large cards', async () => {
-    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new Store(current.store.location.root, current.store.location.scope);
-    await store.exclusive(async (state, save) => {
-      state.notices = Array.from({ length: 43 }, (_, i) => ({
-        id: i.toString(16).padStart(64, '0'),
-        message: '文'.repeat(32000),
-        notify: false,
-      }));
-      await save();
-    });
-    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
-    const first = await report();
-    assert.equal(first.pendingNotices, 43);
-    const saved = await store.read();
-    assert.ok(Buffer.byteLength(JSON.stringify(saved)) > 4 * 1024 * 1024);
-    assert.equal(saved.reports!.length, 1);
-    assert.equal((await report()).response, first.response);
-    deps.native!.deliveredReports = async () => [String(first.response)];
-    assert.equal((await report()).pendingNotices, 42);
-    assert.equal((await store.read()).notices!.length, 42);
-  });
-
-  it('should drain a full intake queue without claiming an unperformed scan completed', async () => {
-    const current = await selectCodexIntake(pluginData, deps);
-    await current.store.exclusive(async (state, save) => {
-      state!.notices = Array.from({ length: 100 }, (_, i) => ({
-        id: i.toString(16).padStart(64, '0'),
-        message: 'existing intake card',
-        notify: true,
-      }));
-      await save(state!);
-    });
-    now += 60000;
-    const before = (await current.store.read())!.lastAttemptAt;
-    const blocked = await runCodexIntake(pluginData, false, deps);
-    assert.equal(blocked.status, 'blocked');
-    assert.equal('code' in blocked && blocked.code, 'intake-notice-capacity');
-    assert.equal((await current.store.read())!.lastAttemptAt, before);
-    assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
-    const pending = await report();
-    assert.equal(pending.pendingNotices, 100);
-    deps.native!.deliveredReports = async () => [String(pending.response)];
-    await assert.rejects(report(), /dispatch-scan-required/);
-    assert.equal((await current.store.read())!.notices!.length, 0);
-    assert.deepEqual((await request('inspect')).reports, []);
-    await runCodexIntake(pluginData, false, deps);
-    assert.equal((await next()).status, 'routing-required');
   });
 });

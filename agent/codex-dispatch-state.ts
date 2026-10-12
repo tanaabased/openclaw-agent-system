@@ -126,7 +126,9 @@ export const dispatchRecordSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    notice: Type.Optional(hash),
+    notice: Type.Optional(hash), // legacy presentation metadata; never used for intake decisions.
+    dispatchedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    intakeReportedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     // accept journals from the earlier model-mediated title repair.
     renameRequested: Type.Optional(Type.Boolean()),
     retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -147,10 +149,12 @@ const schema = Type.Object(
           currentTimeIso: text,
           actions: Type.Integer({ minimum: 0, maximum: 12 }),
           stopped: Type.Optional(Type.Literal('blocked')),
+          response: Type.Optional(Type.String({ maxLength: 128000 })),
         },
         { additionalProperties: false },
       ),
     ),
+    intakeHealth: Type.Optional(Type.String({ maxLength: 128 })),
     checked: Type.Optional(
       Type.Object(
         { at: Type.Integer({ minimum: 0 }), digest: hash },
@@ -234,6 +238,9 @@ export default class CodexDispatchStore {
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId))
     )
       throw new Error('dispatch-state-invalid');
+    // discard obsolete presentation queues, preserving all assignment and assessment records.
+    delete state.notices;
+    delete state.reports;
     serializeState(state);
     return state;
   }

@@ -1,50 +1,58 @@
 import assert from 'node:assert/strict';
-import prepareDispatchReport, { reportResponseLimit } from '../agent/codex-dispatch-report.ts';
+import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
+import type { DispatchState } from '../agent/codex-dispatch-state.ts';
+import type { IntakeState } from '../channels/github/intake/record-store.ts';
 
-const cards = (count: number, message = 'card') =>
-  Array.from({ length: count }, (_, i) => ({
-    id: i.toString(16).padStart(64, '0'),
-    message,
-    notify: false,
-  }));
+const state: DispatchState = { version: 1, scope: 'scope', records: [] };
+const intake: IntakeState = {
+  version: 1,
+  scope: 'scope',
+  workspaceDir: '/workspace',
+  agentId: 'agent',
+  account: { login: 'agent', nodeId: 'actor' },
+  policyDigest: 'policy',
+  baselineAt: 0,
+  records: [],
+};
+const input = {
+  state,
+  intake,
+  slots: 2,
+  automationId: 'intake',
+  currentTimeIso: '2026-10-12T12:00:00.000Z',
+};
 describe('agent/codex-dispatch-report', () => {
-  it('should bound batches by count and utf8 response size without dropping cards', () => {
-    const input = { automationId: 'intake', reports: [], now: 100 };
-    assert.equal(prepareDispatchReport({ ...input, cards: cards(120) }).notices.length, 100);
-    const batch = prepareDispatchReport({ ...input, cards: cards(100, '🔥'.repeat(16000)) });
-    assert.equal(batch.notices.length, 1);
-    assert.ok(Buffer.byteLength(batch.response) <= reportResponseLimit);
-    assert.throws(
-      () => prepareDispatchReport({ ...input, cards: cards(1, 'x'.repeat(128001)) }),
-      /dispatch-report-capacity/,
-    );
+  it('should render quiet counts using the existing message rotation', () => {
+    const report = prepareDispatchReport(input);
+    assert.match(report.response, /DONT_NOTIFY/);
+    assert.match(report.response, /Managing:\*\* 0 issues/);
+    assert.match(report.response, /Pending:\*\* 0/);
+    assert.match(report.response, /Slots:\*\* 0\/2 occupied/);
+    assert.deepEqual(report.started, []);
   });
-  it('should freeze pending delivery while new cards arrive and distinguish repeated copy', () => {
-    const input = { automationId: 'intake', cards: cards(1), reports: [], now: 100 };
-    const first = prepareDispatchReport(input);
-    assert.deepEqual(
-      prepareDispatchReport({ ...input, cards: cards(2), reports: [first], now: 200 }),
-      first,
+  it('should report an intake failure and recovery without repeating notifications', () => {
+    const blocked = {
+      ...intake,
+      blocker: { code: 'intake-provider-unavailable', since: 1, retryAfter: 2 },
+    };
+    const first = prepareDispatchReport({ ...input, intake: blocked });
+    assert.match(first.response, /NOTIFY/);
+    assert.match(first.response, /⚠️/);
+    const next = { ...state, intakeHealth: first.health };
+    assert.match(
+      prepareDispatchReport({ ...input, state: next, intake: blocked }).response,
+      /DONT_NOTIFY/,
     );
-    const second = prepareDispatchReport({ ...input, cards: cards(2).slice(1), now: 200 });
-    assert.notEqual(second.response, first.response);
-    assert.equal(second.createdAt, 200);
+    const recovered = prepareDispatchReport({ ...input, state: next });
+    assert.match(recovered.response, /Intake resumed/);
+    assert.equal(recovered.health, '');
   });
-  it('should rebuild pending delivery for a replacement schedule instead of emitting the retired automation id', () => {
-    const input = { automationId: 'old', cards: cards(1), reports: [], now: 100 };
-    const old = prepareDispatchReport(input);
-    const replacement = prepareDispatchReport({
+  it('should distinguish failed intake state from a temporary provider warning', () => {
+    const report = prepareDispatchReport({
       ...input,
-      automationId: 'replacement',
-      reports: [old],
-      now: 200,
+      intake: { ...intake, blocker: { code: 'intake-state-invalid', since: 1, retryAfter: 2 } },
     });
-    assert.match(replacement.response, /<automation_id>replacement<\/automation_id>/);
-    assert.equal(replacement.createdAt, 200);
-    const legacy = { response: old.response, notices: old.notices, createdAt: old.createdAt };
-    assert.equal(
-      prepareDispatchReport({ ...input, reports: [legacy], now: 200 }).automationId,
-      'old',
-    );
+    assert.match(report.response, /❌/);
+    assert.match(report.response, /intake-state-invalid/);
   });
 });

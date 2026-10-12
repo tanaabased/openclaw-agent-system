@@ -36,30 +36,35 @@ outcome or call to action.
 
 ## Codex Issue Assignment Notices
 
-Use the shared card format for intake and assessment notices:
+Use one compact card for the outcome of an intake check:
 
-- **ℹ️ Information:** a normal transition or recovery.
-- **⚠️ Warning:** a decision, setup action, or temporary provider delay.
-- **❌ Error:** an operation failed or retained work could not be verified.
+- **ℹ️ Information:** issues started, pending assignments, or intake recovery.
+- **⚠️ Warning:** an intake action is needed or a temporary provider delay.
+- **❌ Error:** intake or preparation could not complete.
 
-Lead with a concrete title, then **Issue** and **Chat** links when available,
-**What happened**, and **Next step**. Include necessary project, folder, or actor
-facts. Put a bounded **Technical detail** code last; never use raw provider errors
-as the visible explanation. Keep the text meaningful without emoji or color.
-Severity describes the situation; it does not decide whether to notify the user.
-The runtime supplies change and notification flags. Repeated unchanged outcomes
-need no additional card. Native approval requests keep their native UI.
+List each started item as **Issue:** followed by its repository and number linked
+to its work destination. Do not add an “Open chat” label or duplicate GitHub link.
+Reserve **Feedback** for incoming comments and review feedback, and **Review** for
+requests to review a pull request when those intake capabilities are available.
+Follow with **Managing**, **Pending**, and **Slots** facts. Quiet checks reuse the
+existing time-based message rotation. Omit unknown counts rather than showing zero.
+Warnings and errors explain the affected item or intake operation and its next action;
+include the exact project folder when registration is needed and a bounded diagnostic
+when useful. Preserve successful starts in a report that also contains an obstacle.
 
 ```markdown
-## ℹ️ Work continuing in the issue chat
+## ℹ️ Intake complete — 2 issues started
 
-- **Issue:** [example#7](https://github.com/example/project/issues/7)
-- **Chat:** [Open issue chat](codex://threads/example)
-- **What happened:** The assessment watcher has stopped checking this chat. Your conversation and local changes are retained.
-- **Next step:** Continue in the existing issue chat. No reset or reassignment is needed.
+- **Issue:** [example/project #7](codex://threads/example-7)
+- **Issue:** [example/project #8](codex://threads/example-8)
+
+**Managing:** 5 issues · **Pending:** 1
+**Slots:** 2/2 occupied
+Pending issues will start when a slot becomes available.
 ```
 
-This card reports a monitoring transition, not completion of the issue.
+Keep assessment plans, questions, and assessment-specific warnings or errors in the
+individual issue using the components below. Native approvals keep their native UI.
 
 ## Session Appearance
 

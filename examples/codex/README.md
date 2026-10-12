@@ -29,8 +29,8 @@ constructed failure cases are identified in the tests. This packed/headless
 scenario does not replace separate installed desktop-tool verification.
 For a native follow-up pilot, request implementation explicitly in the issue chat.
 Verify the handoff retains its assessment result (or unsaved-result failure), changes
-no files itself, and produces one non-notifying information card in intake. Later
-polls must not report the implementation checkout as an assessment failure. A new
+no files itself, and produces no assessment-progress announcement in intake. Later
+polls must not inspect the implementation checkout or report it as an assessment failure. A new
 assignment for another issue must still start. Native approval remains native; an
 initial assessment turn and issue prose cannot authorize a handoff.
 
@@ -130,34 +130,26 @@ transient contention. Result submission must use the same bounded waiting behavi
 Run a fresh assessment without follow-up coaching: if its sandbox blocks private
 plugin-state access, it must request native approval for the exact runtime command
 and continue only after approval and verified context. An actual approval denial or
-verification failure must stop it. Verify the retained plan, one completion notice,
-and a subsequent quiet poll without duplicate chats or worktrees.
+verification failure must stop it. Verify the retained plan only in its issue,
+and a subsequent quiet intake report without duplicate chats or worktrees.
 
-For delivery recovery, interrupt a run after it prepares a report but before the final
-heartbeat. The next run must retain the same batch. Record a revised plan with identical
-card wording: the previous delivery must not acknowledge that revision. Exercise combined
-intake and dispatch queues over one report's count and size limits; later batches must
-remain saved until their own delivery. Fill a queue to 100 cards before the next scan
-or dispatch action: it must pause new work and still allow reporting to drain the queue.
-Reconcile an already-created chat while that queue is full; its receipt must survive,
-and its card must appear after earlier delivery frees space. Interrupt acknowledgment
-between the intake and dispatch saves; retry must preserve unrelated pending cards.
-Repeat with large UTF-8 cards near the journal's content limit: report storage must
-remain available, pending cards must survive a restart, and new card production
-must pause on byte capacity before reaching 100 cards. Deny access to a disposable
-assessment skill or guidance fixture and verify the native host-access retry is
-requested without replacing the selected skill or diagnosing corrupt configuration.
-Reactivate with a full queue and a recovered provider: activation must succeed,
-preserve queued cards, and report recovery once after space is available. A real
-provider failure must retain its own diagnostic. Denied access to a saved project
-must request host access instead of treating the checkout as missing.
+Verify one intake summary per scheduled check, including grouped issue links and
+managing, pending, and occupied-slot counts. Revise a plan, record clarification,
+and continue implementation: none may produce intake progress announcements.
+Simulate a malformed or missing final notification; the next run must still scan
+and start eligible work without replaying old cards. Load legacy full notification
+queues and verify they are discarded without losing assignments, assessments, or
+native creation receipts. No notification backlog may consume admission capacity.
+Deny access to a disposable assessment skill or guidance fixture and verify the
+native host-access retry without substituting a skill or diagnosing corrupt state.
+Real provider failures retain their diagnostic; recovery reports current intake health.
 A fresh scan without a terminal dispatch check must return `continue` from report,
-even when an earlier issue has a card ready. Follow its next action until the queue
+even when an issue has already started. Follow its next action until the queue
 is checked, capacity is full, a blocker is retained, or twelve runtime actions are
 spent. A report supplied with the previous trigger's timestamp must return the
 current native occurrence's request without publishing a final response. Repeat
 three fresh multi-issue batches; require each run to fill available slots, retain
-overflow, resume it later without duplicates, and become quiet after delivery.
+overflow, resume it later without duplicates, and produce quiet summaries after the starts have been reported.
 Exhaust the action budget after creation but before receipt reconciliation; the
 next occurrence must recover the same chat rather than launch another.
 For native recovery, verify creation and latest-turn evidence through paged history on a

@@ -2,7 +2,6 @@ import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import retainCodexIntakeNotice from './codex-intake-notice.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -197,7 +196,6 @@ export async function runCodexIntake(
       policyDigest: digest,
       now: (deps.now ?? Date.now)(),
       activate,
-      retainNotice: retainCodexIntakeNotice,
       async connect(signal) {
         return connectSelected(
           current,
@@ -255,7 +253,7 @@ export async function runCodexIntake(
       const now = (deps.now ?? Date.now)();
       const changed = state.blocker?.code !== error.code;
       const result = { status: 'blocked', code: error.code, changed };
-      if (changed || state.noticePending) {
+      if (changed) {
         const next = {
           ...state,
           blocker: {
@@ -264,7 +262,6 @@ export async function runCodexIntake(
             retryAfter: now,
           },
         };
-        retainCodexIntakeNotice(next, result);
         await save(next);
       }
       return {

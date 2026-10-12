@@ -169,6 +169,9 @@ export default class IntakeRecordStore {
         )
       )
         throw new Error('invalid state');
+      // old notification backlogs never control admission or survive the next save.
+      delete value.notices;
+      delete value.noticePending;
       return value;
     } catch {
       throw new IntakeError('intake-state-invalid');

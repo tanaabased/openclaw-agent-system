@@ -174,30 +174,32 @@ and model settings, the runtime corrects a changed native title and verifies the
 before assessment; the display title does not establish chat identity.
 
 When you explicitly ask the issue chat to continue with implementation, its agent
-records a `handoff` before changing the checkout. This ends assessment monitoring;
+records a `handoff` before changing the checkout. This records the transition out of assessment;
 it does not mark the issue complete or grant permission to publish. The existing
-chat, worktree, and recorded outcome are retained. If an unsaved assessment is still
-being checked after you approved further work, recover from the issue or operator
+chat, worktree, and recorded outcome are retained. If an unsaved assessment still
+occupies a slot after you approved further work, recover from the issue or operator
 chat with `dispatchRuntime` input `{"action":"handoff","id":"<assessment-receipt>"}`,
 then repeat with the returned `digest`. The runtime verifies the existing native
 chat and repository and a later user turn; the agent must establish the human's
 explicit authorization from the conversation. Keep the existing work rather than
 resetting and reassigning it.
 
-Intake shows information cards for progress and recovery, warnings for decisions or
-setup, and errors for failed operations. Each includes what happened and the next
-step, with technical details last. A handoff produces one non-notifying information
-card. Unchanged polling and already-reported blockers produce no new card. Failures
-that prevent reading or saving the tracking records cannot be deduplicated safely;
-they remain visible. Cards remain saved until a later run verifies the exact final
-heartbeat in recent native chat history. Interrupted runs can therefore repeat a
-card rather than lose it. Each run posts one bounded batch; additional cards remain queued for later runs.
-When a card queue is full, new work pauses until confirmed delivery frees space.
-Receipts from chats already being created remain saved while their cards wait.
-Reactivation can still verify GitHub while cards are waiting; any deferred health
-update reports the current status once space is available.
-A quiet report requires both a current scan and a completed dispatch check; unfinished
-checks cannot be reported as no updates.
+Each scheduled check produces one intake report: newly started **Issue** links,
+**Managing** and **Pending** counts, occupied **Slots**, and intake warnings or errors.
+Managing means retained issue destinations, not currently running work. Pending means
+accepted assignments waiting to start. Slots currently limit unfinished assessments;
+saving a plan, question, or setup outcome releases the reservation. Later work does
+not consume that assessment slot. An interrupted assessment without an outcome can
+retain its reservation until resolved.
+
+After verified creation, intake does not inspect or announce assessment progress.
+Plans, questions, assessment failures, and implementation updates stay in the issue.
+Unchanged healthy reports use the existing quiet-message rotation without notifying;
+new starts and changed intake health can notify. Reports record attempts, not proven
+message delivery: wording or link differences never block admission or create retries.
+Existing creation receipts still prevent duplicate work after interruption. Legacy
+notification backlogs are discarded without removing issue records or saved results.
+A quiet report requires a current scan and a completed dispatch check.
 
 An `EPERM` or `EACCES` failure can mean the sandbox cannot write private tracking
 files under the plugin data directory. The agent retries the same command once
