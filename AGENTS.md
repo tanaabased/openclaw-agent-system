@@ -62,6 +62,9 @@
 
 ## GitHub notification messages
 
+- Keep standalone Codex intake reports strictly about the current assignment scan and work creation: started items, pending assignments, capacity, and intake obstacles. After verified creation, plans, questions, assessment errors, and implementation progress belong in the individual issue. Retain issue-to-destination records for routing and capacity without publishing a lifecycle feed.
+- Never make admission, dispatch, or duplicate prevention depend on copied notification text or proof of final-message delivery. Verify native creation independently; notification wording is advisory.
+
 - Keep lifecycle implementations responsible for provider facts and lifecycle-specific resources. The shared coordinator owns durable conversation state, scheduling, retries, mode enforcement, turn dispatch, and publication; keep those concerns out of polling intake state.
 - Apply `channels/github/PRESENTATION.md` only as the visual component contract for assignment cards, direct messages, private responses, plans, questions, and quoted `To GitHub` responses.
 - Keep `channels/github/README.md` and `channels/github/ADVANCED.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.

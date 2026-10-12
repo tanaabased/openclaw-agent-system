@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,6 +9,7 @@ import {
   verifyDispatchWorktree,
   type DispatchGit,
 } from '../agent/codex-dispatch-project.ts';
+import codexHostAccess from '../agent/codex-host-access.ts';
 
 describe('agent/codex-dispatch-project', () => {
   let root: string, source: string, other: string, commonDir: string;
@@ -41,6 +42,85 @@ describe('agent/codex-dispatch-project', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should preserve permission errors from configured and discovered project paths', async function () {
+    if (process.platform === 'win32' || process.getuid?.() === 0) this.skip();
+    const parent = join(root, 'restricted');
+    const path = join(parent, 'repo');
+    await mkdir(path, { recursive: true });
+    await chmod(parent, 0);
+    try {
+      for (const explicitPath of [undefined, path])
+        await assert.rejects(
+          resolveDispatchProject(
+            {
+              projects: [project(path)],
+              repository: 'owner/repo',
+              defaultBranch: 'main',
+              workspace: root,
+              explicitPath,
+            },
+            git,
+          ),
+          (error: unknown) => codexHostAccess(error),
+        );
+    } finally {
+      await chmod(parent, 0o700);
+    }
+  });
+
+  it('should exclude inaccessible unrelated projects when an explicit checkout is configured', async function () {
+    if (process.platform === 'win32' || process.getuid?.() === 0) this.skip();
+    const parent = join(root, 'restricted');
+    const path = join(parent, 'repo');
+    await mkdir(path, { recursive: true });
+    await chmod(parent, 0);
+    try {
+      for (const projects of [
+        [project(path), project(source)],
+        [project(source), project(path)],
+      ]) {
+        const selected = await resolveDispatchProject(
+          {
+            projects,
+            repository: 'owner/repo',
+            defaultBranch: 'main',
+            workspace: root,
+            explicitPath: './source',
+          },
+          git,
+        );
+        assert.equal(selected.path, source);
+        assert.equal(selected.commit, commit);
+      }
+    } finally {
+      await chmod(parent, 0o700);
+    }
+  });
+
+  it('should preserve git access denials while classifying other lookup failures', async () => {
+    const input = {
+      projects: [project(source)],
+      repository: 'owner/repo',
+      defaultBranch: 'main',
+      workspace: root,
+    };
+    for (const code of ['EPERM', 'EACCES']) {
+      const denial = Object.assign(new Error('denied'), { code });
+      await assert.rejects(
+        resolveDispatchProject(input, async () => {
+          throw denial;
+        }),
+        (error: unknown) => error === denial,
+      );
+    }
+    await assert.rejects(
+      resolveDispatchProject(input, async () => {
+        throw new Error('failed');
+      }),
+      /dispatch-project-inventory-unavailable/,
+    );
+  });
+
   it('should require exact repository identity and use explicit paths only to constrain saved projects', async () => {
     const input = {
       projects: [project(source), project(other)],
@@ -65,6 +145,38 @@ describe('agent/codex-dispatch-project', () => {
     await assert.rejects(
       resolveDispatchProject({ ...input, explicitPath: alias }, git),
       /dispatch-project-path-unsafe/,
+    );
+  });
+
+  it('should retain changed implementation work at handoff while still requiring repository ownership', async () => {
+    const selected = await resolveDispatchProject(
+      {
+        projects: [project(source)],
+        repository: 'owner/repo',
+        defaultBranch: 'main',
+        workspace: root,
+      },
+      git,
+    );
+    const changed: DispatchGit = async (cwd, argv) =>
+      argv.includes('HEAD')
+        ? '2'.repeat(40)
+        : argv[0] === 'status'
+          ? ' M implementation.ts'
+          : git(cwd, argv);
+    assert.equal(
+      await verifyDispatchWorktree(selected, other, 'owner/repo', changed, 'handoff'),
+      other,
+    );
+    await assert.rejects(
+      verifyDispatchWorktree(
+        selected,
+        other,
+        'owner/repo',
+        async (cwd, argv) => (argv.includes('--git-common-dir') ? other : changed(cwd, argv)),
+        'handoff',
+      ),
+      /dispatch-worktree-diverged/,
     );
   });
 

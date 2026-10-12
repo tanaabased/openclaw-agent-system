@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
@@ -119,7 +120,15 @@ export const dispatchRecordSchema = Type.Object(
     retired: Type.Optional(
       Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
     ),
-    notice: Type.Optional(hash),
+    handoff: Type.Optional(
+      Type.Object(
+        { at: Type.Integer({ minimum: 0 }), by: text, turnId: text },
+        { additionalProperties: false },
+      ),
+    ),
+    notice: Type.Optional(hash), // legacy presentation metadata; never used for intake decisions.
+    dispatchedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    intakeReportedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     // accept journals from the earlier model-mediated title repair.
     renameRequested: Type.Optional(Type.Boolean()),
     retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -128,10 +137,69 @@ export const dispatchRecordSchema = Type.Object(
 );
 export type DispatchRecord = Static<typeof dispatchRecordSchema>;
 const schema = Type.Object(
-  { version: Type.Literal(1), scope: hash, records: Type.Array(dispatchRecordSchema) },
+  {
+    version: Type.Literal(1),
+    scope: hash,
+    records: Type.Array(dispatchRecordSchema),
+    run: Type.Optional(
+      Type.Object(
+        {
+          id: text,
+          automationId: text,
+          currentTimeIso: text,
+          actions: Type.Integer({ minimum: 0, maximum: 12 }),
+          stopped: Type.Optional(Type.Literal('blocked')),
+          response: Type.Optional(Type.String({ maxLength: 128000 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    intakeHealth: Type.Optional(Type.String({ maxLength: 128 })),
+    checked: Type.Optional(
+      Type.Object(
+        { at: Type.Integer({ minimum: 0 }), digest: hash },
+        { additionalProperties: false },
+      ),
+    ),
+    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
+    reports: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            response: Type.String({ minLength: 1, maxLength: 128000 }),
+            automationId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+            createdAt: Type.Integer({ minimum: 0 }),
+            notices: Type.Array(hash, { maxItems: 100 }),
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: 8 },
+      ),
+    ),
+  },
   { additionalProperties: false },
 );
 export type DispatchState = Static<typeof schema>;
+
+const contentBytes = 4 * 1024 * 1024;
+// a bounded report may expand under json escaping; producers cannot consume this reserve.
+const journalBytes = contentBytes + 1024 * 1024;
+
+function serializeState(state: DispatchState) {
+  const contents = JSON.stringify(state);
+  if (
+    Buffer.byteLength(contents) > journalBytes ||
+    Buffer.byteLength(
+      JSON.stringify({
+        ...state,
+        reports: undefined,
+        run: state.run && { ...state.run, response: undefined },
+      }),
+    ) > contentBytes
+  )
+    throw new Error('dispatch-state-capacity');
+  return contents;
+}
 
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
 export default class CodexDispatchStore {
@@ -147,15 +215,19 @@ export default class CodexDispatchStore {
       directories: [root],
       currentUid: process.getuid?.(),
       label: 'Codex issue dispatch',
-      maximumBytes: 4 * 1024 * 1024,
+      maximumBytes: journalBytes,
     });
   }
   async read(): Promise<DispatchState> {
     const contents = await this.file.read();
-    const state: unknown =
-      contents === undefined
-        ? { version: 1, scope: this.scope, records: [] }
-        : JSON.parse(contents);
+    let state: unknown = { version: 1, scope: this.scope, records: [] };
+    if (contents !== undefined) {
+      try {
+        state = JSON.parse(contents);
+      } catch {
+        throw new Error('dispatch-state-invalid');
+      }
+    }
     if (
       !Value.Check(schema, state) ||
       state.scope !== this.scope ||
@@ -166,11 +238,16 @@ export default class CodexDispatchStore {
         (r) =>
           (r.request && (!r.project || !r.context || !r.routing || !r.routingNote)) ||
           (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
-          (r.phase === 'complete' && !r.result),
+          (r.phase === 'complete' && !r.result) ||
+          (r.handoff && (!r.request || !r.threadId || !r.worktree)),
       ) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId))
     )
       throw new Error('dispatch-state-invalid');
+    // discard obsolete presentation queues, preserving all assignment and assessment records.
+    delete state.notices;
+    delete state.reports;
+    serializeState(state);
     return state;
   }
   async exclusive<T>(
@@ -196,10 +273,7 @@ export default class CodexDispatchStore {
           async () => {
             lock.assertHeld();
             if (!Value.Check(schema, state)) throw new Error('dispatch-state-invalid');
-            const contents = JSON.stringify(state);
-            if (Buffer.byteLength(contents) > 4 * 1024 * 1024)
-              throw new Error('dispatch-state-capacity');
-            await this.file.write(contents);
+            await this.file.write(serializeState(state));
           },
           lock.signal,
         );

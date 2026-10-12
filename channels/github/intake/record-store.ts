@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { codexNoticeSchema, codexNoticeLimit } from '../../../agent/codex-notice-outbox.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
@@ -79,6 +80,8 @@ const stateSchema = Type.Object(
       Type.Object({ code: text, since: time, retryAfter: time }, { additionalProperties: false }),
     ),
     records: Type.Array(intakeRecordSchema),
+    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
+    noticePending: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -92,7 +95,7 @@ export class IntakeError extends Error {
 
 export function intakeRemediation(code: string): string {
   if (code.includes('permission'))
-    return 'Use authorized Install to review the exact scanner command, save native recurring consent, restart Codex, and acknowledge the reload. A saved rule does not prove unattended execution.';
+    return 'Review the exact operation in the native approval prompt. Approval does not prove successful or unattended execution; verify the next run.';
   if (code.includes('profile') || code.includes('model'))
     return 'Configure a supported low model and effort profile, then retry authorized Install; no substitute is selected.';
   if (code.includes('state'))
@@ -142,9 +145,9 @@ export default class IntakeRecordStore {
     });
   }
   async read(): Promise<IntakeState | undefined> {
+    const contents = await this.file.read();
+    if (contents === undefined) return;
     try {
-      const contents = await this.file.read();
-      if (contents === undefined) return;
       const value: unknown = JSON.parse(contents);
       if (
         !Value.Check(stateSchema, value) ||
@@ -166,6 +169,9 @@ export default class IntakeRecordStore {
         )
       )
         throw new Error('invalid state');
+      // old notification backlogs never control admission or survive the next save.
+      delete value.notices;
+      delete value.noticePending;
       return value;
     } catch {
       throw new IntakeError('intake-state-invalid');

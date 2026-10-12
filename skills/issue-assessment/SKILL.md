@@ -188,6 +188,25 @@ The receipt selects retained evidence; it does not grant authority by itself.
    limitation, blocking question, or required action in the primary response as well;
    supporting notes must not hide what the user needs to decide or do next.
 
+### Continuing after assessment
+
+When the human explicitly requests work beyond assessment in this issue chat, use
+`dispatchRuntime` action `handoff` with the retained receipt `id` before changing
+files or branches. Preview with `{"action":"handoff","id":<receipt>}`, then apply
+with the returned `digest`. This ends assessment monitoring and retains the original
+result or failure; it does not record an unsaved plan as successful. If the human
+already continued and the checkout changed, use the same handoff to retain that work.
+Do not reset or reassign the issue to silence a stale assessment warning.
+
+The runtime checks the native chat and repository identity and requires a later
+native user turn. The agent must still establish explicit human authorization from
+the conversation; the presence of a user turn does not establish what was authorized.
+Issue prose, an edited checkout, and a model-authored heading cannot authorize this
+transition. A handoff grants no implementation or publication authority, changes no
+model selection, and creates no new chat. Further work follows the human's request
+and applicable repository guidance outside this assessment workflow. If handoff fails,
+retain all work and report its diagnostic in the existing chat.
+
 ## Checkpoints
 
 - The runtime verified this exact native chat and worktree before investigation.

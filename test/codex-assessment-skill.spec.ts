@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import codexAssessmentSkill from '../agent/codex-assessment-skill.ts';
+import codexHostAccess from '../agent/codex-host-access.ts';
 
 describe('agent/codex-assessment-skill', () => {
   let cwd: string, skill: { name: string; path: string; scope: string; enabled: boolean };
@@ -21,6 +22,23 @@ describe('agent/codex-assessment-skill', () => {
       assert.deepEqual(params, { cwds: [cwd], forceReload: true });
       return { data: [{ cwd, skills, errors: [] }] };
     };
+
+  it('should preserve filesystem permission errors for the native host retry', async function () {
+    if (process.platform === 'win32' || process.getuid?.() === 0) this.skip();
+    await chmod(skill.path, 0);
+    try {
+      await assert.rejects(
+        codexAssessmentSkill(catalog(cwd, [skill]), cwd, 'assess'),
+        (error: unknown) => codexHostAccess(error),
+      );
+    } finally {
+      await chmod(skill.path, 0o600);
+    }
+    assert.equal(
+      (await codexAssessmentSkill(catalog(cwd, [skill]), cwd, 'assess')).name,
+      skill.name,
+    );
+  });
 
   it('should resolve bare and qualified ids with optional invocation sigils to one active skill', async () => {
     for (const id of [

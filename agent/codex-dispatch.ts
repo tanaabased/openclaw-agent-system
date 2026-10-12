@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
-import { Value } from 'typebox/value';
+import validateDispatchRequest from './codex-dispatch-request.ts';
+import { dispatchCheckDigest } from './codex-dispatch-check.ts';
+import recoverDispatch from './codex-dispatch-recovery.ts';
+import reportDispatch from './codex-dispatch-reporting.ts';
+import pendingDispatchAssignments, { issueKey } from './codex-dispatch-pending.ts';
+import codexHostAccess from './codex-host-access.ts';
 
 import assessmentGuidance from './assessment-guidance.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
@@ -11,6 +17,7 @@ import {
   type AssessmentResult,
 } from './assessment-result.ts';
 import { automationHash } from './automation-hash.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
@@ -36,9 +43,7 @@ import { assessmentSchema, type RoutingDecision } from './model-routing.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import assignmentCard from '../channels/github/conversation/presentation/assignment-card.ts';
 import renderAssessmentResult from '../channels/github/conversation/presentation/assessment-result.ts';
-import githubNotificationCard, {
-  githubNotificationMarkdownText,
-} from '../channels/github/conversation/presentation/card.ts';
+import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
 import {
   nativeRoutingMetadata,
   routingMetadata,
@@ -70,15 +75,8 @@ function repository(record: IntakeRecord) {
 function issueUrl(record: IntakeRecord) {
   return 'https://github.com/' + repository(record) + '/issues/' + record.issue.number;
 }
-function issueKey(record: IntakeRecord) {
-  return automationHash([
-    record.scope,
-    record.receiving.nodeId,
-    record.repository.nodeId,
-    record.issue.nodeId,
-  ]);
-}
 function code(error: unknown) {
+  if (codexHostAccess(error)) return 'codex-host-access-required';
   const value =
     nativeObject(error) && typeof error.code === 'string'
       ? error.code
@@ -160,88 +158,55 @@ function blocker(
     },
   };
 }
-function noticeDigest(record: DispatchRecord) {
-  return automationHash({
-    phase: record.phase,
-    threadId: record.threadId,
-    result: record.result,
-  });
-}
 function notice(record: DispatchRecord, intake?: IntakeRecord) {
-  const digest = noticeDigest(record);
-  const changed = digest !== record.notice;
-  record.notice = digest;
-  const result = record.result;
-  const registration =
-    result?.outcome === 'operator-setup-blocker' &&
-    result.code === 'dispatch-project-registration-unavailable' &&
-    intake &&
-    record.repositoryPreparation?.checkout;
+  const failure =
+    !record.effective && record.result?.outcome === 'operator-setup-blocker'
+      ? record.result
+      : undefined;
   return {
     id: record.id,
-    status: record.phase,
-    changed,
+    status: record.handoff ? 'handed-off' : record.phase,
+    changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
     threadId: record.threadId,
-    ...(result?.outcome === 'operator-setup-blocker'
+    ...(failure
       ? {
-          code: result.code,
-          message: githubNotificationCard({
-            emoji: registration ? '⚠️' : '⏸️',
-            title: registration
-              ? 'Action required: add a Codex project'
-              : 'Issue assessment blocked',
-            facts: [
-              ...(registration
+          code: failure.code,
+          ...codexIssueNotice({
+            event: 'failure',
+            changed: true,
+            code: failure.code,
+            ...(intake
+              ? {
+                  issue: {
+                    label: repository(intake) + '#' + intake.issue.number,
+                    url: issueUrl(intake),
+                  },
+                }
+              : {}),
+            action: failure.remediation,
+            facts:
+              failure.code === 'dispatch-project-registration-unavailable' &&
+              record.repositoryPreparation?.checkout
                 ? [
                     {
                       label: 'Project name',
-                      value: githubNotificationMarkdownText(intake.repository.name),
+                      value: intake
+                        ? githubNotificationMarkdownText(intake.repository.name)
+                        : 'Repository',
                     },
                     {
                       label: 'Folder path',
-                      value: githubNotificationMarkdownText(registration),
-                    },
-                    {
-                      label: 'Action',
-                      value:
-                        'Add a local Codex project with this exact folder as its primary folder. The project name above is suggested; the folder must match. Scheduled checks will verify the folder and resume this assignment automatically.',
+                      value: githubNotificationMarkdownText(record.repositoryPreparation.checkout),
                     },
                   ]
-                : []),
-              ...(intake
-                ? [
-                    {
-                      label: 'Issue',
-                      value:
-                        '[' +
-                        githubNotificationMarkdownText(
-                          repository(intake) + '#' + intake.issue.number,
-                        ) +
-                        '](' +
-                        issueUrl(intake) +
-                        ')',
-                    },
-                    {
-                      label: 'Assigned by',
-                      value:
-                        '[' +
-                        githubNotificationMarkdownText(intake.assignment.actor.login) +
-                        '](https://github.com/' +
-                        intake.assignment.actor.login +
-                        ')',
-                    },
-                  ]
-                : []),
-              ...(!registration
-                ? [{ label: 'Action', value: githubNotificationMarkdownText(result.remediation) }]
-                : []),
-              { label: 'Diagnostic', value: githubNotificationMarkdownText(result.code) },
-            ],
+                : [],
           }),
         }
-      : result
-        ? { outcome: result.outcome, summary: result.summary }
-        : {}),
+      : {}),
+    nextAction: failure ? 'report' : 'next',
+    instruction: failure
+      ? 'Report this intake obstacle with any issues already started. Do not repeat an uncertain creation.'
+      : 'Continue checking pending assignments while this run has capacity. Assessment progress belongs only in the issue.',
   };
 }
 
@@ -367,6 +332,7 @@ async function recover(
   // titles are presentation, not identity; normalize only after native authority checks.
   if (found.name !== record.request.title)
     await withNative(current, deps, (native) => native.rename(found.id, record.request!.title));
+  if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
   record.effective = {
     status: found.model && found.effort ? 'verified' : 'unverified',
     ...(found.model ? { model: found.model } : {}),
@@ -410,21 +376,85 @@ export async function runCodexDispatch(
   input: unknown,
   deps: CodexDispatchDependencies = {},
 ) {
-  if (!nativeObject(input)) throw new Error('dispatch-request-invalid');
+  validateDispatchRequest(action, input);
   const current = await selectCodexIntake(pluginData, deps);
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
-    if (Object.keys(input).length) throw new Error('dispatch-request-invalid');
     return store.read();
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
+  if (action === 'handoff') {
+    return store.exclusive(async (state, save) => {
+      const record = state.records.find((entry) => entry.id === input.id);
+      if (
+        !record?.request ||
+        !record.project ||
+        !record.threadId ||
+        !record.worktree ||
+        record.reset ||
+        record.retired
+      )
+        throw new Error('dispatch-handoff-unavailable');
+      if (
+        caller === record.sourceThreadId ||
+        state.records.some(
+          (entry) =>
+            entry.id !== record.id && [entry.threadId, entry.receiptThreadId].includes(caller),
+        )
+      )
+        throw new Error('dispatch-handoff-caller-mismatch');
+      const admitted = await current.store.read();
+      const intake = admitted?.records.find((entry) => entry.id === record.intakeId);
+      if (!intake) throw new Error('dispatch-intake-record-missing');
+      const native = await withNative(current, deps, (host) =>
+        host.find({
+          sourceThreadId: record.sourceThreadId,
+          prompt: record.request!.prompt,
+          createdAfter: record.createdAt,
+          threadId: record.threadId,
+        }),
+      );
+      if (
+        !native ||
+        native.id !== record.threadId ||
+        (await realpath(native.cwd)) !== (await realpath(record.worktree))
+      )
+        throw new Error('dispatch-native-readback-diverged');
+      await verifyDispatchWorktree(
+        record.project,
+        native.cwd,
+        repository(intake),
+        deps.git,
+        'handoff',
+      );
+      if (record.handoff)
+        return { status: 'handed-off', changed: false, id: record.id, threadId: record.threadId };
+      if (!native.turnId || !native.followUpUserTurn)
+        throw new Error('dispatch-handoff-user-turn-required');
+      const digest = automationHash({ record, manifest: current.digest, turnId: native.turnId });
+      if (input.digest === undefined)
+        return {
+          status: 'handoff-available',
+          id: record.id,
+          digest,
+          threadId: record.threadId,
+          instruction:
+            'Only after the user requests continuation outside assessment, apply this handoff to end assessment monitoring. It preserves all results and files and grants no implementation or publication authority.',
+        };
+      if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+      record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
+      const response = notice(record, intake);
+      await save();
+      return response;
+    }, true);
+  }
   const operatorRecovery = action === 'retry-denied';
   const operatorReset = action === 'reset';
   const operatorRetire = action === 'retire';
   const operatorAction = operatorRecovery || operatorReset || operatorRetire;
   const childAction = action === 'context' || action === 'result';
-  const retainedWork = childAction || action === 'reconcile';
+  const retainedWork = childAction || action === 'reconcile' || action === 'report';
   if (!retainedWork && !current.policy) throw new Error('dispatch-policy-disabled');
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
@@ -442,6 +472,21 @@ export async function runCodexDispatch(
   const now = (deps.now ?? Date.now)();
   return store
     .exclusive(async (state, save, signal) => {
+      if (!operatorAction && !childAction) {
+        const occurrence = await withNative(current, deps, (host) => host.occurrence(caller));
+        if (state.run?.id !== occurrence.id) {
+          state.run = { ...occurrence, actions: 0 };
+          delete state.checked;
+        }
+        if (action !== 'report') {
+          if (state.run.actions >= 12) {
+            await save();
+            return { status: 'budget-exhausted', changed: false, nextAction: 'report' };
+          }
+          state.run.actions++;
+        }
+        await save();
+      }
       const fresh = async () => {
         const selected = await selectCodexIntake(pluginData, deps);
         const allowed = await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -466,7 +511,9 @@ export async function runCodexDispatch(
           ].includes(code(error))
         )
           throw error;
-        if (record.phase === 'complete') throw error;
+        const previousCode =
+          record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined;
+        if (codexHostAccess(error) || record.phase === 'complete') throw error;
         // Native worktree setup returns a client receipt before the child is readable.
         if (
           code(error) === 'dispatch-creation-unresolved' &&
@@ -488,78 +535,67 @@ export async function runCodexDispatch(
           admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
         );
         record.retryAfter = now + 300000;
+        if (state.run) state.run.stopped = 'blocked';
         const result = notice(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
         );
+        result.changed = previousCode !== code(error);
+        if ('notify' in result) result.notify = result.changed;
         await save();
         return result;
       };
+      if (action === 'report')
+        return reportDispatch(input, {
+          state,
+          admitted,
+          intakeStore: current.store,
+          now,
+          save,
+          slots: codexIntakePolicy(current.manifest, true)?.policy.maxConcurrentItems ?? 2,
+        });
       if (action === 'next') {
-        if (Object.keys(input).some((key) => key !== 'projects'))
-          throw new Error('dispatch-request-invalid');
-        const completed = state.records.find(
-          (record) =>
-            !record.reset &&
-            !record.retired &&
-            record.phase === 'complete' &&
-            record.notice !== noticeDigest(record),
-        );
-        if (completed) {
-          const result = notice(
-            completed,
-            admitted.records.find((entry) => entry.id === completed.intakeId),
-          );
+        const scan = await current.store.read();
+        if (!scan) throw new Error('dispatch-intake-record-missing');
+        const checked = async (status: 'idle' | 'at-capacity') => {
+          state.checked = { at: now, digest: dispatchCheckDigest(state, admitted) };
           await save();
-          return result;
-        }
-        const pending = state.records.find(
+          return { status, changed: false };
+        };
+        for (const pending of state.records.filter(
           (record) =>
             !record.retired &&
+            !record.handoff &&
             record.request &&
+            !record.effective &&
             record.phase !== 'complete' &&
             (record.retryAfter ?? 0) <= now,
-        );
-        if (pending) {
+        )) {
           const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
           if (!intake) return fail(pending, new Error('dispatch-intake-record-missing'));
           try {
             await revalidate(current, intake, deps, signal);
-            const native = await recover(current, pending, intake, deps, save);
-            // a separate app-server can reconstruct an active desktop turn as interrupted.
-            // notloaded is absence of live lifecycle evidence, not proof that work stopped.
-            if (
-              native.status === 'idle' &&
-              ['completed', 'failed', 'interrupted'].includes(native.turnStatus ?? '')
-            )
-              throw new Error('dispatch-assessment-result-missing');
+            await recover(current, pending, intake, deps, save);
             pending.retryAfter = now + 300000;
             await fresh();
             const result = notice(pending, intake);
             await save();
-            return result;
+            if (result.changed || result.status !== 'assessing') return result;
           } catch (error) {
             return fail(pending, error);
           }
         }
         if (
           state.records.filter(
-            (record) => !record.retired && record.request && record.phase !== 'complete',
+            (record) =>
+              !record.retired && !record.handoff && record.request && record.phase !== 'complete',
           ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
         )
-          return { status: 'at-capacity', changed: false };
-        const latest = new Map<string, IntakeRecord>();
-        for (const entry of admitted.records) latest.set(issueKey(entry), entry);
-        const intake = [...latest.values()].find((entry) => {
-          const previous = state.records.findLast((record) => record.issueKey === issueKey(entry));
-          const retiredAt = previous?.retired?.at ?? previous?.reset?.at;
-          if (previous && retiredAt !== undefined)
-            return (
-              entry.id !== previous.intakeId && Date.parse(entry.assignment.createdAt) > retiredAt
-            );
-          return !previous || (!previous.request && (previous.retryAfter ?? 0) <= now);
-        });
-        if (!intake) return { status: 'idle', changed: false };
+          return checked('at-capacity');
+        const intake = pendingDispatchAssignments(state, admitted).find(
+          ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
+        )?.intake;
+        if (!intake) return checked('idle');
         let record = state.records.find(
           (entry) => !entry.reset && !entry.retired && entry.issueKey === issueKey(intake),
         );
@@ -730,185 +766,25 @@ export async function runCodexDispatch(
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
       if (record.reset) throw new Error('dispatch-assessment-reset');
       if (record.retired) throw new Error('dispatch-assessment-retired');
-      if (operatorRetire) {
-        if (
-          Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||
-          (input.digest !== undefined && typeof input.digest !== 'string')
-        )
-          throw new Error('dispatch-request-invalid');
-        if (
-          state.records.some(
-            (entry) => entry.threadId === caller || entry.receiptThreadId === caller,
-          )
-        )
-          throw new Error('dispatch-operator-caller-required');
-        if (record.sourceThreadId !== activation.sourceThreadId)
-          throw new Error('dispatch-retire-unavailable');
-        const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-        const item = await client.getItem(
-          intake.repository.owner.login,
-          intake.repository.name,
-          intake.issue.number,
-        );
-        if (
-          !githubIdentityMatches(client.identity, intake.receiving) ||
-          item.nodeId !== intake.issue.nodeId ||
-          item.databaseId !== intake.issue.databaseId ||
-          item.itemType !== 'issue' ||
-          item.state !== 'closed'
-        )
-          throw new Error('dispatch-retire-closed-issue-required');
-        const digest = automationHash({ record, manifest: current.digest });
-        await fresh();
-        if (input.digest === undefined)
-          return {
-            status: 'retire-available',
-            id: record.id,
-            digest,
-            issue: issueUrl(intake),
-            threadId: record.threadId ?? record.receiptThreadId,
-            instruction:
-              'Retire this closed issue from the queue, preserving its evidence. This does not stop or archive a native chat or remove its worktree; clean those up through native controls. Only a new assignment event can admit it again.',
-          };
-        if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-        record.retired = { at: now, by: caller };
-        await save();
-        return { status: 'retired', id: record.id, retired: record.retired };
-      }
-      if (operatorReset) {
-        if (
-          Object.keys(input).some((key) => !['id', 'digest'].includes(key)) ||
-          (input.digest !== undefined && typeof input.digest !== 'string')
-        )
-          throw new Error('dispatch-request-invalid');
-        if (
-          state.records.some(
-            (entry) => entry.threadId === caller || entry.receiptThreadId === caller,
-          )
-        )
-          throw new Error('dispatch-operator-caller-required');
-        if (
-          record.sourceThreadId !== activation.sourceThreadId ||
-          record.phase !== 'complete' ||
-          !record.result ||
-          !record.request ||
-          !record.threadId
-        )
-          throw new Error('dispatch-reset-unavailable');
-        const native = await withNative(current, deps, (client) =>
-          client.find({
-            sourceThreadId: record.sourceThreadId,
-            prompt: record.request!.prompt,
-            createdAfter: record.createdAt,
-            threadId: record.threadId,
-          }),
-        );
-        if (
-          !native ||
-          !record.resultTurnId ||
-          native.turnId !== record.resultTurnId ||
-          !['idle', 'notLoaded'].includes(native.status) ||
-          native.turnStatus !== 'completed'
-        )
-          throw new Error('dispatch-reset-chat-active');
-        const digest = automationHash({ record, manifest: current.digest, turnId: native.turnId });
-        await fresh();
-        if (input.digest === undefined)
-          return {
-            status: 'reset-available',
-            id: record.id,
-            digest,
-            issue: issueUrl(intake),
-            threadId: record.threadId,
-            outcome: record.result.outcome,
-            instruction:
-              'Reset preserves this assessment and worktree. Only a new assignment event after reset permits one fresh assessment through normal intake. No implementation is authorized.',
-          };
-        if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-        record.reset = { at: now, by: caller };
-        await save();
-        return {
-          status: 'reset',
-          changed: true,
-          id: record.id,
-          threadId: record.threadId,
-          awaiting: 'new-assignment',
-          reset: record.reset,
-        };
-      }
-      if (operatorRecovery) {
-        if (
-          Object.keys(input).some((key) => !['id', 'digest', 'approvedCallId'].includes(key)) ||
-          (input.digest !== undefined && typeof input.digest !== 'string') ||
-          (input.approvedCallId !== undefined &&
-            (typeof input.approvedCallId !== 'string' || !input.approvedCallId.trim()))
-        )
-          throw new Error('dispatch-request-invalid');
-        if (
-          record.sourceThreadId !== activation.sourceThreadId ||
-          !record.request ||
-          !['creating', 'blocked'].includes(record.phase) ||
-          record.clientThreadId ||
-          record.receiptThreadId ||
-          record.threadId ||
-          record.worktree ||
-          (record.deniedCreations?.length ?? 0) >= 8
-        )
-          throw new Error('dispatch-denial-unverified');
-        await revalidate(current, intake, deps, signal);
-        const denial = await withNative(current, deps, async (native) => {
-          const evidence = await native.deniedCreation(
-            record.sourceThreadId,
-            record.request!,
-            input.approvedCallId as string | undefined,
-          );
-          const found = await native.find({
-            sourceThreadId: record.sourceThreadId,
-            prompt: record.request!.prompt,
-            createdAfter: record.createdAt,
-          });
-          if (found) throw new Error('dispatch-denial-unverified');
-          return evidence;
-        });
-        const digest = automationHash({
+      if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
+      if (action === 'retire' || action === 'reset' || action === 'retry-denied')
+        return recoverDispatch(input, {
+          action,
+          state,
           record,
-          manifest: current.digest,
-          denial,
-          approvedCallId: input.approvedCallId,
+          intake,
+          sourceThreadId: activation.sourceThreadId,
+          manifestDigest: current.digest,
+          issueUrl: issueUrl(intake),
+          caller,
+          now,
+          save,
+          fresh,
+          revalidate: () => revalidate(current, intake, deps, signal),
+          connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
+          withNative: (operation) => withNative(current, deps, operation),
         });
-        await fresh();
-        if (input.digest === undefined)
-          return { status: 'retry-available', id: record.id, digest, denial };
-        if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-        record.deniedCreations = [
-          ...(record.deniedCreations ?? []),
-          {
-            request: record.request,
-            createdAt: record.createdAt,
-            recoveredAt: now,
-            ...denial,
-            ...(input.approvedCallId ? { approvedBy: caller } : {}),
-          },
-        ];
-        delete record.request;
-        delete record.result;
-        delete record.notice;
-        delete record.retryAfter;
-        record.phase = 'routing';
-        await save();
-        return { status: 'retry-ready', changed: true, id: record.id };
-      }
       if (action === 'prepare') {
-        if (
-          Object.keys(input).some(
-            (key) => !['id', 'digest', 'assessment', 'fallback', 'title'].includes(key),
-          ) ||
-          !Value.Check(assessmentSchema, input.assessment) ||
-          typeof input.title !== 'string' ||
-          !/^[A-Za-z0-9][A-Za-z0-9 -]{2,79}$/u.test(input.title) ||
-          (input.fallback !== undefined && input.fallback !== 'default')
-        )
-          throw new Error('dispatch-request-invalid');
         if (record.request) return { status: 'reconcile-required', changed: false, id: record.id };
         if (
           record.phase !== 'routing' ||
@@ -975,7 +851,7 @@ export async function runCodexDispatch(
             ' Requested selection; effective settings await native verification.';
           record.createdAt = now;
           record.request = {
-            title: '#' + intake.issue.number + ': ' + input.title.trim().toUpperCase(),
+            title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
             prompt: launchPrompt(record, intake),
             model: decision.candidate.model,
             thinking: decision.candidate.thinking,
@@ -1019,20 +895,6 @@ export async function runCodexDispatch(
         }
       }
       if (action === 'reconcile' || childAction) {
-        if (
-          Object.keys(input).some(
-            (key) =>
-              ![
-                'id',
-                ...(action === 'reconcile'
-                  ? ['receipt']
-                  : action === 'result'
-                    ? ['result', 'previousResultDigest']
-                    : []),
-              ].includes(key),
-          )
-        )
-          throw new Error('dispatch-request-invalid');
         try {
           if (action === 'reconcile' && input.receipt !== undefined) {
             if (

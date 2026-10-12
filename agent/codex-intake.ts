@@ -2,6 +2,8 @@ import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import codexIssueNotice from './codex-issue-notice.ts';
+import codexHostAccess from './codex-host-access.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -198,7 +200,8 @@ export async function runCodexIntake(
             codexHome: current.codexHome,
             inspectBinding: deps.inspectBinding,
           });
-      } catch {
+      } catch (error) {
+        if (codexHostAccess(error)) throw error;
         throw new IntakeError('intake-activation-required');
       }
     };
@@ -211,7 +214,7 @@ export async function runCodexIntake(
         throw new IntakeError('intake-policy-changed');
       await assertActive();
     };
-    return await scanAssignments({
+    const result = await scanAssignments({
       store: current.store,
       workspaceDir: current.workspace,
       agentId: current.agentId,
@@ -229,6 +232,20 @@ export async function runCodexIntake(
       },
       assertCurrent,
     });
+    return {
+      ...result,
+      ...(result.status === 'blocked'
+        ? {
+            notice: codexIssueNotice({
+              event: 'failure',
+              changed: result.changed,
+              code: 'code' in result ? result.code : undefined,
+            }),
+          }
+        : 'recovered' in result && result.recovered
+          ? { notice: codexIssueNotice({ event: 'intake-recovered', changed: true }) }
+          : {}),
+    };
   } catch (error) {
     if (
       !activate &&
@@ -255,9 +272,21 @@ export async function runCodexIntake(
       if (!state) throw error;
       const now = (deps.now ?? Date.now)();
       const changed = state.blocker?.code !== error.code;
-      if (changed)
-        await save({ ...state, blocker: { code: error.code, since: now, retryAfter: now } });
-      return { status: 'blocked', code: error.code, changed };
+      const result = { status: 'blocked', code: error.code, changed };
+      const next = {
+        ...state,
+        lastAttemptAt: now,
+        blocker: {
+          code: error.code,
+          since: changed ? now : state.blocker!.since,
+          retryAfter: now,
+        },
+      };
+      await save(next);
+      return {
+        ...result,
+        notice: codexIssueNotice({ event: 'failure', code: error.code, changed: result.changed }),
+      };
     });
   }
 }

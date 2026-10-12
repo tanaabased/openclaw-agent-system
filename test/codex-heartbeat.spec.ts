@@ -114,7 +114,7 @@ describe('agent/codex-heartbeat', () => {
   });
 
   it('should keep ordinary pending work quiet without asserting that the queue is empty', () => {
-    for (const status of ['at-capacity', 'creating']) {
+    for (const status of ['at-capacity', 'creating', 'assessing', 'handed-off', 'blocked']) {
       const result = codexHeartbeat({
         ...request,
         dispatch: [
@@ -128,10 +128,24 @@ describe('agent/codex-heartbeat', () => {
     }
   });
 
+  it('should suppress only already-reported blockers and retain an earlier handoff notice', () => {
+    assert.equal(
+      codexHeartbeat({ ...request, intake: { status: 'blocked', changed: false } }).status,
+      'quiet',
+    );
+    assert.equal(
+      codexHeartbeat({
+        ...request,
+        dispatch: [{ status: 'handed-off', changed: true }, ...request.dispatch],
+      }).status,
+      'not-quiet',
+    );
+  });
+
   it('should never hide changed work, recovery, failures, approval, or exhausted busy polling', () => {
     for (const intake of [
       { status: 'ready', changed: true },
-      { status: 'blocked', changed: false },
+      { status: 'blocked', changed: true },
       { status: 'busy', changed: false },
     ])
       assert.deepEqual(codexHeartbeat({ ...request, intake }), { status: 'not-quiet' });
@@ -139,7 +153,6 @@ describe('agent/codex-heartbeat', () => {
       'routing-required',
       'prepared',
       'completed',
-      'blocked',
       'approval-required',
       'failed',
       'recovered',
@@ -152,7 +165,7 @@ describe('agent/codex-heartbeat', () => {
     for (const earlier of [
       { status: 'creating', changed: true },
       { status: 'completed', changed: true },
-      { status: 'blocked', changed: false },
+      { status: 'blocked', changed: true },
     ])
       assert.deepEqual(codexHeartbeat({ ...request, dispatch: [earlier, ...request.dispatch] }), {
         status: 'not-quiet',

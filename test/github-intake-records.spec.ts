@@ -40,6 +40,36 @@ describe('channels/github/intake/records', () => {
       },
     };
   }
+  it('should preserve a filesystem denial during scan persistence without recording a provider failure', async () => {
+    const { input, store } = setup();
+    await scanAssignments({ ...input, activate: true });
+    const before = await store.read();
+    for (const code of ['EPERM', 'EACCES']) {
+      const denial = Object.assign(new Error('denied'), { code });
+      store.file.write = async () => {
+        throw denial;
+      };
+      await assert.rejects(
+        scanAssignments({ ...input, now: baseline + 120000 }),
+        (error: unknown) => error === denial,
+      );
+      assert.deepEqual(await store.read(), before);
+    }
+  });
+  it('should propagate local save failures without inventing a provider outage', async () => {
+    const { input, store } = setup();
+    await scanAssignments({ ...input, activate: true });
+    const before = await store.read();
+    const failure = new Error('local persistence failed');
+    let writes = 0;
+    store.file.write = async () => {
+      writes++;
+      throw failure;
+    };
+    await assert.rejects(scanAssignments(input), (error: unknown) => error === failure);
+    assert.equal(writes, 1);
+    assert.deepEqual(await store.read(), before);
+  });
   it('should require activation and persist one immutable record across polls and restart for both host mappings', async () => {
     for (const runtime of ['codex', 'openclaw'] as const) {
       const { input, store, events } = setup(runtime);
@@ -50,6 +80,7 @@ describe('channels/github/intake/records', () => {
       assert.equal((await store.read())!.records.length, 0);
       events[0]!.createdAt = future;
       const accepted = await scanAssignments({ ...input, now: baseline + 120_000 });
+      assert.ok('admitted' in accepted);
       assert.equal(accepted.admitted, 1);
       const state = (await store.read())!;
       assert.equal(state.records[0]!.assignment.nodeId, 'E_assignment');

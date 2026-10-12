@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import assessmentGuidance from '../agent/assessment-guidance.ts';
+import codexHostAccess from '../agent/codex-host-access.ts';
 
 describe('agent/assessment-guidance', () => {
   let root: string;
@@ -12,6 +13,24 @@ describe('agent/assessment-guidance', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should preserve filesystem permission errors for the native host retry', async function () {
+    if (process.platform === 'win32' || process.getuid?.() === 0) this.skip();
+    const path = join(root, 'guidance.md');
+    await writeFile(path, 'Read-only guidance.');
+    await chmod(path, 0);
+    try {
+      await assert.rejects(assessmentGuidance(root, { file: 'guidance.md' }), (error: unknown) =>
+        codexHostAccess(error),
+      );
+    } finally {
+      await chmod(path, 0o600);
+    }
+    assert.equal(
+      (await assessmentGuidance(root, { file: 'guidance.md' }))!.content,
+      'Read-only guidance.',
+    );
   });
 
   it('should preserve single and multiline guidance with reproducible content digests', async () => {

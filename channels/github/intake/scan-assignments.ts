@@ -1,3 +1,5 @@
+import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
+
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../config-schema.ts';
@@ -26,16 +28,32 @@ export interface AssignmentScanInput {
   assertCurrent(): Promise<void>;
 }
 
+interface AssignmentScanResult {
+  status: 'ready' | 'blocked';
+  changed: boolean;
+  code?: string;
+  recovered?: boolean;
+  admitted?: number;
+  baselineAt?: number;
+  checkpoint?: number;
+}
+
 /** admission evidence only: no workspaces, chats, model decisions, or publication. */
-export default async function scanAssignments(input: AssignmentScanInput) {
+export default async function scanAssignments(
+  input: AssignmentScanInput,
+): Promise<AssignmentScanResult> {
   if (input.policy.issueAssignment?.enabled === false)
     throw new IntakeError('intake-policy-disabled');
   return input.store.exclusive(async (previous, save, signal) => {
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
     if (!input.activate && previous?.policyDigest !== input.policyDigest)
       throw new IntakeError('intake-policy-reconciliation-required');
-    if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now)
-      return { status: 'blocked', changed: false, code: previous.blocker.code };
+    if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now) {
+      const result = { status: 'blocked' as const, changed: false, code: previous.blocker.code };
+      return result;
+    }
+    let next: IntakeState;
+    let result: AssignmentScanResult;
     try {
       const client = await input.connect(signal);
       const account: GitHubIdentity = client.identity;
@@ -158,15 +176,17 @@ export default async function scanAssignments(input: AssignmentScanInput) {
       state.records.push(...records);
       const recovered = Boolean(state.blocker);
       delete state.blocker;
-      await save(state);
-      return {
-        status: 'ready',
+      result = {
+        status: 'ready' as const,
         changed: records.length > 0 || recovered,
         admitted: records.length,
+        ...(recovered ? { recovered: true } : {}),
         baselineAt: state.baselineAt,
         checkpoint: state.checkpoint,
       };
+      next = state;
     } catch (error) {
+      if (isFilesystemAccessError(error)) throw error;
       const diagnostic =
         error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
       const code =
@@ -185,7 +205,7 @@ export default async function scanAssignments(input: AssignmentScanInput) {
       );
       if (previous) {
         const changed = previous.blocker?.code !== code;
-        await save({
+        next = {
           ...previous,
           lastAttemptAt: input.now,
           blocker: {
@@ -193,10 +213,12 @@ export default async function scanAssignments(input: AssignmentScanInput) {
             since: changed ? input.now : previous.blocker!.since,
             retryAfter,
           },
-        });
-        return { status: 'blocked', code, changed };
-      }
-      throw new IntakeError(code);
+        };
+        result = { status: 'blocked' as const, code, changed };
+      } else throw new IntakeError(code);
     }
+    // local persistence failures must not be mistaken for provider failures.
+    await save(next);
+    return result;
   });
 }

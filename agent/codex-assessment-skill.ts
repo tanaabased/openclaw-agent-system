@@ -6,6 +6,7 @@ import { basename, isAbsolute } from 'node:path';
 import { nativeObject } from './automation-gateway.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 import { normalizeAssessmentSkillId } from '../manifest/assessment-schema.ts';
+import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 
 export interface CodexAssessmentSkill {
   name: string;
@@ -76,8 +77,9 @@ export default async function codexAssessmentSkill(
     } finally {
       await file.close();
     }
-  } catch {
-    throw new Error('dispatch-assessment-skill-unreadable');
+  } catch (error) {
+    if (isFilesystemAccessError(error)) throw error;
+    throw new Error('dispatch-assessment-skill-unreadable', { cause: error });
   }
   return {
     name: skill.name,

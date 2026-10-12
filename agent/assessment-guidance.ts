@@ -8,6 +8,7 @@ import {
   type AssessmentConfiguration,
 } from '../manifest/assessment-schema.ts';
 import isPathContained from '../utils/is-path-contained.ts';
+import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 
 export interface AssessmentGuidance {
   source: 'inline' | 'file';
@@ -73,6 +74,7 @@ export default async function assessmentGuidance(
         await file.close();
       }
     } catch (error) {
+      if (isFilesystemAccessError(error)) throw error;
       if (error instanceof Error && error.message.startsWith('dispatch-assessment-guidance-'))
         throw error;
       throw new Error('dispatch-assessment-guidance-unreadable', { cause: error });

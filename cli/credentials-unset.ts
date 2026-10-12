@@ -5,6 +5,7 @@ import type OpCredentialManager from '../credentials/op-manager.ts';
 import {
   type CliOutput,
   type CliStyles,
+  type CliSummaryLine,
   writeCliError,
   writeCliDiagnosticNotices,
   writeCliSummary,
@@ -20,6 +21,7 @@ export interface UnsetCredentialsAgentSystemOptions {
   setExitCode(code: number): void;
   storeId?: string;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -44,7 +46,7 @@ async function unsetCredentialsAgentSystem(
       {
         severity: 'warning',
         message:
-          'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
+          'credentials: gateway invalidation is pending. run openclaw agent-system credentials cache flush after gateway access is restored; the store mutation will not be replayed.',
       },
     ]);
   }
@@ -57,29 +59,42 @@ async function unsetCredentialsAgentSystem(
     options.setExitCode(1);
     return;
   }
-  if (result.gatewayInvalidation === 'confirmed') {
-    writeCliSummary(
-      options.output,
-      [{ label: 'gateway cache', style: 'status', value: 'invalidation confirmed' }],
-      options.styles,
-    );
+  const lines: CliSummaryLine[] = [
+    { label: 'credential', style: 'field', value: options.credential },
+    { label: 'agent', style: 'target', value: result.agentId },
+    {
+      label: 'scope',
+      style: 'field',
+      value: options.storeId ? `one store (${options.storeId})` : 'all stores',
+    },
+    ...result.storeIds.map((storeId): CliSummaryLine => ({
+      component: storeId,
+      label: result.status === 'removed' ? 'removed' : 'unchanged',
+      style: result.status === 'removed' ? 'status' : 'field',
+      quiet: result.status === 'missing',
+      value: result.status === 'removed' ? 'op credential removed' : 'op credential is not stored',
+    })),
+    ...result.unavailableStoreIds.map((storeId): CliSummaryLine => ({
+      component: storeId,
+      label: 'unavailable',
+      style: 'warning',
+      value: 'removal skipped',
+    })),
+  ];
+  if (result.gatewayInvalidation) {
+    lines.push({
+      label: 'gateway cache',
+      style: result.gatewayInvalidation === 'confirmed' ? 'field' : 'warning',
+      quiet: result.gatewayInvalidation === 'confirmed',
+      value: `invalidation ${result.gatewayInvalidation}`,
+    });
   }
-  writeCliSummary(
-    options.output,
-    [
-      {
-        label: result.status === 'removed' ? 'removed' : 'unchanged',
-        style: result.status === 'removed' ? 'action' : 'status',
-        value: `op credential for ${result.agentId}${result.status === 'missing' ? ' is not stored' : ''}`,
-      },
-      {
-        label: result.storeIds.length === 1 ? 'store' : 'stores',
-        style: 'target',
-        value: result.storeIds.join(', '),
-      },
-    ],
-    options.styles,
-  );
+  options.output.writeStdout('\n');
+  writeCliSummary(options.output, lines, options.styles, {
+    rowPadding: 0,
+    terminalColumns: options.terminalColumns,
+  });
+  options.output.writeStdout('\n');
   if (result.unavailableStoreIds.length > 0) {
     writeCliDiagnosticNotices(options, [
       {

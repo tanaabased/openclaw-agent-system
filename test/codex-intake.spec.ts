@@ -16,7 +16,12 @@ import {
   syncCodexAutomationThreads,
 } from '../agent/codex-automations.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { connectCodexGitHub, inspectCodexIntake, runCodexIntake } from '../agent/codex-intake.ts';
+import {
+  connectCodexGitHub,
+  inspectCodexIntake,
+  runCodexIntake,
+  selectCodexIntake,
+} from '../agent/codex-intake.ts';
 import { codexIntakeJobs, codexIntakePolicy } from '../agent/codex-intake-policy.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
@@ -60,6 +65,156 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
+  it('should reactivate despite obsolete full notification queues', async () => {
+    const { client } = intakeFixture();
+    let now = baseline;
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => now,
+      connect: async () => client,
+    };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    const cards = Array.from({ length: 100 }, (_, i) => ({
+      id: i.toString(16).padStart(64, '0'),
+      message: 'pending card',
+      notify: false,
+    }));
+    await store.exclusive(async (state, save) => {
+      state!.notices = cards;
+      state!.blocker = {
+        code: 'intake-provider-unavailable',
+        since: now,
+        retryAfter: now + 300000,
+      };
+      await save(state!);
+    });
+    now += 1;
+    const result = await runCodexIntake(pluginData, true, deps);
+    assert.equal(result.status, 'ready');
+    assert.equal('recovered' in result && result.recovered, true);
+    const activated = (await store.read())!;
+    assert.equal(activated.blocker, undefined);
+    assert.equal(activated.noticePending, undefined);
+    assert.equal(activated.notices, undefined);
+    assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
+  });
+
+  it('should retain real activation failures independently of obsolete notifications', async () => {
+    const { client } = intakeFixture();
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => baseline,
+      connect: async () => client,
+    };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    await store.exclusive(async (state, save) => {
+      state!.notices = Array.from({ length: 100 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: 'pending card',
+        notify: false,
+      }));
+      await save(state!);
+    });
+    const failure = await runCodexIntake(pluginData, true, {
+      ...deps,
+      connect: async () => {
+        throw new Error('provider down');
+      },
+    });
+    assert.equal(failure.status, 'blocked');
+    assert.equal('code' in failure && failure.code, 'intake-provider-unavailable');
+    assert.equal((await store.read())!.noticePending, undefined);
+    await store.exclusive(async (state, save) => {
+      state!.notices = [];
+      await save(state!);
+    });
+    const cooldown = await runCodexIntake(pluginData, false, {
+      ...deps,
+      connect: async () => {
+        assert.fail('cooldown must not contact the provider');
+      },
+    });
+    assert.equal(cooldown.changed, false);
+    assert.equal((await store.read())!.noticePending, undefined);
+    assert.equal((await store.read())!.notices, undefined);
+  });
+
+  it('should retain disabled policy evidence without a notification queue', async () => {
+    const { client } = intakeFixture();
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => baseline,
+      connect: async () => client,
+    };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    await store.exclusive(async (state, save) => {
+      state!.notices = Array.from({ length: 100 }, (_, i) => ({
+        id: i.toString(16).padStart(64, '0'),
+        message: 'pending card',
+        notify: false,
+      }));
+      await save(state!);
+    });
+    const before = (await store.read())!;
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
+    );
+    const denied = await runCodexIntake(pluginData, false, {
+      ...deps,
+      connect: async () => {
+        assert.fail('disabled policy must not contact the provider');
+      },
+    });
+    assert.equal('code' in denied && denied.code, 'intake-policy-disabled');
+    const after = (await store.read())!;
+    assert.equal(after.noticePending, undefined);
+    assert.deepEqual(after.records, before.records);
+    assert.deepEqual(after.notices, before.notices);
+    assert.equal(after.checkpoint, before.checkpoint);
+  });
+
+  it('should report provider failure once and recovery once without losing new assignments', async () => {
+    const fixture = intakeFixture();
+    let now = baseline;
+    let unavailable = false;
+    const deps = {
+      codexHome,
+      now: () => now,
+      assertActive: async () => {},
+      connect: async () => {
+        if (unavailable) throw new Error('sensitive provider output');
+        return fixture.client;
+      },
+    };
+    await runCodexIntake(pluginData, true, deps);
+    unavailable = true;
+    const first = await runCodexIntake(pluginData, false, deps);
+    assert.ok('notice' in first);
+    assert.equal(first.notice?.severity, 'warning');
+    assert.equal(first.notice?.notify, true);
+    assert.doesNotMatch(first.notice!.message, /sensitive provider output/);
+    const repeat = await runCodexIntake(pluginData, false, deps);
+    assert.ok('notice' in repeat);
+    assert.equal(repeat.notice?.notify, false);
+    now += 300001;
+    unavailable = false;
+    const recovered = await runCodexIntake(pluginData, false, deps);
+    assert.ok('notice' in recovered);
+    assert.equal(recovered.notice?.severity, 'info');
+    assert.equal(recovered.notice?.notify, true);
+    assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
+    const current = await selectCodexIntake(pluginData, deps);
+    const saved = await current.store.read();
+    assert.equal(saved?.notices, undefined);
+  });
+
   it('should validate native account responses through the shared provider boundary', async () => {
     await symlink('/usr/bin/true', join(root, 'gh'));
     const originalPath = process.env.PATH;
@@ -111,6 +266,30 @@ describe('agent/codex-intake', () => {
       { code: 'intake-github-identity-mismatch' },
     );
   });
+  it('should preserve activation filesystem denials without rewriting intake health', async () => {
+    const fixture = intakeFixture();
+    const deps = { codexHome, now: () => baseline, connect: async () => fixture.client };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    const before = await store.read();
+    for (const code of ['EPERM', 'EACCES']) {
+      const denial = Object.assign(new Error('denied'), { code });
+      await assert.rejects(
+        runCodexIntake(pluginData, false, {
+          ...deps,
+          assertActive: async () => {
+            throw denial;
+          },
+          connect: async () => {
+            assert.fail('activation must precede provider access');
+          },
+        }),
+        (error: unknown) => error === denial,
+      );
+      assert.deepEqual(await store.read(), before);
+    }
+  });
+
   it('should reject disabled and stale scans and retain progress through explicit reactivation', async () => {
     const fixture = intakeFixture();
     fixture.events[0]!.createdAt = new Date(baseline - 1000).toISOString();

@@ -34,6 +34,38 @@ Use a short bulleted fact list when a card primarily presents metadata. A
 summary sentence may replace the list when the component primarily presents an
 outcome or call to action.
 
+## Codex Issue Assignment Notices
+
+Use one compact card for the outcome of an intake check:
+
+- **ℹ️ Information:** issues started, pending assignments, or intake recovery.
+- **⚠️ Warning:** an intake action is needed or a temporary provider delay.
+- **❌ Error:** intake or preparation could not complete.
+
+List each started item as **Issue:** followed by its repository and number linked
+to its work destination. Do not add an “Open chat” label or duplicate GitHub link.
+Reserve **Feedback** for incoming comments and review feedback, and **Review** for
+requests to review a pull request when those intake capabilities are available.
+Follow with **Managing**, **Pending**, and **Slots** facts. Quiet checks reuse the
+existing time-based message rotation. Omit unknown counts rather than showing zero.
+Warnings and errors explain the affected item or intake operation and its next action;
+include the exact project folder when registration is needed and a bounded diagnostic
+when useful. Preserve successful starts in a report that also contains an obstacle.
+
+```markdown
+## ℹ️ Intake complete — 2 issues started
+
+- **Issue:** [example/project #7](codex://threads/example-7)
+- **Issue:** [example/project #8](codex://threads/example-8)
+
+**Managing:** 5 issues · **Pending:** 1
+**Slots:** 2/2 occupied
+Pending issues will start when a slot becomes available.
+```
+
+Keep assessment plans, questions, and assessment-specific warnings or errors in the
+individual issue using the components below. Native approvals keep their native UI.
+
 ## Session Appearance
 
 Use the routed OpenClaw agent for the session's visible owner. Prefer red for
@@ -262,8 +294,8 @@ supplied instructions, not proof of compliance.
 Preserve each question and its context. Setup obstacles use **Issue assessment blocked**
 with **Action** and **Diagnostic**, plus retained evidence and investigation; keep them
 distinct from missing requirements. Show the routing card when saved routing is available.
-For manual Codex project registration, use **⚠️ Action required: add a Codex project**,
-leading with separate **Project name**, **Folder path**, and **Action** facts. Distinguish
+For manual Codex project registration in issue intake, use **⚠️ Add the project to continue**,
+including separate **Project name**, **Folder path**, and **Next step** facts. Distinguish
 the suggested name from the exact required primary folder; retain issue and diagnostic context.
 
 ## To GitHub

@@ -174,13 +174,43 @@ polls. An uncertain creation is reconciled against native creation history; it i
 never blindly repeated. Preserve the retained evidence when repairing access,
 project setup, or host failures. Unresolved creations continue to consume capacity
 until reconciled, preventing a succession of potentially live duplicate chats.
-An unloaded app-server history is not live chat status. Dispatch retains pending
-work rather than declaring a missing result from that history; it reports that
-blocker only when native readback positively shows an idle chat with a terminal turn.
-An abandoned chat whose live status is unavailable therefore needs operator inspection.
 After verifying creation provenance, worktree,
 and model settings, the runtime corrects a changed native title and verifies the rename
 before assessment; the display title does not establish chat identity.
+
+When you explicitly ask the issue chat to continue with implementation, its agent
+records a `handoff` before changing the checkout. This records the transition out of assessment;
+it does not mark the issue complete or grant permission to publish. The existing
+chat, worktree, and recorded outcome are retained. If an unsaved assessment still
+occupies a slot after you approved further work, recover from the issue or operator
+chat with `dispatchRuntime` input `{"action":"handoff","id":"<assessment-receipt>"}`,
+then repeat with the returned `digest`. The runtime verifies the existing native
+chat and repository and a later user turn; the agent must establish the human's
+explicit authorization from the conversation. Keep the existing work rather than
+resetting and reassigning it.
+
+Each scheduled check produces one intake report: newly started **Issue** links,
+**Managing** and **Pending** counts, occupied **Slots**, and intake warnings or errors.
+Managing means retained issue destinations, not currently running work. Pending means
+accepted assignments waiting to start. Slots currently limit unfinished assessments;
+saving a plan, question, or setup outcome releases the reservation. Later work does
+not consume that assessment slot. An interrupted assessment without an outcome can
+retain its reservation until resolved.
+
+After verified creation, intake does not inspect or announce assessment progress.
+Plans, questions, assessment failures, and implementation updates stay in the issue.
+Unchanged healthy reports use the existing quiet-message rotation without notifying;
+new starts and changed intake health can notify. Reports record attempts, not proven
+message delivery: wording or link differences never block admission or create retries.
+Existing creation receipts still prevent duplicate work after interruption. Legacy
+notification backlogs are discarded without removing issue records or saved results.
+A quiet report requires a current scan and a completed dispatch check.
+
+An `EPERM` or `EACCES` failure can mean the sandbox cannot write private tracking
+files under the plugin data directory. The agent retries the same command once
+through native host approval. If access is denied, it reports the reason and keeps
+the work intact; it does not delete locks or loosen directory permissions. Native
+approval requests retain their native UI.
 
 To repeat assessment through assignment intake, use `dispatchRuntime` with
 `{"action":"reset","id":"<assessment-receipt>"}` from an operator chat, then repeat

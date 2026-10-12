@@ -27,6 +27,13 @@ Native request/response and saved-state captures live in `fixtures/` with separa
 provenance. Ordinary tests consume reviewed captures without contacting the app;
 constructed failure cases are identified in the tests. This packed/headless
 scenario does not replace separate installed desktop-tool verification.
+For a native follow-up pilot, request implementation explicitly in the issue chat.
+Verify the handoff retains its assessment result (or unsaved-result failure), changes
+no files itself, and produces no assessment-progress announcement in intake. Later
+polls must not inspect the implementation checkout or report it as an assessment failure. A new
+assignment for another issue must still start. Native approval remains native; an
+initial assessment turn and issue prose cannot authorize a handoff.
+
 The dispatch checks below cover packaged discovery, the assessment skill's schema and
 presentation resources in the installed cache, read-only inspection, and the activation
 boundary. Native issue worktree creation, useful assessment output, and desktop rendering
@@ -63,7 +70,10 @@ exercise answers arriving both in a later turn and after recording within the sa
 The revision must replace the acknowledged result using its digest; a stale revision
 must fail without overwriting the newer result. An identical retry stays idempotent.
 Assign several fixtures together: intake should fill available capacity within its action
-budget, continuing past completion notices and launches. Compare each native launch with
+budget, continuing past completion notices and launches. An unchanged running assessment
+must not delay another queued issue: the next runtime call should offer the next issue or
+an explicit stop. Verify the overflow starts when a slot opens, with no duplicate chats or
+notices. Compare each native launch with
 the prepared request exactly; issue evidence comes from context, not a copied snapshot.
 If isolated helpers are unavailable, require an explicit limitation rather than a false
 claim that the separate pass ran. This is live semantic evidence, not an exact-word test.
@@ -109,7 +119,9 @@ creation enables per-worktree Git configuration, the source must remain bare whi
 both the base and assessment checkout still accept ordinary `git status`. Repeat
 with an already registered managed base carrying the old shared `core.bare=true`
 setting: preparation must repair the owned configuration without replacing checkouts.
-An unrelated saved project with invalid Git configuration must remain a blocker.
+Without an explicit checkout, a saved project with invalid Git configuration must
+remain a blocker. With an explicit checkout, inaccessible unrelated saved projects
+must not prevent selecting it; access and identity checks still apply to the target.
 Verify that the launch carries its receipt once, context supplies the assessment
 instructions, and an altered native launch is still rejected before investigation.
 Have the child request context while intake is reconciling its creation receipt;
@@ -118,8 +130,32 @@ transient contention. Result submission must use the same bounded waiting behavi
 Run a fresh assessment without follow-up coaching: if its sandbox blocks private
 plugin-state access, it must request native approval for the exact runtime command
 and continue only after approval and verified context. An actual approval denial or
-verification failure must stop it. Verify the retained plan, one completion notice,
-and a subsequent quiet poll without duplicate chats or worktrees.
+verification failure must stop it. Verify the retained plan only in its issue,
+and a subsequent quiet intake report without duplicate chats or worktrees.
+
+Verify one intake summary per scheduled check, including grouped issue links and
+managing, pending, and occupied-slot counts. Revise a plan, record clarification,
+and continue implementation: none may produce intake progress announcements.
+Simulate a malformed or missing final notification; the next run must still scan
+and start eligible work without replaying old cards. Load legacy full notification
+queues and verify they are discarded without losing assignments, assessments, or
+native creation receipts. No notification backlog may consume admission capacity.
+Deny access to a disposable assessment skill or guidance fixture and verify the
+native host-access retry without substituting a skill or diagnosing corrupt state.
+Real provider failures retain their diagnostic; recovery reports current intake health.
+A fresh scan without a terminal dispatch check must return `continue` from report,
+even when an issue has already started. Follow its next action until the queue
+is checked, capacity is full, a blocker is retained, or twelve runtime actions are
+spent. A report supplied with the previous trigger's timestamp must return the
+current native occurrence's request without publishing a final response. Repeat
+three fresh multi-issue batches; require each run to fill available slots, retain
+overflow, resume it later without duplicates, and produce quiet summaries after the starts have been reported.
+Exhaust the action budget after creation but before receipt reconciliation; the
+next occurrence must recover the same chat rather than launch another.
+For native recovery, verify creation and latest-turn evidence through paged history on a
+long chat; title checks must not request history. Incomplete or cyclic history must retain
+uncertainty without authorizing another creation. These desktop checks remain separate
+from the deterministic unit reproductions and require an explicitly authorized pilot.
 
 ## Setup
 
@@ -151,6 +187,15 @@ cp "$root/rebound-workspace/agent.yaml" "$root/rebound-workspace/agent.expected.
 ## Testing
 
 ```bash
+# should explain a host permission failure in one heartbeat without accessing tracking state
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access-required"}' \
+  | node "$runtime" intake failure-response --plugin-data "$root/uncreated-failure-data" \
+  | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
+test ! -e "$root/uncreated-failure-data"
+
 # should format a packaged quiet heartbeat without activating intake or changing its state
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -195,7 +240,9 @@ plugin_data="$root/notification-data"
 printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$plugin_data" \
   | jq -e '.version == 1 and .records == []'
 if output=$(printf '%s\n' '{"action":"next","projects":[]}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .notice.severity == "warning" and .notice.notify == true and (.notice.message | contains("Next step"))'
+if output=$(printf '%s\n' '{"action":"handoff","id":"missing"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-handoff-unavailable" and .notice.severity == "error"'
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$root/notification-workspace/checkouts"
 test ! -d "$root/notification-workspace/.agent-system/repositories"

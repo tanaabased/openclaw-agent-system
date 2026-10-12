@@ -1,5 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
+import dispatchHistory from './codex-dispatch-history.ts';
+
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
@@ -14,6 +16,7 @@ export interface DispatchNativeThread {
   status: string;
   turnStatus?: string;
   turnId?: string;
+  followUpUserTurn?: boolean;
 }
 
 function escaped(value: string) {
@@ -47,12 +50,20 @@ export function matchesDispatchCreation(
 
 /** verify native history and titles without creating chats or parsing filesystem history. */
 export function codexDispatchNative(request: CodexThreadRequest) {
-  async function read(id: string) {
+  async function read(
+    id: string,
+    history: 'none' | 'edges' | 'all' = 'edges',
+  ): Promise<Record<string, unknown> | undefined> {
     try {
-      const result = await request('thread/read', { threadId: id, includeTurns: true });
+      const result = await request('thread/read', { threadId: id, includeTurns: false });
       if (!nativeObject(result.thread) || result.thread.id !== id)
         throw new Error('dispatch-native-response-invalid');
-      return result.thread;
+      return {
+        ...result.thread,
+        ...(history === 'none'
+          ? {}
+          : { turns: await dispatchHistory(request, id, history === 'all') }),
+      };
     } catch (error) {
       if (
         error instanceof CodexThreadRpcError &&
@@ -83,6 +94,12 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       id: thread.id,
       cwd: await realpath(thread.cwd),
       status: thread.status.type,
+      followUpUserTurn:
+        Array.isArray(thread.turns) &&
+        thread.turns.length > 1 &&
+        nativeObject(latestTurn) &&
+        Array.isArray(latestTurn.items) &&
+        latestTurn.items.some((item) => nativeObject(item) && item.type === 'userMessage'),
       ...(nativeObject(latestTurn) && typeof latestTurn.id === 'string'
         ? { turnId: latestTurn.id }
         : {}),
@@ -95,17 +112,48 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     };
   }
   return {
+    async occurrence(threadId: string) {
+      const result = await request('thread/turns/list', {
+        threadId,
+        itemsView: 'notLoaded',
+        sortDirection: 'desc',
+        limit: 1,
+      });
+      const turn = Array.isArray(result.data) && result.data[0];
+      if (!nativeObject(turn) || typeof turn.id !== 'string')
+        throw new Error('dispatch-native-turn-unavailable');
+      const items = await request('thread/items/list', {
+        threadId,
+        turnId: turn.id,
+        sortDirection: 'asc',
+        limit: 1,
+      });
+      const entry = Array.isArray(items.data) && items.data[0];
+      const item = nativeObject(entry) && entry.turnId === turn.id && entry.item;
+      const content = nativeObject(item) && item.type === 'userMessage' && item.content;
+      const text = Array.isArray(content) && content[0];
+      const match =
+        nativeObject(text) && text.type === 'text' && typeof text.text === 'string'
+          ? /^<heartbeat>\s*<automation_id>([^<]+)<\/automation_id>\s*<current_time_iso>([^<]+)<\/current_time_iso>/u.exec(
+              text.text,
+            )
+          : null;
+      if (!match || !Number.isFinite(Date.parse(match[2]!)))
+        throw new Error('dispatch-native-occurrence-unavailable');
+      return { id: turn.id, automationId: match[1]!, currentTimeIso: match[2]! };
+    },
     assessmentSkill: (cwd: string, id: string) => codexAssessmentSkill(request, cwd, id),
     async rename(threadId: string, title: string) {
       await request('thread/name/set', { threadId, name: title });
-      if ((await read(threadId))?.name !== title) throw new Error('dispatch-native-title-diverged');
+      if ((await read(threadId, 'none'))?.name !== title)
+        throw new Error('dispatch-native-title-diverged');
     },
     async deniedCreation(
       sourceThreadId: string,
       expected: Record<string, unknown>,
       approvedCallId?: string,
     ) {
-      const source = await read(sourceThreadId);
+      const source = await read(sourceThreadId, 'all');
       if (
         !source ||
         !nativeObject(source.status) ||
