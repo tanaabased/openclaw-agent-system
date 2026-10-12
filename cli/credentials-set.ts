@@ -94,11 +94,15 @@ async function setCredentialsAgentSystem(options: SetCredentialsAgentSystemOptio
       { label: 'input source', style: 'field', value: input.source },
       {
         label: 'gateway cache',
-        style: result.gatewayInvalidation === 'confirmed' ? 'status' : 'field',
-        value:
-          result.gatewayInvalidation === 'confirmed'
-            ? 'invalidation confirmed'
-            : 'invalidation not required',
+        style:
+          result.gatewayInvalidation === 'pending'
+            ? 'warning'
+            : result.gatewayInvalidation === 'confirmed'
+              ? 'status'
+              : 'field',
+        value: result.gatewayInvalidation
+          ? `invalidation ${result.gatewayInvalidation}`
+          : 'invalidation not required',
       },
     ],
     options.styles,

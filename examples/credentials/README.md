@@ -195,10 +195,18 @@ XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | gr
 # should stop the isolated gateway
 openclaw-gateway stop
 
-# should report pending invalidation after a store command when the gateway is unavailable
+# should retain stored success and pending cache invalidation when the gateway is unavailable
+cd "$GITHUB_WORKSPACE/examples/credentials/data"
+output=$(printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin --store file 2> "$TMPDIR/credential-set-offline.stderr")
+printf '%s\n' "$output" | grep -F 'credential' | grep -F 'stored'
+printf '%s\n' "$output" | grep -F 'gateway cache' | grep -F 'invalidation pending'
+if printf '%s\n' "$output" | grep -F 'invalidation not required'; then exit 1; fi
+grep -F 'invalidation is pending' "$TMPDIR/credential-set-offline.stderr"
+
+# should report pending invalidation after removal when the gateway is unavailable
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file 2>&1)
-printf '%s\n' "$output" | grep -F 'unchanged'
+printf '%s\n' "$output" | grep -F 'removed'
 printf '%s\n' "$output" | grep -F 'gateway invalidation is pending'
 
 # should fail cache controls with bounded protocol evidence and empty machine stdout at normal and debug levels

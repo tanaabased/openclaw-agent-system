@@ -127,6 +127,8 @@ describe('cli/credentials', () => {
       assert.doesNotMatch(test.records.diagnostics.join(''), /error|private-token/u);
       assert.match(test.records.output.join(''), /stored|removed/u);
       assert.doesNotMatch(test.records.output.join(''), /warning/u);
+      assert.match(test.records.output.join(''), /gateway cache\s+invalidation pending/u);
+      assert.doesNotMatch(test.records.output.join(''), /invalidation not required/u);
     }
   });
 

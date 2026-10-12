@@ -1,6 +1,7 @@
 import { AutomationError } from '../agent/automation-gateway.ts';
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import { formatRedactedErrorDiagnostic } from '../core/logger.ts';
 import type { AutomationCommandOptions } from './automation-output.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import {
@@ -133,7 +134,13 @@ async function automationSync(options: AutomationCommandOptions) {
       ]);
     }
     writeCliDiagnosticNotices(options, [
-      { severity: 'error', message: `automation operation stopped (${code}).` },
+      {
+        severity: 'error',
+        message:
+          failure instanceof AutomationError || failure === undefined
+            ? `automation operation stopped (${code}).`
+            : formatRedactedErrorDiagnostic('automations', failure, code),
+      },
       ...(progress
         ? [
             {
