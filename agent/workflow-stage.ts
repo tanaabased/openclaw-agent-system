@@ -1,38 +1,24 @@
-import { Type, type Static } from 'typebox';
+import type { Static } from 'typebox';
 
 import assessmentGuidance from './assessment-guidance.ts';
-import { assessmentSelectionSchema } from './assessment-selection.ts';
+import type { assessmentSelectionSchema } from './assessment-selection.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
   defaultAssessmentSkill,
   type AssessmentConfiguration,
 } from '../manifest/assessment-schema.ts';
 
-export const workflowStageSchema = Type.Union([
-  Type.Literal('assessment'),
-  Type.Literal('implementation'),
-  Type.Literal('review'),
-]);
-export type WorkflowStage = Static<typeof workflowStageSchema>;
 export const stageResultContracts = {
   assessment: 'assessment-result/v1',
   implementation: 'implementation-result/v1',
   review: 'review-result/v1',
 } as const;
-
-export const workflowSelectionSchema = Type.Object(
-  {
-    stage: workflowStageSchema,
-    resultContract: Type.Union([
-      Type.Literal(stageResultContracts.assessment),
-      Type.Literal(stageResultContracts.implementation),
-      Type.Literal(stageResultContracts.review),
-    ]),
-    selection: assessmentSelectionSchema,
-  },
-  { additionalProperties: false },
-);
-export type WorkflowSelection = Static<typeof workflowSelectionSchema>;
+export type WorkflowStage = keyof typeof stageResultContracts;
+export interface WorkflowSelection {
+  stage: WorkflowStage;
+  resultContract: (typeof stageResultContracts)[WorkflowStage];
+  selection: Static<typeof assessmentSelectionSchema>;
+}
 
 /** all stages use host-discovered skills and the same contained guidance reader. */
 export async function selectWorkflowStage(input: {
