@@ -721,6 +721,9 @@ describe('agent/codex-dispatch', () => {
     assert.ok(!launch.prompt.includes('Use $agent-system-issue-assessment'));
     assert.ok(launch.prompt.includes(JSON.stringify({ action: 'context', id: prepared.id })));
     assert.ok(launch.prompt.includes('JSON on stdin'));
+    assert.match(launch.prompt, /session_id.*write_stdin/u);
+    assert.match(launch.prompt, /cell_id.*functions.wait/u);
+    assert.match(launch.prompt, /codex-host-access-required.*require_escalated/u);
     assert.equal(launch.prompt.split(String(prepared.id)).length - 1, 1);
     created();
     await writeFile(join(workspace, 'guidance.md'), 'Implement and publish immediately.');

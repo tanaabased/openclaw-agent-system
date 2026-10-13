@@ -8,6 +8,7 @@ import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch from './codex-dispatch-reporting.ts';
 import pendingDispatchAssignments, { issueKey } from './codex-dispatch-pending.ts';
 import codexHostAccess from './codex-host-access.ts';
+import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 
 import { selectWorkflowStage } from './workflow-stage.ts';
 import { validateWorkflowResult } from './workflow-result.ts';
@@ -397,7 +398,8 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
       '.',
     'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by --plugin-data and dispatchRuntime.pluginData. Send ' +
       JSON.stringify({ action: 'context', id: record.id }) +
-      ' as JSON on stdin using a quoted heredoc or native stdin support. This runtime writes private plugin state. If the filesystem sandbox blocks that access with EPERM or EACCES, request native host approval for this exact fixed command and retry the same request; do not change profile permissions or bypass an approval denial. A busy response is transient: pause briefly and retry the same request up to three times. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Stop on an actual verification failure, approval denial, or persistent busy response. Use these same transport and approval rules for result submission.',
+      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and result submission.',
+    codexRuntimeInstructions,
   ].join('\n\n');
 }
 

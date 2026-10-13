@@ -49,7 +49,7 @@ interface BindingOptions {
 
 function parsePluginData(args: string[]): string {
   if (args.length !== 2 || args[0] !== '--plugin-data' || !args[1]) {
-    throw new Error('expected exactly --plugin-data <path>');
+    throw new Error('expected exactly --plugin-data <path>; send JSON on stdin without --input');
   }
   return args[1];
 }
