@@ -404,6 +404,7 @@ export default async function runCodexContinuation(
             work.result?.outcome === 'done' &&
             !work.publicationAttempt &&
             receipt.ended &&
+            found.turnStatus === 'completed' &&
             ['idle', 'notLoaded'].includes(found.status)
           ) {
             work.publicationAttempt = {

@@ -80,6 +80,11 @@ using disposable issues and the installed plugin.
   actual ended-turn blocker, verify a digest-bound operator retry retains the
   same plan and chat and queues one handoff on the next occurrence; native denials
   and substantive implementation results must remain ineligible for that retry.
+  After recording implementation, cancel or fail its turn before delivery. The
+  next occurrence must retain the result and stop without preparing publication;
+  only a successfully completed turn may receive the delivery-only continuation.
+  A native command, patch, or tool approval denial must also stop continuation,
+  even when the surrounding turn completes normally after recording implementation.
 - **Continuation:** explicitly request implementation in the issue and verify its
   handoff preserves the assessment and worktree. Later intake must neither inspect
   that implementation nor prevent another eligible issue from starting.

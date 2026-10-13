@@ -2370,6 +2370,49 @@ describe('agent/codex-dispatch', () => {
     work.continuation.continuationNative = async () => ({ status: 'uncertain' });
     assert.equal((await work.run('next')).status, 'idle');
   });
+
+  for (const turnStatus of ['failed', 'interrupted'])
+    it(`should not resume delivery after the implementation turn is ${turnStatus}`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      const implementation = { outcome: 'done', summary: 'Done.', fullResult: 'Full evidence.' };
+      await work.run('result', { result: implementation }, true);
+      native!.status = 'idle';
+      native!.turnStatus = turnStatus;
+      assert.equal((await work.run('reconcile')).status, 'idle');
+      assert.equal((await work.run('next')).status, 'idle');
+      const records = (await request('inspect')).records as Array<{
+        continuation: { phase: string; result: unknown; publicationAttempt?: unknown };
+      }>;
+      assert.equal(records[0]!.continuation.phase, 'blocked');
+      assert.deepEqual(records[0]!.continuation.result, implementation);
+      assert.equal(records[0]!.continuation.publicationAttempt, undefined);
+      await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+    });
+
+  it('should retain recorded implementation and stop delivery after native approval denial', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    const implementation = { outcome: 'done', summary: 'Done.', fullResult: 'Full evidence.' };
+    await work.run('result', { result: implementation }, true);
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-approval-denied',
+    });
+    assert.equal((await work.run('reconcile')).status, 'blocked');
+    assert.equal((await work.run('next')).status, 'idle');
+    const records = (await request('inspect')).records as Array<{
+      continuation: { result: unknown; publicationAttempt?: unknown };
+    }>;
+    assert.deepEqual(records[0]!.continuation.result, implementation);
+    assert.equal(records[0]!.continuation.publicationAttempt, undefined);
+    await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+  });
+
   it('should leave consequential assessment questions in the issue without preparing implementation', async () => {
     const work = await workIssue({
       version: 1,

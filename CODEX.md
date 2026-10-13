@@ -215,8 +215,7 @@ then repeat it with the returned `digest`. This verifies the old turn has ended,
 retains its evidence, and queues one handoff in the same chat on the next scheduled
 turn. It cannot retry native denials, substantive results, or cancelled work.
 
-The native desktop assessment-to-PR journey has not yet been validated end to end.
-Deterministic fixtures and packaged checks do not establish unattended native
+Deterministic fixtures and packaged checks alone do not establish unattended native
 execution or visible card delivery.
 
 ### Pull Request Delivery

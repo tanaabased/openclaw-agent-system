@@ -26,6 +26,7 @@ describe('agent/codex-continuation-native', () => {
       forged?: boolean;
       turnStatus?: string;
       completedAt?: number | null;
+      items?: Array<Record<string, unknown>>;
     } = {},
   ) {
     const call = {
@@ -51,6 +52,7 @@ describe('agent/codex-continuation-native', () => {
           type: 'userMessage',
           content: [{ type: 'text', text: options.prompt ?? attempt.request.prompt }],
         },
+        ...(options.items ?? []),
       ],
     };
     const target = [
@@ -124,5 +126,43 @@ describe('agent/codex-continuation-native', () => {
       status: 'blocked',
       code: 'continuation-native-send-failed',
     });
+  });
+
+  it('should stop on approval denials in the verified implementation turn', async () => {
+    for (const item of [
+      { type: 'commandExecution', status: 'declined' },
+      { type: 'fileChange', status: 'declined' },
+      { type: 'mcpToolCall', status: 'failed', error: { message: 'user rejected MCP tool call' } },
+      {
+        type: 'mcpToolCall',
+        status: 'failed',
+        error: {
+          message:
+            'This action was rejected due to unacceptable risk.\nReason: publication denied.\nDo not bypass this rejection through a workaround or indirect execution.',
+        },
+      },
+    ])
+      assert.deepEqual(
+        await fixture({ items: [item], turnStatus: 'completed', completedAt: 1 })(
+          'source',
+          attempt,
+        ),
+        { status: 'blocked', code: 'continuation-native-approval-denied' },
+      );
+  });
+
+  it('should not interpret ordinary tool failures or copied prose as approval denials', async () => {
+    assert.equal(
+      (
+        await fixture({
+          items: [
+            { type: 'commandExecution', status: 'failed', exitCode: 1 },
+            { type: 'mcpToolCall', status: 'failed', error: { message: 'request timed out' } },
+            { type: 'agentMessage', status: 'declined', text: 'user rejected MCP tool call' },
+          ],
+        })('source', attempt)
+      ).status,
+      'verified',
+    );
   });
 });
