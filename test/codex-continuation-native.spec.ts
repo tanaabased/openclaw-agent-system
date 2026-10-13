@@ -24,6 +24,8 @@ describe('agent/codex-continuation-native', () => {
       prompt?: string;
       sourceTurn?: string;
       forged?: boolean;
+      turnStatus?: string;
+      completedAt?: number | null;
     } = {},
   ) {
     const call = {
@@ -42,7 +44,8 @@ describe('agent/codex-continuation-native', () => {
     ];
     const implementation = {
       id: 'implementation',
-      status: 'inProgress',
+      status: options.turnStatus ?? 'inProgress',
+      completedAt: options.completedAt ?? null,
       items: [
         {
           type: 'userMessage',
@@ -74,8 +77,31 @@ describe('agent/codex-continuation-native', () => {
     assert.deepEqual(await fixture()('source', attempt), {
       status: 'verified',
       turnId: 'implementation',
-      turnStatus: 'inProgress',
+      ended: false,
     });
+  });
+  it('should require a native end timestamp before classifying a terminal history status as ended', async () => {
+    for (const turnStatus of ['completed', 'failed', 'interrupted']) {
+      for (const completedAt of [undefined, null, 0, NaN])
+        assert.deepEqual(await fixture({ turnStatus, completedAt })('source', attempt), {
+          status: 'verified',
+          turnId: 'implementation',
+          ended: false,
+        });
+      assert.deepEqual(await fixture({ turnStatus, completedAt: 1791919616 })('source', attempt), {
+        status: 'verified',
+        turnId: 'implementation',
+        ended: true,
+      });
+    }
+    assert.deepEqual(
+      await fixture({ turnStatus: 'inProgress', completedAt: 1791919616 })('source', attempt),
+      {
+        status: 'verified',
+        turnId: 'implementation',
+        ended: false,
+      },
+    );
   });
   it('should retain uncertainty when a send or target response is missing', async () => {
     for (const options of [

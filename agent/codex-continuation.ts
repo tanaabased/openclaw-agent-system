@@ -29,8 +29,10 @@ const requestSchema = Type.Object(
       Type.Literal('result'),
       Type.Literal('cancel'),
       Type.Literal('delivery'),
+      Type.Literal('retry'),
     ]),
     id: Type.Optional(Type.String()),
+    digest: Type.Optional(Type.String()),
     result: Type.Optional(implementationResultSchema),
     delivery: Type.Optional(Type.Unknown()),
   },
@@ -52,6 +54,7 @@ export default async function runCodexContinuation(
     throw new Error('continuation-request-invalid');
   const current = await selectCodexIntake(pluginData, deps);
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
+  const retry = input.action === 'retry';
   if (!caller) throw new Error('continuation-caller-required');
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
@@ -67,6 +70,8 @@ export default async function runCodexContinuation(
     schedule.current,
     input.action === 'delivery' ? 'publication' : 'implementation',
   );
+  if (retry && caller === activation.sourceThreadId)
+    throw new Error('continuation-operator-caller-required');
   if (input.action === 'next' || input.action === 'reconcile') {
     if (caller !== activation.sourceThreadId)
       throw new Error('continuation-schedule-caller-required');
@@ -82,6 +87,13 @@ export default async function runCodexContinuation(
   const git = deps.git ?? dispatchGit;
   try {
     const response = await store.exclusive(async (state, save, signal) => {
+      if (
+        retry &&
+        state.records.some(
+          (record) => record.threadId === caller || record.receiptThreadId === caller,
+        )
+      )
+        throw new Error('continuation-operator-caller-required');
       const occurrence =
         input.action === 'next' || input.action === 'reconcile'
           ? await native.occurrence(caller)
@@ -125,7 +137,7 @@ export default async function runCodexContinuation(
             record.reset
           )
             throw new Error('continuation-managed-issue-required');
-          if (!occurrence && caller !== record.threadId)
+          if (!occurrence && !retry && caller !== record.threadId)
             throw new Error('continuation-issue-caller-required');
           if (
             record.sourceThreadId !== activation.sourceThreadId ||
@@ -134,7 +146,18 @@ export default async function runCodexContinuation(
             current.manifest.github.notifications.issueAssignment?.mode !== 'work'
           )
             throw new Error('continuation-authority-changed');
-          if (['blocked', 'cancelled', 'complete'].includes(work.phase))
+          if (
+            retry &&
+            (work.phase !== 'blocked' ||
+              work.code !== 'continuation-turn-ended' ||
+              !work.attempt ||
+              work.result ||
+              work.publicationAttempt ||
+              record.delivery ||
+              (work.retries?.length ?? 0) >= 8)
+          )
+            throw new Error('continuation-retry-unavailable');
+          if (!retry && ['blocked', 'cancelled', 'complete'].includes(work.phase))
             return { status: work.phase, id: record.id, code: work.code };
           if (!record.result) continue;
           if (record.result.outcome !== 'plan-ready') {
@@ -216,11 +239,13 @@ export default async function runCodexContinuation(
             if (
               input.action !== 'next' ||
               !occurrence ||
-              found.turnStatus !== 'completed' ||
+              (work.retries?.length
+                ? !['completed', 'failed', 'interrupted'].includes(found.turnStatus ?? '')
+                : found.turnStatus !== 'completed') ||
               !['idle', 'notLoaded'].includes(found.status)
             )
               continue;
-            if (found.turnId !== record.resultTurnId)
+            if (found.turnId !== (work.retries?.at(-1)?.attempt.turnId ?? record.resultTurnId))
               throw new Error('continuation-user-intervened');
             work.assessmentDigest = automationHash(record.result);
             const id = automationHash({
@@ -263,8 +288,42 @@ export default async function runCodexContinuation(
           }
           if (activeAttempt.turnId && activeAttempt.turnId !== receipt.turnId)
             throw new Error('continuation-turn-changed');
-          activeAttempt.turnId = receipt.turnId;
           if (found.turnId !== receipt.turnId) throw new Error('continuation-user-intervened');
+          if (retry) {
+            if (!receipt.ended || !['idle', 'notLoaded'].includes(found.status))
+              throw new Error('continuation-retry-chat-active');
+            const digest = automationHash({
+              record,
+              schedule: schedule.current,
+              turnId: receipt.turnId,
+            });
+            if (input.digest === undefined)
+              return {
+                status: 'retry-available',
+                id: record.id,
+                digest,
+                threadId: record.threadId,
+                instruction:
+                  'Retain the plan, chat, worktree, and previous attempt. Queue one new implementation handoff for the next scheduled occurrence; do not send it manually.',
+              };
+            if (input.digest !== digest) throw new Error('continuation-retry-stale');
+            work.retries = [
+              ...(work.retries ?? []),
+              {
+                attempt: { ...activeAttempt, turnId: receipt.turnId },
+                ...(work.binding ? { binding: work.binding } : {}),
+                at: (deps.now ?? Date.now)(),
+                by: caller,
+              },
+            ];
+            delete work.attempt;
+            delete work.binding;
+            delete work.code;
+            work.phase = 'waiting';
+            await save();
+            return { status: 'retry-ready', id: record.id, threadId: record.threadId };
+          }
+          activeAttempt.turnId = receipt.turnId;
           if (work.phase === 'prepared') work.phase = 'running';
           work.binding ??= {
             admissionId: admitted.id,
@@ -343,7 +402,7 @@ export default async function runCodexContinuation(
             work.phase === 'delivery' &&
             work.result?.outcome === 'done' &&
             !work.publicationAttempt &&
-            ['completed', 'failed', 'interrupted'].includes(receipt.turnStatus) &&
+            receipt.ended &&
             ['idle', 'notLoaded'].includes(found.status)
           ) {
             work.publicationAttempt = {
@@ -369,7 +428,8 @@ export default async function runCodexContinuation(
           }
           if (
             occurrence &&
-            ['completed', 'failed', 'interrupted'].includes(receipt.turnStatus) &&
+            receipt.ended &&
+            ['idle', 'notLoaded'].includes(found.status) &&
             work.phase !== 'complete'
           ) {
             work.phase = 'blocked';

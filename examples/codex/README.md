@@ -71,6 +71,11 @@ using disposable issues and the installed plugin.
   and one linked PR in the original chat without stage approvals. Capture native
   send receipts, restart reconciliation, provider linkage, attachment, and visible
   presentation separately; a forged or missing receipt must not start work.
+  During the handoff, inspect through a separate native reader: an interrupted
+  status without a completion timestamp must not end the running turn. After an
+  actual ended-turn blocker, verify a digest-bound operator retry retains the
+  same plan and chat and queues one handoff on the next occurrence; native denials
+  and substantive implementation results must remain ineligible for that retry.
 - **Continuation:** explicitly request implementation in the issue and verify its
   handoff preserves the assessment and worktree. Later intake must neither inspect
   that implementation nor prevent another eligible issue from starting.

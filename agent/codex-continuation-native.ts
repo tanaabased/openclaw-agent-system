@@ -68,6 +68,12 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
     const found = candidates[0];
     if (!found) return { status: 'uncertain' as const };
     if (typeof found.id !== 'string') throw new Error('continuation-turn-invalid');
-    return { status: 'verified' as const, turnId: found.id, turnStatus: String(found.status) };
+    // a separate app-server can report an active turn as interrupted without an end timestamp.
+    const ended =
+      ['completed', 'failed', 'interrupted'].includes(String(found.status)) &&
+      typeof found.completedAt === 'number' &&
+      Number.isFinite(found.completedAt) &&
+      found.completedAt > 0;
+    return { status: 'verified' as const, turnId: found.id, ended };
   };
 }

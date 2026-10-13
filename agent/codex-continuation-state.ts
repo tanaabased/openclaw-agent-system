@@ -46,6 +46,20 @@ export const codexContinuationStateSchema = Type.Object(
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
     attempt: Type.Optional(attemptSchema),
+    retries: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            attempt: attemptSchema,
+            binding: Type.Optional(workflowBindingSchema),
+            at: Type.Integer({ minimum: 0 }),
+            by: text,
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: 8 },
+      ),
+    ),
     publicationAttempt: Type.Optional(attemptSchema),
     binding: Type.Optional(workflowBindingSchema),
     result: Type.Optional(implementationResultSchema),

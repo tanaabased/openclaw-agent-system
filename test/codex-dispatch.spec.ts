@@ -2015,14 +2015,21 @@ describe('agent/codex-dispatch', () => {
       ...deps,
       continuationNative: async () =>
         received
-          ? { status: 'verified', turnId: native!.turnId!, turnStatus: native!.turnStatus! }
+          ? {
+              status: 'verified',
+              turnId: native!.turnId!,
+              ended: ['completed', 'failed', 'interrupted'].includes(native!.turnStatus!),
+            }
           : { status: 'uncertain' },
     };
-    const run = (action: string, input: object = {}, child = false) =>
+    const run = (action: string, input: object = {}, child: boolean | string = false) =>
       runCodexContinuation(
         pluginData,
         { action, ...(action === 'next' ? {} : { id: prepared.id }), ...input },
-        { ...continuation, threadId: child ? native!.id : 'intake-thread' },
+        {
+          ...continuation,
+          threadId: typeof child === 'string' ? child : child ? native!.id : 'intake-thread',
+        },
       );
     return {
       id: prepared.id,
@@ -2091,6 +2098,114 @@ describe('agent/codex-dispatch', () => {
       'Keep this change bounded.',
     );
   });
+
+  it('should retain a starting continuation when an isolated reader reports interrupted without an end timestamp', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    native!.status = 'notLoaded';
+    native!.turnStatus = 'interrupted';
+    work.continuation.continuationNative = async () => ({
+      status: 'verified',
+      turnId: native!.turnId!,
+      ended: false,
+    });
+    await work.run('reconcile');
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal(
+      (
+        await work.run(
+          'result',
+          { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' } },
+          true,
+        )
+      ).status,
+      'recorded',
+    );
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should require an ended and inactive turn before blocking work', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    native!.turnStatus = 'completed';
+    await work.run('reconcile');
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    native!.status = 'idle';
+    await work.run('reconcile');
+    const blocked = await work.run('context', {}, true);
+    assert.equal(blocked.status, 'blocked');
+    assert.equal('code' in blocked && blocked.code, 'continuation-turn-ended');
+  });
+
+  for (const endedStatus of ['completed', 'failed', 'interrupted'])
+    it(`should queue one operator-approved retry after a ${endedStatus} turn and retain the earlier attempt`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      native!.status = 'idle';
+      native!.turnStatus = endedStatus;
+      await work.run('reconcile');
+      const before = (await request('inspect')).records;
+      const preview = await work.run('retry', {}, 'operator');
+      assert.equal(preview.status, 'retry-available');
+      assert.deepEqual((await request('inspect')).records, before);
+      await assert.rejects(work.run('retry', {}, true), /operator-caller-required/);
+      await assert.rejects(work.run('retry'), /operator-caller-required/);
+      await assert.rejects(work.run('retry', { digest: 'stale' }, 'operator'), /retry-stale/);
+      const digest = 'digest' in preview && preview.digest;
+      native!.status = 'active';
+      await assert.rejects(work.run('retry', { digest }, 'operator'), /retry-chat-active/);
+      native!.status = 'idle';
+      assert.equal((await work.run('retry', { digest }, 'operator')).status, 'retry-ready');
+      await assert.rejects(work.run('retry', { digest }, 'operator'), /retry-unavailable/);
+      const records = (await request('inspect')).records as Array<{
+        result: unknown;
+        continuation: { retries: Array<{ attempt: { turnId: string }; by: string }> };
+      }>;
+      assert.deepEqual(records[0]!.result, result);
+      assert.equal(records[0]!.continuation.retries[0]!.attempt.turnId, 'implementation-turn');
+      assert.equal(records[0]!.continuation.retries[0]!.by, 'operator');
+      const next = await work.run('next');
+      assert.equal(next.status, 'prepared');
+      assert.equal('request' in next && next.request?.threadId, native!.id);
+      work.continuation.continuationNative = async () => ({ status: 'uncertain' });
+      assert.equal((await work.run('next')).status, 'idle');
+      work.receive();
+      native!.turnId = 'retry-turn';
+      work.continuation.continuationNative = async () => ({
+        status: 'verified',
+        turnId: native!.turnId!,
+        ended: false,
+      });
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+    });
+
+  it('should not retry a denied continuation', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-send-failed',
+    });
+    await work.run('reconcile');
+    await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+  });
+
+  for (const outcome of ['done', 'blocked'])
+    it(`should not retry a continuation with a recorded ${outcome} result`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      await work.run(
+        'result',
+        { result: { outcome, summary: 'Retained outcome.', fullResult: 'Retained evidence.' } },
+        true,
+      );
+      await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+    });
 
   it('should retain uncertain native continuation across restart without another prepared request', async () => {
     const work = await workIssue();

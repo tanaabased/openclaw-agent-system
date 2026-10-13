@@ -209,6 +209,12 @@ Use `continuationRuntime` action `cancel` in the issue chat to stop further auto
 work; it does not undo files or an already-started external operation. Disable the
 workflow through Install to revoke future automatic stage and publication authority.
 
+For `continuation-turn-ended` before an implementation result or delivery attempt,
+an operator may request `continuationRuntime` action `retry` with the retained `id`,
+then repeat it with the returned `digest`. This verifies the old turn has ended,
+retains its evidence, and queues one handoff in the same chat on the next scheduled
+turn. It cannot retry native denials, substantive results, or cancelled work.
+
 The native desktop assessment-to-PR journey has not yet been validated end to end.
 Deterministic fixtures and packaged checks do not establish unattended native
 execution or visible card delivery.
