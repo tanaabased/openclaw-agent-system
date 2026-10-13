@@ -664,7 +664,7 @@ describe('agent/codex-intake', () => {
     );
   });
 
-  it('should include the installed command only for work preparation', () => {
+  it('should include creation orchestration in both modes and continuation only in work', () => {
     const { policy } = intakeFixture();
     const manifest = {
       schemaVersion: 1 as const,
@@ -682,7 +682,10 @@ describe('agent/codex-intake', () => {
       if (job.payload.kind !== 'prompt') throw new Error('expected prompt');
       return job.payload.prompt;
     };
-    assert.ok(!prompt().includes(runtime.entrypoint));
+    const plan = prompt();
+    assert.ok(plan.includes(runtime.entrypoint));
+    assert.ok(plan.includes('tools.mcp__codex_app__create_thread(prepared.request)'));
+    assert.ok(!plan.includes('Installed continuation command'));
     policy.issueAssignment!.mode = 'work';
     assert.throws(() => codexIntakeJobs(manifest), {
       code: 'continuation-runtime-identity-required',

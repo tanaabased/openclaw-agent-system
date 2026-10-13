@@ -1016,6 +1016,41 @@ describe('agent/codex-dispatch', () => {
     assert.notEqual(second.id, first.id);
   });
 
+  it('should allow retirement from a handed-off operator chat but not an active issue chat', async () => {
+    const first = await prepare();
+    fixture.item.state = 'closed';
+    const operator = {
+      threadId: 'operator',
+      activation: async () => ({ sourceThreadId: 'intake-thread' }),
+    };
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'f'.repeat(64),
+        issueKey: 'e'.repeat(64),
+        threadId: 'operator',
+        worktree,
+      });
+      await save();
+    });
+    await assert.rejects(
+      request('retire', { id: first.id }, operator),
+      /dispatch-operator-caller-required/,
+    );
+    await store.exclusive(async (state, save) => {
+      state.records.at(-1)!.handoff = { at: now, by: 'operator', turnId: 'operator-turn' };
+      await save();
+    });
+    const preview = await request('retire', { id: first.id }, operator);
+    assert.equal(preview.status, 'retire-available');
+    assert.equal(
+      (await request('retire', { id: first.id, digest: preview.digest }, operator)).status,
+      'retired',
+    );
+  });
+
   it('should preserve a completed assessment and dispatch once after an explicit reset and new assignment', async () => {
     const first = await prepare();
     created();

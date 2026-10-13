@@ -40,6 +40,10 @@ using disposable issues and the installed plugin.
   checks neither create duplicates nor repeat earlier start notices. Intake reports
   starts, pending work, slots, and intake obstacles; assessment progress stays in
   the issue.
+- **Creation handoff:** verify the scheduled orchestration passes the complete
+  prepared request directly to `create_thread`, including all runtime transport
+  instructions. Command polling must finish before creation; preparation failure
+  or uncertain native submission must never cause another creation call.
 - **Unsubmitted creation:** let an intake turn end after preparation without
   calling `create_thread`. A later scheduled turn must verify complete native
   history, retain the abandoned attempt, and prepare one fresh request. A recorded

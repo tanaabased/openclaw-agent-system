@@ -44,7 +44,10 @@ export default async function recoverDispatch(
   } = context;
   if (action === 'retire') {
     if (
-      state.records.some((entry) => entry.threadId === caller || entry.receiptThreadId === caller)
+      state.records.some(
+        (entry) =>
+          !entry.handoff && (entry.threadId === caller || entry.receiptThreadId === caller),
+      )
     )
       throw new Error('dispatch-operator-caller-required');
     if (record.sourceThreadId !== sourceThreadId) throw new Error('dispatch-retire-unavailable');
