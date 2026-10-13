@@ -5,6 +5,7 @@ import type { assessmentSelectionSchema } from './assessment-selection.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
   defaultAssessmentSkill,
+  defaultImplementationSkill,
   type AssessmentConfiguration,
 } from '../manifest/assessment-schema.ts';
 
@@ -30,7 +31,11 @@ export async function selectWorkflowStage(input: {
 }): Promise<WorkflowSelection> {
   const requestedSkill =
     input.configuration?.skill ??
-    (input.stage === 'assessment' ? defaultAssessmentSkill : undefined);
+    (input.stage === 'assessment'
+      ? defaultAssessmentSkill
+      : input.stage === 'implementation'
+        ? defaultImplementationSkill
+        : undefined);
   if (!requestedSkill) throw new Error('workflow-stage-skill-required');
   const skill = await input.resolveSkill(requestedSkill);
   const guidance = await assessmentGuidance(input.workspace, input.configuration?.guidance);

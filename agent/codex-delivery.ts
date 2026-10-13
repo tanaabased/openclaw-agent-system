@@ -52,6 +52,7 @@ export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies,
   attachment?: (threadId: string, turnId: string, url: string) => Promise<boolean>;
   threadId?: string;
   // only the owning continuation runtime may supply verified schedule state, never request json.
+  authorizeSchedule?: () => Promise<void>;
   schedule?: {
     saved: WorkflowScheduleAuthority;
     current: Omit<WorkflowScheduleAuthority, 'version' | 'capabilities'>;
@@ -160,6 +161,13 @@ export default async function runCodexDelivery(
       )
         throw new Error('delivery-native-binding-mismatch');
       if (deps.schedule) {
+        await deps.authorizeSchedule?.();
+        if (
+          record.continuation &&
+          (record.continuation.phase !== 'delivery' ||
+            record.continuation.result?.outcome !== 'done')
+        )
+          throw new Error('delivery-continuation-stopped');
         if (
           deps.schedule.current.workflow !== 'issue-assignment' ||
           deps.schedule.current.sourceThreadId !== record.sourceThreadId
@@ -261,11 +269,13 @@ export default async function runCodexDelivery(
           id: input.id,
           digest,
           operation: delivery,
-          instruction:
-            'Only after explicit human publication authorization, execute delivery publish with this id and digest through native approval. Retain title/body if supplied. Automatic callers require freshly reconciled schedule authority. Preparation does not grant publication permission.',
+          instruction: deps.schedule
+            ? 'Work mode already authorizes publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
+            : 'Only after explicit human publication authorization, execute delivery publish with this id and digest through native approval. Retain title/body if supplied. Automatic callers require freshly reconciled schedule authority. Preparation does not grant publication permission.',
         };
       if (input.action === 'publish') {
         if (input.digest !== digest) throw new Error('delivery-preview-stale');
+        await deps.authorizeSchedule?.();
         record.delivery = delivery;
         await save();
         try {
@@ -296,6 +306,7 @@ export default async function runCodexDelivery(
               await save();
             },
             beforeCreate: async () => {
+              await deps.authorizeSchedule?.();
               if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
               delivery.creationAttempted = true;
               await save();
@@ -334,6 +345,7 @@ export default async function runCodexDelivery(
               const preferred = preferGitHubSshWorktreeRemote(remote);
               return preferred === remote ? [] : ['-c', `url.${preferred}.insteadOf=${remote}`];
             });
+            await deps.authorizeSchedule?.();
             await git(
               found.cwd,
               [...transport, 'push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
@@ -348,6 +360,7 @@ export default async function runCodexDelivery(
             throw new Error('delivery-push-unverified');
           delivery.pushedHead = head;
           await save();
+          await deps.authorizeSchedule?.();
           await provider.publish(publication);
           delivery.reconciled = true;
           await save();
@@ -358,15 +371,20 @@ export default async function runCodexDelivery(
             pullRequest: delivery.pullRequest,
             url: url(delivery.pullRequest!.pullRequestNumber),
             instruction:
-              'Call native attach_artifact for this pull_request URL in this chat, then list_artifacts, then delivery reconcile and present. Attachment warnings do not block presentation. Never recreate the PR for an attachment or card failure.',
+              'Call native attach_artifact for this pull_request URL in this chat, then list_artifacts, then ' +
+              (deps.schedule
+                ? 'continuationRuntime action:delivery with nested delivery reconcile and present'
+                : 'delivery reconcile and present') +
+              '. Attachment warnings do not block presentation. Never recreate the PR for an attachment or card failure.',
           };
         } catch (error) {
           signal.throwIfAborted();
           if (codexHostAccess(error)) throw error;
           const message = error instanceof Error ? error.message : '';
-          const code = /^(?:dispatch|delivery|github-delivery)-[a-z-]+$/u.test(message)
-            ? message
-            : 'delivery-provider-failed';
+          const code =
+            /^(?:dispatch|delivery|github-delivery|continuation|workflow)-[a-z-]+$/u.test(message)
+              ? message
+              : 'delivery-provider-failed';
           const notice = codexIssueNotice({
             event: 'failure',
             changed: true,

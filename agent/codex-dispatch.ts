@@ -4,13 +4,13 @@ import { join, relative } from 'node:path';
 
 import revalidateAssignment from './dispatch-assignment.ts';
 import dispatchContext from './dispatch-context.ts';
-import dispatchCapacity from './dispatch-capacity.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch from './codex-dispatch-reporting.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import codexHostAccess from './codex-host-access.ts';
+import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 
 import { selectWorkflowStage } from './workflow-stage.ts';
 import recordDispatchResult from './dispatch-result.ts';
@@ -97,9 +97,9 @@ function remediation(value: string) {
   if (value.includes('project'))
     return 'Add the exact repository checkout as one saved Git-backed Codex project, resolve any path or origin conflict, then let the next scheduled occurrence retry this retained assignment.';
   if (value.includes('activation'))
-    return 'Authorize Install to reconcile the updated assessment-only assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
-  if (value === 'dispatch-plan-mode-required')
-    return 'Set issue-assignment mode to plan and reconcile it through authorized Install. This pilot cannot implement or publish.';
+    return 'Authorize Install to reconcile the updated assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
+  if (value === 'dispatch-mode-unsupported')
+    return 'Set issue-assignment mode to plan or work and reconcile it through authorized Install. Other modes cannot dispatch issue assessments.';
   if (value.includes('routing') || value.includes('model'))
     return 'Inspect the retained routing evidence and configured profiles. Repair the selection or native model access; do not substitute a model or recreate the chat.';
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
@@ -216,11 +216,14 @@ export async function revalidateDispatchAssignment(
   deps: CodexDispatchDependencies,
   signal: AbortSignal,
   retainedWork = false,
-  requirePlan = true,
+  requireSupportedMode = true,
 ) {
   const policy = retainedWork ? codexIntakePolicy(current.manifest, true) : current.policy;
-  if (!policy || (requirePlan && policy.policy.issueAssignment?.mode !== 'plan'))
-    throw new Error('dispatch-plan-mode-required');
+  if (
+    !policy ||
+    (requireSupportedMode && !['plan', 'work'].includes(policy.policy.issueAssignment?.mode ?? ''))
+  )
+    throw new Error('dispatch-mode-unsupported');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
   const repo = await revalidateAssignment(policy, record, client);
   return { client, repo };
@@ -329,7 +332,8 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
       '.',
     'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by --plugin-data and dispatchRuntime.pluginData. Send ' +
       JSON.stringify({ action: 'context', id: record.id }) +
-      ' as JSON on stdin using a quoted heredoc or native stdin support. This runtime writes private plugin state. If the filesystem sandbox blocks that access with EPERM or EACCES, request native host approval for this exact fixed command and retry the same request; do not change profile permissions or bypass an approval denial. A busy response is transient: pause briefly and retry the same request up to three times. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Stop on an actual verification failure, approval denial, or persistent busy response. Use these same transport and approval rules for result submission.',
+      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and result submission.',
+    codexRuntimeInstructions,
   ].join('\n\n');
 }
 
@@ -415,6 +419,7 @@ export async function runCodexDispatch(
             'Only after the user requests continuation outside assessment, apply this handoff to end assessment monitoring. It preserves all results and files and grants no implementation or publication authority.',
         };
       if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+      if (record.continuation) record.continuation.phase = 'cancelled';
       record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
       const response = notice(record, intake);
       await save();
@@ -596,8 +601,15 @@ export async function runCodexDispatch(
           }
         }
         if (
-          dispatchCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 1)
-            .available === 0
+          state.records.filter(
+            (record) =>
+              !record.retired &&
+              !record.handoff &&
+              record.request &&
+              (record.phase !== 'complete' ||
+                (record.continuation &&
+                  !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase))),
+          ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
         )
           return checked('at-capacity');
         const intake = pendingDispatchAssignments(state, admitted).find(
@@ -823,6 +835,28 @@ export async function runCodexDispatch(
               ),
           });
           record.assessment = selected.selection;
+          if (current.policy?.policy.issueAssignment?.mode === 'work') {
+            await (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'implementation',
+            );
+            const implementation = await selectWorkflowStage({
+              stage: 'implementation',
+              configuration: current.policy.policy.issueAssignment.implementation,
+              workspace: current.workspace,
+              observedAt: now,
+              resolveSkill: (id) =>
+                withNative(current, deps, (host) => host.assessmentSkill(record.project!.path, id)),
+            });
+            record.continuation = {
+              phase: 'waiting',
+              policyDigest: automationHash(current.manifest.github?.notifications),
+              selection: implementation.selection,
+            };
+          }
           record.routing = JSON.stringify(decision);
           record.routingNote =
             '> **Model routing:** ' +

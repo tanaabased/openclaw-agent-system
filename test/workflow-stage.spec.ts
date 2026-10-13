@@ -28,17 +28,29 @@ describe('agent/workflow-stage', () => {
       assert.equal(selected.selection.defaultSkill, false);
     }
   });
-  it('should retain the assessment default without inventing implementation or review defaults', async () => {
+  it('should resolve bundled assessment and implementation defaults with guidance-only overrides', async () => {
+    for (const stage of ['assessment', 'implementation'] as const) {
+      const selected = await selectWorkflowStage({
+        stage,
+        workspace: '/unused',
+        observedAt: 123,
+        configuration: { guidance: 'Use the repository conventions.\nPreserve existing work.' },
+        resolveSkill: async (id) => {
+          assert.equal(id, `agent-system:agent-system-issue-${stage}`);
+          return { ...skill, name: id };
+        },
+      });
+      assert.equal(selected.selection.defaultSkill, true);
+      assert.match(selected.selection.guidance!.content, /Preserve existing work/);
+    }
+  });
+  it('should reject unavailable replacements without falling back and leave review execution undefined', async () => {
     const input = { workspace: '/unused', observedAt: 123, resolveSkill: async () => skill };
-    assert.equal(
-      (await selectWorkflowStage({ ...input, stage: 'assessment' })).selection.defaultSkill,
-      true,
+    await assert.rejects(
+      selectWorkflowStage({ ...input, stage: 'review' }),
+      /workflow-stage-skill-required/,
     );
-    for (const stage of ['implementation', 'review'] as const) {
-      await assert.rejects(
-        selectWorkflowStage({ ...input, stage }),
-        /workflow-stage-skill-required/,
-      );
+    for (const stage of ['assessment', 'implementation', 'review'] as const)
       await assert.rejects(
         selectWorkflowStage({
           ...input,
@@ -50,7 +62,6 @@ describe('agent/workflow-stage', () => {
         }),
         /skill-unavailable/,
       );
-    }
   });
   it('should require usable assessment and an explicit auto recommendation before implementation', () => {
     for (const outcome of ['plan-ready', 'clarification-needed', 'operator-setup-blocker'] as const)

@@ -18,7 +18,12 @@ export default function prepareDispatchReport(input: {
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.effective && record.threadId);
   const occupied = active.filter(
-    (record) => record.request && !record.handoff && record.phase !== 'complete',
+    (record) =>
+      record.request &&
+      !record.handoff &&
+      (record.phase !== 'complete' ||
+        (record.continuation &&
+          !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase))),
   ).length;
   const pending = pendingDispatchAssignments(state, intake).length;
   const started = managing

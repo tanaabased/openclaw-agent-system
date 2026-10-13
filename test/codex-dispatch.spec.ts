@@ -1,3 +1,7 @@
+import runCodexContinuation, {
+  type CodexContinuationDependencies,
+} from '../agent/codex-continuation.ts';
+import { automationHash } from '../agent/automation-hash.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,6 +11,7 @@ import properLockfile from 'proper-lockfile';
 
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
@@ -717,6 +722,9 @@ describe('agent/codex-dispatch', () => {
     assert.ok(!launch.prompt.includes('Use $agent-system-issue-assessment'));
     assert.ok(launch.prompt.includes(JSON.stringify({ action: 'context', id: prepared.id })));
     assert.ok(launch.prompt.includes('JSON on stdin'));
+    assert.match(launch.prompt, /session_id.*write_stdin/u);
+    assert.match(launch.prompt, /cell_id.*functions.wait/u);
+    assert.match(launch.prompt, /codex-host-access-required.*require_escalated/u);
     assert.equal(launch.prompt.split(String(prepared.id)).length - 1, 1);
     created();
     await writeFile(join(workspace, 'guidance.md'), 'Implement and publish immediately.');
@@ -1006,6 +1014,41 @@ describe('agent/codex-dispatch', () => {
     await reassign();
     const second = await prepare();
     assert.notEqual(second.id, first.id);
+  });
+
+  it('should allow retirement from a handed-off operator chat but not an active issue chat', async () => {
+    const first = await prepare();
+    fixture.item.state = 'closed';
+    const operator = {
+      threadId: 'operator',
+      activation: async () => ({ sourceThreadId: 'intake-thread' }),
+    };
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'f'.repeat(64),
+        issueKey: 'e'.repeat(64),
+        threadId: 'operator',
+        worktree,
+      });
+      await save();
+    });
+    await assert.rejects(
+      request('retire', { id: first.id }, operator),
+      /dispatch-operator-caller-required/,
+    );
+    await store.exclusive(async (state, save) => {
+      state.records.at(-1)!.handoff = { at: now, by: 'operator', turnId: 'operator-turn' };
+      await save();
+    });
+    const preview = await request('retire', { id: first.id }, operator);
+    assert.equal(preview.status, 'retire-available');
+    assert.equal(
+      (await request('retire', { id: first.id, digest: preview.digest }, operator)).status,
+      'retired',
+    );
   });
 
   it('should preserve a completed assessment and dispatch once after an explicit reset and new assignment', async () => {
@@ -1961,5 +2004,474 @@ describe('agent/codex-dispatch', () => {
       String(output.response),
       /How long|Plan ready|Decide retention|clarification/i,
     );
+  });
+  async function workIssue(
+    assessment: Record<string, unknown> = result,
+    guidance: string | { file: string } = 'Follow the plan.',
+    skill: string | undefined = 'company:implement',
+  ) {
+    const configured = structuredClone(manifest);
+    Object.assign(configured.github.notifications['issue-assignment'], {
+      mode: 'work',
+      implementation: { ...(skill ? { skill } : {}), guidance },
+    });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    await runCodexIntake(pluginData, true, {
+      codexHome,
+      now: () => now,
+      connect: async () => fixture.client,
+    });
+    const current = await selectCodexIntake(pluginData, deps);
+    const authority = {
+      workflow: 'issue-assignment' as const,
+      automationId: 'native-intake',
+      sourceThreadId: 'intake-thread',
+      policyDigest: automationHash(current.manifest.github?.notifications),
+      definitionDigest: 'f'.repeat(64),
+    };
+    deps.activation = async () => ({
+      sourceThreadId: authority.sourceThreadId,
+      schedule: {
+        current: authority,
+        saved: {
+          ...authority,
+          version: 1,
+          capabilities: ['assessment', 'implementation', 'publication'],
+        },
+      },
+    });
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    await request('result', { id: prepared.id, result: assessment }, { threadId: native!.id });
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    let received = false;
+    const continuation: CodexContinuationDependencies = {
+      ...deps,
+      continuationNative: async () =>
+        received
+          ? {
+              status: 'verified',
+              turnId: native!.turnId!,
+              ended: ['completed', 'failed', 'interrupted'].includes(native!.turnStatus!),
+            }
+          : { status: 'uncertain' },
+    };
+    const run = (action: string, input: object = {}, child: boolean | string = false) =>
+      runCodexContinuation(
+        pluginData,
+        { action, ...(action === 'next' ? {} : { id: prepared.id }), ...input },
+        {
+          ...continuation,
+          threadId: typeof child === 'string' ? child : child ? native!.id : 'intake-thread',
+        },
+      );
+    return {
+      id: prepared.id,
+      run,
+      continuation,
+      receive() {
+        received = true;
+        native!.turnId = 'implementation-turn';
+        native!.status = 'active';
+        native!.turnStatus = 'inProgress';
+      },
+    };
+  }
+
+  it('should continue actionable work once with the complete assessment and retained selection', async () => {
+    const work = await workIssue();
+    work.continuation.deliver = async () => {
+      throw new Error('preparation must not publish');
+    };
+    const prepared = await work.run('next');
+    assert.equal(prepared.status, 'prepared');
+    assert.equal('request' in prepared && prepared.request?.threadId, native!.id);
+    assert.equal(native!.turnStatus, 'completed');
+    assert.equal((await work.run('next')).status, 'idle');
+    work.receive();
+    const context = await work.run('context', {}, true);
+    assert.equal(context.status, 'verified');
+    assert.deepEqual('assessment' in context && context.assessment, result);
+    assert.equal(
+      'implementation' in context && context.implementation?.skill.name,
+      'company:implement',
+    );
+    const saved = await work.run(
+      'result',
+      {
+        result: {
+          outcome: 'done',
+          summary: 'Implemented and checked.',
+          fullResult: 'Complete implementation and validation evidence.',
+        },
+      },
+      true,
+    );
+    assert.equal(saved.status, 'recorded');
+    const records = (await request('inspect')).records as Array<{
+      continuation: { phase: string; result: unknown };
+      result: unknown;
+    }>;
+    assert.equal(records[0]!.continuation.phase, 'delivery');
+    assert.deepEqual(records[0]!.result, result);
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+  });
+
+  it('should start work with bundled implementation and guidance when no replacement is configured', async () => {
+    const work = await workIssue(result, 'Keep this change bounded.', '');
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    const context = await work.run('context', {}, true);
+    assert.equal(
+      'implementation' in context && context.implementation?.skill.name,
+      'agent-system:agent-system-issue-implementation',
+    );
+    assert.equal('implementation' in context && context.implementation?.defaultSkill, true);
+    assert.equal(
+      'implementation' in context && context.implementation?.guidance?.content,
+      'Keep this change bounded.',
+    );
+  });
+
+  it('should retain a starting continuation when an isolated reader reports interrupted without an end timestamp', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    native!.status = 'notLoaded';
+    native!.turnStatus = 'interrupted';
+    work.continuation.continuationNative = async () => ({
+      status: 'verified',
+      turnId: native!.turnId!,
+      ended: false,
+    });
+    await work.run('reconcile');
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal(
+      (
+        await work.run(
+          'result',
+          { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' } },
+          true,
+        )
+      ).status,
+      'recorded',
+    );
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should require an ended and inactive turn before blocking work', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    native!.turnStatus = 'completed';
+    await work.run('reconcile');
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    native!.status = 'idle';
+    await work.run('reconcile');
+    const blocked = await work.run('context', {}, true);
+    assert.equal(blocked.status, 'blocked');
+    assert.equal('code' in blocked && blocked.code, 'continuation-turn-ended');
+  });
+
+  for (const endedStatus of ['completed', 'failed', 'interrupted'])
+    it(`should queue one operator-approved retry after a ${endedStatus} turn and retain the earlier attempt`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      native!.status = 'idle';
+      native!.turnStatus = endedStatus;
+      await work.run('reconcile');
+      const before = (await request('inspect')).records;
+      const preview = await work.run('retry', {}, 'operator');
+      assert.equal(preview.status, 'retry-available');
+      assert.deepEqual((await request('inspect')).records, before);
+      await assert.rejects(work.run('retry', {}, true), /operator-caller-required/);
+      await assert.rejects(work.run('retry'), /operator-caller-required/);
+      await assert.rejects(work.run('retry', { digest: 'stale' }, 'operator'), /retry-stale/);
+      const digest = 'digest' in preview && preview.digest;
+      native!.status = 'active';
+      await assert.rejects(work.run('retry', { digest }, 'operator'), /retry-chat-active/);
+      native!.status = 'idle';
+      assert.equal((await work.run('retry', { digest }, 'operator')).status, 'retry-ready');
+      await assert.rejects(work.run('retry', { digest }, 'operator'), /retry-unavailable/);
+      const records = (await request('inspect')).records as Array<{
+        result: unknown;
+        continuation: { retries: Array<{ attempt: { turnId: string }; by: string }> };
+      }>;
+      assert.deepEqual(records[0]!.result, result);
+      assert.equal(records[0]!.continuation.retries[0]!.attempt.turnId, 'implementation-turn');
+      assert.equal(records[0]!.continuation.retries[0]!.by, 'operator');
+      const next = await work.run('next');
+      assert.equal(next.status, 'prepared');
+      assert.equal('request' in next && next.request?.threadId, native!.id);
+      work.continuation.continuationNative = async () => ({ status: 'uncertain' });
+      assert.equal((await work.run('next')).status, 'idle');
+      work.receive();
+      native!.turnId = 'retry-turn';
+      work.continuation.continuationNative = async () => ({
+        status: 'verified',
+        turnId: native!.turnId!,
+        ended: false,
+      });
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+    });
+
+  it('should not retry a denied continuation', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-send-failed',
+    });
+    await work.run('reconcile');
+    await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+  });
+
+  it('should permit operator recovery from an explicitly handed-off development chat', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    await work.run('reconcile');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'f'.repeat(64),
+        issueKey: 'e'.repeat(64),
+        threadId: 'operator',
+      });
+      await save();
+    });
+    await assert.rejects(work.run('retry', {}, 'operator'), /operator-caller-required/);
+    await store.exclusive(async (state, save) => {
+      state.records.at(-1)!.handoff = { at: now, by: 'operator', turnId: 'operator-turn' };
+      await save();
+    });
+    assert.equal((await work.run('retry', {}, 'operator')).status, 'retry-available');
+  });
+
+  for (const outcome of ['done', 'blocked'])
+    it(`should not retry a continuation with a recorded ${outcome} result`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      await work.run(
+        'result',
+        { result: { outcome, summary: 'Retained outcome.', fullResult: 'Retained evidence.' } },
+        true,
+      );
+      await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+    });
+
+  it('should retain uncertain native continuation across restart without another prepared request', async () => {
+    const work = await workIssue();
+    assert.equal((await work.run('next')).status, 'prepared');
+    assert.equal((await work.run('reconcile')).status, 'idle');
+    assert.equal((await work.run('next')).status, 'idle');
+    await assert.rejects(work.run('context', {}, true), /send-unverified/);
+  });
+
+  it('should preserve plan-mode results without scheduling implementation', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    await request('result', { id: prepared.id, result }, { threadId: native!.id });
+    const records = (await request('inspect')).records as Array<Record<string, unknown>>;
+    assert.equal(records[0]!.continuation, undefined);
+  });
+
+  it('should stop blocked assessments and changed implementation selections without sending', async () => {
+    const work = await workIssue();
+    work.continuation.native!.assessmentSkill = async () => ({
+      name: 'changed',
+      path: '/changed/SKILL.md',
+      scope: 'user',
+      digest: 'c'.repeat(64),
+    });
+    const stopped = await work.run('next');
+    assert.equal(stopped.status, 'blocked');
+    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should retain an occupied slot until work completes and stop when guidance changes', async () => {
+    await writeFile(join(workspace, 'implementation.md'), 'Original implementation guidance.');
+    const work = await workIssue(result, { file: 'implementation.md' });
+    await next();
+    assert.match(String((await report()).response), /Slots:\*\* 1\/2/);
+    await writeFile(join(workspace, 'implementation.md'), 'Changed implementation guidance.');
+    const stopped = await work.run('next');
+    assert.equal(stopped.status, 'blocked');
+    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
+    now += 300001;
+    await runCodexIntake(pluginData, false, deps);
+    await next();
+    assert.match(String((await report()).response), /Slots:\*\* 0\/2/);
+  });
+
+  it('should stop on native denial and never resend the denied continuation', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-send-failed',
+    });
+    assert.equal((await work.run('reconcile')).status, 'blocked');
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should cancel retained work without changing its assessment or launching another turn', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    assert.equal((await work.run('cancel', {}, true)).status, 'cancelled');
+    assert.equal((await work.run('next')).status, 'idle');
+    const records = (await request('inspect')).records as Array<Record<string, unknown>>;
+    assert.deepEqual(records[0]!.result, result);
+  });
+
+  it('should reject revoked schedule authority and publication before implementation finishes', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await assert.rejects(
+      work.run('delivery', { delivery: { action: 'prepare' } }, true),
+      /implementation-required/,
+    );
+    work.continuation.activation = async () => {
+      throw new Error('workflow-schedule-reconciliation-required');
+    };
+    await assert.rejects(work.run('context', {}, true), /schedule-reconciliation-required/);
+  });
+
+  it('should resume only delivery after a recorded implementation turn ends', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Full evidence.' } },
+      true,
+    );
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    const delivery = await work.run('next');
+    assert.equal(delivery.status, 'prepared');
+    assert.match(
+      String('request' in delivery && delivery.request?.prompt),
+      /only the managed PR delivery/,
+    );
+    work.continuation.continuationNative = async () => ({ status: 'uncertain' });
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  for (const turnStatus of ['failed', 'interrupted'])
+    it(`should not resume delivery after the implementation turn is ${turnStatus}`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      const implementation = { outcome: 'done', summary: 'Done.', fullResult: 'Full evidence.' };
+      await work.run('result', { result: implementation }, true);
+      native!.status = 'idle';
+      native!.turnStatus = turnStatus;
+      assert.equal((await work.run('reconcile')).status, 'idle');
+      assert.equal((await work.run('next')).status, 'idle');
+      const records = (await request('inspect')).records as Array<{
+        continuation: { phase: string; result: unknown; publicationAttempt?: unknown };
+      }>;
+      assert.equal(records[0]!.continuation.phase, 'blocked');
+      assert.deepEqual(records[0]!.continuation.result, implementation);
+      assert.equal(records[0]!.continuation.publicationAttempt, undefined);
+      await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+    });
+
+  it('should retain recorded implementation and stop delivery after native approval denial', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    const implementation = { outcome: 'done', summary: 'Done.', fullResult: 'Full evidence.' };
+    await work.run('result', { result: implementation }, true);
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-approval-denied',
+    });
+    assert.equal((await work.run('reconcile')).status, 'blocked');
+    assert.equal((await work.run('next')).status, 'idle');
+    const records = (await request('inspect')).records as Array<{
+      continuation: { result: unknown; publicationAttempt?: unknown };
+    }>;
+    assert.deepEqual(records[0]!.continuation.result, implementation);
+    assert.equal(records[0]!.continuation.publicationAttempt, undefined);
+    await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+  });
+
+  it('should leave consequential assessment questions in the issue without preparing implementation', async () => {
+    const work = await workIssue({
+      version: 1,
+      outcome: 'clarification-needed',
+      summary: 'Choose the required behavior.',
+      assessment: 'The two requested behaviors conflict.',
+      questions: ['Which behavior is required?'],
+      evidence: [],
+      progress: { completed: [], remaining: ['Resolve requirements.'] },
+    });
+    assert.equal((await work.run('next')).status, 'idle');
+    const records = (await request('inspect')).records as Array<{
+      continuation: { phase: string; attempt?: unknown };
+    }>;
+    assert.equal(records[0]!.continuation.phase, 'blocked');
+    assert.equal(records[0]!.continuation.attempt, undefined);
+  });
+
+  it('should stop when the selected implementation skill is unavailable instead of substituting', async () => {
+    const work = await workIssue();
+    work.continuation.native!.assessmentSkill = async () => {
+      throw new Error('dispatch-assessment-skill-unavailable');
+    };
+    const stopped = await work.run('next');
+    assert.equal(stopped.status, 'blocked');
+    assert.equal('code' in stopped && stopped.code, 'dispatch-assessment-skill-unavailable');
+  });
+
+  it('should pass standing work publication authority to the existing delivery owner', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked work.' } },
+      true,
+    );
+    let calls = 0;
+    work.continuation.deliver = async (_data, value, deliveryDeps) => {
+      calls++;
+      assert.deepEqual(value, { id: work.id, action: 'prepare' });
+      assert.equal(deliveryDeps?.threadId, native!.id);
+      assert.deepEqual(deliveryDeps?.schedule?.saved.capabilities, [
+        'assessment',
+        'implementation',
+        'publication',
+      ]);
+      await deliveryDeps?.authorizeSchedule?.();
+      throw new Error('fixture-delivery-boundary');
+    };
+    await assert.rejects(
+      work.run('delivery', { delivery: { action: 'prepare' } }, true),
+      /fixture-delivery-boundary/,
+    );
+    assert.equal(calls, 1);
+    await assert.rejects(
+      work.run('delivery', { delivery: { id: 'foreign', action: 'prepare' } }, true),
+      /delivery-invalid/,
+    );
+    assert.equal(calls, 1);
   });
 });

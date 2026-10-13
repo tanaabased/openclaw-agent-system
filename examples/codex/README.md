@@ -40,6 +40,10 @@ using disposable issues and the installed plugin.
   checks neither create duplicates nor repeat earlier start notices. Intake reports
   starts, pending work, slots, and intake obstacles; assessment progress stays in
   the issue.
+- **Creation handoff:** verify the scheduled orchestration passes the complete
+  prepared request directly to `create_thread`, including all runtime transport
+  instructions. Command polling must finish before creation; preparation failure
+  or uncertain native submission must never cause another creation call.
 - **Unsubmitted creation:** let an intake turn end after preparation without
   calling `create_thread`. A later scheduled turn must verify complete native
   history, retain the abandoned attempt, and prepare one fresh request. A recorded
@@ -66,6 +70,21 @@ using disposable issues and the installed plugin.
   the same issue destination. Exercise missing project registration and native
   host-access approval; follow the supported recovery in [Codex](../../CODEX.md#issue-assessment)
   without clearing tracking state or bypassing a denial.
+- **Work mode:** activate the complete workflow through Install, assign one bounded
+  disposable issue, and verify assessment, one native implementation continuation,
+  and one linked PR in the original chat without stage approvals. Capture native
+  send receipts, restart reconciliation, provider linkage, attachment, and visible
+  presentation separately; a forged or missing receipt must not start work.
+  During the handoff, inspect through a separate native reader: an interrupted
+  status without a completion timestamp must not end the running turn. After an
+  actual ended-turn blocker, verify a digest-bound operator retry retains the
+  same plan and chat and queues one handoff on the next occurrence; native denials
+  and substantive implementation results must remain ineligible for that retry.
+  After recording implementation, cancel or fail its turn before delivery. The
+  next occurrence must retain the result and stop without preparing publication;
+  only a successfully completed turn may receive the delivery-only continuation.
+  A native command, patch, or tool approval denial must also stop continuation,
+  even when the surrounding turn completes normally after recording implementation.
 - **Continuation:** explicitly request implementation in the issue and verify its
   handoff preserves the assessment and worktree. Later intake must neither inspect
   that implementation nor prevent another eligible issue from starting.
@@ -176,6 +195,21 @@ printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-hando
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$root/notification-workspace/checkouts"
 test ! -d "$root/notification-workspace/.agent-system/repositories"
+
+# should return an actionable diagnostic for an unsupported stdin flag
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(node "$runtime" dispatch --plugin-data "$root/notification-data" --input - 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and (.message | contains("--plugin-data")) and (.message | contains("stdin")) and (.message | contains("--input"))'
+
+# should reject packaged continuation without newly reconciled work authority
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(printf '%s\n' '{"action":"next"}' | CODEX_THREAD_ID=fixture-intake node "$runtime" continuation --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
+test ! -d "$CODEX_HOME/automations"
 
 # should expose packaged delivery while rejecting requests without a valid managed receipt
 root="$TMPDIR/agent-system-codex-example"
@@ -386,6 +420,20 @@ root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
+test ! -d "$CODEX_HOME/rules"
+
+# should bind work preparation to the installed runtime in the native schedule request
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex/notification-policy-agent.yaml" > "$root/notification-workspace/agent.yaml"
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
+jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
+node_executable=$(node -p 'process.execPath')
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+  | jq -e --arg node "$node_executable" --arg runtime "$runtime" --arg data "$plugin_data" '.actions[0].expected.prompt | contains([$node,$runtime,"continuation","--plugin-data",$data] | tojson)'
+test ! -d "$CODEX_HOME/automations"
 test ! -d "$CODEX_HOME/rules"
 
 # should refresh local settings through the bound codex runtime without changing the shared base

@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 
+import { codexContinuationStateSchema } from './codex-continuation-state.ts';
 import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
 import DispatchStore, {
   dispatchRecordProperties,
@@ -94,6 +95,7 @@ export const dispatchRecordSchema = Type.Object(
     clientThreadId: Type.Optional(text),
     receiptThreadId: Type.Optional(text),
     delivery: Type.Optional(codexDeliveryStateSchema),
+    continuation: Type.Optional(codexContinuationStateSchema),
     renameRequested: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },

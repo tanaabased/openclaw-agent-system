@@ -82,6 +82,12 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       version: Type.Literal(1),
       scope: hash,
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
+      continuationRun: Type.Optional(
+        Type.Object(
+          { id: text, actions: Type.Integer({ minimum: 0, maximum: 12 }) },
+          { additionalProperties: false },
+        ),
+      ),
       run: Type.Optional(
         Type.Object(
           {
