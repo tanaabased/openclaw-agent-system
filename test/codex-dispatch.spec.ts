@@ -177,6 +177,9 @@ describe('agent/codex-dispatch', () => {
         return '';
       },
       native: {
+        async unsubmittedCreation() {
+          return undefined;
+        },
         async occurrence() {
           return {
             id: 'run-' + now,
@@ -1311,6 +1314,85 @@ describe('agent/codex-dispatch', () => {
     const unknown = await request('reconcile', { id: prepared.id });
     assert.equal(unknown.code, 'dispatch-creation-unresolved');
     assert.equal(unknown.changed, true);
+  });
+
+  it('should rearm an unsubmitted creation only on a later verified occurrence', async () => {
+    const preparedAt = now;
+    const prepared = await prepare();
+    await request('reconcile', { id: prepared.id });
+    assert.equal((await next()).changed, false);
+    now += 300001;
+    deps.native!.unsubmittedCreation = async (threadId, pending, turnId) => {
+      assert.equal(threadId, 'intake-thread');
+      assert.deepEqual(pending, { createdAt: preparedAt, turnId: 'run-' + preparedAt });
+      assert.equal(turnId, 'run-' + now);
+      return { turnId: 'run-' + preparedAt };
+    };
+    const retry = await prepare();
+    assert.equal(retry.id, prepared.id);
+    const original = prepared.request as { prompt: string; model: string; thinking: string };
+    const replacement = retry.request as typeof original;
+    assert.notEqual(replacement.prompt, original.prompt);
+    assert.equal(replacement.model, original.model);
+    assert.equal(replacement.thinking, original.thinking);
+    const record = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    assert.deepEqual(record.unsubmittedCreations, [
+      {
+        request: prepared.request,
+        createdAt: preparedAt,
+        recoveredAt: now,
+        turnId: 'run-' + preparedAt,
+      },
+    ]);
+    assert.equal(record.result, undefined);
+    assert.equal(
+      (
+        await request('prepare', {
+          id: prepared.id,
+          title: 'repair contained behavior',
+          assessment: { complexity: 'medium', reason: 'Same request.' },
+        })
+      ).status,
+      'reconcile-required',
+    );
+    created();
+    assert.equal((await request('reconcile', { id: retry.id })).status, 'assessing');
+  });
+
+  it('should preserve an uncertain request when absence cannot be proved', async () => {
+    const prepared = await prepare();
+    await request('reconcile', { id: prepared.id });
+    now += 300001;
+    assert.equal((await next()).code, 'dispatch-creation-unresolved');
+    const record = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    assert.deepEqual(record.request, prepared.request);
+    assert.equal(record.unsubmittedCreations, undefined);
+  });
+
+  it('should never rearm pending native worktree receipts', async () => {
+    const prepared = await prepare();
+    await request('reconcile', { id: prepared.id, receipt: { clientThreadId: 'pending' } });
+    deps.native!.unsubmittedCreation = async () => {
+      assert.fail('a native receipt must preclude automatic rearming');
+    };
+    now += 300001;
+    assert.equal((await next()).code, 'dispatch-creation-unresolved');
+  });
+
+  it('should bound automatic recovery of repeatedly unsubmitted creations', async () => {
+    let prepared = await prepare();
+    deps.native!.unsubmittedCreation = async () => ({ turnId: 'completed-turn' });
+    for (let count = 0; count < 8; count++) {
+      await request('reconcile', { id: prepared.id });
+      now += 300001;
+      prepared = await prepare();
+    }
+    await request('reconcile', { id: prepared.id });
+    now += 300001;
+    deps.native!.unsubmittedCreation = async () => {
+      assert.fail('the recovery limit must stop further automatic attempts');
+    };
+    assert.equal((await next()).code, 'dispatch-creation-unresolved');
   });
 
   for (const key of ['threadId', 'clientThreadId'] as const) {

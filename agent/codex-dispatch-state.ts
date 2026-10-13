@@ -82,6 +82,21 @@ export const dispatchRecordSchema = Type.Object(
     routing: Type.Optional(Type.String({ maxLength: 32000 })),
     routingNote: Type.Optional(text),
     request: Type.Optional(creationSchema),
+    preparationTurnId: Type.Optional(text),
+    unsubmittedCreations: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            request: creationSchema,
+            createdAt: Type.Integer({ minimum: 0 }),
+            recoveredAt: Type.Integer({ minimum: 0 }),
+            turnId: text,
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: 8 },
+      ),
+    ),
     deniedCreations: Type.Optional(
       Type.Array(
         Type.Object(

@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
 import dispatchHistory from './codex-dispatch-history.ts';
+import unsubmittedCreation from './codex-dispatch-unsubmitted.ts';
 
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
@@ -112,6 +113,11 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     };
   }
   return {
+    unsubmittedCreation: (
+      threadId: string,
+      prepared: { createdAt: number; turnId?: string },
+      currentTurnId: string,
+    ) => unsubmittedCreation(request, threadId, prepared, currentTurnId),
     async occurrence(threadId: string) {
       const result = await request('thread/turns/list', {
         threadId,

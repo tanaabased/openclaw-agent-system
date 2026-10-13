@@ -362,7 +362,9 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
   );
   return [
     card,
-    'Creation attempt: ' + ((record.deniedCreations?.length ?? 0) + 1) + '.',
+    'Creation attempt: ' +
+      ((record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1) +
+      '.',
     'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by --plugin-data and dispatchRuntime.pluginData. Send ' +
       JSON.stringify({ action: 'context', id: record.id }) +
       ' as JSON on stdin using a quoted heredoc or native stdin support. This runtime writes private plugin state. If the filesystem sandbox blocks that access with EPERM or EACCES, request native host approval for this exact fixed command and retry the same request; do not change profile permissions or bypass an approval denial. A busy response is transient: pause briefly and retry the same request up to three times. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Stop on an actual verification failure, approval denial, or persistent busy response. Use these same transport and approval rules for result submission.',
@@ -582,6 +584,43 @@ export async function runCodexDispatch(
             await save();
             if (result.changed || result.status !== 'assessing') return result;
           } catch (error) {
+            if (
+              code(error) === 'dispatch-creation-unresolved' &&
+              !pending.threadId &&
+              !pending.receiptThreadId &&
+              !pending.clientThreadId &&
+              !pending.worktree &&
+              (pending.unsubmittedCreations?.length ?? 0) < 8
+            ) {
+              try {
+                const proof = await withNative(current, deps, (native) =>
+                  native.unsubmittedCreation(
+                    pending.sourceThreadId,
+                    { createdAt: pending.createdAt, turnId: pending.preparationTurnId },
+                    state.run!.id,
+                  ),
+                );
+                if (proof) {
+                  await fresh();
+                  (pending.unsubmittedCreations ??= []).push({
+                    request: pending.request!,
+                    createdAt: pending.createdAt,
+                    recoveredAt: now,
+                    turnId: proof.turnId,
+                  });
+                  delete pending.request;
+                  delete pending.result;
+                  delete pending.notice;
+                  delete pending.retryAfter;
+                  delete pending.preparationTurnId;
+                  pending.phase = 'routing';
+                  await save();
+                  continue;
+                }
+              } catch (recoveryError) {
+                return fail(pending, recoveryError);
+              }
+            }
             return fail(pending, error);
           }
         }
@@ -850,6 +889,7 @@ export async function runCodexDispatch(
             decision.reason +
             ' Requested selection; effective settings await native verification.';
           record.createdAt = now;
+          record.preparationTurnId = state.run!.id;
           record.request = {
             title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
             prompt: launchPrompt(record, intake),
@@ -873,7 +913,7 @@ export async function runCodexDispatch(
             id: record.id,
             request: record.request,
             instruction:
-              'This fresh prepared response requires one native create_thread call with this request unchanged. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
+              'Next, call native create_thread once with this request unchanged. Do not call prepare again to retrieve or reauthorize it. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
             ...(record.deniedCreations?.length
               ? {
                   recovery: {

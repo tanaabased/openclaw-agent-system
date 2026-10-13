@@ -40,6 +40,12 @@ using disposable issues and the installed plugin.
   checks neither create duplicates nor repeat earlier start notices. Intake reports
   starts, pending work, slots, and intake obstacles; assessment progress stays in
   the issue.
+- **Unsubmitted creation:** let an intake turn end after preparation without
+  calling `create_thread`. A later scheduled turn must verify complete native
+  history, retain the abandoned attempt, and prepare one fresh request. A recorded
+  call (including rejection), pending receipt, or incomplete history must prevent
+  automatic rearming; repeated preparation in the same turn must not authorize
+  another call.
 - **Assessment:** exercise a clear request, missing requirements, conflicting
   evidence, and a setup obstacle. Check repository grounding, useful questions,
   a readable opening from the isolated editor, and a concise full plan with files
