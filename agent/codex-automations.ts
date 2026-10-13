@@ -221,7 +221,11 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
   let policyBlocker: string | undefined;
   if (!cleanupOnly) {
     try {
-      jobs = codexIntakeJobs(loaded.manifest);
+      jobs = codexIntakeJobs(loaded.manifest, {
+        nodeExecutable: process.execPath,
+        entrypoint: resolve(process.argv[1]!),
+        pluginData: root,
+      });
     } catch (error) {
       cleanupOnly = true;
       policyBlocker = error instanceof IntakeError ? error.code : 'intake-policy-invalid';

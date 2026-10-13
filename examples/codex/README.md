@@ -408,6 +408,20 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 test ! -d "$CODEX_HOME/rules"
 
+# should bind work preparation to the installed runtime in the native schedule request
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex/notification-policy-agent.yaml" > "$root/notification-workspace/agent.yaml"
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
+jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
+node_executable=$(node -p 'process.execPath')
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+  | jq -e --arg node "$node_executable" --arg runtime "$runtime" --arg data "$plugin_data" '.actions[0].expected.prompt | contains([$node,$runtime,"continuation","--plugin-data",$data] | tojson)'
+test ! -d "$CODEX_HOME/automations"
+test ! -d "$CODEX_HOME/rules"
+
 # should refresh local settings through the bound codex runtime without changing the shared base
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

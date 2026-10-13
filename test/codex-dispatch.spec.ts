@@ -2039,9 +2039,13 @@ describe('agent/codex-dispatch', () => {
 
   it('should continue actionable work once with the complete assessment and retained selection', async () => {
     const work = await workIssue();
+    work.continuation.deliver = async () => {
+      throw new Error('preparation must not publish');
+    };
     const prepared = await work.run('next');
     assert.equal(prepared.status, 'prepared');
     assert.equal('request' in prepared && prepared.request?.threadId, native!.id);
+    assert.equal(native!.turnStatus, 'completed');
     assert.equal((await work.run('next')).status, 'idle');
     work.receive();
     const context = await work.run('context', {}, true);

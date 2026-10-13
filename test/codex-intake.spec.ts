@@ -664,6 +664,47 @@ describe('agent/codex-intake', () => {
     );
   });
 
+  it('should include the installed command only for work preparation', () => {
+    const { policy } = intakeFixture();
+    const manifest = {
+      schemaVersion: 1 as const,
+      agent: { id: 'receiver' },
+      models,
+      github: { host: 'github.com' as const, username: 'receiver', notifications: policy },
+    };
+    const runtime = {
+      nodeExecutable: '/host/node',
+      entrypoint: '/installed plugin/dist/codex/codex-runtime.js',
+      pluginData: '/private/plugin data',
+    };
+    const prompt = () => {
+      const job = codexIntakeJobs(manifest, runtime)[0]!;
+      if (job.payload.kind !== 'prompt') throw new Error('expected prompt');
+      return job.payload.prompt;
+    };
+    assert.ok(!prompt().includes(runtime.entrypoint));
+    policy.issueAssignment!.mode = 'work';
+    assert.throws(() => codexIntakeJobs(manifest), {
+      code: 'continuation-runtime-identity-required',
+    });
+    const work = prompt();
+    assert.ok(
+      work.includes(
+        JSON.stringify([
+          runtime.nodeExecutable,
+          runtime.entrypoint,
+          'continuation',
+          '--plugin-data',
+          runtime.pluginData,
+        ]),
+      ),
+    );
+    assert.match(work, /next and action:reconcile.*private tracking state/u);
+    assert.match(work, /do not edit repository files.*publish a pull request/u);
+    assert.match(work, /match continuationRuntime.*newest trusted context/u);
+    assert.match(work, /stop on denial/u);
+  });
+
   it('should update the quiet response prompt on the same native schedule and chat', async () => {
     const { policy } = intakeFixture();
     const jobs = codexIntakeJobs({

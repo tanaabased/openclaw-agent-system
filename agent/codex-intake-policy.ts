@@ -14,7 +14,10 @@ export function codexIntakePolicy(manifest: AgentManifest, retainedWork = false)
 }
 
 /** desired policy adds one reserved job; the native planner still owns every mutation. */
-export function codexIntakeJobs(manifest: AgentManifest): ResolvedAutomation[] {
+export function codexIntakeJobs(
+  manifest: AgentManifest,
+  runtime?: { nodeExecutable: string; entrypoint: string; pluginData: string },
+): ResolvedAutomation[] {
   const jobs = manifest.automations ?? [];
   if (jobs.some((job) => job.id === intakeAutomationId))
     throw new IntakeError('intake-automation-id-reserved');
@@ -23,6 +26,8 @@ export function codexIntakeJobs(manifest: AgentManifest): ResolvedAutomation[] {
   if (!manifest.models?.low) throw new IntakeError('intake-low-profile-required');
   const model = projectRoutingProfile(manifest.models.low, 'codex');
   if (model.status !== 'mapped') throw new IntakeError(model.code);
+  if (selected.policy.issueAssignment?.mode === 'work' && !runtime)
+    throw new IntakeError('continuation-runtime-identity-required');
   return [
     ...jobs,
     {
@@ -43,6 +48,16 @@ export function codexIntakeJobs(manifest: AgentManifest): ResolvedAutomation[] {
           ...(selected.policy.issueAssignment?.mode === 'work'
             ? [
                 'Work-mode authorization: the operator activates the complete assessment, implementation, and pull-request delivery workflow. No per-stage human approval is required. Continue actionable assessments in their original issue chats using continuationRuntime, preserving native approval review and stopping on actual denial, cancellation, lost authority, or substantive blockers.',
+                'Installed continuation command (argv data, recorded by the runtime during native schedule activation): ' +
+                  JSON.stringify([
+                    runtime!.nodeExecutable,
+                    runtime!.entrypoint,
+                    'continuation',
+                    '--plugin-data',
+                    runtime!.pluginData,
+                  ]) +
+                  '. Require this command to match continuationRuntime from the newest trusted context. If it differs, stop for Install reconciliation; do not substitute paths. Send the request JSON on stdin, without --input.',
+                "Continuation preparation has the same boundary as assessment preparation: action:next and action:reconcile read the activated schedule, GitHub assignment, selected skill, worktree, and native chat receipts, and update private tracking state. They do not edit repository files, start model work, push commits, or publish a pull request. Only a separate native send_message_to_thread starts implementation from the returned prepared request. Publication occurs later through the issue chat's separately verified delivery action. Native host-access approval for next or reconcile covers this preparation and tracking operation; it does not approve every action of the continuation runtime. On codex-host-access-required, retry the exact command and JSON once through native approval with this bounded purpose and installed identity, then stop on denial.",
                 'After the deterministic scan, even when unchanged, call continuationRuntime action:next using its trusted argvPrefix and pluginData with JSON on stdin. Only status prepared authorizes one native send_message_to_thread call with the exact returned request. Pass the request object directly without reconstructing it, then call continuationRuntime action:reconcile with the returned id. Never repeat a prepared request after failure or uncertain submission; reconcile its native evidence instead. Stop on native rejection and report its actual reason. Process at most twelve continuation actions per occurrence, then continue ordinary dispatch. Do not wait for issue work or copy its plan, blockers, implementation, or delivery into the intake report. Work progress belongs in the original issue chat.',
               ]
             : []),
