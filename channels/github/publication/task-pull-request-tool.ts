@@ -5,6 +5,7 @@ import type { OpenClawPluginToolContext } from 'openclaw/plugin-sdk/plugin-entry
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { legacyGitHubNotifications } from '../config-schema.ts';
 import defineAgentSystemSemanticTool from '../../../api/define-semantic-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolFailureDiagnostic } from '../../../api/error.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
@@ -117,7 +118,7 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
     commands: [],
     configuration: {
       read(manifest: AgentManifest) {
-        return manifest.github?.notifications;
+        return legacyGitHubNotifications(manifest.github?.notifications);
       },
       resolve(configuration) {
         return configuration;

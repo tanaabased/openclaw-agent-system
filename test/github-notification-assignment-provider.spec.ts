@@ -177,6 +177,7 @@ describe('channels/github/intake/assignment-provider', () => {
   it('should require current issue authority independently from feedback at every provider boundary', async () => {
     const selected = structuredClone(manifest);
     const settings = selected.github!.notifications!;
+    assert.ok(settings.schemaVersion !== 2);
     delete settings.approvedActors;
     settings.approvedFeedbackAuthors = [notificationActor];
     const service = (assigned = true) =>

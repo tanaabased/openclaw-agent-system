@@ -7,10 +7,14 @@ automations:
     runtimes: [codex]
     schedule: every 1 hour
     prompt: Review failed builds.
+    overrides:
+      codex: { model: gpt-6-luna, effort: medium }
     thread: { id: project-activity, name: Project activity }
   - id: review-prs
     enabled: false
     runtimes: [codex]
     schedule: every 2 hours
     prompt: Review open pull requests.
+    overrides:
+      codex: { model: gpt-6-luna, effort: medium }
     thread: { id: project-activity, name: Project activity }

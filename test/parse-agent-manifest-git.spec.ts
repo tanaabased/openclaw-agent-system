@@ -25,6 +25,7 @@ git:
     root: .agent-system/worktrees
     repositories:
       root: .agent-system/repositories
+      working-directory: ~/tanaab
       local:
         tanaabased/openclaw-agent-system: ~/tanaab/openclaw-agent-system
         canon: ../canon
@@ -40,6 +41,7 @@ git:
         root: '.agent-system/worktrees',
         repositories: {
           root: '.agent-system/repositories',
+          workingDirectory: '~/tanaab',
           local: {
             'tanaabased/openclaw-agent-system': '~/tanaab/openclaw-agent-system',
             canon: '../canon',

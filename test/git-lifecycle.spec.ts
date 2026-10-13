@@ -105,7 +105,12 @@ describe('tools/git/lifecycle', () => {
         async reconcile() {
           calls.push('reconcile');
           return {
-            actions: ['create-repository-root' as const, 'create-worktree-root' as const],
+            actions: [
+              'create-repository-root' as const,
+              'create-worktree-root' as const,
+              'create-working-directory' as const,
+              'update-gitignore' as const,
+            ],
             gitignored: true,
             layout,
             localRepositories: { canon: 'ready' as const },
@@ -158,6 +163,16 @@ describe('tools/git/lifecycle', () => {
           code: 'git-worktrees-create-worktree-root',
           message: 'Git managed worktree root',
           status: 'created',
+        },
+        {
+          code: 'git-worktrees-create-working-directory',
+          message: 'Git repository working directory',
+          status: 'created',
+        },
+        {
+          code: 'git-worktrees-update-gitignore',
+          message: 'workspace .gitignore',
+          status: 'updated',
         },
       ],
     });

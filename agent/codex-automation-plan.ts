@@ -188,7 +188,7 @@ export default async function planCodexAutomations(options: {
       }
       if (!record && actual) continue;
       const common = {
-        name: `${options.agentId}: ${job.id}`,
+        name: job.displayName ?? `${options.agentId}: ${job.id}`,
         prompt: `${job.payload.prompt}\n\n${codexAutomationMarker(scope, job.id)}`,
         rrule,
         status: job.enabled ? ('ACTIVE' as const) : ('PAUSED' as const),
@@ -196,7 +196,10 @@ export default async function planCodexAutomations(options: {
       };
       let expected: NativeAutomation;
       if (target !== 'independent') {
-        if (override?.model !== undefined || override?.effort !== undefined) {
+        if (
+          !selection?.managed &&
+          (override?.model !== undefined || override?.effort !== undefined)
+        ) {
           throw new CodexAutomationError('automation-thread-overrides-unsupported');
         }
         if (!selection?.managed) await verifyThread(inputs.threads ?? [], target.thread, workspace);

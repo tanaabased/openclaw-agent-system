@@ -1,10 +1,11 @@
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
-import type {
-  GitHubAssignmentEvent,
-  GitHubCanonicalWorkItem,
-  GitHubIdentity,
-  GitHubRepositoryIdentity,
-  GitHubRepositoryPermission,
+import {
+  githubIdentityMatches as isAccount,
+  type GitHubAssignmentEvent,
+  type GitHubCanonicalWorkItem,
+  type GitHubIdentity,
+  type GitHubRepositoryIdentity,
+  type GitHubRepositoryPermission,
 } from '../provider/work-item.ts';
 
 export type GitHubAssignmentAdmissionCode =
@@ -39,13 +40,6 @@ export interface GitHubAssignmentAdmissionInput {
 
 function rejects(code: GitHubAssignmentAdmissionCode): GitHubAssignmentAdmission {
   return { code, disposition: 'rejected' };
-}
-
-function isAccount(identity: GitHubIdentity, account: GitHubIdentity): boolean {
-  return (
-    identity.nodeId === account.nodeId &&
-    identity.login.toLowerCase() === account.login.toLowerCase()
-  );
 }
 
 /** Classify one canonical assignment using immutable identities and control facts only. */

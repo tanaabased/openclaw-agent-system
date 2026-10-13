@@ -26,6 +26,8 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
   });
   let sequence = 0;
   let buffer = '';
+  let diagnosticTail = '';
+  let hostAccessDenied = false;
   const pending = new Map<
     number,
     {
@@ -37,14 +39,26 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
   const fail = () => {
     for (const item of pending.values()) {
       clearTimeout(item.timer);
-      item.reject(new AutomationError('automation-thread-transport-unavailable'));
+      item.reject(
+        new AutomationError(
+          hostAccessDenied
+            ? 'automation-thread-host-access-required'
+            : 'automation-thread-transport-unavailable',
+        ),
+      );
     }
     pending.clear();
   };
-  child.once('error', fail);
+  child.once('error', (error: NodeJS.ErrnoException) => {
+    hostAccessDenied ||= error.code === 'EACCES' || error.code === 'EPERM';
+    fail();
+  });
   child.once('exit', fail);
   child.stdin.on('error', fail);
-  child.stderr.resume();
+  child.stderr.on('data', (chunk: Buffer) => {
+    diagnosticTail = (diagnosticTail + chunk.toString()).slice(-2048);
+    hostAccessDenied ||= /permission denied|operation not permitted/iu.test(diagnosticTail);
+  });
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk: string) => {
     buffer += chunk;
@@ -128,8 +142,22 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
 export function codexThreadAdapter(
   request: CodexThreadRequest,
   workspace: string,
-  verifyDurable?: (id: string) => Promise<void>,
+  verifyDurable?: (id: string) => Promise<Record<string, unknown>>,
 ): AutomationThreadAdapter {
+  const permissions = {
+    approvalPolicy: 'on-request',
+    approvalsReviewer: 'auto_review',
+    sandbox: 'workspace-write',
+  };
+  function verifyPermissions(result: Record<string, unknown>) {
+    if (
+      result.approvalPolicy !== permissions.approvalPolicy ||
+      !['auto_review', 'guardian_subagent'].includes(String(result.approvalsReviewer)) ||
+      !nativeObject(result.sandbox) ||
+      result.sandbox.type !== 'workspaceWrite'
+    )
+      throw new AutomationError('automation-thread-permissions-diverged');
+  }
   async function lookup(id: string) {
     let result: Record<string, unknown>;
     try {
@@ -168,11 +196,16 @@ export function codexThreadAdapter(
       !['idle', 'active', 'running', 'completed', 'notLoaded'].includes(String(thread.status.type))
     )
       throw new AutomationError('automation-thread-unavailable');
-    return { id, ...(typeof thread.name === 'string' ? { name: thread.name } : {}) };
+    return {
+      id,
+      ...(typeof thread.name === 'string' ? { name: thread.name } : {}),
+      ...(typeof thread.model === 'string' ? { model: thread.model } : {}),
+      ...(typeof thread.reasoningEffort === 'string' ? { effort: thread.reasoningEffort } : {}),
+    };
   }
   return {
     lookup,
-    async create(record, saveId, fresh) {
+    async create(record, saveId, fresh, settings) {
       if (!record.nativeId && !fresh)
         throw new AutomationError('automation-thread-create-ambiguous');
       let id = record.nativeId;
@@ -180,15 +213,19 @@ export function codexThreadAdapter(
         const result = await request('thread/start', {
           cwd: workspace,
           ephemeral: false,
+          ...permissions,
+          ...(settings?.model ? { model: settings.model } : {}),
+          ...(settings?.effort ? { config: { model_reasoning_effort: settings.effort } } : {}),
           threadSource: `agent-system:${record.key}`,
         });
         if (!nativeObject(result.thread) || typeof result.thread.id !== 'string')
           throw new AutomationError('automation-thread-response-invalid');
         id = result.thread.id;
         await saveId(id);
+        verifyPermissions(result);
       } else {
         // known identity can resume; loss before durable materialization remains a recovery barrier.
-        await request('thread/resume', { threadId: id });
+        verifyPermissions(await request('thread/resume', { threadId: id, ...permissions }));
       }
       await request('thread/inject_items', {
         threadId: id,
@@ -206,8 +243,9 @@ export function codexThreadAdapter(
         ],
       });
       await request('thread/unsubscribe', { threadId: id });
-      if (verifyDurable) await verifyDurable(id);
-      else await request('thread/resume', { threadId: id });
+      verifyPermissions(
+        verifyDurable ? await verifyDurable(id) : await request('thread/resume', { threadId: id }),
+      );
       return id;
     },
     async rename(id, name) {

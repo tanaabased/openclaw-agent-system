@@ -1,5 +1,6 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import { legacyGitHubNotifications } from './config-schema.ts';
 import type { AgentSystemLifecycleContext } from '../../core/lifecycle-registry.ts';
 import type { NotificationRoutingServiceDependencies } from './routing/service.ts';
 import { initializeModelRouting } from './conversation/model-routing.ts';
@@ -37,7 +38,12 @@ function allowsModel(value: unknown, model: string): boolean {
 }
 
 function desiredModel(context: AgentSystemLifecycleContext): string | undefined {
-  if (!context.manifest.github?.notifications?.assignmentTypes.includes('issue')) return undefined;
+  if (
+    !legacyGitHubNotifications(context.manifest.github?.notifications)?.assignmentTypes.includes(
+      'issue',
+    )
+  )
+    return undefined;
   return initializeModelRouting(context.manifest.models)?.profiles.default.model;
 }
 

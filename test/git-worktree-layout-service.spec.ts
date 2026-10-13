@@ -15,6 +15,23 @@ const runCli: AgentSystemCliRunner = async () => ({
 });
 
 describe('tools/git/worktree-layout-service', () => {
+  it('should inspect a missing working directory without creating it and preserve existing permissions', async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), 'agent-system-worktree-layout-'));
+    const configuration = { repositories: { workingDirectory: 'checkouts' } };
+    const service = new GitWorktreeLayoutService({ currentUid: process.getuid?.(), runCli });
+    assert.equal((await service.inspect(workspaceDir, configuration)).workingDirectory, 'missing');
+    await assert.rejects(lstat(join(workspaceDir, 'checkouts')), { code: 'ENOENT' });
+    const first = await service.reconcile(workspaceDir, configuration);
+    assert.ok(first.actions.includes('create-working-directory'));
+    assert.equal(first.workingDirectory, 'ready');
+    await chmod(join(workspaceDir, 'checkouts'), 0o755);
+    assert.deepEqual((await service.reconcile(workspaceDir, configuration)).actions, []);
+    assert.equal((await lstat(join(workspaceDir, 'checkouts'))).mode & 0o777, 0o755);
+    await chmod(join(workspaceDir, 'checkouts'), 0o777);
+    assert.equal((await service.inspect(workspaceDir, configuration)).workingDirectory, 'unsafe');
+    await assert.rejects(service.reconcile(workspaceDir, configuration), /unsafe/u);
+    assert.equal((await lstat(join(workspaceDir, 'checkouts'))).mode & 0o777, 0o777);
+  });
   it('should reconcile ignored owner-only managed roots idempotently', async () => {
     const workspaceDir = await mkdtemp(join(tmpdir(), 'agent-system-worktree-layout-'));
     const service = new GitWorktreeLayoutService({ currentUid: process.getuid?.(), runCli });

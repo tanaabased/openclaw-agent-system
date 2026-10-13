@@ -1,5 +1,6 @@
 import { delimiter } from 'node:path';
 
+import { inspectCodexIntake } from './codex-intake.ts';
 import { inspectCodexAutomations } from './codex-automations.ts';
 import type { CodexAutomationInputs } from './codex-automation-plan.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -10,6 +11,7 @@ import {
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
 import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
+import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
 
 interface CodexSetupSnapshot {
   agentId: string;
@@ -155,12 +157,22 @@ export async function inspectCodexSetup(
   dependencies: CodexSetupDependencies = {},
 ) {
   const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const notificationBlocker = githubNotificationRuntimeBlocker(
+    context.manifest.github?.notifications,
+    'codex',
+  );
   return {
     status: 'inspected' as const,
     agentId: selected.agentId,
     workspaceDir: selected.workspaceDir,
     manifestDigest: selected.manifestDigest,
-    findings: await lifecycle.inspect(context),
+    intake: await inspectCodexIntake(pluginData, dependencies),
+    findings: [
+      ...(await lifecycle.inspect(context)),
+      ...(notificationBlocker
+        ? [{ component: 'github-notifications', ...notificationBlocker }]
+        : []),
+    ],
     automations: await inspectCodexAutomations(
       pluginData,
       dependencies.automationInputs,
@@ -176,6 +188,13 @@ export async function installCodexSetup(
   dependencies: CodexSetupDependencies = {},
 ) {
   const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const notificationBlocker = githubNotificationRuntimeBlocker(
+    context.manifest.github?.notifications,
+    'codex',
+  );
+  if (notificationBlocker) {
+    throw new CodexSetupError(notificationBlocker.code, notificationBlocker.message);
+  }
   const result = await lifecycle.reconcile(context);
   const automations = await inspectCodexAutomations(
     pluginData,

@@ -1,0 +1,25 @@
+schema-version: 1
+agent:
+  id: codex-disabled-notifications
+github:
+  username: example-agent
+  notifications:
+    schema-version: 2
+    allowed-repository-owners:
+      - login: example-owner
+        node-id: O_example
+    issue-assignment:
+      enabled: false
+      allowed:
+        - login: example-operator
+          node-id: U_operator
+    review-request:
+      enabled: false
+      allowed:
+        - login: example-operator
+          node-id: U_operator
+    feedback:
+      enabled: false
+      allowed:
+        - login: example-operator
+          node-id: U_operator

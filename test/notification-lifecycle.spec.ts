@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { legacyGitHubNotifications } from '../channels/github/config-schema.ts';
 import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
@@ -36,6 +37,52 @@ const healthyHookAccess = {
 };
 
 describe('channels/github/runtime/lifecycle-contribution', () => {
+  it('should block selected version 2 execution before touching legacy runtime resources', async () => {
+    const unused = async () => {
+      throw new Error('legacy resource must not be used');
+    };
+    const contribution = createNotificationLifecycleContribution({
+      hookAccess: { inspect: unused, reconcile: unused },
+      operatorAccess: { inspect: unused, reconcile: unused },
+      modelRoutingAccess: { inspect: unused, reconcile: unused },
+      routingService: { inspect: unused, reconcile: unused },
+    });
+    const v2: AgentManifest = {
+      schemaVersion: 1,
+      agent: { id: 'pirog' },
+      github: {
+        username: 'pirog',
+        notifications: {
+          schemaVersion: 2,
+          runtimes: ['openclaw', 'codex'],
+          intervalMinutes: 5,
+          maxConcurrentItems: 2,
+          allowedRepositoryOwners: [{ login: 'pirog', nodeId: 'U_pirog' }],
+          issueAssignment: {
+            mode: 'auto',
+            allowed: [{ login: 'pirog', nodeId: 'U_pirog', operatorOwner: true }],
+          },
+        },
+      },
+    };
+    const selected = { ...context, manifest: v2 };
+    assert.deepEqual(
+      contribution.validate!(selected)?.diagnostics?.map(({ code }) => code),
+      ['github-notification-runtime-unsupported'],
+    );
+    assert.equal((await contribution.inspect!(selected))[0]?.status, 'blocked');
+    await assert.rejects(
+      contribution.reconcile!(selected),
+      (error: unknown) =>
+        error instanceof AgentSystemLifecycleError &&
+        error.code === 'github-notification-runtime-unsupported',
+    );
+    const policy = v2.github!.notifications!;
+    assert.ok(policy.schemaVersion === 2);
+    policy.runtimes = ['codex'];
+    assert.deepEqual(contribution.validate!({ ...context, manifest: v2 })?.diagnostics, []);
+  });
+
   it('should always participate so removed manifest state can be cleaned up', () => {
     const contribution = createNotificationLifecycleContribution({
       hookAccess: healthyHookAccess,
@@ -118,6 +165,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
     });
     const configured = structuredClone(manifest);
     const settings = configured.github!.notifications!;
+    assert.ok(settings.schemaVersion !== 2);
     settings.approvedIssueAssigners = [
       { login: 'assigner', nodeId: 'U_1' },
       { login: 'renamed', nodeId: 'U_1' },
@@ -166,7 +214,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       github: {
         ...manifest.github,
         notifications: {
-          ...manifest.github?.notifications,
+          ...legacyGitHubNotifications(manifest.github?.notifications),
           assignmentTypes: ['issue'],
           approvedActors: [{ login: 'pirog', nodeId: 'U_1' }],
           intervalMinutes: 5,

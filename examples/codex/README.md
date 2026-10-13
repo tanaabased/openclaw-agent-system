@@ -13,7 +13,8 @@ The trusted `automationRuntime` exposes `threads-sync` under explicit installati
 authorization and a fresh plan digest. It creates per-automation conversations
 through `codex app-server` in the ambient profile, adds an attributed setup
 history item without model generation, and verifies resume through a fresh
-process. Repeated sync reuses those conversations.
+process, including native `auto_review`, `on-request`, and `workspace-write`
+permission readback. Repeated sync reuses those conversations.
 
 The prepare/cancel check retains a pending journal until saved-state verification
 and permits cancellation only while the failed write's target remains unchanged.
@@ -27,6 +28,37 @@ provenance. Ordinary tests consume reviewed captures without contacting the app;
 constructed failure cases are identified in the tests. This packed/headless
 scenario does not replace separate installed desktop-tool verification.
 
+### Desktop Acceptance
+
+These headless checks prove packaged discovery, configuration, activation boundaries,
+and native conversation persistence. They do not prove scheduled issue creation,
+model judgment, or desktop rendering. Those require a separately authorized pilot
+using disposable issues and the installed plugin.
+
+- **Assignment intake:** assign more issues than the available slots. Verify that
+  available slots fill, overflow starts after an assessment finishes, and later
+  checks neither create duplicates nor repeat earlier start notices. Intake reports
+  starts, pending work, slots, and intake obstacles; assessment progress stays in
+  the issue.
+- **Assessment:** exercise a clear request, missing requirements, conflicting
+  evidence, and a setup obstacle. Check repository grounding, useful questions,
+  a readable opening from the isolated editor, and a concise full plan with files
+  beside their changes. Review meaning, not exact wording. A clarification answer
+  should revise the retained result without losing investigation or routing.
+- **Custom instructions:** try the default skill, inline and file guidance, and a
+  replacement skill. Verify the retained selection and shared presentation; missing
+  or changed skills must stop with an actionable diagnostic rather than a fallback.
+- **Recovery:** interrupt native creation and verify that the next check recovers
+  the same issue destination. Exercise missing project registration and native
+  host-access approval; follow the supported recovery in [Codex](../../CODEX.md#issue-assessment)
+  without clearing tracking state or bypassing a denial.
+- **Continuation:** explicitly request implementation in the issue and verify its
+  handoff preserves the assessment and worktree. Later intake must neither inspect
+  that implementation nor prevent another eligible issue from starting.
+
+Use fresh issues as well as follow-up revisions. Keep detailed pilot plans and results
+in the owning issue or pull request, and retire disposable fixtures afterward.
+
 ## Setup
 
 ```bash
@@ -37,7 +69,7 @@ tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
 codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
 codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
 
-# should expose every packaged agent system skill to a fresh codex app server
+# should expose complete packaged skills to a fresh codex app server
 bun --cwd "$GITHUB_WORKSPACE" run test:codex-plugin
 
 # should prepare valid, inactive, and replacement workspaces
@@ -57,6 +89,81 @@ cp "$root/rebound-workspace/agent.yaml" "$root/rebound-workspace/agent.expected.
 ## Testing
 
 ```bash
+# should explain a host permission failure in one heartbeat without accessing tracking state
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access-required"}' \
+  | node "$runtime" intake failure-response --plugin-data "$root/uncreated-failure-data" \
+  | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
+test ! -e "$root/uncreated-failure-data"
+
+# should format a packaged quiet heartbeat without activating intake or changing its state
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10-09T12:00:00.000Z","intake":{"status":"ready","changed":false},"dispatch":[{"status":"at-capacity","changed":false}]}' \
+  | TZ=UTC node "$runtime" intake quiet-response --plugin-data "$root/quiet-data" \
+  | jq -e '.status == "quiet" and .period == "afternoon" and (.message | length > 0) and .response == ("<heartbeat>\n  <automation_id>fixture-native-intake</automation_id>\n  <decision>DONT_NOTIFY</decision>\n  <message>" + .message + "</message>\n</heartbeat>")'
+test ! -e "$root/quiet-data"
+
+# should preserve an actionable earlier result instead of replacing it with quiet text
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10-09T12:00:00.000Z","intake":{"status":"ready","changed":false},"dispatch":[{"status":"completed","changed":true},{"status":"idle","changed":false}]}' \
+  | node "$runtime" intake quiet-response --plugin-data "$root/quiet-data" \
+  | jq -e '.status == "not-quiet" and (has("response") | not)'
+
+# should expose packaged intake and plan one owned schedule without activating it
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+mkdir -p "$root/notification-workspace"
+cp "$GITHUB_WORKSPACE/examples/codex/notification-policy-agent.yaml" "$root/notification-workspace/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex/assessment-guidance.md" "$root/notification-workspace/assessment-guidance.md"
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/notification-workspace" --confirm \
+  | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
+node "$runtime" intake inspect --plugin-data "$plugin_data" \
+  | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
+if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
+printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+  | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
+test ! -e "$root/notification-workspace/.setup-applied"
+test ! -d "$CODEX_HOME/automations"
+
+# should expose packaged dispatch without letting intake-only state launch work
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$plugin_data" \
+  | jq -e '.version == 1 and .records == []'
+if output=$(printf '%s\n' '{"action":"next","projects":[]}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .notice.severity == "warning" and .notice.notify == true and (.notice.message | contains("Next step"))'
+if output=$(printf '%s\n' '{"action":"handoff","id":"missing"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-handoff-unavailable" and .notice.severity == "error"'
+test ! -d "$CODEX_HOME/automations"
+test ! -d "$root/notification-workspace/checkouts"
+test ! -d "$root/notification-workspace/.agent-system/repositories"
+
+# should leave disabled workflows inactive without models or an execution adapter
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/disabled-notification-data"
+mkdir -p "$root/disabled-notification-workspace"
+cp "$GITHUB_WORKSPACE/examples/codex/notification-disabled-agent.yaml" "$root/disabled-notification-workspace/agent.yaml"
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/disabled-notification-workspace" --confirm \
+  | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
+printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+  | jq -e '.status == "aligned" and .actions == [] and (.conversations // []) == []'
+if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-policy-disabled"'
+test ! -d "$CODEX_HOME/automations"
+
 # should preview a valid workspace without persisting a binding
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -226,6 +333,24 @@ jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
+# should accept issue objects as bounded routing context through the installed cache
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
+digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
+jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
+  | node "$runtime" model-routing --plugin-data "$plugin_data" \
+  | jq -e '.status == "resolved" and .profile == "medium" and .candidate.model == "gpt-5.6-sol" and .candidate.thinking == "high" and .execution == "unverified"'
+
+# should plan intake conversation setup without a global scanner rule or reload acknowledgment
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
+test ! -d "$CODEX_HOME/rules"
+
 # should refresh local settings through the bound codex runtime without changing the shared base
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -242,7 +367,7 @@ cmp "$root/workspace/agent.expected.yaml" "$root/workspace/agent.yaml"
 cmp "$root/local.expected.yaml" "$root/workspace/agent.local.yaml"
 rm "$root/workspace/agent.local.yaml"
 
-# should create separate durable native conversations for a shared declaration id
+# should create durable conversations with selected models and verified auto review
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -253,7 +378,7 @@ printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-da
 jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
 
-# should reuse native conversations after the creating process has exited
+# should retain conversation identities and model settings after the creating process exits
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"

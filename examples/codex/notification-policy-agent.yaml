@@ -1,0 +1,41 @@
+schema-version: 1
+agent:
+  id: codex-notification-policy
+git:
+  worktrees:
+    repositories:
+      working-directory: checkouts
+models:
+  default: { model: openai/gpt-6-astra, effort: high }
+  low: { model: openai/gpt-6-luna, effort: medium }
+  medium: { model: openai/gpt-6.1-sol, effort: high }
+  high: { model: openai/gpt-6-astra, effort: high }
+github:
+  username: example-agent
+  notifications:
+    schema-version: 2
+    allowed-repository-owners:
+      - login: example-owner
+        node-id: O_example
+    issue-assignment:
+      allowed:
+        - login: example-operator
+          node-id: U_operator
+          operator-owner: true
+      mode: auto
+      assessment:
+        skill: $agent-system:agent-system-issue-assessment
+        guidance:
+          file: assessment-guidance.md
+    review-request:
+      enabled: false
+      allowed:
+        - login: example-operator
+          node-id: U_operator
+    feedback:
+      enabled: false
+      allowed:
+        - login: example-operator
+          node-id: U_operator
+setup-agent:
+  apply: touch .setup-applied

@@ -1,9 +1,9 @@
 import { resolve } from 'node:path';
 
+import { legacyGitHubNotifications, type GitHubIdentityPin } from '../config-schema.ts';
 import type { AgentSystemCliResult } from '../../../api/types.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
-import type { GitHubIdentityPin } from '../config-schema.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import type { GitHubNotificationLifecycleWorktree } from '../lifecycles/types.ts';
 
@@ -438,7 +438,7 @@ export default class GitHubNotificationIssueDeliveryService {
     }
     await this.#reconcileRecipients(
       github,
-      loaded.manifest.github?.notifications?.pullRequest,
+      legacyGitHubNotifications(loaded.manifest.github?.notifications)?.pullRequest,
       input,
       repository,
       pullRequest.number,

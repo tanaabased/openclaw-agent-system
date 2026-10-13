@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { codexQuietHeartbeatInstructions } from '../agent/codex-heartbeat.ts';
 import { bindCodexWorkspace, unbindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import {
   createCodexSessionContext,
@@ -46,12 +47,21 @@ describe('agent/codex-context', () => {
     });
 
     assert.match(context, /supersedes every earlier Agent System context/u);
+    assert.ok(context.includes(codexQuietHeartbeatInstructions));
     assert.doesNotMatch(context, /For new routed work, use/u);
     assert.deepEqual(envelope(context), {
       version: 1,
       source: 'startup',
       bindingRuntime: {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'binding'],
+        pluginData,
+      },
+      intakeRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'intake'],
+        pluginData,
+      },
+      dispatchRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'dispatch'],
         pluginData,
       },
       automationRuntime: {
@@ -274,6 +284,11 @@ describe('agent/codex-context', () => {
       pluginData,
     });
     assert.match(context, /explicit selections/);
+    assert.match(
+      context,
+      /Scheduled issue assessments submit their assessment through dispatchRuntime action:"prepare"/u,
+    );
+    assert.match(context, /do not make a separate routingRuntime call/u);
     assert.match(context, /invalid or unsupported selections never authorize substitution/);
     assert.match(context, /Preserve saved selections/);
     assert.match(context, /never launches work or changes a model/);

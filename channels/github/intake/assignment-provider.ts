@@ -1,11 +1,14 @@
 import { resolve } from 'node:path';
 
+import {
+  legacyGitHubNotifications,
+  type GitHubNotificationsConfiguration,
+} from '../config-schema.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { GitHubNotificationLifecycleBoundaryInput } from '../lifecycles/types.ts';
 import type { GitHubNotificationAssignmentAuthority } from './assignment-orchestrator.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
-import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { resolveMaximumCommentCharacters } from '../provider/comment-limit.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from './admit-assignment.ts';
@@ -221,11 +224,12 @@ export default class GitHubNotificationAssignmentProvider
     if (
       loaded.status !== 'loaded' ||
       loaded.manifest.agent.id !== input.agentId ||
-      resolve(loaded.scope.workspaceDir) !== resolve(input.workspaceDir) ||
-      !loaded.manifest.github?.notifications
+      resolve(loaded.scope.workspaceDir) !== resolve(input.workspaceDir)
     ) {
       return undefined;
     }
+    const configuration = legacyGitHubNotifications(loaded.manifest.github?.notifications);
+    if (!configuration) return undefined;
     const connected = await this.#dependencies.accountClient.connect(
       { manifest: loaded.manifest, workspaceDir: loaded.scope.workspaceDir },
       'service',
@@ -234,7 +238,7 @@ export default class GitHubNotificationAssignmentProvider
     const config = await this.#dependencies.readConfig();
     return {
       client: new GitHubWorkEventClient(connected, resolveMaximumCommentCharacters(config)),
-      configuration: loaded.manifest.github.notifications,
+      configuration,
     };
   }
 }

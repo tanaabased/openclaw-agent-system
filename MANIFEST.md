@@ -12,6 +12,7 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
   - [`automations`](#automations)
   - [`backup`](#backup)
   - [`environment`](#environment)
+  - [`github.notifications`](#githubnotifications)
   - [`memory`](#memory)
   - [`models`](#models)
   - [`schema-version`](#schema-version)
@@ -113,7 +114,9 @@ state. Use the owning runtime's explicit lifecycle operation to apply changes.
 | tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
 | tool    | `agent_system_google`       | `google`               | [Configuration reference](./tools/google/README.md#configuration)                |
 
-Declare a component's manifest key to enable it.
+Declare a component's manifest key to request it, then use `install` to reconcile
+supported runtime behavior. The [version 2 notification contract](#githubnotifications)
+is accepted as desired state but does not yet have an execution adapter.
 
 ## Configuration
 
@@ -437,6 +440,192 @@ Schema-owned YAML keys use kebab-case. Environment names and user-defined
 identifiers remain literal and are never casing-converted. See
 [Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
+
+### `github.notifications`
+
+An unversioned block retains the existing [OpenClaw channel contract](./channels/github/ADVANCED.md#configuration-reference).
+A block with `schema-version: 2` declares portable notification policy. The outer
+manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix.
+
+**Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
+intake, and assessment dispatch are implemented. Authorized Install reconciles the
+owned assessment schedule. Review requests, feedback, implementation, and
+OpenClaw v2 execution remain unavailable. OpenClaw rejects selected v2 execution
+before legacy routing or authority is used. A Codex-only declaration does not
+enable the OpenClaw channel. Binding and passive discovery never activate work.
+See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
+
+#### Version 2 fields
+
+| Field                       | Required | Default             | Contract                                                                                                                            |
+| --------------------------- | -------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `allowed-repository-owners` | yes      | none                | Nonempty list of pinned repository owners; omission never means unrestricted access.                                                |
+| `feedback`                  | no       | absent              | Actionable feedback for existing admitted work.                                                                                     |
+| `interval-minutes`          | no       | `5`                 | Shared monitoring cadence, integer from `1` through `1440`.                                                                         |
+| `issue-assignment`          | no       | absent              | Issue intake and the assessment, planning, and implementation journey selected by its mode.                                         |
+| `max-concurrent-items`      | no       | `2`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
+| `review-request`            | no       | absent              | Requests to start an independent PR review; not direct PR assignment.                                                               |
+| `runtimes`                  | no       | `[openclaw, codex]` | Nonempty unique selection of `openclaw` and/or `codex`. Each runtime owns its reconciliation; no cross-runtime claiming is implied. |
+| `schema-version`            | yes      | none                | Exactly `2`. Omission selects the legacy contract.                                                                                  |
+
+Each trigger accepts `allowed`, an optional list of actor identity records.
+Omission or `[]` grants no authority for that trigger. An absent trigger is not
+monitored. An issue assigner, review requester, and feedback author are distinct
+roles: membership in one list never implies membership in another. There is no
+`approved-actors` fallback in v2.
+
+Each trigger also accepts optional boolean `enabled`. Omission preserves existing
+trigger behavior. `false` stops that workflow without clearing its allowed identities,
+mode, or assessment settings, and requires no execution adapter for that workflow.
+Explicit `true` requires a supported adapter but never grants authority to an empty
+`allowed` list. Disabled declarations still require valid identity pins.
+
+Every identity record requires `login` and immutable `node-id`, using the existing
+GitHub identity syntax. Logins (case-insensitive) and node IDs must be unique
+within each list. The same identity may appear in separate lists deliberately.
+Repository-owner records carry only these two fields. Trigger `allowed` records
+also accept `operator-owner`, a boolean defaulting to `false`. It records a separate
+OpenClaw operator grant, never an implied consequence of trigger membership and
+never Codex authority. V2 currently provisions no such grants. A future OpenClaw
+adapter must reconcile explicit grants and existing provenance; a `false` entry in
+one trigger does not veto an explicit `true` grant in another.
+
+V2 requires a literal `github.username`; it cannot resolve that value from the
+environment. `github.host` remains `github.com`. Native Codex host authorization
+supplies GitHub access, without an OpenClaw token, managed Git or `gh` configuration,
+or an operator-owner grant.
+
+#### Issue modes
+
+`issue-assignment.mode` is optional and defaults to `plan`. Assessment includes
+investigation and initial planning; workspace preparation belongs to runtime dispatch.
+
+| Mode   | Authorized journey                                                                                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` | Assess, then recommend whether to stop for input or proceed through implementation, validation, and PR delivery. The runtime applies that recommendation within the same PR-delivery ceiling as `work`. |
+| `plan` | Assess the issue and produce an actionable plan or focused questions, then stop before implementation.                                                                                                  |
+| `work` | Assess and plan, then continue through implementation, validation, and verified PR delivery unless blocked or clarification is required.                                                                |
+
+No mode grants merge, deployment, expanded repository scope, or authority to
+change its own mode. Feedback continues the existing work's trusted mode and
+cannot turn planning into implementation. `review-request` and `feedback` do not
+accept a separate mode in this contract. Review behavior will be specified with
+its lifecycle, not borrowed from issue Work mode. Codex assessment dispatch requires
+`plan`; accepting all three mode values here does not implement their workflows.
+
+#### Assessment selection
+
+Configure `github.notifications.issue-assignment.assessment` to select one assessment
+skill and optionally supplement it with trusted profile guidance. Neither field grants
+implementation or publication authority. Applicable repository instructions and runtime
+boundaries remain controlling.
+
+| Field      | Type               | Required | Default                                      | Description                                                                |
+| ---------- | ------------------ | -------- | -------------------------------------------- | -------------------------------------------------------------------------- |
+| `guidance` | string or `{file}` | no       | none                                         | Nonempty single-line or multiline text, or one UTF-8 file; at most 32 KiB. |
+| `skill`    | string             | no       | `agent-system:agent-system-issue-assessment` | ID of one enabled, host-discoverable skill.                                |
+
+Skill IDs accept `skill-name`, `$skill-name`, `plugin:skill-name`, and
+`$plugin:skill-name`. Surrounding spaces and the optional `$` are removed; case is
+preserved. An unqualified name must identify exactly one enabled skill. Use its
+plugin-qualified name to disambiguate. Paths, URLs, inline workflows, and automatic
+skill installation are unsupported. Repository-owned skills are eligible when the
+host discovers them; a skill file path is not a manifest selection mechanism.
+
+```yaml
+issue-assignment:
+  mode: plan
+  assessment:
+    skill: $agent-system:agent-system-issue-assessment
+    guidance: |
+      Challenge unnecessary scope.
+      Prefer small, independently reviewable changes.
+```
+
+Alternatively, use `guidance: {file: guidance/assessment.md}`. Paths resolve from the
+stable bound agent workspace, not the issue worktree or manifest directory. Absolute
+paths, traversal, symlinks, nonregular files, invalid UTF-8, empty text, and NULs are
+rejected. Inline and file forms are mutually exclusive. Guidance files contain
+instructions, not secrets; their contents are retained privately with the assessment.
+
+Omitting both fields uses the default skill. Guidance alone supplements that default;
+a replacement runs alone, with guidance when supplied. Agent System owns generic
+defaults, company skills may live in Canon, and the bound workspace owns selection
+and preferences. A replacement must consume the verified context and return the same
+`assessment-result/v1` contract; the host owns result framing and verified links.
+
+Selection and guidance are captured when native creation is prepared. Continuation
+uses the saved guidance; a fresh assessment observes later guidance-file edits without
+reinstallation. Manifest changes follow the existing Install reconciliation contract.
+Missing, disabled, ambiguous, or changed skills and invalid guidance stop the affected
+assessment with an actionable diagnostic instead of silently changing its procedure.
+Currently, skill resolution supports host-discovered local `SKILL.md` sources.
+
+#### Issue-only profile example
+
+This declaration prepares the agreed self-assignment policy; Install activates it.
+Keep feedback and review-request absent or set `enabled: false` until their execution
+adapters are available.
+
+```yaml
+schema-version: 1
+agent:
+  id: pirog
+github:
+  host: github.com
+  username: pirog
+  notifications:
+    schema-version: 2
+    runtimes: [codex]
+    interval-minutes: 5
+    max-concurrent-items: 2
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDODNGy1g
+      - login: pirog
+        node-id: MDQ6VXNlcjcxMzQyNA==
+      - login: lando
+        node-id: MDEyOk9yZ2FuaXphdGlvbjMxNjA1NTg0
+    issue-assignment:
+      mode: plan
+      allowed:
+        - login: pirog
+          node-id: MDQ6VXNlcjcxMzQyNA==
+          operator-owner: false
+```
+
+#### Activation
+
+Policy declares desired monitoring; binding and passive discovery do not activate
+it. Install reconciles the selected runtime. Empty authority lists admit no work;
+disabling a trigger or removing policy stops admission and requires reconciliation
+to pause the owned job.
+See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
+Review, feedback, and implementation execution remain outside the current Codex support.
+
+#### Legacy compatibility
+
+| Legacy key                                         | Existing consumer                                                  | Version 2 decision                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `allowed-repository-owners`                        | Assignment admission and monitor polling                           | Retained, explicitly required and pinned.                                                                       |
+| `approved-actors`                                  | Assignment/comment fallback, direct PR assignment, operator access | Legacy only; no fallback in v2.                                                                                 |
+| `approved-feedback-authors`                        | Comment admission                                                  | Replaced by `feedback.allowed`.                                                                                 |
+| `approved-issue-assigners`                         | Issue assignment admission                                         | Replaced by `issue-assignment.allowed`.                                                                         |
+| `assignment-types`                                 | Provider discovery, poller selection, model-routing access         | Replaced by trigger sections; direct PR assignment remains legacy-only.                                         |
+| `initial-mode`                                     | Assignment and comment mode selection                              | Replaced by issue-specific `mode`; feedback inherits existing authority.                                        |
+| `interval-minutes`                                 | Monitor scheduling                                                 | Retained as shared cadence.                                                                                     |
+| `max-concurrent-issues`                            | Monitor and model-turn capacity                                    | Replaced by `max-concurrent-items`.                                                                             |
+| `operator-owner` within `approved-actors`          | Operator access reconciliation                                     | Retained legacy grants; v2 stores explicit flags under trigger `allowed` entries without provisioning them yet. |
+| `pull-request.assignees`, `pull-request.reviewers` | Issue delivery and recipient guidance                              | Legacy delivery policy; v2 placement waits for delivery work.                                                   |
+
+Unversioned declarations retain their defaults, authority fallbacks, direct PR
+assignment behavior, and operator grants from [#240](https://github.com/tanaabased/openclaw-agent-system/issues/240).
+Changing a declaration to v2 is an explicit migration; old installed packages
+reject the new structure. The nested version distinguishes incompatible authority
+defaults, trigger selection, mode semantics, and runtime routing; interpreting an
+old block as v2 would change its behavior. No global manifest-version bump or
+automatic migration is required. Do not switch an active OpenClaw installation to
+v2 before its adapter is available.
 
 ### `memory`
 

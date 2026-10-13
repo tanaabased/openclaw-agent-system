@@ -119,7 +119,9 @@ describe('github operator access', () => {
     const f = fixture();
     f.config = { commands: { ownerAllowFrom: ['discord:keep', 123] } };
     const ctx = context();
-    ctx.manifest.github!.notifications!.approvedActors!.push(
+    const notifications = ctx.manifest.github!.notifications!;
+    assert.ok(notifications.schemaVersion !== 2);
+    notifications.approvedActors!.push(
       { login: 'second', nodeId: 'U_second', operatorOwner: true },
       { login: 'third', nodeId: 'U_third' },
     );
@@ -161,6 +163,7 @@ describe('github operator access', () => {
     const ctx = context();
     await f.service.reconcile(ctx);
     const settings = ctx.manifest.github!.notifications!;
+    assert.ok(settings.schemaVersion !== 2);
     settings.approvedIssueAssigners = [];
     settings.approvedFeedbackAuthors = [{ login: 'reviewer', nodeId: 'U_reviewer' }];
     await f.service.reconcile(ctx);

@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { legacyGitHubNotifications } from '../config-schema.ts';
 import defineAgentSystemSemanticTool from '../../../api/define-semantic-tool.ts';
 import type { Logger } from '../../../core/logger.ts';
 import AgentSystemToolError from '../../../api/error.ts';
@@ -43,7 +44,7 @@ interface GitHubNotificationReplyCandidateStager {
 }
 
 function notifications(manifest: AgentManifest) {
-  return manifest.github?.notifications;
+  return legacyGitHubNotifications(manifest.github?.notifications);
 }
 
 /** Return one typed public candidate during a GitHub notification turn. */
