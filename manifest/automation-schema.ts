@@ -97,6 +97,12 @@ export interface AgentAutomation {
 export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
   /** optional presentation supplied by a runtime-owned job projection. */
   displayName?: string;
+  /** Trusted runtime-derived settings; not accepted by the external manifest schema. */
+  internalOpenClaw?: {
+    trigger: { script: string };
+    toolsAllow: string[];
+    group?: string;
+  };
   payload: { kind: 'command'; run: NormalizedCommand } | { kind: 'prompt'; prompt: string };
 };
 

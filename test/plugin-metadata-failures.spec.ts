@@ -121,6 +121,7 @@ const manifest: PluginManifest = {
   },
   contracts: {
     tools: [
+      'agent_system_intake',
       'agent_system_install',
       'agent_system_doctor',
       'agent_system_model_routing',

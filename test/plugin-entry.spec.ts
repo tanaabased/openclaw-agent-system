@@ -142,6 +142,7 @@ describe('index', () => {
     assert.deepEqual(commandNames, []);
     assert.deepEqual(serviceIds, ['agent-system-op-cache', 'agent-system-command-authority']);
     assert.deepEqual(toolNames, [
+      'agent_system_intake',
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',

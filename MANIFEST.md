@@ -450,12 +450,23 @@ manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix
 **Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
 owned assessment schedule. Explicitly authorized Codex PR delivery is available
-after a managed issue chat's implementation handoff. Review requests, feedback, automated implementation, and
-OpenClaw v2 execution remain unavailable. An unavailable OpenClaw notification
+after a managed issue chat's implementation handoff. Review requests, feedback,
+automated implementation, and OpenClaw v2 assessment dispatch remain unavailable.
+An unavailable OpenClaw notification
 adapter produces a validation warning and a skipped install outcome; other
 components remain usable. Doctor reports notifications as blocked, and execution
 stops before legacy routing or authority is used. A Codex-only declaration does not
 enable the OpenClaw channel. Binding and passive discovery never activate work.
+OpenClaw also derives an intake-only `Agent System: github-issue-assignment`
+automation from enabled v2 policy. It uses the existing automation reconciler,
+`models.low`, and a read-only condition before a durable scan. Its retained
+`ISSUE ASSIGNMENTS` conversation belongs in **Agent System**. Intake uses the
+Codex/V2 admission schema in separate OpenClaw state; it never uses legacy
+notification files or stores assessment/session status. It creates no issue chats
+and processes no comments. Operator automation synchronization is required;
+native chat Install/Doctor cannot yet reconcile or inspect the scheduler.
+The legacy channel remains blocked for v2 declarations.
+
 See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
 
 #### Version 2 fields

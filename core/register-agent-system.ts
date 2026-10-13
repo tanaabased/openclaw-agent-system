@@ -1,4 +1,9 @@
 import { readFile } from 'node:fs/promises';
+
+import OpenClawIntake from '../agent/openclaw-intake.ts';
+import createIntakeTool from '../tools/intake/tool.ts';
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
 import { join, resolve } from 'node:path';
 
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
@@ -269,7 +274,24 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   api.on('after_tool_call', (event, context) =>
     notificationRuntime.sessionSetup.observe(event, context),
   );
+  const intakeV2 = new OpenClawIntake({
+    root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
+    namespace: api.runtime.state.resolveStateDir(),
+    manifestService: lifecycleManifestService,
+    async connect(input, signal) {
+      const connected = await githubCapability.accountClient.connect(input, 'service', signal);
+      return new GitHubWorkItemClient(new GitHubWorkEventApiClient(connected));
+    },
+  });
   const toolRegistry = new AgentSystemToolRegistry([
+    createIntakeTool(intakeV2, {
+      ...lifecycleManifestService,
+      loadForCommandDirectory(...args) {
+        if (!manifestServiceRef.current)
+          throw new Error('Agent System manifest service is unavailable.');
+        return manifestServiceRef.current.loadForCommandDirectory(...args);
+      },
+    }),
     ...gitCapability.tools,
     ...githubCapability.tools,
     ...googleCapability.tools,
@@ -473,6 +495,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     notificationRuntime.lifecycleContribution,
+    intakeV2.contribution(),
     automationService.contribution(),
   ];
   const lifecycleRegistry = new AgentSystemLifecycleRegistry(

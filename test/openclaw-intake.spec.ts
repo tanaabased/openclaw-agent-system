@@ -1,0 +1,301 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
+
+import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
+import { codexIntakePolicy } from '../agent/codex-intake-policy.ts';
+import OpenClawIntake from '../agent/openclaw-intake.ts';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import { automationPatch, projectAutomation } from '../agent/automation-projection.ts';
+import type { NativeAutomation } from '../agent/automation-gateway.ts';
+import { intakeLocation } from '../channels/github/intake/record-store.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import createIntakeTool from '../tools/intake/tool.ts';
+import { baseline, intakeFixture } from './github-intake-fixture.ts';
+
+function manifest() {
+  const { policy } = intakeFixture();
+  return {
+    automations: undefined as AgentManifest['automations'],
+    schemaVersion: 1,
+    agent: { id: 'receiver' },
+    models: {
+      default: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      low: { model: 'openai/gpt-6-luna', effort: 'medium' },
+    },
+    github: { username: 'receiver', notifications: { ...policy, runtimes: ['codex', 'openclaw'] } },
+  } satisfies AgentManifest;
+}
+
+describe('OpenClaw V2 intake slice', () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await realpath(await mkdtemp('/tmp/openclaw-intake-'));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  function fixture() {
+    const value = manifest();
+    const provider = intakeFixture();
+    provider.events.length = 0;
+    let now = baseline;
+    let connects = 0;
+    const loaded = {
+      status: 'loaded' as const,
+      manifest: value,
+      scope: { workspaceDir: root, agentId: value.agent.id },
+      path: join(root, 'agent.yaml'),
+      diagnostics: [],
+      validationChecks: [],
+      digest: 'fixture',
+    };
+    const manifests = {
+      async loadForAgentId() {
+        return loaded;
+      },
+      async loadForCommandDirectory() {
+        throw Error('must bind native agent');
+      },
+    };
+    const service = new OpenClawIntake({
+      root: join(root, 'v2'),
+      namespace: root,
+      manifestService: manifests,
+      now: () => now,
+      async connect() {
+        connects++;
+        return provider.client;
+      },
+    });
+    return {
+      value,
+      provider,
+      service,
+      loaded,
+      manifests,
+      connects: () => connects,
+      setNow: (v: number) => {
+        now = v;
+      },
+    };
+  }
+  it('should share the Codex policy contract and isolate runtime identity and V1 files', async () => {
+    const f = fixture();
+    assert.equal(
+      assignmentIntakePolicy(f.value, 'openclaw')!.digest,
+      codexIntakePolicy(f.value)!.digest,
+    );
+    const { store } = await f.service.select(f.value, root);
+    const codex = intakeLocation({
+      root: join(root, 'v2'),
+      namespace: root,
+      runtime: 'codex',
+      workspaceDir: root,
+      agentId: 'receiver',
+    });
+    assert.notEqual(store.location.scope, codex.scope);
+    await writeFile(join(root, 'v1-state.json'), 'untouched');
+    await f.service.run(f.value, root, 'activate');
+    assert.equal(await readFile(join(root, 'v1-state.json'), 'utf8'), 'untouched');
+    assert.equal((await store.read())!.records.length, 0);
+  });
+  it('should keep checks read-only, commit a real assignment once and retain only admission evidence', async () => {
+    const f = fixture();
+    const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
+    const { store } = await f.service.select(f.value, root);
+    assert.equal((await f.service.inspect(f.value, root)).code, 'intake-activation-required');
+    assert.equal(f.connects(), 0);
+    await assert.rejects(f.service.run(f.value, root, 'check', digest), {
+      code: 'intake-activation-required',
+    });
+    assert.equal(await store.read(), undefined);
+    await f.service.run(f.value, root, 'activate');
+    f.provider.events.push(...intakeFixture().events);
+    f.setNow(baseline + 120000);
+    const before = JSON.stringify(await store.read());
+    assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, true);
+    assert.equal(JSON.stringify(await store.read()), before);
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 1);
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 0);
+    assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, false);
+    const state = (await store.read())!;
+    assert.equal(state.baselineAt, baseline);
+    assert.equal(state.records.length, 1);
+    assert.equal(state.records[0]!.status, 'admitted');
+    assert.equal(state.records[0]!.requiresRevalidation, true);
+    for (const key of ['session', 'sessionKey', 'assessment', 'workflow', 'issueStatus'])
+      assert.equal(key in state.records[0]!, false);
+    const context = { manifest: f.value, workspaceDir: root } as never;
+    assert.equal(
+      (await f.service.contribution().reconcile!(context)).outcomes[0]!.status,
+      'unchanged',
+    );
+    assert.equal((await store.read())!.baselineAt, baseline);
+    f.value.github!.notifications!.intervalMinutes = 10;
+    await assert.rejects(f.service.run(f.value, root, 'scan', digest), {
+      code: 'intake-policy-changed',
+    });
+    await f.service.contribution().reconcile!(context);
+    assert.equal((await store.read())!.baselineAt, baseline);
+    assert.equal((await store.read())!.records.length, 1);
+  });
+  it('should fail closed before credentials on disabled or stale policy and changed workspace authority', async () => {
+    const f = fixture();
+    const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
+    await assert.rejects(f.service.run(f.value, root, 'scan', digest, AbortSignal.abort()), {
+      name: 'AbortError',
+    });
+    await assert.rejects(f.service.run(f.value, root, 'scan', '0'.repeat(64)), {
+      code: 'intake-policy-changed',
+    });
+    f.loaded.scope.workspaceDir = '/tmp';
+    await assert.rejects(f.service.run(f.value, root, 'scan', digest), {
+      code: 'intake-policy-changed',
+    });
+    f.value.github!.notifications!.runtimes = ['codex'];
+    await assert.rejects(f.service.run(f.value, root, 'scan', digest), {
+      code: 'intake-policy-disabled',
+    });
+    assert.equal(f.connects(), 0);
+  });
+  it('should expose failed and recovered previews without writing a checkpoint', async () => {
+    const f = fixture();
+    await f.service.run(f.value, root, 'activate');
+    const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
+    const discover = f.provider.client.discoverAssigned;
+    f.provider.client.discoverAssigned = async () => {
+      throw Error('provider secret');
+    };
+    const { store } = await f.service.select(f.value, root);
+    const before = JSON.stringify(await store.read());
+    const preview = await f.service.run(f.value, root, 'check', digest);
+    assert.equal(preview.changed, true);
+    assert.equal(preview.code, 'intake-provider-unavailable');
+    assert.equal(JSON.stringify(preview).includes('secret'), false);
+    assert.equal(JSON.stringify(await store.read()), before);
+    await f.service.run(f.value, root, 'scan', digest);
+    assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, false);
+    f.setNow(baseline + 300001);
+    f.provider.client.discoverAssigned = discover;
+    assert.equal((await f.service.run(f.value, root, 'check', digest)).recovered, true);
+    assert.ok((await store.read())!.blocker);
+    await f.service.run(f.value, root, 'scan', digest);
+    assert.equal((await store.read())!.blocker, undefined);
+  });
+  it('should reject the wrong receiving identity without admitting anything', async () => {
+    const f = fixture();
+    f.provider.client = {
+      ...f.provider.client,
+      identity: { login: 'other', nodeId: 'U_other', type: 'User' },
+    };
+    await assert.rejects(f.service.run(f.value, root, 'activate'), {
+      code: 'intake-github-identity-mismatch',
+    });
+    const { store } = await f.service.select(f.value, root);
+    assert.equal(await store.read(), undefined);
+  });
+  it('should derive only the enabled OpenClaw job and preserve its desired trigger on every reconciliation', () => {
+    const value = manifest();
+    const [job] = openclawIntakeJobs(value);
+    assert.ok(job);
+    assert.equal(value.automations, undefined);
+    assert.equal(job.schedule.kind, 'every');
+    assert.equal(job.internalOpenClaw!.group, 'Agent System');
+    const desired = projectAutomation(job, { anchorMs: baseline, marker: 'owned' } as never, {
+      agentId: 'receiver',
+      workspaceDir: root,
+      command: [],
+      environment: {},
+      timezone: 'UTC',
+    });
+    const current = {
+      ...desired,
+      id: 'native',
+      configRevision: '1',
+      state: {},
+    } as NativeAutomation;
+    assert.equal(desired.name, 'Agent System: github-issue-assignment');
+    assert.deepEqual(desired.payload.toolsAllow, ['agent_system_intake']);
+    assert.deepEqual(automationPatch(current, desired), {});
+    const changed = { ...desired, trigger: { script: 'changed' } };
+    assert.deepEqual(automationPatch(current, changed), { trigger: { script: 'changed' } });
+    const removed = { ...desired };
+    delete removed.trigger;
+    assert.deepEqual(automationPatch(current, removed), { trigger: null });
+    value.github!.notifications!.runtimes = ['codex'];
+    assert.equal(openclawIntakeJobs(value).length, 0);
+    value.github!.notifications!.runtimes = ['openclaw'];
+    value.github!.notifications!.issueAssignment!.enabled = false;
+    assert.equal(openclawIntakeJobs(value).length, 0);
+    value.automations = [job];
+    assert.throws(() => openclawIntakeJobs(value), { code: 'intake-automation-id-reserved' });
+  });
+  it('should keep the trigger quiet for empty scans and wake on changes or failed conditions', async () => {
+    const script = openclawIntakeJobs(manifest())[0]!.internalOpenClaw!.trigger.script;
+    for (const changed of [false, true]) {
+      let output: { fire: boolean } | undefined;
+      await runInNewContext(`(async()=>{${script}})()`, {
+        agent_system_intake: async (args: unknown) => {
+          assert.equal((args as { action: string }).action, 'check');
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ status: 'ready', changed }) }],
+          };
+        },
+        json: (value: { fire: boolean }) => {
+          output = value;
+        },
+      });
+      assert.equal(output!.fire, changed);
+    }
+    let invalid: { fire: boolean } | undefined;
+    await runInNewContext(`(async()=>{${script}})()`, {
+      agent_system_intake: async () => ({}),
+      json: (value: { fire: boolean }) => {
+        invalid = value;
+      },
+    });
+    assert.equal(invalid!.fire, true);
+    let output: unknown;
+    await runInNewContext(`(async()=>{${script}})()`, {
+      agent_system_intake: async () => {
+        throw Error('secret transport diagnostic');
+      },
+      json: (value: unknown) => {
+        output = value;
+      },
+    });
+    assert.equal((output as { fire: boolean }).fire, true);
+    assert.equal(JSON.stringify(output).includes('secret'), false);
+  });
+  it('should bind the tool to the native agent and reject caller-selected identities or activation', async () => {
+    const f = fixture();
+    let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
+    createIntakeTool(f.service, f.manifests).registerTools(
+      {
+        registerTool(value) {
+          factory = value;
+        },
+      },
+      {} as never,
+    );
+    assert.equal(typeof factory, 'function');
+    if (typeof factory !== 'function') throw Error('missing factory');
+    const tool = await factory({ agentId: 'receiver', workspaceDir: root });
+    assert.ok(tool && !Array.isArray(tool));
+    for (const request of [
+      { action: 'activate' },
+      { action: 'inspect', agentId: 'other' },
+      { action: 'scan', policyDigest: 'invalid' },
+    ]) {
+      await assert.rejects(tool.execute('call', request), { code: 'intake-request-invalid' });
+    }
+    await tool.execute('call', { action: 'inspect' });
+    const wrong = await factory({ agentId: 'receiver', workspaceDir: '/tmp' });
+    assert.ok(wrong && !Array.isArray(wrong));
+    await assert.rejects(wrong.execute('call', { action: 'inspect' }), /bind the active/);
+    assert.equal(f.connects(), 0);
+  });
+});

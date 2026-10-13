@@ -30,7 +30,11 @@ export function effectiveAutomation(job: ResolvedAutomation, context: Automation
   delete stableContext.threads;
   return {
     ...normalized,
-    hash: automationHash({ content: normalized.content, context: stableContext }),
+    hash: automationHash({
+      content: normalized.content,
+      context: stableContext,
+      ...(job.internalOpenClaw ? { internal: job.internalOpenClaw } : {}),
+    }),
   };
 }
 
@@ -83,6 +87,7 @@ export function projectAutomation(
     wakeMode: 'now',
     delivery: { mode: 'none', bestEffort: false },
     failureAlert: false,
+    ...(job.internalOpenClaw ? { trigger: job.internalOpenClaw.trigger } : {}),
     payload:
       job.payload.kind === 'command'
         ? {
@@ -109,7 +114,7 @@ export function projectAutomation(
             timeoutSeconds,
             lightContext: false,
             allowUnsafeExternalContent: false,
-            toolsAllow: ['*'],
+            toolsAllow: job.internalOpenClaw?.toolsAllow ?? ['*'],
             ...(override?.model ? { model: override.model.trim() } : {}),
             ...(override?.effort ? { thinking: override.effort.trim() } : {}),
           },
@@ -184,6 +189,6 @@ export function automationPatch(
     };
   }
   for (const key of ['sessionKey', 'trigger', 'pacing'])
-    if (current[key] !== undefined) patch[key] = null;
+    if (current[key] !== undefined && desired[key] === undefined) patch[key] = null;
   return patch;
 }
