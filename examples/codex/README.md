@@ -52,7 +52,15 @@ using disposable issues and the installed plugin.
   beside their changes. Review meaning, not exact wording. A clarification answer
   should revise the retained result without losing investigation or routing.
 - **Custom instructions:** try the default skill, inline and file guidance, and a
-  replacement skill. Verify the retained selection and shared presentation; missing
+  replacement skill. Exercise both the recommended integrated fixture and an
+  unchanged existing generic assessment skill with no Agent System commands,
+  result fields, or required headings. Verify the complete assessment is saved and
+  displayed for an actionable plan, a blocking question with partial work, and a
+  later answer after that question was recorded. Include conditional recommendations,
+  unavailable evidence, and unusable output; compare summaries and readiness with
+  the original, not exact wording. Confirm integrated results are not adapted or
+  submitted twice. Deterministic tests establish storage/rendering, not faithful
+  model interpretation. Verify the retained selection and shared presentation; missing
   or changed skills must stop with an actionable diagnostic rather than a fallback.
 - **Recovery:** interrupt native creation and verify that the next check recovers
   the same issue destination. Exercise missing project registration and native

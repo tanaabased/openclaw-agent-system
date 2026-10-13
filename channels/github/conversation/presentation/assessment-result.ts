@@ -111,12 +111,12 @@ export default function renderAssessmentResult(
     ...(result.outcome === 'plan-ready'
       ? [
           ...(result.planSummary ? ['## Plan summary', result.planSummary] : []),
-          '## Full plan',
-          result.plan,
+          ...(!result.fullAssessment ? ['## Full plan', result.plan] : []),
         ]
       : result.outcome === 'clarification-needed'
         ? ['## Question', result.questions.map(item).join('\n\n')]
         : ['## Action', result.remediation, '**Diagnostic:** `' + result.code + '`']),
+    ...(result.fullAssessment ? ['## Full assessment', result.fullAssessment] : []),
   ];
   const hasInvestigation = result.progress.completed.length || result.progress.remaining.length;
   if (result.evidence.length || hasInvestigation) {

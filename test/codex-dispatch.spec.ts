@@ -769,6 +769,78 @@ describe('agent/codex-dispatch', () => {
     assert.match(String(revised.presentation), /Guidance.*guidance.md/);
   });
 
+  it('should retain ordinary skill output through clarification and a same-chat revision', async () => {
+    await configureAssessment({ skill: 'company:assess' });
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    const context = await request('context', { id: prepared.id }, child);
+    assert.equal(context.currentTurnId, 'first-turn');
+    assert.equal(context.previousResultTurnId, undefined);
+    assert.match(String(context.instructions), /ordinary assessment skill/);
+    assert.match(String(context.instructions), /fullAssessment/);
+    assert.match(String(context.instructions), /consistency check in this turn/);
+    assert.match(String(context.instructions), /without another adaptation or submission/);
+    const original =
+      'Keep records until the retention decision is answered.\n\nPartial plan: inspect the store, then remove eligible records only after approval.\n\nWhich retention period applies?\n\nThe failure cause is unverified.';
+    const question = {
+      version: 1,
+      outcome: 'clarification-needed',
+      summary: 'Retention needs a decision.',
+      assessment: 'Useful partial work is available.',
+      questions: ['Which retention period applies?'],
+      fullAssessment: original,
+      evidence: [],
+      progress: { completed: [], remaining: ['Retention decision.'] },
+    };
+    const saved = await request('result', { id: prepared.id, result: question }, child);
+    assert.ok(String(saved.presentation).includes(original));
+    const current = await request('context', { id: prepared.id }, child);
+    assert.deepEqual(current.previousResult, question);
+    assert.equal(current.previousResultTurnId, current.currentTurnId);
+    assert.equal(current.previousPresentation, saved.presentation);
+    assert.deepEqual(await request('result', { id: prepared.id, result: question }, child), saved);
+
+    native!.turnId = 'later-answer';
+    const followUp = await request('context', { id: prepared.id }, child);
+    assert.notEqual(followUp.previousResultTurnId, followUp.currentTurnId);
+    assert.deepEqual(followUp.assessment, current.assessment);
+    const revised = {
+      ...result,
+      fullAssessment:
+        original +
+        '\n\nAnswer: retain records for 30 days. Remove only older records after approval.',
+    };
+    await assert.rejects(
+      request('result', { id: prepared.id, result: revised }, child),
+      /assessment-result-conflict/,
+    );
+    const recorded = await request(
+      'result',
+      { id: prepared.id, previousResultDigest: followUp.previousResultDigest, result: revised },
+      child,
+    );
+    assert.ok(String(recorded.presentation).includes(revised.fullAssessment));
+    const retained = await request('context', { id: prepared.id }, child);
+    assert.deepEqual(retained.previousResult, revised);
+    assert.equal(retained.previousResultTurnId, 'later-answer');
+    assert.equal(retained.previousPresentation, recorded.presentation);
+    assert.deepEqual(retained.effective, current.effective);
+    native!.followUpUserTurn = true;
+    const handoff = await request('handoff', { id: prepared.id }, child);
+    assert.deepEqual(handoff.previousResult, revised);
+    const transitioned = await request(
+      'handoff',
+      { id: prepared.id, digest: handoff.digest },
+      child,
+    );
+    assert.deepEqual(transitioned.previousResult, revised);
+    assert.deepEqual(
+      (await request('handoff', { id: prepared.id }, child)).previousResult,
+      revised,
+    );
+  });
+
   it('should block unavailable selections before preparing creation and recover the retained assignment', async () => {
     const available = deps.native!.assessmentSkill;
     deps.native!.assessmentSkill = async () => {

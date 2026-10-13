@@ -56,7 +56,35 @@ describe('agent/assessment-result', () => {
         implement: true,
       },
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'x'.repeat(32001) },
+      ...[' ', 42, 'x'.repeat(32001)].map((fullAssessment) => ({
+        ...common,
+        outcome: 'plan-ready',
+        assessment: 'Observed.',
+        plan: 'Do it.',
+        fullAssessment,
+      })),
     ])
       assert.throws(() => parseAssessmentResult(invalid), /assessment-result-invalid/);
+  });
+
+  it('should preserve the complete source in the same contract for every outcome', () => {
+    const fullAssessment =
+      'Delete records only after retention is confirmed.\n\nThe failure cause is not verified.\n\nKeep this partial plan while asking for a decision.';
+    for (const outcome of [
+      { outcome: 'plan-ready', assessment: 'Confirmed retention.', plan: fullAssessment },
+      {
+        outcome: 'clarification-needed',
+        assessment: 'Retention is unresolved.',
+        questions: ['Which retention period applies?'],
+      },
+      {
+        outcome: 'operator-setup-blocker',
+        code: 'assessment-output-unusable',
+        remediation: 'Retry the incomplete assessment in this chat.',
+      },
+    ]) {
+      const input = { ...common, ...outcome, fullAssessment };
+      assert.deepEqual(parseAssessmentResult(input), input);
+    }
   });
 });

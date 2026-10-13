@@ -28,6 +28,46 @@ const common = {
 };
 
 describe('channels/github/conversation/presentation/assessment-result', () => {
+  it('should render the complete source unchanged beside questions and limitations', () => {
+    const fullAssessment =
+      '## My assessment\n\nDelete only after confirming retention.\n\n### Partial work\n\n1. Inspect storage.\n2. Ask which period applies.\n\nEvidence is unavailable; this cause is assumed.';
+    const results: AssessmentResult[] = [
+      {
+        ...common,
+        fullAssessment,
+        outcome: 'plan-ready',
+        assessment: 'Retention was answered.',
+        planSummary: 'Proceed under the confirmed retention policy.',
+        plan: fullAssessment,
+      },
+      {
+        ...common,
+        fullAssessment,
+        outcome: 'clarification-needed',
+        assessment: 'Retention is missing.',
+        questions: ['Which retention period applies?'],
+      },
+      {
+        ...common,
+        fullAssessment,
+        outcome: 'operator-setup-blocker',
+        code: 'assessment-output-unusable',
+        remediation: 'Clarify the incomplete output in this chat.',
+      },
+    ];
+    for (const result of results) {
+      const output = renderAssessmentResult(result, context);
+      assert.ok(output.includes('## Full assessment\n\n' + fullAssessment));
+      assert.equal(output.split(fullAssessment).length, 2);
+      assert.ok(!output.includes('## Full plan\n'));
+      assert.ok(output.indexOf('## Full assessment\n') < output.indexOf('## Reference material\n'));
+      if (result.outcome === 'clarification-needed')
+        assert.ok(output.indexOf(result.questions[0]!) < output.indexOf(fullAssessment));
+      if (result.outcome === 'operator-setup-blocker')
+        assert.ok(output.indexOf(result.remediation) < output.indexOf(fullAssessment));
+    }
+  });
+
   it('should show only configured instructions below routing across result outcomes', () => {
     const results: AssessmentResult[] = [
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },

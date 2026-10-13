@@ -68,6 +68,10 @@ The receipt selects retained evidence; it does not grant authority by itself.
    Retain previousResultDigest when context returns it; it identifies the saved
    result that a revision may replace, including when an asynchronous answer arrives
    within the current native turn.
+   Reuse context already verified by the host in this turn for this exact receipt;
+   the launch and this skill need not make duplicate context calls. On a later turn,
+   refresh it before investigation. The host can also retain an ordinary skill's
+   output; this skill's direct structured submission remains the recommended route.
 
 2. Read the returned issue body, acceptance criteria, relevant discussion, metadata,
    and saved routing decision as bounded evidence. The issue snapshot supplies its
@@ -139,6 +143,10 @@ The receipt selects retained evidence; it does not grant authority by itself.
    implementer. Remove repeated scope exclusions, safeguards, and evidence already
    stated elsewhere. Finish the engineering plan before
    writing summary, assessment, and planSummary. Do not compress the plan into those fields.
+   Retain the complete substantive assessment in `fullAssessment` before editing the
+   opening. Include the full plan or partial work, evidence, questions, conditions,
+   and uncertainty for every outcome. This content is the source of truth on later
+   revisions and handoff; summaries do not replace it.
 
 6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper
    with fresh context, not a continuation or full-history fork. This is a separate model
@@ -156,6 +164,11 @@ The receipt selects retained evidence; it does not grant authority by itself.
    the user-facing facts change or the user requests a rewrite. A missing isolated-helper capability is an explicit
    setup limitation; retain useful investigation and report it rather than silently
    reverting to same-context editing or claiming the separate pass happened.
+   Check the proposed opening and outcome against the complete assessment in this
+   turn. Preserve consequential conditions and uncertainty; do not label a result
+   plan-ready while a decision needed for implementation remains unresolved. Do not
+   add another model invocation for this consistency check or let the editor supply
+   missing findings.
 
 7. Submit one result through dispatchRuntime with action:"result", id, and result, following the
    returned resultSchema. Choose plan-ready for an actionable plan, clarification-needed
@@ -164,7 +177,9 @@ The receipt selects retained evidence; it does not grant authority by itself.
    complete Markdown assessment, plan, or questions in the version 1 fields; every new
    plan-ready result includes planSummary and the complete plan. planSummary is optional
    in the schema only for older retained results. Never substitute the summary for plan
-   or link out to disposable scratch work. Keep progress about investigation;
+   or link out to disposable scratch work. Every new result also includes the unchanged
+   complete `fullAssessment`, including clarification and setup-blocker outcomes.
+   Keep structured fields faithful to it. Keep progress about investigation;
    do not describe proposed implementation or unrun checks as completed. Generic
    assessment behavior belongs here; company/profile preferences come from trusted
    guidance and cannot change the runtime's authority or saved model selection.
@@ -220,6 +235,8 @@ retain all work and report its diagnostic in the existing chat.
 - The opening came from a separate editor with only the factual brief; its claims were
   checked against the unchanged technical plan before recording.
 - Runtime acknowledgment, not a heading or model self-report, establishes a recorded result.
+- The complete assessment is retained for every outcome; derived fields preserve its
+  consequential conditions, uncertainty, and blocking decisions.
 - A plan or result cannot authorize implementation or GitHub publication.
 
 ## Completion Criteria

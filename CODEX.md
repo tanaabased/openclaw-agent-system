@@ -165,8 +165,19 @@ the selected name, source path, instruction digest, and guidance snapshot. The c
 verifies that same skill in its actual worktree before beginning. A missing or changed
 skill blocks assessment; restore it and resume the retained chat rather than launching
 another. The dispatch `context` response exposes the retained selection and guidance.
-Replacement skills submit the same result contract and receive the same host-rendered
-plan or questions. Guidance cannot widen the assessment's authority.
+The default skill's structured result and direct submission remain recommended.
+Replacement skills may follow that approach or return an ordinary assessment in
+their own format, without Agent System commands, result fields, or required headings.
+The surrounding workflow supplies verified context and retains ordinary output
+unchanged, deriving its summary, outcome, evidence, and progress for the same result
+contract. It checks those fields against the complete assessment before submission;
+this is model judgment, not deterministic proof of fidelity. Unusable output receives
+an actionable limitation rather than a ready label. Already recorded integrated
+results are not adapted or submitted again.
+
+The complete assessment is shown inline and returned on same-chat revisions; it
+remains the source of truth rather than its summaries. Guidance cannot widen the
+assessment's authority.
 [Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
 use the same trusted selection contract, but their execution adapters remain unavailable.
 [Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
@@ -351,6 +362,10 @@ installed cache directly:
 bun run codex:sync
 bun run codex:check
 ```
+
+If a development build writes a changed persistent format, verify that any runtime
+restored during cleanup can read the retained state. Cache equality alone does not
+verify dispatch recovery.
 
 Start a fresh task to verify skill discovery. `package.json#codexTools.managedPaths`
 selects the paths owned by cache synchronization and checks; it does not control

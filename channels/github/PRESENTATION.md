@@ -241,6 +241,12 @@ Render the complete full plan inline immediately after its summary, with no acco
 separate-document link, or additional click. Never truncate it in the renderer.
 Older retained results without a separate plan summary still show their complete full plan.
 
+When the result includes a complete `fullAssessment`, show it unchanged under
+**Full assessment** for every outcome, after the plan summary, question, or setup
+action. It replaces the separately rendered Full plan, while questions and required
+actions remain prominent. Do not impose the default plan headings on an ordinary
+skill's output or use a summary in place of the complete source.
+
 Pair each proposed change with its file or small group of related files in the same
 bullet. Use **Add**, **Modify**, **Remove**, or **Move/merge**, followed by the paths and
 the work to do; do not repeat the work in a separate file inventory. Show sources and

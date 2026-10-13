@@ -26,7 +26,14 @@ const progress = Type.Object(
   },
   { additionalProperties: false },
 );
-const common = { version: Type.Literal(1), summary: text, evidence, progress };
+const common = {
+  version: Type.Literal(1),
+  summary: text,
+  evidence,
+  progress,
+  // complete source for new assessments; existing structured results remain supported.
+  fullAssessment: Type.Optional(text),
+};
 
 /** shared issue assessment contract owned by #249; lifecycle identity stays runtime-owned. */
 export const assessmentResultSchema = Type.Union([

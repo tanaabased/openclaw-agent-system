@@ -580,8 +580,13 @@ instructions, not secrets; their contents are retained privately with the assess
 Omitting both fields uses the default skill. Guidance alone supplements that default;
 a replacement runs alone, with guidance when supplied. Agent System owns generic
 defaults, company skills may live in Canon, and the bound workspace owns selection
-and preferences. A replacement must consume the verified context and return the same
-`assessment-result/v1` contract; the host owns result framing and verified links.
+and preferences. A replacement may use the recommended structured result and direct
+submission, as the default skill does, or produce an ordinary assessment without
+Agent System commands, result fields, or required headings. For ordinary output, the
+host supplies verified context, retains the complete assessment, and derives the same
+internal result for saving and display. Integrated results are not adapted a second
+time. The full assessment remains the source of truth for either approach; summaries
+and status must preserve its conditions, uncertainty, and unresolved decisions.
 
 Selection and guidance are captured when native creation is prepared. Continuation
 uses the saved guidance; a fresh assessment observes later guidance-file edits without
