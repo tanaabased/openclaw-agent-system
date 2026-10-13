@@ -125,7 +125,9 @@ original location as current code.
 
 For standalone Codex delivery, retain the original issue chat link and state that
 automatic GitHub feedback delivery is unavailable. Render only after verified
-publication and native attachment; the card itself is not delivery proof.
+publication; native attachment warnings accompany the card without suppressing it.
+Use the shared info, warning, and error components for delivery notices. The card
+itself is not delivery proof.
 
 Use this card for the private `pull-request-opened` turn and the deterministic
 GitHub handoff. See [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,

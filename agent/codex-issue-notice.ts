@@ -21,6 +21,50 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'delivery-attachment-pending')
+    return {
+      severity: 'warning',
+      title: 'PR attachment needs a check',
+      summary:
+        'The pull request is published, but its native chat attachment could not be verified.',
+      next: 'Retry native attachment and its inventory check in this chat. The PR card remains available; do not create another PR.',
+    };
+  if (code === 'delivery-linkage-retried')
+    return {
+      severity: 'info',
+      title: 'Issue link verified after retry',
+      summary: 'GitHub confirmed the closing issue link on a later readback.',
+      next: 'No action is needed. The existing pull request was retained.',
+    };
+  if (code === 'delivery-ssh-transport')
+    return {
+      severity: 'info',
+      title: 'Used the GitHub SSH remote',
+      summary: 'Delivery used the shared GitHub SSH transport preference for this push.',
+      next: 'No action is needed. Repository identity and remote head were verified.',
+    };
+  if (code === 'dispatch-project-git-auth-unavailable')
+    return {
+      severity: 'error',
+      title: 'Git authentication failed',
+      summary: 'Native Git could not authenticate to the repository.',
+      next: 'Check the host Git credential or SSH setup, then retry the retained delivery. No Agent System credential changes are needed.',
+    };
+  if (code === 'github-delivery-linkage-unverified')
+    return {
+      severity: 'error',
+      title: 'Issue link is not verified',
+      summary:
+        'The pull request exists, but GitHub has not confirmed its closing issue link after bounded readback attempts.',
+      next: 'Inspect the existing PR and issue link, then resume the same delivery. Do not create another PR.',
+    };
+  if (code.startsWith('delivery-'))
+    return {
+      severity: 'error',
+      title: 'Pull request delivery needs attention',
+      summary: 'Delivery could not finish its required verification or publication step.',
+      next: 'Inspect the diagnostic and retained PR, if present, then resume the same operation after resolving the problem.',
+    };
   if (code === 'dispatch-scan-required')
     return {
       severity: 'warning',

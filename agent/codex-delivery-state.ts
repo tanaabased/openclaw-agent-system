@@ -35,6 +35,15 @@ export const codexDeliveryStateSchema = Type.Object(
     reconciled: Type.Boolean(),
     attached: Type.Boolean(),
     cardAttempts: Type.Integer({ minimum: 0 }),
+    notices: Type.Optional(
+      Type.Array(
+        Type.Union([
+          Type.Literal('delivery-linkage-retried'),
+          Type.Literal('delivery-ssh-transport'),
+        ]),
+        { maxItems: 2 },
+      ),
+    ),
   },
   { additionalProperties: false },
 );

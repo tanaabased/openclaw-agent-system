@@ -1,6 +1,7 @@
 import type { GitHubIdentityPin, GitHubPullRequestRecipient } from '../config-schema.ts';
 import { githubIdentitySet } from '../provider/work-item.ts';
 import resolvePullRequestRecipients from '../pull-request-recipients.ts';
+import abortableDelay from '../../../utils/abortable-delay.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
 
 export interface GitHubNotificationIssueDeliveryReceipt {
@@ -43,6 +44,7 @@ export interface IssueDeliveryInput {
   repositoryNodeId?: string;
   linkIssue?: boolean;
   beforeCreate?: () => Promise<void>;
+  onLinkageRetry?: () => Promise<void>;
   checkpoint?: (receipt: GitHubNotificationIssueDeliveryReceipt) => Promise<void>;
 }
 
@@ -151,9 +153,23 @@ function pullRequestProjection() {
   return '{baseRef:.base.ref,body,headRef:.head.ref,headRepository:(.head.repo.full_name//""),itemNodeId:.node_id,number,state,title}';
 }
 
+function hasClosingReference(body: string, repository: string, number: number): boolean {
+  const references = new Set([
+    `#${number}`,
+    `${repository}#${number}`.toLowerCase(),
+    `https://github.com/${repository}/issues/${number}`.toLowerCase(),
+  ]);
+  const pattern =
+    /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?):?\s+(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|(?:[\w.-]+\/[\w.-]+)?#\d+)(?=$|[\s.,;:!?])/giu;
+  return [...body.matchAll(pattern)].some((match) => references.has(match[1]!.toLowerCase()));
+}
+
 /** provider operations shared by runtime-owned delivery wrappers. */
 export default class IssueDeliveryProvider {
-  constructor(readonly client: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>) {}
+  constructor(
+    readonly client: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>,
+    private readonly delay = abortableDelay,
+  ) {}
   async inspect(
     input: IssueDeliveryInput,
   ): Promise<GitHubNotificationIssueDeliveryReceipt | undefined> {
@@ -336,11 +352,8 @@ export default class IssueDeliveryProvider {
     });
     if (input.linkIssue && !(await this.#linkedIssue(input, pullRequest))) {
       const reference = `Closes https://github.com/${repository}/issues/${input.item.number}`;
-      if (
-        !pullRequest.body
-          .split(/\r?\n/u)
-          .some((line) => line.trim().toLowerCase() === reference.toLowerCase())
-      ) {
+      let linked = false;
+      if (!hasClosingReference(pullRequest.body, repository, input.item.number)) {
         const linkedBody = `${pullRequest.body.trimEnd()}\n\n${reference}`.trim();
         if (linkedBody.length > 65_536) throw new Error('github-delivery-body-too-large');
         await this.#github(
@@ -358,9 +371,15 @@ export default class IssueDeliveryProvider {
           input.signal,
           JSON.stringify({ body: linkedBody }),
         );
+        linked = await this.#linkedIssue(input, pullRequest);
       }
-      if (!(await this.#linkedIssue(input, pullRequest)))
-        throw new Error('github-delivery-linkage-unverified');
+      for (const milliseconds of [250, 750, 1500]) {
+        if (linked) break;
+        await this.delay(milliseconds, input.signal);
+        linked = await this.#linkedIssue(input, pullRequest);
+        if (linked) await input.onLinkageRetry?.();
+      }
+      if (!linked) throw new Error('github-delivery-linkage-unverified');
     }
     if (
       normalize &&

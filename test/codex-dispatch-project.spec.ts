@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import {
+  dispatchGit,
   githubOrigin,
   resolveDispatchProject,
   verifyDispatchWorktree,
@@ -40,6 +41,38 @@ describe('agent/codex-dispatch-project', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should report native authentication failures without exposing git stderr', async function () {
+    if (process.platform === 'win32') this.skip();
+    const bin = join(root, 'bin');
+    await mkdir(bin);
+    const executable = join(bin, 'git');
+    const originalPath = process.env.PATH;
+    try {
+      process.env.PATH = bin + delimiter + originalPath;
+      for (const [stderr, code] of [
+        [
+          "fatal: could not read Username for 'https://github.com': Device not configured",
+          'dispatch-project-git-auth-unavailable',
+        ],
+        ['git@github.com: Permission denied (publickey).', 'dispatch-project-git-auth-unavailable'],
+        ['fatal: remote unavailable', 'dispatch-project-git-unavailable'],
+      ]) {
+        await writeFile(
+          executable,
+          `#!${process.execPath}\nprocess.stderr.write(${JSON.stringify(stderr)}); process.exit(128);\n`,
+          { mode: 0o755 },
+        );
+        await assert.rejects(
+          dispatchGit(source, ['status']),
+          (error: unknown) => error instanceof Error && error.message === code,
+        );
+      }
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
   });
 
   it('should preserve permission errors from configured and discovered project paths', async function () {

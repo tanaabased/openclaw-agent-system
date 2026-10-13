@@ -16,6 +16,12 @@ describe('agent/codex-issue-notice', () => {
 
   it('should distinguish normal progress, decisions, and failed operations without letting severity force notifications', () => {
     for (const [code, severity] of [
+      ['delivery-attachment-pending', 'warning'],
+      ['delivery-linkage-retried', 'info'],
+      ['delivery-ssh-transport', 'info'],
+      ['dispatch-project-git-auth-unavailable', 'error'],
+      ['github-delivery-linkage-unverified', 'error'],
+      ['delivery-reconciliation-required', 'error'],
       ['dispatch-project-registration-unavailable', 'warning'],
       ['dispatch-activation-required', 'warning'],
       ['intake-policy-disabled', 'info'],

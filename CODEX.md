@@ -203,7 +203,10 @@ Publication retains the PR before recipient reconciliation. If a later step
 fails, prepare and resume that operation. An uncertain creation is reconciled
 against the managed branch; it is never blindly repeated. Attach the returned
 URL with native `attach_artifact`, read `list_artifacts`, then call `reconcile`
-and `present`. Attachment and presentation failures do not create another PR.
+and `present`. Attachment verification is nonblocking: the verified PR card remains
+available with an attachment warning. Delivery notices use the shared info, warning,
+and error cards; publication errors retain the existing PR for retry. Attachment and
+presentation failures do not create another PR.
 See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
 Automatic progression and GitHub feedback delivery remain unavailable; the PR
 card makes no promise to relay comments.

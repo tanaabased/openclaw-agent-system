@@ -1,10 +1,14 @@
 import { realpath } from 'node:fs/promises';
 
+import { preferGitHubSshWorktreeRemote } from '../tools/git/worktree-remote.ts';
+import type abortableDelay from '../utils/abortable-delay.ts';
+
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from './automation-hash.ts';
 import { nativeObject } from './automation-gateway.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
 import dispatchHistory from './codex-dispatch-history.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import {
@@ -42,6 +46,7 @@ type DeliveryRequest = Static<typeof requestSchema>;
 export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
   connect?: typeof connectCodexGitHubAccount;
   git?: DispatchGit;
+  delay?: typeof abortableDelay;
   native?: Pick<ReturnType<typeof codexDispatchNative>, 'find'>;
   attachment?: (threadId: string, turnId: string, url: string) => Promise<boolean>;
   threadId?: string;
@@ -50,6 +55,16 @@ export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies,
     saved: WorkflowScheduleAuthority;
     current: Omit<WorkflowScheduleAuthority, 'version' | 'capabilities'>;
   };
+}
+
+export class CodexDeliveryFailure extends Error {
+  constructor(
+    error: unknown,
+    readonly code: string,
+    readonly notices: Array<ReturnType<typeof codexIssueNotice>>,
+  ) {
+    super(error instanceof Error ? error.message : code, { cause: error });
+  }
 }
 
 /** only successful native inventory readback in the owning turn establishes attachment. */
@@ -90,7 +105,7 @@ export async function codexDeliveryAttachment(
     inventory.artifacts.some(
       (entry) =>
         nativeObject(entry) &&
-        (entry.type === 'pull_request' || entry.artifactType === 'pull_request') &&
+        entry.attachmentType === 'pull_request' &&
         (entry.identityKey === url || (nativeObject(entry.payload) && entry.payload.url === url)),
     )
   );
@@ -226,8 +241,16 @@ export default async function runCodexDelivery(
         reconciled: false,
         attached: previous?.attached ?? false,
         cardAttempts: previous?.cardAttempts ?? 0,
+        notices: previous?.notices ?? [],
       };
       const digest = automationHash({ delivery, turnId: found.turnId, previous });
+      const notices = (attached: boolean) =>
+        [
+          ...new Set([
+            ...(record.delivery?.notices ?? []),
+            ...(!attached ? ['delivery-attachment-pending'] : []),
+          ]),
+        ].map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
       if (input.action === 'prepare')
         return {
@@ -242,127 +265,171 @@ export default async function runCodexDelivery(
         if (input.digest !== digest) throw new Error('delivery-preview-stale');
         record.delivery = delivery;
         await save();
-        const publication: IssueDeliveryInput = {
-          item: {
-            number: intake.issue.number,
-            itemDatabaseId: intake.issue.databaseId,
-            itemNodeId: intake.issue.nodeId,
-            repositoryOwner: intake.repository.owner.login,
-            repositoryName: intake.repository.name,
-            repositoryDefaultBranch: checked.repo.defaultBranch,
-            assignmentActorLogin: intake.assignment.actor.login,
-            assignmentActorNodeId: intake.assignment.actor.nodeId,
-          },
-          branch,
-          title: delivery.title,
-          body: delivery.body,
-          signal,
-          recipients,
-          expectedPullRequest: delivery.pullRequest,
-          headSha: head,
-          repositoryNodeId: intake.repository.nodeId,
-          linkIssue: true,
-          beforeCreate: async () => {
-            if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
-            delivery.creationAttempted = true;
-            await save();
-          },
-          checkpoint: async (receipt) => {
-            delivery.pullRequest = receipt;
-            await save();
-          },
-        };
-        const provider = new IssueDeliveryProvider(connected.account);
-        const remoteRef = `refs/heads/${branch}`;
-        const remote = (
-          await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
-        ).trim();
-        const remoteHead = remote.split(/\s/u)[0] ?? '';
-        if (remote && remoteHead !== head) {
-          if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
-            throw new Error('delivery-remote-head-diverged');
-          await git(found.cwd, ['merge-base', '--is-ancestor', remoteHead!, head], signal);
-        }
-        publication.expectedPullRequest = await provider.inspect({
-          ...publication,
-          headSha: remoteHead,
-        });
-        const pushUrls = (
-          await git(found.cwd, ['remote', 'get-url', '--push', '--all', 'origin'], signal)
-        )
-          .trim()
-          .split(/\r?\n/u);
-        const repository =
-          `${intake.repository.owner.login}/${intake.repository.name}`.toLowerCase();
-        if (pushUrls.some((value) => githubOrigin(value) !== repository))
-          throw new Error('delivery-push-destination-mismatch');
-        if (remoteHead !== head)
-          await git(
-            found.cwd,
-            ['push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
+        try {
+          const publication: IssueDeliveryInput = {
+            item: {
+              number: intake.issue.number,
+              itemDatabaseId: intake.issue.databaseId,
+              itemNodeId: intake.issue.nodeId,
+              repositoryOwner: intake.repository.owner.login,
+              repositoryName: intake.repository.name,
+              repositoryDefaultBranch: checked.repo.defaultBranch,
+              assignmentActorLogin: intake.assignment.actor.login,
+              assignmentActorNodeId: intake.assignment.actor.nodeId,
+            },
+            branch,
+            title: delivery.title,
+            body: delivery.body,
             signal,
-          );
-        if (
-          (await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal))
+            recipients,
+            expectedPullRequest: delivery.pullRequest,
+            headSha: head,
+            repositoryNodeId: intake.repository.nodeId,
+            linkIssue: true,
+            onLinkageRetry: async () => {
+              delivery.notices = [
+                ...new Set([...(delivery.notices ?? []), 'delivery-linkage-retried' as const]),
+              ];
+              await save();
+            },
+            beforeCreate: async () => {
+              if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
+              delivery.creationAttempted = true;
+              await save();
+            },
+            checkpoint: async (receipt) => {
+              delivery.pullRequest = receipt;
+              await save();
+            },
+          };
+          const provider = new IssueDeliveryProvider(connected.account, deps.delay);
+          const remoteRef = `refs/heads/${branch}`;
+          const remote = (
+            await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
+          ).trim();
+          const remoteHead = remote.split(/\s/u)[0] ?? '';
+          if (remote && remoteHead !== head) {
+            if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
+              throw new Error('delivery-remote-head-diverged');
+            await git(found.cwd, ['merge-base', '--is-ancestor', remoteHead!, head], signal);
+          }
+          publication.expectedPullRequest = await provider.inspect({
+            ...publication,
+            headSha: remoteHead,
+          });
+          const pushUrls = (
+            await git(found.cwd, ['remote', 'get-url', '--push', '--all', 'origin'], signal)
+          )
             .trim()
-            .split(/\s/u)[0] !== head
-        )
-          throw new Error('delivery-push-unverified');
-        delivery.pushedHead = head;
-        await save();
-        await provider.publish(publication);
-        delivery.reconciled = true;
-        await save();
-        return {
-          status: 'attachment-required',
-          id: input.id,
-          pullRequest: delivery.pullRequest,
-          url: url(delivery.pullRequest!.pullRequestNumber),
-          instruction:
-            'Call native attach_artifact for this pull_request URL in this chat, then list_artifacts, then delivery reconcile. Never recreate the PR for an attachment or card failure.',
-        };
+            .split(/\r?\n/u);
+          const repository =
+            `${intake.repository.owner.login}/${intake.repository.name}`.toLowerCase();
+          if (pushUrls.some((value) => githubOrigin(value) !== repository))
+            throw new Error('delivery-push-destination-mismatch');
+          if (remoteHead !== head) {
+            const transport = pushUrls.flatMap((remote) => {
+              const preferred = preferGitHubSshWorktreeRemote(remote);
+              return preferred === remote ? [] : ['-c', `url.${preferred}.insteadOf=${remote}`];
+            });
+            await git(
+              found.cwd,
+              [...transport, 'push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
+              signal,
+            );
+            if (transport.length)
+              delivery.notices = [
+                ...new Set([...(delivery.notices ?? []), 'delivery-ssh-transport' as const]),
+              ];
+          }
+          if (
+            (await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal))
+              .trim()
+              .split(/\s/u)[0] !== head
+          )
+            throw new Error('delivery-push-unverified');
+          delivery.pushedHead = head;
+          await save();
+          await provider.publish(publication);
+          delivery.reconciled = true;
+          await save();
+          return {
+            status: 'published',
+            notices: notices(delivery.attached),
+            id: input.id,
+            pullRequest: delivery.pullRequest,
+            url: url(delivery.pullRequest!.pullRequestNumber),
+            instruction:
+              'Call native attach_artifact for this pull_request URL in this chat, then list_artifacts, then delivery reconcile and present. Attachment warnings do not block presentation. Never recreate the PR for an attachment or card failure.',
+          };
+        } catch (error) {
+          signal.throwIfAborted();
+          const message = error instanceof Error ? error.message : '';
+          const code = /^(?:dispatch|delivery|github-delivery)-[a-z-]+$/u.test(message)
+            ? message
+            : 'delivery-provider-failed';
+          const notice = codexIssueNotice({
+            event: 'failure',
+            changed: true,
+            code,
+            ...(delivery.pullRequest
+              ? {
+                  facts: [
+                    {
+                      label: 'Pull request',
+                      value: `[${repository}#${delivery.pullRequest.pullRequestNumber}](${url(delivery.pullRequest.pullRequestNumber)})`,
+                    },
+                  ],
+                }
+              : {}),
+          });
+          throw new CodexDeliveryFailure(error, code, [notice, ...notices(true)]);
+        }
       }
       if (!previous?.pullRequest || automationHash(previous.binding) !== automationHash(binding))
         throw new Error('delivery-reconciliation-required');
       const pullRequestUrl = url(previous.pullRequest.pullRequestNumber);
       if (input.action === 'reconcile') {
-        const attached = deps.attachment
-          ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
-          : await codexDeliveryAttachment(
-              connection!.request,
-              record.threadId,
-              found.turnId,
-              pullRequestUrl,
-            );
+        let attached = false;
+        try {
+          attached = deps.attachment
+            ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
+            : await codexDeliveryAttachment(
+                connection!.request,
+                record.threadId,
+                found.turnId,
+                pullRequestUrl,
+              );
+        } catch {
+          signal.throwIfAborted();
+        }
         previous.attached = attached;
         await save();
-        if (!attached)
-          return {
-            status: 'attachment-required',
-            url: pullRequestUrl,
-            pullRequest: previous.pullRequest,
-          };
         return {
           status: previous.reconciled ? 'ready' : 'publication-incomplete',
+          notices: notices(attached),
           url: pullRequestUrl,
           pullRequest: previous.pullRequest,
         };
       }
-      if (!previous.reconciled || !previous.attached)
-        throw new Error('delivery-reconciliation-required');
+      if (!previous.reconciled) throw new Error('delivery-reconciliation-required');
+      const presentationNotices = notices(previous.attached);
       previous.cardAttempts++;
       await save();
       return {
         status: 'linked',
+        notices: presentationNotices,
         url: pullRequestUrl,
         pullRequest: previous.pullRequest,
-        presentation: githubNotificationPullRequestOpenedCard({
-          issueNumber: intake.issue.number,
-          pullRequestNumber: previous.pullRequest.pullRequestNumber,
-          repositoryOwner: intake.repository.owner.login,
-          repositoryName: intake.repository.name,
-          commentFlow: 'unavailable',
-        }),
+        presentation: [
+          githubNotificationPullRequestOpenedCard({
+            issueNumber: intake.issue.number,
+            pullRequestNumber: previous.pullRequest.pullRequestNumber,
+            repositoryOwner: intake.repository.owner.login,
+            repositoryName: intake.repository.name,
+            commentFlow: 'unavailable',
+          }),
+          ...presentationNotices.map((notice) => notice.message),
+        ].join('\n\n'),
       };
     }, true);
   } finally {

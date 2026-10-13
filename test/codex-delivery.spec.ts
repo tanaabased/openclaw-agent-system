@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import runCodexDelivery, {
   codexDeliveryAttachment,
+  CodexDeliveryFailure,
   type CodexDeliveryDependencies,
 } from '../agent/codex-delivery.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
@@ -46,8 +47,10 @@ describe('agent/codex-delivery', () => {
   let head: string, remote: string, dirty: boolean, attached: boolean, creates: number;
   let failCreate: boolean, failLink: boolean, failRecipient: boolean, wrongIssueLink: boolean;
   let pr: Record<string, unknown> | undefined;
+  let providerLink: boolean | undefined;
   let bindingOverride: Record<string, unknown>;
   let gitCalls: string[][];
+  let linkReads: number, delayedLinkReads: number, bodyWrites: number;
   async function request(
     action: string,
     input: object = {},
@@ -139,9 +142,12 @@ describe('agent/codex-delivery', () => {
     failLink = false;
     failRecipient = false;
     pr = undefined;
+    providerLink = undefined;
     bindingOverride = {};
     gitCalls = [];
+    linkReads = delayedLinkReads = bodyWrites = 0;
     deps = {
+      delay: async () => {},
       codexHome,
       threadId: 'child',
       attachment: async () => attached,
@@ -163,7 +169,7 @@ describe('agent/codex-delivery', () => {
         if (argv[0] === 'rev-parse') return head;
         if (argv[0] === 'rev-list') return '2';
         if (argv[0] === 'ls-remote') return remote ? `${remote}\trefs/heads/pirog-work\n` : '';
-        if (argv[0] === 'push') remote = head;
+        if (argv.includes('push')) remote = head;
         return '';
       },
       connect: async () => ({
@@ -175,17 +181,22 @@ describe('agent/codex-delivery', () => {
         account: {
           identity: account,
           execute: async (argv, stdin) => {
-            if (argv.includes('graphql'))
+            if (argv.includes('graphql')) {
+              linkReads++;
               return result({
                 id: 'PR_7',
                 closingIssuesReferences: {
                   nodes:
-                    pr?.body === 'Closes #3' ||
-                    pr?.body === 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3'
+                    linkReads > delayedLinkReads &&
+                    (providerLink ??
+                      /Closes (?:#3|https:\/\/github.com\/owner\/repo\/issues\/3)/iu.test(
+                        String(pr?.body),
+                      ))
                       ? [{ id: wrongIssueLink ? 'I_other' : 'I_issue' }]
                       : [],
                 },
               });
+            }
             const endpoint = argv.find(
               (arg) => arg.startsWith('repos/') || arg.startsWith('users/'),
             );
@@ -209,6 +220,7 @@ describe('agent/codex-delivery', () => {
             }
             if (endpoint === 'repos/owner/repo/pulls/7') {
               if (argv.includes('PATCH')) {
+                bodyWrites++;
                 if (failLink) throw new Error('link unavailable');
                 pr = { ...pr, ...(JSON.parse(stdin!) as object) };
               }
@@ -239,22 +251,29 @@ describe('agent/codex-delivery', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('should publish authored multi-commit work, checkpoint linkage and require native attachment before presentation', async () => {
+  it('should publish authored multi-commit work and present before native attachment is ready', async () => {
     const preview = await request('prepare');
     assert.equal(preview.status, 'prepared');
     assert.equal((await store.read()).records[0]!.delivery, undefined);
-    assert.ok(!gitCalls.some((argv) => argv[0] === 'push'));
+    assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     const published = await publish();
-    assert.equal(published.status, 'attachment-required');
+    assert.equal(published.status, 'published');
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(
-      gitCalls.find((argv) => argv[0] === 'push'),
-      ['push', '--set-upstream', 'origin', `${firstHead}:refs/heads/pirog-work`],
+      gitCalls.find((argv) => argv.includes('push')),
+      [
+        '-c',
+        'url.git@github.com:owner/repo.git.insteadOf=https://github.com/owner/repo.git',
+        'push',
+        '--set-upstream',
+        'origin',
+        `${firstHead}:refs/heads/pirog-work`,
+      ],
     );
     assert.ok(!gitCalls.some((argv) => argv[0] === 'commit'));
-    await assert.rejects(request('present'), /reconciliation-required/);
-    assert.equal((await request('reconcile')).status, 'attachment-required');
+    assert.equal((await request('present')).status, 'linked');
+    assert.equal((await request('reconcile')).status, 'ready');
     attached = true;
     assert.equal((await request('reconcile')).status, 'ready');
     const presented = await request('present');
@@ -263,11 +282,18 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     attached = false;
     await request('reconcile');
-    await assert.rejects(request('present'), /reconciliation-required/);
+    assert.equal((await request('present')).status, 'linked');
   });
   it('should resume a failed linkage or recipient phase on the checkpointed pr', async () => {
     failLink = true;
-    await assert.rejects(publish(), /link unavailable/);
+    await assert.rejects(publish(), (error: unknown) => {
+      assert.ok(error instanceof CodexDeliveryFailure);
+      assert.match(error.message, /link unavailable/);
+      assert.ok(error.notices.some((notice) => notice.severity === 'info'));
+      const failure = error.notices.find((notice) => notice.severity === 'error');
+      assert.ok(failure?.message.includes(url));
+      return true;
+    });
     let saved = (await store.read()).records[0]!.delivery!;
     assert.equal(saved.pullRequest!.pullRequestNodeId, 'PR_7');
     assert.equal(saved.reconciled, false);
@@ -282,7 +308,7 @@ describe('agent/codex-delivery', () => {
     saved = (await store.read()).records[0]!.delivery!;
     assert.equal(saved.pullRequest!.pullRequestNodeId, 'PR_7');
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
-    assert.equal((await publish()).status, 'attachment-required');
+    assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
   });
   it('should retain uncertain creation intent instead of issuing another create', async () => {
@@ -305,7 +331,7 @@ describe('agent/codex-delivery', () => {
       title: 'Authored title',
       body: 'Authored body.',
     };
-    assert.equal((await publish()).status, 'attachment-required');
+    assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
   });
@@ -325,9 +351,67 @@ describe('agent/codex-delivery', () => {
     wrongIssueLink = true;
     await assert.rejects(publish(), /linkage-unverified/);
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
+    assert.equal(linkReads, 5);
+    await assert.rejects(request('present'), /reconciliation-required/);
     wrongIssueLink = false;
     await publish();
     assert.equal(creates, 1);
+  });
+  it('should retain shorthand closing prose while waiting for provider linkage and deduplicate recovery notices', async () => {
+    delayedLinkReads = 2;
+    const body = 'Authored body.\n\nCloses #3.';
+    const preview = await request('prepare', { body });
+    const published = await request('publish', { body, digest: preview.digest });
+    assert.equal(published.status, 'published');
+    assert.equal(pr!.body, body);
+    assert.equal(bodyWrites, 0);
+    assert.equal(linkReads, 3);
+    assert.equal(
+      (await store.read()).records[0]!.delivery!.notices!.filter(
+        (code) => code === 'delivery-linkage-retried',
+      ).length,
+      1,
+    );
+    const presented = await request('present');
+    assert.match(String(presented.presentation), /Issue link verified after retry/);
+    assert.match(String(presented.presentation), /PR attachment needs a check/);
+    assert.equal(creates, 1);
+  });
+  it('should recognize equivalent closing references without confusing other issues or repositories', async () => {
+    await publish();
+    providerLink = true;
+    for (const [body, added] of [
+      ['CLOSES: #3.', 0],
+      ['Fixed OWNER/REPO#3.', 0],
+      ['Resolves https://github.com/owner/repo/issues/3.', 0],
+      ['Closes #30.', 1],
+      ['Closes other/repo#3.', 1],
+    ] as const) {
+      pr!.body = body;
+      delayedLinkReads = linkReads + 2;
+      const before = bodyWrites;
+      await publish();
+      assert.equal(bodyWrites - before, added, body);
+    }
+    assert.equal(creates, 1);
+  });
+  it('should present the published pr with a warning when native attachment inspection fails', async () => {
+    await publish();
+    const reconciled = await request(
+      'reconcile',
+      {},
+      {
+        attachment: async () => {
+          throw new Error('native unavailable');
+        },
+      },
+    );
+    assert.equal(reconciled.status, 'ready');
+    const presented = await request('present');
+    assert.equal(presented.status, 'linked');
+    assert.match(String(presented.presentation), /Pull request opened/);
+    assert.ok(reconciled.notices?.some((notice) => notice.severity === 'warning'));
+    assert.ok(reconciled.notices?.some((notice) => notice.severity === 'info'));
   });
   it('should require human handoff or a fresh publication schedule and reject request-supplied authority', async () => {
     await store.exclusive(async (state, save) => {
@@ -372,7 +456,7 @@ describe('agent/codex-delivery', () => {
     fixture.item.assignees = [];
     await assert.rejects(request('prepare'), /authority-revoked/);
     assert.equal(creates, 0);
-    assert.ok(!gitCalls.some((argv) => argv[0] === 'push'));
+    assert.ok(!gitCalls.some((argv) => argv.includes('push')));
   });
   it('should reject foreign or closed provider identity before checkpointing or linking', async () => {
     for (const mismatch of [
@@ -389,6 +473,21 @@ describe('agent/codex-delivery', () => {
     }
     assert.equal(creates, 1);
   });
+  it('should preserve an existing ssh push transport without adding overrides', async () => {
+    const git = deps.git!;
+    deps.git = async (cwd, argv, signal) =>
+      argv[0] === 'remote' && argv.includes('--push')
+        ? 'git@github.com:owner/repo.git'
+        : git(cwd, argv, signal);
+    await publish();
+    assert.deepEqual(
+      gitCalls.find((argv) => argv.includes('push')),
+      ['push', '--set-upstream', 'origin', `${firstHead}:refs/heads/pirog-work`],
+    );
+    assert.ok(
+      !(await store.read()).records[0]!.delivery!.notices!.includes('delivery-ssh-transport'),
+    );
+  });
   it('should reject every foreign or invalid push destination before pushing or creating a pr', async () => {
     const git = deps.git!;
     for (const pushUrls of [
@@ -401,7 +500,7 @@ describe('agent/codex-delivery', () => {
       await assert.rejects(publish(), /push-destination-mismatch/);
       assert.equal(remote, '');
       assert.equal(creates, 0);
-      assert.ok(!gitCalls.some((argv) => argv[0] === 'push'));
+      assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     }
   });
   it('should reject changed or missing existing pr bindings before advancing the remote branch', async () => {
@@ -437,7 +536,7 @@ describe('agent/codex-delivery', () => {
       assert.equal(remote, firstHead);
     }
     assert.equal(creates, 1);
-    assert.ok(!gitCalls.some((argv) => argv[0] === 'push'));
+    assert.ok(!gitCalls.some((argv) => argv.includes('push')));
   });
   it('should update only a known ancestor on the same pr and reject unrelated remote heads', async () => {
     await publish();
@@ -467,7 +566,15 @@ describe('agent/codex-delivery native attachment', () => {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({ artifacts: [{ type: 'pull_request', identityKey: url }] }),
+            text: JSON.stringify({
+              artifacts: [
+                {
+                  attachmentType: 'pull_request',
+                  identityKey: '["github.com","owner","repo",7]',
+                  payload: { url, root: null, headBranch: null },
+                },
+              ],
+            }),
           },
         ],
       },
