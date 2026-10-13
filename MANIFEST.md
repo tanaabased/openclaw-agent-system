@@ -449,7 +449,8 @@ manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix
 
 **Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
-owned assessment schedule. Review requests, feedback, implementation, and
+owned assessment schedule. Explicitly authorized Codex PR delivery is available
+after a managed issue chat's implementation handoff. Review requests, feedback, automated implementation, and
 OpenClaw v2 execution remain unavailable. An unavailable OpenClaw notification
 adapter produces a validation warning and a skipped install outcome; other
 components remain usable. Doctor reports notifications as blocked, and execution
@@ -483,7 +484,8 @@ Explicit `true` requires a supported adapter but never grants authority to an em
 
 Every identity record requires `login` and immutable `node-id`, using the existing
 GitHub identity syntax. Logins (case-insensitive) and node IDs must be unique
-within each list. The same identity may appear in separate lists deliberately.
+within each authority list. PR recipients merge matching identities as described
+below. The same identity may appear in separate lists deliberately.
 Repository-owner records carry only these two fields. Trigger `allowed` records
 also accept `operator-owner`, a boolean defaulting to `false`. It records a separate
 OpenClaw operator grant, never an implied consequence of trigger membership and
@@ -495,6 +497,33 @@ V2 requires a literal `github.username`; it cannot resolve that value from the
 environment. `github.host` remains `github.com`. Native Codex host authorization
 supplies GitHub access, without an OpenClaw token, managed Git or `gh` configuration,
 or an operator-owner grant.
+
+#### Pull request recipients
+
+`issue-assignment.pull-request` configures delivery recipients; it does not activate
+publication or grant feedback authority.
+
+| Field                              | Required           | Default                               | Contract                                                              |
+| ---------------------------------- | ------------------ | ------------------------------------- | --------------------------------------------------------------------- |
+| `recipients`                       | no                 | Original assignment actor as assignee | Explicit lists replace this default; `[]` adds nobody.                |
+| `recipients[].login` and `node-id` | For pinned people  | none                                  | Pinned GitHub identity; mutually exclusive with `source`.             |
+| `recipients[].roles`               | yes                | none                                  | Nonempty unique list of `assignee` and/or `reviewer`.                 |
+| `recipients[].source`              | For dynamic people | none                                  | Only `assignment-actor`, resolved from the retained assignment event. |
+
+```yaml
+issue-assignment:
+  pull-request:
+    recipients:
+      - source: assignment-actor
+        roles: [assignee]
+      - login: maintainer
+        node-id: U_maintainer
+        roles: [assignee, reviewer]
+```
+
+Matching identities merge their roles; conflicting pins are rejected. Delivery
+adds missing recipients without removing existing assignees or review requests,
+including CODEOWNERS requests. Completed reviews are not requested again.
 
 #### Issue modes
 

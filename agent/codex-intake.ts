@@ -1,3 +1,4 @@
+import connectCodexGitHubAccount from './codex-github-client.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -6,11 +7,8 @@ import codexIssueNotice from './codex-issue-notice.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import runCodexSetupProcess from './codex-process-runner.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import type { SetupProcessRunner } from './setup-runner.ts';
-import { resolveToolExecutable } from '../api/cli-runner.ts';
-import type { ConnectedGitHubAccountClient } from '../core/github-account-client.ts';
 import IntakeRecordStore, {
   IntakeError,
   intakeLocation,
@@ -19,10 +17,6 @@ import IntakeRecordStore, {
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
-import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
-import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
-import readItemContext from '../channels/github/provider/read-item-context.ts';
-import { githubResponseIdentity } from '../channels/github/provider/work-event-normalization.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
 export interface CodexIntakeDependencies {
@@ -33,50 +27,12 @@ export interface CodexIntakeDependencies {
   connect?: (workspace: string, signal: AbortSignal) => Promise<GitHubNotificationIntakeClient>;
 }
 
-/** ambient host authorization only; no manifest environment, tokens, or managed gh configuration. */
 export async function connectCodexGitHub(
   workspace: string,
   signal: AbortSignal,
-  run: SetupProcessRunner = runCodexSetupProcess,
+  run?: SetupProcessRunner,
 ) {
-  const executable = await resolveToolExecutable('gh', process.env.PATH ?? '');
-  const execute: ConnectedGitHubAccountClient['execute'] = async (argv, stdin, options) => {
-    const result = await run([executable, ...argv, '--hostname', 'github.com'], {
-      cwd: workspace,
-      baseEnv: process.env,
-      env: { GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat' },
-      input: stdin ?? '',
-      timeoutMs: options?.timeoutMs ?? 30_000,
-      maxOutputBytes: options?.maxOutputBytes ?? 512 * 1024,
-      maxCombinedOutputBytes: options?.maxOutputBytes ?? 512 * 1024,
-      killGraceMs: 1000,
-      killProcessTree: true,
-      outputCapture: 'head',
-      signal,
-    });
-    return {
-      stdout: result.stdout,
-      stderr: '',
-      exitCode: result.code,
-      timedOut: result.termination !== 'exit',
-      truncated: Boolean(result.stdoutTruncatedBytes || result.stderrTruncatedBytes),
-    };
-  };
-  const result = await execute(['api', '/user', '--jq', '{login,nodeId:.node_id,type}']);
-  if (result.exitCode !== 0 || result.timedOut || result.truncated)
-    throw new IntakeError('intake-github-auth-unavailable');
-  let identity;
-  try {
-    identity = githubResponseIdentity(JSON.parse(result.stdout), 'native account');
-    if (identity.type !== 'User') throw new Error('unsupported account');
-  } catch {
-    throw new IntakeError('intake-github-identity-invalid');
-  }
-  const api = new GitHubWorkEventApiClient({ identity, execute });
-  return Object.assign(new GitHubWorkItemClient(api), {
-    getItemContext: (owner: string, name: string, number: number) =>
-      readItemContext(api, owner, name, number, 'issue', true),
-  });
+  return (await connectCodexGitHubAccount(workspace, signal, run)).client;
 }
 
 export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDependencies) {

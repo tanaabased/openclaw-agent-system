@@ -1,3 +1,6 @@
+import resolvePullRequestRecipients, {
+  legacyPullRequestRecipients,
+} from '../pull-request-recipients.ts';
 import { resolve } from 'node:path';
 
 import { legacyGitHubNotifications, type GitHubIdentityPin } from '../config-schema.ts';
@@ -56,16 +59,11 @@ export default class GitHubNotificationPullRequestRecipientGuidance {
       const configured = legacyGitHubNotifications(
         loaded.manifest.github?.notifications,
       )?.pullRequest;
-      const assignees = configured?.assignees ?? 'assignment-actor';
-      let resolvedAssignees: GitHubIdentityPin[];
-      if (assignees === 'assignment-actor') {
-        const { assignmentActorLogin: login, assignmentActorNodeId: nodeId } = input.item;
-        if (!login || !nodeId) return unavailable;
-        resolvedAssignees = [{ login, nodeId }];
-      } else {
-        resolvedAssignees = assignees;
-      }
-      const reviewers = configured?.reviewers ?? [];
+      const { assignmentActorLogin: login, assignmentActorNodeId: nodeId } = input.item;
+      const { assignees: resolvedAssignees, reviewers } = resolvePullRequestRecipients(
+        legacyPullRequestRecipients(configured),
+        login && nodeId ? { login, nodeId } : undefined,
+      );
       return [
         'Trusted task PR recipient defaults from agent.yaml and the original admitted assignment:',
         `assignees: ${identities(resolvedAssignees)}; reviewers: ${identities(reviewers)}.`,

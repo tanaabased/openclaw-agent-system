@@ -43,6 +43,30 @@ const externalPullRequestRecipientsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const recipientRoles = Type.Array(
+  Type.Union([Type.Literal('assignee'), Type.Literal('reviewer')]),
+  { minItems: 1, uniqueItems: true },
+);
+const externalDeliveryRecipientsSchema = Type.Object(
+  {
+    recipients: Type.Optional(
+      Type.Array(
+        Type.Union([
+          Type.Object(
+            { ...externalGitHubIdentitySchema.properties, roles: recipientRoles },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            { source: Type.Literal('assignment-actor'), roles: recipientRoles },
+            { additionalProperties: false },
+          ),
+        ]),
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const externalLegacyGitHubNotificationsSchema = Type.Object(
   {
     'assignment-types': Type.Optional(
@@ -114,6 +138,7 @@ const externalGitHubNotificationPolicySchema = Type.Object(
           ...externalNotificationTriggerSchema.properties,
           assessment: Type.Optional(assessmentConfigurationSchema),
           implementation: Type.Optional(assessmentConfigurationSchema),
+          'pull-request': Type.Optional(externalDeliveryRecipientsSchema),
           feedback: Type.Optional(externalFeedbackSchema),
           mode: Type.Optional(
             Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
@@ -147,6 +172,11 @@ export interface GitHubIdentityPin {
   login: string;
   nodeId: string;
 }
+
+export type GitHubRecipientRole = 'assignee' | 'reviewer';
+export type GitHubPullRequestRecipient = (GitHubIdentityPin | { source: 'assignment-actor' }) & {
+  roles: GitHubRecipientRole[];
+};
 
 export interface GitHubApprovedActor extends GitHubIdentityPin {
   operatorOwner?: boolean;
@@ -182,6 +212,7 @@ export interface GitHubNotificationPolicy {
     mode: 'plan' | 'work' | 'auto';
     assessment?: AssessmentConfiguration;
     implementation?: AssessmentConfiguration;
+    pullRequest?: { recipients?: GitHubPullRequestRecipient[] };
     feedback?: GitHubFeedbackPolicy;
   };
   reviewRequest?: {
@@ -247,6 +278,24 @@ export function decodeGitHubNotifications(
               allowed: actors(value['issue-assignment']),
               mode: value['issue-assignment'].mode ?? 'plan',
               ...feedback(value['issue-assignment'].feedback),
+              ...(value['issue-assignment']['pull-request'] === undefined
+                ? {}
+                : {
+                    pullRequest: {
+                      ...(value['issue-assignment']['pull-request'].recipients === undefined
+                        ? {}
+                        : {
+                            recipients: value['issue-assignment']['pull-request'].recipients.map(
+                              (entry) => ({
+                                ...('source' in entry
+                                  ? { source: entry.source }
+                                  : decodeIdentity(entry)),
+                                roles: entry.roles,
+                              }),
+                            ),
+                          }),
+                    },
+                  }),
               ...(value['issue-assignment'].implementation === undefined
                 ? {}
                 : {

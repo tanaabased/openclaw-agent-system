@@ -123,6 +123,10 @@ original location as current code.
 - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
 ```
 
+For standalone Codex delivery, retain the original issue chat link and state that
+automatic GitHub feedback delivery is unavailable. Render only after verified
+publication and native attachment; the card itself is not delivery proof.
+
 Use this card for the private `pull-request-opened` turn and the deterministic
 GitHub handoff. See [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
 session ownership, and publication.

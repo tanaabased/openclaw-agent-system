@@ -234,15 +234,16 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
   };
 }
 
-async function revalidate(
+export async function revalidateDispatchAssignment(
   current: Selection,
   record: IntakeRecord,
   deps: CodexDispatchDependencies,
   signal: AbortSignal,
   retainedWork = false,
+  requirePlan = true,
 ) {
   const policy = retainedWork ? codexIntakePolicy(current.manifest, true) : current.policy;
-  if (!policy || policy.policy.issueAssignment?.mode !== 'plan')
+  if (!policy || (requirePlan && policy.policy.issueAssignment?.mode !== 'plan'))
     throw new Error('dispatch-plan-mode-required');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
   if (
@@ -282,7 +283,7 @@ async function revalidate(
     latest.event !== 'assigned' ||
     latest.actor.type !== 'User' ||
     !githubIdentityMatches(latest.actor, record.assignment.actor) ||
-    !policy.policy.issueAssignment.allowed.some((identity) =>
+    !policy.policy.issueAssignment?.allowed.some((identity) =>
       githubIdentityMatches(identity, latest.actor),
     )
   )
@@ -610,7 +611,7 @@ export async function runCodexDispatch(
           const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
           if (!intake) return fail(pending, new Error('dispatch-intake-record-missing'));
           try {
-            await revalidate(current, intake, deps, signal);
+            await revalidateDispatchAssignment(current, intake, deps, signal);
             await recover(current, pending, intake, deps, save);
             pending.retryAfter = now + 300000;
             await fresh();
@@ -687,7 +688,12 @@ export async function runCodexDispatch(
         }
         try {
           record.intakeId = intake.id;
-          const { client, repo } = await revalidate(current, intake, deps, signal);
+          const { client, repo } = await revalidateDispatchAssignment(
+            current,
+            intake,
+            deps,
+            signal,
+          );
           const configuration = current.manifest.git?.worktrees ?? {};
           const repositoryId = 'github-' + repo.databaseId;
           const layout = resolveGitWorktreeLayout(current.workspace, configuration);
@@ -710,7 +716,7 @@ export async function runCodexDispatch(
           };
           const prepareRepository = async () => {
             await fresh();
-            await revalidate(current, intake, deps, signal);
+            await revalidateDispatchAssignment(current, intake, deps, signal);
             return (deps.prepareRepository ?? prepareDispatchRepository)(
               {
                 workspace: current.workspace,
@@ -855,7 +861,7 @@ export async function runCodexDispatch(
           now,
           save,
           fresh,
-          revalidate: () => revalidate(current, intake, deps, signal),
+          revalidate: () => revalidateDispatchAssignment(current, intake, deps, signal),
           connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
           withNative: (operation) => withNative(current, deps, operation),
         });
@@ -875,7 +881,7 @@ export async function runCodexDispatch(
         )
           throw new Error('dispatch-preparation-stale');
         try {
-          await revalidate(current, intake, deps, signal);
+          await revalidateDispatchAssignment(current, intake, deps, signal);
           const snapshot = JSON.parse(record.context);
           const metadata = snapshot.metadata?.complexity;
           const decision = resolveModelRoutingRequest(
@@ -1011,7 +1017,7 @@ export async function runCodexDispatch(
             throw new Error('dispatch-intake-caller-required');
           if (childAction && record.threadId && record.threadId !== caller)
             throw new Error('dispatch-assessment-caller-mismatch');
-          await revalidate(current, intake, deps, signal, true);
+          await revalidateDispatchAssignment(current, intake, deps, signal, true);
           const native = await recover(
             current,
             record,

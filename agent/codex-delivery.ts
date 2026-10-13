@@ -1,0 +1,349 @@
+import { realpath } from 'node:fs/promises';
+
+import { Type, type Static } from 'typebox';
+import { Value } from 'typebox/value';
+
+import { automationHash } from './automation-hash.ts';
+import { nativeObject } from './automation-gateway.ts';
+import dispatchHistory from './codex-dispatch-history.ts';
+import { codexDispatchNative } from './codex-dispatch-native.ts';
+import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
+import CodexDispatchStore from './codex-dispatch-state.ts';
+import { revalidateDispatchAssignment } from './codex-dispatch.ts';
+import type { CodexDeliveryState } from './codex-delivery-state.ts';
+import connectCodexGitHubAccount from './codex-github-client.ts';
+import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
+import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
+import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
+import { githubNotificationPullRequestOpenedCard } from '../channels/github/events/pull-request-opened.ts';
+import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
+import resolvePullRequestRecipients from '../channels/github/pull-request-recipients.ts';
+
+const requestSchema = Type.Object(
+  {
+    action: Type.Union(
+      ['prepare', 'publish', 'reconcile', 'present'].map((value) => Type.Literal(value)),
+    ),
+    id: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+    digest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+    title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
+    body: Type.Optional(Type.String({ maxLength: 65536 })),
+  },
+  { additionalProperties: false },
+);
+type DeliveryRequest = Static<typeof requestSchema>;
+export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
+  connect?: typeof connectCodexGitHubAccount;
+  git?: DispatchGit;
+  native?: Pick<ReturnType<typeof codexDispatchNative>, 'find'>;
+  attachment?: (threadId: string, turnId: string, url: string) => Promise<boolean>;
+  threadId?: string;
+  // only the owning continuation runtime may supply verified schedule state, never request json.
+  schedule?: {
+    saved: WorkflowScheduleAuthority;
+    current: Omit<WorkflowScheduleAuthority, 'version' | 'capabilities'>;
+  };
+}
+
+/** only successful native inventory readback in the owning turn establishes attachment. */
+export async function codexDeliveryAttachment(
+  request: CodexThreadRequest,
+  threadId: string,
+  turnId: string,
+  url: string,
+): Promise<boolean> {
+  const turns = await dispatchHistory(request, threadId);
+  const turn = turns.find((entry) => entry.id === turnId);
+  if (!turn || !Array.isArray(turn.items)) return false;
+  const calls = turn.items.filter(
+    (item) =>
+      nativeObject(item) &&
+      item.type === 'mcpToolCall' &&
+      item.server === 'codex_app' &&
+      item.tool === 'list_artifacts',
+  );
+  const call = calls.at(-1);
+  if (!nativeObject(call) || call.status !== 'completed' || !nativeObject(call.result))
+    return false;
+  const result = call.result;
+  if (result.isError === true || !Array.isArray(result.content)) return false;
+  const content = result.content.find(
+    (entry) => nativeObject(entry) && entry.type === 'text' && typeof entry.text === 'string',
+  );
+  if (!nativeObject(content) || typeof content.text !== 'string') return false;
+  let inventory: unknown;
+  try {
+    inventory = JSON.parse(content.text);
+  } catch {
+    return false;
+  }
+  return (
+    nativeObject(inventory) &&
+    Array.isArray(inventory.artifacts) &&
+    inventory.artifacts.some(
+      (entry) =>
+        nativeObject(entry) &&
+        (entry.type === 'pull_request' || entry.artifactType === 'pull_request') &&
+        (entry.identityKey === url || (nativeObject(entry.payload) && entry.payload.url === url)),
+    )
+  );
+}
+
+/** publication runs only through an explicitly approved native command; preparation is read-only. */
+export default async function runCodexDelivery(
+  pluginData: string,
+  request: unknown,
+  deps: CodexDeliveryDependencies = {},
+) {
+  if (!Value.Check(requestSchema, request)) throw new Error('delivery-request-invalid');
+  const input: DeliveryRequest = request;
+  if (input.title?.includes('\0') || input.body?.includes('\0'))
+    throw new Error('delivery-request-invalid');
+  const current = await selectCodexIntake(pluginData, {
+    codexHome: deps.codexHome,
+    inspectBinding: deps.inspectBinding,
+  });
+  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
+  const git = deps.git ?? dispatchGit;
+  const connection = deps.native
+    ? undefined
+    : await connectCodexThreads(current.workspace, current.codexHome);
+  const native = deps.native ?? codexDispatchNative(connection!.request);
+  try {
+    return await store.exclusive(async (state, save, signal) => {
+      const record = state.records.find((entry) => entry.id === input.id);
+      if (
+        !record?.request ||
+        !record.project ||
+        !record.worktree ||
+        !record.threadId ||
+        record.threadId !== caller ||
+        record.reset ||
+        record.retired
+      )
+        throw new Error('delivery-managed-issue-required');
+      const found = await native.find({
+        sourceThreadId: record.sourceThreadId,
+        prompt: record.request.prompt,
+        createdAfter: record.createdAt,
+        threadId: record.threadId,
+      });
+      if (
+        !found ||
+        found.id !== caller ||
+        !found.turnId ||
+        (await realpath(found.cwd)) !== (await realpath(record.worktree))
+      )
+        throw new Error('delivery-native-binding-mismatch');
+      if (deps.schedule) {
+        if (
+          deps.schedule.current.workflow !== 'issue-assignment' ||
+          deps.schedule.current.sourceThreadId !== record.sourceThreadId
+        )
+          throw new Error('delivery-schedule-binding-mismatch');
+        requireWorkflowSchedule(deps.schedule.saved, deps.schedule.current, 'publication');
+      } else if (!record.handoff || !found.followUpUserTurn)
+        throw new Error('delivery-human-publication-required');
+      const intake = (await current.store.read())?.records.find(
+        (entry) => entry.id === record.intakeId,
+      );
+      if (!intake) throw new Error('delivery-admission-missing');
+      const connected = await (deps.connect ?? connectCodexGitHubAccount)(
+        current.workspace,
+        signal,
+      );
+      const checked = await revalidateDispatchAssignment(
+        current,
+        intake,
+        { connect: async () => connected.client },
+        signal,
+        true,
+        false,
+      );
+      const policyDigest = automationHash(current.manifest.github?.notifications ?? null);
+      if (deps.schedule && deps.schedule.current.policyDigest !== policyDigest)
+        throw new Error('delivery-schedule-stale');
+      const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
+      await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
+      const branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
+      if (!branch || branch === checked.repo.defaultBranch)
+        throw new Error('delivery-branch-required');
+      await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
+      if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
+        throw new Error('delivery-uncommitted-work');
+      const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
+      if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
+      const count = Number(
+        await git(
+          found.cwd,
+          ['rev-list', '--count', `refs/remotes/origin/${checked.repo.defaultBranch}..HEAD`],
+          signal,
+        ),
+      );
+      if (!Number.isSafeInteger(count) || count < 1)
+        throw new Error('delivery-committed-work-required');
+      const recipients =
+        current.manifest.github?.notifications?.schemaVersion === 2
+          ? current.manifest.github.notifications.issueAssignment?.pullRequest?.recipients
+          : undefined;
+      resolvePullRequestRecipients(recipients, intake.assignment.actor);
+      const binding = {
+        repositoryId: intake.repository.nodeId,
+        issueId: intake.issue.nodeId,
+        threadId: record.threadId,
+        worktree: record.worktree,
+        branch,
+        base: checked.repo.defaultBranch,
+        head,
+        authorId: connected.account.identity.nodeId,
+        policyDigest,
+      };
+      const previous = record.delivery;
+      if (
+        previous &&
+        ['repositoryId', 'issueId', 'threadId', 'worktree', 'branch', 'base', 'authorId'].some(
+          (key) =>
+            previous.binding[key as keyof typeof binding] !== binding[key as keyof typeof binding],
+        )
+      )
+        throw new Error('delivery-binding-changed');
+      const delivery: CodexDeliveryState = {
+        id: previous?.id ?? automationHash({ admission: intake.id, threadId: record.threadId }),
+        binding,
+        title: input.title ?? previous?.title,
+        body: input.body ?? previous?.body,
+        creationAttempted: previous?.creationAttempted ?? false,
+        ...(previous?.pushedHead ? { pushedHead: previous.pushedHead } : {}),
+        ...(previous?.pullRequest ? { pullRequest: previous.pullRequest } : {}),
+        reconciled: false,
+        attached: previous?.attached ?? false,
+        cardAttempts: previous?.cardAttempts ?? 0,
+      };
+      const digest = automationHash({ delivery, turnId: found.turnId, previous });
+      const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
+      if (input.action === 'prepare')
+        return {
+          status: 'prepared',
+          id: input.id,
+          digest,
+          operation: delivery,
+          instruction:
+            'Only after explicit human publication authorization, execute delivery publish with this id and digest through native approval. Retain title/body if supplied. Automatic callers require freshly reconciled schedule authority. Preparation does not grant publication permission.',
+        };
+      if (input.action === 'publish') {
+        if (input.digest !== digest) throw new Error('delivery-preview-stale');
+        record.delivery = delivery;
+        await save();
+        const remoteRef = `refs/heads/${branch}`;
+        const remote = (
+          await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
+        ).trim();
+        const remoteHead = remote.split(/\s/u)[0];
+        if (remote && remoteHead !== head) {
+          if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
+            throw new Error('delivery-remote-head-diverged');
+          await git(found.cwd, ['merge-base', '--is-ancestor', remoteHead!, head], signal);
+        }
+        if (remoteHead !== head)
+          await git(
+            found.cwd,
+            ['push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
+            signal,
+          );
+        if (
+          (await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal))
+            .trim()
+            .split(/\s/u)[0] !== head
+        )
+          throw new Error('delivery-push-unverified');
+        delivery.pushedHead = head;
+        await save();
+        await new IssueDeliveryProvider(connected.account).publish({
+          item: {
+            number: intake.issue.number,
+            itemDatabaseId: intake.issue.databaseId,
+            itemNodeId: intake.issue.nodeId,
+            repositoryOwner: intake.repository.owner.login,
+            repositoryName: intake.repository.name,
+            repositoryDefaultBranch: checked.repo.defaultBranch,
+            assignmentActorLogin: intake.assignment.actor.login,
+            assignmentActorNodeId: intake.assignment.actor.nodeId,
+          },
+          branch,
+          title: delivery.title,
+          body: delivery.body,
+          signal,
+          recipients,
+          expectedPullRequest: delivery.pullRequest,
+          headSha: head,
+          repositoryNodeId: intake.repository.nodeId,
+          linkIssue: true,
+          beforeCreate: async () => {
+            if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
+            delivery.creationAttempted = true;
+            await save();
+          },
+          checkpoint: async (receipt) => {
+            delivery.pullRequest = receipt;
+            await save();
+          },
+        });
+        delivery.reconciled = true;
+        await save();
+        return {
+          status: 'attachment-required',
+          id: input.id,
+          pullRequest: delivery.pullRequest,
+          url: url(delivery.pullRequest!.pullRequestNumber),
+          instruction:
+            'Call native attach_artifact for this pull_request URL in this chat, then list_artifacts, then delivery reconcile. Never recreate the PR for an attachment or card failure.',
+        };
+      }
+      if (!previous?.pullRequest || automationHash(previous.binding) !== automationHash(binding))
+        throw new Error('delivery-reconciliation-required');
+      const pullRequestUrl = url(previous.pullRequest.pullRequestNumber);
+      if (input.action === 'reconcile') {
+        const attached = deps.attachment
+          ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
+          : await codexDeliveryAttachment(
+              connection!.request,
+              record.threadId,
+              found.turnId,
+              pullRequestUrl,
+            );
+        previous.attached = attached;
+        await save();
+        if (!attached)
+          return {
+            status: 'attachment-required',
+            url: pullRequestUrl,
+            pullRequest: previous.pullRequest,
+          };
+        return {
+          status: previous.reconciled ? 'ready' : 'publication-incomplete',
+          url: pullRequestUrl,
+          pullRequest: previous.pullRequest,
+        };
+      }
+      if (!previous.reconciled || !previous.attached)
+        throw new Error('delivery-reconciliation-required');
+      previous.cardAttempts++;
+      await save();
+      return {
+        status: 'linked',
+        url: pullRequestUrl,
+        pullRequest: previous.pullRequest,
+        presentation: githubNotificationPullRequestOpenedCard({
+          issueNumber: intake.issue.number,
+          pullRequestNumber: previous.pullRequest.pullRequestNumber,
+          repositoryOwner: intake.repository.owner.login,
+          repositoryName: intake.repository.name,
+          commentFlow: 'unavailable',
+        }),
+      };
+    }, true);
+  } finally {
+    await connection?.close();
+  }
+}

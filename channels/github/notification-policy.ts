@@ -1,3 +1,4 @@
+import resolvePullRequestRecipients from './pull-request-recipients.ts';
 import type { GitHubNotificationsDeclaration } from './config-schema.ts';
 import { feedbackIdentities } from './feedback-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
@@ -55,6 +56,19 @@ export function validateGitHubNotificationPolicy(
         severity: 'error',
       });
     }
+  }
+  try {
+    resolvePullRequestRecipients(
+      policy.issueAssignment?.pullRequest?.recipients?.filter((entry) => !('source' in entry)) ??
+        [],
+    );
+  } catch {
+    diagnostics.push({
+      code: 'github-notification-recipient-invalid',
+      fieldPath: '/github/notifications/issue-assignment/pull-request/recipients',
+      message: 'Recipient pins conflict or exceed the assignee limit.',
+      severity: 'error',
+    });
   }
   return diagnostics;
 }

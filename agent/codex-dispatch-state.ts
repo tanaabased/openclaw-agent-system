@@ -1,3 +1,4 @@
+import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
 import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
@@ -129,6 +130,7 @@ export const dispatchRecordSchema = Type.Object(
       ),
     ),
     result: Type.Optional(assessmentResultSchema),
+    delivery: Type.Optional(codexDeliveryStateSchema),
     stageReceipt: Type.Optional(
       Type.Object(
         {

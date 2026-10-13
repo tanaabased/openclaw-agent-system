@@ -177,6 +177,14 @@ test ! -d "$CODEX_HOME/automations"
 test ! -d "$root/notification-workspace/checkouts"
 test ! -d "$root/notification-workspace/.agent-system/repositories"
 
+# should expose packaged delivery while rejecting requests without a valid managed receipt
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" delivery --help | grep -F 'Reconcile verifies native attachment'
+if output=$(printf '%s\n' '{"action":"publish","id":"missing"}' | node "$runtime" delivery --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid"'
+
 # should accept separate feedback and stage selections while leaving disabled workflows inactive
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

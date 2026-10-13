@@ -6,6 +6,7 @@ import githubNotificationPullRequestOpenedResponseInstructions from '../conversa
 import type { GitHubNotificationEvent } from './types.ts';
 
 interface GitHubNotificationPullRequestOpenedPresentationInput {
+  commentFlow?: 'openclaw' | 'unavailable';
   issueNumber: number;
   pullRequestNumber: number;
   repositoryName: string;
@@ -34,7 +35,9 @@ export function githubNotificationPullRequestOpenedCard(
       {
         label: 'Comment flow',
         value:
-          'This issue and its delivery pull request share this session; each reply returns to its originating item.',
+          input.commentFlow === 'unavailable'
+            ? 'This pull request is linked to the original issue chat. Automatic GitHub feedback delivery is not available.'
+            : 'This issue and its delivery pull request share this session; each reply returns to its originating item.',
       },
     ],
     title: 'Pull request opened',

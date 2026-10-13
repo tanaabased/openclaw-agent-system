@@ -23,6 +23,13 @@ github:
           node-id: U_operator
           operator-owner: true
       mode: auto
+      pull-request:
+        recipients:
+          - source: assignment-actor
+            roles: [assignee]
+          - login: example-reviewer
+            node-id: U_reviewer
+            roles: [reviewer]
       assessment:
         skill: $agent-system:agent-system-issue-assessment
         guidance:

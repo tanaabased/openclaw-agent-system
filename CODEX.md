@@ -188,6 +188,26 @@ GitHub prose, and a completed assessment cannot authorize continuation or public
 Those operations require a newly reconciled native schedule; their unattended
 operation has not been established.
 
+### Pull Request Delivery
+
+After implementation handoff, explicitly authorize publication in the retained
+issue chat. The trusted `deliveryRuntime` accepts JSON actions with the retained
+dispatch `id`: `prepare` previews the current branch, head, identity, and recipient
+policy; `publish` requires that preview's `digest` and the same optional `title`
+and `body`. Preparation grants no publication authority. Codex uses native host
+Git and GitHub authorization, preserves authored commits and PR metadata, and
+adds the original issue's closing reference. The PR must be open, authored by the
+active account, and target the same repository's default branch.
+
+Publication retains the PR before recipient reconciliation. If a later step
+fails, prepare and resume that operation. An uncertain creation is reconciled
+against the managed branch; it is never blindly repeated. Attach the returned
+URL with native `attach_artifact`, read `list_artifacts`, then call `reconcile`
+and `present`. Attachment and presentation failures do not create another PR.
+See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
+Automatic progression and GitHub feedback delivery remain unavailable; the PR
+card makes no promise to relay comments.
+
 Native creation receipts, chat identity, worktree, and results survive interrupted
 polls. An uncertain creation is reconciled against native creation history; it is
 never blindly repeated. Preserve the retained evidence when repairing access,

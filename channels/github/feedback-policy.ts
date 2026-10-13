@@ -1,3 +1,4 @@
+import { githubIdentitySet } from './provider/work-item.ts';
 import type {
   GitHubFeedbackPolicy,
   GitHubIdentityPin,
@@ -14,20 +15,11 @@ export function feedbackIdentities(
     ...(feedback === true || feedback.inherit ? allowed : []),
     ...(typeof feedback === 'object' ? feedback.allowed : []),
   ];
-  const nodes = new Map<string, GitHubIdentityPin>();
-  const logins = new Map<string, string>();
-  for (const { login, nodeId } of identities) {
-    const normalized = login.toLowerCase();
-    const previous = nodes.get(nodeId);
-    if (
-      (previous && previous.login.toLowerCase() !== normalized) ||
-      (logins.has(normalized) && logins.get(normalized) !== nodeId)
-    )
-      throw new Error('github-notification-feedback-identity-conflict');
-    nodes.set(nodeId, { login: previous?.login ?? login, nodeId });
-    logins.set(normalized, nodeId);
+  try {
+    return githubIdentitySet(identities.map(({ login, nodeId }) => ({ login, nodeId })));
+  } catch {
+    throw new Error('github-notification-feedback-identity-conflict');
   }
-  return [...nodes.values()];
 }
 
 /** the admitted owner selects the scope, including an issue's verified delivery pr. */
