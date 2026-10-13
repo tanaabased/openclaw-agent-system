@@ -353,6 +353,7 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.binding.context.modelRouting.medium == {status: "mapped", sourceModel: "openai/gpt-5.6-sol", model: "gpt-5.6-sol", thinking: "high"}'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
+printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
 
 # should resolve bounded routing through the installed cache and preserve unresolved reasoning
 root="$TMPDIR/agent-system-codex-example"

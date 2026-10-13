@@ -278,6 +278,9 @@ describe('agent/codex-delivery', () => {
     assert.equal((await request('reconcile')).status, 'ready');
     const presented = await request('present');
     assert.equal(presented.status, 'linked');
+    assert.match(String(presented.instruction), /complete presentation Markdown.*final reply/u);
+    assert.match(String(presented.instruction), /including the PR card and all notices/u);
+    assert.match(String(presented.instruction), /card generation, not visible delivery/u);
     assert.match(JSON.stringify(presented.presentation), /feedback delivery is not available/);
     assert.equal(creates, 1);
     attached = false;
