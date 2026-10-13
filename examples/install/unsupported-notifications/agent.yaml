@@ -1,0 +1,22 @@
+schema-version: 1
+
+agent:
+  id: install-data
+  name: Install Data
+  email: install-data@example.com
+
+git: {}
+
+github:
+  username: install-data
+  notifications:
+    schema-version: 2
+    runtimes: [openclaw]
+    allowed-repository-owners:
+      - login: example
+        node-id: O_example
+    issue-assignment:
+      enabled: true
+      allowed:
+        - login: operator
+          node-id: U_operator

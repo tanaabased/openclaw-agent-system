@@ -450,8 +450,10 @@ manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix
 **Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
 owned assessment schedule. Review requests, feedback, implementation, and
-OpenClaw v2 execution remain unavailable. OpenClaw rejects selected v2 execution
-before legacy routing or authority is used. A Codex-only declaration does not
+OpenClaw v2 execution remain unavailable. An unavailable OpenClaw notification
+adapter produces a validation warning and a skipped install outcome; other
+components remain usable. Doctor reports notifications as blocked, and execution
+stops before legacy routing or authority is used. A Codex-only declaration does not
 enable the OpenClaw channel. Binding and passive discovery never activate work.
 See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
 

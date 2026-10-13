@@ -176,7 +176,7 @@ export default function createNotificationLifecycleContribution(
                 code: blocker.code,
                 message: blocker.message,
                 fieldPath: '/github/notifications/runtimes',
-                severity: 'error',
+                severity: 'warning',
               },
             ]
           : validateNotifications(manifest),
@@ -294,11 +294,10 @@ export default function createNotificationLifecycleContribution(
           'openclaw',
         );
         if (blocker)
-          throw new AgentSystemLifecycleError(
-            'github-notifications',
-            blocker.code,
-            blocker.message,
-          );
+          return {
+            outcomes: [{ code: blocker.code, message: blocker.message, status: 'skipped' }],
+            warnings: [{ code: blocker.code, message: blocker.message }],
+          };
         const hookOutcome = legacyGitHubNotifications(context.manifest.github?.notifications)
           ? await dependencies.hookAccess.reconcile(context.workspaceDir)
           : undefined;

@@ -87,3 +87,20 @@ printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
 openclaw config get 'agents.entries.install-data.tools' --json | jq -e '(.allow | sort) == (["read", "agent_system_install", "agent_system_doctor"] | sort) and (has("alsoAllow") | not)'
 ```
+
+```bash
+# should validate an unavailable notification adapter without rejecting the manifest
+cp "$GITHUB_WORKSPACE/examples/install/unsupported-notifications/agent.yaml" "$TMPDIR/install-data/agent.yaml"
+cd "$TMPDIR/install-data"
+openclaw agent-system validate --json | jq -e '.status == "valid" and any(.diagnostics[]; .code == "github-notification-runtime-unsupported" and .severity == "warning")'
+
+# should install other capabilities while skipping unavailable notifications with a warning
+cd "$TMPDIR/install-data"
+openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "github-notifications" and .status == "skipped") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github")'
+openclaw agent-system tool git -- --version | grep -F 'git version'
+
+# should retain the notification blocker without hiding unrelated readiness findings
+cd "$TMPDIR/install-data"
+if output=$(openclaw agent-system doctor --json); then exit 1; fi
+printf '%s\n' "$output" | jq -e 'any(.findings[]; .component == "github-notifications" and .code == "github-notification-runtime-unsupported" and .status == "blocked") and any(.findings[]; .component == "github" and .status == "healthy")'
+```
