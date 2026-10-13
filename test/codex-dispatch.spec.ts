@@ -11,6 +11,7 @@ import properLockfile from 'proper-lockfile';
 
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
@@ -2192,6 +2193,32 @@ describe('agent/codex-dispatch', () => {
     });
     await work.run('reconcile');
     await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+  });
+
+  it('should permit operator recovery from an explicitly handed-off development chat', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    await work.run('reconcile');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'f'.repeat(64),
+        issueKey: 'e'.repeat(64),
+        threadId: 'operator',
+      });
+      await save();
+    });
+    await assert.rejects(work.run('retry', {}, 'operator'), /operator-caller-required/);
+    await store.exclusive(async (state, save) => {
+      state.records.at(-1)!.handoff = { at: now, by: 'operator', turnId: 'operator-turn' };
+      await save();
+    });
+    assert.equal((await work.run('retry', {}, 'operator')).status, 'retry-available');
   });
 
   for (const outcome of ['done', 'blocked'])

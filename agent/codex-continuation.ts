@@ -90,7 +90,8 @@ export default async function runCodexContinuation(
       if (
         retry &&
         state.records.some(
-          (record) => record.threadId === caller || record.receiptThreadId === caller,
+          (record) =>
+            !record.handoff && (record.threadId === caller || record.receiptThreadId === caller),
         )
       )
         throw new Error('continuation-operator-caller-required');
