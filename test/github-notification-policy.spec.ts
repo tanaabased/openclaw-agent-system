@@ -33,7 +33,6 @@ describe('channels/github/notification-policy', () => {
     for (const [key, decoded] of [
       ['issue-assignment', 'issueAssignment'],
       ['review-request', 'reviewRequest'],
-      ['feedback', 'feedback'],
     ] as const) {
       for (const enabled of [undefined, true, false]) {
         for (const allowed of [undefined, [], [actor]]) {
@@ -67,10 +66,9 @@ describe('channels/github/notification-policy', () => {
       runtimes: ['codex'],
       'issue-assignment': { allowed: [{ ...actor }] },
       'review-request': { enabled: false, allowed: [{ ...actor }] },
-      feedback: { enabled: false, allowed: [{ ...actor }] },
     });
     assert.equal(githubNotificationRuntimeBlocker(mixed, 'codex'), undefined);
-    mixed.feedback!.enabled = true;
+    mixed.issueAssignment!.feedback = true;
     assert.equal(
       githubNotificationRuntimeBlocker(mixed, 'codex')?.code,
       'github-notification-runtime-unsupported',
@@ -126,9 +124,8 @@ describe('channels/github/notification-policy', () => {
       maxConcurrentItems: 2,
       allowedRepositoryOwners: [{ login: owner.login, nodeId: owner['node-id'] }],
     });
-    const declaration = parsed({ ...policy, 'issue-assignment': {}, feedback: { allowed: [] } });
+    const declaration = parsed({ ...policy, 'issue-assignment': {} });
     assert.deepEqual(declaration.issueAssignment, { allowed: [], mode: 'plan' });
-    assert.deepEqual(declaration.feedback, { allowed: [] });
     assert.equal(declaration.reviewRequest, undefined);
     assert.equal(legacyGitHubNotifications(declaration), undefined);
   });
@@ -140,18 +137,20 @@ describe('channels/github/notification-policy', () => {
         runtimes: ['codex'],
         'interval-minutes': 10,
         'max-concurrent-items': 3,
-        'issue-assignment': { allowed: [{ ...actor, 'operator-owner': true }], mode },
+        'issue-assignment': {
+          allowed: [{ ...actor, 'operator-owner': true }],
+          mode,
+          feedback: true,
+        },
         'review-request': { allowed: [] },
-        feedback: { allowed: [actor] },
       });
       assert.deepEqual(declaration.issueAssignment, {
         allowed: [{ login: actor.login, nodeId: actor['node-id'], operatorOwner: true }],
         mode,
+        feedback: true,
       });
       assert.deepEqual(declaration.reviewRequest?.allowed, []);
-      assert.deepEqual(declaration.feedback?.allowed, [
-        { login: actor.login, nodeId: actor['node-id'], operatorOwner: false },
-      ]);
+      assert.equal(declaration.issueAssignment?.feedback, true);
       assert.equal(declaration.intervalMinutes, 10);
       assert.equal(declaration.maxConcurrentItems, 3);
       assert.equal(
@@ -201,7 +200,7 @@ describe('channels/github/notification-policy', () => {
   });
 
   it('should reject incomplete pins and ambiguous identities within each authority list', () => {
-    for (const key of ['issue-assignment', 'review-request', 'feedback']) {
+    for (const key of ['issue-assignment', 'review-request']) {
       for (const allowed of [
         [{ login: 'pirog' }],
         [{ ...actor, 'node-id': 'contains space' }],

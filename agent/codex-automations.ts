@@ -388,6 +388,7 @@ export async function inspectCodexDispatchActivation(
   dependencies: CodexAutomationDependencies = {},
   pausedRecovery = false,
   retainedWork = false,
+  capability: 'assessment' | 'implementation' | 'review' | 'publication' = 'assessment',
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
@@ -421,6 +422,8 @@ export async function inspectCodexDispatchActivation(
     )
   )
     throw new Error('dispatch-activation-required');
+  // the shipped schedule grants assessment only, regardless of configured future stages.
+  if (capability !== 'assessment') throw new Error('workflow-schedule-reconciliation-required');
   return { sourceThreadId: record.definition.targetThreadId };
 }
 

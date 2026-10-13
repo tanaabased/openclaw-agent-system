@@ -61,6 +61,10 @@ using disposable issues and the installed plugin.
 - **Continuation:** explicitly request implementation in the issue and verify its
   handoff preserves the assessment and worktree. Later intake must neither inspect
   that implementation nor prevent another eligible issue from starting.
+- **Workflow authority:** the existing assessment schedule must reject implementation,
+  review, and publication authority. A separately authorized native pilot must record
+  the fresh schedule, native continuation and publication receipts, any approval
+  intervention, and recovery before unattended support can be claimed.
 
 Use fresh issues as well as follow-up revisions. Keep detailed pilot plans and results
 in the owning issue or pull request, and retire disposable fixtures afterward.
@@ -140,6 +144,16 @@ printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_dat
 test ! -e "$root/notification-workspace/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
 
+# should reject removed global feedback before binding or activation
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+mkdir -p "$root/removed-feedback-workspace"
+cp "$GITHUB_WORKSPACE/examples/codex/notification-global-feedback-agent.yaml" "$root/removed-feedback-workspace/agent.yaml"
+node "$runtime" binding preview --workspace "$root/removed-feedback-workspace" \
+  | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-notification-global-feedback-removed")'
+test ! -d "$CODEX_HOME/automations"
+
 # should expose packaged dispatch without letting intake-only state launch work
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -155,7 +169,7 @@ test ! -d "$CODEX_HOME/automations"
 test ! -d "$root/notification-workspace/checkouts"
 test ! -d "$root/notification-workspace/.agent-system/repositories"
 
-# should leave disabled workflows inactive without models or an execution adapter
+# should accept separate feedback and stage selections while leaving disabled workflows inactive
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"

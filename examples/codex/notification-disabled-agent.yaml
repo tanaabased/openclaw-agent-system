@@ -13,13 +13,18 @@ github:
       allowed:
         - login: example-operator
           node-id: U_operator
+      implementation:
+        skill: company:implement
+      feedback:
+        inherit: true
+        allowed:
+          - login: example-feedback
+            node-id: U_feedback
     review-request:
       enabled: false
       allowed:
         - login: example-operator
           node-id: U_operator
-    feedback:
-      enabled: false
-      allowed:
-        - login: example-operator
-          node-id: U_operator
+      review:
+        skill: company:review
+      feedback: true

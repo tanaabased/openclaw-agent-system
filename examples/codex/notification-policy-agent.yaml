@@ -32,10 +32,5 @@ github:
       allowed:
         - login: example-operator
           node-id: U_operator
-    feedback:
-      enabled: false
-      allowed:
-        - login: example-operator
-          node-id: U_operator
 setup-agent:
   apply: touch .setup-applied

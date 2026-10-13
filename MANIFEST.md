@@ -460,7 +460,6 @@ See [Codex intake](./CODEX.md#github-notification-policy) for inspection and rec
 | Field                       | Required | Default             | Contract                                                                                                                            |
 | --------------------------- | -------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `allowed-repository-owners` | yes      | none                | Nonempty list of pinned repository owners; omission never means unrestricted access.                                                |
-| `feedback`                  | no       | absent              | Actionable feedback for existing admitted work.                                                                                     |
 | `interval-minutes`          | no       | `5`                 | Shared monitoring cadence, integer from `1` through `1440`.                                                                         |
 | `issue-assignment`          | no       | absent              | Issue intake and the assessment, planning, and implementation journey selected by its mode.                                         |
 | `max-concurrent-items`      | no       | `2`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
@@ -468,14 +467,14 @@ See [Codex intake](./CODEX.md#github-notification-policy) for inspection and rec
 | `runtimes`                  | no       | `[openclaw, codex]` | Nonempty unique selection of `openclaw` and/or `codex`. Each runtime owns its reconciliation; no cross-runtime claiming is implied. |
 | `schema-version`            | yes      | none                | Exactly `2`. Omission selects the legacy contract.                                                                                  |
 
-Each trigger accepts `allowed`, an optional list of actor identity records.
+Each workflow accepts `allowed`, an optional list of actor identity records.
 Omission or `[]` grants no authority for that trigger. An absent trigger is not
 monitored. An issue assigner, review requester, and feedback author are distinct
 roles: membership in one list never implies membership in another. There is no
 `approved-actors` fallback in v2.
 
-Each trigger also accepts optional boolean `enabled`. Omission preserves existing
-trigger behavior. `false` stops that workflow without clearing its allowed identities,
+Each workflow also accepts optional boolean `enabled`. Omission preserves existing
+trigger behavior. `false` pauses new intake without clearing its allowed identities,
 mode, or assessment settings, and requires no execution adapter for that workflow.
 Explicit `true` requires a supported adapter but never grants authority to an empty
 `allowed` list. Disabled declarations still require valid identity pins.
@@ -508,10 +507,38 @@ investigation and initial planning; workspace preparation belongs to runtime dis
 
 No mode grants merge, deployment, expanded repository scope, or authority to
 change its own mode. Feedback continues the existing work's trusted mode and
-cannot turn planning into implementation. `review-request` and `feedback` do not
+cannot turn planning into implementation. `review-request` and nested feedback do not
 accept a separate mode in this contract. Review behavior will be specified with
 its lifecycle, not borrowed from issue Work mode. Codex assessment dispatch requires
 `plan`; accepting all three mode values here does not implement their workflows.
+
+#### Feedback permissions
+
+Set `feedback` independently beneath `issue-assignment` and `review-request`.
+Issue feedback covers the admitted issue and its verified linked delivery PRs in
+all issue modes. Review feedback belongs to the independent reviewer conversation.
+Neither scope grants the other scope or permission to start new work.
+
+| Value                             | Meaning                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------- |
+| omitted or `false`                | No feedback authority (default).                                          |
+| `true`                            | Inherit that workflow's current `allowed` identities.                     |
+| `{allowed: [...]}`                | Use exactly the supplied identities.                                      |
+| `{inherit: true, allowed: [...]}` | Combine the workflow's `allowed` identities with the supplied identities. |
+
+In object form, `inherit` is an optional boolean defaulting to `false`; `allowed`
+is an optional list of `{login, node-id}` records defaulting to `[]`. Feedback
+identities do not accept `operator-owner`. Matching identities are deduplicated by
+immutable node ID, with case-insensitive login comparison; conflicting pins are
+rejected. Inheritance follows the current reconciled policy rather than copying
+an old list. A workflow's `enabled` switch controls new intake; it does not erase
+permissions for retained work.
+
+Top-level v2 `feedback` is rejected, including disabled declarations. Remove it
+and explicitly choose feedback permissions beneath each intended workflow.
+Use `true` only when assigners/requesters should also provide feedback; otherwise
+use an explicit list. Migration never copies the old list into both scopes.
+Feedback execution remains unavailable in the current Codex adapter.
 
 #### Assessment selection
 
@@ -561,11 +588,36 @@ Missing, disabled, ambiguous, or changed skills and invalid guidance stop the af
 assessment with an actionable diagnostic instead of silently changing its procedure.
 Currently, skill resolution supports host-discovered local `SKILL.md` sources.
 
+#### Implementation and review selection
+
+`issue-assignment.implementation` and `review-request.review` accept the same
+optional `skill` and `guidance` fields and contained guidance forms as
+[assessment selection](#assessment-selection). Their defaults are absent; the
+shared selector requires an explicit skill until an owning implementation or
+review consumer supplies a supported default. These declarations do not enable
+execution. Assessment is shared by Plan, Work, and Auto; Work and Auto share
+implementation. Independent PR review has its own review stage. Arbitrary stage
+graphs are unsupported.
+
+The surrounding Agent System workflow owns the internal versioned result contract:
+`assessment-result/v1`, `implementation-result/v1`, or `review-result/v1`. Selected
+implementation and review skills provide substantive analysis; they need not know
+Agent System commands, receipt fields, result payloads, or output headings. The
+workflow must preserve their evidence, plans, questions, and uncertainty when
+adapting output, without inventing missing findings. The runtime binds results to
+admitted work, the native turn/worktree, routing and skill selection, policy, and
+processed evidence. Review results report continue, wait, done, or a blocker;
+the skill owns tests, analysis, findings, and substantive completion criteria.
+Done may occur on the first pass and covers only the evidence processed. New
+head/base revisions, check attempts/results (including same-commit reruns),
+authorized feedback revisions, or request events can warrant another pass.
+Closure or lost authority is a stop reason, not a successful review.
+
 #### Issue-only profile example
 
 This declaration prepares the agreed self-assignment policy; Install activates it.
-Keep feedback and review-request absent or set `enabled: false` until their execution
-adapters are available.
+Keep `feedback` omitted or `false` and `review-request` absent or disabled until
+their execution adapters are available.
 
 ```yaml
 schema-version: 1
@@ -609,7 +661,7 @@ Review, feedback, and implementation execution remain outside the current Codex 
 | -------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `allowed-repository-owners`                        | Assignment admission and monitor polling                           | Retained, explicitly required and pinned.                                                                       |
 | `approved-actors`                                  | Assignment/comment fallback, direct PR assignment, operator access | Legacy only; no fallback in v2.                                                                                 |
-| `approved-feedback-authors`                        | Comment admission                                                  | Replaced by `feedback.allowed`.                                                                                 |
+| `approved-feedback-authors`                        | Comment admission                                                  | Replaced by explicit per-workflow `feedback` choices.                                                           |
 | `approved-issue-assigners`                         | Issue assignment admission                                         | Replaced by `issue-assignment.allowed`.                                                                         |
 | `assignment-types`                                 | Provider discovery, poller selection, model-routing access         | Replaced by trigger sections; direct PR assignment remains legacy-only.                                         |
 | `initial-mode`                                     | Assignment and comment mode selection                              | Replaced by issue-specific `mode`; feedback inherits existing authority.                                        |

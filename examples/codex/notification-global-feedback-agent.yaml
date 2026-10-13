@@ -1,0 +1,16 @@
+schema-version: 1
+agent:
+  id: codex-removed-feedback
+github:
+  username: example-agent
+  notifications:
+    schema-version: 2
+    runtimes: [codex]
+    allowed-repository-owners:
+      - login: example-owner
+        node-id: O_example
+    feedback:
+      enabled: false
+      allowed:
+        - login: example-operator
+          node-id: U_operator

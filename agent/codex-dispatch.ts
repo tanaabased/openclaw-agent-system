@@ -9,7 +9,8 @@ import reportDispatch from './codex-dispatch-reporting.ts';
 import pendingDispatchAssignments, { issueKey } from './codex-dispatch-pending.ts';
 import codexHostAccess from './codex-host-access.ts';
 
-import assessmentGuidance from './assessment-guidance.ts';
+import { selectWorkflowStage } from './workflow-stage.ts';
+import { validateWorkflowResult } from './workflow-result.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
   assessmentResultSchema,
@@ -339,8 +340,10 @@ async function recover(
     ...(found.effort ? { effort: found.effort } : {}),
   };
   record.phase = record.phase === 'complete' ? 'complete' : 'assessing';
-  if (record.phase !== 'complete' && record.result?.outcome === 'operator-setup-blocker')
+  if (record.phase !== 'complete' && record.result?.outcome === 'operator-setup-blocker') {
     delete record.result;
+    delete record.stageReceipt;
+  }
   return found;
 }
 
@@ -610,6 +613,7 @@ export async function runCodexDispatch(
                   });
                   delete pending.request;
                   delete pending.result;
+                  delete pending.stageReceipt;
                   delete pending.notice;
                   delete pending.retryAfter;
                   delete pending.preparationTurnId;
@@ -775,6 +779,7 @@ export async function runCodexDispatch(
           record.manifestDigest = current.digest;
           record.phase = 'routing';
           delete record.result;
+          delete record.stageReceipt;
           await fresh();
           await save();
           return {
@@ -862,19 +867,17 @@ export async function runCodexDispatch(
           if (!('candidate' in decision) || decision.candidate?.status !== 'mapped')
             throw new Error('dispatch-routing-unresolved');
           const configuration = current.policy?.policy.issueAssignment?.assessment;
-          const requestedSkill = configuration?.skill ?? defaultAssessmentSkill;
-          const skill = await withNative(current, deps, (native) =>
-            native.assessmentSkill(record.project!.path, requestedSkill),
-          );
-          const guidance = await assessmentGuidance(current.workspace, configuration?.guidance);
-          record.assessment = {
-            version: 1,
-            requestedSkill,
-            defaultSkill: configuration?.skill === undefined,
-            skill,
-            ...(guidance ? { guidance } : {}),
+          const selected = await selectWorkflowStage({
+            stage: 'assessment',
+            configuration,
+            workspace: current.workspace,
             observedAt: now,
-          };
+            resolveSkill: (id) =>
+              withNative(current, deps, (native) =>
+                native.assessmentSkill(record.project!.path, id),
+              ),
+          });
+          record.assessment = selected.selection;
           record.routing = JSON.stringify(decision);
           record.routingNote =
             '> **Model routing:** ' +
@@ -1030,6 +1033,35 @@ export async function runCodexDispatch(
           if (action === 'result') {
             const result = parseAssessmentResult(input.result);
             if (!native.turnId) throw new Error('dispatch-native-turn-unavailable');
+            const binding = {
+              admissionId: intake.id,
+              workflow: 'issue-assignment' as const,
+              repositoryId: intake.repository.nodeId,
+              subjectId: intake.issue.nodeId,
+              threadId: native.id,
+              turnId: native.turnId,
+              worktree: native.cwd,
+              dispatchDigest: automationHash(record.request),
+              policyDigest: automationHash(current.manifest.github?.notifications ?? null),
+              selectionDigest: automationHash(
+                record.assessment ?? { skill: defaultAssessmentSkill },
+              ),
+              routingDigest: automationHash({
+                routing: record.routing,
+                effective: record.effective,
+              }),
+              evidenceDigest: automationHash(JSON.parse(record.context!)),
+            };
+            validateWorkflowResult(
+              {
+                version: 1,
+                stage: 'assessment',
+                resultContract: 'assessment-result/v1',
+                binding,
+                result,
+              },
+              { binding, stage: 'assessment', authorized: true },
+            );
             if (
               record.result &&
               automationHash(record.result) !== automationHash(result) &&
@@ -1059,6 +1091,7 @@ export async function runCodexDispatch(
               },
             });
             record.result = result;
+            record.stageReceipt = { binding, resultDigest: automationHash(result) };
             record.resultTurnId = native.turnId;
             record.phase = 'complete';
             await save();

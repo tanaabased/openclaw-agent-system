@@ -171,6 +171,26 @@ function modelTierGroupDiagnostics(value: unknown): ManifestDiagnostic[] {
   ];
 }
 
+function globalFeedbackDiagnostics(value: unknown): ManifestDiagnostic[] {
+  const github = isRecord(value) && value.github;
+  const notifications = isRecord(github) && github.notifications;
+  if (
+    !isRecord(notifications) ||
+    notifications['schema-version'] !== 2 ||
+    !Object.hasOwn(notifications, 'feedback')
+  )
+    return [];
+  return [
+    {
+      code: 'github-notification-global-feedback-removed',
+      fieldPath: '/github/notifications/feedback',
+      message:
+        'Global feedback is no longer supported. Remove it and explicitly choose feedback under issue-assignment and/or review-request: false, true to inherit allowed identities, or {inherit, allowed}. No permissions are migrated automatically.',
+      severity: 'error',
+    },
+  ];
+}
+
 function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): ManifestDiagnostic[] {
   if (error.keyword === 'additionalProperties') {
     return error.params.additionalProperties.map((property) => ({
@@ -386,6 +406,7 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
     ]),
     ...legacyPolicyDiagnostics(value),
     ...modelTierGroupDiagnostics(value),
+    ...globalFeedbackDiagnostics(value),
   ];
   if (declarationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
     const declarationPaths = new Set(

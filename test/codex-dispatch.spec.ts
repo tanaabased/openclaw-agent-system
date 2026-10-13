@@ -1444,6 +1444,23 @@ describe('agent/codex-dispatch', () => {
     );
     const recorded = await request('result', { id: prepared.id, result }, child);
     assert.equal(recorded.status, 'recorded');
+    const savedRecord = (
+      (await request('inspect')).records as Array<{
+        stageReceipt: {
+          binding: { threadId: string; turnId: string; workflow: string; evidenceDigest: string };
+          resultDigest: string;
+        };
+      }>
+    )[0]!;
+    assert.equal(savedRecord.stageReceipt.binding.threadId, 'issue-thread');
+    assert.equal(savedRecord.stageReceipt.binding.workflow, 'issue-assignment');
+    assert.equal(savedRecord.stageReceipt.resultDigest, recorded.previousResultDigest);
+    assert.match(savedRecord.stageReceipt.binding.evidenceDigest, /^[a-f0-9]{64}$/);
+    await request('context', { id: prepared.id }, child);
+    assert.deepEqual(
+      ((await request('inspect')).records as Array<{ stageReceipt: unknown }>)[0]!.stageReceipt,
+      savedRecord.stageReceipt,
+    );
     assert.ok(String(recorded.presentation).includes(result.assessment));
     assert.ok(String(recorded.presentation).includes(result.planSummary));
     assert.ok(String(recorded.presentation).includes(result.plan));

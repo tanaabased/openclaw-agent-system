@@ -50,9 +50,7 @@ describe('agent/codex-setup', () => {
     review-request:
       enabled: false
       allowed: [{login: pirog, node-id: U_pirog}]
-    feedback:
-      enabled: false
-      allowed: [{login: pirog, node-id: U_pirog}]
+      feedback: true
 `);
     const deps = {
       ...dependencies,

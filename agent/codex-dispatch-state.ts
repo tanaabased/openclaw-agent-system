@@ -6,6 +6,7 @@ import { Value } from 'typebox/value';
 import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
+import { workflowBindingSchema } from './workflow-result.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
@@ -128,6 +129,15 @@ export const dispatchRecordSchema = Type.Object(
       ),
     ),
     result: Type.Optional(assessmentResultSchema),
+    stageReceipt: Type.Optional(
+      Type.Object(
+        {
+          binding: workflowBindingSchema,
+          resultDigest: hash,
+        },
+        { additionalProperties: false },
+      ),
+    ),
     resultTurnId: Type.Optional(text),
     reset: Type.Optional(
       Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),

@@ -166,8 +166,16 @@ verifies that same skill in its actual worktree before beginning. A missing or c
 skill blocks assessment; restore it and resume the retained chat rather than launching
 another. The dispatch `context` response exposes the retained selection and guidance.
 Replacement skills submit the same result contract and receive the same host-rendered
-plan or questions. Guidance cannot widen the assessment's authority. Implementation
-and review do not yet consume this selection.
+plan or questions. Guidance cannot widen the assessment's authority.
+[Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
+use the same trusted selection contract, but their execution adapters remain unavailable.
+[Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
+assignment and review requests; the removed global setting requires an explicit choice.
+
+The current reconciled schedule authorizes assessment only. Stage declarations,
+GitHub prose, and a completed assessment cannot authorize continuation or publication.
+Those operations require a newly reconciled native schedule; their unattended
+operation has not been established.
 
 Native creation receipts, chat identity, worktree, and results survive interrupted
 polls. An uncertain creation is reconciled against native creation history; it is

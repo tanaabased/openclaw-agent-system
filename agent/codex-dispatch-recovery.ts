@@ -182,6 +182,7 @@ export default async function recoverDispatch(
     ];
     delete record.request;
     delete record.result;
+    delete record.stageReceipt;
     delete record.notice;
     delete record.retryAfter;
     record.phase = 'routing';

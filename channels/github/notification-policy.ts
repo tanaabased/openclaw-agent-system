@@ -1,4 +1,5 @@
 import type { GitHubNotificationsDeclaration } from './config-schema.ts';
+import { feedbackIdentities } from './feedback-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
 
@@ -21,7 +22,6 @@ export function validateGitHubNotificationPolicy(
     { path: 'allowed-repository-owners', identities: policy.allowedRepositoryOwners },
     { path: 'issue-assignment/allowed', identities: policy.issueAssignment?.allowed ?? [] },
     { path: 'review-request/allowed', identities: policy.reviewRequest?.allowed ?? [] },
-    { path: 'feedback/allowed', identities: policy.feedback?.allowed ?? [] },
   ];
   for (const { path, identities } of lists) {
     const nodes = new Set<string>();
@@ -40,6 +40,22 @@ export function validateGitHubNotificationPolicy(
       logins.add(normalizedLogin);
     });
   }
+  for (const [path, workflow] of [
+    ['issue-assignment', policy.issueAssignment],
+    ['review-request', policy.reviewRequest],
+  ] as const) {
+    try {
+      feedbackIdentities(workflow?.allowed ?? [], workflow?.feedback);
+    } catch {
+      diagnostics.push({
+        code: 'github-notification-feedback-identity-conflict',
+        fieldPath: `/github/notifications/${path}/feedback`,
+        message:
+          'Feedback identity pins conflict. Use one login and immutable node id for each identity.',
+        severity: 'error',
+      });
+    }
+  }
   return diagnostics;
 }
 
@@ -49,7 +65,7 @@ export function githubNotificationRuntimeBlocker(
   runtime: 'openclaw' | 'codex',
 ) {
   if (declaration?.schemaVersion !== 2 || !declaration.runtimes.includes(runtime)) return;
-  const triggers = [declaration.issueAssignment, declaration.reviewRequest, declaration.feedback];
+  const triggers = [declaration.issueAssignment, declaration.reviewRequest];
   if (
     triggers.some((trigger) => trigger?.enabled === false) &&
     triggers.every((trigger) => !trigger || trigger.enabled === false)
@@ -57,8 +73,13 @@ export function githubNotificationRuntimeBlocker(
     return;
   if (
     runtime === 'codex' &&
-    ![declaration.reviewRequest, declaration.feedback].some(
-      (trigger) => trigger?.enabled ?? Boolean(trigger?.allowed.length),
+    !(declaration.reviewRequest?.enabled ?? Boolean(declaration.reviewRequest?.allowed.length)) &&
+    !(
+      declaration.issueAssignment?.enabled !== false &&
+      feedbackIdentities(
+        declaration.issueAssignment?.allowed ?? [],
+        declaration.issueAssignment?.feedback,
+      ).length
     )
   )
     return;

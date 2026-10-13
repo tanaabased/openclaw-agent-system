@@ -82,6 +82,17 @@ const externalNotificationTriggerSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const externalFeedbackSchema = Type.Union([
+  Type.Boolean(),
+  Type.Object(
+    {
+      inherit: Type.Optional(Type.Boolean()),
+      allowed: Type.Optional(Type.Array(externalGitHubIdentitySchema)),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
 const externalGitHubNotificationPolicySchema = Type.Object(
   {
     'schema-version': Type.Literal(2),
@@ -102,6 +113,8 @@ const externalGitHubNotificationPolicySchema = Type.Object(
         {
           ...externalNotificationTriggerSchema.properties,
           assessment: Type.Optional(assessmentConfigurationSchema),
+          implementation: Type.Optional(assessmentConfigurationSchema),
+          feedback: Type.Optional(externalFeedbackSchema),
           mode: Type.Optional(
             Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
           ),
@@ -109,8 +122,16 @@ const externalGitHubNotificationPolicySchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    'review-request': Type.Optional(externalNotificationTriggerSchema),
-    feedback: Type.Optional(externalNotificationTriggerSchema),
+    'review-request': Type.Optional(
+      Type.Object(
+        {
+          ...externalNotificationTriggerSchema.properties,
+          review: Type.Optional(assessmentConfigurationSchema),
+          feedback: Type.Optional(externalFeedbackSchema),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -130,6 +151,8 @@ export interface GitHubIdentityPin {
 export interface GitHubApprovedActor extends GitHubIdentityPin {
   operatorOwner?: boolean;
 }
+
+export type GitHubFeedbackPolicy = boolean | { inherit: boolean; allowed: GitHubIdentityPin[] };
 
 export interface GitHubNotificationsConfiguration {
   schemaVersion?: never;
@@ -158,9 +181,15 @@ export interface GitHubNotificationPolicy {
     allowed: GitHubApprovedActor[];
     mode: 'plan' | 'work' | 'auto';
     assessment?: AssessmentConfiguration;
+    implementation?: AssessmentConfiguration;
+    feedback?: GitHubFeedbackPolicy;
   };
-  reviewRequest?: { allowed: GitHubApprovedActor[]; enabled?: boolean };
-  feedback?: { allowed: GitHubApprovedActor[]; enabled?: boolean };
+  reviewRequest?: {
+    allowed: GitHubApprovedActor[];
+    enabled?: boolean;
+    review?: AssessmentConfiguration;
+    feedback?: GitHubFeedbackPolicy;
+  };
 }
 
 export type GitHubNotificationsDeclaration =
@@ -185,6 +214,18 @@ export function decodeGitHubNotifications(
   });
 
   if ('schema-version' in value) {
+    const feedback = (input: Static<typeof externalFeedbackSchema> | undefined) =>
+      input === undefined
+        ? {}
+        : {
+            feedback:
+              typeof input === 'boolean'
+                ? input
+                : {
+                    inherit: input.inherit ?? false,
+                    allowed: (input.allowed ?? []).map(decodeIdentity),
+                  },
+          };
     const actors = (trigger: Static<typeof externalNotificationTriggerSchema>) =>
       (trigger.allowed ?? []).map((actor) => ({
         ...decodeIdentity(actor),
@@ -205,6 +246,14 @@ export function decodeGitHubNotifications(
                 : { enabled: value['issue-assignment'].enabled }),
               allowed: actors(value['issue-assignment']),
               mode: value['issue-assignment'].mode ?? 'plan',
+              ...feedback(value['issue-assignment'].feedback),
+              ...(value['issue-assignment'].implementation === undefined
+                ? {}
+                : {
+                    implementation: decodeAssessmentConfiguration(
+                      value['issue-assignment'].implementation,
+                    ),
+                  }),
               ...(value['issue-assignment'].assessment === undefined
                 ? {}
                 : {
@@ -217,17 +266,13 @@ export function decodeGitHubNotifications(
         : {
             reviewRequest: {
               allowed: actors(value['review-request']),
+              ...feedback(value['review-request'].feedback),
+              ...(value['review-request'].review === undefined
+                ? {}
+                : { review: decodeAssessmentConfiguration(value['review-request'].review) }),
               ...(value['review-request'].enabled === undefined
                 ? {}
                 : { enabled: value['review-request'].enabled }),
-            },
-          }),
-      ...(value.feedback === undefined
-        ? {}
-        : {
-            feedback: {
-              allowed: actors(value.feedback),
-              ...(value.feedback.enabled === undefined ? {} : { enabled: value.feedback.enabled }),
             },
           }),
     };
