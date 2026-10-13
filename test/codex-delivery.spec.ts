@@ -278,6 +278,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await request('reconcile')).status, 'ready');
     const presented = await request('present');
     assert.equal(presented.status, 'linked');
+    assert.deepEqual(presented.notices, []);
     assert.match(String(presented.instruction), /complete presentation Markdown.*final reply/u);
     assert.match(String(presented.instruction), /including the PR card and all notices/u);
     assert.match(String(presented.instruction), /card generation, not visible delivery/u);
@@ -292,7 +293,6 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(publish(), (error: unknown) => {
       assert.ok(error instanceof CodexDeliveryFailure);
       assert.match(error.message, /link unavailable/);
-      assert.ok(error.notices.some((notice) => notice.severity === 'info'));
       const failure = error.notices.find((notice) => notice.severity === 'error');
       assert.ok(failure?.message.includes(url));
       return true;
@@ -430,7 +430,19 @@ describe('agent/codex-delivery', () => {
     assert.equal(presented.status, 'linked');
     assert.match(String(presented.presentation), /Pull request opened/);
     assert.ok(reconciled.notices?.some((notice) => notice.severity === 'warning'));
-    assert.ok(reconciled.notices?.some((notice) => notice.severity === 'info'));
+  });
+  it('should suppress retained ssh transport notices while preserving actionable warnings', async () => {
+    await publish();
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.delivery!.notices = ['delivery-ssh-transport'];
+      await save();
+    });
+    const presented = await request('present');
+    assert.equal(presented.status, 'linked');
+    assert.doesNotMatch(String(presented.presentation), /delivery-ssh-transport/);
+    assert.equal(presented.notices?.length, 1);
+    assert.equal(presented.notices?.[0]?.severity, 'warning');
+    assert.match(String(presented.presentation), /delivery-attachment-pending/);
   });
   it('should require human handoff or a fresh publication schedule and reject request-supplied authority', async () => {
     await store.exclusive(async (state, save) => {

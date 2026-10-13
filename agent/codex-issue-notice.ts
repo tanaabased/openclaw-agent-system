@@ -36,13 +36,6 @@ function failure(code: string): NoticeCopy {
       summary: 'GitHub confirmed the closing issue link on a later readback.',
       next: 'No action is needed. The existing pull request was retained.',
     };
-  if (code === 'delivery-ssh-transport')
-    return {
-      severity: 'info',
-      title: 'Used the GitHub SSH remote',
-      summary: 'Delivery used the shared GitHub SSH transport preference for this push.',
-      next: 'No action is needed. Repository identity and remote head were verified.',
-    };
   if (code === 'dispatch-project-git-auth-unavailable')
     return {
       severity: 'error',

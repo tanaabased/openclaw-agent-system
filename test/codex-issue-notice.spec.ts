@@ -18,7 +18,6 @@ describe('agent/codex-issue-notice', () => {
     for (const [code, severity] of [
       ['delivery-attachment-pending', 'warning'],
       ['delivery-linkage-retried', 'info'],
-      ['delivery-ssh-transport', 'info'],
       ['dispatch-project-git-auth-unavailable', 'error'],
       ['github-delivery-linkage-unverified', 'error'],
       ['delivery-reconciliation-required', 'error'],

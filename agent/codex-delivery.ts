@@ -251,7 +251,9 @@ export default async function runCodexDelivery(
             ...(record.delivery?.notices ?? []),
             ...(!attached ? ['delivery-attachment-pending'] : []),
           ]),
-        ].map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
+        ]
+          .filter((code) => code !== 'delivery-ssh-transport')
+          .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
       if (input.action === 'prepare')
         return {
@@ -337,10 +339,6 @@ export default async function runCodexDelivery(
               [...transport, 'push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
               signal,
             );
-            if (transport.length)
-              delivery.notices = [
-                ...new Set([...(delivery.notices ?? []), 'delivery-ssh-transport' as const]),
-              ];
           }
           if (
             (await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal))
