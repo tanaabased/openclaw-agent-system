@@ -217,7 +217,7 @@ describe('agent/codex-delivery', () => {
                   nodeId: 'PR_7',
                   repositoryId: 'R_repo',
                   headRepositoryId: 'R_repo',
-                  headSha: head,
+                  headSha: remote,
                   authorId: account.nodeId,
                   baseRef: 'main',
                   headRef: 'pirog-work',
@@ -388,6 +388,56 @@ describe('agent/codex-delivery', () => {
       assert.equal(pr!.body, 'Authored body.');
     }
     assert.equal(creates, 1);
+  });
+  it('should reject every foreign or invalid push destination before pushing or creating a pr', async () => {
+    const git = deps.git!;
+    for (const pushUrls of [
+      'https://github.com/other/repo.git',
+      'https://github.com/owner/repo.git\nhttps://github.com/other/repo.git',
+      '',
+    ]) {
+      deps.git = async (cwd, argv, signal) =>
+        argv[0] === 'remote' && argv.includes('--push') ? pushUrls : git(cwd, argv, signal);
+      await assert.rejects(publish(), /push-destination-mismatch/);
+      assert.equal(remote, '');
+      assert.equal(creates, 0);
+      assert.ok(!gitCalls.some((argv) => argv[0] === 'push'));
+    }
+  });
+  it('should reject changed or missing existing pr bindings before advancing the remote branch', async () => {
+    await publish();
+    const saved = { ...pr! };
+    const body = pr!.body;
+    head = 'b'.repeat(40);
+    gitCalls = [];
+    for (const mismatch of [
+      { nodeId: 'PR_other' },
+      { number: 8 },
+      { authorId: 'foreign' },
+      { repositoryId: 'R_other' },
+      { headRepositoryId: 'fork' },
+      { headSha: 'c'.repeat(40) },
+      { baseRef: 'release' },
+      { headRef: 'foreign' },
+      { state: 'closed' },
+    ]) {
+      bindingOverride = mismatch;
+      await assert.rejects(publish(), /does not match/);
+      assert.equal(remote, firstHead);
+      assert.equal(pr!.body, body);
+    }
+    bindingOverride = {};
+    for (const changed of [
+      undefined,
+      { ...saved, state: 'closed' },
+      { ...saved, itemNodeId: 'PR_other' },
+    ]) {
+      pr = changed;
+      await assert.rejects(publish(), /incompatible pull request|no longer matches/);
+      assert.equal(remote, firstHead);
+    }
+    assert.equal(creates, 1);
+    assert.ok(!gitCalls.some((argv) => argv[0] === 'push'));
   });
   it('should update only a known ancestor on the same pr and reject unrelated remote heads', async () => {
     await publish();

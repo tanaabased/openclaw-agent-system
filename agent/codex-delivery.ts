@@ -7,7 +7,12 @@ import { automationHash } from './automation-hash.ts';
 import { nativeObject } from './automation-gateway.ts';
 import dispatchHistory from './codex-dispatch-history.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
-import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
+import {
+  dispatchGit,
+  githubOrigin,
+  verifyDispatchWorktree,
+  type DispatchGit,
+} from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch.ts';
 import type { CodexDeliveryState } from './codex-delivery-state.ts';
@@ -16,7 +21,9 @@ import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.
 import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/events/pull-request-opened.ts';
-import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
+import IssueDeliveryProvider, {
+  type IssueDeliveryInput,
+} from '../channels/github/publication/issue-delivery.ts';
 import resolvePullRequestRecipients from '../channels/github/pull-request-recipients.ts';
 
 const requestSchema = Type.Object(
@@ -235,31 +242,7 @@ export default async function runCodexDelivery(
         if (input.digest !== digest) throw new Error('delivery-preview-stale');
         record.delivery = delivery;
         await save();
-        const remoteRef = `refs/heads/${branch}`;
-        const remote = (
-          await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
-        ).trim();
-        const remoteHead = remote.split(/\s/u)[0];
-        if (remote && remoteHead !== head) {
-          if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
-            throw new Error('delivery-remote-head-diverged');
-          await git(found.cwd, ['merge-base', '--is-ancestor', remoteHead!, head], signal);
-        }
-        if (remoteHead !== head)
-          await git(
-            found.cwd,
-            ['push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
-            signal,
-          );
-        if (
-          (await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal))
-            .trim()
-            .split(/\s/u)[0] !== head
-        )
-          throw new Error('delivery-push-unverified');
-        delivery.pushedHead = head;
-        await save();
-        await new IssueDeliveryProvider(connected.account).publish({
+        const publication: IssueDeliveryInput = {
           item: {
             number: intake.issue.number,
             itemDatabaseId: intake.issue.databaseId,
@@ -288,7 +271,46 @@ export default async function runCodexDelivery(
             delivery.pullRequest = receipt;
             await save();
           },
+        };
+        const provider = new IssueDeliveryProvider(connected.account);
+        const remoteRef = `refs/heads/${branch}`;
+        const remote = (
+          await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
+        ).trim();
+        const remoteHead = remote.split(/\s/u)[0] ?? '';
+        if (remote && remoteHead !== head) {
+          if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
+            throw new Error('delivery-remote-head-diverged');
+          await git(found.cwd, ['merge-base', '--is-ancestor', remoteHead!, head], signal);
+        }
+        publication.expectedPullRequest = await provider.inspect({
+          ...publication,
+          headSha: remoteHead,
         });
+        const pushUrls = (
+          await git(found.cwd, ['remote', 'get-url', '--push', '--all', 'origin'], signal)
+        )
+          .trim()
+          .split(/\r?\n/u);
+        const repository =
+          `${intake.repository.owner.login}/${intake.repository.name}`.toLowerCase();
+        if (pushUrls.some((value) => githubOrigin(value) !== repository))
+          throw new Error('delivery-push-destination-mismatch');
+        if (remoteHead !== head)
+          await git(
+            found.cwd,
+            ['push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
+            signal,
+          );
+        if (
+          (await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal))
+            .trim()
+            .split(/\s/u)[0] !== head
+        )
+          throw new Error('delivery-push-unverified');
+        delivery.pushedHead = head;
+        await save();
+        await provider.publish(publication);
         delivery.reconciled = true;
         await save();
         return {

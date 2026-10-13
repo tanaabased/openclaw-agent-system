@@ -1,4 +1,5 @@
 import type { GitHubIdentityPin, GitHubPullRequestRecipient } from '../config-schema.ts';
+import { githubIdentitySet } from '../provider/work-item.ts';
 import resolvePullRequestRecipients from '../pull-request-recipients.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
 
@@ -153,26 +154,18 @@ function pullRequestProjection() {
 /** provider operations shared by runtime-owned delivery wrappers. */
 export default class IssueDeliveryProvider {
   constructor(readonly client: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>) {}
-  async publish(
+  async inspect(
     input: IssueDeliveryInput,
-    normalize = false,
-  ): Promise<GitHubNotificationIssueDeliveryReceipt> {
+  ): Promise<GitHubNotificationIssueDeliveryReceipt | undefined> {
+    const pullRequest = await this.#find(input);
+    if (!pullRequest) return undefined;
+    await this.#verify(input, pullRequest, false);
+    return { pullRequestNodeId: pullRequest.itemNodeId, pullRequestNumber: pullRequest.number };
+  }
+
+  async #find(input: IssueDeliveryInput): Promise<PullRequestIdentity | undefined> {
     const github = this.client;
-    const branch = input.branch;
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
-    const issue = parseIssue(
-      await this.#github(
-        github,
-        [
-          'api',
-          `repos/${repository}/issues/${input.item.number}`,
-          '--jq',
-          '{databaseId:.id,nodeId:.node_id,number,title}',
-        ],
-        input.signal,
-      ),
-      input.item,
-    );
     const pullRequests = await this.#github(
       github,
       [
@@ -183,7 +176,7 @@ export default class IssueDeliveryProvider {
         '-f',
         'state=all',
         '-f',
-        `head=${input.item.repositoryOwner}:${branch}`,
+        `head=${input.item.repositoryOwner}:${input.branch}`,
         '--jq',
         `[.[]|${pullRequestProjection()}]`,
       ],
@@ -205,34 +198,17 @@ export default class IssueDeliveryProvider {
         );
       }
     }
-    if (pullRequests.length === 0) await input.beforeCreate?.();
-    let pullRequest =
-      pullRequests.length === 0
-        ? parsePullRequest(
-            await this.#github(
-              github,
-              [
-                'api',
-                '--method',
-                'POST',
-                `repos/${repository}/pulls`,
-                '--input',
-                '-',
-                '--jq',
-                pullRequestProjection(),
-              ],
-              input.signal,
-              JSON.stringify({
-                base: input.item.repositoryDefaultBranch,
-                body: normalize
-                  ? `Closes #${input.item.number}`
-                  : (input.body ?? `Closes #${input.item.number}`),
-                head: branch,
-                title: normalize ? issue.title : (input.title ?? issue.title),
-              }),
-            ),
-          )
-        : parsePullRequest(pullRequests[0]);
+    return pullRequests.length === 1 ? parsePullRequest(pullRequests[0]) : undefined;
+  }
+
+  async #verify(
+    input: IssueDeliveryInput,
+    pullRequest: PullRequestIdentity,
+    normalize: boolean,
+  ): Promise<void> {
+    const github = this.client;
+    const branch = input.branch;
+    const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
     if (
       pullRequest.headRef !== branch ||
       pullRequest.headRepository.toLowerCase() !== repository.toLowerCase() ||
@@ -241,7 +217,7 @@ export default class IssueDeliveryProvider {
       throw new Error('The managed branch belongs to an incompatible pull request.');
     }
 
-    if (input.headSha) {
+    if (input.headSha !== undefined) {
       const observed = record(
         await this.#github(
           github,
@@ -271,11 +247,10 @@ export default class IssueDeliveryProvider {
           'The pull request does not match the verified repository, author and head.',
         );
     }
-    const body = `Closes #${input.item.number}`;
     if (!normalize && pullRequest.baseRef !== input.item.repositoryDefaultBranch) {
       throw new Error('The task pull request targets a different base branch.');
     }
-    if (!normalize && !input.headSha) {
+    if (!normalize && input.headSha === undefined) {
       const authorResponse = await this.#github(
         github,
         [
@@ -303,6 +278,58 @@ export default class IssueDeliveryProvider {
         );
       }
     }
+  }
+
+  async publish(
+    input: IssueDeliveryInput,
+    normalize = false,
+  ): Promise<GitHubNotificationIssueDeliveryReceipt> {
+    const github = this.client;
+    const branch = input.branch;
+    const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
+    const issue = parseIssue(
+      await this.#github(
+        github,
+        [
+          'api',
+          `repos/${repository}/issues/${input.item.number}`,
+          '--jq',
+          '{databaseId:.id,nodeId:.node_id,number,title}',
+        ],
+        input.signal,
+      ),
+      input.item,
+    );
+    const existing = await this.#find(input);
+    if (!existing) await input.beforeCreate?.();
+    let pullRequest = !existing
+      ? parsePullRequest(
+          await this.#github(
+            github,
+            [
+              'api',
+              '--method',
+              'POST',
+              `repos/${repository}/pulls`,
+              '--input',
+              '-',
+              '--jq',
+              pullRequestProjection(),
+            ],
+            input.signal,
+            JSON.stringify({
+              base: input.item.repositoryDefaultBranch,
+              body: normalize
+                ? `Closes #${input.item.number}`
+                : (input.body ?? `Closes #${input.item.number}`),
+              head: branch,
+              title: normalize ? issue.title : (input.title ?? issue.title),
+            }),
+          ),
+        )
+      : existing;
+    await this.#verify(input, pullRequest, normalize);
+    const body = `Closes #${input.item.number}`;
     await input.checkpoint?.({
       pullRequestNodeId: pullRequest.itemNodeId,
       pullRequestNumber: pullRequest.number,
@@ -432,7 +459,7 @@ export default class IssueDeliveryProvider {
         throw new Error(`The agent cannot request its own review (${reviewer.login}).`);
       }
     }
-    for (const recipient of [...recipients, ...reviewers]) {
+    for (const recipient of githubIdentitySet([...recipients, ...reviewers])) {
       const observed = identities(
         await this.#github(
           github,
