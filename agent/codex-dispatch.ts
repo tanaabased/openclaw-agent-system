@@ -2,15 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
+import revalidateAssignment from './dispatch-assignment.ts';
+import dispatchContext from './dispatch-context.ts';
+import dispatchCapacity from './dispatch-capacity.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch from './codex-dispatch-reporting.ts';
-import pendingDispatchAssignments, { issueKey } from './codex-dispatch-pending.ts';
+import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import codexHostAccess from './codex-host-access.ts';
 
 import { selectWorkflowStage } from './workflow-stage.ts';
-import { validateWorkflowResult } from './workflow-result.ts';
+import recordDispatchResult from './dispatch-result.ts';
 import codexAssessmentInstructions from './codex-assessment-instructions.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
@@ -41,21 +44,16 @@ import {
   type CodexIntakeDependencies,
 } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import { assessmentSchema, type RoutingDecision } from './model-routing.ts';
+import { assessmentSchema } from './model-routing.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import assignmentCard from '../channels/github/conversation/presentation/assignment-card.ts';
-import renderAssessmentResult from '../channels/github/conversation/presentation/assessment-result.ts';
+import assessmentPresentation from './dispatch-presentation.ts';
 import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
-import {
-  nativeRoutingMetadata,
-  routingMetadata,
-} from '../channels/github/provider/routing-metadata.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
-import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import { defaultAssessmentSkill } from '../manifest/assessment-schema.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 
@@ -76,28 +74,6 @@ function repository(record: IntakeRecord) {
 }
 function issueUrl(record: IntakeRecord) {
   return 'https://github.com/' + repository(record) + '/issues/' + record.issue.number;
-}
-function assessmentPresentation(
-  result: AssessmentResult,
-  record: DispatchRecord,
-  intake: IntakeRecord,
-  workspace: string,
-) {
-  const decision = JSON.parse(record.routing!) as RoutingDecision;
-  return renderAssessmentResult(result, {
-    issue: { label: repository(intake) + '#' + intake.issue.number, url: issueUrl(intake) },
-    routing: { ...decision, model: record.request!.model, effort: record.request!.thinking },
-    effective: record.effective,
-    assessment: record.assessment && {
-      ...record.assessment,
-      guidance: record.assessment.guidance && {
-        ...record.assessment.guidance,
-        ...(record.assessment.guidance.path
-          ? { path: relative(workspace, record.assessment.guidance.path) }
-          : {}),
-      },
-    },
-  });
 }
 function code(error: unknown) {
   if (codexHostAccess(error)) return 'codex-host-access-required';
@@ -246,48 +222,7 @@ export async function revalidateDispatchAssignment(
   if (!policy || (requirePlan && policy.policy.issueAssignment?.mode !== 'plan'))
     throw new Error('dispatch-plan-mode-required');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-  if (
-    !githubIdentityMatches(client.identity, record.receiving) ||
-    client.identity.login.toLowerCase() !== policy.username.toLowerCase()
-  )
-    throw new Error('dispatch-receiver-authority-revoked');
-  const owner = record.repository.owner.login;
-  const name = record.repository.name;
-  const repo = await client.getRepository(owner, name);
-  const item = await client.getItem(owner, name, record.issue.number);
-  const events = await client.listAssignmentEvents(owner, name, record.issue.number);
-  if (events.truncated) throw new Error('dispatch-authority-history-incomplete');
-  const latest = events.events
-    .filter((event) => githubIdentityMatches(event.assignee, client.identity))
-    .sort(
-      (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
-    )[0];
-  if (
-    repo.nodeId !== record.repository.nodeId ||
-    repo.databaseId !== record.repository.databaseId ||
-    repo.archived ||
-    repo.disabled ||
-    !policy.policy.allowedRepositoryOwners.some((identity) =>
-      githubIdentityMatches(identity, repo.owner),
-    ) ||
-    !githubIdentityMatches(record.repository.owner, repo.owner) ||
-    repo.name.toLowerCase() !== name.toLowerCase() ||
-    item.nodeId !== record.issue.nodeId ||
-    item.databaseId !== record.issue.databaseId ||
-    item.number !== record.issue.number ||
-    item.itemType !== 'issue' ||
-    item.state !== 'open' ||
-    !item.assignees.some((identity) => githubIdentityMatches(identity, client.identity)) ||
-    !latest ||
-    latest.nodeId !== record.assignment.nodeId ||
-    latest.event !== 'assigned' ||
-    latest.actor.type !== 'User' ||
-    !githubIdentityMatches(latest.actor, record.assignment.actor) ||
-    !policy.policy.issueAssignment?.allowed.some((identity) =>
-      githubIdentityMatches(identity, latest.actor),
-    )
-  )
-    throw new Error('dispatch-assignment-authority-revoked');
+  const repo = await revalidateAssignment(policy, record, client);
   return { client, repo };
 }
 
@@ -661,10 +596,8 @@ export async function runCodexDispatch(
           }
         }
         if (
-          state.records.filter(
-            (record) =>
-              !record.retired && !record.handoff && record.request && record.phase !== 'complete',
-          ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
+          dispatchCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 1)
+            .available === 0
         )
           return checked('at-capacity');
         const intake = pendingDispatchAssignments(state, admitted).find(
@@ -785,32 +718,7 @@ export async function runCodexDispatch(
             'issue',
             true,
           );
-          const fallbackMetadata = routingMetadata(nativeRoutingMetadata([]), context.body);
-          const conflicts = (['complexity', 'workSize'] as const).filter(
-            (field) =>
-              context.nativeRoutingMetadata?.[field].status === 'verified' &&
-              fallbackMetadata[field].status === 'verified' &&
-              context.nativeRoutingMetadata[field].value !== fallbackMetadata[field].value,
-          );
-          const snapshot = {
-            source: issueUrl(intake),
-            observedAt: now,
-            title: context.title.slice(0, 512),
-            body: context.body.slice(0, 18000),
-            comments: context.comments
-              .slice(-10)
-              .map((comment) => ({ ...comment, body: comment.body.slice(0, 1200) })),
-            metadata: context.routingMetadata ?? null,
-            nativeMetadata: context.nativeRoutingMetadata ?? null,
-            fallbackMetadata,
-            conflicts,
-            labels: context.labels,
-            truncated:
-              context.truncated ||
-              context.body.length > 18000 ||
-              context.comments.length > 10 ||
-              context.comments.some((comment) => comment.body.length > 1200),
-          };
+          const snapshot = dispatchContext(context, issueUrl(intake), now);
           record.project = project;
           record.context = JSON.stringify(snapshot);
           record.manifestDigest = current.digest;
@@ -1077,46 +985,17 @@ export async function runCodexDispatch(
           if (action === 'result') {
             const result = parseAssessmentResult(input.result);
             if (!native.turnId) throw new Error('dispatch-native-turn-unavailable');
-            const binding = {
-              admissionId: intake.id,
-              workflow: 'issue-assignment' as const,
-              repositoryId: intake.repository.nodeId,
-              subjectId: intake.issue.nodeId,
+            recordDispatchResult({
+              record,
+              intake,
               threadId: native.id,
               turnId: native.turnId,
               worktree: native.cwd,
-              dispatchDigest: automationHash(record.request),
-              policyDigest: automationHash(current.manifest.github?.notifications ?? null),
-              selectionDigest: automationHash(
-                record.assessment ?? { skill: defaultAssessmentSkill },
-              ),
-              routingDigest: automationHash({
-                routing: record.routing,
-                effective: record.effective,
-              }),
-              evidenceDigest: automationHash(JSON.parse(record.context!)),
-            };
-            validateWorkflowResult(
-              {
-                version: 1,
-                stage: 'assessment',
-                resultContract: 'assessment-result/v1',
-                binding,
-                result,
-              },
-              { binding, stage: 'assessment', authorized: true },
-            );
-            if (
-              record.result &&
-              automationHash(record.result) !== automationHash(result) &&
-              input.previousResultDigest !== automationHash(record.result)
-            )
-              throw new Error('assessment-result-conflict');
+              policy: current.manifest.github?.notifications,
+              result,
+              previousResultDigest: input.previousResultDigest as string | undefined,
+            });
             const presentation = assessmentPresentation(result, record, intake, current.workspace);
-            record.result = result;
-            record.stageReceipt = { binding, resultDigest: automationHash(result) };
-            record.resultTurnId = native.turnId;
-            record.phase = 'complete';
             await save();
             return {
               status: 'recorded',

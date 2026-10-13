@@ -1,7 +1,7 @@
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
-import pendingDispatchAssignments from './codex-dispatch-pending.ts';
+import pendingDispatchAssignments from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import { githubNotificationMarkdownText as text } from '../channels/github/conversation/presentation/card.ts';

@@ -51,7 +51,7 @@ export default function createIntakeTool(
                   );
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-              details: {},
+              details: result,
             };
           },
         }),

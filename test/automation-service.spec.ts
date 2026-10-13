@@ -900,8 +900,15 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     assert.equal(mutations().length, 0);
     native[0]!.payload.toolsAllow = ['read'];
+    assert.ok(
+      (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+    );
+    assert.deepEqual(native[0]!.payload.toolsAllow, ['read']);
     await service.reconcile(manifest, root);
     assert.deepEqual(native[0]!.payload.toolsAllow, ['*']);
+    assert.ok(
+      (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-healthy'),
+    );
     manifest.automations[0]!.overrides = {};
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.payload.model, undefined);

@@ -199,11 +199,15 @@ describe('OpenClaw V2 intake slice', () => {
   });
   it('should derive only the enabled OpenClaw job and preserve its desired trigger on every reconciliation', () => {
     const value = manifest();
+    value.models.default = { model: 'openai/gpt-6-astra', effort: 'medium' };
     const [job] = openclawIntakeJobs(value);
     assert.ok(job);
     assert.equal(value.automations, undefined);
     assert.equal(job.schedule.kind, 'every');
     assert.equal(job.internalOpenClaw!.group, 'Agent System');
+    assert.equal(job.overrides.openclaw!.model, 'openai/gpt-6-astra');
+    assert.equal(job.overrides.openclaw!.effort, 'medium');
+    assert.equal(value.models.low.model, 'openai/gpt-6-luna');
     const desired = projectAutomation(job, { anchorMs: baseline, marker: 'owned' } as never, {
       agentId: 'receiver',
       workspaceDir: root,
@@ -218,7 +222,13 @@ describe('OpenClaw V2 intake slice', () => {
       state: {},
     } as NativeAutomation;
     assert.equal(desired.name, 'Agent System: github-issue-assignment');
-    assert.deepEqual(desired.payload.toolsAllow, ['agent_system_intake']);
+    assert.deepEqual(desired.payload.toolsAllow, ['*']);
+    const restricted = {
+      ...current,
+      payload: { ...current.payload, toolsAllow: ['agent_system_intake'] },
+    } as NativeAutomation;
+    const restored = automationPatch(restricted, desired);
+    assert.deepEqual((restored.payload as Record<string, unknown>).toolsAllow, ['*']);
     assert.deepEqual(automationPatch(current, desired), {});
     const changed = { ...desired, trigger: { script: 'changed' } };
     assert.deepEqual(automationPatch(current, changed), { trigger: { script: 'changed' } });
@@ -238,6 +248,7 @@ describe('OpenClaw V2 intake slice', () => {
     for (const changed of [false, true]) {
       let output: { fire: boolean } | undefined;
       await runInNewContext(`(async()=>{${script}})()`, {
+        agent_system_dispatch: async () => ({ status: 'ready', changed: false }),
         agent_system_intake: async (args: unknown) => {
           assert.equal((args as { action: string }).action, 'check');
           return {
@@ -269,6 +280,97 @@ describe('OpenClaw V2 intake slice', () => {
     });
     assert.equal((output as { fire: boolean }).fire, true);
     assert.equal(JSON.stringify(output).includes('secret'), false);
+  });
+  it('should pass native structured results to the scheduled quiet condition', async () => {
+    const f = fixture();
+    await f.service.run(f.value, root, 'activate');
+    let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
+    createIntakeTool(f.service, f.manifests).registerTools(
+      {
+        registerTool(value) {
+          factory = value;
+        },
+      },
+      {} as never,
+    );
+    if (typeof factory !== 'function') throw Error('missing factory');
+    const tool = await factory({ agentId: 'receiver', workspaceDir: root });
+    assert.ok(tool && !Array.isArray(tool));
+    const script = openclawIntakeJobs(f.value)[0]!.internalOpenClaw!.trigger.script;
+    const { store } = await f.service.select(f.value, root);
+    for (const changed of [false, true]) {
+      if (changed) {
+        f.provider.events.push(...intakeFixture().events);
+        f.setNow(baseline + 120000);
+      }
+      const before = JSON.stringify(await store.read());
+      let output: { fire: boolean; state: { status: string } } | undefined;
+      await runInNewContext(`(async()=>{${script}})()`, {
+        agent_system_dispatch: async () => ({ status: 'ready', changed: false }),
+        agent_system_intake: async (args: unknown) => {
+          const result = await tool.execute('condition', args);
+          assert.deepEqual(
+            result.details,
+            JSON.parse((result.content[0] as { text: string }).text),
+          );
+          return result.details;
+        },
+        json: (value: typeof output) => {
+          output = value;
+        },
+      });
+      assert.equal(output!.fire, changed);
+      assert.equal(output!.state.status, 'ready');
+      assert.equal(JSON.stringify(await store.read()), before);
+    }
+  });
+  it('should retain the failed check stage and safe diagnostic without exposing raw errors', async () => {
+    const script = openclawIntakeJobs(manifest())[0]!.internalOpenClaw!.trigger.script;
+    const cases = [
+      {
+        stage: 'intake',
+        error: new Error('private transport detail'),
+        code: 'intake-condition-failed',
+      },
+      {
+        stage: 'dispatch',
+        error: new Error('dispatch-native-caller-unavailable'),
+        code: 'dispatch-native-caller-unavailable',
+      },
+      {
+        stage: 'dispatch',
+        error: new Error('private transport detail'),
+        code: 'dispatch-condition-failed',
+      },
+      {
+        stage: 'dispatch',
+        error: { code: 'private-credential-value' },
+        code: 'dispatch-condition-failed',
+      },
+    ];
+    for (const sample of cases) {
+      let output:
+        | { fire: boolean; message: string; state: { status: string; stage: string; code: string } }
+        | undefined;
+      await runInNewContext(`(async()=>{${script}})()`, {
+        agent_system_intake: async () => {
+          if (sample.stage === 'intake') throw sample.error;
+          return { status: 'ready', changed: false };
+        },
+        agent_system_dispatch: async () => {
+          throw sample.error;
+        },
+        json: (value: typeof output) => {
+          output = value;
+        },
+      });
+      assert.equal(output!.fire, true);
+      assert.equal(output!.state.status, 'blocked');
+      assert.equal(output!.state.stage, sample.stage);
+      assert.equal(output!.state.code, sample.code);
+      assert.ok(output!.message.includes(sample.code));
+      assert.equal(JSON.stringify(output).includes('private'), false);
+    }
   });
   it('should bind the tool to the native agent and reject caller-selected identities or activation', async () => {
     const f = fixture();

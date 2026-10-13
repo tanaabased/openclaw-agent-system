@@ -42,6 +42,7 @@ const supportedPluginSdkSubpaths = new Set([
   'session-store-runtime',
   'session-visibility',
   'setup-runtime',
+  'skill-commands-runtime',
   'status-helpers',
 ]);
 const deprecatedPluginSdkSubpaths = new Set([
@@ -163,6 +164,7 @@ describe('openclaw api policy', () => {
       "import { createAgentToAgentPolicy, resolveSessionToolsVisibility } from 'openclaw/plugin-sdk/session-visibility';",
       "import { createClackPrompter } from 'openclaw/plugin-sdk/setup-runtime';",
       "import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';",
+      "import { listSkillCommandsForWorkspace } from 'openclaw/plugin-sdk/skill-commands-runtime';",
     ].join('\n');
 
     assert.deepEqual(openClawImportFailures(source, 'fixture.ts'), []);

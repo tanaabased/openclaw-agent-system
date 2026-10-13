@@ -132,6 +132,9 @@ describe('index', () => {
     assert.deepEqual(hookNames, [
       'after_tool_call',
       'before_tool_call',
+      'after_tool_call',
+      'agent_end',
+      'before_tool_call',
       'resolve_exec_env',
       'before_tool_call',
       'before_agent_run',
@@ -142,6 +145,7 @@ describe('index', () => {
     assert.deepEqual(commandNames, []);
     assert.deepEqual(serviceIds, ['agent-system-op-cache', 'agent-system-command-authority']);
     assert.deepEqual(toolNames, [
+      'agent_system_dispatch',
       'agent_system_intake',
       'agent_system_git',
       'agent_system_git_worktree',

@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
+import createDispatchTool from '../tools/dispatch/tool.ts';
+import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
 import { join, resolve } from 'node:path';
@@ -283,7 +285,34 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return new GitHubWorkItemClient(new GitHubWorkEventApiClient(connected));
     },
   });
+  const automationDependencies = {
+    root: join(api.runtime.state.resolveStateDir(), 'agent-system-automations'),
+    profile: api.runtime.state.resolveStateDir(),
+    command: openClawCommand,
+    environment: Object.fromEntries(
+      ['OPENCLAW_PROFILE', 'OPENCLAW_STATE_DIR', 'OPENCLAW_CONFIG_PATH'].flatMap((name) =>
+        process.env[name] ? [[name, process.env[name]!]] : [],
+      ),
+    ),
+    manifestService: lifecycleManifestService,
+  };
+  const automationService = new AutomationService(automationDependencies);
+  const dispatchV2 = createDispatchTool({
+    api,
+    diagnostics: lifecycleLogger,
+    runtimeUrl,
+    root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
+    intake: intakeV2,
+    automations: automationService,
+    manifestService: lifecycleManifestService,
+    worktrees: gitCapability.trustedWorktreeService,
+    async connect(input, signal) {
+      const connected = await githubCapability.accountClient.connect(input, 'service', signal);
+      return new GitHubWorkEventClient(connected);
+    },
+  });
   const toolRegistry = new AgentSystemToolRegistry([
+    dispatchV2.tool,
     createIntakeTool(intakeV2, {
       ...lifecycleManifestService,
       loadForCommandDirectory(...args) {
@@ -313,18 +342,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     runPreAgent: (command, target, signal) => setupCommands.runPreAgent(command, target, signal),
     prepare: (context) => setupCommands.prepare(context),
   });
-  const automationDependencies = {
-    root: join(api.runtime.state.resolveStateDir(), 'agent-system-automations'),
-    profile: api.runtime.state.resolveStateDir(),
-    command: openClawCommand,
-    environment: Object.fromEntries(
-      ['OPENCLAW_PROFILE', 'OPENCLAW_STATE_DIR', 'OPENCLAW_CONFIG_PATH'].flatMap((name) =>
-        process.env[name] ? [[name, process.env[name]!]] : [],
-      ),
-    ),
-    manifestService: lifecycleManifestService,
-  };
-  const automationService = new AutomationService(automationDependencies);
   const collaboration = createCollaborationLifecycleContribution({
     readConfig,
     resolveAgentWorkspaceDir: (config, agentId) =>
@@ -611,7 +628,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
+  registerAgentSystemHooks(api, manifestService, toolRegistry, {
+    beforeRun: (context) => notificationRuntime.promptGuidance.beforeRun(context),
+    async instructions(context) {
+      const guidance = await notificationRuntime.promptGuidance.instructions(context);
+      const dispatch = await dispatchV2.instructions(context);
+      return [guidance, dispatch].filter(Boolean).join('\n\n') || undefined;
+    },
+  });
   api.registerCli(({ program }) => {
     const automations = new AutomationService({
       ...automationDependencies,

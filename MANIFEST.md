@@ -451,19 +451,27 @@ manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
 owned assessment schedule. Explicitly authorized Codex PR delivery is available
 after a managed issue chat's implementation handoff. Review requests, feedback,
-automated implementation, and OpenClaw v2 assessment dispatch remain unavailable.
+automated implementation, and unattended OpenClaw v2 assessment rollout remain unavailable.
 An unavailable OpenClaw notification
 adapter produces a validation warning and a skipped install outcome; other
 components remain usable. Doctor reports notifications as blocked, and execution
 stops before legacy routing or authority is used. A Codex-only declaration does not
 enable the OpenClaw channel. Binding and passive discovery never activate work.
-OpenClaw also derives an intake-only `Agent System: github-issue-assignment`
+OpenClaw also derives an `Agent System: github-issue-assignment`
 automation from enabled v2 policy. It uses the existing automation reconciler,
-`models.low`, and a read-only condition before a durable scan. Its retained
+`models.default`, and a read-only condition before a durable scan. Its retained
 `ISSUE ASSIGNMENTS` conversation belongs in **Agent System**. Intake uses the
 Codex/V2 admission schema in separate OpenClaw state; it never uses legacy
-notification files or stores assessment/session status. It creates no issue chats
-and processes no comments. Operator automation synchronization is required;
+notification files or stores assessment/session status. The separate plan-mode
+dispatch adapter retains routing and native receipts in its own journal. It uses
+a setup-only issue chat, verifies selected model and effort, then starts assessment
+in a separate turn in that same chat. Results and revisions use the shared
+assessment contract. Uncertain native effects are retained, never repeated.
+The scheduled conversation uses its owning agent's existing tool access without
+an intake-specific narrowing. Automation inspection detects stale allowances;
+installation reconciles them through the existing automation lifecycle.
+It processes no comments.
+Operator automation synchronization is required;
 native chat Install/Doctor cannot yet reconcile or inspect the scheduler.
 The legacy channel remains blocked for v2 declarations.
 
