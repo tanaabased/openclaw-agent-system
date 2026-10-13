@@ -27,135 +27,37 @@ Native request/response and saved-state captures live in `fixtures/` with separa
 provenance. Ordinary tests consume reviewed captures without contacting the app;
 constructed failure cases are identified in the tests. This packed/headless
 scenario does not replace separate installed desktop-tool verification.
-For a native follow-up pilot, request implementation explicitly in the issue chat.
-Verify the handoff retains its assessment result (or unsaved-result failure), changes
-no files itself, and produces no assessment-progress announcement in intake. Later
-polls must not inspect the implementation checkout or report it as an assessment failure. A new
-assignment for another issue must still start. Native approval remains native; an
-initial assessment turn and issue prose cannot authorize a handoff.
 
-The dispatch checks below cover packaged discovery, the assessment skill's schema and
-presentation resources in the installed cache, read-only inspection, and the activation
-boundary. Native issue worktree creation, useful assessment output, and desktop rendering
-require a separately authorized test. For assessment acceptance, review clear requirements,
-missing material information, conflicting evidence, and setup obstacles semantically:
-check repository grounding, focused questions, justified documentation/tests, credible file
-changes, and readable headings, lists, links, quotations, and code blocks. Deterministic
-package checks do not establish those model and desktop properties.
-Include a pending native receipt with a provider different from the app-server default
-and a normalized title: reconciliation must find the existing chat, verify its identity,
-correct the title before assessment, and avoid a second creation. Check summary concision
-and agreement with the full plan semantically; verify that the complete plan follows inline
-without a word-count target or an extra click. Do not assert exact model wording.
-Check that full-plan sections pair each change with its files instead of repeating
-the work in a separate inventory. Required decisions and meaningful validation must
-survive the shorter presentation; grouped test cases must still identify the behavior
-being checked. Do not invent file edits for sections that only describe operations.
-Verify that retained Evidence and Investigation appear under optional Reference material
-after the primary result. Questions, setup actions, and consequential uncertainty must
-remain visible before that section; omit the section when no supporting detail exists.
-For readability acceptance, review the assessment and summary without reading the full
-plan: identify the affected user, their task and current friction, the proposed change,
-and any consequential choice or limitation. Reject an opening that only lists internal
-mechanisms, even if it is concise and technically correct. Compare it with the issue,
-repository findings, and full plan to catch invented benefits or concealed uncertainty.
-Use a fresh issue as well as revisions so the trial does not merely reproduce a coached
-example; assess meaning rather than word counts or a forbidden-words list.
-For the opening editor, inspect the native helper call: it must start without inherited
-conversation and receive only the editor instructions and factual user-journey brief,
-not the full plan or earlier opening. Verify that the assessor checks its claims against
-the plan and that the full plan, outcome, questions, and saved routing remain intact.
-Include a clarification case so editing does not turn an unresolved choice into a promise;
-exercise answers arriving both in a later turn and after recording within the same turn.
-The revision must replace the acknowledged result using its digest; a stale revision
-must fail without overwriting the newer result. An identical retry stays idempotent.
-Assign several fixtures together: intake should fill available capacity within its action
-budget, continuing past completion notices and launches. An unchanged running assessment
-must not delay another queued issue: the next runtime call should offer the next issue or
-an explicit stop. Verify the overflow starts when a slot opens, with no duplicate chats or
-notices. Compare each native launch with
-the prepared request exactly; issue evidence comes from context, not a copied snapshot.
-If isolated helpers are unavailable, require an explicit limitation rather than a false
-claim that the separate pass ran. This is live semantic evidence, not an exact-word test.
-For an explicitly authorized reassessment pilot, preview and apply an operator reset
-only after the prior chat is idle with a recorded result. Verify that its evidence
-remains retained, an ordinary poll creates nothing, and a subsequent assignment event
-produces exactly one new assessment chat through the normal intake flow.
-While assessment is active, poll through the separate app-server adapter: an unloaded
-history must not turn an apparent interruption into a missing-result blocker. Verify
-that the eventual recorded result completes the same dispatch.
+### Desktop Acceptance
 
-For the assessment-selection pilot, use the default with no guidance, inline guidance,
-and file guidance, then the installed replacement with and without guidance. The
-`assessment-skill/SKILL.md` fixture is suitable for a disposable repository. Verify
-bare, `$`-prefixed, and plugin-qualified IDs resolve consistently, and that missing,
-disabled, ambiguous, or changed skills stop assessment without a fallback. Inspect
-the retained skill name, source, digest, and guidance snapshot through context; edits
-to a guidance file must affect a fresh assessment but not continuation of an existing
-one. Include attempted authority expansion and malformed replacement output: neither
-may alter routing, mode, publication authority, or an already recorded valid result.
-Both replacement plans and questions must use the shared host presentation. Verify
-that its Assessment instructions block follows Model routing, identifies the resolved
-custom skill and/or guidance source, preserves inline guidance's indentation and literal
-Markdown characters, and stays absent for the default without guidance. File guidance
-displays its workspace-relative path, not its contents. Continuations retain the original
-instruction selection. These semantic pilot checks need explicit authorization; the
-headless checks prove discovery and configuration only.
+These headless checks prove packaged discovery, configuration, activation boundaries,
+and native conversation persistence. They do not prove scheduled issue creation,
+model judgment, or desktop rendering. Those require a separately authorized pilot
+using disposable issues and the installed plugin.
 
-Verify that a fresh assessment uses the launch prompt's exact context request on stdin
-with the trusted dispatch runtime and plugin-data arguments, without guessing action
-flags. Apply the same transport when recording its result.
-Keep the prepared request as parsed data through native creation, and compare the
-actual launch prompt with the retained request. After retiring a closed fixture and
-admitting a new assignment, verify that reusing its old native receipt is rejected
-without retaining either supplied identity or creating another chat. Use distinctive
-cat-themed skill and guidance markers to distinguish both inputs in the retained
-assessment; these markers must not grant implementation or publication authority.
+- **Assignment intake:** assign more issues than the available slots. Verify that
+  available slots fill, overflow starts after an assessment finishes, and later
+  checks neither create duplicates nor repeat earlier start notices. Intake reports
+  starts, pending work, slots, and intake obstacles; assessment progress stays in
+  the issue.
+- **Assessment:** exercise a clear request, missing requirements, conflicting
+  evidence, and a setup obstacle. Check repository grounding, useful questions,
+  a readable opening from the isolated editor, and a concise full plan with files
+  beside their changes. Review meaning, not exact wording. A clarification answer
+  should revise the retained result without losing investigation or routing.
+- **Custom instructions:** try the default skill, inline and file guidance, and a
+  replacement skill. Verify the retained selection and shared presentation; missing
+  or changed skills must stop with an actionable diagnostic rather than a fallback.
+- **Recovery:** interrupt native creation and verify that the next check recovers
+  the same issue destination. Exercise missing project registration and native
+  host-access approval; follow the supported recovery in [Codex](../../CODEX.md#issue-assessment)
+  without clearing tracking state or bypassing a denial.
+- **Continuation:** explicitly request implementation in the issue and verify its
+  handoff preserves the assessment and worktree. Later intake must neither inspect
+  that implementation nor prevent another eligible issue from starting.
 
-For the native fallback pilot, omit both checkout mappings and the working directory.
-With no saved project, verify one bare source and one detached base checkout, then
-register that exact base and resume the retained assignment. After native worktree
-creation enables per-worktree Git configuration, the source must remain bare while
-both the base and assessment checkout still accept ordinary `git status`. Repeat
-with an already registered managed base carrying the old shared `core.bare=true`
-setting: preparation must repair the owned configuration without replacing checkouts.
-Without an explicit checkout, a saved project with invalid Git configuration must
-remain a blocker. With an explicit checkout, inaccessible unrelated saved projects
-must not prevent selecting it; access and identity checks still apply to the target.
-Verify that the launch carries its receipt once, context supplies the assessment
-instructions, and an altered native launch is still rejected before investigation.
-Have the child request context while intake is reconciling its creation receipt;
-the child must wait for the journal lease and continue, rather than stopping on
-transient contention. Result submission must use the same bounded waiting behavior.
-Run a fresh assessment without follow-up coaching: if its sandbox blocks private
-plugin-state access, it must request native approval for the exact runtime command
-and continue only after approval and verified context. An actual approval denial or
-verification failure must stop it. Verify the retained plan only in its issue,
-and a subsequent quiet intake report without duplicate chats or worktrees.
-
-Verify one intake summary per scheduled check, including grouped issue links and
-managing, pending, and occupied-slot counts. Revise a plan, record clarification,
-and continue implementation: none may produce intake progress announcements.
-Simulate a malformed or missing final notification; the next run must still scan
-and start eligible work without replaying old cards. Load legacy full notification
-queues and verify they are discarded without losing assignments, assessments, or
-native creation receipts. No notification backlog may consume admission capacity.
-Deny access to a disposable assessment skill or guidance fixture and verify the
-native host-access retry without substituting a skill or diagnosing corrupt state.
-Real provider failures retain their diagnostic; recovery reports current intake health.
-A fresh scan without a terminal dispatch check must return `continue` from report,
-even when an issue has already started. Follow its next action until the queue
-is checked, capacity is full, a blocker is retained, or twelve runtime actions are
-spent. A report supplied with the previous trigger's timestamp must return the
-current native occurrence's request without publishing a final response. Repeat
-three fresh multi-issue batches; require each run to fill available slots, retain
-overflow, resume it later without duplicates, and produce quiet summaries after the starts have been reported.
-Exhaust the action budget after creation but before receipt reconciliation; the
-next occurrence must recover the same chat rather than launch another.
-For native recovery, verify creation and latest-turn evidence through paged history on a
-long chat; title checks must not request history. Incomplete or cyclic history must retain
-uncertainty without authorizing another creation. These desktop checks remain separate
-from the deterministic unit reproductions and require an explicitly authorized pilot.
+Use fresh issues as well as follow-up revisions. Keep detailed pilot plans and results
+in the owning issue or pull request, and retire disposable fixtures afterward.
 
 ## Setup
 

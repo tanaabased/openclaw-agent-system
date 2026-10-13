@@ -261,6 +261,8 @@ describe('agent/codex-dispatch', () => {
     assert.equal(((await request('inspect')).records as unknown[]).length, 2);
     const started = await report();
     assert.match(String(started.response), /2 issues started/);
+    assert.ok(String(started.response).includes('[owner/repo#3](codex://threads/issue-thread-3)'));
+    assert.ok(String(started.response).includes('[owner/repo#4](codex://threads/issue-thread-4)'));
 
     now += 300001;
     await runCodexIntake(pluginData, false, deps);
@@ -278,7 +280,7 @@ describe('agent/codex-dispatch', () => {
     const completed = await report();
     assert.match(String(completed.response), /1 issue started/);
     assert.doesNotMatch(String(completed.response), /#3|Plan ready/);
-    assert.match(String(completed.response), /repo #5/);
+    assert.match(String(completed.response), /repo#5/);
     assert.equal((await report()).status, 'report');
     assert.equal(((await request('inspect')).records as unknown[]).length, 3);
   });

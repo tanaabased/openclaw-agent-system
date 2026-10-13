@@ -55,7 +55,7 @@ export default function prepareDispatchReport(input: {
   const issueLabel = (intakeId: string) => {
     const item = intake.records.find((entry) => entry.id === intakeId);
     return item
-      ? text(item.repository.owner.login + '/' + item.repository.name + ' #' + item.issue.number)
+      ? text(item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number)
       : 'Issue';
   };
   const quiet = codexHeartbeat({
