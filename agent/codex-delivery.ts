@@ -21,6 +21,7 @@ import CodexDispatchStore from './codex-dispatch-state.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch.ts';
 import type { CodexDeliveryState } from './codex-delivery-state.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
+import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
@@ -363,6 +364,7 @@ export default async function runCodexDelivery(
           };
         } catch (error) {
           signal.throwIfAborted();
+          if (codexHostAccess(error)) throw error;
           const message = error instanceof Error ? error.message : '';
           const code = /^(?:dispatch|delivery|github-delivery)-[a-z-]+$/u.test(message)
             ? message

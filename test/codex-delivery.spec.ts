@@ -318,6 +318,22 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(publish(), /creation-uncertain/);
     assert.equal(creates, 1);
   });
+  it('should preserve native host-access failures for the authorized retry', async () => {
+    const git = deps.git!;
+    for (const code of ['EPERM', 'EACCES', 'automation-thread-host-access-required']) {
+      const denied = Object.assign(new Error('host access required'), { code });
+      deps.git = async (cwd, argv, signal) => {
+        if (argv[0] === 'ls-remote') throw denied;
+        return git(cwd, argv, signal);
+      };
+      await assert.rejects(publish(), (error) => error === denied);
+      assert.equal(creates, 0);
+      assert.ok(!gitCalls.some((argv) => argv.includes('push')));
+    }
+    deps.git = git;
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 1);
+  });
   it('should recover a lost creation response by adopting the same verified pr', async () => {
     failCreate = true;
     await assert.rejects(publish(), /transport lost/);
