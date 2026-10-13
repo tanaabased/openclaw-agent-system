@@ -422,9 +422,42 @@ export async function inspectCodexDispatchActivation(
     )
   )
     throw new Error('dispatch-activation-required');
-  // the shipped schedule grants assessment only, regardless of configured future stages.
-  if (capability !== 'assessment') throw new Error('workflow-schedule-reconciliation-required');
-  return { sourceThreadId: record.definition.targetThreadId };
+  if (capability === 'assessment') return { sourceThreadId: record.definition.targetThreadId };
+  // work activation is read back against the current definition; old consent never widens.
+  if (
+    capability === 'review' ||
+    pausedRecovery ||
+    retainedWork ||
+    selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
+    selected.loaded.manifest.github.notifications.issueAssignment?.mode !== 'work' ||
+    !job ||
+    job.payload.kind !== 'prompt' ||
+    record.removed ||
+    record.definition.status !== 'ACTIVE' ||
+    record.definition.prompt !==
+      job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId)
+  )
+    throw new Error('workflow-schedule-reconciliation-required');
+  const authority = {
+    workflow: 'issue-assignment' as const,
+    automationId: record.nativeId,
+    sourceThreadId: record.definition.targetThreadId,
+    policyDigest: automationHash(selected.loaded.manifest.github.notifications),
+    definitionDigest: automationHash(record.definition),
+  };
+  return {
+    sourceThreadId: authority.sourceThreadId,
+    schedule: {
+      current: authority,
+      saved: {
+        ...authority,
+        version: 1 as const,
+        capabilities: ['assessment', 'implementation', 'publication'] as Array<
+          'assessment' | 'implementation' | 'publication'
+        >,
+      },
+    },
+  };
 }
 
 /** explicit native conversation sync; schedules remain owned by the desktop app tools. */

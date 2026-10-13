@@ -66,6 +66,11 @@ using disposable issues and the installed plugin.
   the same issue destination. Exercise missing project registration and native
   host-access approval; follow the supported recovery in [Codex](../../CODEX.md#issue-assessment)
   without clearing tracking state or bypassing a denial.
+- **Work mode:** activate the complete workflow through Install, assign one bounded
+  disposable issue, and verify assessment, one native implementation continuation,
+  and one linked PR in the original chat without stage approvals. Capture native
+  send receipts, restart reconciliation, provider linkage, attachment, and visible
+  presentation separately; a forged or missing receipt must not start work.
 - **Continuation:** explicitly request implementation in the issue and verify its
   handoff preserves the assessment and worktree. Later intake must neither inspect
   that implementation nor prevent another eligible issue from starting.
@@ -176,6 +181,14 @@ printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-hando
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$root/notification-workspace/checkouts"
 test ! -d "$root/notification-workspace/.agent-system/repositories"
+
+# should reject packaged continuation without newly reconciled work authority
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(printf '%s\n' '{"action":"next"}' | CODEX_THREAD_ID=fixture-intake node "$runtime" continuation --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
+test ! -d "$CODEX_HOME/automations"
 
 # should expose packaged delivery while rejecting requests without a valid managed receipt
 root="$TMPDIR/agent-system-codex-example"

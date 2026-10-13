@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { automationHash } from '../agent/automation-hash.ts';
 import runCodexDelivery, {
   codexDeliveryAttachment,
   CodexDeliveryFailure,
@@ -476,6 +477,67 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(request('prepare', { schedule: current }), /request-invalid/);
     assert.equal(creates, 0);
   });
+  async function workSchedule() {
+    const configured = structuredClone(manifest);
+    configured.github.notifications['issue-assignment'].mode = 'work';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    const selected = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const current = {
+      workflow: 'issue-assignment' as const,
+      sourceThreadId: 'intake',
+      automationId: 'schedule',
+      definitionDigest: 'definition',
+      policyDigest: automationHash(selected.manifest.github?.notifications),
+    };
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.handoff;
+      await save();
+    });
+    deps.schedule = { current, saved: { ...current, version: 1, capabilities: ['publication'] } };
+  }
+  it('should publish with standing work authority and keep subsequent actions in its continuation', async () => {
+    await workSchedule();
+    deps.authorizeSchedule = async () => {};
+    const published = await publish();
+    assert.equal(published.status, 'published');
+    assert.equal(creates, 1);
+    assert.match(String(published.instruction), /continuationRuntime action:delivery/);
+  });
+  for (const boundary of ['push', 'create'])
+    it(`should stop before ${boundary} when standing work authority is revoked during publication`, async () => {
+      await workSchedule();
+      let revoked = false;
+      deps.authorizeSchedule = async () => {
+        if (revoked) throw new Error('continuation-authority-changed');
+      };
+      if (boundary === 'push') {
+        const git = deps.git!;
+        deps.git = async (...args) => {
+          const output = await git(...args);
+          if (args[1].includes('--push')) revoked = true;
+          return output;
+        };
+      } else {
+        const connect = deps.connect!;
+        deps.connect = async (...args) => {
+          const connected = await connect(...args);
+          const execute = connected.account.execute;
+          connected.account.execute = async (...command) => {
+            const output = await execute(...command);
+            // this read happens inside publish, after the last outer schedule check.
+            if (command[0].includes('repos/owner/repo/issues/3')) revoked = true;
+            return output;
+          };
+          return connected;
+        };
+      }
+      await assert.rejects(publish(), /continuation-authority-changed/);
+      assert.equal(creates, 0);
+      assert.equal(
+        gitCalls.some((argv) => argv.includes('push')),
+        boundary === 'create',
+      );
+    });
   it('should reject stale previews, changed assignments, foreign chats and dirty work before writes', async () => {
     const preview = await request('prepare');
     head = 'b'.repeat(40);

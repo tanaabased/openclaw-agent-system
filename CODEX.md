@@ -85,9 +85,9 @@ intake through one managed `github-issue-assignment` schedule and one retained c
 `📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
 `interval-minutes`; the automation ID is reserved. Intake records eligible
 assignments durably. After explicit reconciliation of the assessment-enabled
-schedule, `plan` assignments can prepare repositories and create native issue chats
-and worktrees in saved local Git-backed projects. Review requests, feedback, implementation, GitHub
-publication, and OpenClaw v2 execution remain unavailable through this Codex path.
+schedule, `plan` and `work` assignments can prepare repositories and create native issue chats
+and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery.
+Review requests, feedback transport, and Auto-mode execution remain unavailable through this Codex path.
 
 Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
 workflow. Install verifies a new chat's saved native approval settings and the saved
@@ -179,14 +179,39 @@ The complete assessment is shown inline and returned on same-chat revisions; it
 remains the source of truth rather than its summaries. Guidance cannot widen the
 assessment's authority.
 [Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
-use the same trusted selection contract, but their execution adapters remain unavailable.
+use the same trusted selection contract. Work uses the bundled
+[issue implementation skill](./skills/issue-implementation/SKILL.md) by default;
+review execution remains unavailable.
 [Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
 assignment and review requests; the removed global setting requires an explicit choice.
 
-The current reconciled schedule authorizes assessment only. Stage declarations,
-GitHub prose, and a completed assessment cannot authorize continuation or publication.
-Those operations require a newly reconciled native schedule; their unattended
-operation has not been established.
+### Work Mode
+
+Set `github.notifications.issue-assignment.mode: work`, optionally override its
+implementation skill or guidance, then authorize Install to reconcile the saved schedule. Activating Work
+mode authorizes assessment, implementation, and PR publication without routine
+stage approvals. Existing Plan-mode schedules remain assessment-only until that
+explicit update. An actionable assessment continues in its original issue chat
+with the complete plan, retained guidance, and selected model and effort.
+
+The runtime automatically checks that the activation and assignment still apply;
+these checks do not ask for renewed approval. Missing requirements, changed or
+unavailable skills/guidance, cancellation, and actual native approval or provider
+denials stop work. Implementation and delivery count against workflow capacity;
+intake reports stay limited to admission and capacity.
+
+Native continuation intent is retained before sending. An uncertain send is
+reconciled, never repeated blindly. A recorded implementation can resume delivery
+without reimplementing or creating another PR. A stopped implementation remains
+in the same chat with its files and evidence: inspect the blocker and explicitly
+continue through the existing manual handoff if human intervention is needed.
+Use `continuationRuntime` action `cancel` in the issue chat to stop further automatic
+work; it does not undo files or an already-started external operation. Disable the
+workflow through Install to revoke future automatic stage and publication authority.
+
+The native desktop assessment-to-PR journey has not yet been validated end to end.
+Deterministic fixtures and packaged checks do not establish unattended native
+execution or visible card delivery.
 
 ### Pull Request Delivery
 
@@ -210,8 +235,9 @@ available with an attachment warning. Delivery notices use the shared info, warn
 and error cards; publication errors retain the existing PR for retry. Attachment and
 presentation failures do not create another PR.
 See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
-Automatic progression and GitHub feedback delivery remain unavailable; the PR
-card makes no promise to relay comments.
+Work-mode publication uses the same delivery operation through the trusted
+continuation runtime. GitHub feedback delivery remains unavailable; the PR card
+makes no promise to relay comments.
 
 Native creation receipts, chat identity, worktree, and results survive interrupted
 polls. An uncertain creation is reconciled against native creation history; it is

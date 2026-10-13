@@ -449,9 +449,10 @@ manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix
 
 **Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
-owned assessment schedule. Explicitly authorized Codex PR delivery is available
-after a managed issue chat's implementation handoff. Review requests, feedback,
-automated implementation, and OpenClaw v2 assessment dispatch remain unavailable.
+owned schedule. Work mode continues actionable assessments through implementation
+and managed PR delivery; Plan mode stops after assessment. Explicitly authorized
+manual delivery remains available after implementation handoff. Review requests,
+feedback, Auto-mode execution, and OpenClaw v2 assessment dispatch remain unavailable.
 An unavailable OpenClaw notification
 adapter produces a validation warning and a skipped install outcome; other
 components remain usable. Doctor reports notifications as blocked, and execution
@@ -639,10 +640,12 @@ Currently, skill resolution supports host-discovered local `SKILL.md` sources.
 
 `issue-assignment.implementation` and `review-request.review` accept the same
 optional `skill` and `guidance` fields and contained guidance forms as
-[assessment selection](#assessment-selection). Their defaults are absent; the
-shared selector requires an explicit skill until an owning implementation or
-review consumer supplies a supported default. These declarations do not enable
-execution. Assessment is shared by Plan, Work, and Auto; Work and Auto share
+[assessment selection](#assessment-selection). Implementation defaults to
+`agent-system:agent-system-issue-implementation`; review has no executable default
+yet. Omit `skill` to retain the stage default, including when supplying only guidance. These declarations alone do not enable
+execution. In standalone Codex, activating Work mode through Install authorizes
+assessment, implementation with the selected skill, and managed PR publication
+without routine stage approvals; see [Work mode](./CODEX.md#work-mode). Assessment is shared by Plan, Work, and Auto; Work and Auto share
 implementation. Independent PR review has its own review stage. Arbitrary stage
 graphs are unsupported.
 
@@ -700,7 +703,7 @@ it. Install reconciles the selected runtime. Empty authority lists admit no work
 disabling a trigger or removing policy stops admission and requires reconciliation
 to pause the owned job.
 See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
-Review, feedback, and implementation execution remain outside the current Codex support.
+Review, feedback, and Auto-mode execution remain outside the current Codex support.
 
 #### Legacy compatibility
 

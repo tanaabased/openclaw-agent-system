@@ -1,3 +1,4 @@
+import { codexContinuationStateSchema } from './codex-continuation-state.ts';
 import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
 import { join } from 'node:path';
 
@@ -131,6 +132,7 @@ export const dispatchRecordSchema = Type.Object(
     ),
     result: Type.Optional(assessmentResultSchema),
     delivery: Type.Optional(codexDeliveryStateSchema),
+    continuation: Type.Optional(codexContinuationStateSchema),
     stageReceipt: Type.Optional(
       Type.Object(
         {
@@ -168,6 +170,12 @@ const schema = Type.Object(
     version: Type.Literal(1),
     scope: hash,
     records: Type.Array(dispatchRecordSchema),
+    continuationRun: Type.Optional(
+      Type.Object(
+        { id: text, actions: Type.Integer({ minimum: 0, maximum: 12 }) },
+        { additionalProperties: false },
+      ),
+    ),
     run: Type.Optional(
       Type.Object(
         {

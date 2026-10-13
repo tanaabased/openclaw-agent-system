@@ -121,9 +121,9 @@ function remediation(value: string) {
   if (value.includes('project'))
     return 'Add the exact repository checkout as one saved Git-backed Codex project, resolve any path or origin conflict, then let the next scheduled occurrence retry this retained assignment.';
   if (value.includes('activation'))
-    return 'Authorize Install to reconcile the updated assessment-only assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
-  if (value === 'dispatch-plan-mode-required')
-    return 'Set issue-assignment mode to plan and reconcile it through authorized Install. This pilot cannot implement or publish.';
+    return 'Authorize Install to reconcile the updated assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
+  if (value === 'dispatch-mode-unsupported')
+    return 'Set issue-assignment mode to plan or work and reconcile it through authorized Install. Other modes cannot dispatch issue assessments.';
   if (value.includes('routing') || value.includes('model'))
     return 'Inspect the retained routing evidence and configured profiles. Repair the selection or native model access; do not substitute a model or recreate the chat.';
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
@@ -240,11 +240,14 @@ export async function revalidateDispatchAssignment(
   deps: CodexDispatchDependencies,
   signal: AbortSignal,
   retainedWork = false,
-  requirePlan = true,
+  requireSupportedMode = true,
 ) {
   const policy = retainedWork ? codexIntakePolicy(current.manifest, true) : current.policy;
-  if (!policy || (requirePlan && policy.policy.issueAssignment?.mode !== 'plan'))
-    throw new Error('dispatch-plan-mode-required');
+  if (
+    !policy ||
+    (requireSupportedMode && !['plan', 'work'].includes(policy.policy.issueAssignment?.mode ?? ''))
+  )
+    throw new Error('dispatch-mode-unsupported');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
   if (
     !githubIdentityMatches(client.identity, record.receiving) ||
@@ -480,6 +483,7 @@ export async function runCodexDispatch(
             'Only after the user requests continuation outside assessment, apply this handoff to end assessment monitoring. It preserves all results and files and grants no implementation or publication authority.',
         };
       if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+      if (record.continuation) record.continuation.phase = 'cancelled';
       record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
       const response = notice(record, intake);
       await save();
@@ -663,7 +667,12 @@ export async function runCodexDispatch(
         if (
           state.records.filter(
             (record) =>
-              !record.retired && !record.handoff && record.request && record.phase !== 'complete',
+              !record.retired &&
+              !record.handoff &&
+              record.request &&
+              (record.phase !== 'complete' ||
+                (record.continuation &&
+                  !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase))),
           ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
         )
           return checked('at-capacity');
@@ -915,6 +924,28 @@ export async function runCodexDispatch(
               ),
           });
           record.assessment = selected.selection;
+          if (current.policy?.policy.issueAssignment?.mode === 'work') {
+            await (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'implementation',
+            );
+            const implementation = await selectWorkflowStage({
+              stage: 'implementation',
+              configuration: current.policy.policy.issueAssignment.implementation,
+              workspace: current.workspace,
+              observedAt: now,
+              resolveSkill: (id) =>
+                withNative(current, deps, (host) => host.assessmentSkill(record.project!.path, id)),
+            });
+            record.continuation = {
+              phase: 'waiting',
+              policyDigest: automationHash(current.manifest.github?.notifications),
+              selection: implementation.selection,
+            };
+          }
           record.routing = JSON.stringify(decision);
           record.routingNote =
             '> **Model routing:** ' +

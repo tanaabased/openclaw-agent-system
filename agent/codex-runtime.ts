@@ -1,3 +1,4 @@
+import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
 
@@ -228,6 +229,15 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
+  if (command === 'continuation') {
+    writeJson(
+      await runCodexContinuation(
+        parsePluginData(args.slice(1)),
+        JSON.parse(await readStandardInput()),
+      ),
+    );
+    return;
+  }
   if (command === 'delivery') {
     if (args[1] === '--help') {
       process.stdout.write(
@@ -379,7 +389,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     return;
   }
   throw new Error(
-    'expected session-start, binding, setup, automations, intake, dispatch, delivery, or model-routing command',
+    'expected session-start, binding, setup, automations, intake, dispatch, continuation, delivery, or model-routing command',
   );
 }
 
@@ -400,12 +410,14 @@ runCodexRuntime().catch((error: unknown) => {
             error instanceof RoutingError ||
             error instanceof CodexAutomationError
           ? { code: error.code }
-          : /^(?:dispatch|delivery|github-delivery|assessment-result|heartbeat)-[a-z-]+$/u.test(
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment-result|heartbeat)-[a-z-]+$/u.test(
                 message,
               )
             ? { code: message }
             : {};
-  const notice = ['intake', 'dispatch', 'delivery', 'model-routing'].includes(process.argv[2] ?? '')
+  const notice = ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
+    process.argv[2] ?? '',
+  )
     ? codexIssueNotice({
         event: 'failure',
         changed: true,
