@@ -95,7 +95,10 @@ using disposable issues and the installed plugin.
   neither may replay already handled feedback. Check that an ordinary
   comment and inline review finding use the shared quoted card: linked author heading, unchanged body and
   mentions, and an exact-comment permalink beneath it. Verify multiline Markdown
-  stays inside the quote and the response stays outside. Fill the three shared
+  stays inside the quote and the response stays outside. Verify inline findings
+  show the retained reviewed diff inside the same quote, with shortened hunks
+  labeled as excerpts and historical locations kept distinct from current code.
+  Fill the three shared
   slots, queue comments on a busy owner, then verify a released slot admits the
   oldest eligible work without a noisy owner monopolizing the queue. Check verified
   send counts and quiet repeat polls. Hold an ordinary desktop turn active while

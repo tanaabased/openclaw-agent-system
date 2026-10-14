@@ -110,8 +110,12 @@ its title, summary, selected findings, location metadata, and source links all
 inside the quote. It groups findings under the verified reviewer identity and review link. Each finding retains its own permalink,
 body, file path, reviewed commit, and available current or original location. Mark
 an unchanged summary as context. Later inline replies link to their exact source;
-parent text and diff hunks belong in bounded structured context. Never label an
-original location as current code.
+parent text and full retained diff hunks belong in bounded structured context.
+Show each finding's available GitHub diff hunk in a fenced `diff` block inside
+the card, capped at its last 20 lines with long lines shortened. Label shortened
+previews as excerpts, preserve literal code fences, and keep the source permalink
+for full context. This is reviewed code, not the whole pull request or a fresh
+working-tree diff. Never label an original location as current code.
 
 ## Pull Request Opened Card
 
@@ -123,8 +127,8 @@ original location as current code.
 - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
 ```
 
-For standalone Codex delivery, retain the original issue chat link and state that
-automatic GitHub feedback delivery is unavailable. Render only after verified
+For standalone Codex delivery, retain the original issue chat link. Configured
+issue feedback also covers its verified delivery pull request. Render only after verified
 publication; native attachment warnings accompany the card without suppressing it.
 Use the shared info, warning, and error components for delivery notices. The card
 itself is not delivery proof.

@@ -43,12 +43,44 @@ describe('channels/github/conversation/review-feedback', () => {
       assert.ok(card.split('\n').every((line) => line.startsWith('>')));
       assert.ok(card.includes('> - One\n> - Two'));
       assert.ok(card.includes('> ```ts\n> run();\n> ```'));
-      assert.ok(card.includes('current line: unavailable or outdated; original line: 7'));
+      assert.ok(card.includes('Current line: unavailable or outdated; original line: 7'));
       assert.ok(card.includes(finding.url));
-      assert.ok(card.includes(finding.originalCommitId));
+      assert.ok(card.includes(finding.originalCommitId.slice(0, 7)));
+      assert.ok(card.includes('> ```diff\n> @@ -1 +1 @@\n> +return values[0]\n> ```'));
       const source = comment.feedback.receipt.kind === 'review' ? review.url : finding.url;
       assert.ok(card.endsWith(`↗](${source})`));
     }
+  });
+  it('should bound reviewed diff previews and preserve literal code fences', () => {
+    const finding = reviewCommentFixture({
+      diffHunk: [
+        '@@ -1,30 +1,30 @@',
+        ...Array.from({ length: 30 }, (_, i) => `+line ${i + 1}`),
+        '+```',
+        '+' + 'x'.repeat(500),
+      ].join('\r\n'),
+    });
+    const card = reviewFeedbackPresentation(reviewFeedback(reviewFixture(), [finding]));
+    assert.ok(card.includes('Reviewed diff excerpt'));
+    assert.ok(!card.includes('> +line 12\n'));
+    assert.ok(card.includes('> +line 13\n'));
+    assert.ok(card.includes('> ````diff\n'));
+    assert.ok(card.includes('> +```\n'));
+    assert.ok(!card.includes('x'.repeat(400)));
+    assert.ok(card.includes('…'));
+    assert.ok(card.includes('Preview shortened'));
+    assert.ok(card.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(card.includes(finding.url));
+  });
+  it('should label provider-truncated and unavailable reviewed diffs honestly', () => {
+    const render = (diffHunk: string, diffTruncated = false) =>
+      reviewFeedbackPresentation(
+        reviewFeedback(reviewFixture(), [reviewCommentFixture({ diffHunk, diffTruncated })]),
+      );
+    assert.ok(render('+partial', true).includes('Reviewed diff excerpt'));
+    assert.ok(render('+trailing spaces  \n').includes('> +trailing spaces  \n'));
+    assert.ok(render(' \n').includes('Reviewed diff unavailable'));
+    assert.ok(!render(' \n').includes('```diff'));
   });
   it('should authorize submitted reviews and replies only through the feedback grant', () => {
     const review = reviewFixture();

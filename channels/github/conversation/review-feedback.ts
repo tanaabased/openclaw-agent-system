@@ -224,6 +224,34 @@ export function reviewFeedbackContext(comment: GitHubReviewFeedback) {
   };
 }
 
+function reviewDiffPreview(finding: GitHubPullRequestReviewComment): string {
+  if (!finding.diffHunk.trim()) return 'Reviewed diff unavailable; open the comment for context.';
+  const lines = finding.diffHunk.replace(/(?:\r\n|\r|\n)+$/u, '').split(/\r\n|\r|\n/u);
+  const selected = lines.slice(-20);
+  const shortened =
+    finding.diffTruncated ||
+    lines.length > selected.length ||
+    selected.some((line) => [...line].length > 400);
+  const text = selected
+    .map((line) => {
+      const characters = [...line];
+      return characters.length > 400 ? characters.slice(0, 400).join('') + '…' : line;
+    })
+    .join('\n');
+  const fence = '`'.repeat(
+    Math.max(3, ...[...text.matchAll(/`+/gu)].map(([run]) => run.length + 1)),
+  );
+  return [
+    `**Reviewed diff${shortened ? ' excerpt' : ''}**`,
+    `${fence}diff\n${text}\n${fence}`,
+    ...(shortened
+      ? [
+          'Preview shortened (at most the last 20 available lines); open the comment for full context.',
+        ]
+      : []),
+  ].join('\n\n');
+}
+
 export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): string {
   const { review, receipt } = comment.feedback;
   const context = reviewFeedbackContext(comment);
@@ -237,7 +265,7 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
     );
   for (const finding of context.findings) {
     lines.push(
-      `[Finding ↗](${finding.url})\nPath: ${githubNotificationMarkdownText(JSON.stringify(finding.path))}; reviewed commit: ${finding.originalCommitId}; current line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n\n${finding.body}`,
+      `[${githubNotificationMarkdownText(finding.path)} ↗](${finding.url}) · reviewed commit \`${finding.originalCommitId.slice(0, 7)}\`\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n\n${finding.body}\n\n${reviewDiffPreview(finding)}`,
     );
   }
   lines.push(`[View ${receipt.kind === 'review' ? 'review' : 'comment'} ↗](${sourceUrl})`);
