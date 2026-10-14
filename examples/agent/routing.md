@@ -1,1 +1,1 @@
-Inspect model routing and resolve an unspecified task using the configured default. Report routing-default-ready after the helper returns unresolved with the configured selection. Do not change session settings.
+Inspect model routing and resolve an unspecified task using the configured default. Then call agent_system_dispatch with action next once. Intake is disabled: require dispatch-intake-activation-required, not session creation. Report routing-default-ready only after both checks. Do not change session settings or retry dispatch.

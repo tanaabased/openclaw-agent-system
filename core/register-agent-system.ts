@@ -30,6 +30,8 @@ import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
+import createSessionDispatchCredential from '../credentials/session-dispatch-runtime.ts';
+import createSessionDispatchLifecycle from '../agent/session-dispatch-lifecycle.ts';
 import createCollaborationLifecycleContribution from '../agent/collaboration-lifecycle.ts';
 import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
 import createInstallTool from '../tools/install/tool.ts';
@@ -98,6 +100,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
   const readConfig = readFreshRuntimeConfig;
+  const sessionDispatch = createSessionDispatchCredential({
+    stateDir: api.runtime.state.resolveStateDir(),
+    readConfig,
+  });
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
   const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
@@ -299,10 +305,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const automationService = new AutomationService(automationDependencies);
   const dispatchV2 = createDispatchTool({
     api,
-    diagnostics: lifecycleLogger,
-    runtimeUrl,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
     intake: intakeV2,
+    credential: sessionDispatch,
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
@@ -511,6 +516,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
+    createSessionDispatchLifecycle(sessionDispatch),
     notificationRuntime.lifecycleContribution,
     intakeV2.contribution(),
     automationService.contribution(),
@@ -579,6 +585,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     toolRuntime,
   });
   const installService = new AgentInstallService({
+    sessionDispatch,
     credentialManager,
     lifecycleRegistry,
   });
@@ -629,11 +636,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
   });
   registerAgentSystemHooks(api, manifestService, toolRegistry, {
-    beforeRun: (context) => notificationRuntime.promptGuidance.beforeRun(context),
-    async instructions(context) {
-      const guidance = await notificationRuntime.promptGuidance.instructions(context);
-      const dispatch = await dispatchV2.instructions(context);
-      return [guidance, dispatch].filter(Boolean).join('\n\n') || undefined;
+    beforeRun: (context, manifest) =>
+      notificationRuntime.promptGuidance.beforeRun(context, manifest?.github?.notifications),
+    async instructions(context, manifest) {
+      const guidance = await notificationRuntime.promptGuidance.instructions(
+        context,
+        manifest?.github?.notifications,
+      );
+      return guidance;
     },
   });
   api.registerCli(({ program }) => {
@@ -649,6 +659,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       setupLifecycle,
     );
     const operatorInstall = new AgentInstallService({
+      sessionDispatch,
       credentialManager,
       lifecycleRegistry: operatorRegistry,
     });
@@ -707,6 +718,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       environmentService,
       input: process.stdin,
       installService: operatorInstall,
+      sessionDispatch,
       automations,
       boundCommands,
       manifestService,

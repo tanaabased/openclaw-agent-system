@@ -46,7 +46,7 @@ describe('tools/git/tool', () => {
   let manifest: AgentManifest;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'agent-system-git-tool-'));
+    root = await realpath(await mkdtemp(join(tmpdir(), 'agent-system-git-tool-')));
     workspaceDir = join(root, 'workspace');
     repositoryDir = join(workspaceDir, 'project');
     await mkdir(repositoryDir, { recursive: true });
@@ -126,6 +126,43 @@ describe('tools/git/tool', () => {
       },
     });
   }
+
+  it('should execute native git in its registered worktree using canonical agent identity', async () => {
+    manifest.git = { worktrees: {} };
+    const cwd = join(workspaceDir, '.agent-system/worktrees/repo-id/issue-id');
+    const admin = join(workspaceDir, '.agent-system/repositories/repo-id.git/worktrees/issue-id');
+    await mkdir(join(cwd, 'src'), { recursive: true });
+    await mkdir(admin, { recursive: true });
+    await writeFile(join(cwd, '.git'), `gitdir: ${admin}\n`);
+    await writeFile(join(admin, 'gitdir'), `${cwd}/.git\n`);
+    await writeFile(join(admin, 'commondir'), '../..\n');
+    const requests: AgentSystemCliRunRequest[] = [];
+    const environmentCalls: string[] = [];
+    const runtime = createRuntime(requests, environmentCalls);
+    const scope = {
+      source: 'tool' as const,
+      toolContext: {
+        agentId: 'data',
+        sessionKey: 'agent:data:dashboard:fixture',
+        sessionId: 'one',
+        workspaceDir: cwd,
+      },
+    };
+    await runtime.executeCli(createGitToolDefinition(), { argv: ['status', '--short'] }, scope);
+    await runtime.executeCli(createGitToolDefinition(), { argv: ['status'], cwd: 'src' }, scope);
+    assert.deepEqual(
+      requests.map((request) => request.cwd),
+      [cwd, join(cwd, 'src')],
+    );
+    assert.deepEqual(environmentCalls, ['data', 'data']);
+    assert.equal(requests[0]!.environment.GIT_AUTHOR_NAME, 'Data');
+    await writeFile(join(admin, 'gitdir'), `${workspaceDir}/.git\n`);
+    await assert.rejects(
+      runtime.executeCli(createGitToolDefinition(), { argv: ['status'] }, scope),
+    );
+    assert.equal(requests.length, 2);
+    assert.equal(environmentCalls.length, 2);
+  });
 
   it('should preserve a nested command directory and project the agent git identity', async () => {
     const requests: AgentSystemCliRunRequest[] = [];

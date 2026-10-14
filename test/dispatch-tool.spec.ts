@@ -6,7 +6,7 @@ import type {
   OpenClawPluginToolFactory,
 } from 'openclaw/plugin-sdk/plugin-entry';
 
-import type { DispatchCaller } from '../agent/openclaw-dispatch-handoff.ts';
+import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 
 interface HookContext {
@@ -47,17 +47,18 @@ describe('tools/dispatch/tool', () => {
     params: { action: 'next' },
   };
 
-  function fixture() {
+  function fixture(caller = coordinator) {
+    const workspaceDir = `/workspaces/${caller.agentId}`;
     const hooks = new Map<string, Hook>();
-    const diagnostics: Array<Record<string, unknown>> = [];
     let factory: OpenClawPluginToolFactory | undefined;
+    let registrationOptions: Parameters<OpenClawPluginApi['registerTool']>[1];
     const session = {
-      sessionId: coordinator.sessionId,
+      sessionId: caller.sessionId,
       archivedAt: undefined as number | undefined,
     };
     const manifest = {
-      agent: { id: coordinator.agentId },
-      github: { notifications: { schemaVersion: 2 } },
+      agent: { id: caller.agentId },
+      github: { notifications: { schemaVersion: 2 as number | undefined } },
     };
     const api = {
       source: '/plugin/index.ts',
@@ -66,29 +67,27 @@ describe('tools/dispatch/tool', () => {
       on(name: string, handler: Hook) {
         hooks.set(name, handler);
       },
-      registerTool(value: OpenClawPluginToolFactory) {
+      registerTool(
+        value: OpenClawPluginToolFactory,
+        options: Parameters<OpenClawPluginApi['registerTool']>[1],
+      ) {
         factory = value;
+        registrationOptions = options;
       },
       runtime: {
         agent: {
           session: {
             getSessionEntry: ({ sessionKey }: { sessionKey: string }) =>
-              sessionKey === coordinator.sessionKey ? session : undefined,
+              sessionKey === caller.sessionKey ? session : undefined,
           },
         },
       },
     } as unknown as OpenClawPluginApi;
     const adapter = createDispatchTool({
       api,
-      runtimeUrl: 'file:///plugin/dist/index.js',
-      diagnostics: {
-        info(message: string) {
-          diagnostics.push(JSON.parse(message.slice('dispatch-invocation '.length)));
-        },
-      },
       manifestService: {
         async loadForAgentId() {
-          return { status: 'loaded', manifest, scope: { workspaceDir: '/workspace' } };
+          return { status: 'loaded', manifest, scope: { workspaceDir } };
         },
       },
     } as unknown as Parameters<typeof createDispatchTool>[0]);
@@ -99,13 +98,13 @@ describe('tools/dispatch/tool', () => {
       return { status: 'idle' };
     };
     assert.ok(factory);
-    const build = (context: OpenClawPluginToolContext = coordinator) => {
+    const build = (context: OpenClawPluginToolContext = { ...caller, workspaceDir }) => {
       const tool = factory!(context);
       assert.ok(tool && !Array.isArray(tool));
       return tool;
     };
     return {
-      diagnostics,
+      registrationOptions,
       hooks,
       hook: hooks.get('before_tool_call')!,
       build,
@@ -116,6 +115,59 @@ describe('tools/dispatch/tool', () => {
     };
   }
 
+  it('should register a dynamic dispatch factory without a gateway adoption name', () => {
+    const f = fixture();
+    assert.equal(f.registrationOptions?.name, undefined);
+    assert.deepEqual(f.registrationOptions?.names ?? [], []);
+    assert.deepEqual(f.adapter.tool.toolNames, ['agent_system_dispatch']);
+    assert.equal(f.build().name, 'agent_system_dispatch');
+  });
+
+  it('should isolate simultaneous caller captures across agents with the same call id', async () => {
+    const observer = {
+      agentId: 'observer',
+      sessionKey: 'agent:observer:automation:intake',
+      sessionId: 'observer-session',
+      runId: 'observer-run',
+    };
+    const first = fixture();
+    const second = fixture(observer);
+    await first.hook(event, coordinator);
+    await assert.rejects(
+      second.build().execute(event.toolCallId, event.params),
+      /dispatch-native-invocation-missing/,
+    );
+    await second.hook(event, observer);
+    await Promise.all([
+      first.build().execute(event.toolCallId, event.params),
+      second.build().execute(event.toolCallId, event.params),
+    ]);
+    assert.deepEqual(first.calls, [{ ...coordinator, toolCallId: event.toolCallId }]);
+    assert.deepEqual(second.calls, [{ ...observer, toolCallId: event.toolCallId }]);
+    for (const f of [first, second])
+      await assert.rejects(
+        f.build().execute(event.toolCallId, event.params),
+        /dispatch-native-invocation-missing/,
+      );
+  });
+
+  it('should return bounded dispatch blockers without exposing raw transport errors', async () => {
+    for (const [message, code] of [
+      ['dispatch-intake-activation-required', 'dispatch-intake-activation-required'],
+      ['private fixture token details', 'dispatch-operation-failed'],
+    ]) {
+      const f = fixture();
+      f.adapter.service.run = async () => {
+        throw new Error(message);
+      };
+      const call = { ...event, params: { action: 'next' } };
+      await f.hook(call, coordinator);
+      const result = await f.build().execute(call.toolCallId, call.params);
+      assert.deepEqual(result.details, { status: 'blocked', code });
+      assert.ok(!JSON.stringify(result).includes('private fixture'));
+    }
+  });
+
   it('should allow the read-only predicate without a conversation session id', async () => {
     const { hook } = fixture();
     assert.equal(await hook({ ...event, params: { action: 'check' } }, trigger), undefined);
@@ -123,15 +175,7 @@ describe('tools/dispatch/tool', () => {
 
   it('should retain caller verification for every other dispatch action', async () => {
     const { hook } = fixture();
-    for (const action of [
-      'inspect',
-      'next',
-      'prepare',
-      'reconcile',
-      'retry',
-      'context',
-      'result',
-    ]) {
+    for (const action of ['inspect', 'next', 'prepare', 'reconcile', 'retry']) {
       const blocked = await hook({ ...event, params: { action } }, trigger);
       assert.equal(blocked?.block, true);
       assert.match(blocked!.blockReason, /dispatch-native-hook-rejected.*sessionId=false/);
@@ -160,30 +204,6 @@ describe('tools/dispatch/tool', () => {
     );
   });
 
-  it('should correlate capture and execution without logging raw caller identity', async () => {
-    const { hook, build, diagnostics } = fixture();
-    await hook(event, coordinator);
-    await build().execute(event.toolCallId, event.params);
-    const capture = diagnostics.find((entry) => entry.stage === 'captured')!;
-    const execution = diagnostics.find((entry) => entry.stage === 'execute')!;
-    const registration = diagnostics.find((entry) => entry.stage === 'registered')!;
-    assert.equal(registration.instance, capture.instance);
-    assert.equal(registration.source, '/plugin/index.ts');
-    assert.equal(registration.runtimeSource, '/plugin/dist/index.js');
-    assert.equal(registration.runtimeUrl, 'file:///plugin/dist/index.js');
-    assert.equal(registration.registrationMode, 'full');
-    assert.ok(Array.isArray(registration.constructionStack));
-    assert.ok(registration.constructionStack.length > 0);
-    assert.equal(execution.constructionStack, undefined);
-    assert.equal(capture.instance, execution.instance);
-    assert.equal(capture.eventCall, execution.executeCall);
-    assert.equal(execution.capturePresent, true);
-    assert.equal(execution.capturedRun, capture.contextRun);
-    assert.ok(Number(capture.sequence) < Number(execution.sequence));
-    for (const value of [...Object.values(coordinator), event.toolCallId])
-      assert.ok(!JSON.stringify(diagnostics).includes(value));
-  });
-
   it('should distinguish separate adapter captures from a changed execution id', async () => {
     const source = fixture();
     const destination = fixture();
@@ -192,37 +212,13 @@ describe('tools/dispatch/tool', () => {
       destination.build().execute(event.toolCallId, event.params),
       /dispatch-native-invocation-missing/,
     );
-    const capture = source.diagnostics.find((entry) => entry.stage === 'captured')!;
-    const execution = destination.diagnostics.find((entry) => entry.stage === 'execute')!;
-    assert.notEqual(capture.instance, execution.instance);
-    assert.equal(capture.eventCall, execution.executeCall);
-    assert.equal(execution.capturePresent, false);
     await assert.rejects(
       source.build().execute('different-call', event.params),
       /dispatch-native-invocation-missing/,
     );
-    const mismatch = source.diagnostics.find((entry) => entry.stage === 'execute')!;
-    assert.equal(capture.instance, mismatch.instance);
-    assert.notEqual(capture.eventCall, mismatch.executeCall);
-    assert.equal(mismatch.pendingCaptures, 1);
+    await source.build().execute(event.toolCallId, event.params);
+    assert.equal(source.calls.length, 1);
     assert.deepEqual(destination.calls, []);
-  });
-
-  it('should identify cleanup before execution without restoring consumed authority', async () => {
-    const { hook, hooks, build, diagnostics, calls } = fixture();
-    await hook(event, coordinator);
-    await hooks.get('after_tool_call')!(event, coordinator);
-    await assert.rejects(
-      build().execute(event.toolCallId, event.params),
-      /dispatch-native-invocation-missing/,
-    );
-    const cleanup = diagnostics.find((entry) => entry.stage === 'cleanup')!;
-    const execution = diagnostics.find((entry) => entry.stage === 'execute')!;
-    assert.equal(cleanup.capturePresent, true);
-    assert.equal(execution.capturePresent, false);
-    assert.equal(cleanup.eventCall, execution.executeCall);
-    assert.ok(Number(cleanup.sequence) < Number(execution.sequence));
-    assert.deepEqual(calls, []);
   });
 
   it('should accept the host event run id and verify an omitted factory session id against the live entry', async () => {
@@ -315,114 +311,15 @@ describe('tools/dispatch/tool', () => {
     );
   });
 
-  it('should correlate creation and continuation receipts with the host event run identity', async () => {
-    const { adapter, hook, hooks } = fixture();
-    const record = {
-      id: 'retained-request',
-      sourceThreadId: coordinator.sessionKey,
-      threadId: 'agent:receiver:issue:1',
-      request: { task: 'Setup only' },
-      creationCall: { toolCallId: 'create-call' },
-      continuation: { toolCallId: 'continue-call' },
-    };
-    adapter.service.scope = async () =>
-      ({
-        journal: { read: async () => ({ records: [record] }) },
-      }) as unknown as Awaited<ReturnType<typeof adapter.service.scope>>;
-    const observations: unknown[][] = [];
-    adapter.service.handoff = async () =>
-      ({
-        claimCreation: async (...args: unknown[]) => {
-          observations.push(['claimCreation', ...args]);
-        },
-        observeCreation: async (...args: unknown[]) => {
-          observations.push(['observeCreation', ...args]);
-        },
-        claimContinuation: async (...args: unknown[]) => {
-          observations.push(['claimContinuation', ...args]);
-        },
-        observeContinuation: async (...args: unknown[]) => {
-          observations.push(['observeContinuation', ...args]);
-        },
-      }) as unknown as Awaited<ReturnType<typeof adapter.service.handoff>>;
-    const context = { ...coordinator, sessionId: undefined, runId: undefined };
-    const source = {
-      sessionKey: coordinator.sessionKey,
-      sessionId: coordinator.sessionId,
-      runId: coordinator.runId,
-    };
-    const creation = {
-      toolName: 'sessions_spawn',
-      toolCallId: 'create-call',
-      runId: coordinator.runId,
-      params: record.request,
-    };
-    assert.equal(await hook(creation, context), undefined);
-    await hooks.get('after_tool_call')!(
-      {
-        ...creation,
-        result: {
-          details: {
-            status: 'accepted',
-            childSessionKey: record.threadId,
-            runId: 'setup-run',
-          },
-        },
-      },
-      context,
-    );
-    const continuation = {
-      toolName: 'sessions_send',
-      toolCallId: 'continue-call',
-      runId: coordinator.runId,
-      params: { sessionKey: record.threadId },
-    };
-    assert.equal(await hook(continuation, context), undefined);
-    await hooks.get('after_tool_call')!(
-      {
-        ...continuation,
-        result: {
-          details: {
-            status: 'accepted',
-            runId: 'assessment-run',
-          },
-        },
-      },
-      context,
-    );
-    assert.deepEqual(observations, [
-      ['claimCreation', record.id, { ...source, toolCallId: 'create-call' }, record.request],
-      [
-        'observeCreation',
-        record.id,
-        { ...source, toolCallId: 'create-call' },
-        { sessionKey: record.threadId, runId: 'setup-run' },
-      ],
-      [
-        'claimContinuation',
-        record.id,
-        { ...source, toolCallId: 'continue-call' },
-        continuation.params,
-      ],
-      [
-        'observeContinuation',
-        record.id,
-        { ...source, toolCallId: 'continue-call' },
-        'assessment-run',
-      ],
-    ]);
-    await hooks.get('after_tool_call')!(
-      {
-        ...creation,
-        toolCallId: 'unclaimed',
-        result: {
-          status: 'accepted',
-          childSessionKey: record.threadId,
-          runId: 'forged-run',
-        },
-      },
-      context,
-    );
-    assert.equal(observations.length, 4);
+  it('should leave unrelated native session tools untouched and install no spawn lifecycle hooks', async () => {
+    const f = fixture();
+    for (const toolName of ['sessions_spawn', 'sessions_send', 'sessions_list']) {
+      assert.equal(await f.hook({ toolName, params: {} }, coordinator), undefined);
+      assert.equal(
+        await f.hooks.get('after_tool_call')!({ toolName, params: {} }, coordinator),
+        undefined,
+      );
+    }
+    assert.equal(f.hooks.has('agent_end'), false);
   });
 });

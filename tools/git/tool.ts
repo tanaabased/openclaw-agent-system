@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../api/error.ts';
@@ -314,7 +314,10 @@ export function createGitToolDefinition(
           : [layout.worktreeRoot, ...Object.values(layout.localRepositories)];
       },
       workingDirectory(input, _configuration, scope) {
-        return scope.source === 'tool' ? (input.cwd ?? '.') : scope.commandWorkingDirectory;
+        if (scope.source !== 'tool') return scope.commandWorkingDirectory;
+        return scope.executionWorkingDirectory
+          ? resolve(scope.executionWorkingDirectory, input.cwd ?? '.')
+          : (input.cwd ?? '.');
       },
     },
     commands: [{ command: 'git', environmentVariable: 'git', hostFallback: 'git' }],

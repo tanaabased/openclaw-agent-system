@@ -2,30 +2,28 @@ import { randomUUID } from 'node:crypto';
 
 import type { Static } from 'typebox';
 
-import { assessmentResultSchema } from './assessment-result.ts';
-import { assessmentInstructions } from './assessment-instructions.ts';
-import assessmentPresentation from './dispatch-presentation.ts';
+import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-assessment.ts';
+import createIssueSession, { type DispatchCaller } from './openclaw-session-create.ts';
+import advanceIssueTurn from './openclaw-session-turn.ts';
+import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
+
 import { automationHash } from './automation-hash.ts';
 import dispatchCapacity from './dispatch-capacity.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingAssignments, { issueKey } from './dispatch-pending.ts';
 import revalidateAssignment from './dispatch-assignment.ts';
-import recordDispatchResult from './dispatch-result.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
-import OpenClawDispatchHandoff, {
-  type DispatchCaller,
-  type DispatchHandoffHost,
-} from './openclaw-dispatch-handoff.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
-import { selectWorkflowStage } from './workflow-stage.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
+import AgentSystemToolError from '../api/error.ts';
+import GitCommandError from '../tools/git/command-error.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
@@ -39,9 +37,7 @@ export interface OpenClawDispatchDependencies {
   ): Promise<GitHubNotificationIntakeClient & GitHubNotificationItemContextClient>;
   worktrees: Pick<TrustedGitWorktreeService, 'prepareGitHub' | 'inspectGitHub'>;
   coordinator(manifest: AgentManifest, workspace: string): Promise<string>;
-  preflight(manifest: AgentManifest): void;
-  native: Pick<DispatchHandoffHost, 'read'>;
-  skill(workspace: string, sessionKey: string, id: string): Promise<CodexAssessmentSkill>;
+  credential: Pick<SessionDispatchCredential, 'use'>;
   now?: () => number;
 }
 
@@ -51,27 +47,38 @@ function source(intake: IntakeRecord) {
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({ context: record.context, manifest: record.manifestDigest });
 }
-function failureCode(error: unknown) {
+function failureCode(error: unknown): string {
+  if (error instanceof GitCommandError) return error.diagnosticCode;
+  if (error instanceof AgentSystemToolError) {
+    if (error.cause instanceof GitCommandError) return error.cause.diagnosticCode;
+    return `dispatch-tool-${error.code.replaceAll('_', '-')}`;
+  }
   return error instanceof Error && /^[a-z][a-z0-9-]{2,127}$/.test(error.message)
     ? error.message
     : 'dispatch-operation-failed';
 }
 
-/** The coordinator supplies judgment; admission, effects and results remain host-verified. */
+/** the coordinator supplies routing judgment; intake and session effects stay host-verified. */
 export default class OpenClawDispatch {
   constructor(readonly dependencies: OpenClawDispatchDependencies) {}
 
-  private async block(store: OpenClawDispatchStore, id: string, error: unknown) {
+  private async block(
+    store: OpenClawDispatchStore,
+    id: string,
+    error: unknown,
+    stage?: OpenClawDispatchRecord['failureStage'],
+  ) {
     const code = failureCode(error);
     await store.exclusive(async (state, save) => {
       const record = state.records.find((entry) => entry.id === id);
       if (record) {
         record.blocker = code;
+        if (stage) record.failureStage = stage;
         if (record.phase !== 'complete') record.phase = 'blocked';
         await save();
       }
     }, true);
-    return { status: 'blocked' as const, id, code };
+    return { status: 'blocked' as const, id, code, ...(stage ? { stage } : {}) };
   }
 
   async scope(manifest: AgentManifest, workspace: string) {
@@ -130,16 +137,6 @@ export default class OpenClawDispatch {
     return { client, repo, intake, worktreeInput };
   }
 
-  async handoff(manifest: AgentManifest, workspace: string) {
-    const current = await this.scope(manifest, workspace);
-    return new OpenClawDispatchHandoff(current.journal, {
-      ...this.dependencies.native,
-      validate: async (record) => {
-        await this.validate(manifest, workspace, record);
-      },
-    });
-  }
-
   /** Read-only pending predicate, combined with the admission check by the quiet trigger. */
   async check(manifest: AgentManifest, workspace: string) {
     if (
@@ -150,14 +147,7 @@ export default class OpenClawDispatch {
     const current = await this.scope(manifest, workspace);
     const state = await current.journal.read();
     const capacity = dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems);
-    const recoverable = state.records.some(
-      (record) =>
-        !record.blocker &&
-        !record.retired &&
-        record.native &&
-        record.setupComplete &&
-        !record.continuation,
-    );
+    const recoverable = state.records.some((record) => continuationStatus(record));
     const pending = pendingAssignments(state, current.admitted).some(
       ({ record, intake }) =>
         !record || (!record.request && (!record.blocker || record.intakeId !== intake.id)),
@@ -173,31 +163,25 @@ export default class OpenClawDispatch {
     workspace: string,
     caller: DispatchCaller,
     input: Static<typeof dispatchParameters>,
-    actualModel?: string,
     operator = false,
+    authority: DispatchAuthority = {},
   ) {
     if (input.action === 'check') return this.check(manifest, workspace);
+    const childAction = input.action === 'context' || input.action === 'result';
     const current = await this.scope(manifest, workspace);
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
-    const child = input.action === 'context' || input.action === 'result';
+    let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
+    let enteredJournal = false;
     if (input.action === 'retry' && !operator) throw new Error('dispatch-operator-required');
     if (
-      !child &&
+      !childAction &&
       caller.sessionKey !== sourceThreadId &&
       !(operator && ['inspect', 'retry'].includes(input.action))
     )
       throw new Error('dispatch-intake-caller-required');
-    const handoff = await this.handoff(manifest, workspace);
-    if (input.action === 'reconcile')
-      return handoff
-        .reconcile(input.id, caller.sessionKey, (this.dependencies.now ?? Date.now)())
-        .catch((error: unknown) => this.block(current.journal, input.id, error));
-    if (child) {
-      if (!actualModel) throw new Error('dispatch-native-execution-unavailable');
-      await handoff.verifyExecution(input.id, caller, actualModel);
-    }
     return current.journal
-      .exclusive(async (state, save) => {
+      .exclusive(async (state, save, lockSignal) => {
+        enteredJournal = true;
         if (input.action === 'inspect')
           return {
             status: 'ready',
@@ -207,22 +191,34 @@ export default class OpenClawDispatch {
               phase: record.phase,
               threadId: record.threadId,
               effective: record.effective,
-              execution: record.execution,
+              sessionCreation: record.sessionCreation,
+              firstTurn: record.firstTurn
+                ? {
+                    status: record.firstTurn.status,
+                    runId: record.firstTurn.runId,
+                    consumedByEventId: record.firstTurn.consumedByEventId,
+                    replyEventId: record.firstTurn.replyEventId,
+                    executionModel: record.firstTurn.executionModel,
+                    executionEffort: 'unverified',
+                  }
+                : undefined,
+              assessmentTurn: record.assessmentTurn && {
+                status: record.assessmentTurn.status,
+                runId: record.assessmentTurn.runId,
+                consumedByEventId: record.assessmentTurn.consumedByEventId,
+                replyEventId: record.assessmentTurn.replyEventId,
+                executionModel: record.assessmentTurn.executionModel,
+                executionEffort: 'unverified',
+              },
               blocker: record.blocker,
+              failureStage: record.failureStage,
               outcome: record.result?.outcome,
             })),
           };
         const now = (this.dependencies.now ?? Date.now)();
         if (input.action === 'next') {
-          const recoverable = state.records.find(
-            (record) =>
-              !record.blocker &&
-              !record.retired &&
-              record.native &&
-              record.setupComplete &&
-              !record.continuation,
-          );
-          if (recoverable) return { status: 'reconcile-required', id: recoverable.id };
+          const continuing = state.records.find((record) => continuationStatus(record));
+          if (continuing) return { status: continuationStatus(continuing)!, id: continuing.id };
           if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
             return { status: 'at-capacity' };
           const pending = pendingAssignments(state, current.admitted).find(
@@ -244,6 +240,7 @@ export default class OpenClawDispatch {
           record.manifestDigest = current.manifestDigest;
           record.phase = 'routing';
           delete record.blocker;
+          delete record.failureStage;
           try {
             const { client, repo, intake } = await this.validate(manifest, workspace, record);
             const evidence = await client.getItemContext(
@@ -283,6 +280,7 @@ export default class OpenClawDispatch {
           await this.validate(manifest, workspace, record);
           record.phase = 'routing';
           delete record.blocker;
+          delete record.failureStage;
           delete record.context;
           await save();
           return {
@@ -291,14 +289,57 @@ export default class OpenClawDispatch {
             instruction: 'The owning coordinator must call next for a fresh evidence snapshot.',
           };
         }
+        if (
+          childAction &&
+          (caller.sessionKey !== record.threadId ||
+            caller.sessionId !== record.sessionCreation?.sessionId ||
+            !record.assessmentTurn)
+        )
+          throw new Error('dispatch-assessment-caller-mismatch');
         const { intake, worktreeInput } = await this.validate(manifest, workspace, record);
+        if (input.action === 'context' || input.action === 'result') {
+          const signal = authority.signal
+            ? AbortSignal.any([authority.signal, lockSignal])
+            : lockSignal;
+          const childAuthority = {
+            signal,
+            assertCurrent: async () => {
+              signal.throwIfAborted();
+              await authority.assertCurrent?.();
+              await this.validate(manifest, workspace, record);
+              signal.throwIfAborted();
+            },
+          };
+          await childAuthority.assertCurrent();
+          return this.dependencies.credential.use(childAuthority, async (request) => {
+            await selectOpenClawAssessment({
+              request,
+              record,
+              workspace: current.workspace,
+              configuration: current.policy.policy.issueAssignment?.assessment,
+              now,
+            });
+            return issueAssessmentAction({
+              request,
+              record,
+              caller,
+              intake,
+              workspace: current.workspace,
+              policy: manifest.github?.notifications,
+              debug: manifest.debug,
+              ...input,
+              save,
+              assertCurrent: childAuthority.assertCurrent,
+            });
+          });
+        }
         if (input.action === 'prepare') {
           if (record.request) return { status: 'reconcile-required', id: record.id };
           if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
             return { status: 'at-capacity', id: record.id };
           if (record.phase !== 'routing' || input.digest !== digest(record) || !record.context)
             throw new Error('dispatch-preparation-stale');
-          this.dependencies.preflight(manifest);
+          preparationStage = 'routing';
           const metadata = JSON.parse(record.context).metadata?.complexity;
           const routing = resolveModelRoutingRequest(
             manifest.models,
@@ -317,116 +358,140 @@ export default class OpenClawDispatch {
           );
           if (!('candidate' in routing) || routing.candidate?.status !== 'mapped')
             throw new Error('dispatch-routing-unresolved');
+          preparationStage = 'worktree';
           const worktree = await this.dependencies.worktrees.prepareGitHub({
             ...worktreeInput,
             title: input.title,
           });
-          const selected = await selectWorkflowStage({
-            stage: 'assessment',
-            configuration: current.policy.policy.issueAssignment?.assessment,
-            workspace: current.workspace,
-            observedAt: now,
-            resolveSkill: (id) => this.dependencies.skill(worktree.path, caller.sessionKey, id),
-          });
-          record.assessment = selected.selection;
           record.worktree = worktree.path;
           record.routing = JSON.stringify(routing);
-          record.routingNote = `Requested ${routing.candidate.model} / ${routing.candidate.thinking}; native execution is not yet verified.`;
+          record.routingNote = `Requested ${routing.candidate.model} / ${routing.candidate.thinking}; session settings are verified at creation, not model execution.`;
           record.request = {
-            runtime: 'subagent',
-            visible: true,
-            cleanup: 'keep',
-            expectsCompletionMessage: false,
+            key: `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}`,
+            idempotencyKey: record.id,
+            agentId: manifest.agent.id,
             label: `#${intake.issue.number}: ${input.title.trim().toUpperCase()}`,
-            group: `${intake.repository.owner.login}/${intake.repository.name}`,
+            category: intake.repository.name,
             cwd: worktree.path,
             model: routing.candidate.model,
-            task: `Agent System setup only. Receipt ${record.id}. Do not investigate, assess, modify files, delegate, or publish. Do not call tools. Reply only: Setup ready. Assessment will arrive in a separate turn after the host verifies model and effort.`,
+            thinkingLevel: routing.candidate.thinking,
+          };
+          record.sessionCreation = {
+            attempted: false,
+            sourceSessionId: caller.sessionId,
+            sourceRunId: caller.runId,
+            sourceToolCallId: caller.toolCallId,
           };
           record.phase = 'creating';
+          preparationStage = 'verification';
           await this.validate(manifest, workspace, record);
           await save();
-          return {
-            status: 'prepared',
-            id: record.id,
-            request: record.request,
-            instruction:
-              'Call native sessions_spawn exactly once with request unchanged. Then reconcile this id. Never repeat an uncertain creation or reconstruct the request.',
-          };
         }
-        if (input.action === 'context' || input.action === 'result') {
-          if (record.execution?.runId !== caller.runId || !record.assessment || !record.worktree)
-            throw new Error('dispatch-assessment-caller-mismatch');
-          const skill = await this.dependencies.skill(
-            record.worktree,
-            caller.sessionKey,
-            record.assessment.requestedSkill,
-          );
-          if (automationHash(skill) !== automationHash(record.assessment.skill))
-            throw new Error('dispatch-assessment-skill-changed');
-          if (input.action === 'context')
-            return {
-              status: 'verified',
-              id: record.id,
-              evidence: JSON.parse(record.context!),
-              routing: JSON.parse(record.routing!),
-              routingNote: record.routingNote,
-              effective: record.effective,
-              execution: record.execution,
-              assessment: record.assessment,
-              project: { path: record.worktree },
-              currentTurnId: caller.runId,
-              previousResult: record.result,
-              previousResultTurnId: record.resultTurnId,
-              ...(record.result
-                ? {
-                    previousResultDigest: automationHash(record.result),
-                    previousPresentation: assessmentPresentation(
-                      record.result,
-                      record,
-                      intake,
-                      current.workspace,
-                      { debug: manifest.debug },
-                    ),
-                  }
-                : {}),
-              resultContract: 'assessment-result/v1',
-              resultSchema: assessmentResultSchema,
-              dispatchRuntime: {
-                runtime: 'openclaw',
-                tool: 'agent_system_dispatch',
-                id: record.id,
-              },
-              instructions:
-                assessmentInstructions +
-                '\n\nSubmit through native agent_system_dispatch with action result, this id and result matching resultSchema. Include previousResultDigest when revising. On conflict reload context. After acknowledgment reproduce the entire returned presentation. No CLI, implementation, or publication.',
-            };
-          const result = recordDispatchResult({
-            record,
-            intake,
-            threadId: caller.sessionKey,
-            turnId: caller.runId,
-            worktree: record.worktree,
-            policy: manifest.github?.notifications,
-            result: input.result,
-            previousResultDigest: input.previousResultDigest,
-          });
-          await save();
-          return {
-            status: 'recorded',
-            id: record.id,
-            outcome: result.outcome,
-            previousResultDigest: automationHash(result),
-            presentation: assessmentPresentation(result, record, intake, current.workspace, {
-              debug: manifest.debug,
-            }),
+        if (
+          input.action === 'prepare' ||
+          input.action === 'reconcile' ||
+          input.action === 'start' ||
+          input.action === 'assess'
+        ) {
+          if (!record.sessionCreation || !record.request || !('key' in record.request))
+            throw new Error('dispatch-legacy-handoff-retained');
+          if (
+            record.sourceThreadId !== caller.sessionKey ||
+            record.request.agentId !== manifest.agent.id ||
+            record.request.key !==
+              `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}` ||
+            record.request.idempotencyKey !== record.id ||
+            record.request.category !== intake.repository.name
+          )
+            throw new Error('dispatch-session-binding-changed');
+          const assessment = input.action === 'assess' || Boolean(record.assessmentTurn);
+          const working = assessment || input.action === 'start' || Boolean(record.firstTurn);
+          preparationStage = assessment
+            ? 'assessment-turn'
+            : working
+              ? 'first-turn'
+              : 'session-create';
+          const signal = authority.signal
+            ? AbortSignal.any([authority.signal, lockSignal])
+            : lockSignal;
+          const turnAuthority = {
+            signal,
+            assertCurrent: async () => {
+              signal.throwIfAborted();
+              await authority.assertCurrent?.();
+              if (
+                (await this.dependencies.coordinator(manifest, current.workspace)) !==
+                sourceThreadId
+              )
+                throw new Error('dispatch-coordinator-binding-changed');
+              await this.validate(manifest, workspace, record);
+              signal.throwIfAborted();
+            },
           };
+          if (assessment && !record.assessmentTurn) {
+            await turnAuthority.assertCurrent();
+            await this.dependencies.credential.use(turnAuthority, async (request) => {
+              await selectOpenClawAssessment({
+                request,
+                record,
+                workspace: current.workspace,
+                configuration: current.policy.policy.issueAssignment?.assessment,
+                now,
+              });
+              await turnAuthority.assertCurrent();
+              await save();
+            });
+          }
+          return (working ? advanceIssueTurn : createIssueSession)({
+            credential: this.dependencies.credential,
+            record,
+            save,
+            authority: turnAuthority,
+            assessment,
+          });
         }
         throw new Error('dispatch-action-invalid');
-      }, child)
+      }, childAction)
       .catch((error: unknown) => {
-        if (input.action === 'prepare') return this.block(current.journal, input.id, error);
+        if (!enteredJournal) throw error;
+        if (
+          input.action === 'prepare' ||
+          input.action === 'reconcile' ||
+          input.action === 'start' ||
+          input.action === 'assess'
+        )
+          return this.block(current.journal, input.id, error, preparationStage);
         throw error;
       });
   }
+}
+
+function continuationStatus(record: OpenClawDispatchRecord) {
+  if (!record.sessionCreation || record.retired || record.handoff || record.reset) return;
+  // only the accepted receipt gap is automatically recoverable, and never by another send.
+  if (
+    record.phase === 'blocked' &&
+    record.failureStage === 'first-turn' &&
+    record.blocker === 'dispatch-turn-delivery-unverified' &&
+    record.sessionCreation.verified &&
+    record.firstTurn &&
+    ['accepted', 'consumed'].includes(record.firstTurn.status)
+  )
+    return 'reconcile-required';
+  if (
+    record.phase === 'blocked' &&
+    record.failureStage === 'assessment-turn' &&
+    record.blocker === 'dispatch-turn-delivery-unverified' &&
+    record.assessmentTurn &&
+    ['accepted', 'consumed'].includes(record.assessmentTurn.status)
+  )
+    return 'reconcile-required';
+  if (record.blocker) return;
+  if (record.assessmentTurn)
+    return record.assessmentTurn.status !== 'completed' ? 'reconcile-required' : undefined;
+  if (record.phase === 'creating') return 'reconcile-required';
+  if (record.phase === 'created')
+    return record.firstTurn && record.firstTurn.status !== 'completed'
+      ? 'reconcile-required'
+      : 'assessment-required';
 }

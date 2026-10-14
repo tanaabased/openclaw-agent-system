@@ -4,11 +4,13 @@ import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import AgentSystemToolError from './error.ts';
 import type { AgentSystemToolScope } from './types.ts';
+import isManagedWorktreeWorkspace from '../tools/git/worktree-workspace.ts';
+import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 
 type LoadedAgentManifest = Extract<AgentManifestLoadResult, { status: 'loaded' }>;
 
 /**
- * Load an agent manifest that is exactly bound to the authoritative tool scope.
+ * load canonical agent configuration while validating the host's execution workspace.
  *
  * @throws {AgentSystemToolError} When agent identity or workspace ownership cannot be proven.
  */
@@ -28,7 +30,15 @@ export default async function loadBoundToolManifest(
     const result = await manifestService.loadForAgentId(agentId, 'cli');
     if (
       result.status !== 'loaded' ||
-      resolve(result.scope.workspaceDir) !== resolve(workspaceDir)
+      result.manifest.agent.id !== agentId ||
+      (resolve(result.scope.workspaceDir) !== resolve(workspaceDir) &&
+        (!scope.toolContext?.sessionId ||
+          parseAgentSessionKey(scope.toolContext.sessionKey ?? '')?.agentId !== agentId ||
+          !(await isManagedWorktreeWorkspace(
+            result.scope.workspaceDir,
+            result.manifest.git?.worktrees,
+            workspaceDir,
+          ))))
     ) {
       throw new AgentSystemToolError(
         'agent_not_resolved',

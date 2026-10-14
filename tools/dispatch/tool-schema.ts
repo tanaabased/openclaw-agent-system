@@ -1,6 +1,6 @@
 import { Type, type TProperties } from 'typebox';
-import { assessmentSchema } from '../../agent/model-routing.ts';
 import { assessmentResultSchema } from '../../agent/assessment-result.ts';
+import { assessmentSchema } from '../../agent/model-routing.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
@@ -18,7 +18,8 @@ export const dispatchParameters = Type.Union([
     fallback: Type.Optional(Type.Literal('default')),
   }),
   object({ action: Type.Literal('reconcile'), id }),
-  object({ action: Type.Literal('retry'), id }),
+  object({ action: Type.Literal('start'), id }),
+  object({ action: Type.Literal('assess'), id }),
   object({ action: Type.Literal('context'), id }),
   object({
     action: Type.Literal('result'),
@@ -26,4 +27,5 @@ export const dispatchParameters = Type.Union([
     result: assessmentResultSchema,
     previousResultDigest: Type.Optional(id),
   }),
+  object({ action: Type.Literal('retry'), id }),
 ]);

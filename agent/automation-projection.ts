@@ -26,8 +26,14 @@ export function effectiveAutomation(job: ResolvedAutomation, context: Automation
     throw new AutomationError('automation-effort-unsupported');
   }
   const normalized = automationContent(job, 'openclaw');
-  const stableContext = { ...context };
-  delete stableContext.threads;
+  const stableContext = {
+    agentId: context.agentId,
+    workspaceDir: context.workspaceDir,
+    timezone: context.timezone,
+    ...(job.payload.kind === 'command'
+      ? { command: context.command, environment: context.environment }
+      : {}),
+  };
   return {
     ...normalized,
     hash: automationHash({

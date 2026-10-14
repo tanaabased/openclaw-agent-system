@@ -35,6 +35,7 @@ const routingPrompt =
   'Inspect model routing and resolve an unspecified task using the configured default.';
 const inspectCall = 'call_agent_routing_inspect';
 const resolveCall = 'call_agent_routing_resolve';
+const dispatchCall = 'call_agent_dispatch_dispatch';
 const routingReady = 'routing-default-ready';
 function routingRequest(request: ChatCompletionRequest): boolean {
   return request.messages.some(
@@ -109,9 +110,27 @@ fixtures.push(
           result.reason === 'No defensible tier.' &&
           selection?.model === 'aimock/gpt-5.5' &&
           selection.effort === 'medium' &&
-          result.application === 'not-requested'
+          result.application === 'not-requested' &&
+          !openClawAIMockToolResultText(request.messages, dispatchCall)
         );
       },
+    },
+    response: {
+      id: 'agent-dispatch-rejected',
+      toolCalls: [
+        { id: dispatchCall, name: 'agent_system_dispatch', arguments: '{"action":"next"}' },
+      ],
+    },
+  },
+  {
+    match: {
+      model: /^(?:aimock\/)?gpt-5\.5$/u,
+      hasToolResult: true,
+      predicate: (request) =>
+        routingRequest(request) &&
+        openClawAIMockToolResultText(request.messages, dispatchCall)?.includes(
+          'dispatch-intake-activation-required',
+        ) === true,
     },
     response: { id: 'agent-routing-final', content: routingReady },
   },
@@ -130,6 +149,7 @@ export const agentExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: inspectCall, name: 'agent_system_model_routing' },
     { id: resolveCall, name: 'agent_system_model_routing' },
+    { id: dispatchCall, name: 'agent_system_dispatch' },
   ],
   userPromptSignals: agentUserPromptSignals,
 };

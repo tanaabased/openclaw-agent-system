@@ -1,0 +1,246 @@
+import assert from 'node:assert/strict';
+
+import {
+  GatewayClientRequestError,
+  GatewayClientRequestTimeoutError,
+} from '@openclaw/gateway-client';
+
+import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
+import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+
+describe('credentials/session-dispatch-client', () => {
+  it('should identify rejected methods without exposing provider payloads or retrying', async () => {
+    for (const [method, expected] of [
+      ['sessions.create', 'session-dispatch-create-request-invalid'],
+      ['sessions.describe', 'session-dispatch-describe-request-invalid'],
+      ['chat.history', 'session-dispatch-history-request-invalid'],
+      ['chat.send', 'session-dispatch-chat-send-request-invalid'],
+    ] as const) {
+      let calls = 0;
+      const request = sessionDispatchRequest(async () => {
+        calls++;
+        throw new GatewayClientRequestError({
+          code: 'INVALID_REQUEST',
+          message: 'private-token sessionId requires messageId',
+          details: { token: 'private-token' },
+        });
+      }, {});
+      await assert.rejects(request(method, {}), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message, expected);
+        assert.equal(error.cause, undefined);
+        assert.ok(!JSON.stringify(error).includes('private-token'));
+        return true;
+      });
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('should retain uncertain create outcomes for timeout and unrecognized failures', async () => {
+    for (const [failure, expected] of [
+      [
+        new GatewayClientRequestTimeoutError({
+          method: 'sessions.create',
+          timeoutMs: 1,
+          requestSent: true,
+        }),
+        'session-dispatch-create-timeout-unverified',
+      ],
+      [
+        new GatewayClientRequestError({ code: 'UNAVAILABLE', message: 'private-token' }),
+        'session-dispatch-create-unavailable-unverified',
+      ],
+      [
+        new GatewayClientRequestError({ code: 'private-token', message: 'private-token' }),
+        'session-dispatch-create-request-unverified',
+      ],
+      [new Error('private-token'), 'session-dispatch-create-request-unverified'],
+    ] as const) {
+      let calls = 0;
+      const request = sessionDispatchRequest(async () => {
+        calls++;
+        throw failure;
+      }, {});
+      await assert.rejects(request('sessions.create', {}), { message: expected });
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('should keep local cancellation and enrollment failures distinct after remote success or failure', async () => {
+    for (const remoteFails of [false, true]) {
+      for (const cancelled of [false, true]) {
+        const controller = new AbortController();
+        const failure = new Error(cancelled ? 'dispatch-cancelled' : 'dispatch-enrollment-changed');
+        let changed = false;
+        const request = sessionDispatchRequest(
+          async () => {
+            changed = true;
+            if (cancelled) controller.abort(failure);
+            if (remoteFails) throw new Error('remote-failure');
+            return { sessionId: 'retained' };
+          },
+          {
+            signal: controller.signal,
+            assertEnrollmentCurrent() {
+              if (changed && !cancelled) throw failure;
+            },
+          },
+        );
+        await assert.rejects(request('sessions.create', {}), (error: unknown) => error === failure);
+      }
+    }
+  });
+
+  it('should reject expired authority and unavailable methods before calling the transport', async () => {
+    let calls = 0;
+    const transport: DispatchRequest = async () => {
+      calls++;
+    };
+    const failure = new Error('dispatch-policy-changed');
+    const request = sessionDispatchRequest(transport, {
+      async assertCurrent() {
+        throw failure;
+      },
+    });
+    await assert.rejects(request('chat.history', {}), (error: unknown) => error === failure);
+    await assert.rejects(
+      sessionDispatchRequest(transport, {})('config.apply', {}),
+      /session-dispatch-method-unavailable/,
+    );
+    assert.equal(calls, 0);
+  });
+
+  it('should forward workflow families without adding a per-method permission gate', async () => {
+    for (const method of [
+      'sessions.create',
+      'sessions.patchMany',
+      'sessions.messages.subscribe',
+      'sessions.messages.unsubscribe',
+      'sessions.recover',
+      'sessions.abort',
+      'session.members.list',
+      'chat.send',
+      'chat.abort',
+      'chat.startup',
+      'chat.message.get',
+      'agent',
+      'agent.wait',
+      'agent.identity.get',
+      'agents.list',
+      'models.list',
+      'tools.effective',
+      'tools.invoke',
+      'skills.status',
+      'commands.list',
+      'artifacts.download',
+      'progressCard.put',
+      'audit.run.inspect',
+      'cron.history',
+      'question.waitAnswer',
+      'exec.approval.waitDecision',
+      'usage.status',
+      'health',
+      'status',
+      'logs.tail',
+      'sessions.futureOperation',
+    ]) {
+      const params = { sessionKey: 'issue', idempotencyKey: 'retained-attempt' };
+      const result = { runId: 'retained-run', status: 'accepted' };
+      let calls = 0;
+      const request = sessionDispatchRequest(async (name, input) => {
+        calls++;
+        assert.equal(name, method);
+        assert.equal(input, params);
+        return result;
+      }, {});
+      assert.equal(await request(method, params), result);
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('should leave gateway denials authoritative without retrying or exposing diagnostics', async () => {
+    for (const method of ['sessions.reset', 'chat.inject', 'tools.invoke']) {
+      let calls = 0;
+      const request = sessionDispatchRequest(async () => {
+        calls++;
+        throw new GatewayClientRequestError({
+          code: 'FORBIDDEN',
+          message: 'private-token operator.admin required',
+          details: { token: 'private-token' },
+        });
+      }, {});
+      await assert.rejects(request(method, {}), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /^session-dispatch-[a-z-]+-forbidden$/);
+        assert.equal(error.cause, undefined);
+        assert.ok(!JSON.stringify(error).includes('private-token'));
+        return true;
+      });
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('should reject unrelated families and malformed method names before transport', async () => {
+    let calls = 0;
+    const request = sessionDispatchRequest(async () => {
+      calls++;
+    }, {});
+    for (const method of [
+      '',
+      'config.apply',
+      'device.token.rotate',
+      'update.run',
+      'node.invoke',
+      'exec.approvals.set',
+      'sessions',
+      'sessionsOther.send',
+      'sessions..send',
+      'chat.send\nprivate-token',
+      'chat.send private-token',
+      `chat.${'a'.repeat(96)}`,
+    ]) {
+      await assert.rejects(request(method, {}), /session-dispatch-method-unavailable/);
+    }
+    assert.equal(calls, 0);
+  });
+
+  it('should preserve uncertain send outcomes without resubmitting', async () => {
+    let calls = 0;
+    const request = sessionDispatchRequest(async () => {
+      calls++;
+      throw new GatewayClientRequestTimeoutError({
+        method: 'chat.send',
+        timeoutMs: 1,
+        requestSent: true,
+      });
+    }, {});
+    await assert.rejects(request('chat.send', { idempotencyKey: 'one-attempt' }), {
+      message: 'session-dispatch-chat-send-timeout-unverified',
+    });
+    assert.equal(calls, 1);
+  });
+
+  it('should preserve successful results after checking current authority', async () => {
+    const result = { sessionId: 'retained' };
+    const params = { sessionKey: 'issue' };
+    const order: string[] = [];
+    const request = sessionDispatchRequest(
+      async (method, input) => {
+        assert.equal(method, 'chat.history');
+        assert.equal(input, params);
+        order.push('request');
+        return result;
+      },
+      {
+        async assertCurrent() {
+          order.push('authority');
+        },
+        assertEnrollmentCurrent() {
+          order.push('enrollment');
+        },
+      },
+    );
+    assert.equal(await request('chat.history', params), result);
+    assert.deepEqual(order, ['enrollment', 'authority', 'enrollment', 'request', 'enrollment']);
+  });
+});
