@@ -28,8 +28,10 @@ const common = {
 };
 
 describe('channels/github/conversation/presentation/assessment-result', () => {
-  it('should distinguish a recommendation from authority and withhold credential-shaped reasons', () => {
-    for (const action of ['proceed', 'wait'] as const) {
+  it('should show auto decisions regardless of debug without claiming authority or leaking credentials', () => {
+    for (const { action, debug } of (['proceed', 'wait'] as const).flatMap((action) =>
+      [false, true].map((debug) => ({ action, debug })),
+    )) {
       const output = renderAssessmentResult(
         {
           ...common,
@@ -38,12 +40,14 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
           plan: 'Retained plan.',
           decision: { action, reasons: ['Scope is bounded.', 'api_key=private-value'] },
         },
-        context,
+        { ...context, debug },
       );
+      assert.ok(output.includes('## ' + (action === 'wait' ? '⏸️' : '▶️') + ' Auto mode decision'));
+      assert.ok(output.includes('**Decision:** `' + action + '`'));
       assert.match(output, /Scope is bounded/);
       assert.match(
         output,
-        action === 'wait' ? /Wait for operator direction/ : /subject to runtime authorization/,
+        action === 'wait' ? /Next.*Await your direction/ : /Next.*once runtime checks pass/,
       );
       assert.match(output, /private content withheld/);
       assert.doesNotMatch(output, /private-value/);

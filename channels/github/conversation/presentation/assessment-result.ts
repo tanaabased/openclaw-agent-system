@@ -84,15 +84,19 @@ export default function renderAssessmentResult(
     ...(result.decision
       ? [
           githubNotificationCard({
-            emoji: result.decision.action === 'wait' ? '⏸️' : '🧭',
-            title: 'Continuation recommendation',
+            emoji: result.decision.action === 'wait' ? '⏸️' : '▶️',
+            title: 'Auto mode decision',
             facts: [
               {
                 label: 'Decision',
+                value: '`' + result.decision.action + '`',
+              },
+              {
+                label: 'Next',
                 value:
                   result.decision.action === 'wait'
-                    ? 'Wait for operator direction'
-                    : 'Proceed, subject to runtime authorization',
+                    ? 'Await your direction before implementation.'
+                    : 'Continue automatically once runtime checks pass.',
               },
               ...result.decision.reasons.map((reason) => ({
                 label: 'Reason',

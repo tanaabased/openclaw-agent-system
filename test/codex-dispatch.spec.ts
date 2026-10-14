@@ -2277,7 +2277,7 @@ describe('agent/codex-dispatch', () => {
     const work = await autoIssue(waiting);
     assert.equal((await work.run('next')).status, 'idle');
     const context = await request('context', { id: work.id }, { threadId: native!.id });
-    assert.match(String(context.previousPresentation), /Wait for operator direction/);
+    assert.match(String(context.previousPresentation), /Decision.*`wait`/);
     await next();
     assert.match(String((await report()).response), /Slots:\*\* 0\/2/);
     await request(
