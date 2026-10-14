@@ -171,7 +171,7 @@ test ! -e "$TMPDIR/agent-system-raw-worktree"
 
 # should report managed worktree roots as healthy
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
-openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git managed repository and worktree roots are ignored'
+openclaw agent-system doctor --json | jq -e 'if any(.findings[]; .component == "git" and .code == "git-worktree-roots-gitignored" and .status == "healthy") then true else error("managed worktree roots are not healthy: \(.)") end'
 
 # should remove the clean managed worktree without enabling delete policy
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"

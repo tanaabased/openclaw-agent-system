@@ -57,7 +57,9 @@ openclaw gateway call skills.status --params '{"agentId":"tanaabot","sessionKey"
 
 # should accept one first turn in the exact empty session incarnation
 session_id=$(cat "$TMPDIR/containment-session-id")
-openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" --rawfile message "$GITHUB_WORKSPACE/examples/containment/worktree-context.md" '{sessionKey:"agent:tanaabot:dashboard:worktree-context-leia",agentId:"tanaabot",sessionId:$id,message:$message,queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"containment-worktree-first-turn"}')" --json | jq -e '.runId == "containment-worktree-first-turn" and (.status == "started" or .status == "queued" or .status == "ok")'
+# strip the fixture's trailing newline before sending so the stored input remains byte-for-byte comparable.
+message=$(cat "$GITHUB_WORKSPACE/examples/containment/worktree-context.md")
+openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" --arg message "$message" '{sessionKey:"agent:tanaabot:dashboard:worktree-context-leia",agentId:"tanaabot",sessionId:$id,message:$message,queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"containment-worktree-first-turn"}')" --json | jq -e '.runId == "containment-worktree-first-turn" and (.status == "started" or .status == "queued" or .status == "ok")'
 
 # should retain canonical guidance and native identity while executing in the worktree
 openclaw gateway call agent.wait --params '{"runId":"containment-worktree-first-turn","timeoutMs":600000}' --timeout 620000 --json | jq -e '.runId == "containment-worktree-first-turn" and .status == "ok"'
@@ -74,15 +76,19 @@ openclaw gateway call chat.history --params '{"sessionKey":"agent:tanaabot:dashb
 openclaw-gateway stop
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 session_id=$(cat "$TMPDIR/containment-session-id")
-openclaw gateway call chat.history --params '{"sessionKey":"agent:tanaabot:dashboard:worktree-context-leia","inputRunIds":["containment-worktree-first-turn"],"limit":200,"maxChars":100000}' --json | jq -e --arg id "$session_id" --rawfile message "$GITHUB_WORKSPACE/examples/containment/worktree-context.md" '
+message=$(cat "$GITHUB_WORKSPACE/examples/containment/worktree-context.md")
+openclaw gateway call chat.history --params '{"sessionKey":"agent:tanaabot:dashboard:worktree-context-leia","inputRunIds":["containment-worktree-first-turn"],"limit":200,"maxChars":100000}' --json | jq -e --arg id "$session_id" --arg message "$message" '
   def input_text: if (.content | type) == "string" then .content else [.content[] | select(.type == "text") | .text] | join("") end;
-  .sessionId == $id and .sessionInfo.hasActiveRun == false and
-  ([.messages[] | select(.role == "user" and .__openclaw.runId == "containment-worktree-first-turn" and
-    (.__openclaw.idempotencyKey // .idempotencyKey) == "containment-worktree-first-turn:user" and
-    (.__openclaw.id | length) > 0 and .__openclaw.truncated != true and input_text == $message)] | length) == 1 and
-  any(.messages[]; .role == "assistant" and .__openclaw.runId == "containment-worktree-first-turn" and
-    (.__openclaw.id | length) > 0 and .__openclaw.truncated != true and .stopReason == "stop" and
-    (.__openclaw.mirrorOrigin == null or .__openclaw.runTerminal == true))'
+  {
+    session: (.sessionId == $id),
+    idle: (.sessionInfo.hasActiveRun == false),
+    inputCustody: (([.messages[] | select(.role == "user" and .__openclaw.runId == "containment-worktree-first-turn" and
+      (.__openclaw.idempotencyKey // .idempotencyKey) == "containment-worktree-first-turn:user" and
+      (.__openclaw.id | length) > 0 and .__openclaw.truncated != true and input_text == $message)] | length) == 1),
+    replyOwnership: any(.messages[]; .role == "assistant" and .__openclaw.runId == "containment-worktree-first-turn" and
+      (.__openclaw.id | length) > 0 and .__openclaw.truncated != true and (.stopReason == "stop" or .stopReason == "end_turn") and
+      .__openclaw.runTerminal != false and (.__openclaw.mirrorOrigin == null or .__openclaw.runTerminal == true))
+  } | if all(.[]; . == true) then . else error("restart custody checks failed: \(.)") end'
 ```
 
 ```bash

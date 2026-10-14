@@ -516,7 +516,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
 inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
-printf '%s\n' "$inspection" | jq -e '.status == "available" and (.reportGuidance | contains("**Model routing**"))'
+printf '%s\n' "$inspection" | jq -e '.status == "available" and (.reportGuidance | contains("Model routing"))'
 digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
 jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"An unspecified task.",assessment:{complexity:"unset",reason:"No defensible tier."}}' \
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
