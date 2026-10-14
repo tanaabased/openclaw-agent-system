@@ -44,8 +44,10 @@ using disposable issues and the installed plugin.
   prepared request directly to `create_thread`, including all runtime transport
   instructions. Command polling must finish before creation; preparation failure
   or uncertain native submission must never cause another creation call.
-- **Continuation handoff:** verify preparation and native send happen in one
-  orchestration block with the complete prepared request passed directly. An altered
+- **Continuation handoff:** verify preparation finishes without sending, then a
+  separate execution consumes the stored complete request once. An idle check must
+  never invoke native send or request implementation approval. A missing stored
+  request or native rejection must stop without reconstructing or resending it. An altered
   prompt must produce a mismatch blocker, never implementation authority or quiet
   success. An operator retry must retain the malformed send evidence and current
   diagnostic turn, require an unchanged assessment checkout and no implementation
@@ -84,6 +86,8 @@ using disposable issues and the installed plugin.
   and selected model/effort through one implementation turn and one linked PR; wait
   keeps its plan, releases the implementation slot, and produces neither. Repeat
   polling and restart to verify no duplicate turn or PR and no promotion of wait.
+  Require an authored PR description with the verified implementation and validation
+  evidence; missing or blank bodies must stop before automatic publication.
   Capture native receipts, provider linkage, attachment, and visible presentation
   separately. Unit fixtures cover invalid decisions, stale evidence, changed guidance,
   revoked authority, and denial; they do not prove model suitability judgment.

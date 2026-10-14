@@ -14,7 +14,8 @@ export default function codexDispatchHandoff(
     '--plugin-data',
     runtime.pluginData,
   ];
-  return `const argv = ${JSON.stringify(argv)};
+  const key = JSON.stringify(`agent-system:continuation:${runtime.pluginData}`);
+  return `${route === 'continuation' ? `store(${key}, null);\n` : ''}const argv = ${JSON.stringify(argv)};
 ${String.raw`const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const command = argv.map(quote).join(' ') + " <<'AGENT_SYSTEM_PREPARE'\n" + JSON.stringify(prepareInput) + '\nAGENT_SYSTEM_PREPARE';
 async function prepare(escalated = false) {
@@ -44,9 +45,20 @@ for (let retry = 0; prepared.status === 'busy' && retry < 3; retry++) {
   prepared = await prepare();
 }
 if (prepared.status === 'prepared') {
-  text({id: prepared.id, native: await tools.NATIVE_HANDOFF(prepared.request)});
+  HANDOFF
 }`.replace(
-  'NATIVE_HANDOFF',
-  route === 'dispatch' ? 'mcp__codex_app__create_thread' : 'mcp__codex_app__send_message_to_thread',
+  'HANDOFF',
+  route === 'dispatch'
+    ? 'text({id: prepared.id, native: await tools.mcp__codex_app__create_thread(prepared.request)});'
+    : `store(${key}, prepared);`,
 )}`;
+}
+
+/** consume the exact request once, in a separate execution from host-access preparation. */
+export function codexContinuationSend(pluginData: string) {
+  const key = JSON.stringify(`agent-system:continuation:${pluginData}`);
+  return `const prepared = load(${key});
+if (!prepared || prepared.status !== 'prepared') throw new Error('continuation-prepared-request-unavailable');
+store(${key}, null);
+text({id: prepared.id, native: await tools.mcp__codex_app__send_message_to_thread(prepared.request)});`;
 }

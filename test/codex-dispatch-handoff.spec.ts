@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 
-import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
+import codexDispatchHandoff, { codexContinuationSend } from '../agent/codex-dispatch-handoff.ts';
 
 const runtime = {
   nodeExecutable: '/node',
@@ -27,32 +27,41 @@ function fixture(
   const polls: Record<string, unknown>[] = [];
   const creations: unknown[] = [];
   const output: unknown[] = [];
-  const execute = () =>
-    runInNewContext('(async () => {' + codexDispatchHandoff(runtime, route) + '})()', {
-      prepareInput: { action: 'prepare', id: 'receipt', title: 'poem', assessment: {} },
-      tools: {
-        exec_command: async (input: Record<string, unknown>) => {
-          commands.push(input);
-          assert.ok(results.length);
-          return results.shift();
-        },
-        write_stdin: async (input: Record<string, unknown>) => {
-          polls.push(input);
-          assert.ok(results.length);
-          return results.shift();
-        },
-        [route === 'dispatch'
-          ? 'mcp__codex_app__create_thread'
-          : 'mcp__codex_app__send_message_to_thread']: async (input: unknown) => {
-          creations.push(input);
-          if (failCreation) throw new Error('native rejection');
-          return { threadId: 'child' };
-        },
+  const retained = new Map<string, unknown>();
+  const context = {
+    prepareInput:
+      route === 'continuation'
+        ? { action: 'next' }
+        : { action: 'prepare', id: 'receipt', title: 'poem', assessment: {} },
+    tools: {
+      exec_command: async (input: Record<string, unknown>) => {
+        commands.push(input);
+        assert.ok(results.length);
+        return results.shift();
       },
-      text: (value: unknown) => output.push(value),
-      setTimeout: (callback: () => void) => callback(),
-    });
-  return { execute, commands, polls, creations, output };
+      write_stdin: async (input: Record<string, unknown>) => {
+        polls.push(input);
+        assert.ok(results.length);
+        return results.shift();
+      },
+      [route === 'dispatch'
+        ? 'mcp__codex_app__create_thread'
+        : 'mcp__codex_app__send_message_to_thread']: async (input: unknown) => {
+        creations.push(input);
+        if (failCreation) throw new Error('native rejection');
+        return { threadId: 'child' };
+      },
+    },
+    store: (key: string, value: unknown) => retained.set(key, value),
+    load: (key: string) => retained.get(key),
+    text: (value: unknown) => output.push(value),
+    setTimeout: (callback: () => void) => callback(),
+  };
+  const execute = () =>
+    runInNewContext('(async () => {' + codexDispatchHandoff(runtime, route) + '})()', context);
+  const send = () =>
+    runInNewContext('(async () => {' + codexContinuationSend(runtime.pluginData) + '})()', context);
+  return { execute, send, commands, polls, creations, output };
 }
 
 describe('agent/codex-dispatch-handoff', () => {
@@ -69,15 +78,54 @@ describe('agent/codex-dispatch-handoff', () => {
       'continuation',
     );
     await test.execute();
+    assert.equal(test.creations.length, 0);
+    await test.send();
     assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [continuation]);
+    await assert.rejects(test.send(), /prepared-request-unavailable/);
     assert.match(String(test.commands[0]!.cmd), /'continuation'/);
     const rejected = fixture(
       [{ exit_code: 0, output: JSON.stringify(prepared) }],
       true,
       'continuation',
     );
-    await assert.rejects(rejected.execute(), /native rejection/);
+    await rejected.execute();
+    await assert.rejects(rejected.send(), /native rejection/);
+    await assert.rejects(rejected.send(), /prepared-request-unavailable/);
     assert.equal(rejected.creations.length, 1);
+  });
+  it('should check continuation eligibility without native sending and clear stale requests', async () => {
+    for (const status of ['idle', 'blocked', 'pending', 'busy']) {
+      const response = { exit_code: 0, output: JSON.stringify({ status }) };
+      const test = fixture(
+        [
+          { exit_code: 0, output: JSON.stringify(prepared) },
+          response,
+          response,
+          response,
+          response,
+        ],
+        false,
+        'continuation',
+      );
+      await test.execute();
+      await test.execute();
+      await assert.rejects(test.send(), /prepared-request-unavailable/);
+      assert.equal(test.creations.length, 0);
+    }
+    const test = fixture(
+      [
+        { exit_code: 0, output: JSON.stringify(prepared) },
+        { exit_code: 1, output: 'codex-host-access-required' },
+        { exit_code: 1, output: 'native approval denied' },
+      ],
+      false,
+      'continuation',
+    );
+    await test.execute();
+    await assert.rejects(test.execute(), /preparation-failed/);
+    await assert.rejects(test.send(), /prepared-request-unavailable/);
+    assert.equal(test.creations.length, 0);
+    assert.equal(test.commands[1]!.cmd, test.commands[2]!.cmd);
   });
   it('should pass every prepared field directly after polling the same command', async () => {
     const json = JSON.stringify(prepared);

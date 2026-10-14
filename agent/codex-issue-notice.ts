@@ -21,6 +21,20 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'delivery-body-required')
+    return {
+      severity: 'warning',
+      title: 'The PR description is missing',
+      summary: 'Automatic publication requires an explicit public description.',
+      next: 'Compose a concise body with the implemented change, verified checks, limitations, and issue-required evidence. Prepare again with that body, then publish with the same body and returned digest. Do not copy private context.',
+    };
+  if (code === 'native-approval-denied')
+    return {
+      severity: 'error',
+      title: 'Native approval rejected the operation',
+      summary: 'The requested operation was rejected by native approval review.',
+      next: 'Stop this operation and report the actual rejection reason. Preserve pending work and receipts; do not retry through another execution path.',
+    };
   if (code === 'continuation-send-mismatch')
     return {
       severity: 'error',

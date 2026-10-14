@@ -364,13 +364,7 @@ export default async function runCodexContinuation(
           const receipt = await continuationNative(record.sourceThreadId, activeAttempt);
           if (retry && work.phase === 'prepared' && receipt.status !== 'mismatch')
             throw new Error('continuation-retry-unavailable');
-          if (receipt.status === 'blocked') {
-            work.phase = 'blocked';
-            work.code = receipt.code;
-            await save();
-            return { status: 'blocked', id: record.id, code: work.code };
-          }
-          if (receipt.status === 'mismatch' && !retry) {
+          if (receipt.status === 'blocked' || (receipt.status === 'mismatch' && !retry)) {
             work.phase = 'blocked';
             work.code = receipt.code;
             await save();
@@ -473,7 +467,7 @@ export default async function runCodexContinuation(
               previousResult: work.result,
               deliveryOnly: Boolean(work.result?.outcome === 'done'),
               instructions:
-                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto also requires its verified retained proceed recommendation. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|present,...}; reuse the managed operation and returned digest, never create a replacement PR. Use native attach_artifact and reproduce the complete returned presentation. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
+                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto also requires its verified retained proceed recommendation. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|present,...}; reuse the managed operation and returned digest, never create a replacement PR. For new PR delivery, compose a concise public title and body from the verified implementation outcome, validation, and limitations. Include issue-required evidence and a closing reference; do not copy private context or the full private report. Pass title/body to delivery prepare and retain them unchanged with its digest on publish. Use native attach_artifact and reproduce the complete returned presentation. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
             };
           if (input.action === 'result') {
             if (work.publicationAttempt)

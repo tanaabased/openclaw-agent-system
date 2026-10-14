@@ -271,6 +271,9 @@ unavailable skills/guidance, cancellation, and actual native approval or provide
 denials stop work. Implementation and delivery count against workflow capacity;
 intake reports stay limited to admission and capacity.
 
+Automatic PR publication requires an explicit public description of the change,
+verified checks, and limitations. Private reports are not copied into GitHub.
+
 Native continuation intent is retained before sending. An uncertain send is
 reconciled, never repeated blindly. A recorded implementation can resume delivery
 without reimplementing or creating another PR. A stopped implementation remains

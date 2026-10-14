@@ -577,6 +577,35 @@ describe('agent/codex-delivery', () => {
     });
     deps.schedule = { current, saved: { ...current, version: 1, capabilities: ['publication'] } };
   }
+  it('should require an authored body before automatic publication without blocking recovery', async () => {
+    await workSchedule();
+    deps.authorizeSchedule = async () => {};
+    for (const body of [undefined, '', '  \n']) {
+      await assert.rejects(request('prepare', { body }), /delivery-body-required/);
+      await assert.rejects(
+        request('publish', { body, digest: 'a'.repeat(64) }),
+        /delivery-body-required/,
+      );
+    }
+    assert.equal(creates, 0);
+    assert.equal(
+      gitCalls.some((argv) => argv.includes('push')),
+      false,
+    );
+    const body =
+      'Added the marker. Exact bytes and final newline verified; git diff --check passed. Closes #3.';
+    const preview = await request('prepare', { body });
+    await request('publish', { body, digest: preview.digest });
+    assert.equal(pr!.body, body);
+    // recovery must not require inventing a body for an already attempted publication.
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.delivery!.body;
+      await save();
+    });
+    await request('reconcile');
+    assert.equal((await request('prepare')).status, 'prepared');
+    assert.equal(creates, 1);
+  });
   it('should publish with standing work authority and keep subsequent actions in its continuation', async () => {
     await workSchedule();
     deps.authorizeSchedule = async () => {};

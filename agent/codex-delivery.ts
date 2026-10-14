@@ -236,6 +236,13 @@ export default async function runCodexDelivery(
       };
       const previous = record.delivery;
       if (
+        deps.schedule &&
+        !previous?.creationAttempted &&
+        ['prepare', 'publish'].includes(input.action) &&
+        !(input.body ?? previous?.body)?.trim()
+      )
+        throw new Error('delivery-body-required');
+      if (
         previous &&
         ['repositoryId', 'issueId', 'threadId', 'worktree', 'branch', 'base', 'authorId'].some(
           (key) =>
