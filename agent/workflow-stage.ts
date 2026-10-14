@@ -6,6 +6,7 @@ import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
   defaultAssessmentSkill,
   defaultImplementationSkill,
+  defaultFeedbackSkill,
   type AssessmentConfiguration,
 } from '../manifest/assessment-schema.ts';
 
@@ -13,6 +14,7 @@ export const stageResultContracts = {
   assessment: 'assessment-result/v1',
   implementation: 'implementation-result/v1',
   review: 'review-result/v1',
+  feedback: 'feedback-result/v1',
 } as const;
 export type WorkflowStage = keyof typeof stageResultContracts;
 export interface WorkflowSelection {
@@ -35,7 +37,9 @@ export async function selectWorkflowStage(input: {
       ? defaultAssessmentSkill
       : input.stage === 'implementation'
         ? defaultImplementationSkill
-        : undefined);
+        : input.stage === 'feedback'
+          ? defaultFeedbackSkill
+          : undefined);
   if (!requestedSkill) throw new Error('workflow-stage-skill-required');
   const skill = await input.resolveSkill(requestedSkill);
   const guidance = await assessmentGuidance(input.workspace, input.configuration?.guidance);
@@ -57,7 +61,7 @@ export async function selectWorkflowStage(input: {
 export function nextIssueStage(
   mode: 'plan' | 'work' | 'auto',
   outcome: 'plan-ready' | 'clarification-needed' | 'operator-setup-blocker',
-  recommendation?: 'stop' | 'proceed',
+  recommendation?: 'wait' | 'proceed',
 ): 'implementation' | 'stop' {
   if (outcome !== 'plan-ready' || mode === 'plan') return 'stop';
   if (mode === 'auto' && !recommendation) throw new Error('workflow-recommendation-required');

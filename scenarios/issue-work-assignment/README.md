@@ -10,7 +10,9 @@ This GitHub Actions-only scenario proves the CLI `issue` + `work` + `assignment`
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, delivery of the created issue title and body as bounded private
 context, graceful continuation without optional session setup, one assessment and plan, and the
-planning-only worktree checkpoint. The same lifecycle contract runs against the
+planning-only worktree checkpoint. The strict fixture requires the assignment
+heading and body inside one Markdown quote, while its assessment and plan stay
+ordinary document sections. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
 It also checks that the installed runtime saves publication receipts in the owning

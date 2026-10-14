@@ -90,7 +90,7 @@ openclaw config get 'agents.entries.install-data.tools' --json | jq -e '(.allow 
 ```
 
 ```bash
-# should validate an unavailable notification adapter without rejecting the manifest
+# should validate an unavailable review adapter without rejecting the manifest
 cp "$GITHUB_WORKSPACE/examples/install/unsupported-notifications/agent.yaml" "$TMPDIR/install-data/agent.yaml"
 cd "$TMPDIR/install-data"
 openclaw agent-system validate --json | jq -e '.status == "valid" and any(.diagnostics[]; .code == "github-notification-runtime-unsupported" and .severity == "warning")'
@@ -108,9 +108,9 @@ printf '%s\n' "$output" | jq -e 'any(.findings[]; .code == "session-dispatch-cre
 # should start the gateway for owner-consented device enrollment
 openclaw-gateway start
 
-# should install other capabilities while skipping unavailable notifications with a warning
+# should enroll dispatch while skipping unavailable reviews without activating issue intake
 cd "$TMPDIR/install-data"
-openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .component == "github-notifications" and .status == "skipped") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github")'
+openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .component == "github-notifications" and .status == "skipped") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
 openclaw agent-system tool git -- --version | grep -F 'git version'
 
 # should retain the notification blocker without hiding unrelated readiness findings

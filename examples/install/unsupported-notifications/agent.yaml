@@ -15,9 +15,6 @@ github:
     allowed-repository-owners:
       - login: example
         node-id: O_example
-    issue-assignment:
-      enabled: false
-      allowed: []
     review-request:
       enabled: true
       allowed:

@@ -11,6 +11,7 @@ import type { BackupConfiguration } from './backup-schema.ts';
 
 export interface AgentManifest {
   schemaVersion: 1;
+  debug?: boolean;
   automations?: ResolvedAutomation[];
   agent: {
     id: string;

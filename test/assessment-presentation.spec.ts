@@ -28,6 +28,32 @@ const common = {
 };
 
 describe('channels/github/conversation/presentation/assessment-result', () => {
+  it('should show auto decisions regardless of debug without claiming authority or leaking credentials', () => {
+    for (const { action, debug } of (['proceed', 'wait'] as const).flatMap((action) =>
+      [false, true].map((debug) => ({ action, debug })),
+    )) {
+      const output = renderAssessmentResult(
+        {
+          ...common,
+          outcome: 'plan-ready',
+          assessment: 'Observed.',
+          plan: 'Retained plan.',
+          decision: { action, reasons: ['Scope is bounded.', 'api_key=private-value'] },
+        },
+        { ...context, debug },
+      );
+      assert.ok(output.includes('## ' + (action === 'wait' ? '⏸️' : '▶️') + ' Auto mode decision'));
+      assert.ok(output.includes('**Decision:** `' + action + '`'));
+      assert.match(output, /Scope is bounded/);
+      assert.match(
+        output,
+        action === 'wait' ? /Next.*Await your direction/ : /Next.*once runtime checks pass/,
+      );
+      assert.match(output, /private content withheld/);
+      assert.doesNotMatch(output, /private-value/);
+      assert.match(output, /Retained plan/);
+    }
+  });
   it('should render the complete source unchanged beside questions and limitations', () => {
     const fullAssessment =
       '## My assessment\n\nDelete only after confirming retention.\n\n### Partial work\n\n1. Inspect storage.\n2. Ask which period applies.\n\nEvidence is unavailable; this cause is assumed.';
@@ -68,7 +94,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     }
   });
 
-  it('should show only configured instructions below routing across result outcomes', () => {
+  it('should show selected instructions below routing across debug result outcomes', () => {
     const results: AssessmentResult[] = [
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
       {
@@ -98,10 +124,12 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
         ]) {
           const output = renderAssessmentResult(result, {
             ...context,
+            debug: true,
             assessment: { defaultSkill: !custom, skill: { name: 'cats:assess' }, guidance },
           });
-          assert.equal(output.includes('Assessment instructions'), custom || !!guidance);
-          assert.equal(output.includes('cats:assess'), custom);
+          assert.equal(output.includes('Assessment instructions'), true);
+          assert.ok(!output.includes('> > ## 🧩 Assessment instructions'));
+          assert.equal(output.includes('cats:assess'), true);
           assert.equal(output.includes('**Guidance:**'), !!guidance);
           if (custom || guidance) {
             const position = output.indexOf('> ## 🧩 Assessment instructions');
@@ -113,7 +141,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
             assert.ok(
               output.includes(
                 guidance.content.includes('\n')
-                  ? '> Use [cat] names.\n> \n> Keep **evidence**.'
+                  ? '> Use [cat] names.\n>\n> Keep **evidence**.'
                   : '> Use cat names.',
               ),
             );
@@ -136,7 +164,11 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     const before = structuredClone(guidance);
     const output = renderAssessmentResult(
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
-      { ...context, assessment: { defaultSkill: true, skill: { name: 'default' }, guidance } },
+      {
+        ...context,
+        debug: true,
+        assessment: { defaultSkill: true, skill: { name: 'default' }, guidance },
+      },
     );
     assert.ok(
       output.includes(
@@ -145,7 +177,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
           '> # Keep this heading literal',
           '>   whiskers  =  1',
           '> \t<cat>',
-          '> ',
+          '>',
           '> ```',
           '> > meow',
           '> ````',
@@ -179,8 +211,19 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
         effective: { status: 'verified', model: context.routing.model, effort: 'high' },
       },
     );
-    assert.ok(output.startsWith('## 🧭 Plan ready\n\n'));
-    for (const retained of [common.summary, assessment, planSummary, plan, context.issue.url])
+    assert.ok(output.startsWith('> ## 🧭 Plan ready\n>\n'));
+    assert.ok(
+      output.includes(
+        '> Preserve the complete result.\n>\n> Keep [source evidence](https://example.com/evidence).',
+      ),
+    );
+    assert.ok(
+      output.includes(
+        '> **Issue:** [owner/repo#7](https://github.com/owner/repo/issues/7)\n\n## Assessment',
+      ),
+    );
+    assert.ok(!output.includes('> > ## 🧠 Model routing'));
+    for (const retained of [assessment, planSummary, plan, context.issue.url])
       assert.ok(output.includes(retained));
     assert.ok(output.indexOf(assessment) < output.indexOf('> ## 🧠 Model routing'));
     assert.ok(output.indexOf('> ## 🧠 Model routing') < output.indexOf('## Plan summary\n'));
@@ -227,7 +270,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       },
       context,
     );
-    assert.ok(output.startsWith('## ❓ Clarification needed\n\n'));
+    assert.ok(output.startsWith('> ## ❓ Clarification needed\n>\n'));
     assert.ok(output.includes('## Assessment\n\nThe retention period'));
     assert.ok(output.includes('## Question\n\n- How long should results remain?'));
     assert.ok(output.includes('  - Until resolved\n  - For a fixed period'));
@@ -244,10 +287,16 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       { ...common, outcome: 'operator-setup-blocker', code: 'repository-unavailable', remediation },
       context,
     );
-    assert.ok(output.startsWith('## ⏸️ Issue assessment blocked\n\n'));
-    assert.ok(output.includes('## Action\n\n' + remediation));
-    assert.ok(output.includes('**Diagnostic:** `repository-unavailable`'));
-    assert.ok(output.indexOf(remediation) < output.indexOf('## Reference material\n'));
+    assert.ok(output.startsWith('> ## ⏸️ Issue assessment blocked\n>\n'));
+    assert.ok(
+      output.includes(
+        '> ## Action\n>\n> Restore repository access.\n>\n> ```text\n> retry the same chat\n> ```',
+      ),
+    );
+    assert.ok(output.includes('> **Diagnostic:** `repository-unavailable`'));
+    assert.ok(
+      output.indexOf('> Restore repository access.') < output.indexOf('## Reference material\n'),
+    );
     assert.ok(output.includes(common.evidence[0]!.source));
     assert.ok(output.includes(common.progress.completed[0]!));
     assert.ok(!output.includes('## Question\n'));
@@ -311,7 +360,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       },
       { ...context, routing: { ...context.routing, reason: 'Review [literal] *metadata*.' } },
     );
-    assert.ok(output.startsWith('## 🧭 Plan ready\n\n'));
+    assert.ok(output.startsWith('> ## 🧭 Plan ready\n>\n'));
     assert.ok(output.includes(plan));
     assert.match(output, /Selected.*gpt-6-astra \/ high/);
     assert.ok(output.includes('Review \\[literal\\] \\*metadata\\*.'));

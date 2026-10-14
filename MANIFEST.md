@@ -11,6 +11,7 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
   - [`agent`](#agent)
   - [`automations`](#automations)
   - [`backup`](#backup)
+  - [`debug`](#debug)
   - [`environment`](#environment)
   - [`github.notifications`](#githubnotifications)
   - [`memory`](#memory)
@@ -426,6 +427,24 @@ exclusions. Exclude previous custom destinations explicitly.
 See the [backup command](./CLI.md#openclaw-agent-system-backup-create) for coverage,
 destination restrictions, and sensitive-archive handling.
 
+### `debug`
+
+| Type    | Required | Default |
+| ------- | -------- | ------- |
+| boolean | no       | `false` |
+
+Set `debug: true` at the top level to show private workflow instruction cards:
+selected skills (including defaults), guidance sources, and retained inline guidance.
+Codex uses this for assessment, implementation delivery, and feedback replies;
+OpenClaw's shared assessment renderer uses the same switch. When omitted or false,
+these cards are hidden. Errors, blockers, responses, and publication outcomes remain
+visible. This controls presentation only; it does not enable runtime logging,
+change permissions, or change the skill or guidance applied to a turn.
+
+Inline guidance links to its verified manifest source when available. The text
+shown is the retained snapshot, while the linked file may have changed since then.
+Only inline guidance text is expanded; file guidance retains its source link.
+
 ### `environment`
 
 | Field          | Type                    | Required | Default | Behavior                                                              |
@@ -451,9 +470,12 @@ manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
 owned schedule. Work mode continues actionable assessments through implementation
 and managed PR delivery; Plan mode stops after assessment. Explicitly authorized
-manual delivery remains available after implementation handoff. Review requests,
-feedback and Auto-mode execution remain unavailable. OpenClaw v2 supports the
-default assessment skill in Plan mode; broader workflow rollout remains separate.
+manual delivery remains available after implementation handoff. Configured Codex issue
+feedback resumes the owning chat for explanation and bounded replies, including on its
+verified delivery PR. Codex Auto conditionally continues a recorded proceed decision
+through the same implementation and delivery stages. Review requests remain unavailable.
+OpenClaw v2 supports the default assessment skill in Plan mode; broader workflow rollout
+remains separate.
 An unavailable OpenClaw notification
 adapter produces a validation warning and a skipped install outcome; other
 components remain usable. Doctor reports notifications as blocked, and execution
@@ -498,7 +520,7 @@ See [Codex intake](./CODEX.md#github-notification-policy) for inspection and rec
 | `allowed-repository-owners` | yes      | none                | Nonempty list of pinned repository owners; omission never means unrestricted access.                                                |
 | `interval-minutes`          | no       | `5`                 | Shared monitoring cadence, integer from `1` through `1440`.                                                                         |
 | `issue-assignment`          | no       | absent              | Issue intake and the assessment, planning, and implementation journey selected by its mode.                                         |
-| `max-concurrent-items`      | no       | `2`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
+| `max-concurrent-items`      | no       | `3`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
 | `review-request`            | no       | absent              | Requests to start an independent PR review; not direct PR assignment.                                                               |
 | `runtimes`                  | no       | `[openclaw, codex]` | Nonempty unique selection of `openclaw` and/or `codex`. Each runtime owns its reconciliation; no cross-runtime claiming is implied. |
 | `schema-version`            | yes      | none                | Exactly `2`. Omission selects the legacy contract.                                                                                  |
@@ -573,8 +595,9 @@ No mode grants merge, deployment, expanded repository scope, or authority to
 change its own mode. Feedback continues the existing work's trusted mode and
 cannot turn planning into implementation. `review-request` and nested feedback do not
 accept a separate mode in this contract. Review behavior will be specified with
-its lifecycle, not borrowed from issue Work mode. Codex assessment dispatch requires
-`plan`; accepting all three mode values here does not implement their workflows.
+its lifecycle, not borrowed from issue Work mode. Codex supports `plan`, `work`, and opt-in [`auto`](./CODEX.md#auto-mode). Auto requires
+explicit saved workflow activation and a recorded proceed decision; OpenClaw Auto
+execution remains unavailable.
 
 #### Feedback permissions
 
@@ -602,7 +625,15 @@ Top-level v2 `feedback` is rejected, including disabled declarations. Remove it
 and explicitly choose feedback permissions beneath each intended workflow.
 Use `true` only when assigners/requesters should also provide feedback; otherwise
 use an explicit list. Migration never copies the old list into both scopes.
-Feedback execution remains unavailable in the current Codex adapter.
+Codex supports feedback in the owning issue chat; independent reviewer intake and
+OpenClaw v2 feedback execution still require their execution adapters.
+
+Object-form feedback also accepts optional `skill` and `guidance` using the
+[assessment selection](#assessment-selection) value shapes. Both workflows default
+to `agent-system:agent-system-feedback-reply`; each may replace that skill or add
+inline or contained-file guidance independently. These composition fields grant
+no feedback authority: choose `inherit` or `allowed` explicitly. Missing or changed
+selected skills stop composition instead of silently falling back.
 
 #### Assessment selection
 
@@ -687,8 +718,8 @@ Closure or lost authority is a stop reason, not a successful review.
 #### Issue-only profile example
 
 This declaration prepares the agreed self-assignment policy; Install activates it.
-Keep `feedback` omitted or `false` and `review-request` absent or disabled until
-their execution adapters are available.
+Keep `review-request` absent or disabled until its execution adapter is available.
+Issue feedback is optional; see [Codex issue feedback](./CODEX.md#issue-feedback).
 
 ```yaml
 schema-version: 1
@@ -701,7 +732,7 @@ github:
     schema-version: 2
     runtimes: [codex]
     interval-minutes: 5
-    max-concurrent-items: 2
+    max-concurrent-items: 3
     allowed-repository-owners:
       - login: tanaabased
         node-id: O_kgDODNGy1g
@@ -724,7 +755,9 @@ it. Install reconciles the selected runtime. Empty authority lists admit no work
 disabling a trigger or removing policy stops admission and requires reconciliation
 to pause the owned job.
 See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
-Review, feedback, and Auto-mode execution remain outside the current Codex support.
+Independent review remains outside the current Codex support. Auto uses the same
+configured assessment and implementation stages, subject to its recorded decision
+and freshly reconciled authority.
 
 #### Legacy compatibility
 

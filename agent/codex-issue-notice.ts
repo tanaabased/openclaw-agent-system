@@ -21,6 +21,30 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'continuation-send-mismatch')
+    return {
+      severity: 'error',
+      title: 'The continuation request changed in transit',
+      summary:
+        'The native send does not match the prepared request. Implementation is not authorized by this send.',
+      next: 'Inspect the retained send and issue chat. An operator may preview a bounded continuation retry; do not resend the old request or relax receipt verification.',
+    };
+  if (code === 'private-state-file-lock-busy')
+    return {
+      severity: 'warning',
+      title: 'Tracking files are temporarily busy',
+      summary:
+        'Another operation is updating the tracking files. This attempt could not finish within its bounded wait.',
+      next: 'The next scheduled check will retry. Keep existing work and receipts. Do not delete the lock or reset the chat; if this persists, inspect the operation holding the journal.',
+    };
+  if (code === 'dispatch-recovery-stale')
+    return {
+      severity: 'warning',
+      title: 'Refresh the recovery preview',
+      summary:
+        'The work or authority changed after the recovery preview. The requested transition was not applied.',
+      next: 'Preview the same recovery action again without a digest, inspect the current result, and apply its new digest only if the existing authorization still covers it. For handoff, use action:handoff with the same id; do not refresh assessment context after implementation. If it becomes stale again, stop and inspect concurrent changes. Preserve the existing chat, branch, and commit.',
+    };
   if (code === 'delivery-attachment-pending')
     return {
       severity: 'warning',

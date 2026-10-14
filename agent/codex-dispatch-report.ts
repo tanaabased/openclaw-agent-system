@@ -1,10 +1,14 @@
+import codexCapacity from './codex-capacity.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
-import { githubNotificationMarkdownText as text } from '../channels/github/conversation/presentation/card.ts';
+import {
+  githubNotificationMarkdownText as text,
+  githubNotificationQuote,
+} from '../channels/github/conversation/presentation/card.ts';
 
 /** summarize intake facts only; assessment results never become intake announcements. */
 export default function prepareDispatchReport(input: {
@@ -17,15 +21,22 @@ export default function prepareDispatchReport(input: {
   const { state, intake } = input;
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.effective && record.threadId);
-  const occupied = active.filter(
-    (record) =>
-      record.request &&
-      !record.handoff &&
-      (record.phase !== 'complete' ||
-        (record.continuation &&
-          !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase))),
-  ).length;
+  const occupied = codexCapacity(active, input.slots).occupied;
   const pending = pendingDispatchAssignments(state, intake).length;
+  const feedback = active.flatMap((record) =>
+    (record.feedback?.events ?? []).map((event) => ({ record, event })),
+  );
+  const sent = feedback.filter(({ event }) => event.attempt?.turnId && !event.reported);
+  const queuedFeedback = feedback.filter(({ event }) => event.phase === 'queued');
+  const feedbackProblems = active.filter(
+    (record) =>
+      record.feedback?.code &&
+      (record.feedback.code !== 'dispatch-assignment-authority-revoked' ||
+        record.feedback.events.some((event) =>
+          ['queued', 'prepared', 'running', 'responded'].includes(event.phase),
+        )),
+  );
+
   const started = managing
     .filter((record) => record.dispatchedAt !== undefined && record.intakeReportedAt === undefined)
     .slice(0, 12);
@@ -37,6 +48,7 @@ export default function prepareDispatchReport(input: {
   );
   const failures = [
     ...(intake.blocker ? [{ id: 'scan', code: intake.blocker.code }] : []),
+    ...feedbackProblems.map((record) => ({ id: record.id, code: record.feedback!.code! })),
     ...problems.map((record) => ({
       id: record.id,
       code: record.result!.outcome === 'operator-setup-blocker' ? record.result!.code : '',
@@ -75,12 +87,14 @@ export default function prepareDispatchReport(input: {
       ? '❌ Intake could not finish'
       : '⚠️ Intake needs attention'
     : started.length
-      ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
-      : recovered
-        ? 'ℹ️ Intake resumed'
-        : pending
-          ? `ℹ️ Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-          : 'ℹ️ Intake checked';
+      ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
+      : sent.length
+        ? `ℹ️ Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
+        : recovered
+          ? 'ℹ️ Intake resumed'
+          : pending
+            ? `ℹ️ Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+            : 'ℹ️ Intake checked';
   const lines = ['## ' + title, ''];
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
   for (const record of started)
@@ -88,8 +102,19 @@ export default function prepareDispatchReport(input: {
       `- **Issue:** [${issueLabel(record.intakeId)}](codex://threads/${encodeURIComponent(record.threadId!)})`,
     );
   if (started.length) lines.push('');
+  const sentOwners = new Map<string, { record: (typeof active)[number]; count: number }>();
+  for (const { record } of sent) {
+    const owner = sentOwners.get(record.id);
+    if (owner) owner.count++;
+    else sentOwners.set(record.id, { record, count: 1 });
+  }
+  for (const { record, count } of sentOwners.values())
+    lines.push(
+      `- **Feedback delivered to chat:** [${issueLabel(record.intakeId)}](codex://threads/${encodeURIComponent(record.threadId!)}) · ${count} item${count === 1 ? '' : 's'}`,
+    );
+  if (sent.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
-    const record = problems.find((entry) => entry.id === notice.id);
+    const record = active.find((entry) => entry.id === notice.id);
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
       `  **Action:** ${record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
@@ -107,10 +132,12 @@ export default function prepareDispatchReport(input: {
     }
   }
   if (notices.length) lines.push('');
-  if (!started.length && !notices.length && !recovered)
+  if (!started.length && !sent.length && !notices.length && !recovered)
     lines.push(pending ? 'Accepted assignments are waiting to start.' : quiet.message, '');
+  const queuedOwners = new Set(queuedFeedback.map(({ record }) => record.id)).size;
   lines.push(
     `**Managing:** ${managing.length} issues · **Pending:** ${pending}`,
+    `**Queued feedback:** ${queuedFeedback.length} item${queuedFeedback.length === 1 ? '' : 's'} across ${queuedOwners} issue${queuedOwners === 1 ? '' : 's'}`,
     `**Slots:** ${occupied}/${input.slots} occupied`,
   );
   if (pending && !notices.length)
@@ -122,10 +149,14 @@ export default function prepareDispatchReport(input: {
   return {
     response: codexHeartbeatEnvelope(
       input.automationId,
-      lines.join('\n'),
-      started.length > 0 || recovered || (Boolean(health) && health !== state.intakeHealth),
+      githubNotificationQuote(lines.join('\n')),
+      started.length > 0 ||
+        sent.length > 0 ||
+        recovered ||
+        (Boolean(health) && health !== state.intakeHealth),
     ),
     health,
+    sent: sent.map(({ event }) => event.id),
     started: started.map((record) => record.id),
   };
 }

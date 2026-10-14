@@ -94,6 +94,7 @@ export async function issueAssessmentAction(input: {
   intake: IntakeRecord;
   workspace: string;
   policy: unknown;
+  debug?: boolean;
   action: 'context' | 'result';
   result?: unknown;
   previousResultDigest?: string;
@@ -190,7 +191,9 @@ export async function issueAssessmentAction(input: {
             previousResult: record.result,
             previousResultDigest: automationHash(record.result),
             previousResultTurnId: record.resultTurnId,
-            previousPresentation: assessmentPresentation(record.result, record, intake, workspace),
+            previousPresentation: assessmentPresentation(record.result, record, intake, workspace, {
+              debug: input.debug,
+            }),
           }
         : {}),
       resultContract: 'assessment-result/v1',
@@ -222,7 +225,9 @@ export async function issueAssessmentAction(input: {
     result: input.result,
     previousResultDigest: input.previousResultDigest,
   });
-  const presentation = assessmentPresentation(result, record, intake, workspace);
+  const presentation = assessmentPresentation(result, record, intake, workspace, {
+    debug: input.debug,
+  });
   delete record.blocker;
   delete record.failureStage;
   await input.assertCurrent();

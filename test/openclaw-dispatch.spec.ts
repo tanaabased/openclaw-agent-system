@@ -1040,6 +1040,22 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  for (const debug of [false, true]) {
+    it(`should ${debug ? 'include' : 'omit'} debug instructions in recorded and reloaded assessments`, async () => {
+      manifest.debug = debug;
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await context(input.id);
+      const recorded = await submit(input.id);
+      assert.ok('presentation' in recorded && typeof recorded.presentation === 'string');
+      assert.equal(recorded.presentation.includes('Assessment instructions'), debug);
+      const reloaded = await context(input.id);
+      assert.ok('previousPresentation' in reloaded);
+      assert.equal(reloaded.previousPresentation, recorded.presentation);
+    });
+  }
+
   it('should continue the completed investigation in its original session without repeating it', async () => {
     const input = await next();
     await prepare(input);

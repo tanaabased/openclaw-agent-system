@@ -18,6 +18,7 @@ github:
       - login: example-owner
         node-id: O_example
     issue-assignment:
+      feedback: true
       allowed:
         - login: example-operator
           node-id: U_operator

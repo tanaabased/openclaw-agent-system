@@ -326,6 +326,7 @@ export default class OpenClawDispatch {
               intake,
               workspace: current.workspace,
               policy: manifest.github?.notifications,
+              debug: manifest.debug,
               ...input,
               save,
               assertCurrent: childAuthority.assertCurrent,

@@ -28,6 +28,7 @@ import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './va
 const externalAgentManifestSchema = Type.Object(
   {
     'schema-version': Type.Literal(1),
+    debug: Type.Optional(Type.Boolean()),
     automations: Type.Optional(externalAutomationsSchema),
     agent: externalAgentSectionSchema,
     environment: Type.Optional(
@@ -223,6 +224,7 @@ function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): Manif
 function decodeManifest(value: ExternalAgentManifest): AgentManifest {
   return {
     schemaVersion: value['schema-version'],
+    ...(value.debug === undefined ? {} : { debug: value.debug }),
     agent: decodeAgentSection(value.agent),
     ...(value.environment === undefined
       ? {}

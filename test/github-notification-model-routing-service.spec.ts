@@ -215,7 +215,7 @@ describe('channels/github/conversation/model-routing-service', () => {
     const applied = await h.service.apply(route);
     assert.deepEqual(applied?.expected, profiles.default);
     assert.match(applied!.guidance, /unresolved/);
-    assert.match(applied!.guidance, /\*\*Model routing\*\*/);
+    assert.match(applied!.guidance, /## 🧠 Model routing/);
     await h.service.assess(saved, context);
     assert.equal(h.requests.length, 1);
   });

@@ -9,6 +9,41 @@ describe('agent/assessment-result', () => {
     evidence: [{ source: 'issue and repository', status: 'observed', detail: 'Verified context.' }],
     progress: { completed: ['Read the owning code.'], remaining: [] },
   };
+  it('should retain bounded decisions without accepting permission or conflicting outcomes', () => {
+    const plan = {
+      ...common,
+      outcome: 'plan-ready',
+      assessment: 'Observed.',
+      plan: 'Small change.',
+    };
+    for (const action of ['proceed', 'wait']) {
+      const value = { ...plan, decision: { action, reasons: ['The scope is understood.'] } };
+      assert.deepEqual(parseAssessmentResult(value), value);
+    }
+    for (const decision of [
+      { action: 'proceed', reasons: [] },
+      { action: 'proceed', reasons: [' '] },
+      { action: 'proceed', reasons: ['x'.repeat(1001)] },
+      { action: 'proceed', reasons: Array(6).fill('Reason') },
+      { action: 'allow', reasons: ['The issue asks for permission.'] },
+      { action: 'proceed', reasons: ['Clear.'], authorized: true },
+    ])
+      assert.throws(
+        () => parseAssessmentResult({ ...plan, decision }),
+        /assessment-result-invalid/,
+      );
+    assert.throws(
+      () =>
+        parseAssessmentResult({
+          ...common,
+          outcome: 'clarification-needed',
+          assessment: 'Unknown retention.',
+          questions: ['How long?'],
+          decision: { action: 'proceed', reasons: ['Try anyway.'] },
+        }),
+      /assessment-decision-conflict/,
+    );
+  });
   it('should preserve useful plans, requirement questions, and setup failures in one contract', () => {
     for (const outcome of [
       {

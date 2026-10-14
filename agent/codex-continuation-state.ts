@@ -45,6 +45,7 @@ export const codexContinuationStateSchema = Type.Object(
     policyDigest: hash,
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
+    assessmentSelectionDigest: Type.Optional(hash),
     attempt: Type.Optional(attemptSchema),
     retries: Type.Optional(
       Type.Array(
@@ -52,6 +53,17 @@ export const codexContinuationStateSchema = Type.Object(
           {
             attempt: attemptSchema,
             binding: Type.Optional(workflowBindingSchema),
+            resumeAfterTurnId: Type.Optional(text),
+            mismatch: Type.Optional(
+              Type.Object(
+                {
+                  callId: text,
+                  requestDigest: hash,
+                  turnId: text,
+                },
+                { additionalProperties: false },
+              ),
+            ),
             at: Type.Integer({ minimum: 0 }),
             by: text,
           },

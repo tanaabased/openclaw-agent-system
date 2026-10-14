@@ -66,6 +66,8 @@ export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDep
     agentId: loaded.manifest.agent.id,
     digest: loaded.digest,
     manifest: loaded.manifest,
+    manifestPath: loaded.path,
+    manifestSources: loaded.sources,
     codexHome: namespace,
   };
 }

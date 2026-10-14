@@ -8,7 +8,6 @@ import {
   type GitHubCanonicalFeedback,
 } from './review-feedback.ts';
 
-import configuredAgentEntries from '../../../core/configured-agents.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationCommentPresentation } from '../events/comment.ts';
 import githubNotificationCommentContext from './context/comment.ts';
@@ -87,27 +86,6 @@ function commentDispatchError(error: GitHubNotificationModelTurnDispatcherError)
   );
 }
 
-function normalizedAgentId(agentId: string): string {
-  return agentId.trim().toLowerCase();
-}
-
-function agentPresentation(config: OpenClawConfig, agentId: string) {
-  const agent = configuredAgentEntries(config).find(
-    ({ id }) => normalizedAgentId(id) === normalizedAgentId(agentId),
-  );
-  return {
-    emoji: agent?.identity?.emoji?.trim() || '🤖',
-    label: agent?.identity?.name?.trim() || agentId,
-  };
-}
-
-function controlUiAgentsPath(config: OpenClawConfig): string {
-  const configured = config.gateway?.controlUi?.basePath?.trim() ?? '';
-  const rooted =
-    configured && configured !== '/' ? `/${configured.replace(/^\/+|\/+$/gu, '')}` : '';
-  return `${rooted}/agents`;
-}
-
 function commentPermalink(
   item: GitHubNotificationItemState,
   source: GitHubNotificationConversationSource,
@@ -171,14 +149,9 @@ export default class GitHubNotificationCommentTurnService {
       conversationId,
     );
     const messageId = `comment:${input.revision.revisionId}`;
-    const agent = agentPresentation(config, route.agentId);
     const presentation = isReviewFeedback(input.comment)
       ? reviewFeedbackPresentation(input.comment)
       : githubNotificationCommentPresentation({
-          agent: {
-            ...agent,
-            url: controlUiAgentsPath(config),
-          },
           author: {
             label: author.login,
             url: `https://github.com/${author.login}`,
@@ -188,7 +161,6 @@ export default class GitHubNotificationCommentTurnService {
             label: `${input.item.repositoryOwner}/${input.item.repositoryName}#${input.source.number}`,
             url: commentPermalink(input.item, input.source, input.comment.databaseId),
           },
-          mentions: input.mentions,
         });
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,

@@ -160,6 +160,14 @@ The receipt selects retained evidence; it does not grant authority by itself.
    and uncertainty for every outcome. This content is the source of truth on later
    revisions and handoff; summaries do not replace it.
 
+   When trusted context selects Auto, use this same assessment and guidance to
+   recommend `proceed` or `wait`. Wait when requirements are incomplete, consequential
+   ambiguity remains, scope is broad, or the work has high consequences requiring
+   operator direction. A complete plan can still warrant waiting. Record the decision
+   and bounded, non-sensitive reasons in the returned result schema; never infer
+   permission from the issue or from `plan-ready`. Preserve the full assessment and
+   stop after recording: the runtime owns any authorized continuation.
+
 6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper
    with fresh context, not a continuation or full-history fork. This is a separate model
    invocation for the opening only, not another investigation or planning workflow.

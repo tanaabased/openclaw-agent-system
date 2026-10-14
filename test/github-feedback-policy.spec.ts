@@ -26,6 +26,14 @@ const parse = (notifications: unknown) =>
   );
 
 describe('channels/github/feedback-policy', () => {
+  it('should default to three shared slots and preserve an explicit limit', () => {
+    for (const limit of [undefined, 2, 5]) {
+      const parsed = parse(limit === undefined ? {} : { 'max-concurrent-items': limit });
+      assert.ok(parsed.status === 'valid');
+      assert.equal(parsed.manifest.github!.notifications!.schemaVersion, 2);
+      assert.equal(parsed.manifest.github!.notifications!.maxConcurrentItems, limit ?? 3);
+    }
+  });
   it('should distinguish off, inheritance, replacement and augmentation without copying parent grants', () => {
     assert.deepEqual(feedbackIdentities([pirog], undefined), []);
     assert.deepEqual(feedbackIdentities([pirog], false), []);
@@ -90,6 +98,36 @@ describe('channels/github/feedback-policy', () => {
       { allowed: [{ login: 'missing' }] },
       { allowed: [{ ...pin(pirog), 'operator-owner': true }] },
     ])
+      assert.equal(parse({ 'issue-assignment': { feedback } }).status, 'invalid');
+  });
+  it('should decode independent reply composition without implicitly granting feedback authority', () => {
+    const parsed = parse({
+      'issue-assignment': {
+        allowed: [pin(pirog)],
+        feedback: { skill: '$company:reply', guidance: 'Keep it short.\nUse our voice.' },
+      },
+      'review-request': {
+        allowed: [pin(smutlord)],
+        feedback: { guidance: { file: 'guidance/reply.md' } },
+      },
+    });
+    assert.ok(parsed.status === 'valid');
+    const policy = parsed.manifest.github!.notifications!;
+    assert.ok(policy.schemaVersion === 2);
+    assert.deepEqual(policy.issueAssignment!.feedback, {
+      inherit: false,
+      allowed: [],
+      skill: 'company:reply',
+      guidance: 'Keep it short.\nUse our voice.',
+    });
+    assert.deepEqual(policy.reviewRequest!.feedback, {
+      inherit: false,
+      allowed: [],
+      guidance: { file: 'guidance/reply.md' },
+    });
+    assert.equal(allowsWorkflowFeedback(policy, 'issue-assignment', pirog), false);
+    assert.equal(allowsWorkflowFeedback(policy, 'review-request', smutlord), false);
+    for (const feedback of [{ skill: '../file' }, { guidance: { file: '' } }])
       assert.equal(parse({ 'issue-assignment': { feedback } }).status, 'invalid');
   });
   it('should diagnose conflicting effective feedback pins during manifest validation', () => {

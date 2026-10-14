@@ -252,6 +252,88 @@ describe('agent/codex-delivery', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should retain linked custom implementation instructions after the pr card', async () => {
+    await publish();
+    await request('reconcile');
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation = {
+        phase: 'complete',
+        policyDigest: 'a'.repeat(64),
+        selection: {
+          version: 1,
+          observedAt: 1,
+          requestedSkill: 'custom:work',
+          defaultSkill: false,
+          skill: {
+            name: 'custom:work',
+            path: '/skills/work/SKILL.md',
+            scope: 'user',
+            digest: 'a'.repeat(64),
+          },
+          guidance: {
+            source: 'file',
+            path: join(workspace, 'work.md'),
+            content: 'Private instructions',
+            digest: 'b'.repeat(64),
+          },
+        },
+      };
+      await save();
+    });
+    const normal = String((await request('present')).presentation);
+    assert.ok(!normal.includes('Implementation instructions'));
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
+    const shown = String((await request('present')).presentation);
+    assert.ok(shown.indexOf('Implementation instructions') > shown.indexOf('Comment flow'));
+    assert.ok(shown.includes('[custom:work](</skills/work/SKILL.md>)'));
+    assert.ok(shown.includes('[work.md](<'));
+    assert.ok(!shown.includes('Private instructions'));
+  });
+  it('should show feedback only when the configured schedule and owner are verified', async () => {
+    const configured = structuredClone(manifest);
+    Object.assign(configured.github.notifications['issue-assignment'], { feedback: true });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const authority = {
+      workflow: 'issue-assignment' as const,
+      automationId: 'automation',
+      sourceThreadId: 'intake',
+      policyDigest: automationHash(current.manifest.github!.notifications),
+      definitionDigest: 'e'.repeat(64),
+    };
+    const activation = {
+      sourceThreadId: 'intake',
+      schedule: {
+        current: authority,
+        saved: { ...authority, version: 1 as const, capabilities: ['feedback' as const] },
+      },
+    };
+    deps.activation = async () => activation;
+    await publish();
+    await request('reconcile');
+    const active = await request('present');
+    assert.match(String(active.presentation), /Approved feedback.*original issue chat/u);
+    assert.match(String(active.presentation), /originating item or review thread/u);
+    activation.sourceThreadId = 'other-intake';
+    assert.match(
+      String((await request('present')).presentation),
+      /active intake could not be verified/u,
+    );
+    activation.sourceThreadId = 'intake';
+    activation.schedule.saved.policyDigest = 'stale';
+    assert.match(
+      String((await request('present')).presentation),
+      /active intake could not be verified/u,
+    );
+    deps.activation = async () => {
+      throw new Error('dispatch-activation-required');
+    };
+    assert.match(
+      String((await request('present')).presentation),
+      /active intake could not be verified/u,
+    );
+    assert.equal(creates, 1);
+  });
   it('should publish authored multi-commit work and present before native attachment is ready', async () => {
     const preview = await request('prepare');
     assert.equal(preview.status, 'prepared');

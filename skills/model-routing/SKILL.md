@@ -65,7 +65,7 @@ Example resolve request after inspection:
 - Profiles came from the caller's trusted runtime binding, not the task directory.
 - The helper validated the assessment; it did not create a task, resolve secrets, or mutate a session.
 - Report recommendation, requested application, and verified execution as distinct evidence.
-- Preserve the short **Model routing** blockquote immediately after the first assessment prose. Include selected model, effort, complexity, source, reason, and any explicit override or unresolved default use. Keep GitHub's block private, outside the public reply candidate.
+- Preserve the short **🧠 Model routing** card immediately after the first assessment prose. Put its heading and every content line inside one Markdown quote block. Include selected model, effort, complexity, source, reason, and any explicit override or unresolved default use. Keep GitHub's block private, outside the public reply candidate.
 
 ## Completion Criteria
 

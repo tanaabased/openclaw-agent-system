@@ -16,6 +16,7 @@ export interface DispatchNativeThread {
   effort?: string;
   status: string;
   turnStatus?: string;
+  turnEnded?: boolean;
   turnId?: string;
   followUpUserTurn?: boolean;
 }
@@ -95,6 +96,13 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       id: thread.id,
       cwd: await realpath(thread.cwd),
       status: thread.status.type,
+      // a separate app-server can report a live desktop turn as interrupted/notLoaded.
+      turnEnded:
+        nativeObject(latestTurn) &&
+        ['completed', 'failed', 'interrupted'].includes(String(latestTurn.status)) &&
+        typeof latestTurn.completedAt === 'number' &&
+        Number.isFinite(latestTurn.completedAt) &&
+        latestTurn.completedAt > 0,
       followUpUserTurn:
         Array.isArray(thread.turns) &&
         thread.turns.length > 1 &&

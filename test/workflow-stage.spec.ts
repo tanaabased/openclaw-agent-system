@@ -68,7 +68,7 @@ describe('agent/workflow-stage', () => {
       assert.equal(nextIssueStage('plan', outcome, 'proceed'), 'stop');
     assert.equal(nextIssueStage('work', 'plan-ready'), 'implementation');
     assert.equal(nextIssueStage('auto', 'plan-ready', 'proceed'), 'implementation');
-    assert.equal(nextIssueStage('auto', 'plan-ready', 'stop'), 'stop');
+    assert.equal(nextIssueStage('auto', 'plan-ready', 'wait'), 'stop');
     assert.throws(() => nextIssueStage('auto', 'plan-ready'), /workflow-recommendation-required/);
     for (const mode of ['work', 'auto'] as const)
       for (const outcome of ['clarification-needed', 'operator-setup-blocker'] as const)

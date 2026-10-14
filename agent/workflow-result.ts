@@ -1,7 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { assessmentResultSchema } from './assessment-result.ts';
+import { assessmentResultSchema, parseAssessmentResult } from './assessment-result.ts';
 import { automationHash } from './automation-hash.ts';
 import { stageResultContracts, type WorkflowStage } from './workflow-stage.ts';
 
@@ -36,7 +36,6 @@ export const workflowResultSchema = Type.Union([
       stage: Type.Literal('assessment'),
       resultContract: Type.Literal(stageResultContracts.assessment),
       result: assessmentResultSchema,
-      recommendation: Type.Optional(Type.Union([Type.Literal('stop'), Type.Literal('proceed')])),
     },
     { additionalProperties: false },
   ),
@@ -97,6 +96,7 @@ export function validateWorkflowResult(
     (value.stage === 'review') !== (value.binding.workflow === 'review-request')
   )
     throw new Error('workflow-stage-mismatch');
+  if (value.stage === 'assessment') parseAssessmentResult(value.result);
   return value;
 }
 
@@ -107,14 +107,14 @@ export interface WorkflowScheduleAuthority {
   sourceThreadId: string;
   policyDigest: string;
   definitionDigest: string;
-  capabilities: Array<WorkflowStage | 'publication'>;
+  capabilities: Array<WorkflowStage | 'publication' | 'feedback'>;
 }
 
 /** only a freshly reconciled native definition can authorize a new stage or publication. */
 export function requireWorkflowSchedule(
   saved: WorkflowScheduleAuthority | undefined,
   current: Omit<WorkflowScheduleAuthority, 'version' | 'capabilities'>,
-  capability: WorkflowStage | 'publication',
+  capability: WorkflowStage | 'publication' | 'feedback',
 ): void {
   if (
     !saved ||
@@ -127,6 +127,7 @@ export function requireWorkflowSchedule(
     saved.automationId !== current.automationId ||
     saved.workflow !== current.workflow ||
     (capability !== 'publication' &&
+      capability !== 'feedback' &&
       (capability === 'review') !== (current.workflow === 'review-request')) ||
     saved.sourceThreadId !== current.sourceThreadId ||
     saved.policyDigest !== current.policyDigest ||

@@ -69,6 +69,10 @@ describe('agent/codex-context', () => {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'dispatch'],
         pluginData,
       },
+      feedbackRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'feedback'],
+        pluginData,
+      },
       continuationRuntime: {
         argvPrefix: [
           nodeExecutable,

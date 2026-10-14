@@ -3,6 +3,36 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should describe lock contention as retryable without implying identity corruption', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'private-state-file-lock-busy',
+      changed: true,
+    });
+    assert.equal(notice.severity, 'warning');
+    assert.match(notice.summary, /another operation|another update/i);
+    assert.match(notice.next, /retry|scheduled check/i);
+    assert.match(notice.next, /Do not delete the lock/);
+    assert.doesNotMatch(notice.summary, /identity|did not match|corrupt/i);
+    assert.equal(
+      codexIssueNotice({ event: 'failure', code: 'intake-state-invalid', changed: true }).severity,
+      'error',
+    );
+  });
+
+  it('should recover stale previews through the same action without returning implementation to assessment', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'dispatch-recovery-stale',
+      changed: true,
+    });
+    assert.equal(notice.severity, 'warning');
+    assert.match(notice.message, /same recovery action/);
+    assert.match(notice.message, /action:handoff/);
+    assert.match(notice.message, /do not refresh assessment context after implementation/);
+    assert.match(notice.message, /existing authorization/);
+  });
+
   it('should preserve the owning callers escaped recovery path without escaping it twice', () => {
     const notice = codexIssueNotice({
       event: 'failure',
@@ -38,6 +68,8 @@ describe('agent/codex-issue-notice', () => {
     ] as const) {
       const first = codexIssueNotice({ event: 'failure', code, changed: true });
       assert.equal(first.severity, severity, code);
+      assert.ok(first.message.startsWith('> ## '));
+      assert.ok(first.message.split('\n').every((line) => line.startsWith('>')));
       assert.equal(first.notify, true, code);
       assert.equal(
         codexIssueNotice({ event: 'failure', code, changed: false }).notify,

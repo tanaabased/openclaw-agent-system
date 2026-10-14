@@ -1,3 +1,5 @@
+import runCodexFeedback from './codex-feedback.ts';
+import codexCapacity from './codex-capacity.ts';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -14,7 +16,9 @@ import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 
 import { selectWorkflowStage } from './workflow-stage.ts';
 import recordDispatchResult from './dispatch-result.ts';
-import codexAssessmentInstructions from './codex-assessment-instructions.ts';
+import codexAssessmentInstructions, {
+  autoAssessmentInstructions,
+} from './codex-assessment-instructions.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
   assessmentResultSchema,
@@ -48,7 +52,10 @@ import { assessmentSchema } from './model-routing.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import assignmentCard from '../channels/github/conversation/presentation/assignment-card.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
-import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
+import {
+  githubNotificationMarkdownText,
+  githubNotificationQuote,
+} from '../channels/github/conversation/presentation/card.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -99,7 +106,7 @@ function remediation(value: string) {
   if (value.includes('activation'))
     return 'Authorize Install to reconcile the updated assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
   if (value === 'dispatch-mode-unsupported')
-    return 'Set issue-assignment mode to plan or work and reconcile it through authorized Install. Other modes cannot dispatch issue assessments.';
+    return 'Set issue-assignment mode to plan, work, or auto and reconcile it through authorized Install. Other modes cannot dispatch issue assessments.';
   if (value.includes('routing') || value.includes('model'))
     return 'Inspect the retained routing evidence and configured profiles. Repair the selection or native model access; do not substitute a model or recreate the chat.';
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
@@ -221,7 +228,8 @@ export async function revalidateDispatchAssignment(
   const policy = retainedWork ? codexIntakePolicy(current.manifest, true) : current.policy;
   if (
     !policy ||
-    (requireSupportedMode && !['plan', 'work'].includes(policy.policy.issueAssignment?.mode ?? ''))
+    (requireSupportedMode &&
+      !['plan', 'work', 'auto'].includes(policy.policy.issueAssignment?.mode ?? ''))
   )
     throw new Error('dispatch-mode-unsupported');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
@@ -345,6 +353,10 @@ export async function runCodexDispatch(
   deps: CodexDispatchDependencies = {},
 ) {
   validateDispatchRequest(action, input);
+  if (action === 'next') {
+    const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
+    if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
+  }
   const current = await selectCodexIntake(pluginData, deps);
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
@@ -407,7 +419,18 @@ export async function runCodexDispatch(
         };
       if (!native.turnId || !native.followUpUserTurn)
         throw new Error('dispatch-handoff-user-turn-required');
-      const digest = automationHash({ record, manifest: current.digest, turnId: native.turnId });
+      // polling and presentation do not change the work being handed off; retain all authority and result fields.
+      const digest = automationHash({
+        record: {
+          ...record,
+          feedback: undefined,
+          notice: undefined,
+          intakeReportedAt: undefined,
+          renameRequested: undefined,
+        },
+        manifest: current.digest,
+        turnId: native.turnId,
+      });
       if (input.digest === undefined)
         return {
           status: 'handoff-available',
@@ -447,6 +470,7 @@ export async function runCodexDispatch(
   if (!admitted || (!retainedWork && admitted.policyDigest !== current.policy?.digest))
     throw new Error('dispatch-policy-reconciliation-required');
   const now = (deps.now ?? Date.now)();
+  const waitForLock = childAction || action === 'report';
   return store
     .exclusive(async (state, save, signal) => {
       if (!operatorAction && !childAction) {
@@ -529,7 +553,7 @@ export async function runCodexDispatch(
           intakeStore: current.store,
           now,
           save,
-          slots: codexIntakePolicy(current.manifest, true)?.policy.maxConcurrentItems ?? 2,
+          slots: codexIntakePolicy(current.manifest, true)?.policy.maxConcurrentItems ?? 3,
         });
       if (action === 'next') {
         const scan = await current.store.read();
@@ -600,17 +624,7 @@ export async function runCodexDispatch(
             return fail(pending, error);
           }
         }
-        if (
-          state.records.filter(
-            (record) =>
-              !record.retired &&
-              !record.handoff &&
-              record.request &&
-              (record.phase !== 'complete' ||
-                (record.continuation &&
-                  !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase))),
-          ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
-        )
+        if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
           return checked('at-capacity');
         const intake = pendingDispatchAssignments(state, admitted).find(
           ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
@@ -835,7 +849,8 @@ export async function runCodexDispatch(
               ),
           });
           record.assessment = selected.selection;
-          if (current.policy?.policy.issueAssignment?.mode === 'work') {
+          record.issueMode = current.policy!.policy.issueAssignment!.mode;
+          if (record.issueMode === 'work' || record.issueMode === 'auto') {
             await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
               { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
@@ -845,7 +860,7 @@ export async function runCodexDispatch(
             );
             const implementation = await selectWorkflowStage({
               stage: 'implementation',
-              configuration: current.policy.policy.issueAssignment.implementation,
+              configuration: current.policy!.policy.issueAssignment!.implementation,
               workspace: current.workspace,
               observedAt: now,
               resolveSkill: (id) =>
@@ -858,18 +873,19 @@ export async function runCodexDispatch(
             };
           }
           record.routing = JSON.stringify(decision);
-          record.routingNote =
-            '> **Model routing:** ' +
-            decision.candidate.model +
-            ' / ' +
-            decision.candidate.thinking +
-            ' — ' +
-            decision.complexity +
-            ' complexity (' +
-            decision.source +
-            '). ' +
-            decision.reason +
-            ' Requested selection; effective settings await native verification.';
+          record.routingNote = githubNotificationQuote(
+            '## 🧠 Model routing\n\n' +
+              decision.candidate.model +
+              ' / ' +
+              decision.candidate.thinking +
+              ' — ' +
+              decision.complexity +
+              ' complexity (' +
+              decision.source +
+              '). ' +
+              decision.reason +
+              ' Requested selection; effective settings await native verification.',
+          );
           record.createdAt = now;
           record.preparationTurnId = state.run!.id;
           record.request = {
@@ -1008,16 +1024,43 @@ export async function runCodexDispatch(
                       record,
                       intake,
                       current.workspace,
+                      {
+                        debug: current.manifest.debug,
+                        manifestPath:
+                          current.manifestSources?.[
+                            '/github/notifications/issue-assignment/assessment/guidance'
+                          ]?.path ?? current.manifestPath,
+                      },
                     ),
                   }
                 : {}),
               resultContract: 'assessment-result/v1',
               resultSchema: assessmentResultSchema,
-              instructions: codexAssessmentInstructions,
+              mode: record.issueMode ?? 'plan',
+              instructions:
+                codexAssessmentInstructions +
+                (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
             };
           }
           if (action === 'result') {
-            const result = parseAssessmentResult(input.result);
+            let result: AssessmentResult;
+            try {
+              result = parseAssessmentResult(input.result);
+              if (record.issueMode === 'auto' && !result.decision)
+                throw new Error('assessment-decision-required');
+              if (
+                record.continuation?.assessmentDigest &&
+                record.continuation.assessmentDigest !== automationHash(result)
+              )
+                throw new Error('continuation-assessment-changed');
+            } catch (error) {
+              if (record.issueMode === 'auto' && record.continuation) {
+                record.continuation.phase = 'blocked';
+                record.continuation.code = code(error);
+                await save();
+              }
+              throw error;
+            }
             if (!native.turnId) throw new Error('dispatch-native-turn-unavailable');
             recordDispatchResult({
               record,
@@ -1029,7 +1072,21 @@ export async function runCodexDispatch(
               result,
               previousResultDigest: input.previousResultDigest as string | undefined,
             });
-            const presentation = assessmentPresentation(result, record, intake, current.workspace);
+            if (
+              record.issueMode === 'auto' &&
+              record.continuation &&
+              result.decision?.action === 'wait'
+            ) {
+              record.continuation.phase = 'blocked';
+              record.continuation.code = 'continuation-auto-wait';
+            }
+            const presentation = assessmentPresentation(result, record, intake, current.workspace, {
+              debug: current.manifest.debug,
+              manifestPath:
+                current.manifestSources?.[
+                  '/github/notifications/issue-assignment/assessment/guidance'
+                ]?.path ?? current.manifestPath,
+            });
             await save();
             return {
               status: 'recorded',
@@ -1048,7 +1105,7 @@ export async function runCodexDispatch(
         }
       }
       throw new Error('dispatch-action-invalid');
-    }, childAction)
+    }, waitForLock)
     .catch((error: unknown) => {
       if (nativeObject(error) && error.code === 'private-state-file-lock-busy')
         return {
