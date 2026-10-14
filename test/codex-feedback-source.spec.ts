@@ -148,4 +148,43 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(state.events.length, 2);
     assert.equal(JSON.parse(state.events[1]!.source).feedback.receipt.kind, 'review-comment');
   });
+
+  it('should admit a same-timestamp inline reply from its own empty review exactly once', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = true;
+    const state: CodexFeedback = { baseline: { PR: {} }, events: [] };
+    const review = reviewFixture({ author: account, body: '' });
+    const reply = reviewCommentFixture({
+      author: account,
+      replyToId: 70,
+      body: '@receiver follow-up in this thread',
+    });
+    const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
+    const reviews = reviewClientFixture(review, [reply, parent]);
+    reviews.getReviewComments = async () => [reply];
+    const input = {
+      state,
+      policy,
+      owner: 'owner',
+      name: 'repo',
+      number: 3,
+      nodeId: 'PR',
+      itemType: 'pull-request' as const,
+      now: 10,
+      client: {
+        identity: account,
+        listIssueComments: async () => ({ comments: [], truncated: false }),
+        getIssueComment: async () => comment('C'),
+        reviews,
+      },
+    };
+    await discoverCodexFeedback(input);
+    await discoverCodexFeedback(input);
+    assert.equal(state.events.length, 1);
+    const source = JSON.parse(state.events[0]!.source);
+    assert.equal(source.nodeId, reply.nodeId);
+    assert.equal(source.feedback.receipt.kind, 'review-comment');
+    assert.equal(source.feedback.comments[0].replyToId, parent.databaseId);
+    assert.equal(source.feedback.parent.nodeId, parent.nodeId);
+  });
 });

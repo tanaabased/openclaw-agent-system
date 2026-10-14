@@ -60,11 +60,7 @@ export function reviewFeedback(
   const findings = comments
     .filter(
       (comment) =>
-        comment.replyToId === undefined ||
-        previous?.members[comment.nodeId] !== undefined ||
-        (!previous &&
-          Date.parse(comment.createdAt) <= Date.parse(review.submittedAt ?? '') &&
-          comment.author?.nodeId === review.author?.nodeId),
+        comment.replyToId === undefined || previous?.members[comment.nodeId] !== undefined,
     )
     .sort((a, b) => a.databaseId - b.databaseId);
   const members = Object.fromEntries(

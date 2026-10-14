@@ -556,6 +556,10 @@ export default async function runCodexFeedback(
               turnId: event.attempt?.turnId ?? event.previousTurnIds?.at(-1),
               caller,
             });
+            const root =
+              isReviewFeedback(source) && source.feedback.receipt.kind === 'review-comment'
+                ? source.feedback.comments[0]?.replyToId
+                : undefined;
             if (input.digest === undefined)
               return {
                 status: operatorPublication ? 'publication-approval-required' : 'publication-ready',
@@ -563,7 +567,7 @@ export default async function runCodexFeedback(
                 eventId: event.id,
                 digest,
                 body,
-                destination: `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}`,
+                destination: `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}${root ? `#discussion_r${root}` : ''}`,
                 authority: schedule.saved,
                 instruction: operatorPublication
                   ? 'Only apply this digest after explicit human approval of this exact retained reply and destination. This operator recovery never resumes a model or changes the draft.'
@@ -574,10 +578,6 @@ export default async function runCodexFeedback(
               event.publicationApproval = { by: caller, at: now, digest };
               await save();
             }
-            const root =
-              isReviewFeedback(source) && source.feedback.receipt.kind === 'review-comment'
-                ? source.feedback.comments[0]?.replyToId
-                : undefined;
             const publisher = new GitHubNotificationCommentPublisher({
               redactText: redactCodexFeedback,
               authorize: async () => {

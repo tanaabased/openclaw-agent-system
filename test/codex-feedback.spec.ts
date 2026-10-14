@@ -9,6 +9,11 @@ import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
+import {
+  reviewFixture,
+  reviewCommentFixture,
+  reviewClientFixture,
+} from './github-review-fixtures.ts';
 
 const id = 'd'.repeat(64);
 const commenter = { ...account, login: 'contributor', nodeId: 'U_contributor' };
@@ -315,6 +320,108 @@ describe('agent/codex-feedback', () => {
     const saved = (await store.read())!.records[0]!.feedback!.events[0]!;
     assert.equal(saved.result!.privateText, 'Detailed private answer.');
     assert.equal(saved.receipt!.nodeId, 'reply');
+  });
+  it('should preview and publish an inline reply only in its retained review thread', async () => {
+    const connect = deps.feedbackConnect!;
+    const provider = await connect(root, new AbortController().signal);
+    const review = reviewFixture({ author: commenter, body: '' });
+    const reply = reviewCommentFixture({
+      author: commenter,
+      replyToId: 70,
+      body: '@receiver explain in this thread',
+    });
+    const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
+    const reviews = reviewClientFixture(review, [reply, parent]);
+    reviews.getReviewComments = async () => [reply];
+    const getItem = provider.client.getItem;
+    provider.client.getItem = async (owner, name, number) =>
+      number === 45
+        ? {
+            ...intakeFixture().item,
+            number,
+            nodeId: 'PR_delivery',
+            itemType: 'pull-request',
+            pullRequest: {
+              baseRef: 'main',
+              baseRepositoryDatabaseId: 10,
+              baseRepositoryNodeId: 'R_repo',
+              draft: false,
+              headRef: 'branch',
+              headSha: 'a'.repeat(40),
+              merged: false,
+            },
+          }
+        : getItem(owner, name, number);
+    provider.comments.reviews = reviews as typeof provider.comments.reviews;
+    const roots: number[] = [];
+    provider.replies = {
+      create: async (_owner: string, _name: string, number: number, rootId: number) => {
+        assert.equal(number, 45);
+        roots.push(rootId);
+        return { nodeId: 'PRRC_published', databaseId: 99 };
+      },
+      find: async () => undefined,
+    } as unknown as typeof provider.replies;
+    deps.feedbackConnect = async () => provider;
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.delivery = {
+        id,
+        binding: {
+          repositoryId: 'R_repo',
+          issueId: 'I_issue',
+          threadId: 'child',
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: account.nodeId,
+          policyDigest: 'a'.repeat(64),
+        },
+        creationAttempted: true,
+        pullRequest: { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 },
+        reconciled: true,
+        attached: true,
+        cardAttempts: 1,
+      };
+      record.feedback = { baseline: { PR_delivery: {} }, events: [] };
+      await save();
+    });
+    const prepared = await call('next');
+    assert.equal(prepared.status, 'feedback-prepared');
+    assert.ok('eventId' in prepared && prepared.eventId);
+    const ref = { id, eventId: prepared.eventId };
+    sent = true;
+    turn = 'feedback';
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    assert.equal(
+      (await call('result', { ...ref, result: { privateText: 'Full analysis.' } }, true)).status,
+      'recorded',
+    );
+    const composed = await call('compose', ref, true);
+    assert.ok('digest' in composed && composed.digest);
+    assert.equal(
+      (
+        await call(
+          'candidate',
+          { ...ref, digest: composed.digest, publicText: 'Brief answer.' },
+          true,
+        )
+      ).status,
+      'candidate-recorded',
+    );
+    const preview = await call('publish', ref, true);
+    assert.ok('digest' in preview && preview.digest);
+    assert.equal(
+      'destination' in preview && preview.destination,
+      'https://github.com/owner/repo/pull/45#discussion_r70',
+    );
+    const completed = await call('publish', { ...ref, digest: preview.digest }, true);
+    assert.equal(completed.status, 'published');
+    assert.ok('presentation' in completed && completed.presentation?.includes('#discussion_r99'));
+    await call('publish', { ...ref, digest: preview.digest }, true);
+    assert.deepEqual(roots, [70]);
+    assert.equal(creates, 0);
   });
   for (const debug of [false, true])
     it(`should publish unchanged feedback with debug ${debug}`, async () => {

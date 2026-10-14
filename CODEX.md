@@ -195,6 +195,8 @@ Approved comments must address the configured GitHub account outside quoted text
 The initial read establishes a baseline without replaying historical comments.
 Subsequent issue comments, submitted PR reviews and inline replies route to the
 original issue chat with their exact source and review context retained.
+Public replies to inline feedback stay in the original review thread. Replies to
+submitted reviews and ordinary PR comments appear in the PR conversation.
 
 Assignments and feedback share `max-concurrent-items`, which defaults to **3**.
 A busy owner queues feedback without taking another slot. An idle owner needs a

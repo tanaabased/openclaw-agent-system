@@ -78,12 +78,23 @@ describe('channels/github/conversation/review-feedback', () => {
     }
   });
 
-  it('should group replies authored as part of the same submitted review', () => {
+  it('should keep explicit thread replies separate even when submitted with their own review', () => {
     const review = reviewFixture();
     const reply = reviewCommentFixture({ replyToId: 70 });
     const feedback = reviewFeedback(review, [reply]);
-    assert.deepEqual(feedback.feedback.receipt.selected, [reply.nodeId]);
+    assert.deepEqual(feedback.feedback.receipt.selected, []);
     assert.equal(admit(feedback).disposition, 'approved');
+  });
+
+  it('should preserve previously grouped replies without changing their retained revision', () => {
+    const review = reviewFixture();
+    const reply = reviewCommentFixture();
+    const previous = reviewFeedback(review, [reply]);
+    reply.replyToId = 70;
+    const retained = reviewFeedback(review, [reply], previous.feedback.receipt);
+    assert.deepEqual(retained.feedback.receipt.selected, []);
+    assert.deepEqual(Object.keys(retained.feedback.receipt.members), [reply.nodeId]);
+    assert.deepEqual(reviewFeedbackRevision(retained), reviewFeedbackRevision(previous));
   });
 
   it('should reject pending, unauthorized, self, bot, mixed-author, and oversized feedback', () => {

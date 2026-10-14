@@ -88,6 +88,11 @@ using disposable issues and the installed plugin.
 - **Author feedback:** activate inherited assigners plus one pinned contributor. Verify a
   new issue comment, a submitted review on its delivery PR, and a later inline reply
   reach the original issue chat with exact source context. Check that an ordinary
+  inline reply carrying its own empty review and matching submission timestamp
+  stays a thread comment: preview the exact thread permalink, publish once under
+  its root review comment, and leave the PR conversation reply count unchanged.
+  Repeat polling after publication and after upgrading with retained review groups;
+  neither may replay already handled feedback. Check that an ordinary
   comment uses the shared quoted card: linked author heading, unchanged body and
   mentions, and an exact-comment permalink beneath it. Verify multiline Markdown
   stays inside the quote and the response stays outside. Fill the three shared

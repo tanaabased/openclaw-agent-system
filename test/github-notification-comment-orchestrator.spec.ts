@@ -1219,6 +1219,31 @@ describe('channels/github/conversation/review-intake', () => {
     assert.equal(h.turns[1]?.comment.nodeId, 'PRRC_reply');
   });
 
+  it('should route a same-timestamp reply from an empty review as a thread comment', async () => {
+    const h = harness();
+    h.review.body = '';
+    h.comments.splice(
+      0,
+      h.comments.length,
+      reviewCommentFixture({
+        replyToId: 70,
+        body: '@tanaabot answer in this thread',
+      }),
+    );
+    const getComment = h.client.getComment;
+    h.client.getComment = async (owner, name, number, commentId) =>
+      commentId === 70
+        ? reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 })
+        : getComment(owner, name, number, commentId);
+    await h.make().reconcile(agentId, notificationItemKey);
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 1);
+    const feedback = h.turns[0]!.comment;
+    assert.ok(isReviewFeedback(feedback));
+    assert.equal(feedback.feedback.receipt.kind, 'review-comment');
+    assert.equal(feedback.feedback.comments[0]?.replyToId, 70);
+  });
+
   it('should deliver only changed findings after edits including a rejected intermediate edit', async () => {
     const h = harness();
     await h.make().reconcile(agentId, notificationItemKey);
