@@ -61,7 +61,7 @@ export async function selectWorkflowStage(input: {
 export function nextIssueStage(
   mode: 'plan' | 'work' | 'auto',
   outcome: 'plan-ready' | 'clarification-needed' | 'operator-setup-blocker',
-  recommendation?: 'stop' | 'proceed',
+  recommendation?: 'wait' | 'proceed',
 ): 'implementation' | 'stop' {
   if (outcome !== 'plan-ready' || mode === 'plan') return 'stop';
   if (mode === 'auto' && !recommendation) throw new Error('workflow-recommendation-required');

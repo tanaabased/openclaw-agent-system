@@ -50,6 +50,9 @@ const creationSchema = Type.Object(
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    issueMode: Type.Optional(
+      Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
+    ),
     project: Type.Optional(dispatchProjectSchema),
     repositoryPreparation: Type.Optional(
       Type.Object(

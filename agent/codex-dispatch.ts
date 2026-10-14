@@ -16,7 +16,9 @@ import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 
 import { selectWorkflowStage } from './workflow-stage.ts';
 import recordDispatchResult from './dispatch-result.ts';
-import codexAssessmentInstructions from './codex-assessment-instructions.ts';
+import codexAssessmentInstructions, {
+  autoAssessmentInstructions,
+} from './codex-assessment-instructions.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
   assessmentResultSchema,
@@ -104,7 +106,7 @@ function remediation(value: string) {
   if (value.includes('activation'))
     return 'Authorize Install to reconcile the updated assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
   if (value === 'dispatch-mode-unsupported')
-    return 'Set issue-assignment mode to plan or work and reconcile it through authorized Install. Other modes cannot dispatch issue assessments.';
+    return 'Set issue-assignment mode to plan, work, or auto and reconcile it through authorized Install. Other modes cannot dispatch issue assessments.';
   if (value.includes('routing') || value.includes('model'))
     return 'Inspect the retained routing evidence and configured profiles. Repair the selection or native model access; do not substitute a model or recreate the chat.';
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
@@ -226,7 +228,8 @@ export async function revalidateDispatchAssignment(
   const policy = retainedWork ? codexIntakePolicy(current.manifest, true) : current.policy;
   if (
     !policy ||
-    (requireSupportedMode && !['plan', 'work'].includes(policy.policy.issueAssignment?.mode ?? ''))
+    (requireSupportedMode &&
+      !['plan', 'work', 'auto'].includes(policy.policy.issueAssignment?.mode ?? ''))
   )
     throw new Error('dispatch-mode-unsupported');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
@@ -846,7 +849,8 @@ export async function runCodexDispatch(
               ),
           });
           record.assessment = selected.selection;
-          if (current.policy?.policy.issueAssignment?.mode === 'work') {
+          record.issueMode = current.policy!.policy.issueAssignment!.mode;
+          if (record.issueMode === 'work' || record.issueMode === 'auto') {
             await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
               { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
@@ -856,7 +860,7 @@ export async function runCodexDispatch(
             );
             const implementation = await selectWorkflowStage({
               stage: 'implementation',
-              configuration: current.policy.policy.issueAssignment.implementation,
+              configuration: current.policy!.policy.issueAssignment!.implementation,
               workspace: current.workspace,
               observedAt: now,
               resolveSkill: (id) =>
@@ -1032,11 +1036,31 @@ export async function runCodexDispatch(
                 : {}),
               resultContract: 'assessment-result/v1',
               resultSchema: assessmentResultSchema,
-              instructions: codexAssessmentInstructions,
+              mode: record.issueMode ?? 'plan',
+              instructions:
+                codexAssessmentInstructions +
+                (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
             };
           }
           if (action === 'result') {
-            const result = parseAssessmentResult(input.result);
+            let result: AssessmentResult;
+            try {
+              result = parseAssessmentResult(input.result);
+              if (record.issueMode === 'auto' && !result.decision)
+                throw new Error('assessment-decision-required');
+              if (
+                record.continuation?.assessmentDigest &&
+                record.continuation.assessmentDigest !== automationHash(result)
+              )
+                throw new Error('continuation-assessment-changed');
+            } catch (error) {
+              if (record.issueMode === 'auto' && record.continuation) {
+                record.continuation.phase = 'blocked';
+                record.continuation.code = code(error);
+                await save();
+              }
+              throw error;
+            }
             if (!native.turnId) throw new Error('dispatch-native-turn-unavailable');
             recordDispatchResult({
               record,
@@ -1048,6 +1072,14 @@ export async function runCodexDispatch(
               result,
               previousResultDigest: input.previousResultDigest as string | undefined,
             });
+            if (
+              record.issueMode === 'auto' &&
+              record.continuation &&
+              result.decision?.action === 'wait'
+            ) {
+              record.continuation.phase = 'blocked';
+              record.continuation.code = 'continuation-auto-wait';
+            }
             const presentation = assessmentPresentation(result, record, intake, current.workspace, {
               debug: current.manifest.debug,
               manifestPath:

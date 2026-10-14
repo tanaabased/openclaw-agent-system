@@ -2,6 +2,16 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 const text = Type.String({ minLength: 1, maxLength: 32000, pattern: '\\S' });
+export const assessmentDecisionSchema = Type.Object(
+  {
+    action: Type.Union([Type.Literal('proceed'), Type.Literal('wait')]),
+    reasons: Type.Array(Type.String({ minLength: 1, maxLength: 1000, pattern: '\\S' }), {
+      minItems: 1,
+      maxItems: 5,
+    }),
+  },
+  { additionalProperties: false },
+);
 const evidence = Type.Array(
   Type.Object(
     {
@@ -33,6 +43,7 @@ const common = {
   progress,
   // complete source for new assessments; existing structured results remain supported.
   fullAssessment: Type.Optional(text),
+  decision: Type.Optional(assessmentDecisionSchema),
 };
 
 /** shared issue assessment contract owned by #249; lifecycle identity stays runtime-owned. */
@@ -72,5 +83,7 @@ export type AssessmentResult = Static<typeof assessmentResultSchema>;
 export function parseAssessmentResult(value: unknown): AssessmentResult {
   if (!Value.Check(assessmentResultSchema, value) || JSON.stringify(value).length > 96000)
     throw new Error('assessment-result-invalid');
+  if (value.decision?.action === 'proceed' && value.outcome !== 'plan-ready')
+    throw new Error('assessment-decision-conflict');
   return value;
 }

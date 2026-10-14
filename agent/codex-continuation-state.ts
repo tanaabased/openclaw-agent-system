@@ -45,6 +45,7 @@ export const codexContinuationStateSchema = Type.Object(
     policyDigest: hash,
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
+    assessmentSelectionDigest: Type.Optional(hash),
     attempt: Type.Optional(attemptSchema),
     retries: Type.Optional(
       Type.Array(

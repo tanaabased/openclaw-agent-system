@@ -70,6 +70,16 @@ using disposable issues and the installed plugin.
   the same issue destination. Exercise missing project registration and native
   host-access approval; follow the supported recovery in [Codex](../../CODEX.md#issue-assessment)
   without clearing tracking state or bypassing a denial.
+- **Auto mode:** explicitly activate Auto through Install; an older Plan/Work
+  schedule must not authorize it. Use one clear disposable issue and one issue
+  requiring operator direction. Verify the same assessment skill produces a retained
+  proceed/wait decision with reasons: proceed keeps the complete assessment, guidance,
+  and selected model/effort through one implementation turn and one linked PR; wait
+  keeps its plan, releases the implementation slot, and produces neither. Repeat
+  polling and restart to verify no duplicate turn or PR and no promotion of wait.
+  Capture native receipts, provider linkage, attachment, and visible presentation
+  separately. Unit fixtures cover invalid decisions, stale evidence, changed guidance,
+  revoked authority, and denial; they do not prove model suitability judgment.
 - **Work mode:** activate the complete workflow through Install, assign one bounded
   disposable issue, and verify assessment, one native implementation continuation,
   and one linked PR in the original chat without stage approvals. Capture native

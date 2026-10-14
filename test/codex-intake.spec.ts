@@ -489,57 +489,59 @@ describe('agent/codex-intake', () => {
     assert.equal(inspection.baselineAt, baseline);
     assert.equal(inspection.records!.length, 0);
     if (disable === 'workflow disable') {
-      const work = structuredClone(manifest);
-      Object.assign(work.github.notifications['issue-assignment'], {
-        mode: 'work',
-        implementation: { skill: 'company:implement' },
-      });
-      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(work));
-      await assert.rejects(
-        inspectCodexDispatchActivation(pluginData, deps, false, false, 'implementation'),
-        /activation-required/,
-      );
-      const workPlan = await plan();
-      const workPrepared = await prepareCodexAutomation(pluginData, workPlan.digest, {}, deps);
-      await saveNative(workPrepared.request);
-      await acknowledgeCodexAutomation(pluginData, workPlan.digest, undefined, deps);
-      const activated = await inspectCodexDispatchActivation(
-        pluginData,
-        deps,
-        false,
-        false,
-        'implementation',
-      );
-      assert.deepEqual(activated.schedule?.saved.capabilities, [
-        'assessment',
-        'implementation',
-        'publication',
-      ]);
-      assert.equal(activated.schedule?.current.automationId, nativeId);
-      assert.equal(
-        (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'publication'))
-          .schedule?.current.sourceThreadId,
-        'intake-thread',
-      );
-      await assert.rejects(
-        inspectCodexDispatchActivation(pluginData, deps, false, false, 'review'),
-        /schedule-reconciliation-required/,
-      );
-      await saveNative({ ...workPrepared.request, status: 'PAUSED' });
-      await assert.rejects(
-        inspectCodexDispatchActivation(pluginData, deps, false, false, 'publication'),
-        /activation-required/,
-      );
-      await saveNative(workPrepared.request);
-      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
-      const planAgain = await plan();
-      const preparedAgain = await prepareCodexAutomation(pluginData, planAgain.digest, {}, deps);
-      await saveNative(preparedAgain.request);
-      await acknowledgeCodexAutomation(pluginData, planAgain.digest, undefined, deps);
-      await assert.rejects(
-        inspectCodexDispatchActivation(pluginData, deps, false, false, 'implementation'),
-        /schedule-reconciliation-required/,
-      );
+      for (const mode of ['work', 'auto']) {
+        const work = structuredClone(manifest);
+        Object.assign(work.github.notifications['issue-assignment'], {
+          mode,
+          implementation: { skill: 'company:implement' },
+        });
+        await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(work));
+        await assert.rejects(
+          inspectCodexDispatchActivation(pluginData, deps, false, false, 'implementation'),
+          /activation-required/,
+        );
+        const workPlan = await plan();
+        const workPrepared = await prepareCodexAutomation(pluginData, workPlan.digest, {}, deps);
+        await saveNative(workPrepared.request);
+        await acknowledgeCodexAutomation(pluginData, workPlan.digest, undefined, deps);
+        const activated = await inspectCodexDispatchActivation(
+          pluginData,
+          deps,
+          false,
+          false,
+          'implementation',
+        );
+        assert.deepEqual(activated.schedule?.saved.capabilities, [
+          'assessment',
+          'implementation',
+          'publication',
+        ]);
+        assert.equal(activated.schedule?.current.automationId, nativeId);
+        assert.equal(
+          (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'publication'))
+            .schedule?.current.sourceThreadId,
+          'intake-thread',
+        );
+        await assert.rejects(
+          inspectCodexDispatchActivation(pluginData, deps, false, false, 'review'),
+          /schedule-reconciliation-required/,
+        );
+        await saveNative({ ...workPrepared.request, status: 'PAUSED' });
+        await assert.rejects(
+          inspectCodexDispatchActivation(pluginData, deps, false, false, 'publication'),
+          /activation-required/,
+        );
+        await saveNative(workPrepared.request);
+        await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+        const planAgain = await plan();
+        const preparedAgain = await prepareCodexAutomation(pluginData, planAgain.digest, {}, deps);
+        await saveNative(preparedAgain.request);
+        await acknowledgeCodexAutomation(pluginData, planAgain.digest, undefined, deps);
+        await assert.rejects(
+          inspectCodexDispatchActivation(pluginData, deps, false, false, 'implementation'),
+          /schedule-reconciliation-required/,
+        );
+      }
     }
     const disabled = structuredClone(manifest);
     Object.assign(disabled.github.notifications['issue-assignment'], { enabled: false });

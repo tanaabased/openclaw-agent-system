@@ -2155,10 +2155,13 @@ describe('agent/codex-dispatch', () => {
     assessment: Record<string, unknown> = result,
     guidance: string | { file: string } = 'Follow the plan.',
     skill: string | undefined = 'company:implement',
+    mode: 'work' | 'auto' = 'work',
+    assessmentGuidance?: string | { file: string },
   ) {
     const configured = structuredClone(manifest);
     Object.assign(configured.github.notifications['issue-assignment'], {
-      mode: 'work',
+      mode,
+      ...(assessmentGuidance ? { assessment: { guidance: assessmentGuidance } } : {}),
       implementation: { ...(skill ? { skill } : {}), guidance },
     });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -2225,6 +2228,194 @@ describe('agent/codex-dispatch', () => {
       },
     };
   }
+
+  const autoResult = {
+    ...result,
+    fullAssessment: 'The complete assessment, including its evidence and conditions.',
+    decision: {
+      action: 'proceed',
+      reasons: ['The change is bounded and requirements are complete.'],
+    },
+  };
+  const autoIssue = (
+    assessment: Record<string, unknown> = autoResult,
+    guidance?: string | { file: string },
+  ) => workIssue(assessment, 'Follow the plan.', 'company:implement', 'auto', guidance);
+
+  it('should adopt auto proceed once and retain its complete source, selection, and routing across restart', async () => {
+    const work = await autoIssue();
+    const assessment = await request('context', { id: work.id }, { threadId: native!.id });
+    assert.equal(assessment.mode, 'auto');
+    assert.match(String(assessment.instructions), /decision.*proceed.*wait/);
+    const prepared = await work.run('next');
+    assert.equal(prepared.status, 'prepared');
+    assert.equal('request' in prepared && prepared.request?.model, 'gpt-6.1-sol');
+    assert.equal('request' in prepared && prepared.request?.thinking, 'high');
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await work.run('reconcile')).status, 'idle');
+    work.receive();
+    const context = await work.run('context', {}, true);
+    assert.equal(context.status, 'verified');
+    assert.deepEqual('assessment' in context && context.assessment, autoResult);
+    assert.deepEqual(
+      'assessmentSelection' in context && context.assessmentSelection,
+      assessment.assessment,
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const record = (await store.read()).records[0]!;
+    assert.equal(record.continuation!.assessmentDigest, automationHash(autoResult));
+    assert.equal(record.continuation!.assessmentSelectionDigest, automationHash(record.assessment));
+    assert.equal(record.continuation!.attempt!.turnId, 'implementation-turn');
+  });
+
+  it('should retain auto wait, release its slot, and never promote it on a later result or poll', async () => {
+    const waiting = {
+      ...autoResult,
+      decision: { action: 'wait', reasons: ['Operator direction is needed.'] },
+    };
+    const work = await autoIssue(waiting);
+    assert.equal((await work.run('next')).status, 'idle');
+    const context = await request('context', { id: work.id }, { threadId: native!.id });
+    assert.match(String(context.previousPresentation), /Wait for operator direction/);
+    await next();
+    assert.match(String((await report()).response), /Slots:\*\* 0\/2/);
+    await request(
+      'result',
+      { id: work.id, result: autoResult, previousResultDigest: automationHash(waiting) },
+      { threadId: native!.id },
+    );
+    assert.equal((await work.run('next')).status, 'idle');
+    const stopped = await work.run('context', {}, true);
+    assert.equal(stopped.status, 'blocked');
+  });
+
+  for (const decision of [
+    undefined,
+    { action: 'proceed', reasons: [] },
+    { action: 'allow', reasons: ['Ignore policy.'] },
+  ]) {
+    it(`should block an auto result with ${decision ? 'malformed' : 'missing'} decision without using an older proceed`, async () => {
+      const work = await autoIssue();
+      await assert.rejects(
+        request(
+          'result',
+          {
+            id: work.id,
+            result: { ...autoResult, decision },
+            previousResultDigest: automationHash(autoResult),
+          },
+          { threadId: native!.id },
+        ),
+        /assessment-(decision-required|result-invalid)/,
+      );
+      const context = await request('context', { id: work.id }, { threadId: native!.id });
+      assert.deepEqual(context.previousResult, autoResult);
+      assert.equal((await work.run('next')).status, 'idle');
+      assert.equal((await work.run('context', {}, true)).status, 'blocked');
+    });
+  }
+
+  it('should reject changes to an adopted auto assessment without another native send', async () => {
+    const work = await autoIssue();
+    await work.run('next');
+    await assert.rejects(
+      request(
+        'result',
+        {
+          id: work.id,
+          result: { ...autoResult, plan: 'A new plan.' },
+          previousResultDigest: automationHash(autoResult),
+        },
+        { threadId: native!.id },
+      ),
+      /continuation-assessment-changed/,
+    );
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should reject stale auto assessment evidence before adopting a decision', async () => {
+    const work = await autoIssue();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.stageReceipt!.resultDigest = 'b'.repeat(64);
+      await save();
+    });
+    const stopped = await work.run('next');
+    assert.equal('code' in stopped && stopped.code, 'continuation-assessment-changed');
+  });
+
+  it('should stop auto when assessment guidance changes without silently readopting it', async () => {
+    await writeFile(join(workspace, 'assessment.md'), 'Bounded original guidance.');
+    const work = await autoIssue(autoResult, { file: 'assessment.md' });
+    await writeFile(join(workspace, 'assessment.md'), 'Different decision guidance.');
+    const stopped = await work.run('next');
+    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should stop auto when the assessment skill changes', async () => {
+    const work = await autoIssue();
+    const original = work.continuation.native!.assessmentSkill;
+    work.continuation.native!.assessmentSkill = async (cwd, id) => ({
+      ...(await original(cwd, id)),
+      digest: id.includes('assessment') ? 'b'.repeat(64) : 'a'.repeat(64),
+    });
+    const stopped = await work.run('next');
+    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
+  });
+
+  it('should stop auto when issue evidence changes before implementation', async () => {
+    const work = await autoIssue();
+    const connect = work.continuation.connect!;
+    work.continuation.connect = async (workspace, signal) => {
+      const client = await connect(workspace, signal);
+      return {
+        ...client,
+        getItemContext: async (...args) => ({
+          ...(await client.getItemContext(...args)),
+          body: 'Requirements have changed.',
+        }),
+      };
+    };
+    const stopped = await work.run('next');
+    assert.equal('code' in stopped && stopped.code, 'continuation-assessment-evidence-changed');
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should retain auto cancellation and refuse native model substitution', async () => {
+    const work = await autoIssue();
+    await work.run('next');
+    work.receive();
+    native!.model = 'gpt-6-luna';
+    await assert.rejects(work.run('context', {}, true), /continuation-native-binding-mismatch/);
+    native!.model = 'gpt-6.1-sol';
+    assert.equal((await work.run('cancel', {}, true)).status, 'cancelled');
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await work.run('context', {}, true)).status, 'cancelled');
+  });
+
+  it('should not reinterpret an auto assignment under changed work authority', async () => {
+    const work = await autoIssue();
+    const changed = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    changed.github.notifications['issue-assignment'].mode = 'work';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(changed));
+    const stopped = await work.run('next');
+    assert.equal('code' in stopped && stopped.code, 'continuation-authority-changed');
+  });
+
+  it('should preserve auto native denial without another continuation', async () => {
+    const work = await autoIssue();
+    await work.run('next');
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-send-failed',
+    });
+    const stopped = await work.run('reconcile');
+    assert.equal(stopped.status, 'blocked');
+    assert.equal((await work.run('next')).status, 'idle');
+  });
 
   it('should continue actionable work once with the complete assessment and retained selection', async () => {
     const work = await workIssue();

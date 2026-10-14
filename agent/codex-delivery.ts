@@ -274,7 +274,7 @@ export default async function runCodexDelivery(
           digest,
           operation: delivery,
           instruction: deps.schedule
-            ? 'Work mode already authorizes publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
+            ? 'The activated workflow and verified continuation authorize publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
             : 'Only after explicit human publication authorization, execute delivery publish with this id and digest through native approval. Retain title/body if supplied. Automatic callers require freshly reconciled schedule authority. Preparation does not grant publication permission.',
         };
       if (input.action === 'publish') {

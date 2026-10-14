@@ -440,7 +440,9 @@ export async function inspectCodexDispatchActivation(
           selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
           selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
         ).length === 0
-      : selected.loaded.manifest.github.notifications.issueAssignment?.mode !== 'work') ||
+      : !['work', 'auto'].includes(
+          selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
+        )) ||
     !job ||
     job.payload.kind !== 'prompt' ||
     record.removed ||

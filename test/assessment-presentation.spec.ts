@@ -28,6 +28,28 @@ const common = {
 };
 
 describe('channels/github/conversation/presentation/assessment-result', () => {
+  it('should distinguish a recommendation from authority and withhold credential-shaped reasons', () => {
+    for (const action of ['proceed', 'wait'] as const) {
+      const output = renderAssessmentResult(
+        {
+          ...common,
+          outcome: 'plan-ready',
+          assessment: 'Observed.',
+          plan: 'Retained plan.',
+          decision: { action, reasons: ['Scope is bounded.', 'api_key=private-value'] },
+        },
+        context,
+      );
+      assert.match(output, /Scope is bounded/);
+      assert.match(
+        output,
+        action === 'wait' ? /Wait for operator direction/ : /subject to runtime authorization/,
+      );
+      assert.match(output, /private content withheld/);
+      assert.doesNotMatch(output, /private-value/);
+      assert.match(output, /Retained plan/);
+    }
+  });
   it('should render the complete source unchanged beside questions and limitations', () => {
     const fullAssessment =
       '## My assessment\n\nDelete only after confirming retention.\n\n### Partial work\n\n1. Inspect storage.\n2. Ask which period applies.\n\nEvidence is unavailable; this cause is assumed.';

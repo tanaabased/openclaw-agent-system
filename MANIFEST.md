@@ -472,7 +472,8 @@ owned schedule. Work mode continues actionable assessments through implementatio
 and managed PR delivery; Plan mode stops after assessment. Explicitly authorized
 manual delivery remains available after implementation handoff. Configured issue feedback
 resumes the owning chat for explanation and bounded replies, including on its verified
-delivery PR. Review requests, Auto-mode execution, and unattended OpenClaw v2 assessment
+delivery PR. Codex Auto conditionally continues a recorded proceed decision through the
+same implementation and delivery stages. Review requests and unattended OpenClaw v2 assessment
 rollout remain unavailable.
 An unavailable OpenClaw notification
 adapter produces a validation warning and a skipped install outcome; other
@@ -581,7 +582,9 @@ No mode grants merge, deployment, expanded repository scope, or authority to
 change its own mode. Feedback continues the existing work's trusted mode and
 cannot turn planning into implementation. `review-request` and nested feedback do not
 accept a separate mode in this contract. Review behavior will be specified with
-its lifecycle, not borrowed from issue Work mode. Codex supports `plan` and `work`; accepting `auto` here does not implement its workflow.
+its lifecycle, not borrowed from issue Work mode. Codex supports `plan`, `work`, and opt-in [`auto`](./CODEX.md#auto-mode). Auto requires
+explicit saved workflow activation and a recorded proceed decision; OpenClaw Auto
+execution remains unavailable.
 
 #### Feedback permissions
 
@@ -739,7 +742,9 @@ it. Install reconciles the selected runtime. Empty authority lists admit no work
 disabling a trigger or removing policy stops admission and requires reconciliation
 to pause the owned job.
 See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
-Independent review and Auto-mode execution remain outside the current Codex support.
+Independent review remains outside the current Codex support. Auto uses the same
+configured assessment and implementation stages, subject to its recorded decision
+and freshly reconciled authority.
 
 #### Legacy compatibility
 

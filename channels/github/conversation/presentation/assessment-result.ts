@@ -1,4 +1,5 @@
 import type { AssessmentResult } from '../../../../agent/assessment-result.ts';
+import redactCodexFeedback from '../../../../agent/codex-feedback-redaction.ts';
 import type { RoutingDecision } from '../../../../agent/model-routing.ts';
 import workflowInstructions, {
   type WorkflowInstructionsSelection,
@@ -80,6 +81,27 @@ export default function renderAssessmentResult(
     ...('assessment' in result ? ['## Assessment', result.assessment] : []),
     routingCard,
     ...(instructionsCard ? [instructionsCard] : []),
+    ...(result.decision
+      ? [
+          githubNotificationCard({
+            emoji: result.decision.action === 'wait' ? '⏸️' : '🧭',
+            title: 'Continuation recommendation',
+            facts: [
+              {
+                label: 'Decision',
+                value:
+                  result.decision.action === 'wait'
+                    ? 'Wait for operator direction'
+                    : 'Proceed, subject to runtime authorization',
+              },
+              ...result.decision.reasons.map((reason) => ({
+                label: 'Reason',
+                value: text(redactCodexFeedback(reason)),
+              })),
+            ],
+          }),
+        ]
+      : []),
     ...(result.outcome === 'plan-ready'
       ? [
           ...(result.planSummary ? ['## Plan summary', result.planSummary] : []),

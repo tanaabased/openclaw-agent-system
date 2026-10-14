@@ -280,6 +280,12 @@ behavior and owning files; spell out individual cases only when needed to preser
 important requirement or prevent a likely mistake. Work without file edits needs no
 invented file list.
 
+When an assessment includes a continuation recommendation, show its `proceed` or
+`wait` decision and bounded reasons after the instruction card (or routing card when
+debug is off). Label proceed as subject to runtime authorization and wait as requiring
+operator direction. Escape reason text and withhold credential-shaped content; do not
+present the recommendation as permission or replace the complete assessment with it.
+
 The private routing card follows the assessment. Its values come from saved routing and
 native readback, with requested selection distinct from effective execution. Preserve
 the model, effort, selection rationale, and provenance; use readable Markdown rather

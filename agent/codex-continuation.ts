@@ -14,10 +14,11 @@ import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit, verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
+import dispatchContext from './dispatch-context.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, validateWorkflowResult } from './workflow-result.ts';
-import { selectWorkflowStage } from './workflow-stage.ts';
+import { nextIssueStage, selectWorkflowStage } from './workflow-stage.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 
 const requestSchema = Type.Object(
@@ -144,7 +145,11 @@ export default async function runCodexContinuation(
             record.sourceThreadId !== activation.sourceThreadId ||
             work.policyDigest !== schedule.current.policyDigest ||
             current.manifest.github?.notifications?.schemaVersion !== 2 ||
-            current.manifest.github.notifications.issueAssignment?.mode !== 'work'
+            !['work', 'auto'].includes(
+              current.manifest.github.notifications.issueAssignment?.mode ?? '',
+            ) ||
+            (record.issueMode ?? 'work') !==
+              current.manifest.github.notifications.issueAssignment?.mode
           )
             throw new Error('continuation-authority-changed');
           if (
@@ -161,6 +166,38 @@ export default async function runCodexContinuation(
           if (!retry && ['blocked', 'cancelled', 'complete'].includes(work.phase))
             return { status: work.phase, id: record.id, code: work.code };
           if (!record.result) continue;
+          if (record.issueMode === 'auto') {
+            if (!record.result.decision) throw new Error('assessment-decision-required');
+            if (
+              !record.stageReceipt ||
+              record.stageReceipt.resultDigest !== automationHash(record.result) ||
+              record.stageReceipt.binding.selectionDigest !== automationHash(record.assessment) ||
+              record.stageReceipt.binding.routingDigest !==
+                automationHash({ routing: record.routing, effective: record.effective }) ||
+              record.stageReceipt.binding.evidenceDigest !==
+                automationHash(JSON.parse(record.context!)) ||
+              record.stageReceipt.binding.policyDigest !== work.policyDigest ||
+              record.stageReceipt.binding.turnId !== record.resultTurnId ||
+              record.stageReceipt.binding.threadId !== record.threadId ||
+              record.stageReceipt.binding.worktree !== record.worktree
+            )
+              throw new Error('continuation-assessment-changed');
+            if (
+              nextIssueStage('auto', record.result.outcome, record.result.decision.action) !==
+              'implementation'
+            ) {
+              work.phase = 'blocked';
+              work.code = 'continuation-auto-wait';
+              await save();
+              return { status: 'blocked', id: record.id, code: work.code };
+            }
+            if (
+              !record.assessment ||
+              (work.assessmentSelectionDigest &&
+                work.assessmentSelectionDigest !== automationHash(record.assessment))
+            )
+              throw new Error('continuation-assessment-selection-changed');
+          }
           if (record.result.outcome !== 'plan-ready') {
             work.phase = 'blocked';
             work.code = 'continuation-assessment-not-actionable';
@@ -173,7 +210,31 @@ export default async function runCodexContinuation(
             (entry) => entry.id === record.intakeId,
           );
           if (!admitted) throw new Error('continuation-admission-missing');
-          await revalidateDispatchAssignment(current, admitted, deps, signal, false);
+          const { client, repo } = await revalidateDispatchAssignment(
+            current,
+            admitted,
+            deps,
+            signal,
+            false,
+          );
+          if (record.issueMode === 'auto' && !work.binding) {
+            const retained = JSON.parse(record.context!);
+            const latest = dispatchContext(
+              await client.getItemContext(
+                repo.owner.login,
+                repo.name,
+                admitted.issue.number,
+                'issue',
+                true,
+              ),
+              retained.source,
+              retained.observedAt,
+            );
+            if (latest.truncated || retained.truncated)
+              throw new Error('continuation-assessment-evidence-incomplete');
+            if (automationHash(latest) !== automationHash(retained))
+              throw new Error('continuation-assessment-evidence-changed');
+          }
           const found = await native.find({
             sourceThreadId: record.sourceThreadId,
             prompt: record.request.prompt,
@@ -207,25 +268,37 @@ export default async function runCodexContinuation(
             observedAt: work.selection.observedAt,
             resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
           });
-          const expectedSkill = work.selection.skill,
-            actualSkill = selection.selection.skill;
-          const samePath =
-            expectedSkill.path === actualSkill.path ||
-            (expectedSkill.scope === 'repo' &&
-              actualSkill.scope === 'repo' &&
-              isPathContained(record.project.path, expectedSkill.path) &&
-              isPathContained(found.cwd, actualSkill.path) &&
-              relative(record.project.path, expectedSkill.path) ===
-                relative(found.cwd, actualSkill.path));
-          if (
-            !samePath ||
-            expectedSkill.name !== actualSkill.name ||
-            expectedSkill.scope !== actualSkill.scope ||
-            expectedSkill.digest !== actualSkill.digest ||
-            automationHash(work.selection.guidance ?? null) !==
-              automationHash(selection.selection.guidance ?? null)
-          )
-            throw new Error('continuation-selection-changed');
+          const selections = [{ expected: work.selection, actual: selection.selection }];
+          if (record.issueMode === 'auto') {
+            const assessment = await selectWorkflowStage({
+              stage: 'assessment',
+              configuration: current.manifest.github.notifications.issueAssignment.assessment,
+              workspace: current.workspace,
+              observedAt: record.assessment!.observedAt,
+              resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
+            });
+            selections.push({ expected: record.assessment!, actual: assessment.selection });
+          }
+          for (const { expected, actual } of selections) {
+            const expectedSkill = expected.skill,
+              actualSkill = actual.skill;
+            const samePath =
+              expectedSkill.path === actualSkill.path ||
+              (expectedSkill.scope === 'repo' &&
+                actualSkill.scope === 'repo' &&
+                isPathContained(record.project.path, expectedSkill.path) &&
+                isPathContained(found.cwd, actualSkill.path) &&
+                relative(record.project.path, expectedSkill.path) ===
+                  relative(found.cwd, actualSkill.path));
+            if (
+              !samePath ||
+              expectedSkill.name !== actualSkill.name ||
+              expectedSkill.scope !== actualSkill.scope ||
+              expectedSkill.digest !== actualSkill.digest ||
+              automationHash(expected.guidance ?? null) !== automationHash(actual.guidance ?? null)
+            )
+              throw new Error('continuation-selection-changed');
+          }
           // recheck the saved native activation after provider and skill reads, before side effects.
           const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
             pluginData,
@@ -249,6 +322,8 @@ export default async function runCodexContinuation(
             if (found.turnId !== (work.retries?.at(-1)?.attempt.turnId ?? record.resultTurnId))
               throw new Error('continuation-user-intervened');
             work.assessmentDigest = automationHash(record.result);
+            if (record.issueMode === 'auto')
+              work.assessmentSelectionDigest = automationHash(record.assessment);
             const id = automationHash({
               id: record.id,
               assessment: work.assessmentDigest,
@@ -264,7 +339,7 @@ export default async function runCodexContinuation(
                 model: record.request.model,
                 thinking: record.request.thinking,
                 prompt:
-                  'Continue this managed Work-mode issue through implementation and pull-request delivery. Work mode already authorizes this sequence; do not request routine stage approval. Before editing, call continuationRuntime from the newest trusted Agent System context with JSON on stdin: ' +
+                  'Continue this managed issue through implementation and pull-request delivery. The activated workflow authorizes this sequence after its recorded assessment decision; do not request routine stage approval. Before editing, call continuationRuntime from the newest trusted Agent System context with JSON on stdin: ' +
                   JSON.stringify({ action: 'context', id: record.id }) +
                   '. Proceed only after verified context; follow its retained assessment, implementation selection, and instructions. Stop on substantive blockers or native denial. Continuation receipt: ' +
                   id +
@@ -346,6 +421,7 @@ export default async function runCodexContinuation(
               status: 'verified',
               id: record.id,
               assessment: record.result,
+              assessmentSelection: record.assessment,
               implementation: selection.selection,
               binding: work.binding,
               resultContract: 'implementation-result/v1',
@@ -353,7 +429,7 @@ export default async function runCodexContinuation(
               previousResult: work.result,
               deliveryOnly: Boolean(work.result?.outcome === 'done'),
               instructions:
-                'Work mode authorizes implementation and PR publication without further stage approval while this context remains valid. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|present,...}; reuse the managed operation and returned digest, never create a replacement PR. Use native attach_artifact and reproduce the complete returned presentation. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
+                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto also requires its verified retained proceed recommendation. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|present,...}; reuse the managed operation and returned digest, never create a replacement PR. Use native attach_artifact and reproduce the complete returned presentation. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
             };
           if (input.action === 'result') {
             if (work.publicationAttempt)
@@ -420,7 +496,7 @@ export default async function runCodexContinuation(
                 model: record.request.model,
                 thinking: record.request.thinking,
                 prompt:
-                  'Resume only the managed PR delivery for this Work-mode issue; implementation is already recorded. Do not repeat implementation or ask for stage approval. Refresh continuationRuntime context using JSON on stdin: ' +
+                  'Resume only the managed PR delivery for this issue; implementation is already recorded. Do not repeat implementation or ask for stage approval. Refresh continuationRuntime context using JSON on stdin: ' +
                   JSON.stringify({ action: 'context', id: record.id }) +
                   '. Reconcile the retained delivery operation; never create a replacement PR. Stop on actual native denial.',
               },

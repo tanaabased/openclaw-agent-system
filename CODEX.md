@@ -239,6 +239,23 @@ Independent reviewer feedback still requires the reviewer intake adapter. Discov
 and retained queues are bounded: incomplete provider reads or a full journal stop
 new feedback admission with a diagnostic; they do not silently discard comments.
 
+### Auto Mode
+
+Set `github.notifications.issue-assignment.mode: auto`, then authorize Install to
+reconcile the saved workflow. Auto uses your existing assessment skill and guidance
+to recommend `proceed` or `wait`, with reasons shown in the issue chat. Clear, bounded
+work can continue through the configured implementation and managed PR delivery;
+incomplete requirements, broad scope, or consequential uncertainty should wait.
+A ready plan alone does not authorize implementation.
+
+A wait retains the complete plan and releases its implementation slot. Polling and
+feedback cannot promote it; explicitly direct further work in the same chat through
+the [manual handoff](#issue-assessment). Missing or invalid decisions, changed issue
+evidence before implementation, changed skills/guidance, lost authority, and native
+denials stop continuation. Fix the stated obstacle and give explicit direction;
+never recreate the issue chat to bypass its retained stop. Existing Plan/Work schedules
+do not grant Auto authority without reconciliation. Native OpenClaw Auto is not supported.
+
 ### Work Mode
 
 Set `github.notifications.issue-assignment.mode: work`, optionally override its
