@@ -2152,7 +2152,7 @@ describe('agent/codex-dispatch', () => {
     );
   });
   async function workIssue(
-    assessment: Record<string, unknown> = result,
+    assessment: Record<string, unknown> | null = result,
     guidance: string | { file: string } = 'Follow the plan.',
     skill: string | undefined = 'company:implement',
     mode: 'work' | 'auto' = 'work',
@@ -2192,7 +2192,8 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
-    await request('result', { id: prepared.id, result: assessment }, { threadId: native!.id });
+    if (assessment)
+      await request('result', { id: prepared.id, result: assessment }, { threadId: native!.id });
     native!.status = 'idle';
     native!.turnStatus = 'completed';
     let received = false;
@@ -2238,9 +2239,85 @@ describe('agent/codex-dispatch', () => {
     },
   };
   const autoIssue = (
-    assessment: Record<string, unknown> = autoResult,
+    assessment: Record<string, unknown> | null = autoResult,
     guidance?: string | { file: string },
   ) => workIssue(assessment, 'Follow the plan.', 'company:implement', 'auto', guidance);
+
+  for (const [invalid, error] of [
+    [{ ...autoResult, plan: undefined }, 'assessment-result-invalid'],
+    [{ ...autoResult, decision: undefined }, 'assessment-decision-required'],
+    [
+      {
+        version: 1,
+        outcome: 'clarification-needed',
+        summary: 'Requirements are unclear.',
+        assessment: 'A choice is needed.',
+        questions: ['Which behavior is intended?'],
+        evidence: result.evidence,
+        progress: result.progress,
+        decision: autoResult.decision,
+      },
+      'assessment-decision-conflict',
+    ],
+  ] as const) {
+    it(`should continue once after correcting an initial ${error}`, async () => {
+      const work = await autoIssue(null);
+      const child = { threadId: native!.id };
+      await assert.rejects(
+        request('result', { id: work.id, result: invalid }, child),
+        new RegExp(error),
+      );
+      assert.equal((await work.run('next')).status, 'idle');
+      await request('result', { id: work.id, result: autoResult }, child);
+      assert.equal((await work.run('next')).status, 'prepared');
+      assert.equal((await work.run('next')).status, 'pending');
+      work.receive();
+      const context = await work.run('context', {}, true);
+      assert.equal(context.status, 'verified');
+      assert.deepEqual('assessment' in context && context.assessment, autoResult);
+    });
+  }
+
+  for (const stop of ['wait', 'cancel', 'changed-selection', 'denial'] as const) {
+    it(`should preserve auto ${stop} through invalid and corrected assessments`, async () => {
+      const work = await autoIssue();
+      const child = { threadId: native!.id };
+      let previousResultDigest = automationHash(autoResult);
+      if (stop === 'wait') {
+        const waiting = {
+          ...autoResult,
+          decision: { action: 'wait', reasons: ['Operator direction is needed.'] },
+        };
+        await request('result', { id: work.id, result: waiting, previousResultDigest }, child);
+        previousResultDigest = automationHash(waiting);
+      } else if (stop === 'cancel') {
+        await work.run('cancel', {}, true);
+      } else if (stop === 'changed-selection') {
+        const original = work.continuation.native!.assessmentSkill;
+        work.continuation.native!.assessmentSkill = async (cwd, id) => ({
+          ...(await original(cwd, id)),
+          digest: id.includes('assessment') ? 'b'.repeat(64) : 'a'.repeat(64),
+        });
+        await work.run('next');
+      } else {
+        await work.run('next');
+        work.continuation.continuationNative = async () => ({
+          status: 'blocked',
+          code: 'continuation-native-send-failed',
+        });
+        await work.run('reconcile');
+      }
+      const stopped = await work.run('context', {}, true);
+      assert.equal(stopped.status, stop === 'cancel' ? 'cancelled' : 'blocked');
+      await assert.rejects(
+        request('result', { id: work.id, result: { ...autoResult, plan: undefined } }, child),
+        /assessment-result-invalid/,
+      );
+      await request('result', { id: work.id, result: autoResult, previousResultDigest }, child);
+      assert.equal((await work.run('next')).status, 'idle');
+      assert.deepEqual(await work.run('context', {}, true), stopped);
+    });
+  }
 
   it('should adopt auto proceed once and retain its complete source, selection, and routing across restart', async () => {
     const work = await autoIssue();
@@ -2313,8 +2390,50 @@ describe('agent/codex-dispatch', () => {
       assert.deepEqual(context.previousResult, autoResult);
       assert.equal((await work.run('next')).status, 'idle');
       assert.equal((await work.run('context', {}, true)).status, 'blocked');
+      await request('result', { id: work.id, result: autoResult }, { threadId: native!.id });
+      assert.equal((await work.run('next')).status, 'prepared');
+      assert.equal((await work.run('next')).status, 'pending');
     });
   }
+
+  it('should retain an adopted auto assessment blocker after a corrected submission', async () => {
+    const work = await autoIssue();
+    await work.run('next');
+    const child = { threadId: native!.id };
+    await assert.rejects(
+      request('result', { id: work.id, result: { ...autoResult, plan: undefined } }, child),
+      /assessment-result-invalid/,
+    );
+    await request('result', { id: work.id, result: autoResult }, child);
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await work.run('context', {}, true)).status, 'blocked');
+  });
+
+  it('should require a valid revision digest before clearing an auto assessment blocker', async () => {
+    const work = await autoIssue();
+    const child = { threadId: native!.id };
+    await assert.rejects(
+      request('result', { id: work.id, result: { ...autoResult, plan: undefined } }, child),
+      /assessment-result-invalid/,
+    );
+    const waiting = {
+      ...autoResult,
+      decision: { action: 'wait', reasons: ['Operator direction is needed.'] },
+    };
+    await assert.rejects(
+      request('result', { id: work.id, result: waiting }, child),
+      /assessment-result-conflict/,
+    );
+    assert.equal((await work.run('next')).status, 'idle');
+    await request(
+      'result',
+      { id: work.id, result: waiting, previousResultDigest: automationHash(autoResult) },
+      child,
+    );
+    assert.equal((await work.run('next')).status, 'idle');
+    const stopped = await work.run('context', {}, true);
+    assert.equal('code' in stopped && stopped.code, 'continuation-auto-wait');
+  });
 
   it('should reject changes to an adopted auto assessment without another native send', async () => {
     const work = await autoIssue();

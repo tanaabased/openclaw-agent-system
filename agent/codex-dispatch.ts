@@ -1043,6 +1043,7 @@ export async function runCodexDispatch(
             };
           }
           if (action === 'result') {
+            const continuation = record.issueMode === 'auto' ? record.continuation : undefined;
             let result: AssessmentResult;
             try {
               result = parseAssessmentResult(input.result);
@@ -1054,9 +1055,12 @@ export async function runCodexDispatch(
               )
                 throw new Error('continuation-assessment-changed');
             } catch (error) {
-              if (record.issueMode === 'auto' && record.continuation) {
-                record.continuation.phase = 'blocked';
-                record.continuation.code = code(error);
+              if (
+                continuation &&
+                !['blocked', 'cancelled', 'complete'].includes(continuation.phase)
+              ) {
+                continuation.phase = 'blocked';
+                continuation.code = code(error);
                 await save();
               }
               throw error;
@@ -1073,12 +1077,22 @@ export async function runCodexDispatch(
               previousResultDigest: input.previousResultDigest as string | undefined,
             });
             if (
-              record.issueMode === 'auto' &&
-              record.continuation &&
-              result.decision?.action === 'wait'
+              continuation?.phase === 'blocked' &&
+              !continuation.assessmentDigest &&
+              !continuation.attempt &&
+              !continuation.binding &&
+              [
+                'assessment-result-invalid',
+                'assessment-decision-required',
+                'assessment-decision-conflict',
+              ].includes(continuation.code ?? '')
             ) {
-              record.continuation.phase = 'blocked';
-              record.continuation.code = 'continuation-auto-wait';
+              continuation.phase = 'waiting';
+              delete continuation.code;
+            }
+            if (continuation?.phase === 'waiting' && result.decision?.action === 'wait') {
+              continuation.phase = 'blocked';
+              continuation.code = 'continuation-auto-wait';
             }
             const presentation = assessmentPresentation(result, record, intake, current.workspace, {
               debug: current.manifest.debug,

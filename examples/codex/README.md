@@ -86,6 +86,10 @@ using disposable issues and the installed plugin.
   and selected model/effort through one implementation turn and one linked PR; wait
   keeps its plan, releases the implementation slot, and produces neither. Repeat
   polling and restart to verify no duplicate turn or PR and no promotion of wait.
+  Submit an invalid assessment before adoption, then correct it through the result
+  route. Verify one continuation uses the corrected proceed result; a corrected
+  wait still stops. Invalid submissions must preserve existing wait, cancellation,
+  denial, or changed-authority blockers, and must not rearm an adopted assessment.
   Require an authored PR description with the verified implementation and validation
   evidence; missing or blank bodies must stop before automatic publication.
   Capture native receipts, provider linkage, attachment, and visible presentation
