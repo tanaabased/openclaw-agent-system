@@ -34,9 +34,9 @@ describe('channels/github/events/presentation', () => {
         'work',
       ),
       [
-        '## 📥 Issue assigned',
-        '',
-        '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in `work` mode.',
+        '> ## 📥 Issue assigned',
+        '>',
+        '> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in `work` mode.',
       ].join('\n'),
     );
   });
@@ -68,9 +68,9 @@ describe('channels/github/events/presentation', () => {
     assert.equal(
       githubNotificationImplementationCard(12),
       [
-        '## 🛠️ Implementation started',
-        '',
-        'The public plan for issue #12 is published. Carry it out now in `work` mode, ending with one local commit. Lifecycle delivery follows.',
+        '> ## 🛠️ Implementation started',
+        '>',
+        '> The public plan for issue #12 is published. Carry it out now in `work` mode, ending with one local commit. Lifecycle delivery follows.',
       ].join('\n'),
     );
   });
@@ -86,15 +86,22 @@ describe('channels/github/events/presentation', () => {
     assert.equal(
       privateText,
       [
-        '## 🔀 Pull request opened',
-        '',
-        '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
-        '- **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
-        '- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
+        '> ## 🔀 Pull request opened',
+        '>',
+        '> - **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
+        '> - **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
+        '> - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
       ].join('\n'),
     );
     const publicText = githubNotificationPullRequestHandoffComment(input);
-    assert.equal(publicText, privateText);
+    assert.match(publicText, /^## 🔀 Pull request opened\n\n/u);
+    assert.equal(
+      publicText,
+      privateText
+        .split('\n')
+        .map((line) => (line === '>' ? '' : line.slice(2)))
+        .join('\n'),
+    );
     assert.equal(
       githubNotificationPublicationText('pull-request-handoff', [{ text: publicText }]),
       publicText,

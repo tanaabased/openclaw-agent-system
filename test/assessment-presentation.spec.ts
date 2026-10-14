@@ -102,6 +102,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
             assessment: { defaultSkill: !custom, skill: { name: 'cats:assess' }, guidance },
           });
           assert.equal(output.includes('Assessment instructions'), true);
+          assert.ok(!output.includes('> > ## 🧩 Assessment instructions'));
           assert.equal(output.includes('cats:assess'), true);
           assert.equal(output.includes('**Guidance:**'), !!guidance);
           if (custom || guidance) {
@@ -114,7 +115,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
             assert.ok(
               output.includes(
                 guidance.content.includes('\n')
-                  ? '> Use [cat] names.\n> \n> Keep **evidence**.'
+                  ? '> Use [cat] names.\n>\n> Keep **evidence**.'
                   : '> Use cat names.',
               ),
             );
@@ -150,7 +151,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
           '> # Keep this heading literal',
           '>   whiskers  =  1',
           '> \t<cat>',
-          '> ',
+          '>',
           '> ```',
           '> > meow',
           '> ````',
@@ -184,8 +185,19 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
         effective: { status: 'verified', model: context.routing.model, effort: 'high' },
       },
     );
-    assert.ok(output.startsWith('## 🧭 Plan ready\n\n'));
-    for (const retained of [common.summary, assessment, planSummary, plan, context.issue.url])
+    assert.ok(output.startsWith('> ## 🧭 Plan ready\n>\n'));
+    assert.ok(
+      output.includes(
+        '> Preserve the complete result.\n>\n> Keep [source evidence](https://example.com/evidence).',
+      ),
+    );
+    assert.ok(
+      output.includes(
+        '> **Issue:** [owner/repo#7](https://github.com/owner/repo/issues/7)\n\n## Assessment',
+      ),
+    );
+    assert.ok(!output.includes('> > ## 🧠 Model routing'));
+    for (const retained of [assessment, planSummary, plan, context.issue.url])
       assert.ok(output.includes(retained));
     assert.ok(output.indexOf(assessment) < output.indexOf('> ## 🧠 Model routing'));
     assert.ok(output.indexOf('> ## 🧠 Model routing') < output.indexOf('## Plan summary\n'));
@@ -232,7 +244,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       },
       context,
     );
-    assert.ok(output.startsWith('## ❓ Clarification needed\n\n'));
+    assert.ok(output.startsWith('> ## ❓ Clarification needed\n>\n'));
     assert.ok(output.includes('## Assessment\n\nThe retention period'));
     assert.ok(output.includes('## Question\n\n- How long should results remain?'));
     assert.ok(output.includes('  - Until resolved\n  - For a fixed period'));
@@ -249,10 +261,16 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       { ...common, outcome: 'operator-setup-blocker', code: 'repository-unavailable', remediation },
       context,
     );
-    assert.ok(output.startsWith('## ⏸️ Issue assessment blocked\n\n'));
-    assert.ok(output.includes('## Action\n\n' + remediation));
-    assert.ok(output.includes('**Diagnostic:** `repository-unavailable`'));
-    assert.ok(output.indexOf(remediation) < output.indexOf('## Reference material\n'));
+    assert.ok(output.startsWith('> ## ⏸️ Issue assessment blocked\n>\n'));
+    assert.ok(
+      output.includes(
+        '> ## Action\n>\n> Restore repository access.\n>\n> ```text\n> retry the same chat\n> ```',
+      ),
+    );
+    assert.ok(output.includes('> **Diagnostic:** `repository-unavailable`'));
+    assert.ok(
+      output.indexOf('> Restore repository access.') < output.indexOf('## Reference material\n'),
+    );
     assert.ok(output.includes(common.evidence[0]!.source));
     assert.ok(output.includes(common.progress.completed[0]!));
     assert.ok(!output.includes('## Question\n'));
@@ -316,7 +334,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
       },
       { ...context, routing: { ...context.routing, reason: 'Review [literal] *metadata*.' } },
     );
-    assert.ok(output.startsWith('## 🧭 Plan ready\n\n'));
+    assert.ok(output.startsWith('> ## 🧭 Plan ready\n>\n'));
     assert.ok(output.includes(plan));
     assert.match(output, /Selected.*gpt-6-astra \/ high/);
     assert.ok(output.includes('Review \\[literal\\] \\*metadata\\*.'));

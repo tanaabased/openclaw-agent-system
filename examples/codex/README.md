@@ -148,7 +148,10 @@ using disposable issues and the installed plugin.
   intake must not claim active delivery.
   With top-level `debug: true`, check skill and guidance notices after model routing for assessment,
   after the PR card for implementation, and after the public quote and outcome
-  for feedback. Include default skill selections; skill and guidance file links
+  for feedback. All distinct cards include their emoji, title, content, and
+  notices inside one outer quote; full assessments, plans, and private responses
+  remain ordinary document sections. Check routing and instruction cards for
+  accidental repeated wrapping. Include default skill selections; skill and guidance file links
   resolve to retained sources, and inline guidance links to its manifest source
   while preserving the literal retained text. With debug false or omitted, hide
   all instruction notices while retaining blockers and publication outcomes.
@@ -209,7 +212,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access-required"}' \
   | node "$runtime" intake failure-response --plugin-data "$root/uncreated-failure-data" \
-  | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
+  | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("> ## ⚠️ Codex needs access to its tracking files\n>\n>")) and (.response | contains("> - **Technical detail:**")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
 test ! -e "$root/uncreated-failure-data"
 
 # should format a packaged quiet heartbeat without activating intake or changing its state

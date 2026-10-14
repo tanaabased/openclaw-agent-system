@@ -15,6 +15,7 @@ describe('channels/github/conversation/presentation/workflow-instructions', () =
     const card = feedbackReplyPresentation('contributor', body);
     assert.ok(card.startsWith('> ## 📤 To [@contributor](https://github.com/contributor)'));
     assert.ok(card.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(!card.startsWith('> > ##'));
     assert.ok(card.includes('> First paragraph.\n>\n> - Item\n>\n> > Nested quote'));
     const response = feedbackResponse({
       privateText: 'First private paragraph.\n\nSecond private paragraph.',
@@ -43,6 +44,7 @@ describe('channels/github/conversation/presentation/workflow-instructions', () =
       '/workspace',
       { debug: true },
     )!;
+    assert.ok(card.startsWith('> ## 🧩 Feedback reply instructions\n>\n> -'));
     assert.ok(card.includes('[piroplugin:piro-feedback-reply](</skills/latin%20reply/SKILL.md>)'));
     assert.ok(
       card.includes('[.agent-system/reply #1.md](</workspace/.agent-system/reply%20%231.md>)'),
@@ -79,6 +81,11 @@ describe('channels/github/conversation/presentation/workflow-instructions', () =
       assert.ok(!output.includes('Hidden guidance.'));
       assert.ok(output.includes('Private answer.') && output.includes('Public answer.'));
       assert.ok(output.includes('approval-denied'));
+      assert.ok(
+        output.includes(
+          '> ## ⚠️ Public reply withheld\n>\n> Public reply withheld: `approval-denied`.',
+        ),
+      );
     }
     assert.ok(
       workflowInstructions('Assessment', { ...selection, defaultSkill: true }, undefined, {
@@ -95,6 +102,7 @@ describe('channels/github/conversation/presentation/workflow-instructions', () =
       publication: { url: 'https://github.com/owner/repo/issues/1#issuecomment-2' },
     });
     assert.ok(output.indexOf('Feedback reply instructions') > output.indexOf('Published reply'));
+    assert.ok(output.includes('> ## ℹ️ Reply published\n>\n> [Published reply ↗]'));
     assert.ok(output.includes('Private English answer.'));
     assert.ok(
       output.includes('> ## 📤 To [@contributor](https://github.com/contributor)\n>\n> Ita.'),

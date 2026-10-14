@@ -50,7 +50,10 @@ import { assessmentSchema } from './model-routing.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import assignmentCard from '../channels/github/conversation/presentation/assignment-card.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
-import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
+import {
+  githubNotificationMarkdownText,
+  githubNotificationQuote,
+} from '../channels/github/conversation/presentation/card.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -866,18 +869,19 @@ export async function runCodexDispatch(
             };
           }
           record.routing = JSON.stringify(decision);
-          record.routingNote =
-            '> **Model routing:** ' +
-            decision.candidate.model +
-            ' / ' +
-            decision.candidate.thinking +
-            ' — ' +
-            decision.complexity +
-            ' complexity (' +
-            decision.source +
-            '). ' +
-            decision.reason +
-            ' Requested selection; effective settings await native verification.';
+          record.routingNote = githubNotificationQuote(
+            '## 🧠 Model routing\n\n' +
+              decision.candidate.model +
+              ' / ' +
+              decision.candidate.thinking +
+              ' — ' +
+              decision.complexity +
+              ' complexity (' +
+              decision.source +
+              '). ' +
+              decision.reason +
+              ' Requested selection; effective settings await native verification.',
+          );
           record.createdAt = now;
           record.preparationTurnId = state.run!.id;
           record.request = {

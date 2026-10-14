@@ -1328,7 +1328,7 @@ describe('agent/codex-dispatch', () => {
     const blocked = await next();
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
     assert.equal(blocked.changed, true);
-    assert.match(String(blocked.message), /^## ⚠️ Add the project to continue\n/u);
+    assert.match(String(blocked.message), /^> ## ⚠️ Add the project to continue\n/u);
     assert.ok(String(blocked.message).includes('- **Project name:** repo\n'));
     assert.ok(
       String(blocked.message).includes(

@@ -1,6 +1,9 @@
 import { isAbsolute, relative } from 'node:path';
 
-import githubNotificationCard, { githubNotificationMarkdownText } from './card.ts';
+import githubNotificationCard, {
+  githubNotificationMarkdownText,
+  githubNotificationQuote,
+} from './card.ts';
 
 export interface WorkflowInstructionsSelection {
   defaultSkill: boolean;
@@ -51,7 +54,12 @@ export default function workflowInstructions(
         ]
       : []),
   ];
-  const sections = [githubNotificationCard({ emoji: '🧩', title: `${stage} instructions`, facts })];
+  const sections = [
+    githubNotificationCard(
+      { emoji: '🧩', title: `${stage} instructions`, facts },
+      { quoted: false },
+    ),
+  ];
   if (guidance?.source === 'inline') {
     const fence = '`'.repeat(
       (guidance.content.match(/`+/gu) ?? []).reduce(
@@ -61,9 +69,5 @@ export default function workflowInstructions(
     );
     sections.push([fence + 'text', guidance.content.replace(/\r\n?/gu, '\n'), fence].join('\n'));
   }
-  return sections
-    .join('\n\n')
-    .split('\n')
-    .map((line) => '> ' + line)
-    .join('\n');
+  return githubNotificationQuote(sections.join('\n\n'));
 }

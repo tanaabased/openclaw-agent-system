@@ -5,7 +5,10 @@ import codexIssueNotice from './codex-issue-notice.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
-import { githubNotificationMarkdownText as text } from '../channels/github/conversation/presentation/card.ts';
+import {
+  githubNotificationMarkdownText as text,
+  githubNotificationQuote,
+} from '../channels/github/conversation/presentation/card.ts';
 
 /** summarize intake facts only; assessment results never become intake announcements. */
 export default function prepareDispatchReport(input: {
@@ -146,7 +149,7 @@ export default function prepareDispatchReport(input: {
   return {
     response: codexHeartbeatEnvelope(
       input.automationId,
-      lines.join('\n'),
+      githubNotificationQuote(lines.join('\n')),
       started.length > 0 ||
         sent.length > 0 ||
         recovered ||

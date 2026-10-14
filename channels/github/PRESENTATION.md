@@ -24,11 +24,21 @@ notifications channel. It describes their appearance and composition only. The
 ## Card
 
 ```markdown
-## <emoji> <short descriptive title>
-
-- **<fact>:** <value>
-- **<fact>:** <value>
+> ## <emoji> <short descriptive title>
+>
+> - **<fact>:** <value>
+> - **<fact>:** <value>
 ```
+
+Put the emoji, title, body, links, and notices inside one outer Markdown quote
+block. Quote every line, including blanks and code fences; preserve author
+quotations as nested quotes. Apply the wrapper once at the owning renderer.
+Full assessments, plans, questions, and private responses remain ordinary document
+sections outside their distinct cards.
+
+This contract covers issue and PR assignments, intake status, model routing,
+implementation and PR delivery, comment and review intake, public-reply previews,
+instruction/debug cards, and information, warning, error, and outcome callouts.
 
 Use a short bulleted fact list when a card primarily presents metadata. A
 summary sentence may replace the list when the component primarily presents an
@@ -53,14 +63,14 @@ include the exact project folder when registration is needed and a bounded diagn
 when useful. Preserve successful starts in a report that also contains an obstacle.
 
 ```markdown
-## ℹ️ Intake complete — 2 issues started
-
-- **Issue:** [example/project #7](codex://threads/example-7)
-- **Issue:** [example/project #8](codex://threads/example-8)
-
-**Managing:** 5 issues · **Pending:** 1
-**Slots:** 2/2 occupied
-Pending issues will start when a slot becomes available.
+> ## ℹ️ Intake complete — 2 issues started
+>
+> - **Issue:** [example/project #7](codex://threads/example-7)
+> - **Issue:** [example/project #8](codex://threads/example-8)
+>
+> **Managing:** 5 issues · **Pending:** 1
+> **Slots:** 2/2 occupied
+> Pending issues will start when a slot becomes available.
 ```
 
 Keep assessment plans, questions, and assessment-specific warnings or errors in the
@@ -77,15 +87,15 @@ of the public GitHub response.
 ## Assignment Card
 
 ```markdown
-## 📥 Issue assigned
-
-[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Please begin working on it in `work` mode.
+> ## 📥 Issue assigned
+>
+> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Please begin working on it in `work` mode.
 ```
 
 ```markdown
-## 🔀 Pull request assigned
-
-[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18). Please begin working on it in `plan` mode.
+> ## 🔀 Pull request assigned
+>
+> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18). Please begin working on it in `plan` mode.
 ```
 
 ## Direct Message
@@ -120,11 +130,11 @@ working-tree diff. Never label an original location as current code.
 ## Pull Request Opened Card
 
 ```markdown
-## 🔀 Pull request opened
-
-- **Issue:** [tanaabased/example#7](https://github.com/tanaabased/example/issues/7)
-- **Pull request:** [tanaabased/example#18](https://github.com/tanaabased/example/pull/18)
-- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
+> ## 🔀 Pull request opened
+>
+> - **Issue:** [tanaabased/example#7](https://github.com/tanaabased/example/issues/7)
+> - **Pull request:** [tanaabased/example#18](https://github.com/tanaabased/example/pull/18)
+> - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
 ```
 
 For standalone Codex delivery, retain the original issue chat link. Configured
@@ -133,16 +143,16 @@ publication; native attachment warnings accompany the card without suppressing i
 Use the shared info, warning, and error components for delivery notices. The card
 itself is not delivery proof.
 
-Use this card for the private `pull-request-opened` turn and the deterministic
-GitHub handoff. See [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
+Use the quoted card for the private `pull-request-opened` turn. The deterministic
+GitHub handoff retains the same content without the private outer quote. See [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
 session ownership, and publication.
 
 ## Implementation Card
 
 ```markdown
-## 🛠️ Implementation started
-
-The public plan is published. Carry it out now in `work` mode.
+> ## 🛠️ Implementation started
+>
+> The public plan is published. Carry it out now in `work` mode.
 ```
 
 Keep the following private result report-like with stable implementation and
@@ -152,9 +162,9 @@ implementation began.
 ## Response
 
 ```markdown
-## <emoji> <outcome title>
-
-<one-sentence outcome summary>
+> ## <emoji> <outcome title>
+>
+> <one-sentence outcome summary>
 
 ## Response
 
@@ -167,9 +177,9 @@ tables when they make the complete result easier to review.
 ## Plan
 
 ```markdown
-## 🧭 Plan ready
-
-<one-sentence outcome summary>
+> ## 🧭 Plan ready
+>
+> <one-sentence outcome summary>
 
 ## Assessment
 
@@ -300,9 +310,9 @@ incoming comment card or public GitHub reply.
 ## Question
 
 ```markdown
-## ❓ Clarification needed
-
-<one-sentence explanation>
+> ## ❓ Clarification needed
+>
+> <one-sentence explanation>
 
 ## Assessment
 
@@ -316,7 +326,7 @@ incoming comment card or public GitHub reply.
 ```
 
 Preserve each question and its context. Setup obstacles use **Issue assessment blocked**
-with **Action** and **Diagnostic**, plus retained evidence and investigation; keep them
+with **Action** and **Diagnostic** inside the same quoted callout, plus retained evidence and investigation; keep them
 distinct from missing requirements. Show the routing card when saved routing is available.
 For manual Codex project registration in issue intake, use **⚠️ Add the project to continue**,
 including separate **Project name**, **Folder path**, and **Next step** facts. Distinguish
@@ -349,7 +359,8 @@ public-reply wrapper or a second model-authored answer. The
 Codex feedback and lifecycle turns with distinct private and public parts use
 this composition. Preserve the complete retained private response; do not replace
 it with the public candidate. After publication, link the verified reply. If
-publication is withheld or uncertain, report that outcome without claiming a post:
+publication is withheld or uncertain, report that outcome without claiming a post.
+Put the publication link or obstacle in a quoted information or warning callout:
 
 For feedback, include the complete incoming comment or review card at the top of
 the final response. Progress commentary alone is insufficient: clients may collapse
@@ -369,4 +380,8 @@ it when the turn finishes. Keep the source card outside the public reply quote.
 > ## 📤 To [@pirog](https://github.com/pirog)
 >
 > <complete GitHub-facing response>
+
+> ## ℹ️ Reply published
+>
+> [Published reply ↗](https://github.com/example/project/issues/7#issuecomment-123)
 ```

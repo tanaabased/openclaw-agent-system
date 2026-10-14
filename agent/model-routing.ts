@@ -62,7 +62,7 @@ export const modelRoutingRubric = [
 ].join('\n\n');
 
 export const modelRoutingReportGuidance =
-  'After the initial assessment prose, include one short Markdown blockquote labeled **Model routing**, naming the saved model, effort, complexity, evidence source and brief reason. Explain explicit overrides and any unresolved assessment using the configured default. Report recommendation, requested application, and verified execution separately; selection is not proof of effective runtime settings. Preserve the selection on ordinary follow-ups, resume, and compaction.';
+  'After the initial assessment prose, include one short Markdown blockquote headed ## 🧠 Model routing, with the heading and every content line inside the same quote block, naming the saved model, effort, complexity, evidence source and brief reason. Explain explicit overrides and any unresolved assessment using the configured default. Report recommendation, requested application, and verified execution separately; selection is not proof of effective runtime settings. Preserve the selection on ordinary follow-ups, resume, and compaction.';
 
 export function validateRoutingProfiles(models: AgentModelsConfiguration): void {
   const tiers = [models.low, models.medium, models.high];

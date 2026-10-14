@@ -43,8 +43,11 @@ export function githubNotificationQuote(text: string): string {
     .join('\n');
 }
 
-/** Render the shared title and compact fact-list grammar. */
-export default function githubNotificationCard(input: GitHubNotificationCardInput): string {
+/** quote complete private cards; raw composition and public handoffs opt out explicitly. */
+export default function githubNotificationCard(
+  input: GitHubNotificationCardInput,
+  { quoted = true }: { quoted?: boolean } = {},
+): string {
   const card = [`## ${oneLine(input.emoji, 'emoji')} ${oneLine(input.title, 'title')}`, ''];
   if ('facts' in input) {
     if (input.facts.length === 0) {
@@ -56,7 +59,7 @@ export default function githubNotificationCard(input: GitHubNotificationCardInpu
           `- **${oneLine(label, 'fact label')}:** ${oneLine(value, 'fact value')}`,
       ),
     );
-    return card.join('\n');
+    return quoted ? githubNotificationQuote(card.join('\n')) : card.join('\n');
   }
   card.push(oneLine(input.summary, 'summary'));
   if (input.note) {
@@ -65,5 +68,5 @@ export default function githubNotificationCard(input: GitHubNotificationCardInpu
       `**${oneLine(input.note.label, 'note label')}:** ${oneLine(input.note.text, 'note text')}`,
     );
   }
-  return card.join('\n');
+  return quoted ? githubNotificationQuote(card.join('\n')) : card.join('\n');
 }

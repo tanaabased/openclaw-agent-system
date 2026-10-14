@@ -31,8 +31,12 @@ export default function feedbackResponse(
   if (input.publication)
     sections.push(
       'url' in input.publication
-        ? `[Published reply ↗](${input.publication.url})`
-        : `Public reply withheld: \`${input.publication.withheld}\`.`,
+        ? githubNotificationQuote(
+            `## ℹ️ Reply published\n\n[Published reply ↗](${input.publication.url})`,
+          )
+        : githubNotificationQuote(
+            `## ⚠️ Public reply withheld\n\nPublic reply withheld: \`${input.publication.withheld}\`.`,
+          ),
     );
   const instructions = workflowInstructions(
     'Feedback reply',

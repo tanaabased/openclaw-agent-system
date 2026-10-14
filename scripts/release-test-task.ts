@@ -437,7 +437,7 @@ try {
       assert.equal(result.status, 'unresolved');
       assert.deepEqual(result.candidate, inspected.profiles.default);
       assert.equal(result.application, 'not-requested');
-      assert.match(inspected.reportGuidance, /\*\*Model routing\*\*/);
+      assert.match(inspected.reportGuidance, /## 🧠 Model routing/);
       const overridden = await resolveRouting({
         ...input,
         overrides: { model: 'manual', effort: 'low' },

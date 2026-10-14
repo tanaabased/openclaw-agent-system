@@ -29,6 +29,9 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(report.response, /Pending:\*\* 0/);
     assert.match(report.response, /Slots:\*\* 0\/2 occupied/);
     assert.deepEqual(report.started, []);
+    const message = report.response.split('<message>')[1]!.split('</message>')[0]!;
+    assert.ok(message.startsWith('> ## ℹ️'));
+    assert.ok(message.split('\n').every((line) => line.startsWith('>')));
   });
   it('should report an intake failure and recovery without repeating notifications', () => {
     const blocked = {
@@ -38,6 +41,8 @@ describe('agent/codex-dispatch-report', () => {
     const first = prepareDispatchReport({ ...input, intake: blocked });
     assert.match(first.response, /NOTIFY/);
     assert.match(first.response, /⚠️/);
+    assert.match(first.response, /> ## ⚠️/);
+    assert.match(first.response, /> {3}\*\*Diagnostic:\*\*/);
     const next = { ...state, intakeHealth: first.health };
     assert.match(
       prepareDispatchReport({ ...input, state: next, intake: blocked }).response,

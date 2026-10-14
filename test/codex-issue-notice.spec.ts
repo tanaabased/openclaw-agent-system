@@ -68,6 +68,8 @@ describe('agent/codex-issue-notice', () => {
     ] as const) {
       const first = codexIssueNotice({ event: 'failure', code, changed: true });
       assert.equal(first.severity, severity, code);
+      assert.ok(first.message.startsWith('> ## '));
+      assert.ok(first.message.split('\n').every((line) => line.startsWith('>')));
       assert.equal(first.notify, true, code);
       assert.equal(
         codexIssueNotice({ event: 'failure', code, changed: false }).notify,

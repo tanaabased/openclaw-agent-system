@@ -278,7 +278,7 @@ describe('scripts/github-notification-model-scenarios', () => {
           content: scenario.systemPromptSignals.join('\n'),
           role: 'system',
         },
-        { content: userPromptSignals.join('\n'), role: 'user' },
+        { content: '> ## 📥 Issue assigned\n>\n> ' + userPromptSignals.join('\n> '), role: 'user' },
       ],
       model: 'gpt-5.5',
       tools: [
@@ -291,6 +291,10 @@ describe('scripts/github-notification-model-scenarios', () => {
     };
 
     assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+    const quoted = request.messages[1]!.content;
+    request.messages[1]!.content = userPromptSignals.join('\n');
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
+    request.messages[1]!.content = quoted;
     assert.deepEqual(scenario.toolCalls, [
       {
         id: githubNotificationAssignmentCallId,
@@ -311,7 +315,11 @@ describe('scripts/github-notification-model-scenarios', () => {
     const request: ChatCompletionRequest = {
       messages: [
         { content: scenario.systemPromptSignals.join('\n'), role: 'system' },
-        { content: scenario.userPromptSignals?.join('\n') ?? '', role: 'user' },
+        {
+          content:
+            '> ## 📥 Issue assigned\n>\n> ' + (scenario.userPromptSignals?.join('\n> ') ?? ''),
+          role: 'user',
+        },
       ],
       model: 'gpt-5.5',
       tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
@@ -330,7 +338,8 @@ describe('scripts/github-notification-model-scenarios', () => {
     request.tools = [{ function: { name: 'agent_system_github_reply' }, type: 'function' }];
     request.messages[1]!.content = 'unrelated issue';
     assert.equal(matchFixture([...scenario.fixtures], request), null);
-    request.messages[1]!.content = scenario.userPromptSignals?.join('\n') ?? '';
+    request.messages[1]!.content =
+      '> ## 📥 Issue assigned\n>\n> ' + (scenario.userPromptSignals?.join('\n> ') ?? '');
     request.messages.push({ role: 'tool', tool_call_id: 'unrelated', content: '{"ok":true}' });
     assert.equal(matchFixture([...scenario.fixtures], request), null);
     request.messages[2]!.tool_call_id = `${githubNotificationAssignmentCallId}_fc-observed_123`;
@@ -352,7 +361,11 @@ describe('scripts/github-notification-model-scenarios', () => {
       const request: ChatCompletionRequest = {
         messages: [
           { content: scenario.systemPromptSignals.join('\n'), role: 'system' },
-          { content: scenario.userPromptSignals?.join('\n') ?? '', role: 'user' },
+          {
+            content:
+              '> ## 📥 Issue assigned\n>\n> ' + (scenario.userPromptSignals?.join('\n> ') ?? ''),
+            role: 'user',
+          },
           {
             content: JSON.stringify({
               groups: entry.names.map((name, position) => ({ name, position })),
@@ -399,7 +412,11 @@ describe('scripts/github-notification-model-scenarios', () => {
     const request: ChatCompletionRequest = {
       messages: [
         { content: scenario.systemPromptSignals.join('\n'), role: 'system' },
-        { content: scenario.userPromptSignals?.join('\n') ?? '', role: 'user' },
+        {
+          content:
+            '> ## 📥 Issue assigned\n>\n> ' + (scenario.userPromptSignals?.join('\n> ') ?? ''),
+          role: 'user',
+        },
       ],
       model: 'gpt-5.5',
       tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
@@ -476,6 +493,7 @@ describe('scripts/github-notification-model-scenarios', () => {
           ].join('\n\n'),
           role: 'system',
         },
+        { role: 'user', content: '> ## 📥 Issue assigned\n>\n> Assigned fixture.' },
       ],
       model: 'gpt-5.5',
       tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
@@ -536,6 +554,7 @@ describe('scripts/github-notification-model-scenarios', () => {
             ].join('\n'),
             role: 'system',
           },
+          { role: 'user', content: '> ## 🛠️ Implementation started\n>\n> Implement fixture.' },
         ],
         model: 'gpt-5.5',
         tools: [
@@ -607,6 +626,7 @@ describe('scripts/github-notification-model-scenarios', () => {
             ].join('\n'),
             role: 'system',
           },
+          { role: 'user', content: '> ## 🔀 Pull request opened\n>\n> Linked delivery.' },
         ],
         model: 'gpt-5.5',
       };

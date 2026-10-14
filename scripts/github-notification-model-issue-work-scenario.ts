@@ -210,6 +210,7 @@ export default function createGitHubNotificationIssueWorkScenario(
         hasToolResult: false,
         model: /^(?:aimock\/)?gpt-5\.5$/u,
         systemMessage: [...assignmentPromptSignals],
+        predicate: (request) => requestText(request).includes('> ## 📥 Issue assigned\n>\n>'),
         toolName: 'agent_system_github_reply',
       },
       response: {
@@ -240,7 +241,8 @@ export default function createGitHubNotificationIssueWorkScenario(
       match: {
         model: /^(?:aimock\/)?gpt-5\.5$/u,
         predicate: (request) =>
-          !hasGitHubNotificationModelToolResult(request.messages, options.callIds.issue),
+          !hasGitHubNotificationModelToolResult(request.messages, options.callIds.issue) &&
+          requestText(request).includes('> ## 🛠️ Implementation started\n>\n>'),
         systemMessage: [...implementationPromptSignals],
         toolName: 'agent_system_github',
       },
@@ -295,6 +297,7 @@ export default function createGitHubNotificationIssueWorkScenario(
       match: {
         model: /^(?:aimock\/)?gpt-5\.5$/u,
         systemMessage: [...pullRequestOpenedPromptSignals],
+        predicate: (request) => requestText(request).includes('> ## 🔀 Pull request opened\n>\n>'),
       },
       response: {
         content: githubNotificationPullRequestOpenedFinalResponse,
