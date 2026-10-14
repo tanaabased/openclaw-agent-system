@@ -1,3 +1,4 @@
+import sessionDispatchRequirements from '../agent/session-dispatch-requirements.ts';
 import type AgentSystemToolRegistry from './registry.ts';
 import type { AgentToolAccessGrants } from './plan-access.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -13,7 +14,15 @@ export default function createAgentToolAccessGrants(
 ): AgentToolAccessGrants {
   const githubToolNames = manifest.github === undefined ? [] : openClawGitHubToolNames;
   return {
-    desired: [...registry.configuredToolNames(manifest), ...githubToolNames],
+    desired: [
+      ...registry
+        .configuredToolNames(manifest)
+        .filter(
+          (name) =>
+            name !== 'agent_system_dispatch' || sessionDispatchRequirements(manifest).length > 0,
+        ),
+      ...githubToolNames,
+    ],
     owned: [...registry.allToolNames(), ...openClawGitHubToolNames],
   };
 }

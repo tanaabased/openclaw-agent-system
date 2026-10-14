@@ -8,6 +8,59 @@ import { githubNotificationChannelId } from '../channels/github/routing/routing.
 import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 describe('channels/github/conversation/prompt-guidance', () => {
+  it('should not select stale legacy turns or attest prompts for a v2 manifest', async () => {
+    const context = {
+      agentId: 'data',
+      messageProvider: githubNotificationChannelId,
+      sessionKey: 'agent:data:agent-system-github:data:direct:github:issue:r_repo:12',
+    };
+    const notifications = {
+      schemaVersion: 2 as const,
+      runtimes: ['openclaw' as const],
+      intervalMinutes: 5,
+      maxConcurrentItems: 1,
+      allowedRepositoryOwners: [{ login: 'example', nodeId: 'O_example' }],
+    };
+    const staleTurn = {
+      agentId: 'data',
+      conversationId: 'github:issue:R_repo:12',
+      sourceId: 'old-assignment',
+      identity: { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' } as const,
+    };
+    let selections = 0;
+    const dependencies = {
+      turnSelector: {
+        async select() {
+          selections++;
+          return staleTurn;
+        },
+      },
+      candidates: {
+        async assertPromptSelected() {
+          assert.fail('v2 must not require a v1 prompt receipt');
+        },
+        async attestPromptSelection() {
+          assert.fail('v2 must not write a v1 prompt receipt');
+        },
+      },
+      turnContracts: createGitHubNotificationTurnContractResolver(),
+      logger: {
+        warn() {
+          assert.fail('v2 must not emit legacy lifecycle failures');
+        },
+      },
+    };
+    assert.equal(
+      await githubNotificationPromptGuidance(context, dependencies, notifications),
+      undefined,
+    );
+    assert.equal(
+      await githubNotificationBeforeRun(context, dependencies, notifications),
+      undefined,
+    );
+    assert.equal(selections, 0);
+  });
+
   it('should block unattested github turns before model execution', async () => {
     const selected = {
       agentId: 'data',

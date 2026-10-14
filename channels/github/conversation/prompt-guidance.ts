@@ -2,6 +2,7 @@ import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 
 import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
 import type { Logger } from '../../../core/logger.ts';
+import type { GitHubNotificationsDeclaration } from '../config-schema.ts';
 import type GitHubNotificationReplyCandidateStore from '../publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
@@ -33,8 +34,9 @@ function isGitHubNotificationContext(context: AgentSystemHookContext): boolean {
 export default async function githubNotificationPromptGuidance(
   context: AgentSystemHookContext,
   dependencies: GitHubNotificationPromptGuidanceDependencies,
+  notifications?: GitHubNotificationsDeclaration,
 ): Promise<string | undefined> {
-  if (!isGitHubNotificationContext(context)) return undefined;
+  if (notifications?.schemaVersion === 2 || !isGitHubNotificationContext(context)) return undefined;
   const selected = await dependencies.turnSelector.select(context);
   if (selected === undefined) {
     dependencies.logger.warn(
@@ -71,8 +73,9 @@ export async function githubNotificationBeforeRun(
     turnSelector: Pick<GitHubNotificationTurnSelector, 'select'>;
     logger: Pick<Logger, 'warn'>;
   },
+  notifications?: GitHubNotificationsDeclaration,
 ) {
-  if (!isGitHubNotificationContext(context)) return undefined;
+  if (notifications?.schemaVersion === 2 || !isGitHubNotificationContext(context)) return undefined;
   let code = 'github-notification-model-turn-unresolved';
   try {
     const selected = await dependencies.turnSelector.select(context);

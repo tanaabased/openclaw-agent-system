@@ -259,6 +259,14 @@ openclaw agent-system automations sync --json | tee "$TMPDIR/automation-threads-
 openclaw gateway call sessions.list --params '{"agentId":"automation-tanaabot","archived":"all"}' --json | jq -e '[.sessions[] | select(.displayName == "Project activity")] | length == 2'
 touch threads-ready
 
+# should preserve prompt job identity across installed launcher paths
+set -euo pipefail
+cd "$TMPDIR/automation-agent"
+ln -s "$(command -v openclaw)" "$TMPDIR/automation-alternate-openclaw"
+"$TMPDIR/automation-alternate-openclaw" agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+"$TMPDIR/automation-alternate-openclaw" agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}]' > launcher-after.json
+jq -S '[.jobs[] | {id, nativeId, routing}]' threads-before.json | diff - launcher-after.json
+
 # should preserve persistent routing through a gateway restart
 set -euo pipefail
 cd "$TMPDIR/automation-agent"

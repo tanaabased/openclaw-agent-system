@@ -452,7 +452,8 @@ intake, and assessment dispatch are implemented. Authorized Install reconciles t
 owned schedule. Work mode continues actionable assessments through implementation
 and managed PR delivery; Plan mode stops after assessment. Explicitly authorized
 manual delivery remains available after implementation handoff. Review requests,
-feedback, Auto-mode execution, and unattended OpenClaw v2 assessment rollout remain unavailable.
+feedback and Auto-mode execution remain unavailable. OpenClaw v2 supports the
+default assessment skill in Plan mode; broader workflow rollout remains separate.
 An unavailable OpenClaw notification
 adapter produces a validation warning and a skipped install outcome; other
 components remain usable. Doctor reports notifications as blocked, and execution
@@ -465,9 +466,21 @@ automation from enabled v2 policy. It uses the existing automation reconciler,
 Codex/V2 admission schema in separate OpenClaw state; it never uses legacy
 notification files or stores assessment/session status. The separate plan-mode
 dispatch adapter retains routing and native receipts in its own journal. It uses
-a setup-only issue chat, verifies selected model and effort, then starts assessment
-in a separate turn in that same chat. Results and revisions use the shared
-assessment contract. Uncertain native effects are retained, never repeated.
+the retained credential to create one empty ordinary issue session in the managed
+worktree, then verifies its identity, selected model and effort, and empty/idle state.
+The coordinator then starts one journaled assessment turn. The issue session uses
+`agent_system_dispatch` actions `context` and `result` to verify its binding and
+retain a complete plan, clarification, or setup blocker through the shared assessment
+contract. Later answers refresh context and revise the retained result in the same
+session. Replacement assessment skills and implementation handoff are not supported
+in OpenClaw. Uncertain creation or send effects are retained, never repeated.
+For blocked creation confirmation, inspect with `agent_system_dispatch` action
+`inspect` (no `id`), then request action `reconcile` with the saved receipt `id`
+in the existing `ISSUE ASSIGNMENTS` coordinator. Reconciliation reads back the
+original session and attempted turn; it does not create a replacement or resend.
+Ordinary polling recovers accepted/consumed turns missing delivery evidence, but
+skips other blockers. A missing structured result requires continuation in the
+owning issue chat. `retry` cannot reset an already prepared creation request.
 The scheduled conversation uses its owning agent's existing tool access without
 an intake-specific narrowing. Automation inspection detects stale allowances;
 installation reconciles them through the existing automation lifecycle.

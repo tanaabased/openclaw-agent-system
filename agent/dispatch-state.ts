@@ -22,6 +22,7 @@ export const dispatchRecordProperties = {
   phase: Type.Union([
     Type.Literal('routing'),
     Type.Literal('creating'),
+    Type.Literal('created'),
     Type.Literal('assessing'),
     Type.Literal('complete'),
     Type.Literal('blocked'),
@@ -186,6 +187,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         (r) =>
           (r.request && (!r.context || !r.routing || !r.routingNote)) ||
           (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
+          (r.phase === 'created' &&
+            (this.contract.runtime !== 'openclaw' || !r.request || !r.threadId || !r.effective)) ||
           (r.phase === 'complete' && !r.result) ||
           (r.handoff && (!r.request || !r.threadId || !r.worktree)),
       ) ||

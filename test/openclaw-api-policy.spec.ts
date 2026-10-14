@@ -27,6 +27,7 @@ const supportedPluginSdkSubpaths = new Set([
   'cli-argv',
   'command-auth',
   'config-contracts',
+  'device-bootstrap',
   'error-runtime',
   'gateway-runtime',
   'logging-core',
@@ -136,6 +137,7 @@ function openClawImportFailures(source: string, file: string): OpenClawImportFai
 describe('openclaw api policy', () => {
   it('should detect deprecated, private, unknown, dynamic, and re-exported imports', () => {
     const source = [
+      "import { issueDeviceBootstrapToken, listDevicePairing, revokeDeviceBootstrapToken } from 'openclaw/plugin-sdk/device-bootstrap';",
       "import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';",
       "export { acquireFileLock } from 'openclaw/plugin-sdk/file-lock';",
       "export * from 'openclaw/plugin-sdk/config-types';",
@@ -156,6 +158,7 @@ describe('openclaw api policy', () => {
 
   it('should accept reviewed focused public imports', () => {
     const source = [
+      "import { issueDeviceBootstrapToken, listDevicePairing, revokeDeviceBootstrapToken } from 'openclaw/plugin-sdk/device-bootstrap';",
       "import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';",
       "import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';",
       "import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';",

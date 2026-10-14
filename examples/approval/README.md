@@ -2,6 +2,8 @@
 
 This scenario runs the prepared Agent System package in the default Gateway with one native OpenClaw agent and one Codex agent. It exercises the authenticated Control UI protocol and installed approval router, proving that denial prevents lifecycle effects, approved Doctor runs checks without applying setup, and Allow once permits exactly one installation. Calls explicitly request the ten-minute tool budget. Unit tests own the exhaustive lifecycle tool and decision matrix; the live model is used only for installed native tool discovery, including Codex dynamic tools. This scenario tests the OpenClaw [development target](../../README.md#version-compatibility).
 
+Both agent workspaces must remain distinct from the Gateway default and from each other. This catches tool substitution that separates lifecycle execution from its approval hook state.
+
 ## Setup
 
 ```bash
@@ -23,6 +25,10 @@ openclaw config set 'agents.entries.approval-codex.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.approval-codex.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
 openclaw config set 'agents.entries.approval-openclaw.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.approval-openclaw.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"openclaw\"}}}" --strict-json
+
+# should retain separate gateway and agent workspaces for approval ownership
+openclaw config set agents.defaults.workspace "$TMPDIR/main"
+openclaw config get agents --json | jq -e '.defaults.workspace as $gateway | .entries["approval-codex"].workspace as $codex | .entries["approval-openclaw"].workspace as $native | ($gateway | type == "string") and ($codex | type == "string") and ($native | type == "string") and $codex != $gateway and $native != $gateway and $codex != $native'
 
 # should start the default gateway as a supervised background process
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start

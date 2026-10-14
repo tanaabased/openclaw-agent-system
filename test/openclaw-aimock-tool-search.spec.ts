@@ -173,7 +173,7 @@ describe('scripts/aimock-tool-search', () => {
     append(
       input,
       (await reply(scenario, input)).response,
-      searchResult(['agent_system_model_routing']),
+      searchResult(['agent_system_model_routing', 'agent_system_dispatch']),
     );
     const inspect = (await reply(scenario, input)).response;
     append(input, inspect, {
@@ -204,6 +204,26 @@ describe('scripts/aimock-tool-search', () => {
               reason: 'No defensible tier.',
               selection: { model: 'aimock/gpt-5.5', effort: 'medium' },
               application: 'not-requested',
+            }),
+          },
+        ],
+      },
+    });
+    const dispatch = (await reply(scenario, input)).response;
+    assert.ok('toolCalls' in dispatch && dispatch.toolCalls?.length === 1);
+    assert.deepEqual(JSON.parse(dispatch.toolCalls[0]!.arguments), {
+      id: 'openclaw:agent_system_dispatch',
+      args: { action: 'next' },
+    });
+    append(input, dispatch, {
+      tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'blocked',
+              code: 'dispatch-intake-activation-required',
             }),
           },
         ],

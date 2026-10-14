@@ -883,6 +883,29 @@ describe('agent/automation-service', () => {
     assert.ok(findings.some(({ code }) => code === 'automation-delivery-failed'));
     assert.ok(!JSON.stringify(findings).includes('secret'));
   });
+  it('should reuse installed prompt jobs from a different gateway launcher context', async () => {
+    manifest.automations = jobs([
+      { id: 'prompt', schedule: 'every 1 hour', prompt: 'Review the repo.' },
+    ]);
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const installed = await store.read();
+    const gateway = new AutomationService({
+      ...service.dependencies,
+      command: ['/opt/node/bin/node', '/opt/openclaw/dist/index.js'],
+      environment: {},
+    });
+    calls = [];
+    assert.ok(
+      (await gateway.inspect(manifest, root)).some(({ code }) => code === 'automation-healthy'),
+    );
+    assert.equal((await gateway.run(manifest, root, 'prompt')).status, 'queued');
+    const result = await gateway.reconcile(manifest, root);
+    assert.ok(result.outcomes.every(({ status }) => status === 'unchanged'));
+    assert.equal(mutations().length, 0);
+    assert.deepEqual(await store.read(), installed);
+    assert.equal(native.length, 1);
+  });
   it('should project isolated owning-agent prompts and clear removed model overrides', async () => {
     manifest.automations = jobs([
       {
