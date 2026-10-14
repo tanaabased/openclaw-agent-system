@@ -233,6 +233,8 @@ turn. After explicit human approval, an operator chat may preview
 `feedbackRuntime` with `{"action":"publish-approved","id":"...","eventId":"..."}`
 and apply its returned `digest`. This retries only the exact retained reply,
 rechecks its source and permissions, and reconciles any uncertain provider write.
+Later follow-ups do not invalidate the retained reply; recovery verifies its original
+completed feedback turn and waits if the owning chat is active.
 Independent reviewer feedback still requires the reviewer intake adapter. Discovery
 and retained queues are bounded: incomplete provider reads or a full journal stop
 new feedback admission with a diagnostic; they do not silently discard comments.

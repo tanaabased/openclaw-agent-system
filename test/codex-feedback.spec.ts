@@ -36,6 +36,7 @@ describe('agent/codex-feedback', () => {
     creates: number,
     published: string | undefined;
   let receiptStatus: 'verified' | 'blocked' | 'uncertain';
+  let receiptTurn: string | undefined;
   const call = (action: string, input = {}, child = false) =>
     runCodexFeedback(
       pluginData,
@@ -43,6 +44,7 @@ describe('agent/codex-feedback', () => {
       { ...deps, threadId: child ? 'child' : 'intake' },
     );
   beforeEach(async () => {
+    receiptTurn = undefined;
     root = await realpath(await mkdtemp(join(tmpdir(), 'codex-feedback-')));
     const workspace = join(root, 'workspace'),
       codexHome = join(root, 'codex'),
@@ -181,15 +183,21 @@ describe('agent/codex-feedback', () => {
           effort: 'high',
           status: 'idle',
           turnStatus: sent && !ended ? 'inProgress' : 'completed',
+          turnEnded: !sent || ended,
           turnId: turn,
         }),
       } as unknown as NonNullable<CodexFeedbackDependencies['native']>,
       continuationNative: async () =>
         receiptStatus === 'blocked'
-          ? { status: 'blocked', code: 'continuation-native-approval-denied' }
+          ? {
+              status: 'blocked',
+              code: 'continuation-native-approval-denied',
+              turnId: receiptTurn ?? turn,
+              ended,
+            }
           : !sent || receiptStatus === 'uncertain'
             ? { status: 'uncertain' }
-            : { status: 'verified', turnId: turn, ended },
+            : { status: 'verified', turnId: receiptTurn ?? turn, ended },
       git: async (_cwd, args) =>
         args[0] === 'remote' ? 'https://github.com/owner/repo.git' : commonDir,
       feedbackConnect: async () =>
@@ -483,7 +491,11 @@ describe('agent/codex-feedback', () => {
             completed.presentation.indexOf('Published reply'),
         );
       }
-      assert.ok(completed.presentation.includes('> ## 📤 To GitHub'));
+      assert.ok(
+        completed.presentation.includes(
+          '> ## 📤 To [@contributor](https://github.com/contributor)',
+        ),
+      );
       assert.ok(!published!.includes('Use concise phrasing.'));
       assert.ok(!published!.includes('custom:latin'));
       assert.ok(!published!.includes('Private English'));
@@ -675,6 +687,18 @@ describe('agent/codex-feedback', () => {
       state.records[0]!.phase = 'complete';
       await save();
     });
+    const find = deps.native!.find;
+    deps.native!.find = async (input) => ({
+      ...(await find(input))!,
+      status: 'notLoaded',
+      turnStatus: 'interrupted',
+      turnEnded: false,
+    });
+    assert.equal((await call('next')).status, 'idle');
+    const queued = (await store.read())!.records[0]!.feedback!.events[0]!;
+    assert.equal(queued.phase, 'queued');
+    assert.equal(queued.attempt, undefined);
+    deps.native!.find = find;
     assert.equal((await call('next')).status, 'feedback-prepared');
   });
   it('should preserve a concurrent publication receipt and exclude its reply on the next scan', async () => {
@@ -906,6 +930,9 @@ describe('agent/codex-feedback', () => {
     );
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
+    receiptTurn = turn;
+    turn = 'later-human-followup';
+    receiptStatus = 'blocked';
     const operator = (digest?: string) =>
       runCodexFeedback(
         pluginData,
@@ -913,6 +940,33 @@ describe('agent/codex-feedback', () => {
         { ...deps, threadId: 'operator' },
       );
     assert.equal((await call('publish-approved', ref)).status, 'blocked');
+    for (const state of ['uncertain', 'unfinished', 'different-turn'] as const) {
+      receiptStatus = state === 'uncertain' ? 'uncertain' : 'blocked';
+      ended = state !== 'unfinished';
+      receiptTurn = state === 'different-turn' ? 'unrelated' : 'feedback';
+      const rejected = await operator();
+      assert.equal(
+        'code' in rejected && rejected.code,
+        'feedback-publication-recovery-unavailable',
+      );
+      assert.equal(creates, 0);
+    }
+    receiptStatus = 'blocked';
+    receiptTurn = 'feedback';
+    ended = true;
+    const find = deps.native!.find;
+    for (const status of ['active', 'notLoaded']) {
+      deps.native!.find = async (input) => ({
+        ...(await find(input))!,
+        status,
+        turnStatus: 'interrupted',
+        turnEnded: false,
+      });
+      const busy = await operator();
+      assert.equal('code' in busy && busy.code, 'feedback-publication-recovery-unavailable');
+      assert.equal(creates, 0);
+    }
+    deps.native!.find = find;
     const preview = await operator();
     assert.equal(preview.status, 'publication-approval-required');
     assert.ok('digest' in preview && preview.digest);

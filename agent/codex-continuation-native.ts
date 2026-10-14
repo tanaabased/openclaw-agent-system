@@ -52,7 +52,8 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
       escaped(attempt.request.prompt) +
       '</input>\n</codex_delegation>';
     const candidates = target
-      .slice(before + 1)
+      // native sends can arrive as steering inside the turn observed before dispatch.
+      .slice(before)
       .filter(
         (entry) =>
           Array.isArray(entry.items) &&
@@ -63,7 +64,8 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
                 item.namespace === 'codex_app' &&
                 item.name === 'send_message_to_thread' &&
                 item.output === envelope) ||
-                (call.status === 'completed' &&
+                (entry.id !== attempt.beforeTurnId &&
+                  call.status === 'completed' &&
                   item.type === 'userMessage' &&
                   Array.isArray(item.content) &&
                   item.content.length === 1 &&
@@ -76,7 +78,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
     const found = candidates[0];
     if (!found) return { status: 'uncertain' as const };
     if (typeof found.id !== 'string') throw new Error('continuation-turn-invalid');
-    if (
+    const approvalDenied =
       Array.isArray(found.items) &&
       found.items.some((item) => {
         if (!nativeObject(item)) return false;
@@ -98,15 +100,20 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
               'Do not bypass this rejection through a workaround or indirect execution.',
             ))
         );
-      })
-    )
-      return { status: 'blocked' as const, code: 'continuation-native-approval-denied' };
+      });
     // a separate app-server can report an active turn as interrupted without an end timestamp.
     const ended =
       ['completed', 'failed', 'interrupted'].includes(String(found.status)) &&
       typeof found.completedAt === 'number' &&
       Number.isFinite(found.completedAt) &&
       found.completedAt > 0;
+    if (approvalDenied)
+      return {
+        status: 'blocked' as const,
+        code: 'continuation-native-approval-denied',
+        turnId: found.id,
+        ended,
+      };
     return { status: 'verified' as const, turnId: found.id, ended };
   };
 }

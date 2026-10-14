@@ -1,13 +1,30 @@
 import assert from 'node:assert/strict';
 
 import workflowInstructions from '../channels/github/conversation/presentation/workflow-instructions.ts';
-import feedbackResponse from '../channels/github/conversation/presentation/feedback-response.ts';
+import feedbackResponse, {
+  feedbackReplyPresentation,
+} from '../channels/github/conversation/presentation/feedback-response.ts';
 
 const selection = {
   defaultSkill: false,
   skill: { name: 'piroplugin:piro-feedback-reply', path: '/skills/latin reply/SKILL.md' },
 };
 describe('channels/github/conversation/presentation/workflow-instructions', () => {
+  it('should quote the verified reply recipient and every multiline body line', () => {
+    const body = '@contributor\r\n\r\nFirst paragraph.\n\n- Item\n\n> Nested quote';
+    const card = feedbackReplyPresentation('contributor', body);
+    assert.ok(card.startsWith('> ## 📤 To [@contributor](https://github.com/contributor)'));
+    assert.ok(card.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(card.includes('> First paragraph.\n>\n> - Item\n>\n> > Nested quote'));
+    const response = feedbackResponse({
+      privateText: 'First private paragraph.\n\nSecond private paragraph.',
+      publicReply: { recipient: 'contributor', text: body },
+    });
+    assert.ok(
+      response.startsWith('## Response\n\nFirst private paragraph.\n\nSecond private paragraph.'),
+    );
+    assert.ok(response.endsWith(card));
+  });
   it('should hide instructions unless debug is enabled and link retained sources', () => {
     assert.equal(
       workflowInstructions('Assessment', { ...selection, defaultSkill: true }),
@@ -53,7 +70,7 @@ describe('channels/github/conversation/presentation/workflow-instructions', () =
     for (const debug of [undefined, false]) {
       const output = feedbackResponse({
         privateText: 'Private answer.',
-        publicText: 'Public answer.',
+        publicReply: { recipient: 'contributor', text: 'Public answer.' },
         debug,
         selection: { ...selection, guidance: { source: 'inline', content: 'Hidden guidance.' } },
         publication: { withheld: 'approval-denied' },
@@ -72,14 +89,16 @@ describe('channels/github/conversation/presentation/workflow-instructions', () =
   it('should place reply instructions after the public reply and its outcome', () => {
     const output = feedbackResponse({
       privateText: 'Private English answer.',
-      publicText: 'Ita.',
+      publicReply: { recipient: 'contributor', text: 'Ita.' },
       selection,
       debug: true,
       publication: { url: 'https://github.com/owner/repo/issues/1#issuecomment-2' },
     });
     assert.ok(output.indexOf('Feedback reply instructions') > output.indexOf('Published reply'));
     assert.ok(output.includes('Private English answer.'));
-    assert.ok(output.includes('> ## 📤 To GitHub\n>\n> Ita.'));
+    assert.ok(
+      output.includes('> ## 📤 To [@contributor](https://github.com/contributor)\n>\n> Ita.'),
+    );
     const withheld = feedbackResponse({
       privateText: 'Private.',
       selection,

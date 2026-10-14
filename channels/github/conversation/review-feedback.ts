@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
+import { githubNotificationMarkdownText, githubNotificationQuote } from './presentation/card.ts';
 import {
   admitGitHubComment,
   type GitHubCanonicalIssueComment,
@@ -226,8 +227,9 @@ export function reviewFeedbackContext(comment: GitHubReviewFeedback) {
 export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): string {
   const { review, receipt } = comment.feedback;
   const context = reviewFeedbackContext(comment);
+  const sourceUrl = receipt.kind === 'review' ? review.url : context.findings[0]!.url;
   const lines = [
-    `Review feedback from @${comment.author!.login}: ${receipt.kind === 'review' ? review.url : context.findings[0]!.url}`,
+    `## 💬 From [@${githubNotificationMarkdownText(comment.author!.login)}](https://github.com/${encodeURIComponent(comment.author!.login)})`,
   ];
   if (receipt.kind === 'review')
     lines.push(
@@ -235,8 +237,9 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
     );
   for (const finding of context.findings) {
     lines.push(
-      `Finding ${finding.url}\nPath: ${JSON.stringify(finding.path)}; reviewed commit: ${finding.originalCommitId}; current line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n${finding.body}`,
+      `[Finding ↗](${finding.url})\nPath: ${githubNotificationMarkdownText(JSON.stringify(finding.path))}; reviewed commit: ${finding.originalCommitId}; current line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n\n${finding.body}`,
     );
   }
-  return lines.join('\n\n');
+  lines.push(`[View ${receipt.kind === 'review' ? 'review' : 'comment'} ↗](${sourceUrl})`);
+  return githubNotificationQuote(lines.join('\n\n'));
 }

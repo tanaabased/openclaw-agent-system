@@ -36,6 +36,13 @@ export function githubNotificationMarkdownText(value: string): string {
     .replace(/[\\[\]`*_]/gu, '\\$&');
 }
 
+export function githubNotificationQuote(text: string): string {
+  return text
+    .split(/\r\n|\r|\n/u)
+    .map((line) => (line ? `> ${line}` : '>'))
+    .join('\n');
+}
+
 /** Render the shared title and compact fact-list grammar. */
 export default function githubNotificationCard(input: GitHubNotificationCardInput): string {
   const card = [`## ${oneLine(input.emoji, 'emoji')} ${oneLine(input.title, 'title')}`, ''];

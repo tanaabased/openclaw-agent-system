@@ -14,7 +14,9 @@ import connectCodexFeedback from './codex-feedback-client.ts';
 import redactCodexFeedback from './codex-feedback-redaction.ts';
 import { scanCodexFeedback, applyFeedbackScans } from './codex-feedback-scan.ts';
 import selectFeedbackStage from './feedback-stage.ts';
-import feedbackResponse from '../channels/github/conversation/presentation/feedback-response.ts';
+import feedbackResponse, {
+  feedbackReplyPresentation,
+} from '../channels/github/conversation/presentation/feedback-response.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 import { admitCodexFeedback, feedbackRevision } from './codex-feedback-source.ts';
 import { feedbackResultSchema } from './codex-feedback-state.ts';
@@ -337,12 +339,25 @@ export default async function runCodexFeedback(
             throw new Error('feedback-publication-interrupted');
           if (operatorPublication) {
             if (selfFeedback) throw new Error('feedback-self-publication-denied');
-            const retainedTurn = event.attempt?.turnId ?? event.previousTurnIds?.at(-1);
+            const retainedTurn = event.attempt?.turnId;
+            const receipt = event.attempt
+              ? await receiptFor(record.sourceThreadId, event.attempt)
+              : undefined;
             if (
               !event.result?.publicText ||
               !retainedTurn ||
-              found.turnId !== retainedTurn ||
-              found.turnStatus !== 'completed'
+              !receipt ||
+              (receipt.status !== 'verified' &&
+                !(
+                  receipt.status === 'blocked' &&
+                  receipt.code === 'continuation-native-approval-denied'
+                )) ||
+              !('turnId' in receipt) ||
+              receipt.turnId !== retainedTurn ||
+              !('ended' in receipt) ||
+              !receipt.ended ||
+              !['idle', 'notLoaded'].includes(found.status) ||
+              found.turnEnded !== true
             )
               throw new Error('feedback-publication-recovery-unavailable');
           } else if (event.attempt) {
@@ -375,7 +390,7 @@ export default async function runCodexFeedback(
               codexItemOccupied(record) ||
               !codexCapacity(state.records, policy.maxConcurrentItems).available ||
               !['idle', 'notLoaded'].includes(found.status) ||
-              !['completed', 'failed', 'interrupted'].includes(found.turnStatus ?? '')
+              found.turnEnded !== true
             )
               continue;
             const id = automationHash([event.id, occurrence!.id, found.turnId]);
@@ -560,6 +575,7 @@ export default async function runCodexFeedback(
               isReviewFeedback(source) && source.feedback.receipt.kind === 'review-comment'
                 ? source.feedback.comments[0]?.replyToId
                 : undefined;
+            const destination = `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}${root ? `#discussion_r${root}` : ''}`;
             if (input.digest === undefined)
               return {
                 status: operatorPublication ? 'publication-approval-required' : 'publication-ready',
@@ -567,11 +583,14 @@ export default async function runCodexFeedback(
                 eventId: event.id,
                 digest,
                 body,
-                destination: `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}${root ? `#discussion_r${root}` : ''}`,
+                destination,
+                presentation:
+                  feedbackReplyPresentation(source.author!.login, body) +
+                  `\n\n[Reply destination ↗](${destination})`,
                 authority: schedule.saved,
                 instruction: operatorPublication
                   ? 'Only apply this digest after explicit human approval of this exact retained reply and destination. This operator recovery never resumes a model or changes the draft.'
-                  : 'This preview makes no GitHub write. Show this exact destination and attributed public draft when requesting native execution approval. The freshly reconciled operator-activated feedback workflow authorizes a routine reply within this scope; call publish with this digest. Native approval review still applies: stop on denial and never substitute another route.',
+                  : 'This preview makes no GitHub write. Reproduce its presentation verbatim, including the quoted title and every quoted body line, when requesting native execution approval. The freshly reconciled operator-activated feedback workflow authorizes a routine reply within this scope; call publish with this digest. Native approval review still applies: stop on denial and never substitute another route.',
               };
             if (input.digest !== digest) throw new Error('feedback-publication-approval-stale');
             if (operatorPublication) {
@@ -649,7 +668,7 @@ export default async function runCodexFeedback(
                   ]?.path ?? current.manifestPath,
                 workspace: current.workspace,
                 privateText: event.result.privateText,
-                publicText: body,
+                publicReply: { recipient: source.author!.login, text: body },
                 publication: {
                   url: `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#${root ? 'discussion_r' : 'issuecomment-'}${event.receipt!.databaseId}`,
                 },

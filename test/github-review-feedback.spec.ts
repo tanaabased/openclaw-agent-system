@@ -6,6 +6,7 @@ import {
   readReviewFeedback,
   reviewFeedback,
   reviewFeedbackContext,
+  reviewFeedbackPresentation,
   reviewFeedbackRevision,
   reviewReplyFeedback,
 } from '../channels/github/conversation/review-feedback.ts';
@@ -26,6 +27,29 @@ const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
 describe('channels/github/conversation/review-feedback', () => {
+  it('should quote complete review and inline cards with exact source links and historical locations', () => {
+    const review = reviewFixture({ body: 'Review summary.\n\n> Quoted context.' });
+    const finding = reviewCommentFixture({
+      body: 'First paragraph.\r\n\r\n- One\r\n- Two\r\n\r\n```ts\r\nrun();\r\n```',
+      line: null,
+      originalLine: 7,
+    });
+    for (const comment of [
+      reviewFeedback(review, [finding]),
+      reviewReplyFeedback(review, { ...finding, replyToId: 70 }),
+    ]) {
+      const card = reviewFeedbackPresentation(comment);
+      assert.ok(card.startsWith(`> ## 💬 From [@${comment.author!.login}]`));
+      assert.ok(card.split('\n').every((line) => line.startsWith('>')));
+      assert.ok(card.includes('> - One\n> - Two'));
+      assert.ok(card.includes('> ```ts\n> run();\n> ```'));
+      assert.ok(card.includes('current line: unavailable or outdated; original line: 7'));
+      assert.ok(card.includes(finding.url));
+      assert.ok(card.includes(finding.originalCommitId));
+      const source = comment.feedback.receipt.kind === 'review' ? review.url : finding.url;
+      assert.ok(card.endsWith(`↗](${source})`));
+    }
+  });
   it('should authorize submitted reviews and replies only through the feedback grant', () => {
     const review = reviewFixture();
     const finding = reviewCommentFixture();

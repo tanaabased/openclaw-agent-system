@@ -105,8 +105,9 @@ separately from this presentation.
 > [View comment on tanaabased/example#7 ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123)
 ```
 
-A review feedback message groups its summary and selected findings under the
-verified reviewer identity and review link. Each finding retains its own permalink,
+A review feedback message uses the same quoted **💬 From @author** card, with
+its title, summary, selected findings, location metadata, and source links all
+inside the quote. It groups findings under the verified reviewer identity and review link. Each finding retains its own permalink,
 body, file path, reviewed commit, and available current or original location. Mark
 an unchanged summary as context. Later inline replies link to their exact source;
 parent text and diff hunks belong in bounded structured context. Never label an
@@ -317,24 +318,26 @@ For manual Codex project registration in issue intake, use **⚠️ Add the proj
 including separate **Project name**, **Folder path**, and **Next step** facts. Distinguish
 the suggested name from the exact required primary folder; retain issue and diagnostic context.
 
-## To GitHub
+## Public Reply
 
 ```markdown
-> ## 📤 To GitHub
+> ## 📤 To [@pirog](https://github.com/pirog)
 >
 > Thanks for flagging this, @pirog. The notification flow now preserves the link.
 ```
 
 Use this component only when a lifecycle turn intentionally separates its
 private report from a typed public candidate. Render the complete GitHub-facing
-text as one Markdown blockquote. Multi-paragraph responses repeat the blockquote
-marker for each paragraph. Address the verified source commenter where it reads
+text as one Markdown blockquote headed **📤 To @recipient**, with the verified
+source commenter linked to their GitHub profile. Quote every line, including
+blank lines, lists, and code fences. Use the same card for the publication preview
+and final response. Address the verified source commenter where it reads
 naturally rather than imposing a fixed mention position.
 
 ## Ordinary Comment Response
 
 Legacy OpenClaw ordinary comments use one concise final answer, without a
-`To GitHub` wrapper or a second model-authored answer. The
+public-reply wrapper or a second model-authored answer. The
 [security and lifecycle](./ADVANCED.md#security-and-lifecycle) reference describes its private/public mirroring.
 
 ## Private and Public Composition
@@ -359,7 +362,7 @@ it when the turn finishes. Keep the source card outside the public reply quote.
 
 <complete private response>
 
-> ## 📤 To GitHub
+> ## 📤 To [@pirog](https://github.com/pirog)
 >
 > <complete GitHub-facing response>
 ```

@@ -1,6 +1,9 @@
 import githubNotificationCommentEventInstructions from '../conversation/prompts/event-comment.ts';
 import githubNotificationResponseInstructions from '../conversation/prompts/response.ts';
-import { githubNotificationMarkdownText } from '../conversation/presentation/card.ts';
+import {
+  githubNotificationMarkdownText,
+  githubNotificationQuote,
+} from '../conversation/presentation/card.ts';
 import type { GitHubNotificationEvent } from './types.ts';
 
 export interface GitHubNotificationCommentEventProjection {
@@ -21,11 +24,7 @@ export function githubNotificationCommentPresentation(
 ): string {
   const heading = `## 💬 From [@${githubNotificationMarkdownText(projection.author.label)}](${projection.author.url})`;
   const footer = `[View comment on ${githubNotificationMarkdownText(projection.item.label)} ↗](${projection.item.url})`;
-  return [heading, '', projection.body, '', footer]
-    .join('\n')
-    .split(/\r\n|\r|\n/u)
-    .map((line) => (line ? `> ${line}` : '>'))
-    .join('\n');
+  return githubNotificationQuote([heading, '', projection.body, '', footer].join('\n'));
 }
 
 /** Describe the currently model-backed comment event. */

@@ -21,6 +21,8 @@ describe('agent/codex-continuation-native', () => {
       call?: boolean;
       status?: string;
       duplicate?: boolean;
+      followUp?: boolean;
+      sameTurn?: boolean;
       prompt?: string;
       sourceTurn?: string;
       forged?: boolean;
@@ -56,10 +58,27 @@ describe('agent/codex-continuation-native', () => {
         ...(options.items ?? []),
       ],
     };
+    const steered = {
+      ...implementation,
+      id: 'assessment',
+      items: [
+        {
+          type: 'functionCallOutput',
+          namespace: 'codex_app',
+          name: 'send_message_to_thread',
+          output:
+            '<codex_delegation>\n  <source_thread_id>source</source_thread_id>\n  <input>' +
+            (options.prompt ?? attempt.request.prompt) +
+            '</input>\n</codex_delegation>',
+        },
+      ],
+    };
     const target = [
-      { id: 'assessment', status: 'completed', items: [] },
-      implementation,
+      ...(options.sameTurn
+        ? [steered]
+        : [{ id: 'assessment', status: 'completed', items: [] }, implementation]),
       ...(options.duplicate ? [{ ...implementation, id: 'duplicate' }] : []),
+      ...(options.followUp ? [{ id: 'followup', status: 'completed', items: [] }] : []),
     ];
     return codexContinuationNative(async (method, params) => {
       if (params.threadId === 'source') {
@@ -81,6 +100,24 @@ describe('agent/codex-continuation-native', () => {
       status: 'verified',
       turnId: 'implementation',
       ended: false,
+    });
+  });
+  it('should reconcile native steering within the observed turn without resending', async () => {
+    assert.deepEqual(await fixture({ sameTurn: true })('source', attempt), {
+      status: 'verified',
+      turnId: 'assessment',
+      ended: false,
+    });
+    assert.deepEqual(
+      await fixture({ sameTurn: true, turnStatus: 'completed', completedAt: 1 })('source', attempt),
+      {
+        status: 'verified',
+        turnId: 'assessment',
+        ended: true,
+      },
+    );
+    assert.deepEqual(await fixture({ sameTurn: true, prompt: 'different' })('source', attempt), {
+      status: 'uncertain',
     });
   });
   it('should accept an explicit local host without relaxing the prepared request', async () => {
@@ -163,11 +200,16 @@ describe('agent/codex-continuation-native', () => {
       },
     ])
       assert.deepEqual(
-        await fixture({ items: [item], turnStatus: 'completed', completedAt: 1 })(
+        await fixture({ items: [item], turnStatus: 'completed', completedAt: 1, followUp: true })(
           'source',
           attempt,
         ),
-        { status: 'blocked', code: 'continuation-native-approval-denied' },
+        {
+          status: 'blocked',
+          code: 'continuation-native-approval-denied',
+          turnId: 'implementation',
+          ended: true,
+        },
       );
   });
 

@@ -93,12 +93,18 @@ using disposable issues and the installed plugin.
   its root review comment, and leave the PR conversation reply count unchanged.
   Repeat polling after publication and after upgrading with retained review groups;
   neither may replay already handled feedback. Check that an ordinary
-  comment uses the shared quoted card: linked author heading, unchanged body and
+  comment and inline review finding use the shared quoted card: linked author heading, unchanged body and
   mentions, and an exact-comment permalink beneath it. Verify multiline Markdown
   stays inside the quote and the response stays outside. Fill the three shared
   slots, queue comments on a busy owner, then verify a released slot admits the
   oldest eligible work without a noisy owner monopolizing the queue. Check verified
-  send counts and quiet repeat polls. Edit a source or revoke its author before
+  send counts and quiet repeat polls. Hold an ordinary desktop turn active while
+  the separate native adapter reports `notLoaded`/`interrupted` without `completedAt`:
+  feedback must remain queued without a send or an additional slot until that turn
+  has a verified completion timestamp. If a native send races with a new turn and
+  arrives as steering, reconcile its exact envelope within that turn; never resend
+  or leave an ended, unanswered delivery occupying capacity indefinitely.
+  Edit a source or revoke its author before
   publication; retain the private answer and withhold the public reply. Interrupt a
   reply after its provider write and reconcile the same receipt without a duplicate.
   Request the intake report while a reply holds the journal: it must wait within
@@ -129,6 +135,9 @@ using disposable issues and the installed plugin.
   An unfinished publication must stay stopped across scheduled polls. After fresh
   human approval, verify the operator preview binds the exact retained draft and
   destination, rejects a stale digest, and reconciles a prior write without duplication.
+  Add a harmless follow-up in the owner chat before recovery: verify the original
+  completed feedback receipt still permits the explicitly approved retry. Unfinished,
+  missing, or mismatched original receipts and an active owner must remain blocked.
   After an ended feedback turn is blocked, verify the next queued comment on that
   owner can start in the same poll when capacity permits, without retrying an
   uncertain send or exceeding the poll budget. Verify the delivery PR card reports
@@ -140,7 +149,7 @@ using disposable issues and the installed plugin.
   resolve to retained sources, and inline guidance links to its manifest source
   while preserving the literal retained text. With debug false or omitted, hide
   all instruction notices while retaining blockers and publication outcomes.
-  Confirm the outgoing quote contains both the “📤 To GitHub” heading and reply.
+  Confirm the outgoing quote contains both the “📤 To @recipient” linked heading and every reply line, including the preview.
   Use a temporary Latin-only replacement reply skill to distinguish an English
   private response from its public candidate, then test guidance separately and
   restore the bundled default after the trial.
