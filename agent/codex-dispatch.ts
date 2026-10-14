@@ -1,3 +1,5 @@
+import runCodexFeedback from './codex-feedback.ts';
+import codexCapacity from './codex-capacity.ts';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -345,6 +347,10 @@ export async function runCodexDispatch(
   deps: CodexDispatchDependencies = {},
 ) {
   validateDispatchRequest(action, input);
+  if (action === 'next') {
+    const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
+    if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
+  }
   const current = await selectCodexIntake(pluginData, deps);
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
@@ -529,7 +535,7 @@ export async function runCodexDispatch(
           intakeStore: current.store,
           now,
           save,
-          slots: codexIntakePolicy(current.manifest, true)?.policy.maxConcurrentItems ?? 2,
+          slots: codexIntakePolicy(current.manifest, true)?.policy.maxConcurrentItems ?? 3,
         });
       if (action === 'next') {
         const scan = await current.store.read();
@@ -600,17 +606,7 @@ export async function runCodexDispatch(
             return fail(pending, error);
           }
         }
-        if (
-          state.records.filter(
-            (record) =>
-              !record.retired &&
-              !record.handoff &&
-              record.request &&
-              (record.phase !== 'complete' ||
-                (record.continuation &&
-                  !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase))),
-          ).length >= (current.policy?.policy.maxConcurrentItems ?? 1)
-        )
+        if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
           return checked('at-capacity');
         const intake = pendingDispatchAssignments(state, admitted).find(
           ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,

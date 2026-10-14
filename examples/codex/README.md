@@ -85,6 +85,54 @@ using disposable issues and the installed plugin.
   only a successfully completed turn may receive the delivery-only continuation.
   A native command, patch, or tool approval denial must also stop continuation,
   even when the surrounding turn completes normally after recording implementation.
+- **Author feedback:** activate inherited assigners plus one pinned contributor. Verify a
+  new issue comment, a submitted review on its delivery PR, and a later inline reply
+  reach the original issue chat with exact source context. Check that an ordinary
+  comment uses the shared quoted card: linked author heading, unchanged body and
+  mentions, and an exact-comment permalink beneath it. Verify multiline Markdown
+  stays inside the quote and the response stays outside. Fill the three shared
+  slots, queue comments on a busy owner, then verify a released slot admits the
+  oldest eligible work without a noisy owner monopolizing the queue. Check verified
+  send counts and quiet repeat polls. Edit a source or revoke its author before
+  publication; retain the private answer and withhold the public reply. Interrupt a
+  reply after its provider write and reconcile the same receipt without a duplicate.
+  Verify same-account feedback stays private even if a public candidate is supplied,
+  and that confirmed runtime replies never become new feedback events.
+  Activate routine public replies once, then process two successive comments from
+  the pinned contributor without per-comment human confirmation. Each publication
+  must expose its exact destination and attributed draft before applying the matching
+  digest through native approval. A changed source, stale digest, or native denial
+  must still stop the write.
+  Verify receipt matching accepts an explicit `hostId: local` on the otherwise
+  unchanged native send, while rejecting another host or changed request fields.
+  Verify a fuller private answer remains visible in the final chat response and
+  the selected reply skill produces a separate concise public quote. Exercise the
+  bundled default, a replacement skill, inline and file guidance, and a missing or
+  changed skill; missing replacements must preserve the private answer and block
+  publication without fallback. Confirm applicable voice skills are read and their
+  style is reflected without inventing facts or hiding blockers. Check actual
+  rendered cards separately from stored Markdown and provider receipts. Confirm
+  the final response starts with the complete incoming card even after progress
+  commentary is collapsed, followed by the private answer and public quote.
+  During slow provider discovery, save a child response and confirm the scan does
+  not block that save or overwrite its result or publication receipt. Preserve
+  lock-loss protections; never delete a lock to make the trial pass.
+  An unfinished publication must stay stopped across scheduled polls. After fresh
+  human approval, verify the operator preview binds the exact retained draft and
+  destination, rejects a stale digest, and reconciles a prior write without duplication.
+  After an ended feedback turn is blocked, verify the next queued comment on that
+  owner can start in the same poll when capacity permits, without retrying an
+  uncertain send or exceeding the poll budget. Verify the delivery PR card reports
+  feedback as active only after saved schedule readback; disabled or unverified
+  intake must not claim active delivery.
+  Check custom skill and guidance notices after model routing for assessment,
+  after the PR card for implementation, and after the public quote and outcome
+  for feedback. Default-only selections stay hidden; custom skill and guidance
+  file links resolve to the retained files, and inline guidance remains literal.
+  Use a temporary Latin-only replacement reply skill to distinguish an English
+  private response from its public candidate, then test guidance separately and
+  restore the bundled default after the trial.
+  Independent reviewer-chat routing requires its separate intake adapter.
 - **Continuation:** explicitly request implementation in the issue and verify its
   handoff preserves the assessment and worktree. Later intake must neither inspect
   that implementation nor prevent another eligible issue from starting.
@@ -208,6 +256,14 @@ root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"next"}' | CODEX_THREAD_ID=fixture-intake node "$runtime" continuation --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
+test ! -d "$CODEX_HOME/automations"
+
+# should reject packaged feedback without a freshly reconciled intake schedule
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(printf '%s\n' '{"action":"next"}' | CODEX_THREAD_ID=fixture-intake node "$runtime" feedback --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
 test ! -d "$CODEX_HOME/automations"
 
@@ -386,6 +442,8 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.binding.context.capabilities == ["agent-system-doctor", "agent-system-install", "agent-system-model-routing", "agent-system-git-cli", "agent-system-github-cli"]'
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.binding.context.modelRouting.medium == {status: "mapped", sourceModel: "openai/gpt-5.6-sol", model: "gpt-5.6-sol", thinking: "high"}'
+printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
+  | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
 printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
 

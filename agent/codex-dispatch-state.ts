@@ -1,5 +1,7 @@
 import { Type, type Static } from 'typebox';
 
+import { codexFeedbackSchema } from './codex-feedback-state.ts';
+
 import { codexContinuationStateSchema } from './codex-continuation-state.ts';
 import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
 import DispatchStore, {
@@ -96,6 +98,7 @@ export const dispatchRecordSchema = Type.Object(
     receiptThreadId: Type.Optional(text),
     delivery: Type.Optional(codexDeliveryStateSchema),
     continuation: Type.Optional(codexContinuationStateSchema),
+    feedback: Type.Optional(codexFeedbackSchema),
     renameRequested: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },

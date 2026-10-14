@@ -87,14 +87,7 @@ export function githubNotificationRuntimeBlocker(
     return;
   if (
     runtime === 'codex' &&
-    !(declaration.reviewRequest?.enabled ?? Boolean(declaration.reviewRequest?.allowed.length)) &&
-    !(
-      declaration.issueAssignment?.enabled !== false &&
-      feedbackIdentities(
-        declaration.issueAssignment?.allowed ?? [],
-        declaration.issueAssignment?.feedback,
-      ).length
-    )
+    !(declaration.reviewRequest?.enabled ?? Boolean(declaration.reviewRequest?.allowed.length))
   )
     return;
   return {

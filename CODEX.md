@@ -87,7 +87,8 @@ intake through one managed `github-issue-assignment` schedule and one retained c
 assignments durably. After explicit reconciliation of the assessment-enabled
 schedule, `plan` and `work` assignments can prepare repositories and create native issue chats
 and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery.
-Review requests, feedback transport, and Auto-mode execution remain unavailable through this Codex path.
+Issue feedback can resume its owning chat for explanation and a bounded public reply.
+Review requests and Auto-mode execution remain unavailable through this Codex path.
 
 Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
 workflow. Install verifies a new chat's saved native approval settings and the saved
@@ -185,6 +186,55 @@ review execution remains unavailable.
 [Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
 assignment and review requests; the removed global setting requires an explicit choice.
 
+### Issue Feedback
+
+Set `issue-assignment.feedback: true` to inherit approved assigners, or use
+`{ inherit: true, allowed: [...] }` to add pinned contributors. Reconcile Install
+after changing permissions; an older saved schedule cannot authorize feedback.
+Approved comments must address the configured GitHub account outside quoted text.
+The initial read establishes a baseline without replaying historical comments.
+Subsequent issue comments, submitted PR reviews and inline replies route to the
+original issue chat with their exact source and review context retained.
+
+Assignments and feedback share `max-concurrent-items`, which defaults to **3**.
+A busy owner queues feedback without taking another slot. An idle owner needs a
+free slot; the oldest eligible work proceeds, and each completed response puts
+that owner's remaining backlog behind work already waiting. Questions, blockers
+and completed turns release capacity. Uncertain native sends retain their slot
+until reconciled and are never blindly repeated.
+
+The intake card reports feedback delivered to chats, queued items across issues, and
+occupied slots. Answers and publication outcomes stay in the owning chat;
+unchanged checks remain quiet. Feedback authorizes read-only investigation,
+private explanation and an optional concise public reply. It does not start
+implementation or a review. Publication rechecks the exact source, assignment
+and permissions, and reconciles uncertain writes before another action.
+The chat displays the complete retained private response. The configured
+`feedback.skill` (default `agent-system:agent-system-feedback-reply`) then composes
+a separate public candidate, applying optional `feedback.guidance` and applicable
+voice skills. It summarizes for the audience rather than truncating the private
+answer. Runtime `result` saves the private response, `compose` returns the verified
+skill and context, and `candidate` records its output against the composition
+digest. Missing or changed skills withhold the reply and preserve the private answer.
+The final chat response includes the private explanation, the exact public quote,
+and the verified publication link or an explicit obstacle.
+
+Routine public replies use a two-step publication: `publish` without a digest
+returns the exact destination and attributed draft without a GitHub write;
+`publish` with that digest rechecks authority and executes through native approval.
+Operator activation covers the configured routine reply scope, but never overrides
+a native approval denial.
+Feedback authored by the publishing GitHub account receives a private response
+only. Confirmed runtime replies are excluded from intake, preventing reply loops.
+An unfinished publication stops instead of automatically resuming another model
+turn. After explicit human approval, an operator chat may preview
+`feedbackRuntime` with `{"action":"publish-approved","id":"...","eventId":"..."}`
+and apply its returned `digest`. This retries only the exact retained reply,
+rechecks its source and permissions, and reconciles any uncertain provider write.
+Independent reviewer feedback still requires the reviewer intake adapter. Discovery
+and retained queues are bounded: incomplete provider reads or a full journal stop
+new feedback admission with a diagnostic; they do not silently discard comments.
+
 ### Work Mode
 
 Set `github.notifications.issue-assignment.mode: work`, optionally override its
@@ -241,8 +291,7 @@ and error cards; publication errors retain the existing PR for retry. Attachment
 presentation failures do not create another PR.
 See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
 Work-mode publication uses the same delivery operation through the trusted
-continuation runtime. GitHub feedback delivery remains unavailable; the PR card
-makes no promise to relay comments.
+continuation runtime. Configured issue feedback also covers its verified delivery PR.
 
 Native creation receipts, chat identity, worktree, and results survive interrupted
 polls. An uncertain creation is reconciled against native creation history; it is

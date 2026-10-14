@@ -112,6 +112,7 @@ const externalFeedbackSchema = Type.Union([
     {
       inherit: Type.Optional(Type.Boolean()),
       allowed: Type.Optional(Type.Array(externalGitHubIdentitySchema)),
+      ...assessmentConfigurationSchema.properties,
     },
     { additionalProperties: false },
   ),
@@ -182,7 +183,8 @@ export interface GitHubApprovedActor extends GitHubIdentityPin {
   operatorOwner?: boolean;
 }
 
-export type GitHubFeedbackPolicy = boolean | { inherit: boolean; allowed: GitHubIdentityPin[] };
+export type GitHubFeedbackPolicy =
+  boolean | ({ inherit: boolean; allowed: GitHubIdentityPin[] } & AssessmentConfiguration);
 
 export interface GitHubNotificationsConfiguration {
   schemaVersion?: never;
@@ -255,6 +257,7 @@ export function decodeGitHubNotifications(
                 : {
                     inherit: input.inherit ?? false,
                     allowed: (input.allowed ?? []).map(decodeIdentity),
+                    ...decodeAssessmentConfiguration(input),
                   },
           };
     const actors = (trigger: Static<typeof externalNotificationTriggerSchema>) =>
@@ -266,7 +269,7 @@ export function decodeGitHubNotifications(
       schemaVersion: 2,
       runtimes: value.runtimes ?? ['openclaw', 'codex'],
       intervalMinutes: value['interval-minutes'] ?? 5,
-      maxConcurrentItems: value['max-concurrent-items'] ?? 2,
+      maxConcurrentItems: value['max-concurrent-items'] ?? 3,
       allowedRepositoryOwners: value['allowed-repository-owners'].map(decodeIdentity),
       ...(value['issue-assignment'] === undefined
         ? {}

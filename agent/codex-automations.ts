@@ -1,3 +1,4 @@
+import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -392,7 +393,8 @@ export async function inspectCodexDispatchActivation(
   dependencies: CodexAutomationDependencies = {},
   pausedRecovery = false,
   retainedWork = false,
-  capability: 'assessment' | 'implementation' | 'review' | 'publication' = 'assessment',
+  capability:
+    'assessment' | 'implementation' | 'review' | 'publication' | 'feedback' = 'assessment',
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
@@ -433,7 +435,12 @@ export async function inspectCodexDispatchActivation(
     pausedRecovery ||
     retainedWork ||
     selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
-    selected.loaded.manifest.github.notifications.issueAssignment?.mode !== 'work' ||
+    (capability === 'feedback'
+      ? feedbackIdentities(
+          selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
+          selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
+        ).length === 0
+      : selected.loaded.manifest.github.notifications.issueAssignment?.mode !== 'work') ||
     !job ||
     job.payload.kind !== 'prompt' ||
     record.removed ||
@@ -456,8 +463,10 @@ export async function inspectCodexDispatchActivation(
       saved: {
         ...authority,
         version: 1 as const,
-        capabilities: ['assessment', 'implementation', 'publication'] as Array<
-          'assessment' | 'implementation' | 'publication'
+        capabilities: (capability === 'feedback'
+          ? ['feedback', 'publication']
+          : ['assessment', 'implementation', 'publication']) as Array<
+          'assessment' | 'implementation' | 'publication' | 'feedback'
         >,
       },
     },

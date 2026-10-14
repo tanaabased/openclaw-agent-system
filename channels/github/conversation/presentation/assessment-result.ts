@@ -1,5 +1,8 @@
 import type { AssessmentResult } from '../../../../agent/assessment-result.ts';
 import type { RoutingDecision } from '../../../../agent/model-routing.ts';
+import workflowInstructions, {
+  type WorkflowInstructionsSelection,
+} from './workflow-instructions.ts';
 import githubNotificationCard, { githubNotificationMarkdownText } from './card.ts';
 
 interface AssessmentPresentationContext {
@@ -9,11 +12,8 @@ interface AssessmentPresentationContext {
     effort: string;
   };
   effective?: { status: 'verified' | 'unverified'; model?: string; effort?: string };
-  assessment?: {
-    defaultSkill: boolean;
-    skill: { name: string };
-    guidance?: { source: 'inline' | 'file'; path?: string; content: string };
-  };
+  workspace?: string;
+  assessment?: WorkflowInstructionsSelection;
 }
 
 function item(markdown: string): string {
@@ -25,13 +25,6 @@ function quote(markdown: string): string {
     .split('\n')
     .map((line) => '> ' + line)
     .join('\n');
-}
-
-function literalText(value: string): string {
-  const fence = '`'.repeat(
-    (value.match(/`+/gu) ?? []).reduce((size, run) => Math.max(size, run.length + 1), 3),
-  );
-  return [fence + 'text', value.replace(/\r\n?/gu, '\n'), fence].join('\n');
 }
 
 /** frame a validated result without interpreting its prose as state or routing authority. */
@@ -71,36 +64,7 @@ export default function renderAssessmentResult(
       ],
     }),
   );
-  const instructionFacts = [
-    ...(assessment && !assessment.defaultSkill
-      ? [{ label: 'Skill', value: text(assessment.skill.name) }]
-      : []),
-    ...(assessment?.guidance
-      ? [
-          {
-            label: 'Guidance',
-            value:
-              assessment.guidance.source === 'file'
-                ? text(assessment.guidance.path ?? 'Guidance file')
-                : 'Inline guidance',
-          },
-        ]
-      : []),
-  ];
-  const instructionsCard = instructionFacts.length
-    ? quote(
-        [
-          githubNotificationCard({
-            emoji: '🧩',
-            title: 'Assessment instructions',
-            facts: instructionFacts,
-          }),
-          ...(assessment?.guidance?.source === 'inline'
-            ? [literalText(assessment.guidance.content)]
-            : []),
-        ].join('\n\n'),
-      )
-    : undefined;
+  const instructionsCard = workflowInstructions('Assessment', assessment, context.workspace);
   const content = [
     '## ' + titles[result.outcome],
     result.summary,

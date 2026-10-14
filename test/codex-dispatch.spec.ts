@@ -33,6 +33,7 @@ const manifest = {
     username: 'receiver',
     notifications: {
       'schema-version': 2,
+      'max-concurrent-items': 2,
       runtimes: ['codex'],
       'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
       'issue-assignment': {
@@ -757,7 +758,8 @@ describe('agent/codex-dispatch', () => {
     assert.ok(String(recorded.presentation).includes('Plan ready'));
     assert.match(String(recorded.presentation), /Skill.*company:assess/);
     assert.match(String(recorded.presentation), /Guidance.*guidance.md/);
-    assert.ok(!String(recorded.presentation).includes(workspace));
+    assert.ok(String(recorded.presentation).includes(`[guidance.md](<${workspace}/guidance.md>)`));
+    assert.ok(!String(recorded.presentation).includes('Prefer small fixes.'));
     const question = {
       version: 1,
       outcome: 'clarification-needed',

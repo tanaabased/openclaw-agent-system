@@ -1,3 +1,4 @@
+import runCodexFeedback from './codex-feedback.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
@@ -229,6 +230,12 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
+  if (command === 'feedback') {
+    writeJson(
+      await runCodexFeedback(parsePluginData(args.slice(1)), JSON.parse(await readStandardInput())),
+    );
+    return;
+  }
   if (command === 'continuation') {
     writeJson(
       await runCodexContinuation(

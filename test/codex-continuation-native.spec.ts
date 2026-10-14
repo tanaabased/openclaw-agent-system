@@ -27,13 +27,14 @@ describe('agent/codex-continuation-native', () => {
       turnStatus?: string;
       completedAt?: number | null;
       items?: Array<Record<string, unknown>>;
+      arguments?: Record<string, unknown>;
     } = {},
   ) {
     const call = {
       type: options.forged ? 'agentMessage' : 'mcpToolCall',
       server: 'codex_app',
       tool: 'send_message_to_thread',
-      arguments: attempt.request,
+      arguments: options.arguments ?? attempt.request,
       status: options.status ?? 'completed',
     };
     const source = [
@@ -81,6 +82,25 @@ describe('agent/codex-continuation-native', () => {
       turnId: 'implementation',
       ended: false,
     });
+  });
+  it('should accept an explicit local host without relaxing the prepared request', async () => {
+    assert.equal(
+      (await fixture({ arguments: { ...attempt.request, hostId: 'local' } })('source', attempt))
+        .status,
+      'verified',
+    );
+    for (const changed of [
+      { hostId: 'remote' },
+      { hostId: 'local', threadId: 'other' },
+      { hostId: 'local', prompt: 'Different instructions.' },
+      { hostId: 'local', model: 'other' },
+      { hostId: 'local', thinking: 'low' },
+      { hostId: 'local', unknown: true },
+    ])
+      assert.deepEqual(
+        await fixture({ arguments: { ...attempt.request, ...changed } })('source', attempt),
+        { status: 'uncertain' },
+      );
   });
   it('should require a native end timestamp before classifying a terminal history status as ended', async () => {
     for (const turnStatus of ['completed', 'failed', 'interrupted']) {

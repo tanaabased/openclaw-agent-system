@@ -4,6 +4,14 @@ import type { CodexContinuationState } from './codex-continuation-state.ts';
 import dispatchHistory, { dispatchHistoryPages } from './codex-dispatch-history.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 
+/** an explicit local host selects the same native destination as an omitted host. */
+function localSendArguments(value: unknown) {
+  if (!nativeObject(value) || value.hostId !== 'local') return value;
+  const request = { ...value };
+  delete request.hostId;
+  return request;
+}
+
 /** reconcile the exact native send, never a model claim that it sent a message. */
 export default function codexContinuationNative(request: CodexThreadRequest) {
   return async (
@@ -25,7 +33,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           item.type === 'mcpToolCall' &&
           item.server === 'codex_app' &&
           item.tool === 'send_message_to_thread' &&
-          automationHash(item.arguments) === automationHash(attempt.request),
+          automationHash(localSendArguments(item.arguments)) === automationHash(attempt.request),
       );
     if (calls.length > 1) throw new Error('continuation-send-duplicated');
     const call = calls[0];

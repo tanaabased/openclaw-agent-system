@@ -298,13 +298,14 @@ describe('channels/github/conversation/comment-turn-service', () => {
         dispatcher: modelTurnDispatcher(async (input) => {
           assert.equal(recorded, true);
           assert.equal(createIfMissing, false);
-          const presentation = [
-            '📬 [Tanaabot](/openclaw/agents) reply with ready',
-            '',
-            '> _[@pirog](https://github.com/pirog) mentioned Tanaabot on [tanaabased/example#12](https://github.com/tanaabased/example/issues/12#issuecomment-91)._',
-          ].join('\n');
-          assert.equal(input.ctx.Body, presentation);
-          assert.equal(input.ctx.BodyForAgent, presentation);
+          assert.match(input.ctx.Body as string, /^> ## 💬 From \[@pirog\]/u);
+          assert.ok((input.ctx.Body as string).includes('> @tanaabot reply with ready'));
+          assert.ok(
+            (input.ctx.Body as string).includes(
+              'https://github.com/tanaabased/example/issues/12#issuecomment-91',
+            ),
+          );
+          assert.equal(input.ctx.BodyForAgent, input.ctx.Body);
           assert.equal(input.ctx.RawBody, comment.body);
           assert.equal(input.ctx.Provider, githubNotificationChannelId);
           assert.deepEqual((input.ctx.ChannelContext as Record<string, unknown>).chat, {
@@ -440,7 +441,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     });
   });
 
-  it('should fall back to the agent id and bot emoji', async () => {
+  it('should render the author card without configured agent appearance', async () => {
     const fallbackConfig: OpenClawConfig = {
       ...config,
       agents: {
@@ -453,7 +454,8 @@ describe('channels/github/conversation/comment-turn-service', () => {
       ['ready'],
       'gateway',
       (_options, context) => {
-        assert.match(String(context.Body), /^🤖 \[tanaabot\]\(\/agents\)/u);
+        assert.match(String(context.Body), /^> ## 💬 From \[@pirog\]/u);
+        assert.ok(String(context.Body).includes('> @tanaabot reply with ready'));
       },
       undefined,
       fallbackConfig,

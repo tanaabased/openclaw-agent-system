@@ -16,8 +16,8 @@ notifications channel. It describes their appearance and composition only. The
 - Give private lifecycle results a report-like structure with stable sections
   for the complete assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
-  reports. An ordinary comment response is mirrored unchanged in its private
-  session.
+  reports. Legacy OpenClaw ordinary comments mirror their public answer privately;
+  Codex feedback presents the complete private response and a separate public quote.
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 
@@ -90,21 +90,20 @@ of the public GitHub response.
 
 ## Direct Message
 
-A direct inbound comment replaces each admitted GitHub account mention with the
-agent's installed emoji, display name, and OpenClaw Agents link. The remaining
-author-written Markdown source stays exact, so standard links, headings, lists,
-tables, blockquotes, and code formatting remain available to OpenClaw's Markdown
-renderer. GitHub-specific shorthand such as bare mentions and issue numbers may
-remain literal text. A quoted italic footer links the author and the source
-comment:
+Codex and OpenClaw use the same quoted card for an admitted comment. The heading
+links the verified author, the body preserves the author's Markdown and mentions,
+and the footer links to the exact source comment rather than only its issue or
+pull request. Prefix every line, including blank lines, with the outer quote marker;
+keep lists, code blocks, and nested quotes inside the card. Preserve the raw source
+separately from this presentation.
 
 ```markdown
-📬 [Notification Data](/agents) can you confirm whether this also covers comments received while planning?
-
-> _[@pirog](https://github.com/pirog) mentioned Notification Data on [tanaabased/example#7](https://github.com/tanaabased/example/issues/7#issuecomment-123)._
+> ## 💬 From [@pirog](https://github.com/pirog)
+>
+> @tanaabot can you confirm whether this also covers comments received while planning?
+>
+> [View comment on tanaabased/example#7 ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123)
 ```
-
-Use the agent's configured emoji and fall back to `🤖` when it has none.
 
 A review feedback message groups its summary and selected findings under the
 verified reviewer identity and review link. Each finding retains its own permalink,
@@ -279,11 +278,19 @@ The framing follows the structured result; prose headings never select state.
 
 When custom assessment instructions were selected, follow Model routing with a quoted
 **🧩 Assessment instructions** card. Show the resolved custom **Skill** name and/or
-**Guidance**: the workspace-relative file path for file guidance, or “Inline guidance”
+**Guidance**: a linked workspace-relative label for file guidance, or “Inline guidance”
 followed by a literal text block preserving whitespace and Markdown characters.
 Use the retained runtime selection, not model-authored claims. Omit default skill
 metadata and omit the card entirely when neither override is present. This identifies
-supplied instructions, not proof of compliance.
+supplied instructions, not proof of compliance. Link custom skills to their resolved
+`SKILL.md` and file guidance to its resolved absolute path when the chat supports
+local file links. Keep these links private.
+
+Reuse the same component as **🧩 Implementation instructions** immediately after the
+PR card and as **🧩 Feedback reply instructions** after the public reply quote and
+publication link or obstacle. Render only retained custom selections and guidance;
+keep default-only selections hidden. Do not put reply instructions in the incoming
+comment card or public GitHub reply.
 
 ## Question
 
@@ -326,19 +333,27 @@ naturally rather than imposing a fixed mention position.
 
 ## Ordinary Comment Response
 
-Use one concise final answer for an ordinary admitted comment, without a
+Legacy OpenClaw ordinary comments use one concise final answer, without a
 `To GitHub` wrapper or a second model-authored answer. The
 [security and lifecycle](./ADVANCED.md#security-and-lifecycle) reference describes its private/public mirroring.
 
 ## Private and Public Composition
 
-When a lifecycle turn presents distinct private and public response parts
-together, use this composition:
+Codex feedback and lifecycle turns with distinct private and public parts use
+this composition. Preserve the complete retained private response; do not replace
+it with the public candidate. After publication, link the verified reply. If
+publication is withheld or uncertain, report that outcome without claiming a post:
+
+For feedback, include the complete incoming comment or review card at the top of
+the final response. Progress commentary alone is insufficient: clients may collapse
+it when the turn finishes. Keep the source card outside the public reply quote.
 
 ```markdown
-## 💬 Comment answered
-
-The clarification is sufficient to continue planning.
+> ## 💬 From [@author](https://github.com/author)
+>
+> <complete incoming comment>
+>
+> [View comment on owner/repo#123 ↗](https://github.com/owner/repo/issues/123#issuecomment-456)
 
 ## Response
 

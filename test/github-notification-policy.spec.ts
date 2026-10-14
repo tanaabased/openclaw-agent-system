@@ -69,10 +69,7 @@ describe('channels/github/notification-policy', () => {
     });
     assert.equal(githubNotificationRuntimeBlocker(mixed, 'codex'), undefined);
     mixed.issueAssignment!.feedback = true;
-    assert.equal(
-      githubNotificationRuntimeBlocker(mixed, 'codex')?.code,
-      'github-notification-runtime-unsupported',
-    );
+    assert.equal(githubNotificationRuntimeBlocker(mixed, 'codex'), undefined);
     assert.equal(parse({ 'approved-actors': [actor], enabled: false }).status, 'invalid');
   });
   it('should normalize assessment skill ids and retain optional guidance forms', () => {
@@ -121,7 +118,7 @@ describe('channels/github/notification-policy', () => {
       schemaVersion: 2,
       runtimes: ['openclaw', 'codex'],
       intervalMinutes: 5,
-      maxConcurrentItems: 2,
+      maxConcurrentItems: 3,
       allowedRepositoryOwners: [{ login: owner.login, nodeId: owner['node-id'] }],
     });
     const declaration = parsed({ ...policy, 'issue-assignment': {} });
@@ -153,10 +150,7 @@ describe('channels/github/notification-policy', () => {
       assert.equal(declaration.issueAssignment?.feedback, true);
       assert.equal(declaration.intervalMinutes, 10);
       assert.equal(declaration.maxConcurrentItems, 3);
-      assert.equal(
-        githubNotificationRuntimeBlocker(declaration, 'codex')?.code,
-        'github-notification-runtime-unsupported',
-      );
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
     }
   });

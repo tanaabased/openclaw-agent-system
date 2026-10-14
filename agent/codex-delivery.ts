@@ -7,6 +7,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from './automation-hash.ts';
+import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { nativeObject } from './automation-gateway.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import dispatchHistory from './codex-dispatch-history.ts';
@@ -25,7 +26,9 @@ import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
+import workflowInstructions from '../channels/github/conversation/presentation/workflow-instructions.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/events/pull-request-opened.ts';
+import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';
@@ -45,6 +48,7 @@ const requestSchema = Type.Object(
 );
 type DeliveryRequest = Static<typeof requestSchema>;
 export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
+  activation?: typeof inspectCodexDispatchActivation;
   connect?: typeof connectCodexGitHubAccount;
   git?: DispatchGit;
   delay?: typeof abortableDelay;
@@ -430,6 +434,40 @@ export default async function runCodexDelivery(
         };
       }
       if (!previous.reconciled) throw new Error('delivery-reconciliation-required');
+      let commentFlow: 'codex' | 'unavailable' | 'unverified' = 'unavailable';
+      const policy = current.manifest.github?.notifications;
+      if (
+        policy?.schemaVersion === 2 &&
+        feedbackIdentities(policy.issueAssignment?.allowed ?? [], policy.issueAssignment?.feedback)
+          .length
+      ) {
+        commentFlow = 'unverified';
+        try {
+          const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
+            pluginData,
+            { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+            false,
+            false,
+            'feedback',
+          );
+          if (activation.schedule && activation.sourceThreadId === record.sourceThreadId) {
+            requireWorkflowSchedule(
+              activation.schedule.saved,
+              activation.schedule.current,
+              'feedback',
+            );
+            if (activation.schedule.current.policyDigest === policyDigest) commentFlow = 'codex';
+          }
+        } catch (error) {
+          if (codexHostAccess(error)) throw error;
+          // presentation cannot claim active feedback when schedule readback fails.
+        }
+      }
+      const implementationInstructions = workflowInstructions(
+        'Implementation',
+        record.continuation?.selection,
+        current.workspace,
+      );
       const presentationNotices = notices(previous.attached);
       previous.cardAttempts++;
       await save();
@@ -446,8 +484,9 @@ export default async function runCodexDelivery(
             pullRequestNumber: previous.pullRequest.pullRequestNumber,
             repositoryOwner: intake.repository.owner.login,
             repositoryName: intake.repository.name,
-            commentFlow: 'unavailable',
+            commentFlow,
           }),
+          ...(implementationInstructions ? [implementationInstructions] : []),
           ...presentationNotices.map((notice) => notice.message),
         ].join('\n\n'),
       };
