@@ -2,10 +2,11 @@ import type { AssessmentResult } from '../../../../agent/assessment-result.ts';
 import type { RoutingDecision } from '../../../../agent/model-routing.ts';
 import workflowInstructions, {
   type WorkflowInstructionsSelection,
+  type WorkflowInstructionsPresentation,
 } from './workflow-instructions.ts';
 import githubNotificationCard, { githubNotificationMarkdownText } from './card.ts';
 
-interface AssessmentPresentationContext {
+interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
   issue: { label: string; url: string };
   routing: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
     model: string;
@@ -64,7 +65,12 @@ export default function renderAssessmentResult(
       ],
     }),
   );
-  const instructionsCard = workflowInstructions('Assessment', assessment, context.workspace);
+  const instructionsCard = workflowInstructions(
+    'Assessment',
+    assessment,
+    context.workspace,
+    context,
+  );
   const content = [
     '## ' + titles[result.outcome],
     result.summary,

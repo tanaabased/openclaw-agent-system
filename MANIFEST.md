@@ -11,6 +11,7 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
   - [`agent`](#agent)
   - [`automations`](#automations)
   - [`backup`](#backup)
+  - [`debug`](#debug)
   - [`environment`](#environment)
   - [`github.notifications`](#githubnotifications)
   - [`memory`](#memory)
@@ -425,6 +426,24 @@ exclusions. Exclude previous custom destinations explicitly.
 
 See the [backup command](./CLI.md#openclaw-agent-system-backup-create) for coverage,
 destination restrictions, and sensitive-archive handling.
+
+### `debug`
+
+| Type    | Required | Default |
+| ------- | -------- | ------- |
+| boolean | no       | `false` |
+
+Set `debug: true` at the top level to show private workflow instruction cards:
+selected skills (including defaults), guidance sources, and retained inline guidance.
+Codex uses this for assessment, implementation delivery, and feedback replies;
+OpenClaw's shared assessment renderer uses the same switch. When omitted or false,
+these cards are hidden. Errors, blockers, responses, and publication outcomes remain
+visible. This controls presentation only; it does not enable runtime logging,
+change permissions, or change the skill or guidance applied to a turn.
+
+Inline guidance links to its verified manifest source when available. The text
+shown is the retained snapshot, while the linked file may have changed since then.
+Only inline guidance text is expanded; file guidance retains its source link.
 
 ### `environment`
 

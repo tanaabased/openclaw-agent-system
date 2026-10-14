@@ -467,6 +467,13 @@ export default async function runCodexDelivery(
         'Implementation',
         record.continuation?.selection,
         current.workspace,
+        {
+          debug: current.manifest.debug,
+          manifestPath:
+            current.manifestSources?.[
+              '/github/notifications/issue-assignment/implementation/guidance'
+            ]?.path ?? current.manifestPath,
+        },
       );
       const presentationNotices = notices(previous.attached);
       previous.cardAttempts++;

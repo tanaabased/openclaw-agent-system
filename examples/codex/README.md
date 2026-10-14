@@ -125,10 +125,13 @@ using disposable issues and the installed plugin.
   uncertain send or exceeding the poll budget. Verify the delivery PR card reports
   feedback as active only after saved schedule readback; disabled or unverified
   intake must not claim active delivery.
-  Check custom skill and guidance notices after model routing for assessment,
+  With top-level `debug: true`, check skill and guidance notices after model routing for assessment,
   after the PR card for implementation, and after the public quote and outcome
-  for feedback. Default-only selections stay hidden; custom skill and guidance
-  file links resolve to the retained files, and inline guidance remains literal.
+  for feedback. Include default skill selections; skill and guidance file links
+  resolve to retained sources, and inline guidance links to its manifest source
+  while preserving the literal retained text. With debug false or omitted, hide
+  all instruction notices while retaining blockers and publication outcomes.
+  Confirm the outgoing quote contains both the “📤 To GitHub” heading and reply.
   Use a temporary Latin-only replacement reply skill to distinguish an English
   private response from its public candidate, then test guidance separately and
   restore the bundled default after the trial.

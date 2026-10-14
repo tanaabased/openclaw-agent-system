@@ -642,6 +642,11 @@ export default async function runCodexFeedback(
               presentation: feedbackResponse({
                 sourcePresentation,
                 selection: event.composition,
+                debug: current.manifest.debug,
+                manifestPath:
+                  current.manifestSources?.[
+                    '/github/notifications/issue-assignment/feedback/guidance'
+                  ]?.path ?? current.manifestPath,
                 workspace: current.workspace,
                 privateText: event.result.privateText,
                 publicText: body,
@@ -700,6 +705,11 @@ export default async function runCodexFeedback(
                     presentation: feedbackResponse({
                       sourcePresentation,
                       selection: event.composition,
+                      debug: current.manifest.debug,
+                      manifestPath:
+                        current.manifestSources?.[
+                          '/github/notifications/issue-assignment/feedback/guidance'
+                        ]?.path ?? current.manifestPath,
                       workspace: current.workspace,
                       privateText: event.result.privateText,
                       publication: { withheld: code },

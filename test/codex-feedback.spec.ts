@@ -316,38 +316,71 @@ describe('agent/codex-feedback', () => {
     assert.equal(saved.result!.privateText, 'Detailed private answer.');
     assert.equal(saved.receipt!.nodeId, 'reply');
   });
-  it('should present the retained replacement skill after the published reply', async () => {
-    const path = join(root, 'workspace', 'agent.yaml');
-    const manifest = JSON.parse(await readFile(path, 'utf8'));
-    manifest.github.notifications['issue-assignment'].feedback.skill = 'custom:latin';
-    await writeFile(path, JSON.stringify(manifest));
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
-    const activation = deps.activation!;
-    deps.activation = async (...args) => {
-      const result = await activation(...args);
-      result.schedule!.current.policyDigest = automationHash(
-        current.manifest.github!.notifications,
+  for (const debug of [false, true])
+    it(`should publish unchanged feedback with debug ${debug}`, async () => {
+      const path = join(root, 'workspace', 'agent.yaml');
+      const manifest = JSON.parse(await readFile(path, 'utf8'));
+      manifest.debug = !debug;
+      manifest.github.notifications['issue-assignment'].feedback.skill = 'custom:latin';
+      manifest.github.notifications['issue-assignment'].feedback.guidance = 'Base guidance.';
+      await writeFile(path, JSON.stringify(manifest));
+      const overlayPath = join(root, 'workspace', 'agent.local.yaml');
+      await writeFile(
+        overlayPath,
+        JSON.stringify({
+          github: {
+            notifications: {
+              'issue-assignment': { feedback: { guidance: 'Use concise phrasing.' } },
+            },
+          },
+        }),
       );
-      result.schedule!.saved.policyDigest = result.schedule!.current.policyDigest;
-      return result;
-    };
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await recordReply(ref, 'Private English answer.', 'Ita.');
-    const preview = await call('publish', ref, true);
-    assert.ok('digest' in preview && preview.digest);
-    const completed = await call('publish', { ...ref, digest: preview.digest }, true);
-    assert.equal(completed.status, 'published');
-    assert.ok('presentation' in completed && completed.presentation);
-    assert.ok(completed.presentation.includes('[custom:latin](</trusted/feedback/SKILL.md>)'));
-    assert.ok(
-      completed.presentation.indexOf('Feedback reply instructions') >
-        completed.presentation.indexOf('Published reply'),
-    );
-    assert.ok(!published!.includes('custom:latin'));
-    assert.ok(!published!.includes('Private English'));
-  });
+      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const activation = deps.activation!;
+      deps.activation = async (...args) => {
+        const result = await activation(...args);
+        result.schedule!.current.policyDigest = automationHash(
+          current.manifest.github!.notifications,
+        );
+        result.schedule!.saved.policyDigest = result.schedule!.current.policyDigest;
+        return result;
+      };
+      const ref = await prepare();
+      sent = true;
+      turn = 'feedback';
+      await call('result', { ...ref, result: { privateText: 'Private English answer.' } }, true);
+      const composition = await call('compose', ref, true);
+      assert.ok('digest' in composition && composition.digest);
+      manifest.debug = debug;
+      await writeFile(path, JSON.stringify(manifest));
+      const candidate = await call(
+        'candidate',
+        { ...ref, digest: composition.digest, publicText: 'Ita.' },
+        true,
+      );
+      assert.equal(candidate.status, 'candidate-recorded');
+      const preview = await call('publish', ref, true);
+      assert.ok('digest' in preview && preview.digest);
+      const completed = await call('publish', { ...ref, digest: preview.digest }, true);
+      assert.equal(completed.status, 'published');
+      assert.ok('presentation' in completed && completed.presentation);
+      assert.equal(
+        completed.presentation.includes('[custom:latin](</trusted/feedback/SKILL.md>)'),
+        debug,
+      );
+      assert.equal(completed.presentation.includes('Use concise phrasing.'), debug);
+      if (debug) {
+        assert.ok(completed.presentation.includes(`[Inline guidance](<${overlayPath}>)`));
+        assert.ok(
+          completed.presentation.indexOf('Feedback reply instructions') >
+            completed.presentation.indexOf('Published reply'),
+        );
+      }
+      assert.ok(completed.presentation.includes('> ## 📤 To GitHub'));
+      assert.ok(!published!.includes('Use concise phrasing.'));
+      assert.ok(!published!.includes('custom:latin'));
+      assert.ok(!published!.includes('Private English'));
+    });
   it('should withhold publication when the admitted source changes', async () => {
     const ref = await prepare();
     sent = true;

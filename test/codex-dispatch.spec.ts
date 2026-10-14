@@ -3,7 +3,7 @@ import runCodexContinuation, {
 } from '../agent/codex-continuation.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -718,6 +718,8 @@ describe('agent/codex-dispatch', () => {
   it('should retain a normalized replacement and guidance across continuation without expanding authority', async () => {
     await writeFile(join(workspace, 'guidance.md'), 'Prefer small fixes.');
     await configureAssessment({ skill: ' $company:assess ', guidance: { file: 'guidance.md' } });
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...configured, debug: true }));
     const prepared = await prepare();
     const launch = prepared.request as { prompt: string };
     assert.ok(!launch.prompt.includes('Use $agent-system-issue-assessment'));

@@ -386,6 +386,7 @@ export default class OpenClawDispatch {
                       record,
                       intake,
                       current.workspace,
+                      { debug: manifest.debug },
                     ),
                   }
                 : {}),
@@ -416,7 +417,9 @@ export default class OpenClawDispatch {
             id: record.id,
             outcome: result.outcome,
             previousResultDigest: automationHash(result),
-            presentation: assessmentPresentation(result, record, intake, current.workspace),
+            presentation: assessmentPresentation(result, record, intake, current.workspace, {
+              debug: manifest.debug,
+            }),
           };
         }
         throw new Error('dispatch-action-invalid');

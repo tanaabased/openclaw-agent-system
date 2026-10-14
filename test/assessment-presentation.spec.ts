@@ -68,7 +68,7 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     }
   });
 
-  it('should show only configured instructions below routing across result outcomes', () => {
+  it('should show selected instructions below routing across debug result outcomes', () => {
     const results: AssessmentResult[] = [
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
       {
@@ -98,10 +98,11 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
         ]) {
           const output = renderAssessmentResult(result, {
             ...context,
+            debug: true,
             assessment: { defaultSkill: !custom, skill: { name: 'cats:assess' }, guidance },
           });
-          assert.equal(output.includes('Assessment instructions'), custom || !!guidance);
-          assert.equal(output.includes('cats:assess'), custom);
+          assert.equal(output.includes('Assessment instructions'), true);
+          assert.equal(output.includes('cats:assess'), true);
           assert.equal(output.includes('**Guidance:**'), !!guidance);
           if (custom || guidance) {
             const position = output.indexOf('> ## 🧩 Assessment instructions');
@@ -136,7 +137,11 @@ describe('channels/github/conversation/presentation/assessment-result', () => {
     const before = structuredClone(guidance);
     const output = renderAssessmentResult(
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
-      { ...context, assessment: { defaultSkill: true, skill: { name: 'default' }, guidance } },
+      {
+        ...context,
+        debug: true,
+        assessment: { defaultSkill: true, skill: { name: 'default' }, guidance },
+      },
     );
     assert.ok(
       output.includes(

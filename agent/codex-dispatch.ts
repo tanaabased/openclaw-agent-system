@@ -1004,6 +1004,13 @@ export async function runCodexDispatch(
                       record,
                       intake,
                       current.workspace,
+                      {
+                        debug: current.manifest.debug,
+                        manifestPath:
+                          current.manifestSources?.[
+                            '/github/notifications/issue-assignment/assessment/guidance'
+                          ]?.path ?? current.manifestPath,
+                      },
                     ),
                   }
                 : {}),
@@ -1025,7 +1032,13 @@ export async function runCodexDispatch(
               result,
               previousResultDigest: input.previousResultDigest as string | undefined,
             });
-            const presentation = assessmentPresentation(result, record, intake, current.workspace);
+            const presentation = assessmentPresentation(result, record, intake, current.workspace, {
+              debug: current.manifest.debug,
+              manifestPath:
+                current.manifestSources?.[
+                  '/github/notifications/issue-assignment/assessment/guidance'
+                ]?.path ?? current.manifestPath,
+            });
             await save();
             return {
               status: 'recorded',

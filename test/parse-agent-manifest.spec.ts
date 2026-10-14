@@ -8,6 +8,23 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('manifest/parse', () => {
+  it('should accept only boolean debug and keep it off when omitted', () => {
+    for (const debug of [undefined, false, true]) {
+      const parsed = parseAgentManifest(
+        JSON.stringify({ 'schema-version': 1, agent: { id: 'test' }, debug }),
+      );
+      assert.equal(parsed.status, 'valid');
+      if (parsed.status === 'valid') assert.equal(parsed.manifest.debug, debug);
+    }
+    for (const debug of ['true', 1, {}]) {
+      assert.equal(
+        parseAgentManifest(JSON.stringify({ 'schema-version': 1, agent: { id: 'test' }, debug }))
+          .status,
+        'invalid',
+      );
+    }
+  });
+
   it('should accept only the explicit codex bootstrap runtime declaration', () => {
     const declared = parseAgentManifest(
       'schema-version: 1\nagent:\n  id: emori\n  runtime: codex\n',

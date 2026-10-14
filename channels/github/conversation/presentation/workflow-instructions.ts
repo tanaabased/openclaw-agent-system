@@ -8,6 +8,11 @@ export interface WorkflowInstructionsSelection {
   guidance?: { source: 'inline' | 'file'; path?: string; content: string };
 }
 
+export interface WorkflowInstructionsPresentation {
+  debug?: boolean;
+  manifestPath?: string;
+}
+
 function fileLink(label: string, path?: string): string {
   const text = githubNotificationMarkdownText(label);
   if (!path || !isAbsolute(path) || /[\r\n\0]/u.test(path)) return text;
@@ -15,25 +20,27 @@ function fileLink(label: string, path?: string): string {
   return `[${text}](<${target}>)`;
 }
 
-/** show only retained overrides; a selection notice is not proof of model compliance. */
+/** debug shows retained selections; a notice is not proof of model compliance. */
 export default function workflowInstructions(
   stage: 'Assessment' | 'Implementation' | 'Feedback reply' | 'Review',
   selection?: WorkflowInstructionsSelection,
   workspace?: string,
+  presentation: WorkflowInstructionsPresentation = {},
 ): string | undefined {
-  if (!selection) return;
+  if (!presentation.debug || !selection) return;
   const { guidance, skill } = selection;
   const facts = [
-    ...(!selection.defaultSkill
-      ? [{ label: 'Skill', value: fileLink(skill.name, skill.path) }]
-      : []),
+    {
+      label: 'Skill',
+      value: fileLink(skill.name, skill.path) + (selection.defaultSkill ? ' (default)' : ''),
+    },
     ...(guidance
       ? [
           {
             label: 'Guidance',
             value:
               guidance.source === 'inline'
-                ? 'Inline guidance'
+                ? fileLink('Inline guidance', presentation.manifestPath)
                 : fileLink(
                     guidance.path && workspace && isAbsolute(guidance.path)
                       ? relative(workspace, guidance.path)
@@ -44,7 +51,6 @@ export default function workflowInstructions(
         ]
       : []),
   ];
-  if (!facts.length) return;
   const sections = [githubNotificationCard({ emoji: '🧩', title: `${stage} instructions`, facts })];
   if (guidance?.source === 'inline') {
     const fence = '`'.repeat(

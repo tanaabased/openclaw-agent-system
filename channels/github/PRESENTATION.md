@@ -276,21 +276,21 @@ Keep consequential uncertainty, blocking questions, and required actions in the 
 assessment, questions, or action; the reference section must not be their only home.
 The framing follows the structured result; prose headings never select state.
 
-When custom assessment instructions were selected, follow Model routing with a quoted
-**🧩 Assessment instructions** card. Show the resolved custom **Skill** name and/or
-**Guidance**: a linked workspace-relative label for file guidance, or “Inline guidance”
-followed by a literal text block preserving whitespace and Markdown characters.
-Use the retained runtime selection, not model-authored claims. Omit default skill
-metadata and omit the card entirely when neither override is present. This identifies
-supplied instructions, not proof of compliance. Link custom skills to their resolved
-`SKILL.md` and file guidance to its resolved absolute path when the chat supports
-local file links. Keep these links private.
+When debug presentation is enabled, follow Model routing with a quoted
+**🧩 Assessment instructions** card. Show the retained **Skill**, including the
+default, linked to its resolved `SKILL.md`. Show file **Guidance** as a linked
+workspace-relative label. For inline guidance, link “Inline guidance” to its
+verified manifest source when available, then show the retained text in a literal
+block preserving whitespace and Markdown characters. The source file may change;
+the retained text records what the turn used. Keep these links and instructions
+private. Selection metadata is not proof of compliance.
 
 Reuse the same component as **🧩 Implementation instructions** immediately after the
 PR card and as **🧩 Feedback reply instructions** after the public reply quote and
-publication link or obstacle. Render only retained custom selections and guidance;
-keep default-only selections hidden. Do not put reply instructions in the incoming
-comment card or public GitHub reply.
+publication link or obstacle. With debug off, omit instruction cards entirely,
+including custom selections and guidance. Errors, blockers, private responses,
+and publication outcomes remain visible. Do not put reply instructions in the
+incoming comment card or public GitHub reply.
 
 ## Question
 
@@ -320,8 +320,8 @@ the suggested name from the exact required primary folder; retain issue and diag
 ## To GitHub
 
 ```markdown
-## 📤 To GitHub
-
+> ## 📤 To GitHub
+>
 > Thanks for flagging this, @pirog. The notification flow now preserves the link.
 ```
 
@@ -359,7 +359,7 @@ it when the turn finishes. Keep the source card outside the public reply quote.
 
 <complete private response>
 
-## 📤 To GitHub
-
+> ## 📤 To GitHub
+>
 > <complete GitHub-facing response>
 ```

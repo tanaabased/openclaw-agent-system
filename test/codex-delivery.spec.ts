@@ -280,6 +280,9 @@ describe('agent/codex-delivery', () => {
       };
       await save();
     });
+    const normal = String((await request('present')).presentation);
+    assert.ok(!normal.includes('Implementation instructions'));
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
     const shown = String((await request('present')).presentation);
     assert.ok(shown.indexOf('Implementation instructions') > shown.indexOf('Comment flow'));
     assert.ok(shown.includes('[custom:work](</skills/work/SKILL.md>)'));
