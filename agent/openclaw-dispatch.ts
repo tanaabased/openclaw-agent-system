@@ -47,6 +47,15 @@ function source(intake: IntakeRecord) {
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({ context: record.context, manifest: record.manifestDigest });
 }
+function pendingAssignment({
+  record,
+  intake,
+}: {
+  record?: OpenClawDispatchRecord;
+  intake: IntakeRecord;
+}) {
+  return !record || (!record.request && (!record.blocker || record.intakeId !== intake.id));
+}
 function failureCode(error: unknown): string {
   if (error instanceof GitCommandError) return error.diagnosticCode;
   if (error instanceof AgentSystemToolError) {
@@ -148,10 +157,7 @@ export default class OpenClawDispatch {
     const state = await current.journal.read();
     const capacity = dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems);
     const recoverable = state.records.some((record) => continuationStatus(record));
-    const pending = pendingAssignments(state, current.admitted).some(
-      ({ record, intake }) =>
-        !record || (!record.request && (!record.blocker || record.intakeId !== intake.id)),
-    );
+    const pending = pendingAssignments(state, current.admitted).some(pendingAssignment);
     return {
       status: 'ready' as const,
       changed: recoverable || (capacity.available > 0 && pending),
@@ -221,10 +227,7 @@ export default class OpenClawDispatch {
           if (continuing) return { status: continuationStatus(continuing)!, id: continuing.id };
           if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
             return { status: 'at-capacity' };
-          const pending = pendingAssignments(state, current.admitted).find(
-            ({ record, intake }) =>
-              !record || (!record.request && (!record.blocker || record.intakeId !== intake.id)),
-          );
+          const pending = pendingAssignments(state, current.admitted).find(pendingAssignment);
           if (!pending) return { status: 'idle' };
           const record: OpenClawDispatchRecord = pending.record ?? {
             id: automationHash([current.journal.scope, randomUUID()]),

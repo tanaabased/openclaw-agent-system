@@ -146,6 +146,16 @@ export const openclawDispatchRecordSchema = Type.Object(
 export type OpenClawDispatchRecord = Static<typeof openclawDispatchRecordSchema>;
 export type OpenClawDispatchState = DispatchState<OpenClawDispatchRecord>;
 
+function validIssueTurn(turn: Static<typeof issueTurnSchema>, runId: string) {
+  return (
+    turn.runId === runId &&
+    ['consumed', 'completed'].includes(turn.status) === Boolean(turn.consumedByEventId) &&
+    (!turn.executionModel || turn.status === 'completed') &&
+    (!turn.replyEventId || turn.status === 'completed') &&
+    (turn.status !== 'completed' || Boolean(turn.replyEventId))
+  );
+}
+
 export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatchRecord> {
   constructor(root: string, scope: string) {
     super(root, scope, {
@@ -173,26 +183,12 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
             (!record.effective || record.sessionCreation.verified) &&
             (!record.firstTurn ||
               (record.sessionCreation.verified &&
-                record.firstTurn.runId === `${record.id}:first-turn` &&
-                ['consumed', 'completed'].includes(record.firstTurn.status) ===
-                  Boolean(record.firstTurn.consumedByEventId) &&
-                (!record.firstTurn.executionModel || record.firstTurn.status === 'completed') &&
-                (!record.firstTurn.replyEventId || record.firstTurn.status === 'completed') &&
-                (record.firstTurn.status !== 'completed' ||
-                  Boolean(record.firstTurn.replyEventId)))) &&
+                validIssueTurn(record.firstTurn, `${record.id}:first-turn`))) &&
             (!record.assessmentTurn ||
               (record.sessionCreation.verified &&
                 record.assessment &&
                 (!record.firstTurn || record.firstTurn.status === 'completed') &&
-                record.assessmentTurn.runId === `${record.id}:assessment` &&
-                ['consumed', 'completed'].includes(record.assessmentTurn.status) ===
-                  Boolean(record.assessmentTurn.consumedByEventId) &&
-                (!record.assessmentTurn.executionModel ||
-                  record.assessmentTurn.status === 'completed') &&
-                (!record.assessmentTurn.replyEventId ||
-                  record.assessmentTurn.status === 'completed') &&
-                (record.assessmentTurn.status !== 'completed' ||
-                  Boolean(record.assessmentTurn.replyEventId)))) &&
+                validIssueTurn(record.assessmentTurn, `${record.id}:assessment`))) &&
             (!record.assessmentCaller || record.assessmentTurn) &&
             (!record.result ||
               (record.assessmentTurn &&

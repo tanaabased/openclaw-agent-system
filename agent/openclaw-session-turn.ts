@@ -1,3 +1,4 @@
+import issueInputEvent from './openclaw-session-input.ts';
 import issueTurnReply from './openclaw-session-reply.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
 
@@ -41,28 +42,9 @@ function consumedInputEvent(
   if (!inputs.length && turn.consumedByEventId) return turn.consumedByEventId;
   if (inputs.length !== 1) throw new Error('dispatch-turn-delivery-unverified');
   const entry = inputs[0]!;
-  const meta = sessionObject(entry.__openclaw);
-  const content =
-    typeof entry.content === 'string'
-      ? entry.content
-      : Array.isArray(entry.content) &&
-          entry.content.every((block) => {
-            const part = sessionObject(block);
-            return part.type === 'text' && typeof part.text === 'string';
-          })
-        ? entry.content.map((block) => sessionObject(block).text).join('')
-        : undefined;
-  if (
-    meta.runId !== turn.runId ||
-    typeof meta.id !== 'string' ||
-    !meta.id ||
-    meta.truncated === true ||
-    content !== turn.message ||
-    (meta.idempotencyKey ?? entry.idempotencyKey) !== key ||
-    (entry.idempotencyKey !== undefined && entry.idempotencyKey !== key)
-  )
-    throw new Error('dispatch-turn-input-mismatch');
-  return meta.id;
+  const eventId = issueInputEvent(entry, turn);
+  if (!eventId) throw new Error('dispatch-turn-input-mismatch');
+  return eventId;
 }
 
 /** one persisted attempt; recovery reads exact input custody and transcript ownership, never resends. */

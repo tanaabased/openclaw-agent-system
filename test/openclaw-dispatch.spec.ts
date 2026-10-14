@@ -1103,6 +1103,44 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).result, undefined);
   });
 
+  for (const mismatch of ['missing text', 'conflicting key']) {
+    it(`should reject ${mismatch} in assessment input before retaining caller authority`, async () => {
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      const user = messages[0]!;
+      if (mismatch === 'missing text')
+        user.content = [{ type: 'text', text: user.content }, { type: 'text' }];
+      else user.idempotencyKey = 'unrelated:user';
+      await assert.rejects(context(input.id), /dispatch-assessment-input-mismatch/);
+      assert.equal((await record()).assessmentCaller, undefined);
+      assert.equal((await record()).result, undefined);
+      assert.equal(sends().length, 1);
+    });
+  }
+
+  it('should reject inconsistent persisted assessment receipts', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    const journal = (await service.scope(manifest, root)).journal;
+    for (const change of [
+      { runId: 'other' },
+      { status: 'completed' as const },
+      { status: 'consumed' as const },
+      { executionModel: 'openai/gpt-6.1-sol' },
+      { replyEventId: 'unearned' },
+    ]) {
+      await assert.rejects(
+        journal.exclusive(async (state, save) => {
+          Object.assign(state.records[0]!.assessmentTurn!, change);
+          await save();
+        }),
+      );
+    }
+    assert.equal((await record()).assessmentTurn?.status, 'accepted');
+  });
+
   it('should preserve the prior plan on conflict and permit a same-session clarification revision', async () => {
     const input = await next();
     await prepare(input);
