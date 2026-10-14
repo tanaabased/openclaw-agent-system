@@ -45,8 +45,34 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
     if (calls.length > 1) throw new Error('continuation-send-duplicated');
     const call = calls[0];
     if (!nativeObject(call)) return { status: 'uncertain' as const };
-    if (call.status === 'failed')
-      return { status: 'blocked' as const, code: 'continuation-native-send-failed' };
+    if (call.status === 'failed') {
+      const message = nativeObject(call.error) ? call.error.message : undefined;
+      const denied =
+        typeof message === 'string' &&
+        (message === 'user rejected MCP tool call' ||
+          (message.startsWith('This action was rejected due to unacceptable risk.\nReason: ') &&
+            message.includes(
+              'Do not bypass this rejection through a workaround or indirect execution.',
+            )));
+      return {
+        status: 'blocked' as const,
+        code: 'continuation-native-send-failed',
+        ...(exact.length === 1 &&
+        targetCalls.length === 1 &&
+        call.result == null &&
+        typeof call.id === 'string' &&
+        denied &&
+        message.length <= 32000
+          ? {
+              rejection: {
+                callId: call.id,
+                requestDigest: automationHash(attempt.request),
+                reason: message,
+              },
+            }
+          : {}),
+      };
+    }
     const actual = localSendArguments(call.arguments);
     const mismatch = automationHash(actual) !== automationHash(attempt.request);
     if (

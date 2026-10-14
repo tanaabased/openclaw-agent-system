@@ -2722,6 +2722,77 @@ describe('agent/codex-dispatch', () => {
     });
     await work.run('reconcile');
     await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
+    await assert.rejects(work.run('retry-denied', {}, 'operator'), /denial-unverified/);
+  });
+
+  it('should retain a rejected auto send and require exact operator reapproval before one fresh handoff', async () => {
+    const work = await autoIssue();
+    const first = await work.run('next');
+    const rejection = {
+      callId: 'denied-send',
+      requestDigest: 'd'.repeat(64),
+      reason: 'user rejected MCP tool call',
+    };
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-send-failed',
+      rejection,
+    });
+    await work.run('reconcile');
+    assert.equal((await work.run('next')).status, 'idle');
+    const before = (await request('inspect')).records;
+    const preview = await work.run('retry-denied', {}, 'operator');
+    assert.equal(preview.status, 'retry-available');
+    assert.deepEqual((await request('inspect')).records, before);
+    await assert.rejects(work.run('retry-denied'), /operator-caller-required/);
+    await assert.rejects(work.run('retry-denied', {}, true), /operator-caller-required/);
+    const digest = 'digest' in preview && preview.digest;
+    await assert.rejects(
+      work.run('retry-denied', { digest }, 'operator'),
+      /denial-approval-required/,
+    );
+    const input = { digest, approvedCallId: rejection.callId };
+    rejection.reason = 'changed';
+    await assert.rejects(work.run('retry-denied', input, 'operator'), /retry-stale/);
+    rejection.reason = 'user rejected MCP tool call';
+    const turnId = native!.turnId;
+    native!.turnId = 'intervening-turn';
+    await assert.rejects(work.run('retry-denied', input, 'operator'), /user-intervened/);
+    native!.turnId = turnId;
+    native!.status = 'active';
+    await assert.rejects(work.run('retry-denied', input, 'operator'), /retry-chat-active/);
+    native!.status = 'idle';
+    const git = work.continuation.git!;
+    work.continuation.git = async (cwd, args, signal) =>
+      args[0] === 'status' ? ' M changed' : git(cwd, args, signal);
+    await assert.rejects(work.run('retry-denied', input, 'operator'), /worktree-changed/);
+    work.continuation.git = git;
+    assert.equal((await work.run('retry-denied', input, 'operator')).status, 'retry-ready');
+    await assert.rejects(work.run('retry-denied', input, 'operator'), /retry-unavailable/);
+    const records = (await request('inspect')).records as Array<{
+      result: unknown;
+      continuation: {
+        retries: Array<{ attempt: { request: unknown }; rejection: unknown; by: string }>;
+      };
+    }>;
+    assert.deepEqual(records[0]!.result, autoResult);
+    const retained = records[0]!.continuation.retries[0]!;
+    assert.deepEqual(retained.rejection, rejection);
+    assert.deepEqual(retained.attempt.request, 'request' in first && first.request);
+    assert.equal(retained.by, 'operator');
+    const next = await work.run('next');
+    assert.equal(next.status, 'prepared');
+    assert.equal('request' in next && next.request?.threadId, native!.id);
+    assert.notDeepEqual('request' in next && next.request, retained.attempt.request);
+    work.continuation.continuationNative = async () => ({ status: 'uncertain' });
+    assert.equal((await work.run('next')).status, 'pending');
+    work.receive();
+    work.continuation.continuationNative = async () => ({
+      status: 'verified',
+      turnId: native!.turnId!,
+      ended: false,
+    });
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
   });
 
   it('should permit operator recovery from an explicitly handed-off development chat', async () => {

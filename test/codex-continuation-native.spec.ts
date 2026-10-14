@@ -31,6 +31,8 @@ describe('agent/codex-continuation-native', () => {
       completedAt?: number | null;
       items?: Array<Record<string, unknown>>;
       arguments?: Record<string, unknown>;
+      error?: { message: string };
+      result?: unknown;
     } = {},
   ) {
     const call = {
@@ -40,6 +42,8 @@ describe('agent/codex-continuation-native', () => {
       tool: 'send_message_to_thread',
       arguments: options.arguments ?? attempt.request,
       status: options.status ?? 'completed',
+      error: options.error,
+      result: options.result,
     };
     const source = [
       {
@@ -214,6 +218,33 @@ describe('agent/codex-continuation-native', () => {
       status: 'blocked',
       code: 'continuation-native-send-failed',
     });
+  });
+
+  it('should expose reapproval evidence only for an exact native approval rejection', async () => {
+    for (const message of [
+      'user rejected MCP tool call',
+      'This action was rejected due to unacceptable risk.\nReason: missing authorization.\nDo not bypass this rejection through a workaround or indirect execution.',
+    ]) {
+      const receipt = await fixture({ status: 'failed', error: { message } })('source', attempt);
+      assert.equal(receipt.status, 'blocked');
+      assert.equal('rejection' in receipt && receipt.rejection?.callId, 'native-send');
+      assert.equal('rejection' in receipt && receipt.rejection?.reason, message);
+    }
+    for (const options of [
+      { error: { message: 'request timed out' } },
+      { error: { message: 'user rejected MCP tool call' }, result: {} },
+      {
+        error: { message: 'user rejected MCP tool call' },
+        arguments: { ...attempt.request, prompt: 'altered' },
+      },
+    ]) {
+      const receipt = await fixture({ status: 'failed', ...options })('source', attempt);
+      assert.equal('rejection' in receipt && Boolean(receipt.rejection), false);
+    }
+    await assert.rejects(
+      fixture({ status: 'failed', duplicateSend: true })('source', attempt),
+      /send-duplicated/,
+    );
   });
 
   it('should stop on approval denials in the verified implementation turn', async () => {

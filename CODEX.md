@@ -297,6 +297,14 @@ retains both before queuing one new handoff. Unknown or duplicate sends, changed
 native settings, and approval denials remain blocked. Never edit tracking files or
 manually resend the old request.
 
+For an explicitly reapproved native send rejection before implementation, use
+`continuationRuntime` action `retry-denied` from the operator chat with the retained
+`id`. Inspect its rejection evidence, then apply its `digest` and the exact
+`approvedCallId`. Recovery requires the original idle chat and unchanged assessment
+checkout, retains the rejected attempt and reason, and queues one fresh handoff for
+scheduled intake. Native approval still applies. Unknown send failures, later chat
+turns, and denials during implementation or publication remain blocked.
+
 Deterministic fixtures and packaged checks alone do not establish unattended native
 execution or visible card delivery.
 

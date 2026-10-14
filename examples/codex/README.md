@@ -53,6 +53,12 @@ using disposable issues and the installed plugin.
   diagnostic turn, require an unchanged assessment checkout and no implementation
   result, and queue exactly one fresh handoff. Repeat polling to prove no duplicate
   send; duplicate sends, changed model or destination, and native denials stay blocked.
+- **Reapproved send rejection:** after an exact native continuation send is rejected,
+  verify ordinary polls and `retry` leave it blocked. Explicit operator reapproval
+  through `retry-denied` must bind the rejected call and fresh preview digest, retain
+  its request and reason, and queue one new receipt in the original chat and unchanged
+  worktree. Repeated application or polling must not duplicate that send. Unknown
+  failures, intervening turns, changed files, and implementation denials stay blocked.
 - **Unsubmitted creation:** let an intake turn end after preparation without
   calling `create_thread`. A later scheduled turn must verify complete native
   history, retain the abandoned attempt, and prepare one fresh request. A recorded

@@ -31,9 +31,11 @@ const requestSchema = Type.Object(
       Type.Literal('cancel'),
       Type.Literal('delivery'),
       Type.Literal('retry'),
+      Type.Literal('retry-denied'),
     ]),
     id: Type.Optional(Type.String()),
     digest: Type.Optional(Type.String()),
+    approvedCallId: Type.Optional(Type.String()),
     result: Type.Optional(implementationResultSchema),
     delivery: Type.Optional(Type.Unknown()),
   },
@@ -55,7 +57,8 @@ export default async function runCodexContinuation(
     throw new Error('continuation-request-invalid');
   const current = await selectCodexIntake(pluginData, deps);
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
-  const retry = input.action === 'retry';
+  const retryDenied = input.action === 'retry-denied';
+  const retry = input.action === 'retry' || retryDenied;
   if (!caller) throw new Error('continuation-caller-required');
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
@@ -156,9 +159,10 @@ export default async function runCodexContinuation(
             retry &&
             (!(
               (work.phase === 'blocked' &&
-                ['continuation-turn-ended', 'continuation-send-mismatch'].includes(
-                  work.code ?? '',
-                )) ||
+                (retryDenied
+                  ? ['continuation-native-send-failed']
+                  : ['continuation-turn-ended', 'continuation-send-mismatch']
+                ).includes(work.code ?? '')) ||
               (work.phase === 'prepared' && !work.binding)
             ) ||
               !work.attempt ||
@@ -339,6 +343,7 @@ export default async function runCodexContinuation(
               assessment: work.assessmentDigest,
               selection: work.selection,
               before: found.turnId,
+              ...(work.retries?.length ? { retry: work.retries.length } : {}),
             });
             work.attempt = {
               id,
@@ -362,6 +367,58 @@ export default async function runCodexContinuation(
           }
           const activeAttempt = work.publicationAttempt ?? work.attempt;
           const receipt = await continuationNative(record.sourceThreadId, activeAttempt);
+          if (retryDenied) {
+            if (
+              receipt.status !== 'blocked' ||
+              !('rejection' in receipt) ||
+              !receipt.rejection ||
+              work.binding ||
+              activeAttempt.turnId ||
+              work.result ||
+              work.publicationAttempt ||
+              record.delivery
+            )
+              throw new Error('continuation-denial-unverified');
+            if (found.turnId !== activeAttempt.beforeTurnId)
+              throw new Error('continuation-user-intervened');
+            if (found.turnStatus !== 'completed' || !['idle', 'notLoaded'].includes(found.status))
+              throw new Error('continuation-retry-chat-active');
+            await verifyDispatchWorktree(
+              record.project,
+              found.cwd,
+              admitted.repository.owner.login + '/' + admitted.repository.name,
+              git,
+            );
+            const digest = automationHash({ record, schedule: schedule.current, receipt });
+            if (input.digest === undefined)
+              return {
+                status: 'retry-available',
+                id: record.id,
+                digest,
+                threadId: record.threadId,
+                rejection: receipt.rejection,
+                instruction:
+                  'Only explicit operator reapproval of this rejected call authorizes retry-denied with this digest and approvedCallId. Preserve the rejected attempt and queue one new handoff for scheduled intake; native approval still applies.',
+              };
+            if (input.digest !== digest) throw new Error('continuation-retry-stale');
+            if (input.approvedCallId !== receipt.rejection.callId)
+              throw new Error('continuation-denial-approval-required');
+            work.retries = [
+              ...(work.retries ?? []),
+              {
+                attempt: activeAttempt,
+                rejection: receipt.rejection,
+                resumeAfterTurnId: found.turnId,
+                at: (deps.now ?? Date.now)(),
+                by: caller,
+              },
+            ];
+            delete work.attempt;
+            delete work.code;
+            work.phase = 'waiting';
+            await save();
+            return { status: 'retry-ready', id: record.id, threadId: record.threadId };
+          }
           if (retry && work.phase === 'prepared' && receipt.status !== 'mismatch')
             throw new Error('continuation-retry-unavailable');
           if (receipt.status === 'blocked' || (receipt.status === 'mismatch' && !retry)) {
