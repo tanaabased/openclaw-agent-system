@@ -18,13 +18,17 @@ const request = {
 };
 const prepared = { status: 'prepared', id: 'receipt', request };
 
-function fixture(results: Record<string, unknown>[], failCreation = false) {
+function fixture(
+  results: Record<string, unknown>[],
+  failCreation = false,
+  route: 'dispatch' | 'continuation' = 'dispatch',
+) {
   const commands: Record<string, unknown>[] = [];
   const polls: Record<string, unknown>[] = [];
   const creations: unknown[] = [];
   const output: unknown[] = [];
   const execute = () =>
-    runInNewContext('(async () => {' + codexDispatchHandoff(runtime) + '})()', {
+    runInNewContext('(async () => {' + codexDispatchHandoff(runtime, route) + '})()', {
       prepareInput: { action: 'prepare', id: 'receipt', title: 'poem', assessment: {} },
       tools: {
         exec_command: async (input: Record<string, unknown>) => {
@@ -37,7 +41,9 @@ function fixture(results: Record<string, unknown>[], failCreation = false) {
           assert.ok(results.length);
           return results.shift();
         },
-        mcp__codex_app__create_thread: async (input: unknown) => {
+        [route === 'dispatch'
+          ? 'mcp__codex_app__create_thread'
+          : 'mcp__codex_app__send_message_to_thread']: async (input: unknown) => {
           creations.push(input);
           if (failCreation) throw new Error('native rejection');
           return { threadId: 'child' };
@@ -50,6 +56,29 @@ function fixture(results: Record<string, unknown>[], failCreation = false) {
 }
 
 describe('agent/codex-dispatch-handoff', () => {
+  it('should send the complete continuation request once without transcribing its receipt', async () => {
+    const continuation = {
+      threadId: 'issue',
+      model: 'model',
+      thinking: 'medium',
+      prompt: 'Continue. Receipt: ' + 'e'.repeat(63) + '5.',
+    };
+    const test = fixture(
+      [{ exit_code: 0, output: JSON.stringify({ ...prepared, request: continuation }) }],
+      false,
+      'continuation',
+    );
+    await test.execute();
+    assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [continuation]);
+    assert.match(String(test.commands[0]!.cmd), /'continuation'/);
+    const rejected = fixture(
+      [{ exit_code: 0, output: JSON.stringify(prepared) }],
+      true,
+      'continuation',
+    );
+    await assert.rejects(rejected.execute(), /native rejection/);
+    assert.equal(rejected.creations.length, 1);
+  });
   it('should pass every prepared field directly after polling the same command', async () => {
     const json = JSON.stringify(prepared);
     const test = fixture([

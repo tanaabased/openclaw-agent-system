@@ -44,6 +44,13 @@ using disposable issues and the installed plugin.
   prepared request directly to `create_thread`, including all runtime transport
   instructions. Command polling must finish before creation; preparation failure
   or uncertain native submission must never cause another creation call.
+- **Continuation handoff:** verify preparation and native send happen in one
+  orchestration block with the complete prepared request passed directly. An altered
+  prompt must produce a mismatch blocker, never implementation authority or quiet
+  success. An operator retry must retain the malformed send evidence and current
+  diagnostic turn, require an unchanged assessment checkout and no implementation
+  result, and queue exactly one fresh handoff. Repeat polling to prove no duplicate
+  send; duplicate sends, changed model or destination, and native denials stay blocked.
 - **Unsubmitted creation:** let an intake turn end after preparation without
   calling `create_thread`. A later scheduled turn must verify complete native
   history, retain the abandoned attempt, and prepare one fresh request. A recorded

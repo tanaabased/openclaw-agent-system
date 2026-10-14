@@ -286,6 +286,14 @@ then repeat it with the returned `digest`. This verifies the old turn has ended,
 retains its evidence, and queues one handoff in the same chat on the next scheduled
 turn. It cannot retry native denials, substantive results, or cancelled work.
 
+An altered continuation prompt stops with `continuation-send-mismatch`. The same
+operator retry can recover a verified, completed malformed send only before any
+recorded implementation or delivery, with the original assessment checkout unchanged.
+The preview binds the native send evidence and latest diagnostic turn; recovery
+retains both before queuing one new handoff. Unknown or duplicate sends, changed
+native settings, and approval denials remain blocked. Never edit tracking files or
+manually resend the old request.
+
 Deterministic fixtures and packaged checks alone do not establish unattended native
 execution or visible card delivery.
 

@@ -154,8 +154,13 @@ export default async function runCodexContinuation(
             throw new Error('continuation-authority-changed');
           if (
             retry &&
-            (work.phase !== 'blocked' ||
-              work.code !== 'continuation-turn-ended' ||
+            (!(
+              (work.phase === 'blocked' &&
+                ['continuation-turn-ended', 'continuation-send-mismatch'].includes(
+                  work.code ?? '',
+                )) ||
+              (work.phase === 'prepared' && !work.binding)
+            ) ||
               !work.attempt ||
               work.result ||
               work.publicationAttempt ||
@@ -319,7 +324,12 @@ export default async function runCodexContinuation(
               !['idle', 'notLoaded'].includes(found.status)
             )
               continue;
-            if (found.turnId !== (work.retries?.at(-1)?.attempt.turnId ?? record.resultTurnId))
+            if (
+              found.turnId !==
+              (work.retries?.at(-1)?.resumeAfterTurnId ??
+                work.retries?.at(-1)?.attempt.turnId ??
+                record.resultTurnId)
+            )
               throw new Error('continuation-user-intervened');
             work.assessmentDigest = automationHash(record.result);
             if (record.issueMode === 'auto')
@@ -352,19 +362,40 @@ export default async function runCodexContinuation(
           }
           const activeAttempt = work.publicationAttempt ?? work.attempt;
           const receipt = await continuationNative(record.sourceThreadId, activeAttempt);
+          if (retry && work.phase === 'prepared' && receipt.status !== 'mismatch')
+            throw new Error('continuation-retry-unavailable');
           if (receipt.status === 'blocked') {
             work.phase = 'blocked';
             work.code = receipt.code;
             await save();
             return { status: 'blocked', id: record.id, code: work.code };
           }
-          if (receipt.status !== 'verified') {
+          if (receipt.status === 'mismatch' && !retry) {
+            work.phase = 'blocked';
+            work.code = receipt.code;
+            await save();
+            return { status: 'blocked', id: record.id, code: work.code };
+          }
+          if (retry && receipt.status === 'mismatch') {
+            if (work.binding || work.result || work.publicationAttempt || record.delivery)
+              throw new Error('continuation-retry-unavailable');
+            await verifyDispatchWorktree(
+              record.project,
+              found.cwd,
+              admitted.repository.owner.login + '/' + admitted.repository.name,
+              git,
+            );
+          }
+          if (receipt.status !== 'verified' && !(retry && receipt.status === 'mismatch')) {
             if (!occurrence) throw new Error('continuation-send-unverified');
-            continue;
+            return { status: 'pending', id: record.id, code: 'continuation-send-unverified' };
           }
           if (activeAttempt.turnId && activeAttempt.turnId !== receipt.turnId)
             throw new Error('continuation-turn-changed');
-          if (found.turnId !== receipt.turnId) throw new Error('continuation-user-intervened');
+          if (
+            found.turnId !== (receipt.status === 'mismatch' ? receipt.latestTurnId : receipt.turnId)
+          )
+            throw new Error('continuation-user-intervened');
           if (retry) {
             if (!receipt.ended || !['idle', 'notLoaded'].includes(found.status))
               throw new Error('continuation-retry-chat-active');
@@ -372,6 +403,9 @@ export default async function runCodexContinuation(
               record,
               schedule: schedule.current,
               turnId: receipt.turnId,
+              ...(receipt.status === 'mismatch'
+                ? { receipt, resumeAfterTurnId: found.turnId }
+                : {}),
             });
             if (input.digest === undefined)
               return {
@@ -387,6 +421,16 @@ export default async function runCodexContinuation(
               ...(work.retries ?? []),
               {
                 attempt: { ...activeAttempt, turnId: receipt.turnId },
+                ...(receipt.status === 'mismatch'
+                  ? {
+                      resumeAfterTurnId: found.turnId,
+                      mismatch: {
+                        callId: receipt.callId,
+                        requestDigest: receipt.requestDigest,
+                        turnId: receipt.turnId,
+                      },
+                    }
+                  : {}),
                 ...(work.binding ? { binding: work.binding } : {}),
                 at: (deps.now ?? Date.now)(),
                 by: caller,

@@ -1,13 +1,16 @@
 /** native orchestration keeps the prepared prompt out of model transcription. */
-export default function codexDispatchHandoff(runtime: {
-  nodeExecutable: string;
-  entrypoint: string;
-  pluginData: string;
-}) {
+export default function codexDispatchHandoff(
+  runtime: {
+    nodeExecutable: string;
+    entrypoint: string;
+    pluginData: string;
+  },
+  route: 'dispatch' | 'continuation' = 'dispatch',
+) {
   const argv = [
     runtime.nodeExecutable,
     runtime.entrypoint,
-    'dispatch',
+    route,
     '--plugin-data',
     runtime.pluginData,
   ];
@@ -19,7 +22,7 @@ async function prepare(escalated = false) {
     cmd: command, max_output_tokens: 32000,
     ...(escalated ? {
       sandbox_permissions: 'require_escalated',
-      justification: 'Allow the activated assignment workflow to prepare this native assessment handoff?',
+      justification: 'Allow the activated assignment workflow to prepare this native issue handoff?',
       prefix_rule: argv
     } : {})
   });
@@ -31,7 +34,7 @@ async function prepare(escalated = false) {
   text({...result, output});
   if (result.exit_code !== 0) {
     if (!escalated && /codex-host-access-required|EPERM|EACCES/u.test(output)) return prepare(true);
-    throw new Error('dispatch-preparation-failed; inspect the command result and reconcile before retrying');
+    throw new Error('native-handoff-preparation-failed; inspect the command result and reconcile before retrying');
   }
   return JSON.parse(output);
 }
@@ -41,6 +44,9 @@ for (let retry = 0; prepared.status === 'busy' && retry < 3; retry++) {
   prepared = await prepare();
 }
 if (prepared.status === 'prepared') {
-  text({id: prepared.id, creation: await tools.mcp__codex_app__create_thread(prepared.request)});
-}`}`;
+  text({id: prepared.id, native: await tools.NATIVE_HANDOFF(prepared.request)});
+}`.replace(
+  'NATIVE_HANDOFF',
+  route === 'dispatch' ? 'mcp__codex_app__create_thread' : 'mcp__codex_app__send_message_to_thread',
+)}`;
 }

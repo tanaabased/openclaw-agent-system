@@ -21,6 +21,14 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'continuation-send-mismatch')
+    return {
+      severity: 'error',
+      title: 'The continuation request changed in transit',
+      summary:
+        'The native send does not match the prepared request. Implementation is not authorized by this send.',
+      next: 'Inspect the retained send and issue chat. An operator may preview a bounded continuation retry; do not resend the old request or relax receipt verification.',
+    };
   if (code === 'private-state-file-lock-busy')
     return {
       severity: 'warning',

@@ -2251,8 +2251,8 @@ describe('agent/codex-dispatch', () => {
     assert.equal(prepared.status, 'prepared');
     assert.equal('request' in prepared && prepared.request?.model, 'gpt-6.1-sol');
     assert.equal('request' in prepared && prepared.request?.thinking, 'high');
-    assert.equal((await work.run('next')).status, 'idle');
-    assert.equal((await work.run('reconcile')).status, 'idle');
+    assert.equal((await work.run('next')).status, 'pending');
+    assert.equal((await work.run('reconcile')).status, 'pending');
     work.receive();
     const context = await work.run('context', {}, true);
     assert.equal(context.status, 'verified');
@@ -2426,7 +2426,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(prepared.status, 'prepared');
     assert.equal('request' in prepared && prepared.request?.threadId, native!.id);
     assert.equal(native!.turnStatus, 'completed');
-    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await work.run('next')).status, 'pending');
     work.receive();
     const context = await work.run('context', {}, true);
     assert.equal(context.status, 'verified');
@@ -2545,7 +2545,7 @@ describe('agent/codex-dispatch', () => {
       assert.equal(next.status, 'prepared');
       assert.equal('request' in next && next.request?.threadId, native!.id);
       work.continuation.continuationNative = async () => ({ status: 'uncertain' });
-      assert.equal((await work.run('next')).status, 'idle');
+      assert.equal((await work.run('next')).status, 'pending');
       work.receive();
       native!.turnId = 'retry-turn';
       work.continuation.continuationNative = async () => ({
@@ -2555,6 +2555,44 @@ describe('agent/codex-dispatch', () => {
       });
       assert.equal((await work.run('context', {}, true)).status, 'verified');
     });
+
+  it('should recover an altered prompt only through a fresh operator preview and unchanged assessment checkout', async () => {
+    const work = await autoIssue();
+    await work.run('next');
+    native!.turnId = 'diagnostic-followup';
+    const mismatch = {
+      status: 'mismatch' as const,
+      code: 'continuation-send-mismatch',
+      callId: 'bad-send',
+      requestDigest: 'd'.repeat(64),
+      turnId: 'failed-handoff',
+      latestTurnId: native!.turnId,
+      ended: true,
+    };
+    work.continuation.continuationNative = async () => mismatch;
+    assert.equal((await work.run('context', {}, true)).status, 'blocked');
+    assert.equal((await work.run('next')).status, 'idle');
+    const preview = await work.run('retry', {}, 'operator');
+    assert.equal(preview.status, 'retry-available');
+    const digest = 'digest' in preview && preview.digest;
+    const originalGit = work.continuation.git!;
+    work.continuation.git = async (cwd, args, signal) =>
+      args[0] === 'status' ? ' M changed' : originalGit(cwd, args, signal);
+    await assert.rejects(work.run('retry', { digest }, 'operator'), /worktree-changed/);
+    work.continuation.git = originalGit;
+    mismatch.requestDigest = 'e'.repeat(64);
+    await assert.rejects(work.run('retry', { digest }, 'operator'), /retry-stale/);
+    mismatch.requestDigest = 'd'.repeat(64);
+    assert.equal((await work.run('retry', { digest }, 'operator')).status, 'retry-ready');
+    const records = (await request('inspect')).records as Array<{
+      continuation: { retries: Array<{ resumeAfterTurnId: string; mismatch: { callId: string } }> };
+    }>;
+    assert.equal(records[0]!.continuation.retries[0]!.resumeAfterTurnId, 'diagnostic-followup');
+    assert.equal(records[0]!.continuation.retries[0]!.mismatch.callId, 'bad-send');
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.continuation.continuationNative = async () => ({ status: 'uncertain' });
+    assert.equal((await work.run('next')).status, 'pending');
+  });
 
   it('should not retry a denied continuation', async () => {
     const work = await workIssue();
@@ -2609,8 +2647,8 @@ describe('agent/codex-dispatch', () => {
   it('should retain uncertain native continuation across restart without another prepared request', async () => {
     const work = await workIssue();
     assert.equal((await work.run('next')).status, 'prepared');
-    assert.equal((await work.run('reconcile')).status, 'idle');
-    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await work.run('reconcile')).status, 'pending');
+    assert.equal((await work.run('next')).status, 'pending');
     await assert.rejects(work.run('context', {}, true), /send-unverified/);
   });
 
@@ -2705,7 +2743,7 @@ describe('agent/codex-dispatch', () => {
       /only the managed PR delivery/,
     );
     work.continuation.continuationNative = async () => ({ status: 'uncertain' });
-    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await work.run('next')).status, 'pending');
   });
 
   for (const turnStatus of ['failed', 'interrupted'])

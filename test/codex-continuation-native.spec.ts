@@ -21,6 +21,7 @@ describe('agent/codex-continuation-native', () => {
       call?: boolean;
       status?: string;
       duplicate?: boolean;
+      duplicateSend?: boolean;
       followUp?: boolean;
       sameTurn?: boolean;
       prompt?: string;
@@ -33,6 +34,7 @@ describe('agent/codex-continuation-native', () => {
     } = {},
   ) {
     const call = {
+      id: 'native-send',
       type: options.forged ? 'agentMessage' : 'mcpToolCall',
       server: 'codex_app',
       tool: 'send_message_to_thread',
@@ -43,7 +45,7 @@ describe('agent/codex-continuation-native', () => {
       {
         id: options.sourceTurn ?? 'scan',
         status: 'completed',
-        items: options.call === false ? [] : [call],
+        items: options.call === false ? [] : options.duplicateSend ? [call, call] : [call],
       },
     ];
     const implementation = {
@@ -78,7 +80,9 @@ describe('agent/codex-continuation-native', () => {
         ? [steered]
         : [{ id: 'assessment', status: 'completed', items: [] }, implementation]),
       ...(options.duplicate ? [{ ...implementation, id: 'duplicate' }] : []),
-      ...(options.followUp ? [{ id: 'followup', status: 'completed', items: [] }] : []),
+      ...(options.followUp
+        ? [{ id: 'followup', status: 'completed', completedAt: 2, items: [] }]
+        : []),
     ];
     return codexContinuationNative(async (method, params) => {
       if (params.threadId === 'source') {
@@ -136,8 +140,34 @@ describe('agent/codex-continuation-native', () => {
     ])
       assert.deepEqual(
         await fixture({ arguments: { ...attempt.request, ...changed } })('source', attempt),
-        { status: 'uncertain' },
+        changed.threadId === 'other' || changed.prompt
+          ? { status: 'uncertain' }
+          : { status: 'blocked', code: 'continuation-send-mismatch' },
       );
+  });
+
+  it('should retain a completed altered prompt as mismatch evidence without verifying it', async () => {
+    const altered = { ...attempt.request, prompt: 'Continue this issue' };
+    const inspect = fixture({
+      arguments: altered,
+      prompt: altered.prompt,
+      turnStatus: 'completed',
+      completedAt: 1,
+      followUp: true,
+    });
+    const result = await inspect('source', attempt);
+    assert.equal(result.status, 'mismatch');
+    assert.equal('turnId' in result && result.turnId, 'implementation');
+    assert.equal('latestTurnId' in result && result.latestTurnId, 'followup');
+    assert.equal('callId' in result && result.callId, 'native-send');
+    assert.equal('ended' in result && result.ended, true);
+    const denied = await fixture({
+      arguments: altered,
+      prompt: altered.prompt,
+      items: [{ type: 'commandExecution', status: 'declined' }],
+    })('source', attempt);
+    assert.equal(denied.status, 'blocked');
+    assert.equal('code' in denied && denied.code, 'continuation-native-approval-denied');
   });
   it('should require a native end timestamp before classifying a terminal history status as ended', async () => {
     for (const turnStatus of ['completed', 'failed', 'interrupted']) {
@@ -171,6 +201,7 @@ describe('agent/codex-continuation-native', () => {
       assert.deepEqual(await fixture(options)('source', attempt), { status: 'uncertain' });
   });
   it('should reject copied prose and duplicate or unrelated turns', async () => {
+    await assert.rejects(fixture({ duplicateSend: true })('source', attempt), /send-duplicated/);
     assert.deepEqual(await fixture({ forged: true })('source', attempt), { status: 'uncertain' });
     await assert.rejects(fixture({ duplicate: true })('source', attempt), /turn-ambiguous/);
     await assert.rejects(

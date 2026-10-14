@@ -53,6 +53,17 @@ export const codexContinuationStateSchema = Type.Object(
           {
             attempt: attemptSchema,
             binding: Type.Optional(workflowBindingSchema),
+            resumeAfterTurnId: Type.Optional(text),
+            mismatch: Type.Optional(
+              Type.Object(
+                {
+                  callId: text,
+                  requestDigest: hash,
+                  turnId: text,
+                },
+                { additionalProperties: false },
+              ),
+            ),
             at: Type.Integer({ minimum: 0 }),
             by: text,
           },

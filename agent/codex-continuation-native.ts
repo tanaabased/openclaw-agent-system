@@ -25,7 +25,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
     });
     if (entries.some((entry) => entry.turnId !== attempt.sourceTurnId || !nativeObject(entry.item)))
       throw new Error('continuation-source-unavailable');
-    const calls = entries
+    const targetCalls = entries
       .map((entry) => entry.item)
       .filter(
         (item) =>
@@ -33,13 +33,30 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           item.type === 'mcpToolCall' &&
           item.server === 'codex_app' &&
           item.tool === 'send_message_to_thread' &&
-          automationHash(localSendArguments(item.arguments)) === automationHash(attempt.request),
+          nativeObject(item.arguments) &&
+          item.arguments.threadId === attempt.request.threadId,
       );
+    const exact = targetCalls.filter(
+      (item) =>
+        nativeObject(item) &&
+        automationHash(localSendArguments(item.arguments)) === automationHash(attempt.request),
+    );
+    const calls = exact.length ? exact : targetCalls;
     if (calls.length > 1) throw new Error('continuation-send-duplicated');
     const call = calls[0];
     if (!nativeObject(call)) return { status: 'uncertain' as const };
     if (call.status === 'failed')
       return { status: 'blocked' as const, code: 'continuation-native-send-failed' };
+    const actual = localSendArguments(call.arguments);
+    const mismatch = automationHash(actual) !== automationHash(attempt.request);
+    if (
+      !nativeObject(actual) ||
+      typeof actual.prompt !== 'string' ||
+      (mismatch &&
+        automationHash({ ...actual, prompt: attempt.request.prompt }) !==
+          automationHash(attempt.request))
+    )
+      return { status: 'blocked' as const, code: 'continuation-send-mismatch' };
     const target = await dispatchHistory(request, attempt.request.threadId, true);
     const before = target.findIndex((entry) => entry.id === attempt.beforeTurnId);
     if (before < 0) throw new Error('continuation-history-incomplete');
@@ -49,7 +66,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
       '<codex_delegation>\n  <source_thread_id>' +
       escaped(sourceThreadId) +
       '</source_thread_id>\n  <input>' +
-      escaped(attempt.request.prompt) +
+      escaped(actual.prompt) +
       '</input>\n</codex_delegation>';
     const candidates = target
       // native sends can arrive as steering inside the turn observed before dispatch.
@@ -71,36 +88,39 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
                   item.content.length === 1 &&
                   nativeObject(item.content[0]) &&
                   item.content[0].type === 'text' &&
-                  item.content[0].text === attempt.request.prompt)),
+                  item.content[0].text === actual.prompt)),
           ),
       );
     if (candidates.length > 1) throw new Error('continuation-turn-ambiguous');
     const found = candidates[0];
     if (!found) return { status: 'uncertain' as const };
     if (typeof found.id !== 'string') throw new Error('continuation-turn-invalid');
-    const approvalDenied =
-      Array.isArray(found.items) &&
-      found.items.some((item) => {
-        if (!nativeObject(item)) return false;
-        if (item.type === 'commandExecution' || item.type === 'fileChange')
-          return item.status === 'declined';
-        if (
-          item.type !== 'mcpToolCall' ||
-          item.status !== 'failed' ||
-          item.result != null ||
-          !nativeObject(item.error)
-        )
-          return false;
-        const message = item.error.message;
-        return (
-          message === 'user rejected MCP tool call' ||
-          (typeof message === 'string' &&
-            message.startsWith('This action was rejected due to unacceptable risk.\nReason: ') &&
-            message.includes(
-              'Do not bypass this rejection through a workaround or indirect execution.',
-            ))
-        );
-      });
+    const inspected = mismatch ? target.slice(target.indexOf(found)) : [found];
+    const approvalDenied = inspected.some(
+      (turn) =>
+        Array.isArray(turn.items) &&
+        turn.items.some((item) => {
+          if (!nativeObject(item)) return false;
+          if (item.type === 'commandExecution' || item.type === 'fileChange')
+            return item.status === 'declined';
+          if (
+            item.type !== 'mcpToolCall' ||
+            item.status !== 'failed' ||
+            item.result != null ||
+            !nativeObject(item.error)
+          )
+            return false;
+          const message = item.error.message;
+          return (
+            message === 'user rejected MCP tool call' ||
+            (typeof message === 'string' &&
+              message.startsWith('This action was rejected due to unacceptable risk.\nReason: ') &&
+              message.includes(
+                'Do not bypass this rejection through a workaround or indirect execution.',
+              ))
+          );
+        }),
+    );
     // a separate app-server can report an active turn as interrupted without an end timestamp.
     const ended =
       ['completed', 'failed', 'interrupted'].includes(String(found.status)) &&
@@ -114,6 +134,24 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
         turnId: found.id,
         ended,
       };
+    if (mismatch) {
+      const latest = target.at(-1)!;
+      if (call.status !== 'completed' || typeof call.id !== 'string')
+        return { status: 'uncertain' as const };
+      return {
+        status: 'mismatch' as const,
+        code: 'continuation-send-mismatch',
+        callId: call.id,
+        requestDigest: automationHash(actual),
+        turnId: found.id,
+        latestTurnId: String(latest.id),
+        ended:
+          ended &&
+          ['completed', 'failed', 'interrupted'].includes(String(latest.status)) &&
+          typeof latest.completedAt === 'number' &&
+          latest.completedAt > 0,
+      };
+    }
     return { status: 'verified' as const, turnId: found.id, ended };
   };
 }
