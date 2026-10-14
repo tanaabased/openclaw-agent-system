@@ -413,7 +413,18 @@ export async function runCodexDispatch(
         };
       if (!native.turnId || !native.followUpUserTurn)
         throw new Error('dispatch-handoff-user-turn-required');
-      const digest = automationHash({ record, manifest: current.digest, turnId: native.turnId });
+      // polling and presentation do not change the work being handed off; retain all authority and result fields.
+      const digest = automationHash({
+        record: {
+          ...record,
+          feedback: undefined,
+          notice: undefined,
+          intakeReportedAt: undefined,
+          renameRequested: undefined,
+        },
+        manifest: current.digest,
+        turnId: native.turnId,
+      });
       if (input.digest === undefined)
         return {
           status: 'handoff-available',

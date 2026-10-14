@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should recover stale previews through the same action without returning implementation to assessment', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'dispatch-recovery-stale',
+      changed: true,
+    });
+    assert.equal(notice.severity, 'warning');
+    assert.match(notice.message, /same recovery action/);
+    assert.match(notice.message, /action:handoff/);
+    assert.match(notice.message, /do not refresh assessment context after implementation/);
+    assert.match(notice.message, /existing authorization/);
+  });
+
   it('should preserve the owning callers escaped recovery path without escaping it twice', () => {
     const notice = codexIssueNotice({
       event: 'failure',

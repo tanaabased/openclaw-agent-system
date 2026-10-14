@@ -496,6 +496,78 @@ describe('agent/codex-dispatch', () => {
     );
   });
 
+  it('should preserve a handoff preview across feedback scans and intake presentation updates', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    await request('result', { id: prepared.id, result }, child);
+    native!.followUpUserTurn = true;
+    native!.turnId = 'authorized-follow-up';
+    const preview = await request('handoff', { id: prepared.id }, child);
+    const selected = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(
+      selected.store.location.root,
+      selected.store.location.scope,
+    );
+    const feedback = {
+      startedAt: now,
+      baseline: {},
+      events: [],
+      scannedAt: 'later-scan',
+      scannedTime: now + 1,
+    };
+    await store.exclusive(async (state, save) => {
+      const record = state.records.find((item) => item.id === prepared.id)!;
+      record.feedback = feedback;
+      record.intakeReportedAt = now + 1;
+      record.notice = 'f'.repeat(64);
+      record.renameRequested = true;
+      await save();
+    });
+    assert.equal(
+      (await request('handoff', { id: prepared.id, digest: preview.digest }, child)).status,
+      'handed-off',
+    );
+    const retained = (await store.read()).records.find((item) => item.id === prepared.id)!;
+    assert.deepEqual(retained.feedback, feedback);
+    assert.equal(retained.result?.summary, result.summary);
+  });
+
+  it('should require a fresh handoff preview when the retained assessment changes', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    await request('result', { id: prepared.id, result }, child);
+    native!.followUpUserTurn = true;
+    native!.turnId = 'authorized-follow-up';
+    const preview = await request('handoff', { id: prepared.id }, child);
+    const selected = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(
+      selected.store.location.root,
+      selected.store.location.scope,
+    );
+    await store.exclusive(async (state, save) => {
+      state.records.find((item) => item.id === prepared.id)!.result!.summary = 'Revised scope.';
+      await save();
+    });
+    await assert.rejects(
+      request('handoff', { id: prepared.id, digest: preview.digest }, child),
+      /dispatch-recovery-stale/,
+    );
+    assert.equal(
+      (await store.read()).records.find((item) => item.id === prepared.id)!.handoff,
+      undefined,
+    );
+    const refreshed = await request('handoff', { id: prepared.id }, child);
+    assert.equal((refreshed.previousResult as typeof result).summary, 'Revised scope.');
+    assert.equal(
+      (await request('handoff', { id: prepared.id, digest: refreshed.digest }, child)).status,
+      'handed-off',
+    );
+  });
+
   async function configureAssessment(assessment: unknown) {
     const configured = structuredClone(manifest);
     Object.assign(configured.github.notifications['issue-assignment'], { assessment });

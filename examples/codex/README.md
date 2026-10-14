@@ -139,6 +139,11 @@ using disposable issues and the installed plugin.
 - **Continuation:** explicitly request implementation in the issue and verify its
   handoff preserves the assessment and worktree. Later intake must neither inspect
   that implementation nor prevent another eligible issue from starting.
+  Preview a human-authorized handoff, let feedback polling and intake reporting run,
+  then apply the original digest: those observation updates must not invalidate it.
+  A revised assessment, manifest, or native user turn must invalidate the preview.
+  Recover a stale preview through the same handoff action and its fresh digest;
+  do not return an implemented branch to assessment-context verification.
 - **Workflow authority:** the existing assessment schedule must reject implementation,
   review, and publication authority. A separately authorized native pilot must record
   the fresh schedule, native continuation and publication receipts, any approval
