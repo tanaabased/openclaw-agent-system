@@ -29,6 +29,51 @@ function parsed(notifications: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
+  it('should allow openclaw planning while naming unsupported enabled capabilities', () => {
+    const supported = {
+      ...policy,
+      runtimes: ['openclaw', 'codex'],
+      'issue-assignment': { allowed: [actor], mode: 'plan', feedback: false },
+      'review-request': { enabled: false, allowed: [{ ...actor }], feedback: true },
+    };
+    assert.equal(githubNotificationRuntimeBlocker(parsed(supported), 'openclaw'), undefined);
+    for (const [extra, capability] of [
+      [{ mode: 'work' }, 'work issue assignment'],
+      [{ mode: 'auto' }, 'auto issue assignment'],
+      [{ feedback: true }, 'issue feedback'],
+      [{ feedback: { allowed: [{ ...actor }] } }, 'issue feedback'],
+      [{ assessment: { skill: 'custom:assess' } }, 'replacement assessment skills'],
+    ] as const) {
+      const declaration = parsed({
+        ...supported,
+        'issue-assignment': { ...supported['issue-assignment'], ...extra },
+      });
+      assert.ok(
+        githubNotificationRuntimeBlocker(declaration, 'openclaw')?.message.includes(capability),
+      );
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
+      declaration.issueAssignment!.enabled = false;
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
+    }
+    const review = parsed({ ...supported, 'review-request': { allowed: [{ ...actor }] } });
+    assert.match(githubNotificationRuntimeBlocker(review, 'openclaw')!.message, /review requests/);
+    for (const skill of [
+      'agent-system-issue-assessment',
+      'agent-system:agent-system-issue-assessment',
+    ]) {
+      assert.equal(
+        githubNotificationRuntimeBlocker(
+          parsed({
+            ...supported,
+            'issue-assignment': { ...supported['issue-assignment'], assessment: { skill } },
+          }),
+          'openclaw',
+        ),
+        undefined,
+      );
+    }
+  });
+
   it('should preserve trigger switches and authority independently of adapter availability', () => {
     for (const [key, decoded] of [
       ['issue-assignment', 'issueAssignment'],
@@ -44,7 +89,9 @@ describe('channels/github/notification-policy', () => {
           assert.equal(declaration[decoded]?.allowed.length, allowed?.length ?? 0);
           assert.equal(
             githubNotificationRuntimeBlocker(declaration, 'openclaw')?.code,
-            enabled === false ? undefined : 'github-notification-runtime-unsupported',
+            key === 'review-request' && (enabled ?? Boolean(allowed?.length))
+              ? 'github-notification-runtime-unsupported'
+              : undefined,
           );
           assert.equal(
             githubNotificationRuntimeBlocker(declaration, 'codex')?.code,

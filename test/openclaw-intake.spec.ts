@@ -7,6 +7,10 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
 import { codexIntakePolicy } from '../agent/codex-intake-policy.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
+import AgentDoctorService from '../agent/doctor-service.ts';
+import doctorAgentSystem from '../cli/doctor.ts';
+import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
+import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { automationPatch, projectAutomation } from '../agent/automation-projection.ts';
 import type { NativeAutomation } from '../agent/automation-gateway.ts';
@@ -82,6 +86,76 @@ describe('OpenClaw V2 intake slice', () => {
       },
     };
   }
+  it('should report supported planning through combined doctor and install without starting legacy monitoring', async () => {
+    const f = fixture();
+    const unused = async () => {
+      throw Error('legacy monitoring must not be activated');
+    };
+    let cleanupCalls = 0;
+    const legacy = createNotificationLifecycleContribution({
+      hookAccess: { inspect: unused, reconcile: unused },
+      monitorService: { runOnce: unused },
+      routingService: {
+        async inspect(desired) {
+          assert.equal(desired.enabled, false);
+          return { kind: 'noop', code: 'notification-routing-disabled', message: 'disabled' };
+        },
+        async reconcile(desired) {
+          assert.equal(desired.enabled, false);
+          return {
+            configChanged: false,
+            plan: { kind: 'noop', code: 'notification-routing-disabled', message: 'disabled' },
+            receiptAction: 'none',
+            requiresManualRestart: false,
+          };
+        },
+      },
+      stateStore: {
+        read: async () => undefined,
+        remove: async () => {
+          cleanupCalls++;
+          return false;
+        },
+      },
+    });
+    const registry = new AgentSystemLifecycleRegistry([legacy, f.service.contribution()]);
+    const doctor = new AgentDoctorService({ lifecycleRegistry: registry });
+    const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
+    assert.deepEqual(legacy.validate!(context)?.diagnostics, []);
+    async function inspect(expected: 'healthy' | 'drift', code: string) {
+      const output: string[] = [];
+      const exits: number[] = [];
+      await doctorAgentSystem({
+        doctorService: doctor,
+        manifestService: {
+          loadForAgentId: async () => f.loaded,
+          loadForCommandDirectory: async () => f.loaded,
+        },
+        workspaceDir: root,
+        json: true,
+        output: { writeStdout: (value) => output.push(value), writeStderr: unused },
+        setExitCode: (value) => exits.push(value),
+      });
+      const result = JSON.parse(output.join(''));
+      assert.equal(result.status, expected);
+      assert.deepEqual(
+        result.findings.map((finding: { code: string }) => finding.code),
+        [code],
+      );
+      assert.deepEqual(exits, expected === 'healthy' ? [] : [1]);
+    }
+    await inspect('drift', 'intake-activation-required');
+    assert.equal(f.connects(), 0);
+    const installed = await registry.reconcile(context);
+    assert.deepEqual(installed.warnings, []);
+    assert.ok(installed.outcomes.some((item) => item.code === 'intake-activated'));
+    assert.equal(cleanupCalls, 1);
+    await inspect('healthy', 'intake-ready');
+    const notifications = f.value.github.notifications;
+    notifications.intervalMinutes++;
+    await inspect('drift', 'intake-policy-reconciliation-required');
+  });
+
   it('should share the Codex policy contract and isolate runtime identity and V1 files', async () => {
     const f = fixture();
     assert.equal(

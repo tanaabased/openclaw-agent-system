@@ -3,6 +3,7 @@ import type { GitHubNotificationsDeclaration } from './config-schema.ts';
 import { feedbackIdentities } from './feedback-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
+import { defaultAssessmentSkill } from '../../manifest/assessment-schema.ts';
 
 /** validate portable policy without consulting providers, credentials, or installed state. */
 export function validateGitHubNotificationPolicy(
@@ -73,7 +74,7 @@ export function validateGitHubNotificationPolicy(
   return diagnostics;
 }
 
-/** codex supports issue intake only; other execution adapters remain unavailable. */
+/** report unsupported enabled workflows; lifecycle owners inspect runtime readiness separately. */
 export function githubNotificationRuntimeBlocker(
   declaration: GitHubNotificationsDeclaration | undefined,
   runtime: 'openclaw' | 'codex',
@@ -85,6 +86,32 @@ export function githubNotificationRuntimeBlocker(
     triggers.every((trigger) => !trigger || trigger.enabled === false)
   )
     return;
+  if (runtime === 'openclaw') {
+    const issue = declaration.issueAssignment;
+    const review = declaration.reviewRequest;
+    const issueEnabled = issue && (issue.enabled ?? Boolean(issue.allowed.length));
+    let capability: string | undefined;
+    if (review?.enabled ?? Boolean(review?.allowed.length)) capability = 'review requests';
+    else if (issueEnabled && issue.mode !== 'plan') capability = `${issue.mode} issue assignment`;
+    else if (issueEnabled && feedbackIdentities(issue.allowed, issue.feedback).length)
+      capability = 'issue feedback';
+    else if (
+      issueEnabled &&
+      issue.assessment?.skill &&
+      ![defaultAssessmentSkill, defaultAssessmentSkill.split(':').at(-1)!].includes(
+        issue.assessment.skill,
+      )
+    )
+      capability = 'replacement assessment skills';
+    if (!capability) return;
+    return {
+      code: 'github-notification-runtime-unsupported',
+      message: `OpenClaw V2 does not support ${capability}.`,
+      remediation:
+        'Use Plan-mode issue assignment with the default assessment skill and feedback disabled; disable review requests. Enrollment, intake and automation readiness are checked separately.',
+      status: 'blocked' as const,
+    };
+  }
   if (
     runtime === 'codex' &&
     !(declaration.reviewRequest?.enabled ?? Boolean(declaration.reviewRequest?.allowed.length))

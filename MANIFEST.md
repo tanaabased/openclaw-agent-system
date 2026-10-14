@@ -476,10 +476,11 @@ verified delivery PR. Codex Auto conditionally continues a recorded proceed deci
 through the same implementation and delivery stages. Review requests remain unavailable.
 OpenClaw v2 supports the default assessment skill in Plan mode; broader workflow rollout
 remains separate.
-An unavailable OpenClaw notification
-adapter produces a validation warning and a skipped install outcome; other
-components remain usable. Doctor reports notifications as blocked, and execution
-stops before legacy routing or authority is used. A Codex-only declaration does not
+OpenClaw Work/Auto modes, issue feedback, review requests, and replacement assessment
+skills remain unsupported. Enabling one produces a validation warning, a skipped
+notification install outcome, and a blocked Doctor finding; other components remain
+usable. Supported Plan-mode declarations are checked by the enrollment, intake, and
+automation lifecycle owners without activating legacy monitoring. A Codex-only declaration does not
 enable the OpenClaw channel. Binding and passive discovery never activate work.
 OpenClaw also derives an `Agent System: github-issue-assignment`
 automation from enabled v2 policy. It uses the existing automation reconciler,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -152,7 +152,7 @@ describe('manifest/service', () => {
     ]);
   });
 
-  it('should load tool policy with a warning when a notification adapter is unavailable', async () => {
+  it('should warn for unsupported work mode but load supported planning without a warning', async () => {
     const root = await temporaryRoot();
     await writeFile(
       join(root, 'agent.yaml'),
@@ -168,6 +168,7 @@ describe('manifest/service', () => {
             'allowed-repository-owners': [{ login: 'example', 'node-id': 'O_example' }],
             'issue-assignment': {
               enabled: true,
+              mode: 'work',
               allowed: [{ login: 'operator', 'node-id': 'U_operator' }],
             },
           },
@@ -196,6 +197,13 @@ describe('manifest/service', () => {
       result.diagnostics.map(({ code, severity }) => ({ code, severity })),
       [{ code: 'github-notification-runtime-unsupported', severity: 'warning' }],
     );
+    const path = join(root, 'agent.yaml');
+    await writeFile(path, (await readFile(path, 'utf8')).replace('"mode":"work"', '"mode":"plan"'));
+    const supported = await service.loadForAgentId('tanaabot', 'before_tool_call');
+    assert.equal(supported.status, 'loaded');
+    if (supported.status !== 'loaded') return;
+    assert.deepEqual(supported.diagnostics, []);
+    assert.equal(supported.manifest.git?.policy?.forcePush, 'deny');
   });
 
   it('should cache unchanged manifests and reload a changed file', async () => {

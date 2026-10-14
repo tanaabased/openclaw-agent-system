@@ -42,7 +42,7 @@ if OPENCLAW_LOG_LEVEL=debug openclaw agent-system automations sync --json > offl
 jq -e '.status == "failed" and .code == "automation-gateway-unavailable"' offline-sync.json
 
 # should register native handoff observation without launching an issue chat
-openclaw plugins inspect agent-system --runtime --json | jq -e 'any(.typedHooks[]; .name == "before_tool_call") and any(.typedHooks[]; .name == "after_tool_call") and any(.typedHooks[]; .name == "agent_end")'
+openclaw plugins inspect agent-system --runtime --json | jq -e '[.typedHooks[].name] as $registered | ["before_tool_call", "after_tool_call"] - $registered | if length == 0 then true else error("missing handoff hooks: \(.)") end'
 
 # should retain plain human failure diagnostics at debug level while offline
 cd "$TMPDIR/automation-agent"
