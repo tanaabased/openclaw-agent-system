@@ -464,6 +464,7 @@ export async function runCodexDispatch(
   if (!admitted || (!retainedWork && admitted.policyDigest !== current.policy?.digest))
     throw new Error('dispatch-policy-reconciliation-required');
   const now = (deps.now ?? Date.now)();
+  const waitForLock = childAction || action === 'report';
   return store
     .exclusive(async (state, save, signal) => {
       if (!operatorAction && !childAction) {
@@ -1068,7 +1069,7 @@ export async function runCodexDispatch(
         }
       }
       throw new Error('dispatch-action-invalid');
-    }, childAction)
+    }, waitForLock)
     .catch((error: unknown) => {
       if (nativeObject(error) && error.code === 'private-state-file-lock-busy')
         return {

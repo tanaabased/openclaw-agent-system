@@ -101,6 +101,10 @@ using disposable issues and the installed plugin.
   send counts and quiet repeat polls. Edit a source or revoke its author before
   publication; retain the private answer and withhold the public reply. Interrupt a
   reply after its provider write and reconcile the same receipt without a duplicate.
+  Request the intake report while a reply holds the journal: it must wait within
+  the bounded lock policy, then report fresh saved state. If contention outlasts
+  that wait and the permitted retries, show a temporary tracking-file warning
+  without claiming an identity mismatch or consuming the pending report.
   Verify same-account feedback stays private even if a public candidate is supplied,
   and that confirmed runtime replies never become new feedback events.
   Activate routine public replies once, then process two successive comments from

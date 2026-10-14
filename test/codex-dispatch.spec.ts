@@ -1841,6 +1841,76 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await first).status, 'routing-required');
   });
 
+  it('should wait for a concurrent writer and report the newly saved journal state', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+    await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const writer = store.exclusive(async (state, save) => {
+      entered.resolve();
+      await release.promise;
+      state.records[0]!.intakeReportedAt = now;
+      await save();
+    });
+    await entered.promise;
+    const lock = properLockfile.lock;
+    properLockfile.lock = async (path, options) => {
+      const retries = options?.retries;
+      if (
+        String(path) === store.path &&
+        retries &&
+        typeof retries !== 'number' &&
+        retries.retries
+      ) {
+        release.resolve();
+        await writer;
+      }
+      return lock(path, options);
+    };
+    try {
+      const recheck = await report();
+      assert.equal(recheck.status, 'continue');
+      assert.equal(recheck.nextAction, 'next');
+      await next();
+      const completed = await report();
+      assert.equal(completed.status, 'report');
+      assert.doesNotMatch(String(completed.response), /1 issue started/);
+      assert.equal((await store.read()).records[0]!.intakeReportedAt, now);
+    } finally {
+      properLockfile.lock = lock;
+      release.resolve();
+      await writer;
+    }
+  });
+
+  it('should leave reporting unconsumed when the bounded journal wait is exhausted', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+    await next();
+    const before = await request('inspect');
+    const lock = properLockfile.lock;
+    properLockfile.lock = async (path, options) => {
+      if (String(path).includes('codex-dispatch-'))
+        throw Object.assign(new Error('The journal remains busy.'), { code: 'ELOCKED' });
+      return lock(path, options);
+    };
+    try {
+      assert.deepEqual(await report(), { status: 'busy', changed: false });
+      assert.deepEqual(await request('inspect'), before);
+    } finally {
+      properLockfile.lock = lock;
+    }
+    const recovered = await report();
+    assert.equal(recovered.status, 'report');
+    assert.match(String(recovered.response), /1 issue started/);
+    assert.deepEqual(await report(), recovered);
+  });
+
   it('should let child context and result wait for the intake journal lease', async () => {
     const prepared = await prepare();
     created();

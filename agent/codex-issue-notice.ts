@@ -21,6 +21,14 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'private-state-file-lock-busy')
+    return {
+      severity: 'warning',
+      title: 'Tracking files are temporarily busy',
+      summary:
+        'Another operation is updating the tracking files. This attempt could not finish within its bounded wait.',
+      next: 'The next scheduled check will retry. Keep existing work and receipts. Do not delete the lock or reset the chat; if this persists, inspect the operation holding the journal.',
+    };
   if (code === 'dispatch-recovery-stale')
     return {
       severity: 'warning',

@@ -3,6 +3,23 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should describe lock contention as retryable without implying identity corruption', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'private-state-file-lock-busy',
+      changed: true,
+    });
+    assert.equal(notice.severity, 'warning');
+    assert.match(notice.summary, /another operation|another update/i);
+    assert.match(notice.next, /retry|scheduled check/i);
+    assert.match(notice.next, /Do not delete the lock/);
+    assert.doesNotMatch(notice.summary, /identity|did not match|corrupt/i);
+    assert.equal(
+      codexIssueNotice({ event: 'failure', code: 'intake-state-invalid', changed: true }).severity,
+      'error',
+    );
+  });
+
   it('should recover stale previews through the same action without returning implementation to assessment', () => {
     const notice = codexIssueNotice({
       event: 'failure',
