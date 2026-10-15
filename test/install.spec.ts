@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 
 import ansis from 'ansis';
 
+import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import { AutomationError } from '../agent/automation-gateway.ts';
 import installAgentSystem from '../cli/install.ts';
 import { AgentInstallError, type AgentInstallResult } from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -663,6 +665,110 @@ describe('cli/install', () => {
     assert.match(result.hint, /Host setup was skipped/u);
     assert.match(diagnostics.join(''), /Earlier completed changes remain applied/u);
     assert.match(result.recovery, /blocking component may also have partial effects/u);
+  });
+
+  it('should preserve sanitized gateway evidence and lifecycle progress in both failure modes', async () => {
+    const upstream = [
+      Object.assign(new Error('secret request payload'), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+        details: { token: 'secret' },
+      }),
+      Object.assign(new Error('secret connection URL'), {
+        name: 'GatewayTransportError',
+        kind: 'closed',
+        connectionDetails: { message: 'secret' },
+        code: 1008,
+        reason: 'secret',
+        requestDispatched: true,
+      }),
+    ];
+    const expected = [
+      {
+        method: 'cron.add',
+        category: 'rejected',
+        gatewayCode: 'INVALID_REQUEST',
+        closeCode: null,
+        requestDispatched: null,
+      },
+      {
+        method: 'cron.add',
+        category: 'closed',
+        gatewayCode: null,
+        closeCode: 1008,
+        requestDispatched: true,
+      },
+    ];
+    const progress = {
+      outcomes: installOutcomes,
+      warnings: [{ component: 'path', code: 'retained-warning', message: 'Retain in JSON.' }],
+      unattempted: [{ component: 'automations' }],
+    };
+    for (const [index, error] of upstream.entries()) {
+      for (const json of [true, false]) {
+        const harness = createHarness({
+          install: new AgentSystemLifecycleError(
+            'automations',
+            index === 0 ? 'automation-gateway-rejected' : 'automation-gateway-failed',
+            'Automation reconciliation stopped.',
+            {
+              cause: new AutomationError(
+                index === 0 ? 'automation-gateway-rejected' : 'automation-gateway-failed',
+                automationGatewayDiagnostic('cron.add', error),
+              ),
+            },
+            undefined,
+            undefined,
+            progress,
+          ),
+          json,
+        });
+        await harness.run();
+        assert.deepEqual(harness.exitCodes, [1]);
+        const diagnostics = harness.diagnostics.join('');
+        if (json) {
+          const result = JSON.parse(harness.output.join(''));
+          assert.deepEqual(result.diagnostic, expected[index]);
+          assert.deepEqual(result.outcomes, progress.outcomes);
+          assert.deepEqual(result.warnings, progress.warnings);
+          assert.deepEqual(result.unattempted, progress.unattempted);
+          assert.equal(result.status, 'failed');
+          assert.equal(result.blocked.component, 'automations');
+          assert.equal(result.earlierChangesRemainApplied, true);
+        } else {
+          assert.equal(diagnostics.match(/^messages$/gmu)?.length, 1);
+          assert.ok(
+            harness.events.join('').indexOf('workspace  ') <
+              harness.events.join('').indexOf('messages'),
+          );
+        }
+        assert.ok(
+          diagnostics
+            .replace(/\s+/gu, '')
+            .includes(`gatewaydiagnostic:${JSON.stringify(expected[index])}`),
+        );
+        assert.ok(!harness.events.join('').includes('secret'));
+      }
+    }
+  });
+
+  it('should not serialize arbitrary diagnostic properties from unrelated errors', async () => {
+    const harness = createHarness({
+      install: new AgentSystemLifecycleError(
+        'automations',
+        'automation-reconcile-failed',
+        'Failed.',
+        {
+          cause: Object.assign(new Error('failure'), { diagnostic: { token: 'secret' } }),
+        },
+      ),
+      json: true,
+    });
+    await harness.run();
+    assert.deepEqual(harness.exitCodes, [1]);
+    assert.ok(!Object.hasOwn(JSON.parse(harness.output.join('')), 'diagnostic'));
+    assert.ok(!harness.events.join('').includes('secret'));
   });
 
   it('should keep preflight credential failures nonzero and structured', async () => {

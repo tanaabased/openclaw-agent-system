@@ -1,6 +1,7 @@
 import confirmSessionDispatch from './session-dispatch-consent.ts';
 import presentCliCommand from './presentation.ts';
 import confirmSetupInstall, { type SetupConsentOptions } from './setup-consent.ts';
+import { AutomationError } from '../agent/automation-gateway.ts';
 import {
   AgentInstallError,
   type default as AgentInstallService,
@@ -200,6 +201,8 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     }
   } catch (error) {
     const failure = error instanceof AgentSystemLifecycleError ? error : undefined;
+    const diagnostic =
+      failure?.cause instanceof AutomationError ? failure.cause.diagnostic : undefined;
     const blocked = {
       component:
         failure?.component ?? (error instanceof AgentInstallError ? 'credentials' : 'install'),
@@ -226,6 +229,7 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
         outcomes,
         warnings,
         blocked,
+        ...(diagnostic ? { diagnostic } : {}),
         unattempted,
         earlierChangesRemainApplied: outcomes.length > 0,
         recovery,
@@ -267,6 +271,7 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
       writeCliDiagnostics(options.output, [
         ...warnings.map((warning) => formatDiagnostic(warning)),
         errorMessage,
+        ...(diagnostic ? [`gateway diagnostic: ${JSON.stringify(diagnostic)}`] : []),
         ...guidance,
       ]);
     } else {
@@ -275,6 +280,14 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
           warnings.map((warning) => ({ ...warning, message: formatDiagnostic(warning) })),
         ),
         { severity: 'error', message: errorMessage },
+        ...(diagnostic
+          ? [
+              {
+                severity: 'error' as const,
+                message: `gateway diagnostic: ${JSON.stringify(diagnostic)}`,
+              },
+            ]
+          : []),
         { severity: 'notice', message: guidance.join('\n') },
       ]);
     }
