@@ -2,7 +2,7 @@ const { reporters, Runner } = require('mocha');
 
 const reportAfterMs = 500;
 
-module.exports = class UnitTimingReporter extends reporters.Spec {
+module.exports = class TestTimingReporter extends reporters.Spec {
   constructor(runner, options) {
     super(runner, options);
     const slow = [];

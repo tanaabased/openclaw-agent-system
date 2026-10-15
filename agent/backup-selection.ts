@@ -8,6 +8,7 @@ import nodeErrorCode from '../utils/node-error-code.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { BackupConfiguration } from '../manifest/backup-schema.ts';
 import backupDirectoryRelevant from './backup-directory-relevant.ts';
+import backupPayloadPaths from './backup-payload-paths.ts';
 import {
   BackupError,
   backupControlDirectory,
@@ -396,19 +397,7 @@ export async function planWorkspaceBackup(options: {
       }
     }
   }
-  // structural parent directories do not restore excluded file contents.
-  for (const path of [...selected]) {
-    let parent = dirname(path);
-    while (parent !== '.') {
-      selected.add(parent);
-      parent = dirname(parent);
-    }
-  }
-  if (selected.size > 100_000)
-    throw new BackupError(
-      'backup-inventory-too-large',
-      'A workspace backup supports at most 100000 entries.',
-    );
+  const files = backupPayloadPaths(selected);
   return {
     agentId: options.manifest.agent.id,
     workspaceDir,
@@ -419,7 +408,7 @@ export async function planWorkspaceBackup(options: {
       : {}),
     protectedPaths,
     selection,
-    files: [...selected].sort(),
+    files,
     diagnostics,
     coverage: {
       stage: 'workspace-only',

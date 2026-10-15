@@ -61,3 +61,7 @@ Separate native OS coverage from runtime coverage. Keep installation/Doctor, exe
 ### Shared synthetic SSH preparation
 
 Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
+
+### Source test boundaries
+
+Keep source specs flat under `test/`. Select deterministic and read-only contract checks with `test:unit` on Ubuntu, portable `*.component.spec.ts` with `test:component` on Ubuntu, and native `*.os.component.spec.ts` with `test:os` on both supported OSes. Keep mixed specs in the component selection until their unit-shaped cases are extracted. The built memory helper belongs to portable component coverage. Keep the 100,000-entry backup fixture opt-in under `test:stress`; preserve normal PR coverage with bounded filesystem pruning and pure payload/parent-limit checks. `bun run test` remains the fast unit alias; `bun run test:all` covers all ordinary selections and excludes stress. Never remove a component from CI merely by excluding it from the unit glob.

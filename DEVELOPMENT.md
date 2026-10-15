@@ -112,13 +112,17 @@ bun run typecheck
 
 `bun run lint` runs ESLint, the Prettier formatting check, and ShellCheck.
 
-### Unit Tests
+### Source Tests
 
 ```sh
 bun run test
 ```
 
-The default Mocha suite keeps behavior-focused specifications flat in [`test/`](./test/).
+The Mocha suites keep behavior-focused specifications flat in [`test/`](./test/). `bun run test` remains the fast unit alias; `bun run test:all` builds the helper artifacts and runs all ordinary source tests. Use `bun run test:unit` for deterministic in-process and read-only contract checks, `bun run test:component` for portable component checks, and `bun run test:os` for native component contracts.
+
+Portable components use `*.component.spec.ts`; native process, permission, symlink, and socket checks use `*.os.component.spec.ts`. CI runs units and portable components on Ubuntu and native components on both Ubuntu and macOS. Mixed files remain components until their deterministic cases are extracted. Installed-runtime acceptance stays in Leia examples.
+
+`bun run test:stress` explicitly runs `*.stress.spec.ts`, including the 100,000-entry backup fixture. Stress checks are excluded from default tests and PR workflows; ordinary coverage checks pruning with a small filesystem fixture and the inventory limit in memory.
 
 ### Recorded CLI Fixtures
 
