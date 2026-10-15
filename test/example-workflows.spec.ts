@@ -124,7 +124,11 @@ describe('example workflows', () => {
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
     assert.equal(job?.['runs-on'], 'ubuntu-24.04');
     assert.equal(job?.strategy?.matrix?.os, undefined);
-    assert.deepEqual(job?.strategy?.matrix?.example, ['codex-install', 'codex-automations']);
+    assert.deepEqual(job?.strategy?.matrix?.example, [
+      'codex-install',
+      'codex-automations',
+      'codex-notifications',
+    ]);
     assert.ok(example);
     assert.equal(example.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');
     assert.equal(example.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
@@ -146,7 +150,7 @@ describe('example workflows', () => {
     assert.ok(commands.every(({ command }) => !/^openclaw\s/m.test(command)));
   });
 
-  it('should retain codex notification heartbeat assertions while their ci selection is deferred', () => {
+  it('should cover quiet and actionable codex notification heartbeat responses', () => {
     const suites = new Leia().parse([resolve('examples', 'codex-notifications', 'README.md')]);
     assert.equal(suites.length, 1);
     assert.ok(suites[0]?.tests.setup?.some(({ skip }) => !skip));

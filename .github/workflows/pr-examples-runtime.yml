@@ -23,6 +23,7 @@ jobs:
         example:
           - codex-install
           - codex-automations
+          - codex-notifications
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
