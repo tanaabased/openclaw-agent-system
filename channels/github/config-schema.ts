@@ -43,6 +43,30 @@ const externalPullRequestRecipientsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const recipientRoles = Type.Array(
+  Type.Union([Type.Literal('assignee'), Type.Literal('reviewer')]),
+  { minItems: 1, uniqueItems: true },
+);
+const externalDeliveryRecipientsSchema = Type.Object(
+  {
+    recipients: Type.Optional(
+      Type.Array(
+        Type.Union([
+          Type.Object(
+            { ...externalGitHubIdentitySchema.properties, roles: recipientRoles },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            { source: Type.Literal('assignment-actor'), roles: recipientRoles },
+            { additionalProperties: false },
+          ),
+        ]),
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const externalLegacyGitHubNotificationsSchema = Type.Object(
   {
     'assignment-types': Type.Optional(
@@ -82,6 +106,18 @@ const externalNotificationTriggerSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const externalFeedbackSchema = Type.Union([
+  Type.Boolean(),
+  Type.Object(
+    {
+      inherit: Type.Optional(Type.Boolean()),
+      allowed: Type.Optional(Type.Array(externalGitHubIdentitySchema)),
+      ...assessmentConfigurationSchema.properties,
+    },
+    { additionalProperties: false },
+  ),
+]);
+
 const externalGitHubNotificationPolicySchema = Type.Object(
   {
     'schema-version': Type.Literal(2),
@@ -102,6 +138,9 @@ const externalGitHubNotificationPolicySchema = Type.Object(
         {
           ...externalNotificationTriggerSchema.properties,
           assessment: Type.Optional(assessmentConfigurationSchema),
+          implementation: Type.Optional(assessmentConfigurationSchema),
+          'pull-request': Type.Optional(externalDeliveryRecipientsSchema),
+          feedback: Type.Optional(externalFeedbackSchema),
           mode: Type.Optional(
             Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
           ),
@@ -109,8 +148,16 @@ const externalGitHubNotificationPolicySchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    'review-request': Type.Optional(externalNotificationTriggerSchema),
-    feedback: Type.Optional(externalNotificationTriggerSchema),
+    'review-request': Type.Optional(
+      Type.Object(
+        {
+          ...externalNotificationTriggerSchema.properties,
+          review: Type.Optional(assessmentConfigurationSchema),
+          feedback: Type.Optional(externalFeedbackSchema),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -127,9 +174,17 @@ export interface GitHubIdentityPin {
   nodeId: string;
 }
 
+export type GitHubRecipientRole = 'assignee' | 'reviewer';
+export type GitHubPullRequestRecipient = (GitHubIdentityPin | { source: 'assignment-actor' }) & {
+  roles: GitHubRecipientRole[];
+};
+
 export interface GitHubApprovedActor extends GitHubIdentityPin {
   operatorOwner?: boolean;
 }
+
+export type GitHubFeedbackPolicy =
+  boolean | ({ inherit: boolean; allowed: GitHubIdentityPin[] } & AssessmentConfiguration);
 
 export interface GitHubNotificationsConfiguration {
   schemaVersion?: never;
@@ -158,9 +213,16 @@ export interface GitHubNotificationPolicy {
     allowed: GitHubApprovedActor[];
     mode: 'plan' | 'work' | 'auto';
     assessment?: AssessmentConfiguration;
+    implementation?: AssessmentConfiguration;
+    pullRequest?: { recipients?: GitHubPullRequestRecipient[] };
+    feedback?: GitHubFeedbackPolicy;
   };
-  reviewRequest?: { allowed: GitHubApprovedActor[]; enabled?: boolean };
-  feedback?: { allowed: GitHubApprovedActor[]; enabled?: boolean };
+  reviewRequest?: {
+    allowed: GitHubApprovedActor[];
+    enabled?: boolean;
+    review?: AssessmentConfiguration;
+    feedback?: GitHubFeedbackPolicy;
+  };
 }
 
 export type GitHubNotificationsDeclaration =
@@ -185,6 +247,19 @@ export function decodeGitHubNotifications(
   });
 
   if ('schema-version' in value) {
+    const feedback = (input: Static<typeof externalFeedbackSchema> | undefined) =>
+      input === undefined
+        ? {}
+        : {
+            feedback:
+              typeof input === 'boolean'
+                ? input
+                : {
+                    inherit: input.inherit ?? false,
+                    allowed: (input.allowed ?? []).map(decodeIdentity),
+                    ...decodeAssessmentConfiguration(input),
+                  },
+          };
     const actors = (trigger: Static<typeof externalNotificationTriggerSchema>) =>
       (trigger.allowed ?? []).map((actor) => ({
         ...decodeIdentity(actor),
@@ -194,7 +269,7 @@ export function decodeGitHubNotifications(
       schemaVersion: 2,
       runtimes: value.runtimes ?? ['openclaw', 'codex'],
       intervalMinutes: value['interval-minutes'] ?? 5,
-      maxConcurrentItems: value['max-concurrent-items'] ?? 2,
+      maxConcurrentItems: value['max-concurrent-items'] ?? 3,
       allowedRepositoryOwners: value['allowed-repository-owners'].map(decodeIdentity),
       ...(value['issue-assignment'] === undefined
         ? {}
@@ -205,6 +280,32 @@ export function decodeGitHubNotifications(
                 : { enabled: value['issue-assignment'].enabled }),
               allowed: actors(value['issue-assignment']),
               mode: value['issue-assignment'].mode ?? 'plan',
+              ...feedback(value['issue-assignment'].feedback),
+              ...(value['issue-assignment']['pull-request'] === undefined
+                ? {}
+                : {
+                    pullRequest: {
+                      ...(value['issue-assignment']['pull-request'].recipients === undefined
+                        ? {}
+                        : {
+                            recipients: value['issue-assignment']['pull-request'].recipients.map(
+                              (entry) => ({
+                                ...('source' in entry
+                                  ? { source: entry.source }
+                                  : decodeIdentity(entry)),
+                                roles: entry.roles,
+                              }),
+                            ),
+                          }),
+                    },
+                  }),
+              ...(value['issue-assignment'].implementation === undefined
+                ? {}
+                : {
+                    implementation: decodeAssessmentConfiguration(
+                      value['issue-assignment'].implementation,
+                    ),
+                  }),
               ...(value['issue-assignment'].assessment === undefined
                 ? {}
                 : {
@@ -217,17 +318,13 @@ export function decodeGitHubNotifications(
         : {
             reviewRequest: {
               allowed: actors(value['review-request']),
+              ...feedback(value['review-request'].feedback),
+              ...(value['review-request'].review === undefined
+                ? {}
+                : { review: decodeAssessmentConfiguration(value['review-request'].review) }),
               ...(value['review-request'].enabled === undefined
                 ? {}
                 : { enabled: value['review-request'].enabled }),
-            },
-          }),
-      ...(value.feedback === undefined
-        ? {}
-        : {
-            feedback: {
-              allowed: actors(value.feedback),
-              ...(value.feedback.enabled === undefined ? {} : { enabled: value.feedback.enabled }),
             },
           }),
     };

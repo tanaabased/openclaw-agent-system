@@ -41,6 +41,9 @@ cd "$TMPDIR/automation-agent"
 if OPENCLAW_LOG_LEVEL=debug openclaw agent-system automations sync --json > offline-sync.json; then exit 1; fi
 jq -e '.status == "failed" and .code == "automation-gateway-unavailable"' offline-sync.json
 
+# should register native handoff observation without launching an issue chat
+openclaw plugins inspect agent-system --runtime --json | jq -e '[.typedHooks[].name] as $registered | ["before_tool_call", "after_tool_call"] - $registered | if length == 0 then true else error("missing handoff hooks: \(.)") end'
+
 # should retain plain human failure diagnostics at debug level while offline
 cd "$TMPDIR/automation-agent"
 if NO_COLOR=1 OPENCLAW_LOG_LEVEL=debug openclaw agent-system automations sync > "$TMPDIR/automation-offline.stdout" 2> "$TMPDIR/automation-offline.stderr"; then exit 1; fi
@@ -255,6 +258,14 @@ jq -e '([.jobs[] | select(.id == "shared-builds" or .id == "separate-review") | 
 openclaw agent-system automations sync --json | tee "$TMPDIR/automation-threads-resync.json" | jq -e 'select(.status == "synchronized") | all(.outcomes[]; .status == "unchanged")'
 openclaw gateway call sessions.list --params '{"agentId":"automation-tanaabot","archived":"all"}' --json | jq -e '[.sessions[] | select(.displayName == "Project activity")] | length == 2'
 touch threads-ready
+
+# should preserve prompt job identity across installed launcher paths
+set -euo pipefail
+cd "$TMPDIR/automation-agent"
+ln -s "$(command -v openclaw)" "$TMPDIR/automation-alternate-openclaw"
+"$TMPDIR/automation-alternate-openclaw" agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+"$TMPDIR/automation-alternate-openclaw" agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}]' > launcher-after.json
+jq -S '[.jobs[] | {id, nativeId, routing}]' threads-before.json | diff - launcher-after.json
 
 # should preserve persistent routing through a gateway restart
 set -euo pipefail

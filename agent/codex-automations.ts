@@ -1,3 +1,4 @@
+import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -221,7 +222,11 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
   let policyBlocker: string | undefined;
   if (!cleanupOnly) {
     try {
-      jobs = codexIntakeJobs(loaded.manifest);
+      jobs = codexIntakeJobs(loaded.manifest, {
+        nodeExecutable: process.execPath,
+        entrypoint: resolve(process.argv[1]!),
+        pluginData: root,
+      });
     } catch (error) {
       cleanupOnly = true;
       policyBlocker = error instanceof IntakeError ? error.code : 'intake-policy-invalid';
@@ -388,6 +393,8 @@ export async function inspectCodexDispatchActivation(
   dependencies: CodexAutomationDependencies = {},
   pausedRecovery = false,
   retainedWork = false,
+  capability:
+    'assessment' | 'implementation' | 'review' | 'publication' | 'feedback' = 'assessment',
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
@@ -421,7 +428,51 @@ export async function inspectCodexDispatchActivation(
     )
   )
     throw new Error('dispatch-activation-required');
-  return { sourceThreadId: record.definition.targetThreadId };
+  if (capability === 'assessment') return { sourceThreadId: record.definition.targetThreadId };
+  // work activation is read back against the current definition; old consent never widens.
+  if (
+    capability === 'review' ||
+    pausedRecovery ||
+    retainedWork ||
+    selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
+    (capability === 'feedback'
+      ? feedbackIdentities(
+          selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
+          selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
+        ).length === 0
+      : !['work', 'auto'].includes(
+          selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
+        )) ||
+    !job ||
+    job.payload.kind !== 'prompt' ||
+    record.removed ||
+    record.definition.status !== 'ACTIVE' ||
+    record.definition.prompt !==
+      job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId)
+  )
+    throw new Error('workflow-schedule-reconciliation-required');
+  const authority = {
+    workflow: 'issue-assignment' as const,
+    automationId: record.nativeId,
+    sourceThreadId: record.definition.targetThreadId,
+    policyDigest: automationHash(selected.loaded.manifest.github.notifications),
+    definitionDigest: automationHash(record.definition),
+  };
+  return {
+    sourceThreadId: authority.sourceThreadId,
+    schedule: {
+      current: authority,
+      saved: {
+        ...authority,
+        version: 1 as const,
+        capabilities: (capability === 'feedback'
+          ? ['feedback', 'publication']
+          : ['assessment', 'implementation', 'publication']) as Array<
+          'assessment' | 'implementation' | 'publication' | 'feedback'
+        >,
+      },
+    },
+  };
 }
 
 /** explicit native conversation sync; schedules remain owned by the desktop app tools. */

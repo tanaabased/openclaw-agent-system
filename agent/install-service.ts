@@ -1,3 +1,5 @@
+import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import sessionDispatchRequirements from './session-dispatch-requirements.ts';
 import collectOpEnvironmentRequirements, {
   hasOpEnvironmentRequirements,
 } from '../environment/op-requirements.ts';
@@ -18,6 +20,7 @@ export interface AgentInstallResult {
 }
 
 export interface AgentInstallServiceDependencies {
+  sessionDispatch?: Pick<SessionDispatchCredential, 'needsEnrollment'>;
   credentialManager?: Pick<OpCredentialManager, 'validateStoredForInstall'>;
   lifecycleRegistry: Pick<AgentSystemLifecycleRegistry, 'reconcile'>;
 }
@@ -44,9 +47,33 @@ export default class AgentInstallService {
     this.#dependencies = dependencies;
   }
 
+  async sessionDispatchPlan(manifest: AgentInstallInput['manifest']) {
+    const consumers = sessionDispatchRequirements(manifest);
+    return {
+      consumers,
+      enrollmentRequired:
+        consumers.length > 0 &&
+        (this.#dependencies.sessionDispatch
+          ? await this.#dependencies.sessionDispatch.needsEnrollment()
+          : true),
+    };
+  }
+
   async install(input: AgentInstallInput): Promise<AgentInstallResult> {
     input.signal?.throwIfAborted();
     await input.assertCurrent?.();
+    if (
+      input.runtime === 'openclaw' &&
+      sessionDispatchRequirements(input.manifest).length &&
+      !input.sessionDispatchConsent
+    ) {
+      const plan = await this.sessionDispatchPlan(input.manifest);
+      if (plan.enrollmentRequired)
+        throw new AgentInstallError(
+          'Session dispatch enrollment requires explicit Install consent; use interactive Install or --yes.',
+          'session-dispatch-approval-required',
+        );
+    }
     if (hasOpEnvironmentRequirements(collectOpEnvironmentRequirements(input.manifest))) {
       const credentialManager = this.#dependencies.credentialManager;
       if (!credentialManager) {

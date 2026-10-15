@@ -46,6 +46,9 @@ describe('agent/automation-threads', () => {
         native.set(id, { id, ...settings });
         return id;
       },
+      async setGroup(id: string, group: string) {
+        native.set(id, { ...native.get(id), id, group });
+      },
       async rename(id: string, name: string) {
         native.set(id, { ...native.get(id), id, name });
       },
@@ -53,6 +56,23 @@ describe('agent/automation-threads', () => {
     const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
     return { store, adapter, native, creates: () => creates };
   }
+  it('should reconcile an internal group, detect drift read-only and preserve native identity', async () => {
+    const f = fixture('openclaw');
+    const declarations = jobs('Intake', ['intake']);
+    declarations[0]!.internalOpenClaw = {
+      trigger: { script: 'check' },
+      toolsAllow: [],
+      group: 'Agent System',
+    };
+    const id = (await f.store.resolve(declarations, true)).get('intake')!.id;
+    assert.equal(f.native.get(id)!.group, 'Agent System');
+    f.native.get(id)!.group = 'Other';
+    await assert.rejects(f.store.resolve(declarations), rejects('automation-thread-group-drift'));
+    assert.equal(f.native.get(id)!.group, 'Other');
+    assert.equal((await f.store.resolve(declarations, true)).get('intake')!.id, id);
+    assert.equal(f.native.get(id)!.group, 'Agent System');
+    assert.equal(f.creates(), 1);
+  });
   it('should create with selected settings and detect drift without changing or replacing the chat', async () => {
     const f = fixture('codex');
     const declarations = jobs('Intake', ['intake']);

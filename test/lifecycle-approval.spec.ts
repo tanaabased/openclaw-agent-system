@@ -31,17 +31,17 @@ setup:
       apply: apply-approved
 `;
 
-async function fixture() {
+async function fixture(agentId = 'data') {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'lifecycle-approval-')));
   roots.push(root);
-  await writeFile(join(root, 'agent.yaml'), manifest);
-  const workspaces: Record<string, string> = { data: root };
+  await writeFile(join(root, 'agent.yaml'), manifest.replace('id: data', `id: ${agentId}`));
+  const workspaces: Record<string, string> = { [agentId]: root };
   const calls: string[] = [];
   const rebuilds: boolean[] = [];
   const controller = new AbortController();
   const context = {
-    agentId: 'data',
-    sessionKey: 'agent:data:test',
+    agentId,
+    sessionKey: `agent:${agentId}:test`,
     sessionId: 'session',
     toolCallId: 'call',
     abortSignal: controller.signal,
@@ -49,7 +49,7 @@ async function fixture() {
   const service = new AgentManifestService({
     getConfig: () => ({}),
     logger: { info() {}, warn() {}, error() {} },
-    parseSessionAgentId: () => 'data',
+    parseSessionAgentId: () => agentId,
     resolveAgentWorkspaceDir: (_config, agent) => workspaces[agent]!,
   });
   let afterInspect: (() => Promise<void>) | undefined;
@@ -158,15 +158,18 @@ describe('agent/lifecycle-approval', () => {
       let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
       definition.registerTools(
         {
-          registerTool(value) {
+          registerTool(value, options) {
+            assert.equal(options?.name, undefined, 'keep approval hooks and tools instance-local');
+            assert.deepEqual(options?.names ?? [], []);
             factory = value;
           },
         },
         {} as never,
       );
-      assert.equal(typeof factory, 'function');
-      if (typeof factory !== 'function') throw new Error('missing native tool factory');
-      const native = await factory(f.toolContext);
+      assert.ok(factory && typeof factory === 'object' && 'create' in factory);
+      if (!factory || typeof factory !== 'object' || !('create' in factory))
+        throw new Error('missing v2 tool factory');
+      const native = await factory.create({ ...f.toolContext, assertInvocationCurrent() {} });
       assert.ok(native && !Array.isArray(native));
       assert.equal(native.name, name);
       assert.equal(Value.Check(native.parameters, {}), true);
@@ -203,6 +206,48 @@ describe('agent/lifecycle-approval', () => {
       await assert.rejects(native.execute('call', params, f.controller.signal), {
         code: 'approval_denied',
       });
+    });
+
+    it(`should isolate ${name} approvals across agent workspaces with the same call id`, async () => {
+      const first = await fixture('first');
+      const second = await fixture('second');
+      const build = async (f: typeof first) => {
+        let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
+        const definition = (name === 'agent_system_install' ? createInstallTool : createDoctorTool)(
+          () => f.approval,
+        );
+        definition.registerTools(
+          {
+            registerTool(value) {
+              factory = value;
+            },
+          },
+          {} as never,
+        );
+        assert.ok(factory && typeof factory === 'object' && 'create' in factory);
+        if (!factory || typeof factory !== 'object' || !('create' in factory))
+          throw new Error('missing v2 tool factory');
+        const tool = await factory.create({ ...f.toolContext, assertInvocationCurrent() {} });
+        assert.ok(tool && !Array.isArray(tool));
+        return tool;
+      };
+      const [firstTool, secondTool] = await Promise.all([build(first), build(second)]);
+      const request = await first.request(name, {}, first.context);
+      request.requireApproval.onResolution('allow-once');
+      await assert.rejects(secondTool.execute('call', {}), { code: 'approval_denied' });
+      assert.deepEqual(second.calls, []);
+      const secondRequest = await second.request(name, {}, second.context);
+      secondRequest.requireApproval.onResolution('allow-once');
+      await Promise.all([firstTool.execute('call', {}), secondTool.execute('call', {})]);
+      for (const f of [first, second])
+        assert.deepEqual(
+          f.calls,
+          name === 'agent_system_install'
+            ? ['credentials', 'reconcile', 'inspect', 'check-approved']
+            : ['inspect', 'check-approved'],
+        );
+      for (const tool of [firstTool, secondTool])
+        await assert.rejects(tool.execute('call', {}), { code: 'approval_denied' });
     });
 
     for (const decision of ['deny', 'timeout', 'cancelled', 'allow-always', 'unknown', undefined]) {

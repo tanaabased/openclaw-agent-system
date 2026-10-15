@@ -34,9 +34,9 @@ describe('channels/github/events/presentation', () => {
         'work',
       ),
       [
-        '## 📥 Issue assigned',
-        '',
-        '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in `work` mode.',
+        '> ## 📥 Issue assigned',
+        '>',
+        '> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in `work` mode.',
       ].join('\n'),
     );
   });
@@ -68,9 +68,9 @@ describe('channels/github/events/presentation', () => {
     assert.equal(
       githubNotificationImplementationCard(12),
       [
-        '## 🛠️ Implementation started',
-        '',
-        'The public plan for issue #12 is published. Carry it out now in `work` mode, ending with one local commit. Lifecycle delivery follows.',
+        '> ## 🛠️ Implementation started',
+        '>',
+        '> The public plan for issue #12 is published. Carry it out now in `work` mode, ending with one local commit. Lifecycle delivery follows.',
       ].join('\n'),
     );
   });
@@ -86,15 +86,22 @@ describe('channels/github/events/presentation', () => {
     assert.equal(
       privateText,
       [
-        '## 🔀 Pull request opened',
-        '',
-        '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
-        '- **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
-        '- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
+        '> ## 🔀 Pull request opened',
+        '>',
+        '> - **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
+        '> - **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
+        '> - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
       ].join('\n'),
     );
     const publicText = githubNotificationPullRequestHandoffComment(input);
-    assert.equal(publicText, privateText);
+    assert.match(publicText, /^## 🔀 Pull request opened\n\n/u);
+    assert.equal(
+      publicText,
+      privateText
+        .split('\n')
+        .map((line) => (line === '>' ? '' : line.slice(2)))
+        .join('\n'),
+    );
     assert.equal(
       githubNotificationPublicationText('pull-request-handoff', [{ text: publicText }]),
       publicText,
@@ -145,30 +152,55 @@ describe('channels/github/events/presentation', () => {
       '',
       '- Keep `code` exact.',
       '- Ask @octocat about #12.  ',
+      '',
+      '> Quoted context',
+      '',
+      '```ts',
+      'const mention = "@tanaabot";',
+      '```',
     ].join('\n');
-    const start = body.indexOf('@tanaabot');
 
     assert.equal(
       githubNotificationCommentPresentation({
-        agent: { emoji: '📬', label: 'Notification Data', url: '/openclaw/agents' },
         author: { label: 'pirog', url: 'https://github.com/pirog' },
         body,
         item: {
           label: 'tanaabased/openclaw-agent-system#46',
           url: 'https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123',
         },
-        mentions: [{ end: start + '@tanaabot'.length, start }],
       }),
       [
-        '  📬 [Notification Data](/openclaw/agents) Please check [the build](https://github.com/tanaabased/example/actions).',
-        '',
-        '## Notes',
-        '',
-        '- Keep `code` exact.',
-        '- Ask @octocat about #12.  ',
-        '',
-        '> _[@pirog](https://github.com/pirog) mentioned Notification Data on [tanaabased/openclaw-agent-system#46](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123)._',
+        '> ## 💬 From [@pirog](https://github.com/pirog)',
+        '>',
+        '>   @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
+        '>',
+        '> ## Notes',
+        '>',
+        '> - Keep `code` exact.',
+        '> - Ask @octocat about #12.  ',
+        '>',
+        '> > Quoted context',
+        '>',
+        '> ```ts',
+        '> const mention = "@tanaabot";',
+        '> ```',
+        '>',
+        '> [View comment on tanaabased/openclaw-agent-system#46 ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123)',
       ].join('\n'),
     );
+  });
+
+  it('should keep all provider line endings inside the comment quote', () => {
+    const presentation = githubNotificationCommentPresentation({
+      author: { label: 'pirog', url: 'https://github.com/pirog' },
+      body: '@tanaabot first\r\n\r\nsecond\rthird',
+      item: {
+        label: 'example/repo#12',
+        url: 'https://github.com/example/repo/pull/12#issuecomment-91',
+      },
+    });
+    assert.ok(presentation.includes('> @tanaabot first\n>\n> second\n> third'));
+    assert.ok(presentation.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(presentation.endsWith('/pull/12#issuecomment-91)'));
   });
 });

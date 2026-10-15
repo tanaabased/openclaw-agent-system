@@ -16,7 +16,7 @@ import GitRepositoryService, {
 } from '../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
-import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
+import { gitRemoteIdentity, preferGitHubSshWorktreeRemote } from '../tools/git/worktree-remote.ts';
 import type { GitWorktreeServiceContext } from '../tools/git/worktree-service.ts';
 
 export type DispatchRepositoryPreparation = NonNullable<DispatchRecord['repositoryPreparation']>;
@@ -45,7 +45,8 @@ export default async function prepareDispatchRepository(
   const identity = gitRemoteIdentity(input.cloneUrl);
   if (identity !== 'github.com/' + input.repository.toLowerCase())
     throw new Error('dispatch-repository-identity-invalid');
-  const selected = await service.selection(layout, input.repositoryId, input.cloneUrl);
+  const cloneUrl = preferGitHubSshWorktreeRemote(input.cloneUrl);
+  const selected = await service.selection(layout, input.repositoryId, cloneUrl);
   if (
     input.previous &&
     (input.previous.path !== selected.path || input.previous.identity !== identity)
@@ -91,7 +92,7 @@ export default async function prepareDispatchRepository(
     },
   };
   if (selected.kind === 'local') await service.verify(context, selected.path, selected.source);
-  const lease = await service.acquire(context, layout, input.repositoryId, input.cloneUrl);
+  const lease = await service.acquire(context, layout, input.repositoryId, cloneUrl);
   try {
     return await withPrivateStateLock(lease, async () => {
       context.signal = privateStateLockSignal(dependencies.signal);
@@ -100,11 +101,11 @@ export default async function prepareDispatchRepository(
         context,
         layout,
         input.repositoryId,
-        input.cloneUrl,
+        cloneUrl,
         false,
         true,
       );
-      const form = await service.verify(context, repository.path, input.cloneUrl);
+      const form = await service.verify(context, repository.path, cloneUrl);
       let checkout = repository.path;
       if (form === 'bare') {
         const run = async (cwd: string, argv: string[]) =>
@@ -151,7 +152,7 @@ export default async function prepareDispatchRepository(
           await run(repository.path, ['worktree', 'add', '--detach', checkout, commit]);
         }
         if (
-          (await service.verify(context, checkout, input.cloneUrl)) !== 'working' ||
+          (await service.verify(context, checkout, cloneUrl)) !== 'working' ||
           (await realpath(
             await run(checkout, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
           )) !==

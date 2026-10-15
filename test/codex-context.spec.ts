@@ -48,6 +48,11 @@ describe('agent/codex-context', () => {
 
     assert.match(context, /supersedes every earlier Agent System context/u);
     assert.ok(context.includes(codexQuietHeartbeatInstructions));
+    assert.match(
+      context,
+      /Reproduce the complete returned presentation Markdown in the final reply/u,
+    );
+    assert.match(context, /card generation, not visible delivery/u);
     assert.doesNotMatch(context, /For new routed work, use/u);
     assert.deepEqual(envelope(context), {
       version: 1,
@@ -62,6 +67,22 @@ describe('agent/codex-context', () => {
       },
       dispatchRuntime: {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'dispatch'],
+        pluginData,
+      },
+      feedbackRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'feedback'],
+        pluginData,
+      },
+      continuationRuntime: {
+        argvPrefix: [
+          nodeExecutable,
+          join(pluginRoot, 'dist/codex/codex-runtime.js'),
+          'continuation',
+        ],
+        pluginData,
+      },
+      deliveryRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'delivery'],
         pluginData,
       },
       automationRuntime: {

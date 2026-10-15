@@ -10,7 +10,7 @@ import {
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
   type GitHubNotificationPublicationSource,
-} from './publication.ts';
+} from './publication-contract.ts';
 
 type PublicationItem = Pick<
   GitHubNotificationItemState,
@@ -43,6 +43,7 @@ export interface GitHubNotificationCommentPublicationConnection {
 }
 
 export interface GitHubNotificationCommentPublisherDependencies {
+  redactText(text: string): string;
   authorize(
     input:
       | {
@@ -110,7 +111,11 @@ export default class GitHubNotificationCommentPublisher {
     input: GitHubNotificationCommentPublicationInput,
     create: boolean,
   ): Promise<GitHubNotificationCommentPublicationResult | undefined> {
-    const text = githubNotificationPublicationText(input.intent, [{ text: input.text }]);
+    const text = githubNotificationPublicationText(
+      input.intent,
+      [{ text: input.text }],
+      this.#dependencies.redactText,
+    );
     const conversation = input.conversationId
       ? ({ conversationId: input.conversationId } as const)
       : ({ item: input.item } as const);
@@ -149,6 +154,7 @@ export default class GitHubNotificationCommentPublisher {
           ? githubNotificationAttributedReplyText(
               text,
               connection.commenterLogin ?? missingCommenterLogin(),
+              this.#dependencies.redactText,
             )
           : text;
       const expectedBody = githubNotificationPublicationComment(publicText, marker);

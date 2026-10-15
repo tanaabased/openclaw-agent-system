@@ -34,6 +34,8 @@ import {
 } from '../agent/command-authority.ts';
 import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
+import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import resetSessionDispatch from './session-dispatch-reset.ts';
 import type AgentInstallService from '../agent/install-service.ts';
 import { completeCliOneShot } from './one-shot.ts';
 import {
@@ -74,7 +76,9 @@ export interface RegisterAgentSystemCliOptions {
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
   doctorService: Pick<AgentDoctorService, 'inspect'>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  installService: Pick<AgentInstallService, 'install'>;
+  installService: Pick<AgentInstallService, 'install'> &
+    Partial<Pick<AgentInstallService, 'sessionDispatchPlan'>>;
+  sessionDispatch?: Pick<SessionDispatchCredential, 'reset'>;
   input?: Readable;
   environment?: Readonly<NodeJS.ProcessEnv>;
   setupPrompt?: () => Promise<boolean | symbol>;
@@ -578,10 +582,32 @@ export default function registerAgentSystemCli(
         workspaceDir: cwd(),
       });
     });
+  if (options.sessionDispatch) {
+    const reset = agentSystem
+      .command('session-dispatch')
+      .description('manage session dispatch enrollment.')
+      .command('reset <deviceId>')
+      .description(
+        'clear local enrollment only after the exact device has been removed from Devices.',
+      )
+      .action(async (deviceId) => {
+        if (!(await allowOperatorCommand(true))) return;
+        await resetSessionDispatch({
+          deviceId: String(deviceId),
+          service: options.sessionDispatch!,
+          output,
+          setExitCode,
+        });
+      });
+    void reset;
+  }
   const install = agentSystem
     .command('install')
     .description('install the workspace agent and reconcile configured lifecycle state.')
-    .option('--yes', 'confirm setup without prompting.')
+    .option(
+      '--yes',
+      'accept installation, including required session dispatch enrollment, without prompting.',
+    )
     .option('--non-interactive', 'run without interactive prompts.')
     .option('--skip-setup', 'skip all setup checks and applies with a warning.')
     .option('--skip-setup-host', 'skip host setup checks and applies with a warning.')

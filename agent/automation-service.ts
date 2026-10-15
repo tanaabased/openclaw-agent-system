@@ -1,5 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
+import openclawIntakeJobs from './openclaw-intake-policy.ts';
+
 import {
   AutomationError,
   listNativeAutomations,
@@ -101,7 +103,7 @@ export default class AutomationService {
       observed,
     });
     const ids = new Set([
-      ...(manifest.automations ?? []).map(({ id }) => id),
+      ...openclawIntakeJobs(manifest).map(({ id }) => id),
       ...ledger.records.map(({ id }) => id),
     ]);
     return {
@@ -111,7 +113,7 @@ export default class AutomationService {
         ? 'attention'
         : 'aligned',
       jobs: [...ids].map((id) => {
-        const declared = manifest.automations?.find((job) => job.id === id);
+        const declared = openclawIntakeJobs(manifest).find((job) => job.id === id);
         const record = ledger.records.find((entry) => entry.id === id);
         const native = record ? this.owned(record, observed, context.agentId) : undefined;
         return {
@@ -159,7 +161,7 @@ export default class AutomationService {
   }
 
   async run(manifest: AgentManifest, workspaceDir: string, id: string) {
-    const job = manifest.automations?.find((entry) => entry.id === id);
+    const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
     if (!job) throw new AutomationError('automation-id-missing');
     if (!job.runtimes.includes('openclaw'))
       throw new AutomationError('automation-runtime-unsupported');
@@ -191,8 +193,8 @@ export default class AutomationService {
       loaded.status !== 'loaded' ||
       loaded.manifest.agent.id !== context.agentId ||
       (await realpath(loaded.scope.workspaceDir)) !== context.workspaceDir ||
-      automationHash(loaded.manifest.automations ?? []) !==
-        automationHash(manifest.automations ?? [])
+      automationHash(openclawIntakeJobs(loaded.manifest)) !==
+        automationHash(openclawIntakeJobs(manifest))
     )
       throw new AutomationError('automation-manifest-changed');
     const result = nativeAutomationRun(
@@ -249,7 +251,7 @@ export default class AutomationService {
   ): Promise<AgentSystemLifecycleFinding[]> {
     const { store, context } = snapshot ?? (await this.scope(manifest, workspaceDir));
     const ledger = snapshot?.ledger ?? (await store.read());
-    const declarations = (manifest.automations ?? []).filter((job) =>
+    const declarations = openclawIntakeJobs(manifest).filter((job) =>
       job.runtimes.includes('openclaw'),
     );
     if (!declarations.length && !ledger.records.length) return [];
@@ -407,7 +409,7 @@ export default class AutomationService {
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const { context, store } = await this.scope(manifest, workspaceDir);
     const initial = await store.read();
-    const declarations = (manifest.automations ?? []).filter((job) =>
+    const declarations = openclawIntakeJobs(manifest).filter((job) =>
       job.runtimes.includes('openclaw'),
     );
     if (!declarations.length && !initial.records.length) return { outcomes: [], warnings: [] };
@@ -488,7 +490,7 @@ export default class AutomationService {
           if (!ledger.records.some((record) => record.marker === native.declarationKey))
             throw new AutomationError('automation-ownership-missing');
         }
-        const currentManifestHash = automationHash(manifest.automations ?? []);
+        const currentManifestHash = automationHash(openclawIntakeJobs(manifest));
         const assertCurrent = async () => {
           const loaded = await this.dependencies.manifestService.loadForAgentId(
             context.agentId,
@@ -498,7 +500,7 @@ export default class AutomationService {
             loaded.status !== 'loaded' ||
             loaded.manifest.agent.id !== context.agentId ||
             (await realpath(loaded.scope.workspaceDir)) !== context.workspaceDir ||
-            automationHash(loaded.manifest.automations ?? []) !== currentManifestHash
+            automationHash(openclawIntakeJobs(loaded.manifest)) !== currentManifestHash
           )
             throw new AutomationError('automation-manifest-changed');
         };
@@ -694,7 +696,7 @@ export default class AutomationService {
     const { context, store } = await this.scope(manifest, workspaceDir);
     const ledger = await store.read();
     const record = ledger.records.find((entry) => entry.id === id);
-    const job = manifest.automations?.find((entry) => entry.id === id);
+    const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
     if (
       !record ||
       !job ||

@@ -117,8 +117,28 @@ describe('index', () => {
       registerService(service: { id: string }) {
         serviceIds.push(service.id);
       },
-      registerTool(_tool: unknown, toolOptions?: { name?: string }) {
-        if (toolOptions?.name) toolNames.push(toolOptions.name);
+      registerTool(
+        factory: Parameters<OpenClawPluginApi['registerTool']>[0],
+        toolOptions?: Parameters<OpenClawPluginApi['registerTool']>[1],
+      ) {
+        if (toolOptions?.name) {
+          toolNames.push(toolOptions.name);
+          return;
+        }
+        const context = {
+          agentId: 'data',
+          workspaceDir: '/workspace',
+          senderIsOwner: true,
+          assertInvocationCurrent() {},
+        };
+        const tools =
+          typeof factory === 'function'
+            ? factory(context)
+            : 'create' in factory
+              ? factory.create(context)
+              : factory;
+        assert.ok(tools);
+        for (const tool of Array.isArray(tools) ? tools : [tools]) toolNames.push(tool.name);
       },
       registerTrustedToolPolicy(policy: { id: string }) {
         policyIds.push(policy.id);
@@ -132,6 +152,8 @@ describe('index', () => {
     assert.deepEqual(hookNames, [
       'after_tool_call',
       'before_tool_call',
+      'after_tool_call',
+      'before_tool_call',
       'resolve_exec_env',
       'before_tool_call',
       'before_agent_run',
@@ -142,6 +164,8 @@ describe('index', () => {
     assert.deepEqual(commandNames, []);
     assert.deepEqual(serviceIds, ['agent-system-op-cache', 'agent-system-command-authority']);
     assert.deepEqual(toolNames, [
+      'agent_system_dispatch',
+      'agent_system_intake',
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',

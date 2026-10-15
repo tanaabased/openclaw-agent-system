@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { legacyGitHubNotifications } from '../channels/github/config-schema.ts';
 import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import AgentSystemLifecycleRegistry, {
+  AgentSystemLifecycleError,
+} from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
@@ -37,7 +39,7 @@ const healthyHookAccess = {
 };
 
 describe('channels/github/runtime/lifecycle-contribution', () => {
-  it('should block selected version 2 execution before touching legacy runtime resources', async () => {
+  it('should skip unavailable version 2 installation without blocking other components', async () => {
     const unused = async () => {
       throw new Error('legacy resource must not be used');
     };
@@ -67,16 +69,43 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
     };
     const selected = { ...context, manifest: v2 };
     assert.deepEqual(
-      contribution.validate!(selected)?.diagnostics?.map(({ code }) => code),
-      ['github-notification-runtime-unsupported'],
+      contribution.validate!(selected)?.diagnostics?.map(({ code, severity }) => ({
+        code,
+        severity,
+      })),
+      [{ code: 'github-notification-runtime-unsupported', severity: 'warning' }],
     );
     assert.equal((await contribution.inspect!(selected))[0]?.status, 'blocked');
-    await assert.rejects(
-      contribution.reconcile!(selected),
-      (error: unknown) =>
-        error instanceof AgentSystemLifecycleError &&
-        error.code === 'github-notification-runtime-unsupported',
+    let laterComponentInstalled = false;
+    const registry = new AgentSystemLifecycleRegistry([
+      contribution,
+      {
+        id: 'later-component',
+        isConfigured: () => true,
+        async reconcile() {
+          laterComponentInstalled = true;
+          return { outcomes: [{ code: 'later-ready', message: 'ready', status: 'created' }] };
+        },
+      },
+    ]);
+    const installed = await registry.reconcile({ ...selected, runtime: 'openclaw' });
+    assert.equal(laterComponentInstalled, true);
+    assert.deepEqual(
+      installed.outcomes.map(({ component, code, status }) => ({ component, code, status })),
+      [
+        {
+          component: 'github-notifications',
+          code: 'github-notification-runtime-unsupported',
+          status: 'skipped',
+        },
+        { component: 'later-component', code: 'later-ready', status: 'created' },
+      ],
     );
+    assert.deepEqual(
+      installed.warnings.map(({ component, code }) => ({ component, code })),
+      [{ component: 'github-notifications', code: 'github-notification-runtime-unsupported' }],
+    );
+    assert.equal((await contribution.inspect!(selected))[0]?.status, 'blocked');
     const policy = v2.github!.notifications!;
     assert.ok(policy.schemaVersion === 2);
     policy.runtimes = ['codex'];

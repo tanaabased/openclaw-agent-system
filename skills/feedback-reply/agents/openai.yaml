@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Feedback Reply'
+  short_description: 'Write concise public replies in the agent’s own voice'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-feedback-reply to compose a public reply from the supplied private response and verified outcome.'

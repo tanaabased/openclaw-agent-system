@@ -36,6 +36,7 @@ export interface AutomationThread {
   name?: string;
   model?: string;
   effort?: string;
+  group?: string;
 }
 export type AutomationThreadSettings = Pick<AutomationThread, 'model' | 'effort'>;
 export interface AutomationThreadAdapter {
@@ -49,12 +50,14 @@ export interface AutomationThreadAdapter {
     settings?: AutomationThreadSettings,
   ): Promise<string>;
   rename(id: string, name: string): Promise<void>;
+  setGroup?(id: string, group: string): Promise<void>;
 }
 export interface AutomationThreadSelection {
   key: string;
   exact?: string;
   name?: string;
   managed: boolean;
+  group?: string;
 }
 
 /** titles never identify conversations; Codex partitions shared declarations by stable job identity. */
@@ -79,6 +82,9 @@ export function automationThreadSelection(
     ...(job.thread.id ? { exact: job.thread.id } : {}),
     ...(job.thread.name ? { name: job.thread.name } : {}),
     managed: true,
+    ...(runtime === 'openclaw' && job.internalOpenClaw?.group
+      ? { group: job.internalOpenClaw.group }
+      : {}),
   };
 }
 
@@ -229,6 +235,16 @@ export default class AutomationThreads {
           await this.adapter.rename(native.id, name);
           const readback = await this.adapter.lookup(native.id);
           if (!readback || readback.name !== name)
+            throw new AutomationError('automation-thread-readback-diverged');
+          native = readback;
+        }
+        if (selection.group !== undefined && native.group !== selection.group) {
+          if (!apply) throw new AutomationError('automation-thread-group-drift');
+          if (!this.adapter.setGroup)
+            throw new AutomationError('automation-thread-group-unsupported');
+          await this.adapter.setGroup(native.id, selection.group);
+          const readback = await this.adapter.lookup(native.id);
+          if (!readback || readback.group !== selection.group)
             throw new AutomationError('automation-thread-readback-diverged');
           native = readback;
         }

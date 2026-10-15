@@ -30,8 +30,15 @@ export const dispatchGit: DispatchGit = async (cwd, argv, signal) => {
     killProcessTree: true,
     outputCapture: 'head',
   });
-  if (result.code !== 0 || result.termination !== 'exit' || result.stdoutTruncatedBytes)
-    throw new Error('dispatch-project-git-unavailable');
+  if (result.code !== 0 || result.termination !== 'exit' || result.stdoutTruncatedBytes) {
+    const authentication =
+      /authentication failed|could not read (?:Username|Password)|terminal prompts disabled|Permission denied \(publickey\)/iu.test(
+        result.stderr,
+      );
+    throw new Error(
+      authentication ? 'dispatch-project-git-auth-unavailable' : 'dispatch-project-git-unavailable',
+    );
+  }
   return result.stdout.trim();
 };
 

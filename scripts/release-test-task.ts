@@ -220,6 +220,10 @@ try {
     'skills/github-update/agents/openai.yaml',
     'tools/install/README.md',
     'tools/doctor/README.md',
+    'skills/issue-implementation/SKILL.md',
+    'skills/issue-implementation/agents/openai.yaml',
+    'skills/issue-implementation/assets/icon-small.svg',
+    'skills/issue-implementation/assets/icon-large.svg',
     'skills/doctor/SKILL.md',
     'skills/doctor/agents/openai.yaml',
     'skills/install/SKILL.md',
@@ -433,7 +437,7 @@ try {
       assert.equal(result.status, 'unresolved');
       assert.deepEqual(result.candidate, inspected.profiles.default);
       assert.equal(result.application, 'not-requested');
-      assert.match(inspected.reportGuidance, /\*\*Model routing\*\*/);
+      assert.match(inspected.reportGuidance, /## 🧠 Model routing/);
       const overridden = await resolveRouting({
         ...input,
         overrides: { model: 'manual', effort: 'low' },

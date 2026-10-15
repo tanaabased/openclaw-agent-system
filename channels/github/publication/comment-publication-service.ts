@@ -1,3 +1,4 @@
+import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';
 import { legacyGitHubNotifications } from '../config-schema.ts';
 import {
   admitReviewFeedback,
@@ -183,6 +184,7 @@ export default class GitHubNotificationCommentPublicationService {
   #publisher(input: GitHubNotificationCommentPublicationServiceInput) {
     let authorized: PublicationMatch | undefined;
     return new GitHubNotificationCommentPublisher({
+      redactText: redactSensitiveText,
       authorize: async () => {
         authorized = await this.#authorizeLocal(input);
         return { authorized: true };

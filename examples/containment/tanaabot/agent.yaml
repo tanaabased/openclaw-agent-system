@@ -5,7 +5,8 @@ agent:
   name: Tanaabot Containment Source
   email: tanaabot-containment@example.invalid
 
-git: {}
+git:
+  worktrees: {}
 
 setup-agent:
   check: |

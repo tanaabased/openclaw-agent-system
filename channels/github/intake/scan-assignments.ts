@@ -17,7 +17,7 @@ import {
 } from './record-store.ts';
 
 export interface AssignmentScanInput {
-  store: IntakeRecordStore;
+  store: Pick<IntakeRecordStore, 'exclusive' | 'location'>;
   workspaceDir: string;
   agentId: string;
   policy: GitHubNotificationPolicy;

@@ -14,6 +14,7 @@ import AgentInstallService from '../agent/install-service.ts';
 import AgentSystemLifecycleRegistry, {
   AgentSystemLifecycleError,
 } from '../core/lifecycle-registry.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
@@ -381,6 +382,77 @@ describe('agent/automation-service', () => {
     });
     assert.equal(native.length, 1);
     assert.equal(native[0]?.enabled, false);
+  });
+
+  it('should install the derived V2 job and group, detect drift and converge without duplicates', async () => {
+    const sessions = new Map<string, Record<string, unknown>>();
+    const original = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      if (!method.startsWith('sessions.')) return original(method, params);
+      calls.push({ method, params: structuredClone(params) });
+      const key = String(params.key ?? params.sessionId);
+      if (method === 'sessions.resolve')
+        return sessions.has(key) ? { ok: true, key, agentId: 'tanaabot' } : { ok: false };
+      if (method === 'sessions.list') return { sessions: [...sessions.values()] };
+      if (method === 'sessions.create') {
+        assert.equal(params.cwd, root);
+        sessions.set(key, { key, sessionId: 'intake-session', workspaceDir: root });
+        return { ok: true };
+      }
+      if (method === 'sessions.patch') {
+        assert.equal(params.expectedSessionId, 'intake-session');
+        const row = sessions.get(key)!;
+        if (params.autoLabel)
+          Object.assign(row, { autoLabel: params.autoLabel, displayName: params.autoLabel });
+        if (params.category) row.category = params.category;
+        return { ok: true };
+      }
+      throw Error('unexpected session operation');
+    };
+    const policy = { ...intakeFixture().policy, runtimes: ['openclaw' as const] };
+    manifest.automations = [];
+    manifest.models = {
+      default: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      low: { model: 'openai/gpt-6-luna', effort: 'medium' },
+    };
+    manifest.github = { username: 'tanaabot', notifications: policy };
+    await service.reconcile(manifest, root);
+    assert.equal(native.length, 1);
+    assert.equal(sessions.size, 1);
+    assert.equal(native[0]!.enabled, true);
+    assert.equal(native[0]!.name, 'Agent System: github-issue-assignment');
+    assert.ok(native[0]!.trigger);
+    assert.equal([...sessions.values()][0]!.category, 'Agent System');
+    const identity = native[0]!.id;
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.equal(
+      calls.some((c) =>
+        ['cron.add', 'cron.update', 'sessions.create', 'sessions.patch'].includes(c.method),
+      ),
+      false,
+    );
+    policy.intervalMinutes = 10;
+    const findings = await service.inspect(manifest, root);
+    assert.ok(findings.some((f) => f.status === 'drift'));
+    assert.equal(
+      calls.some((c) =>
+        ['cron.add', 'cron.update', 'sessions.create', 'sessions.patch'].includes(c.method),
+      ),
+      false,
+    );
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.schedule.everyMs, 600000);
+    assert.ok(native[0]!.trigger);
+    policy.issueAssignment!.enabled = false;
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.enabled, false);
+    policy.issueAssignment!.enabled = true;
+    await service.reconcile(manifest, root);
+    assert.equal(native.length, 1);
+    assert.equal(native[0]!.id, identity);
+    assert.equal(native[0]!.enabled, true);
+    assert.equal(sessions.size, 1);
   });
 
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {
@@ -811,6 +883,29 @@ describe('agent/automation-service', () => {
     assert.ok(findings.some(({ code }) => code === 'automation-delivery-failed'));
     assert.ok(!JSON.stringify(findings).includes('secret'));
   });
+  it('should reuse installed prompt jobs from a different gateway launcher context', async () => {
+    manifest.automations = jobs([
+      { id: 'prompt', schedule: 'every 1 hour', prompt: 'Review the repo.' },
+    ]);
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const installed = await store.read();
+    const gateway = new AutomationService({
+      ...service.dependencies,
+      command: ['/opt/node/bin/node', '/opt/openclaw/dist/index.js'],
+      environment: {},
+    });
+    calls = [];
+    assert.ok(
+      (await gateway.inspect(manifest, root)).some(({ code }) => code === 'automation-healthy'),
+    );
+    assert.equal((await gateway.run(manifest, root, 'prompt')).status, 'queued');
+    const result = await gateway.reconcile(manifest, root);
+    assert.ok(result.outcomes.every(({ status }) => status === 'unchanged'));
+    assert.equal(mutations().length, 0);
+    assert.deepEqual(await store.read(), installed);
+    assert.equal(native.length, 1);
+  });
   it('should project isolated owning-agent prompts and clear removed model overrides', async () => {
     manifest.automations = jobs([
       {
@@ -828,8 +923,15 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     assert.equal(mutations().length, 0);
     native[0]!.payload.toolsAllow = ['read'];
+    assert.ok(
+      (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+    );
+    assert.deepEqual(native[0]!.payload.toolsAllow, ['read']);
     await service.reconcile(manifest, root);
     assert.deepEqual(native[0]!.payload.toolsAllow, ['*']);
+    assert.ok(
+      (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-healthy'),
+    );
     manifest.automations[0]!.overrides = {};
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.payload.model, undefined);

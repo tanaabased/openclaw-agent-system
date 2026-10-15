@@ -253,20 +253,38 @@ try {
     .map((name) => `${manifest.name}:${name}`)
     .filter((name) => !discovered.has(name));
   assert.deepEqual(missing, [], `fresh Codex task omitted skills: ${missing.join(', ')}`);
+  const implementation = discovered.get('agent-system:agent-system-issue-implementation');
+  assert.ok(implementation, 'the bundled implementation default must be discoverable');
+  assert.equal(
+    await realpath(implementation.path),
+    join(cacheRoot, 'skills/issue-implementation/SKILL.md'),
+  );
   const assessment = discovered.get('agent-system:agent-system-issue-assessment');
   assert.equal(
     await realpath(assessment!.path),
     join(cacheRoot, 'skills/issue-assessment/SKILL.md'),
   );
   const fixtureWorkspace = join(temporaryRoot, 'assessment-workspace');
-  const fixtureSkill = join(fixtureWorkspace, '.agents/skills/fixture-assessment');
-  await mkdir(fixtureSkill, { recursive: true });
-  await cp(resolve('examples/codex/assessment-skill/SKILL.md'), join(fixtureSkill, 'SKILL.md'));
-  const replacement = (await freshSkills(codex, environment, fixtureWorkspace)).get(
-    'fixture-assessment',
-  );
-  assert.equal(replacement?.scope, 'repo');
-  assert.equal(await realpath(replacement!.path), join(fixtureSkill, 'SKILL.md'));
+  const fixtures = [
+    ['fixture-assessment', 'assessment-skill'],
+    ['generic-assessment', 'generic-assessment-skill'],
+  ] as const;
+  for (const [name, directory] of fixtures) {
+    const fixtureSkill = join(fixtureWorkspace, '.agents/skills', name);
+    await mkdir(fixtureSkill, { recursive: true });
+    await cp(resolve('examples/codex', directory, 'SKILL.md'), join(fixtureSkill, 'SKILL.md'));
+  }
+  const replacements = await freshSkills(codex, environment, fixtureWorkspace);
+  for (const [name, directory] of fixtures) {
+    const replacement = replacements.get(name);
+    const path = join(fixtureWorkspace, '.agents/skills', name, 'SKILL.md');
+    assert.equal(replacement?.scope, 'repo');
+    assert.equal(await realpath(replacement!.path), path);
+    assert.equal(
+      await readFile(path, 'utf8'),
+      await readFile(resolve('examples/codex', directory, 'SKILL.md'), 'utf8'),
+    );
+  }
   process.stdout.write(`Codex plugin checks: ok (${expectedSkillNames.size} skills)\n`);
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

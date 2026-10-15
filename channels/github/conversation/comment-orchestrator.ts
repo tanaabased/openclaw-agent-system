@@ -602,13 +602,7 @@ export default class GitHubNotificationCommentOrchestrator {
           conversationId,
         );
         const group = snapshot?.conversation?.revisions[review.nodeId]?.review;
-        if (
-          group?.members[reply.nodeId] ||
-          (!group &&
-            Date.parse(reply.createdAt) <= Date.parse(review.submittedAt ?? '') &&
-            reply.author?.nodeId === review.author?.nodeId)
-        )
-          continue;
+        if (group?.members[reply.nodeId]) continue;
         await consume(reviewReplyFeedback(review, reply));
         if (budget <= 0) return;
       }

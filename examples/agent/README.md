@@ -2,6 +2,14 @@
 
 This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, read-only model routing, and value-free lifecycle logging without depending on live model behavior.
 
+The readiness turn uses a GitHub-shaped session key after the installed agent's
+manifest switches to notification V2. It must reach the mock model without a
+legacy conversation record or V1 prompt attestation. The declaration disables
+both intake triggers; this tests passive version selection, not notification
+installation or polling. Unit coverage supplies stale V1 state as the negative
+control. The routing turn also requests issue-session dispatch while intake is inactive and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
+passing it does not establish dispatch recovery or single-execution guarantees.
+
 ## Setup
 
 ```bash
@@ -23,10 +31,11 @@ openclaw-gateway start --debug
 ## Testing
 
 ```bash
-# should start an explicitly installed data-agent session without tools
+# should keep a v2 agent out of legacy github prompt processing
+cat "$GITHUB_WORKSPACE/examples/agent/v2-notifications.yaml" >> "$GITHUB_WORKSPACE/examples/agent/data/agent.yaml"
 openclaw agent \
   --agent data \
-  --session-key agent:data:agent-system-leia \
+  --session-key agent:data:agent-system-github:data:direct:github:issue:r_example:1 \
   --message-file "$GITHUB_WORKSPACE/examples/agent/ready.md" \
   --timeout 120
 
@@ -55,13 +64,17 @@ if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-lifecycle.log"; then ex
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-file.jsonl"; then exit 1; fi
 if grep -Fq 'leia-initial-manifest-value' "$gateway_log_path"; then exit 1; fi
 
-# should inspect and resolve routing through the active agent without changing its session selection
+# should resolve routing and reject dispatch without active intake
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-routing-leia \
   --message-file "$GITHUB_WORKSPACE/examples/agent/routing.md" \
   --timeout 120 \
   | grep -F 'routing-default-ready'
+
+# should omit temporary dispatch invocation tracing from runtime logs
+if grep -Fq 'dispatch-invocation ' "$TMPDIR/agent-file.jsonl"; then exit 1; fi
+if grep -Fq 'dispatch-invocation ' "$(openclaw-gateway log-path)"; then exit 1; fi
 
 # should match the complete strict mock exchange
 openclaw-aimock evidence \

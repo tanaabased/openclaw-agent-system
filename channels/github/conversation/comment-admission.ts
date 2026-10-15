@@ -140,13 +140,14 @@ export function githubCommentRevision(comment: GitHubCanonicalIssueComment): Git
 /** Admit only an approved human's exact mention in current author-written prose. */
 export function admitGitHubComment(input: {
   account: GitHubIdentity;
+  allowSelf?: boolean;
   comment: GitHubCanonicalIssueComment;
   configuration: GitHubNotificationsConfiguration;
   maximumCommentCharacters?: number;
 }): GitHubCommentAdmission {
   const author = input.comment.author;
   if (!author) return { code: 'comment-actor-missing', disposition: 'rejected' };
-  if (author.nodeId === input.account.nodeId) {
+  if (author.nodeId === input.account.nodeId && !input.allowSelf) {
     return { code: 'comment-actor-self', disposition: 'rejected' };
   }
   if (author.type !== 'User') {

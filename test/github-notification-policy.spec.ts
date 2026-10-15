@@ -29,11 +29,55 @@ function parsed(notifications: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
+  it('should allow openclaw planning while naming unsupported enabled capabilities', () => {
+    const supported = {
+      ...policy,
+      runtimes: ['openclaw', 'codex'],
+      'issue-assignment': { allowed: [actor], mode: 'plan', feedback: false },
+      'review-request': { enabled: false, allowed: [{ ...actor }], feedback: true },
+    };
+    assert.equal(githubNotificationRuntimeBlocker(parsed(supported), 'openclaw'), undefined);
+    for (const [extra, capability] of [
+      [{ mode: 'work' }, 'work issue assignment'],
+      [{ mode: 'auto' }, 'auto issue assignment'],
+      [{ feedback: true }, 'issue feedback'],
+      [{ feedback: { allowed: [{ ...actor }] } }, 'issue feedback'],
+      [{ assessment: { skill: 'custom:assess' } }, 'replacement assessment skills'],
+    ] as const) {
+      const declaration = parsed({
+        ...supported,
+        'issue-assignment': { ...supported['issue-assignment'], ...extra },
+      });
+      assert.ok(
+        githubNotificationRuntimeBlocker(declaration, 'openclaw')?.message.includes(capability),
+      );
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
+      declaration.issueAssignment!.enabled = false;
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
+    }
+    const review = parsed({ ...supported, 'review-request': { allowed: [{ ...actor }] } });
+    assert.match(githubNotificationRuntimeBlocker(review, 'openclaw')!.message, /review requests/);
+    for (const skill of [
+      'agent-system-issue-assessment',
+      'agent-system:agent-system-issue-assessment',
+    ]) {
+      assert.equal(
+        githubNotificationRuntimeBlocker(
+          parsed({
+            ...supported,
+            'issue-assignment': { ...supported['issue-assignment'], assessment: { skill } },
+          }),
+          'openclaw',
+        ),
+        undefined,
+      );
+    }
+  });
+
   it('should preserve trigger switches and authority independently of adapter availability', () => {
     for (const [key, decoded] of [
       ['issue-assignment', 'issueAssignment'],
       ['review-request', 'reviewRequest'],
-      ['feedback', 'feedback'],
     ] as const) {
       for (const enabled of [undefined, true, false]) {
         for (const allowed of [undefined, [], [actor]]) {
@@ -45,7 +89,9 @@ describe('channels/github/notification-policy', () => {
           assert.equal(declaration[decoded]?.allowed.length, allowed?.length ?? 0);
           assert.equal(
             githubNotificationRuntimeBlocker(declaration, 'openclaw')?.code,
-            enabled === false ? undefined : 'github-notification-runtime-unsupported',
+            key === 'review-request' && (enabled ?? Boolean(allowed?.length))
+              ? 'github-notification-runtime-unsupported'
+              : undefined,
           );
           assert.equal(
             githubNotificationRuntimeBlocker(declaration, 'codex')?.code,
@@ -67,14 +113,10 @@ describe('channels/github/notification-policy', () => {
       runtimes: ['codex'],
       'issue-assignment': { allowed: [{ ...actor }] },
       'review-request': { enabled: false, allowed: [{ ...actor }] },
-      feedback: { enabled: false, allowed: [{ ...actor }] },
     });
     assert.equal(githubNotificationRuntimeBlocker(mixed, 'codex'), undefined);
-    mixed.feedback!.enabled = true;
-    assert.equal(
-      githubNotificationRuntimeBlocker(mixed, 'codex')?.code,
-      'github-notification-runtime-unsupported',
-    );
+    mixed.issueAssignment!.feedback = true;
+    assert.equal(githubNotificationRuntimeBlocker(mixed, 'codex'), undefined);
     assert.equal(parse({ 'approved-actors': [actor], enabled: false }).status, 'invalid');
   });
   it('should normalize assessment skill ids and retain optional guidance forms', () => {
@@ -123,12 +165,11 @@ describe('channels/github/notification-policy', () => {
       schemaVersion: 2,
       runtimes: ['openclaw', 'codex'],
       intervalMinutes: 5,
-      maxConcurrentItems: 2,
+      maxConcurrentItems: 3,
       allowedRepositoryOwners: [{ login: owner.login, nodeId: owner['node-id'] }],
     });
-    const declaration = parsed({ ...policy, 'issue-assignment': {}, feedback: { allowed: [] } });
+    const declaration = parsed({ ...policy, 'issue-assignment': {} });
     assert.deepEqual(declaration.issueAssignment, { allowed: [], mode: 'plan' });
-    assert.deepEqual(declaration.feedback, { allowed: [] });
     assert.equal(declaration.reviewRequest, undefined);
     assert.equal(legacyGitHubNotifications(declaration), undefined);
   });
@@ -140,24 +181,23 @@ describe('channels/github/notification-policy', () => {
         runtimes: ['codex'],
         'interval-minutes': 10,
         'max-concurrent-items': 3,
-        'issue-assignment': { allowed: [{ ...actor, 'operator-owner': true }], mode },
+        'issue-assignment': {
+          allowed: [{ ...actor, 'operator-owner': true }],
+          mode,
+          feedback: true,
+        },
         'review-request': { allowed: [] },
-        feedback: { allowed: [actor] },
       });
       assert.deepEqual(declaration.issueAssignment, {
         allowed: [{ login: actor.login, nodeId: actor['node-id'], operatorOwner: true }],
         mode,
+        feedback: true,
       });
       assert.deepEqual(declaration.reviewRequest?.allowed, []);
-      assert.deepEqual(declaration.feedback?.allowed, [
-        { login: actor.login, nodeId: actor['node-id'], operatorOwner: false },
-      ]);
+      assert.equal(declaration.issueAssignment?.feedback, true);
       assert.equal(declaration.intervalMinutes, 10);
       assert.equal(declaration.maxConcurrentItems, 3);
-      assert.equal(
-        githubNotificationRuntimeBlocker(declaration, 'codex')?.code,
-        'github-notification-runtime-unsupported',
-      );
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
     }
   });
@@ -201,7 +241,7 @@ describe('channels/github/notification-policy', () => {
   });
 
   it('should reject incomplete pins and ambiguous identities within each authority list', () => {
-    for (const key of ['issue-assignment', 'review-request', 'feedback']) {
+    for (const key of ['issue-assignment', 'review-request']) {
       for (const allowed of [
         [{ login: 'pirog' }],
         [{ ...actor, 'node-id': 'contains space' }],

@@ -3,6 +3,9 @@ import { realpath } from 'node:fs/promises';
 import type { OpenClawPluginToolContext } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
 
+import sessionDispatchRequirements, {
+  sessionDispatchDisclosure,
+} from './session-dispatch-requirements.ts';
 import type AgentDoctorService from './doctor-service.ts';
 import type AgentInstallService from './install-service.ts';
 import { selectedSetupPhases, type InstallSetupOptions } from './install-options.ts';
@@ -14,6 +17,7 @@ import AgentSystemToolError from '../api/error.ts';
 
 type LoadedManifest = Extract<AgentManifestLoadResult, { status: 'loaded' }>;
 interface ApprovalContext {
+  requester?: { senderIsOwner?: boolean };
   agentId?: string;
   sessionKey?: string;
   sessionId?: string;
@@ -27,6 +31,7 @@ interface PendingOperation {
   skipSetupHost: boolean;
   skipSetupAgent: boolean;
   allowed: boolean;
+  sessionDispatchConsent: boolean;
   signals: Set<AbortSignal>;
   expiresAt: number;
   dispose(): void;
@@ -80,6 +85,9 @@ export default class AgentLifecycleApproval {
       previous?.dispose();
       denied();
     }
+    const consumers =
+      name === 'agent_system_install' ? sessionDispatchRequirements(loaded.manifest) : [];
+    if (consumers.length && context.requester?.senderIsOwner !== true) denied();
     const workspaceDir = await realpath(loaded.scope.workspaceDir);
     context.abortSignal?.throwIfAborted();
     const operation = name === 'agent_system_install' ? 'Install' : 'Doctor';
@@ -117,16 +125,28 @@ export default class AgentLifecycleApproval {
           : selection.skipSetupAgent
             ? 'run host setup; skip agent setup'
             : 'run host and agent setup';
-    const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : `Reconcile agent state, shared Codex prerequisite, and host collaboration (session reading/messaging); ${setupScope}.`}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
+    const ordinaryDescription = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : `Reconcile agent state, shared Codex prerequisite, and host collaboration (session reading/messaging); ${setupScope}.`}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
+    const description = consumers.length
+      ? [
+          `Install ${JSON.stringify(loaded.manifest.agent.id)} at ${JSON.stringify(workspaceDir)}`,
+          '',
+          `- ${setupScope} (${steps.length} steps)`,
+          '- reconcile configured state',
+          ...(rebuildCodexPath ? ['- replace Codex PATH'] : []),
+          '',
+          sessionDispatchDisclosure(consumers),
+        ].join('\n')
+      : ordinaryDescription;
     // Do not let the host's display bound silently omit the target or selected operation.
     if (description.length > 512) denied();
-    const timeoutMs = 120_000;
+    const timeoutMs = consumers.length ? 600_000 : 120_000;
     const pending: PendingOperation = {
       loaded: structuredClone(loaded),
       rebuildCodexPath,
       workspaceDir,
       ...selection,
       allowed: false,
+      sessionDispatchConsent: consumers.length > 0,
       signals: new Set(context.abortSignal ? [context.abortSignal] : []),
       expiresAt: Date.now() + timeoutMs,
       dispose: () => {
@@ -181,10 +201,24 @@ export default class AgentLifecycleApproval {
       selectedSetupPhases(params as InstallSetupOptions).skipSetupAgent !== pending.skipSetupAgent
     )
       denied();
+    const assertEnrollmentCurrent = () => {
+      if (!pending.sessionDispatchConsent) return;
+      if (
+        context.senderIsOwner !== true ||
+        !context.assertInvocationCurrent ||
+        Date.now() >= pending.expiresAt
+      )
+        denied();
+      context.assertInvocationCurrent();
+      for (const signal of pending.signals) signal.throwIfAborted();
+      signal?.throwIfAborted();
+    };
+    assertEnrollmentCurrent();
     const signals = [...pending.signals, ...(signal ? [signal] : [])];
     const combinedSignal = AbortSignal.any(signals);
     const assertCurrent = async () => {
       combinedSignal.throwIfAborted();
+      assertEnrollmentCurrent();
       if (!context.workspaceDir || (await realpath(context.workspaceDir)) !== pending.workspaceDir)
         denied();
       const current = await this.dependencies.manifestService.loadForAgentId(
@@ -217,6 +251,9 @@ export default class AgentLifecycleApproval {
         return name === 'agent_system_install'
           ? this.dependencies.installService.install({
               ...input,
+              ...(pending.sessionDispatchConsent
+                ? { sessionDispatchConsent: true, assertEnrollmentCurrent }
+                : {}),
               skipSetupHost: pending.skipSetupHost,
               skipSetupAgent: pending.skipSetupAgent,
             })

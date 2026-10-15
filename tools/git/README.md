@@ -297,11 +297,11 @@ Run ordinary Git commands using the trusted active agent. Configuration and
 
 #### Parameters
 
-| Parameter | Type         | Required | Default         | Description                                                                            |
-| --------- | ------------ | -------- | --------------- | -------------------------------------------------------------------------------------- |
-| `argv`    | string array | yes      | none            | 1–256 Git arguments, without the `git` executable.                                     |
-| `cwd`     | string       | no       | agent workspace | Working directory within the workspace or configured worktree root; 1–4096 characters. |
-| `stdin`   | string       | no       | none            | Ordinary command input, at most 64 KiB; never credentials.                             |
+| Parameter | Type         | Required | Default                      | Description                                                                            |
+| --------- | ------------ | -------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `argv`    | string array | yes      | none                         | 1–256 Git arguments, without the `git` executable.                                     |
+| `cwd`     | string       | no       | verified execution workspace | Working directory within the workspace or configured worktree root; 1–4096 characters. |
+| `stdin`   | string       | no       | none                         | Ordinary command input, at most 64 KiB; never credentials.                             |
 
 #### Usage
 
@@ -313,6 +313,12 @@ Inspect the active workspace:
 
 For a managed checkout, pass its returned canonical path as `cwd`. Results include
 `exitCode`, `stdout`, `stderr`, and `truncated`.
+
+In an ordinary session bound to a registered worktree under the agent's managed
+bare-repository layout, omitted and relative `cwd` values use that worktree.
+Agent configuration and Git identity still come from the canonical agent workspace.
+Home-workspace sessions retain the agent workspace default. This binding does not
+admit an issue or expand Git policy.
 
 ### `agent_system_git_worktree`
 

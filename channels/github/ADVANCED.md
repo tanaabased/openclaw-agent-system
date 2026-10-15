@@ -518,10 +518,11 @@ metadata. Oversized or incomplete groups are not executed as partial instruction
 The existing 400-revision conversation limit remains; capacity exhaustion reports
 `github-notification-feedback-capacity-exceeded` without consuming the new source.
 
-Replies remain top-level comments on the source PR, with exact-source
-reauthorization and durable publication receipts. Inline reply publication,
-automatic thread resolution, and independent review-assignment sessions are not
-implemented.
+OpenClaw replies remain top-level comments on the source PR, with exact-source
+reauthorization and durable publication receipts; inline reply publication is not
+implemented there. [Standalone Codex](../../CODEX.md#issue-feedback) publishes
+inline replies in the original review thread. Automatic thread resolution and
+independent review-assignment sessions are not implemented in either runtime.
 
 ## Security and Lifecycle
 

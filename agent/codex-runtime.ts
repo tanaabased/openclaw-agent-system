@@ -1,3 +1,6 @@
+import runCodexFeedback from './codex-feedback.ts';
+import runCodexContinuation from './codex-continuation.ts';
+import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
 
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
@@ -47,7 +50,7 @@ interface BindingOptions {
 
 function parsePluginData(args: string[]): string {
   if (args.length !== 2 || args[0] !== '--plugin-data' || !args[1]) {
-    throw new Error('expected exactly --plugin-data <path>');
+    throw new Error('expected exactly --plugin-data <path>; send JSON on stdin without --input');
   }
   return args[1];
 }
@@ -227,6 +230,33 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
+  if (command === 'feedback') {
+    writeJson(
+      await runCodexFeedback(parsePluginData(args.slice(1)), JSON.parse(await readStandardInput())),
+    );
+    return;
+  }
+  if (command === 'continuation') {
+    writeJson(
+      await runCodexContinuation(
+        parsePluginData(args.slice(1)),
+        JSON.parse(await readStandardInput()),
+      ),
+    );
+    return;
+  }
+  if (command === 'delivery') {
+    if (args[1] === '--help') {
+      process.stdout.write(
+        'Usage: delivery --plugin-data <path>\nJSON on stdin: action prepare, publish, reconcile, or present; id is the retained managed issue receipt. Prepare returns a digest for explicitly authorized publication. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
+      );
+      return;
+    }
+    writeJson(
+      await runCodexDelivery(parsePluginData(args.slice(1)), JSON.parse(await readStandardInput())),
+    );
+    return;
+  }
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
@@ -366,7 +396,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     return;
   }
   throw new Error(
-    'expected session-start, binding, setup, automations, intake, dispatch, or model-routing command',
+    'expected session-start, binding, setup, automations, intake, dispatch, continuation, delivery, or model-routing command',
   );
 }
 
@@ -374,21 +404,27 @@ runCodexRuntime().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'unknown Agent System Codex failure';
   const details = codexHostAccess(error)
     ? { code: 'codex-host-access-required' }
-    : error instanceof AgentSystemLifecycleError
-      ? {
-          component: error.component,
-          code: error.code,
-          ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
-        }
-      : error instanceof IntakeError ||
-          error instanceof CodexSetupError ||
-          error instanceof RoutingError ||
-          error instanceof CodexAutomationError
-        ? { code: error.code }
-        : /^(?:dispatch|assessment-result|heartbeat)-[a-z-]+$/u.test(message)
-          ? { code: message }
-          : {};
-  const notice = ['intake', 'dispatch', 'model-routing'].includes(process.argv[2] ?? '')
+    : error instanceof CodexDeliveryFailure
+      ? { code: error.code }
+      : error instanceof AgentSystemLifecycleError
+        ? {
+            component: error.component,
+            code: error.code,
+            ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
+          }
+        : error instanceof IntakeError ||
+            error instanceof CodexSetupError ||
+            error instanceof RoutingError ||
+            error instanceof CodexAutomationError
+          ? { code: error.code }
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment-result|heartbeat)-[a-z-]+$/u.test(
+                message,
+              )
+            ? { code: message }
+            : {};
+  const notice = ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
+    process.argv[2] ?? '',
+  )
     ? codexIssueNotice({
         event: 'failure',
         changed: true,
@@ -396,7 +432,7 @@ runCodexRuntime().catch((error: unknown) => {
       })
     : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? { notice } : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

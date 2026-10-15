@@ -5,7 +5,10 @@ import type {
   dispatchChannelInboundTurn,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
-import { legacyGitHubNotifications } from '../config-schema.ts';
+import {
+  legacyGitHubNotifications,
+  type GitHubNotificationsDeclaration,
+} from '../config-schema.ts';
 import {
   assertConversationHookReady,
   type ConversationHookFinding,
@@ -225,21 +228,32 @@ export default function createGitHubNotificationRuntime(
       stateStore: monitorStateStore,
     }),
     promptGuidance: {
-      beforeRun(context: AgentSystemHookContext) {
-        return githubNotificationBeforeRun(context, {
-          candidates,
-          turnSelector,
-          logger: dependencies.lifecycleLogger,
-        });
+      beforeRun(context: AgentSystemHookContext, notifications?: GitHubNotificationsDeclaration) {
+        return githubNotificationBeforeRun(
+          context,
+          {
+            candidates,
+            turnSelector,
+            logger: dependencies.lifecycleLogger,
+          },
+          notifications,
+        );
       },
-      instructions(context: AgentSystemHookContext) {
-        return githubNotificationPromptGuidance(context, {
-          candidates,
-          logger: dependencies.lifecycleLogger,
-          turnContracts,
-          turnSelector,
-          ...(recipientGuidance ? { recipientGuidance } : {}),
-        });
+      instructions(
+        context: AgentSystemHookContext,
+        notifications?: GitHubNotificationsDeclaration,
+      ) {
+        return githubNotificationPromptGuidance(
+          context,
+          {
+            candidates,
+            logger: dependencies.lifecycleLogger,
+            turnContracts,
+            turnSelector,
+            ...(recipientGuidance ? { recipientGuidance } : {}),
+          },
+          notifications,
+        );
       },
     },
     replyTool: createGitHubNotificationReplyTool(

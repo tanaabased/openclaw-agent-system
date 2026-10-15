@@ -85,9 +85,10 @@ intake through one managed `github-issue-assignment` schedule and one retained c
 `📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
 `interval-minutes`; the automation ID is reserved. Intake records eligible
 assignments durably. After explicit reconciliation of the assessment-enabled
-schedule, `plan` assignments can prepare repositories and create native issue chats
-and worktrees in saved local Git-backed projects. Review requests, feedback, implementation, GitHub
-publication, and OpenClaw v2 execution remain unavailable through this Codex path.
+schedule, `plan` and `work` assignments can prepare repositories and create native issue chats
+and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery.
+Issue feedback can resume its owning chat for explanation and a bounded public reply.
+Review requests and Auto-mode execution remain unavailable through this Codex path.
 
 Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
 workflow. Install verifies a new chat's saved native approval settings and the saved
@@ -165,9 +166,172 @@ the selected name, source path, instruction digest, and guidance snapshot. The c
 verifies that same skill in its actual worktree before beginning. A missing or changed
 skill blocks assessment; restore it and resume the retained chat rather than launching
 another. The dispatch `context` response exposes the retained selection and guidance.
-Replacement skills submit the same result contract and receive the same host-rendered
-plan or questions. Guidance cannot widen the assessment's authority. Implementation
-and review do not yet consume this selection.
+The default skill's structured result and direct submission remain recommended.
+Replacement skills may follow that approach or return an ordinary assessment in
+their own format, without Agent System commands, result fields, or required headings.
+The surrounding workflow supplies verified context and retains ordinary output
+unchanged, deriving its summary, outcome, evidence, and progress for the same result
+contract. It checks those fields against the complete assessment before submission;
+this is model judgment, not deterministic proof of fidelity. Unusable output receives
+an actionable limitation rather than a ready label. Already recorded integrated
+results are not adapted or submitted again.
+
+The complete assessment is shown inline and returned on same-chat revisions; it
+remains the source of truth rather than its summaries. Guidance cannot widen the
+assessment's authority.
+[Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
+use the same trusted selection contract. Work uses the bundled
+[issue implementation skill](./skills/issue-implementation/SKILL.md) by default;
+review execution remains unavailable.
+[Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
+assignment and review requests; the removed global setting requires an explicit choice.
+
+### Issue Feedback
+
+Set `issue-assignment.feedback: true` to inherit approved assigners, or use
+`{ inherit: true, allowed: [...] }` to add pinned contributors. Reconcile Install
+after changing permissions; an older saved schedule cannot authorize feedback.
+Approved comments must address the configured GitHub account outside quoted text.
+The initial read establishes a baseline without replaying historical comments.
+Subsequent issue comments, submitted PR reviews and inline replies route to the
+original issue chat with their exact source and review context retained.
+Public replies to inline feedback stay in the original review thread. Replies to
+submitted reviews and ordinary PR comments appear in the PR conversation.
+
+Assignments and feedback share `max-concurrent-items`, which defaults to **3**.
+A busy owner queues feedback without taking another slot. An idle owner needs a
+free slot; the oldest eligible work proceeds, and each completed response puts
+that owner's remaining backlog behind work already waiting. Questions, blockers
+and completed turns release capacity. Uncertain native sends retain their slot
+until reconciled and are never blindly repeated.
+
+The intake card reports feedback delivered to chats, queued items across issues, and
+occupied slots. Answers and publication outcomes stay in the owning chat;
+unchanged checks remain quiet. Feedback authorizes read-only investigation,
+private explanation and an optional concise public reply. It does not start
+implementation or a review. Publication rechecks the exact source, assignment
+and permissions, and reconciles uncertain writes before another action.
+The chat displays the complete retained private response. The configured
+`feedback.skill` (default `agent-system:agent-system-feedback-reply`) then composes
+a separate public candidate, applying optional `feedback.guidance` and applicable
+voice skills. It summarizes for the audience rather than truncating the private
+answer. Runtime `result` saves the private response, `compose` returns the verified
+skill and context, and `candidate` records its output against the composition
+digest. Missing or changed skills withhold the reply and preserve the private answer.
+The final chat response includes the private explanation, the exact public quote,
+and the verified publication link or an explicit obstacle.
+
+Routine public replies use a two-step publication: `publish` without a digest
+returns the exact destination and attributed draft without a GitHub write;
+`publish` with that digest rechecks authority and executes through native approval.
+Operator activation covers the configured routine reply scope, but never overrides
+a native approval denial.
+Feedback authored by the publishing GitHub account receives a private response
+only. Confirmed runtime replies are excluded from intake, preventing reply loops.
+An unfinished publication stops instead of automatically resuming another model
+turn. After explicit human approval, an operator chat may preview
+`feedbackRuntime` with `{"action":"publish-approved","id":"...","eventId":"..."}`
+and apply its returned `digest`. This retries only the exact retained reply,
+rechecks its source and permissions, and reconciles any uncertain provider write.
+Later follow-ups do not invalidate the retained reply; recovery verifies its original
+completed feedback turn and waits if the owning chat is active.
+Independent reviewer feedback still requires the reviewer intake adapter. Discovery
+and retained queues are bounded: incomplete provider reads or a full journal stop
+new feedback admission with a diagnostic; they do not silently discard comments.
+
+### Auto Mode
+
+Set `github.notifications.issue-assignment.mode: auto`, then authorize Install to
+reconcile the saved workflow. Auto uses your existing assessment skill and guidance
+to recommend `proceed` or `wait`, with reasons shown in the issue chat. Clear, bounded
+work can continue through the configured implementation and managed PR delivery;
+incomplete requirements, broad scope, or consequential uncertainty should wait.
+A ready plan alone does not authorize implementation.
+
+A wait retains the complete plan and releases its implementation slot. Polling and
+feedback cannot promote it; explicitly direct further work in the same chat through
+the [manual handoff](#issue-assessment). Missing or invalid decisions, changed issue
+evidence before implementation, changed skills/guidance, lost authority, and native
+denials stop continuation. Fix the stated obstacle and give explicit direction;
+never recreate the issue chat to bypass its retained stop. Existing Plan/Work schedules
+do not grant Auto authority without reconciliation. Native OpenClaw Auto is not supported.
+
+### Work Mode
+
+Set `github.notifications.issue-assignment.mode: work`, optionally override its
+implementation skill or guidance, then authorize Install to reconcile the saved schedule. Activating Work
+mode authorizes assessment, implementation, and PR publication without routine
+stage approvals. Existing Plan-mode schedules remain assessment-only until that
+explicit update. An actionable assessment continues in its original issue chat
+with the complete plan, retained guidance, and selected model and effort.
+
+The runtime automatically checks that the activation and assignment still apply;
+these checks do not ask for renewed approval. Missing requirements, changed or
+unavailable skills/guidance, cancellation, and actual native approval or provider
+denials stop work. Implementation and delivery count against workflow capacity;
+intake reports stay limited to admission and capacity.
+
+Automatic PR publication requires an explicit public description of the change,
+verified checks, and limitations. Private reports are not copied into GitHub.
+
+Native continuation intent is retained before sending. An uncertain send is
+reconciled, never repeated blindly. A recorded implementation can resume delivery
+without reimplementing or creating another PR. A stopped implementation remains
+in the same chat with its files and evidence: inspect the blocker and explicitly
+continue through the existing manual handoff if human intervention is needed.
+Use `continuationRuntime` action `cancel` in the issue chat to stop further automatic
+work; it does not undo files or an already-started external operation. Disable the
+workflow through Install to revoke future automatic stage and publication authority.
+
+For `continuation-turn-ended` before an implementation result or delivery attempt,
+an operator may request `continuationRuntime` action `retry` with the retained `id`,
+then repeat it with the returned `digest`. This verifies the old turn has ended,
+retains its evidence, and queues one handoff in the same chat on the next scheduled
+turn. It cannot retry native denials, substantive results, or cancelled work.
+
+An altered continuation prompt stops with `continuation-send-mismatch`. The same
+operator retry can recover a verified, completed malformed send only before any
+recorded implementation or delivery, with the original assessment checkout unchanged.
+The preview binds the native send evidence and latest diagnostic turn; recovery
+retains both before queuing one new handoff. Unknown or duplicate sends, changed
+native settings, and approval denials remain blocked. Never edit tracking files or
+manually resend the old request.
+
+For an explicitly reapproved native send rejection before implementation, use
+`continuationRuntime` action `retry-denied` from the operator chat with the retained
+`id`. Inspect its rejection evidence, then apply its `digest` and the exact
+`approvedCallId`. Recovery requires the original idle chat and unchanged assessment
+checkout, retains the rejected attempt and reason, and queues one fresh handoff for
+scheduled intake. Native approval still applies. Unknown send failures, later chat
+turns, and denials during implementation or publication remain blocked.
+
+Deterministic fixtures and packaged checks alone do not establish unattended native
+execution or visible card delivery.
+
+### Pull Request Delivery
+
+After implementation handoff, explicitly authorize publication in the retained
+issue chat. The trusted `deliveryRuntime` accepts JSON actions with the retained
+dispatch `id`: `prepare` previews the current branch, head, identity, and recipient
+policy; `publish` requires that preview's `digest` and the same optional `title`
+and `body`. Preparation grants no publication authority. Codex uses native host
+Git and GitHub authorization, preserves authored commits and PR metadata, and
+adds the original issue's closing reference. The PR must be open, authored by the
+active account, and target the same repository's default branch.
+
+Publication retains the PR before recipient reconciliation. If a later step
+fails, prepare and resume that operation. An uncertain creation is reconciled
+against the managed branch; it is never blindly repeated. Attach the returned
+URL with native `attach_artifact`, read `list_artifacts`, then call `reconcile`
+and `present`, then reproduce its complete presentation in the final reply. The runtime
+generates the cards; successful generation alone does not prove they were displayed.
+Attachment verification is nonblocking: the verified PR card remains
+available with an attachment warning. Delivery notices use the shared info, warning,
+and error cards; publication errors retain the existing PR for retry. Attachment and
+presentation failures do not create another PR.
+See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
+Work-mode publication uses the same delivery operation through the trusted
+continuation runtime. Configured issue feedback also covers its verified delivery PR.
 
 Native creation receipts, chat identity, worktree, and results survive interrupted
 polls. An uncertain creation is reconciled against native creation history; it is
@@ -343,6 +507,10 @@ installed cache directly:
 bun run codex:sync
 bun run codex:check
 ```
+
+If a development build writes a changed persistent format, verify that any runtime
+restored during cleanup can read the retained state. Cache equality alone does not
+verify dispatch recovery.
 
 Start a fresh task to verify skill discovery. `package.json#codexTools.managedPaths`
 selects the paths owned by cache synchronization and checks; it does not control

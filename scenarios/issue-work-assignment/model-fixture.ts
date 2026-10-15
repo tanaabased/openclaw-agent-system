@@ -17,7 +17,9 @@ export const githubNotificationAssignmentFinalResponse = [
   '',
   'The requested fixture is bounded and the prepared worktree is ready for implementation after this planning checkpoint.',
   '',
-  '> **Model routing:** aimock/gpt-5.5, medium effort; low complexity, assessed from the localized fixture request. This is the saved selection.',
+  '> ## 🧠 Model routing',
+  '>',
+  '> aimock/gpt-5.5, medium effort; low complexity, assessed from the localized fixture request. This is the saved selection.',
   '',
   '## Plan',
   '',
@@ -45,7 +47,10 @@ function hasAssignmentUserPrompt(request: ChatCompletionRequest): boolean {
     .filter((message) => message.role === 'user')
     .map((message) => getTextContent(message.content) ?? '')
     .join('\n');
-  return assignmentUserPromptSignals.every((signal) => userText.includes(signal));
+  return (
+    assignmentUserPromptSignals.every((signal) => userText.includes(signal)) &&
+    (request.model.endsWith('-classifier') || userText.includes('> ## 📥 Issue assigned\n>\n>'))
+  );
 }
 
 const fixtures: Fixture[] = [

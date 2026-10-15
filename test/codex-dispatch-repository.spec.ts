@@ -44,12 +44,25 @@ describe('agent/codex-dispatch-repository', () => {
     assert.equal(retained?.path, path);
     assert.equal(retained?.checkout, path);
     assert.equal(retained?.identity, 'github.com/owner/repo');
+    assert.equal(retained?.source, 'git@github.com:owner/repo.git');
+    assert.equal(
+      await fixture.git.execute(path, ['remote', 'get-url', 'origin']),
+      'git@github.com:owner/repo.git',
+    );
     assert.equal(await prepare(), path);
     assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
     assert.equal(
       fixture.git.calls.some(({ argv }) => argv[0] === 'worktree'),
       false,
     );
+  });
+
+  it('should reuse an existing https checkout without changing its origin or cloning again', async () => {
+    const path = join(fixture.workspaceDir, 'checkouts', 'repo');
+    await fixture.git.seed(path, source);
+    assert.equal(await prepare(), path);
+    assert.equal(await fixture.git.execute(path, ['remote', 'get-url', 'origin']), source);
+    assert.ok(!fixture.git.calls.some(({ argv }) => argv[0] === 'clone'));
   });
 
   it('should materialize one stable bare-backed base checkout without an issue branch', async () => {

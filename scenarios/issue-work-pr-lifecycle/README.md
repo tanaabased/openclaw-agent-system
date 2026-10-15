@@ -7,7 +7,9 @@ the visible issue handoff, one source-affine pull-request reply, closed-unmerged
 recovery, reopen baselining, merge-driven retirement, session archival, and
 clean worktree removal. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and the live provider through
-workflow dispatch.
+workflow dispatch. The strict fixture requires complete quoted assignment,
+implementation, and private PR delivery cards; the public issue handoff remains
+unquoted.
 
 The scenario creates one disposable issue, pull request, head branch, and
 temporary base branch in `tanaabased/big-test-bucket`, then removes every

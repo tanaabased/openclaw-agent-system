@@ -21,6 +21,7 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 - [`openclaw agent-system credentials set op`](#openclaw-agent-system-credentials-set-op)
 - [`openclaw agent-system credentials unset op`](#openclaw-agent-system-credentials-unset-op)
 - [`openclaw agent-system credentials validate op`](#openclaw-agent-system-credentials-validate-op)
+- [`openclaw agent-system session-dispatch reset`](#openclaw-agent-system-session-dispatch-reset)
 - [`openclaw agent-system doctor`](#openclaw-agent-system-doctor)
 - [`openclaw agent-system env`](#openclaw-agent-system-env)
 - [`openclaw agent-system install`](#openclaw-agent-system-install)
@@ -582,7 +583,7 @@ Reconcile the workspace agent's identity, models, memory, paths, capabilities, a
 | `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
 | `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
 | `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
-| `--yes`                | no       | off     | Consent to setup without prompting.                                                                  |
+| `--yes`                | no       | off     | Accept installation, including required session dispatch enrollment, without prompting.              |
 
 ### Usage
 
@@ -594,7 +595,7 @@ openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip
 # review and apply the current workspace configuration.
 openclaw agent-system install
 
-# explicitly consent to setup for an unattended installation.
+# explicitly consent to installation and required enrollment without prompts.
 openclaw agent-system install --yes --json
 ```
 
@@ -633,11 +634,29 @@ executable, credential, and identity checks.
 
 Interactive installation previews applicable commands, shells, and timeouts on
 stderr. Declining or cancelling stops before mutation. No applicable setup
-means no prompt.
+means no setup prompt; required session dispatch enrollment has its own consent preview.
 
-Unattended consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
+Unattended setup consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
 or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent;
 prompts and warning diagnostics stay on stderr. Consent is not persisted.
+
+When enabled OpenClaw issue-assignment or review-request policies require session
+dispatch, Install lists those consumers and discloses `operator.read` and
+`operator.write` before enrollment. These grants are broader than sessions-only
+access. Explicit `--yes` accepts enrollment; `--non-interactive`, CI, or missing
+stdin alone do not. The UI uses the existing Install Allow once approval and
+requires a verified owner. A missing or unusable credential blocks enrollment-
+dependent installation; unsupported review execution remains a separate finding.
+
+One Gateway-wide device identity is retained in macOS Keychain or Linux Secret
+Service; there is no file-store fallback. Enrollment currently supports a local
+non-TLS Gateway. Manual pairing policy still requires approval of the exact
+request in Devices or `openclaw devices approve <requestId>`, then another Install
+to resume. Repeated Install reuses the credential; disabling a consumer retains
+it for other agents. Doctor reports enrollment state without issuing credentials.
+For revoked credentials, use the [exact-device reset](#openclaw-agent-system-session-dispatch-reset)
+before explicitly re-enrolling. Credential readiness alone does not establish
+end-to-end issue or review dispatch.
 
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;
@@ -833,3 +852,28 @@ native-drifted jobs fail before temporary authority or tool credentials are issu
 It returns one bounded JSON status and a nonzero exit status on failure. Direct
 operator invocation is a manual command execution and does not create a native
 scheduled occurrence or update its history.
+
+## `openclaw agent-system session-dispatch reset`
+
+Clear retained local enrollment after its exact device has been removed from the
+Gateway. This operator-only command does not remove devices, sessions, or other
+credentials. It refuses a different device ID, unreadable pairing state, or any
+remaining paired/pending device entry. The identity is shared across this Gateway;
+pause dependent automations before reset.
+
+### Options
+
+| Option or argument | Required | Default | Description                                          |
+| ------------------ | -------- | ------- | ---------------------------------------------------- |
+| `<deviceId>`       | yes      | none    | Exact session dispatch device ID reported by Doctor. |
+
+### Usage
+
+```text
+openclaw agent-system session-dispatch reset <deviceId>
+```
+
+Remove the exact device in Devices first, then run this command with its ID.
+Successful reset returns a JSON removal receipt. Doctor then reports a missing
+credential, and the next Install requests fresh enrollment consent. Do not restore
+a revoked credential from a backup to undo reset; explicitly re-enroll instead.

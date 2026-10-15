@@ -15,6 +15,8 @@ export interface AgentSystemLifecycleContext {
 export interface AgentSystemLifecycleExecutionContext extends AgentSystemLifecycleContext {
   /** Selected by the invoking integration, never by manifest or environment values. */
   runtime: AgentSetupRuntime;
+  sessionDispatchConsent?: boolean;
+  assertEnrollmentCurrent?(): void;
   signal?: AbortSignal;
   /** Recheck one chat-approved plan before each lifecycle boundary. */
   assertCurrent?(): Promise<void>;

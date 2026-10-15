@@ -21,6 +21,81 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'delivery-body-required')
+    return {
+      severity: 'warning',
+      title: 'The PR description is missing',
+      summary: 'Automatic publication requires an explicit public description.',
+      next: 'Compose a concise body with the implemented change, verified checks, limitations, and issue-required evidence. Prepare again with that body, then publish with the same body and returned digest. Do not copy private context.',
+    };
+  if (code === 'native-approval-denied')
+    return {
+      severity: 'error',
+      title: 'Native approval rejected the operation',
+      summary: 'The requested operation was rejected by native approval review.',
+      next: 'Stop this operation and report the actual rejection reason. Preserve pending work and receipts; do not retry through another execution path.',
+    };
+  if (code === 'continuation-send-mismatch')
+    return {
+      severity: 'error',
+      title: 'The continuation request changed in transit',
+      summary:
+        'The native send does not match the prepared request. Implementation is not authorized by this send.',
+      next: 'Inspect the retained send and issue chat. An operator may preview a bounded continuation retry; do not resend the old request or relax receipt verification.',
+    };
+  if (code === 'private-state-file-lock-busy')
+    return {
+      severity: 'warning',
+      title: 'Tracking files are temporarily busy',
+      summary:
+        'Another operation is updating the tracking files. This attempt could not finish within its bounded wait.',
+      next: 'The next scheduled check will retry. Keep existing work and receipts. Do not delete the lock or reset the chat; if this persists, inspect the operation holding the journal.',
+    };
+  if (code === 'dispatch-recovery-stale')
+    return {
+      severity: 'warning',
+      title: 'Refresh the recovery preview',
+      summary:
+        'The work or authority changed after the recovery preview. The requested transition was not applied.',
+      next: 'Preview the same recovery action again without a digest, inspect the current result, and apply its new digest only if the existing authorization still covers it. For handoff, use action:handoff with the same id; do not refresh assessment context after implementation. If it becomes stale again, stop and inspect concurrent changes. Preserve the existing chat, branch, and commit.',
+    };
+  if (code === 'delivery-attachment-pending')
+    return {
+      severity: 'warning',
+      title: 'PR attachment needs a check',
+      summary:
+        'The pull request is published, but its native chat attachment could not be verified.',
+      next: 'Retry native attachment and its inventory check in this chat. The PR card remains available; do not create another PR.',
+    };
+  if (code === 'delivery-linkage-retried')
+    return {
+      severity: 'info',
+      title: 'Issue link verified after retry',
+      summary: 'GitHub confirmed the closing issue link on a later readback.',
+      next: 'No action is needed. The existing pull request was retained.',
+    };
+  if (code === 'dispatch-project-git-auth-unavailable')
+    return {
+      severity: 'error',
+      title: 'Git authentication failed',
+      summary: 'Native Git could not authenticate to the repository.',
+      next: 'Check the host Git credential or SSH setup, then retry the retained delivery. No Agent System credential changes are needed.',
+    };
+  if (code === 'github-delivery-linkage-unverified')
+    return {
+      severity: 'error',
+      title: 'Issue link is not verified',
+      summary:
+        'The pull request exists, but GitHub has not confirmed its closing issue link after bounded readback attempts.',
+      next: 'Inspect the existing PR and issue link, then resume the same delivery. Do not create another PR.',
+    };
+  if (code.startsWith('delivery-'))
+    return {
+      severity: 'error',
+      title: 'Pull request delivery needs attention',
+      summary: 'Delivery could not finish its required verification or publication step.',
+      next: 'Inspect the diagnostic and retained PR, if present, then resume the same operation after resolving the problem.',
+    };
   if (code === 'dispatch-scan-required')
     return {
       severity: 'warning',

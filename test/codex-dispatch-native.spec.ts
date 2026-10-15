@@ -248,6 +248,12 @@ describe('agent/codex-dispatch-native', () => {
     const found = await native.find({ ...input, threadId: 'matching' });
     assert.equal(found?.turnId, 'follow-up');
     assert.equal(found?.turnStatus, 'inProgress');
+    assert.equal(found?.turnEnded, false);
+    for (const completedAt of [null, undefined, 0, NaN, 1791919616]) {
+      latest = { id: 'busy', status: 'interrupted', completedAt, items: [] };
+      const observed = await native.find({ ...input, threadId: 'matching' });
+      assert.equal(observed?.turnEnded, completedAt === 1791919616);
+    }
     assert.equal(found?.followUpUserTurn, false);
     latest = { id: 'human', status: 'inProgress', items: [{ type: 'userMessage', content: [] }] };
     assert.equal((await native.find({ ...input, threadId: 'matching' }))?.followUpUserTurn, true);

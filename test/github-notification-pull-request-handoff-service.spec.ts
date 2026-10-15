@@ -220,7 +220,14 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
             assert.ok(handoff?.status === 'pending');
             assert.equal(input.target, handoff.target);
             assert.equal(input.text, handoff.publicText);
-            assert.equal(input.text, privateCard);
+            assert.ok(privateCard.startsWith('> ## 🔀 Pull request opened'));
+            assert.equal(
+              input.text,
+              privateCard
+                .split('\n')
+                .map((line) => (line === '>' ? '' : line.slice(2)))
+                .join('\n'),
+            );
             return {
               receipt: { databaseId: 101, nodeId: 'IC_handoff' },
               status: 'published' as const,

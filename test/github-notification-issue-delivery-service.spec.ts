@@ -321,6 +321,29 @@ describe('channels/github/conversation/issue-delivery-service', () => {
     });
   });
 
+  it('should verify a dual-role recipient once while assigning both roles', async () => {
+    const pin = { login: 'pirog', nodeId: 'U_actor' };
+    const scenario = serviceHarness({ assignees: [pin], reviewers: [pin] });
+    await scenario.delivery.deliver({
+      agentId,
+      item: approvedNotificationItem(),
+      workspaceDir,
+      worktree,
+    });
+    assert.equal(
+      scenario.githubRequests.filter(({ argv }) => argv.includes('users/pirog')).length,
+      1,
+    );
+    for (const endpoint of ['issues/45/assignees', 'pulls/45/requested_reviewers']) {
+      assert.ok(
+        scenario.githubRequests.some(
+          ({ argv }) =>
+            argv.includes('POST') && argv.includes(`repos/tanaabased/example/${endpoint}`),
+        ),
+      );
+    }
+  });
+
   it('should add pinned recipients without removing existing assignees or re-requesting completed reviews', async () => {
     const scenario = serviceHarness({
       assignees: [{ login: 'maintainer', nodeId: 'U_maintainer' }],

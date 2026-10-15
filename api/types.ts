@@ -211,6 +211,7 @@ export interface AgentSystemCliToolDefinition<
       configuration: TResolvedConfiguration,
       scope: {
         commandWorkingDirectory?: string;
+        executionWorkingDirectory?: string;
         admittedWorkingDirectories?: readonly string[];
         source: AgentSystemToolScope['source'];
         workspaceDir: string;

@@ -31,8 +31,11 @@ export default function createLifecycleTool(
       );
     },
     registerTools(api) {
-      api.registerTool(
-        (context) => ({
+      // Keep this factory with its instance-local hooks; a name hint lets OpenClaw
+      // substitute the Gateway tool without its captured caller or approval state.
+      api.registerTool({
+        contextVersion: 2,
+        create: (context) => ({
           name: definition.name,
           label: definition.label,
           description: definition.description,
@@ -47,12 +50,11 @@ export default function createLifecycleTool(
             );
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(output) }],
-              details: {},
+              details: output,
             };
           },
         }),
-        { name: definition.name },
-      );
+      });
     },
   };
 }
