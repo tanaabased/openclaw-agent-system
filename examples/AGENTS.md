@@ -3,6 +3,7 @@
 ## Scope
 
 - Treat each `examples/<scenario>/README.md` as one executable, user-visible contract and one CI matrix identity.
+- Keep Leia coverage on essential installed critical paths: prepare the declared state, perform the supported operation, and verify its meaningful result. Keep parsing permutations, optional branches, formatting variants, and exhaustive failure cases in unit or component tests unless the installed runtime or native OS boundary is necessary to detect the failure.
 - Choose the driver from the contract rather than the folder: use direct assertions when state proves the behavior, strict AIMock when the real OpenClaw agent/tool loop matters without model judgment, and a live model only when provider transport, model interpretation, or Codex-native tool behavior is itself under test.
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned model fixtures and expected evidence beside their README. Share only provider lifecycle machinery through `scripts/openclaw-aimock`.
@@ -11,6 +12,7 @@
 
 ## OpenClaw Runtime
 
+- Prefer `openclaw agent-system` subcommands for supported managed operations and observations, including installation, validation, Doctor, environment, credentials, automation list/sync/run/history, backup, and tool execution. This exercises the public Agent System boundary together with its underlying integration. Keep native OpenClaw commands when no equivalent exists, when creating deliberately unmanaged state or drift, or when independently observing native state or exercising the real agent/tool loop is the contract. Do not replace a managed-launcher or native-execution test with a different entrypoint.
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.
 - Use `openclaw-setup` for the shared isolated profile and packed Agent System plugin setup. Pass the prepared pack through `--agent-system`, use `--needs-secret-service` only when a cross-platform scenario exercises the native credential backend, use `--needs-ssh-key` only when a scenario needs the shared SSH fixture, and use `--yolo` only when an unattended agent scenario requires tool execution. Omit `--model` for direct and AIMock scenarios; configure strict AIMock afterward through `openclaw-aimock`. Pass a complete provider/model reference only for a justified live-model scenario. Treat successful setup as proof that the resulting OpenClaw configuration is valid and any supplied Agent System pack is enabled and runtime-loadable; keep scenario assertions focused on behavior beyond those shared postconditions.
 - Pass scenario-owned inputs to shared Leia helpers as command-line options. Reserve environment variables for the process or underlying runtime rather than using helper-specific environment aliases in scenario READMEs.
@@ -32,6 +34,8 @@
 - When multiple expected properties must occur on the same output line, chain fixed-string greps in one pipeline; do not assert formatter padding or alignment whitespace.
 - Use multiple direct command-and-grep assertions in one test when expected properties occur on different output lines; do not reshape output solely to force one assertion pipeline.
 - Do not add preflight checks when the immediately following product command validates the same requirement.
+- Run required commands directly and let missing prerequisites, unexpected exit codes, and absent results fail the test. Do not skip required work behind availability guards, repair it with a fallback, or add tests that merely demonstrate shell conditionals. Keep expected-failure assertions only for critical protection boundaries that need installed-runtime proof.
+- Use bounded polling only for asynchronous readiness or completion that the preceding command does not already await. Keep cleanup and diagnostic branches tied to scenario-owned resources; they must not turn failed work into success.
 - Prefer one command per line; avoid `command && next-command` when ordinary newline sequencing expresses the same fail-fast flow.
 - Treat blank-line-separated blocks as separate scripts; do not rely on variables, shell options, functions, or working directories persisting between them.
 - Keep runtime-derived state beneath the scenario's `TMPDIR` and keep generated state out of version control.

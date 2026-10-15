@@ -44,23 +44,10 @@ openclaw agent \
   --timeout 120
 
 # should load the data manifest through a passive gateway lifecycle
-gateway_log_path="$(openclaw-gateway log-path)"
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  # inspect the complete test-owned file; a busy debug tail can displace the lifecycle event.
-  jq -Rr 'fromjson? | .. | strings' "$TMPDIR/agent-file.jsonl" > "$TMPDIR/agent-lifecycle.log"
-  if grep -Eq \
-    '\[agent-system\] manifest_loaded trigger="(service|session_start|before_prompt_build)" agentId="data"' \
-    "$TMPDIR/agent-lifecycle.log"; then
-    break
-  fi
-  if [ "$attempt" -eq 10 ]; then
-    grep -F '[agent-system]' "$TMPDIR/agent-lifecycle.log" || true
-    tail -n 100 "$TMPDIR/agent-lifecycle.log"
-    tail -n 100 "$gateway_log_path"
-    exit 1
-  fi
-  sleep 1
-done
+jq -Rr 'fromjson? | .. | strings' "$TMPDIR/agent-file.jsonl" > "$TMPDIR/agent-lifecycle.log"
+grep -E \
+  '\[agent-system\] manifest_loaded trigger="(service|session_start|before_prompt_build)" agentId="data"' \
+  "$TMPDIR/agent-lifecycle.log"
 
 # should keep manifest values out of lifecycle and gateway logs
 gateway_log_path="$(openclaw-gateway log-path)"

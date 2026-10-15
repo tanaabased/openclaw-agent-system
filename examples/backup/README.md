@@ -172,27 +172,3 @@ printf '%s\n' "$applied" | grep -F 'kept (3)'
 printf '%s\n' "$applied" | grep -F 'would-delete (0)' | grep -F 'none'
 printf '%s\n' "$applied" | grep -F 'deleted (0)' | grep -F 'none'
 ```
-
-```bash
-# should skip pruning when creation or upload fails in an automation sequence.
-cd "$TMPDIR/backup-workspace"
-before="$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')"
-if archive="$(false)"; then openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 1; fi
-if archive="$(openclaw as backup create --output "$TMPDIR/prune-archives" --openclaw-state off --json | jq -er '.archive')"; then
-  if false; then openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 1; fi
-fi
-after="$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')"
-test "$after" = "$((before + 1))"
-```
-
-```bash
-# should prune only after the stubbed upload succeeds for the exact returned archive.
-cd "$TMPDIR/backup-workspace"
-archive="$(openclaw as backup create --output "$TMPDIR/prune-archives" --openclaw-state off --json | jq -er '.archive')"
-openclaw as backup verify "$archive" --json | jq -e '.status == "verified"'
-test -s "$archive"
-if true; then
-  openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --json | jq -e '.status == "pruned" and (.deleted | length) > 0'
-fi
-test "$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 3
-```

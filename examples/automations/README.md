@@ -63,7 +63,7 @@ if grep -F 'messages' "$TMPDIR/automation-options.stderr"; then exit 1; fi
 OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw-gateway start --debug
 cd "$TMPDIR/automation-agent"
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.warnings | all(.code != "automation-sync-deferred")) and (.outcomes | any(.component == "automations" and .code == "automation-synchronized" and .status == "created"))'
-openclaw gateway call cron.list --params '{"includeDisabled":true}' --json | jq -e '.jobs | any(.name == "Agent System: offline" and .enabled == false)'
+openclaw agent-system automations list --json | jq -e '.jobs | any(.id == "offline" and .nativeEnabled == false)'
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '(.outcomes | any(.component == "automations")) and all(.outcomes[] | select(.component == "automations"); .status == "unchanged")'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 test ! -e offline-ran
@@ -87,13 +87,13 @@ curl -fsS "$(cat "$TMPDIR/openclaw-aimock.url")/proof/evidence" | jq -e '.reques
 
 # should retain consumed one-shots across unchanged install removal and reintroduction
 cd "$TMPDIR/automation-agent"
-openclaw gateway call cron.list --params '{"includeDisabled":true}' --json | jq -r '.jobs[] | select(.name == "Agent System: identity") | .id' > identity.native-id
+openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "identity") | .nativeId | strings' > identity.native-id
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "automations" and .status == "unchanged")'
 printf '[]\n' > automations.yaml
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json
 cp "$GITHUB_WORKSPACE/examples/automations/identity.yaml" automations.yaml
 PATH="$TMPDIR/automation-host-bin:$PATH" openclaw agent-system install --yes --json
-openclaw gateway call cron.list --params '{"includeDisabled":true}' --json | jq -r '.jobs[] | select(.name == "Agent System: identity" and .enabled == false) | .id' | diff - identity.native-id
+openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "identity" and .nativeEnabled == false) | .nativeId | strings' | diff - identity.native-id
 
 # should refuse an explicit replay of a consumed one-shot
 cd "$TMPDIR/automation-agent"
