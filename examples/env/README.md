@@ -1,6 +1,6 @@
 # Environment Example
 
-This scenario uses scenario-owned workspaces on a fresh runner. It verifies ordered dotenv, 1Password Environment, and direct secret resolution; host references; required-value enforcement; and value-free environment inspection without invoking a model. One local signature verifies that the `from-op` SSH key resolves to usable private-key material.
+This scenario uses scenario-owned workspaces on a fresh runner. It verifies ordered dotenv, 1Password Environment, and direct secret resolution; host references; required-value enforcement; and value-free environment inspection without invoking a model. It also verifies an environment-backed display name during installation. One local signature verifies that the `from-op` SSH key resolves to usable private-key material.
 
 ## Setup
 
@@ -21,6 +21,11 @@ openclaw agents add onepassword-data --workspace "$GITHUB_WORKSPACE/examples/env
 ## Testing
 
 ```bash
+# should install an agent with its display name resolved from the agent environment
+cd "$GITHUB_WORKSPACE/examples/env/identity"
+openclaw agent-system install
+openclaw agents list --json | jq -e '[.[] | select(.id == "identity-data" and .identityName == "Data from environment")] | length == 1'
+
 # should inspect resolved host and dotenv metadata without exposing values
 cd "$GITHUB_WORKSPACE/examples/env/data"
 output="$(AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json)"

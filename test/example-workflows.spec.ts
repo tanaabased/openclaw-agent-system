@@ -74,7 +74,7 @@ describe('example workflows', () => {
     }
   });
 
-  it('should stage native os contracts on both operating systems without hosted secrets', async () => {
+  it('should cover native os contracts on both operating systems without hosted secrets', async () => {
     const source = await readFile('.github/workflows/pr-examples-os.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
     const steps = workflow.jobs?.examples?.steps ?? [];
@@ -84,7 +84,12 @@ describe('example workflows', () => {
     assert.equal(workflow.permissions?.contents, 'read');
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
     assert.deepEqual(matrix?.os, ['macos-26', 'ubuntu-24.04']);
-    assert.deepEqual(matrix?.example, ['os-storage']);
+    assert.deepEqual(matrix?.example, [
+      'os-install',
+      'os-doctor',
+      'os-execution',
+      'os-credentials',
+    ]);
     assert.equal(workflow.jobs?.examples?.strategy?.['fail-fast'], false);
     assert.ok(example);
     assert.equal(example?.if, undefined);
@@ -107,8 +112,36 @@ describe('example workflows', () => {
     }
   });
 
-  it('should retain codex heartbeat assertions while runtime ci selection is deferred', () => {
-    const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
+  it('should run the packed codex lifecycle on ubuntu without openclaw or hosted secrets', async () => {
+    const workflow = parse(
+      await readFile('.github/workflows/pr-examples-runtime.yml', 'utf8'),
+    ) as ExampleWorkflow;
+    const job = workflow.jobs?.examples;
+    const steps = job?.steps ?? [];
+    const example = steps.find(({ name }) => name === 'Run Leia-backed example');
+
+    assert.equal(workflow.permissions?.contents, 'read');
+    assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
+    assert.equal(job?.['runs-on'], 'ubuntu-24.04');
+    assert.equal(job?.strategy?.matrix?.os, undefined);
+    assert.deepEqual(job?.strategy?.matrix?.example, ['codex-install']);
+    assert.ok(example);
+    assert.equal(example.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');
+    assert.equal(example.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
+    assert.equal(example.env?.CODEX_TOOLS_CODEX_HOME, example.env?.CODEX_HOME);
+    for (const step of steps) {
+      assert.ok(!Object.values(step.env ?? {}).some((value) => String(value).includes('secrets.')));
+    }
+    const suites = new Leia().parse([resolve('examples', 'codex-install', 'README.md')]);
+    assert.equal(suites.length, 1);
+    const commands = [...(suites[0]?.tests.setup ?? []), ...(suites[0]?.tests.test ?? [])];
+    assert.ok(commands.some(({ command, skip }) => !skip && command.includes('test:codex-plugin')));
+    assert.ok(commands.some(({ command, skip }) => !skip && command.includes('binding unbind')));
+    assert.ok(commands.every(({ command }) => !/^openclaw\s/m.test(command)));
+  });
+
+  it('should retain codex workflow heartbeat assertions while their ci selection is deferred', () => {
+    const suites = new Leia().parse([resolve('examples', 'codex-workflows', 'README.md')]);
     assert.equal(suites.length, 1);
     assert.ok(suites[0]?.tests.setup?.some(({ skip }) => !skip));
     const heartbeatTests = suites[0]?.tests.test?.filter(

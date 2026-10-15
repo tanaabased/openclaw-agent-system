@@ -272,7 +272,10 @@ try {
   for (const [name, directory] of fixtures) {
     const fixtureSkill = join(fixtureWorkspace, '.agents/skills', name);
     await mkdir(fixtureSkill, { recursive: true });
-    await cp(resolve('examples/codex', directory, 'SKILL.md'), join(fixtureSkill, 'SKILL.md'));
+    await cp(
+      resolve('examples/codex-install', directory, 'SKILL.md'),
+      join(fixtureSkill, 'SKILL.md'),
+    );
   }
   const replacements = await freshSkills(codex, environment, fixtureWorkspace);
   for (const [name, directory] of fixtures) {
@@ -282,7 +285,7 @@ try {
     assert.equal(await realpath(replacement!.path), path);
     assert.equal(
       await readFile(path, 'utf8'),
-      await readFile(resolve('examples/codex', directory, 'SKILL.md'), 'utf8'),
+      await readFile(resolve('examples/codex-install', directory, 'SKILL.md'), 'utf8'),
     );
   }
   process.stdout.write(`Codex plugin checks: ok (${expectedSkillNames.size} skills)\n`);

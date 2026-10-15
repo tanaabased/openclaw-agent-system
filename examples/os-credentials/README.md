@@ -1,4 +1,4 @@
-# OS Storage Example
+# OS Credentials Example
 
 Verify installed Agent System storage on macOS and Linux: private managed directories, agent-scoped file credentials, native SSH private-key access, and refusal to follow unsafe paths. Commands run directly without starting a Gateway or model and without contacting external services.
 
@@ -17,8 +17,8 @@ openclaw-setup \
 # should install isolated agents with a local ssh key and synthetic file credentials
 umask 077
 mkdir -p "$TMPDIR/os storage"
-cp -R "$GITHUB_WORKSPACE/examples/os-storage/alpha" "$TMPDIR/os storage/alpha"
-cp -R "$GITHUB_WORKSPACE/examples/os-storage/beta" "$TMPDIR/os storage/beta"
+cp -R "$GITHUB_WORKSPACE/examples/os-credentials/alpha" "$TMPDIR/os storage/alpha"
+cp -R "$GITHUB_WORKSPACE/examples/os-credentials/beta" "$TMPDIR/os storage/beta"
 mkdir "$TMPDIR/os storage/alpha/keys"
 ssh-keygen -q -t ed25519 -N '' -f "$TMPDIR/os storage/alpha/keys/id_ed25519"
 mkdir -p "$TMPDIR/os storage/config/tanaab/agent-system/storage-alpha" "$TMPDIR/os storage/config/tanaab/agent-system/storage-beta"

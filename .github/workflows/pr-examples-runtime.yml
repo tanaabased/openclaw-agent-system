@@ -1,0 +1,64 @@
+name: Runtime tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: examples-runtime-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  NO_COLOR: '1'
+
+jobs:
+  examples:
+    name: ${{ matrix.example }} (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - codex-install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: PATH updates
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Install Node
+        uses: tanaabased/actions/setup-node@v1
+      - name: Install Bun
+        uses: tanaabased/actions/setup-bun@v1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped build
+        uses: tanaabased/actions/prepare-release@v1
+        with:
+          version: dev
+          commands: |
+            version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Check prepared plugin
+        run: |
+          bun run plugin:check
+          bun run format:check
+      - name: Pack prepared plugin
+        id: pack
+        uses: tanaabased/actions/npm-pack@v1
+      - name: Run Leia-backed example
+        shell: bash
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
