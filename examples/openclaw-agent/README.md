@@ -1,4 +1,4 @@
-# Agent Example
+# OpenClaw Agent Example
 
 This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, read-only model routing, and value-free lifecycle logging without depending on live model behavior.
 
@@ -10,17 +10,21 @@ installation or polling. Unit coverage supplies stale V1 state as the negative
 control. The routing turn also requests issue-session dispatch while intake is inactive and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
 passing it does not establish dispatch recovery or single-execution guarantees.
 
+Runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The data workspace is copied because the passive-loading check changes its manifest after installation.
+
 ## Setup
 
 ```bash
 # should configure the default profile with the prepared plugin and strict mock model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw-aimock prepare --scenario agent
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
+  --yolo
+openclaw-aimock prepare --scenario openclaw-agent
 
 # should install the scenario-owned data workspace through agent system
-cd "$GITHUB_WORKSPACE/examples/agent/data"
+cp -R "$GITHUB_WORKSPACE/examples/openclaw-agent/data" "$TMPDIR/data"
+cd "$TMPDIR/data"
 openclaw agent-system install
 
 # should start the default gateway as a supervised background process
@@ -32,11 +36,11 @@ openclaw-gateway start --debug
 
 ```bash
 # should keep a v2 agent out of legacy github prompt processing
-cat "$GITHUB_WORKSPACE/examples/agent/v2-notifications.yaml" >> "$GITHUB_WORKSPACE/examples/agent/data/agent.yaml"
+cat "$GITHUB_WORKSPACE/examples/openclaw-agent/v2-notifications.yaml" >> "$TMPDIR/data/agent.yaml"
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-github:data:direct:github:issue:r_example:1 \
-  --message-file "$GITHUB_WORKSPACE/examples/agent/ready.md" \
+  --message-file "$GITHUB_WORKSPACE/examples/openclaw-agent/ready.md" \
   --timeout 120
 
 # should load the data manifest through a passive gateway lifecycle
@@ -68,7 +72,7 @@ if grep -Fq 'leia-initial-manifest-value' "$gateway_log_path"; then exit 1; fi
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-routing-leia \
-  --message-file "$GITHUB_WORKSPACE/examples/agent/routing.md" \
+  --message-file "$GITHUB_WORKSPACE/examples/openclaw-agent/routing.md" \
   --timeout 120 \
   | grep -F 'routing-default-ready'
 
@@ -78,8 +82,8 @@ if grep -Fq 'dispatch-invocation ' "$(openclaw-gateway log-path)"; then exit 1; 
 
 # should match the complete strict mock exchange
 openclaw-aimock evidence \
-  --scenario agent \
-  --expected-evidence "$GITHUB_WORKSPACE/examples/agent/expected-evidence.json"
+  --scenario openclaw-agent \
+  --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-agent/expected-evidence.json"
 ```
 
 ## Cleanup

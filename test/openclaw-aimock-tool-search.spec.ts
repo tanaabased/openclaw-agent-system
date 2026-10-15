@@ -174,14 +174,17 @@ describe('scripts/aimock-tool-search', () => {
     assert.equal(call.toolCalls?.[0]?.name, 'agent_system_github');
     const ready = request('Acknowledge readiness without using tools.');
     ready.messages.unshift({ role: 'system', content: 'Name: Data' });
-    assert.deepEqual((await reply(withToolSearch(resolveScenario('agent')), ready)).response, {
-      content: 'Ready.',
-      id: 'agent-system-example-agent-final-response',
-    });
+    assert.deepEqual(
+      (await reply(withToolSearch(resolveScenario('openclaw-agent')), ready)).response,
+      {
+        content: 'Ready.',
+        id: 'agent-system-example-agent-final-response',
+      },
+    );
   });
 
   it('should pass verified inner json to the next routing step without losing its digest', async () => {
-    const scenario = withToolSearch(resolveScenario('agent'));
+    const scenario = withToolSearch(resolveScenario('openclaw-agent'));
     const input = request(
       'Inspect model routing and resolve an unspecified task using the configured default.',
     );

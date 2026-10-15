@@ -140,7 +140,7 @@ export const agentExampleScenario: OpenClawAIMockScenario = {
   skipToolSearch: hasAgentPrompt,
   finalResponses: [agentExampleFinalResponse, routingReady],
   fixtures,
-  id: 'agent',
+  id: 'openclaw-agent',
   model: {
     match: /^(?:aimock\/)?gpt-5\.5$/u,
     reference: 'aimock/gpt-5.5',

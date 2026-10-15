@@ -21,6 +21,7 @@ interface WorkflowStep {
   if?: string;
   name?: string;
   run?: string;
+  uses?: string;
 }
 
 interface ExampleWorkflow {
@@ -112,7 +113,7 @@ describe('example workflows', () => {
     }
   });
 
-  it('should run the packed codex lifecycle on ubuntu without openclaw or hosted secrets', async () => {
+  it('should run packed runtime contracts on ubuntu without hosted secrets', async () => {
     const workflow = parse(
       await readFile('.github/workflows/pr-examples-runtime.yml', 'utf8'),
     ) as ExampleWorkflow;
@@ -128,11 +129,14 @@ describe('example workflows', () => {
       'codex-install',
       'codex-automations',
       'codex-notifications',
+      'openclaw-agent',
     ]);
     assert.ok(example);
     assert.equal(example.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');
     assert.equal(example.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
     assert.equal(example.env?.CODEX_TOOLS_CODEX_HOME, example.env?.CODEX_HOME);
+    const openClawSetup = steps.find(({ uses }) => uses === 'tanaabased/actions/setup-openclaw@v1');
+    assert.equal(openClawSetup?.if, "startsWith(matrix.example, 'openclaw-')");
     for (const step of steps) {
       assert.ok(!Object.values(step.env ?? {}).some((value) => String(value).includes('secrets.')));
     }
@@ -143,11 +147,14 @@ describe('example workflows', () => {
         suites[0]?.tests.test?.some(({ skip }) => !skip),
         scenario,
       );
-      return [...(suites[0]?.tests.setup ?? []), ...(suites[0]?.tests.test ?? [])];
+      const commands = [...(suites[0]?.tests.setup ?? []), ...(suites[0]?.tests.test ?? [])];
+      if (scenario.startsWith('codex-')) {
+        assert.ok(commands.every(({ command }) => !/^openclaw\s/m.test(command)));
+      }
+      return commands;
     });
     assert.ok(commands.some(({ command, skip }) => !skip && command.includes('test:codex-plugin')));
     assert.ok(commands.some(({ command, skip }) => !skip && command.includes('binding unbind')));
-    assert.ok(commands.every(({ command }) => !/^openclaw\s/m.test(command)));
   });
 
   it('should cover quiet and actionable codex notification heartbeat responses', () => {

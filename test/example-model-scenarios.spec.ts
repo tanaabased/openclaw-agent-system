@@ -60,14 +60,14 @@ function request(
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
     assert.deepEqual(exampleModelScenarioIds, [
-      'agent',
+      'openclaw-agent',
       'collaboration',
       'automations',
       'credentials',
       'github',
       'os-execution',
     ]);
-    assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
+    assert.equal(resolveOpenClawAIMockScenario('openclaw-agent').id, 'openclaw-agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
     assert.throws(
@@ -77,7 +77,7 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should acknowledge agent readiness without a tool call', () => {
-    const scenario = resolveExampleModelScenario('agent');
+    const scenario = resolveExampleModelScenario('openclaw-agent');
     const fixture = matchFixture(
       [...scenario.fixtures],
       request('data', 'Acknowledge readiness without using tools.', []),

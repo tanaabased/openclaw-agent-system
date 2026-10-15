@@ -6,7 +6,7 @@
   "provider": "aimock",
   "requestCount": 6,
   "responsesApiRequestCount": 6,
-  "scenario": "agent",
+  "scenario": "openclaw-agent",
   "schemaVersion": 2,
   "strictMissCount": 0,
   "successfulFixtureResponseCount": 6,
