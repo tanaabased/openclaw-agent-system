@@ -66,6 +66,7 @@ describe('scripts/example-model-scenarios', () => {
       'credentials',
       'github',
       'os-execution',
+      'openclaw-runtimes',
     ]);
     assert.equal(resolveOpenClawAIMockScenario('openclaw-agent').id, 'openclaw-agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
@@ -88,6 +89,59 @@ describe('scripts/example-model-scenarios', () => {
       content: 'Ready.',
       id: 'agent-system-example-agent-final-response',
     });
+  });
+
+  it('should complete native runtime fixtures only after their own execution or doctor result', () => {
+    const scenario = resolveExampleModelScenario('openclaw-runtimes');
+    for (const [tool, prompt, callId, validResult, invalidResult, expected] of [
+      [
+        'exec',
+        'Run agent-system-runtime-probe openclaw',
+        'call_runtime_exec',
+        'runtime-boundary-verified',
+        'command failed',
+        'runtime-exec-ready',
+      ],
+      [
+        'agent_system_doctor',
+        'Call agent_system_doctor exactly once',
+        'call_runtime_doctor',
+        '{"findings":[]}',
+        '{"status":"error"}',
+        'runtime-doctor-ready',
+      ],
+    ] as const) {
+      const input = request('runtime-openclaw', prompt, [tool]);
+      const fixture = matchFixture([...scenario.fixtures], input);
+      assert.ok(fixture);
+      const response = fixture.response;
+      assert.ok(typeof response !== 'function' && 'toolCalls' in response);
+      assert.equal(response.toolCalls?.[0]?.name, tool);
+      if (tool === 'exec') {
+        assert.equal(
+          JSON.parse(response.toolCalls![0]!.arguments).command,
+          'agent-system-runtime-probe openclaw',
+        );
+      }
+      for (const [observedId, content] of [
+        ['unrelated', validResult],
+        [callId, invalidResult],
+      ]) {
+        assert.equal(
+          matchFixture(
+            [...scenario.fixtures],
+            request('runtime-openclaw', prompt, [tool], { callId: observedId!, content: content! }),
+          ),
+          null,
+        );
+      }
+      const final = matchFixture(
+        [...scenario.fixtures],
+        request('runtime-openclaw', prompt, [tool], { callId, content: validResult }),
+      )?.response;
+      assert.ok(final && typeof final !== 'function' && 'content' in final);
+      assert.equal(final.content, expected);
+    }
   });
 
   it('should require the matching native execution receipt before completing either shell mode', () => {

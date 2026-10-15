@@ -165,6 +165,42 @@ describe('scripts/aimock-tool-search', () => {
     }
   });
 
+  it('should admit only an authored denial result without accepting another tool failure', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const input = request('Call agent_system_install exactly once');
+    append(
+      input,
+      (await reply(scenario, input)).response,
+      searchResult(['exec', 'agent_system_install', 'agent_system_doctor']),
+    );
+    const invocation = (await reply(scenario, input)).response;
+    assert.ok('toolCalls' in invocation);
+    assert.deepEqual(JSON.parse(invocation.toolCalls![0]!.arguments), {
+      id: 'openclaw:agent_system_install',
+      args: { timeoutMs: 600000 },
+    });
+    append(input, invocation, {
+      tool: { id: 'openclaw:agent_system_install', name: 'agent_system_install' },
+      result: { isError: true, content: [{ type: 'text', text: 'Denied by user.' }] },
+    });
+    assert.throws(() => normalizeToolSearchRequest(input));
+    assert.deepEqual((await reply(scenario, input)).response, {
+      content: 'runtime-install-denied',
+      id: 'runtime-install-final',
+    });
+    const wrongCall = structuredClone(input);
+    const callId = wrongCall.messages.at(-1)!.tool_call_id!;
+    wrongCall.messages.at(-1)!.tool_call_id = callId.replace('install', 'doctor');
+    wrongCall.messages.at(-2)!.tool_calls![0]!.id = callId.replace('install', 'doctor');
+    assert.throws(() => normalizeToolSearchRequest(wrongCall, scenario.expectedErrorToolCallIds));
+    const wrongResult = structuredClone(input);
+    wrongResult.messages.at(-1)!.content = String(wrongResult.messages.at(-1)!.content).replace(
+      'Denied by user.',
+      'Gateway unavailable.',
+    );
+    assert.equal(matchFixture([...scenario.fixtures], wrongResult), null);
+  });
+
   it('should preserve direct calls and the explicitly tool-free readiness turn', async () => {
     const github = withToolSearch(resolveScenario('github'));
     const direct = request();

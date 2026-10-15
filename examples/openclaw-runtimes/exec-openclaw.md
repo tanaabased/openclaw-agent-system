@@ -1,0 +1,3 @@
+Use OpenClaw `exec` exactly once to run the literal command `agent-system-runtime-probe openclaw` from the current workspace with `host: "gateway"` and `yieldMs: 120000`. The executable must resolve through the manifest PATH. Do not inspect or run its file by another path, modify PATH, create result files yourself, or repair a failure.
+
+If the tool reports a running session, poll that exact session with `process` using `action: "poll"` and `timeout: 30000` until it exits. Never launch another copy. The probe verifies the expected security rejections itself and exits zero only when they pass. Report the exit code and stop.

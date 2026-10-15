@@ -163,13 +163,13 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 [Leia](https://github.com/lando/leia) suites run **only in GitHub Actions**:
 they install plugins and mutate isolated OpenClaw or provider state.
 
-- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-examples-os.yml) select installation, Doctor, execution, and credentials on macOS and Ubuntu; [Runtime tests](./.github/workflows/pr-examples-runtime.yml) cover standalone Codex installation, binding, and automations on Ubuntu.
+- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-examples-os.yml) select installation, Doctor, execution, and credentials on macOS and Ubuntu; [Runtime tests](./.github/workflows/pr-examples-runtime.yml) cover standalone Codex and OpenClaw contracts on Ubuntu.
 - Only explicitly selected examples run in CI. Unselected folders remain migration inputs; their presence is not evidence of active coverage.
 - Follow the [example guidance](./examples/AGENTS.md) for drivers, fixtures, credentials, and assertions.
 
 #### Lifecycle Approval
 
-See the [approval example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/approval/README.md)
+See the [runtime boundary example](./examples/openclaw-runtimes/README.md)
 for installed Control UI approval coverage across native OpenClaw and
 OpenClaw-hosted Codex. Other chat channels are outside this matrix.
 

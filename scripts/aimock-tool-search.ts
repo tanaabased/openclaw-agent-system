@@ -9,6 +9,7 @@ import {
 } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
+import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
 
 const discoveryPrefix = 'call_aimock_discover_';
 
@@ -62,7 +63,10 @@ function catalog(
 }
 
 /** Present real discovered tools and verified inner results to scenario assertions. */
-export function normalizeToolSearchRequest(request: ChatCompletionRequest): ChatCompletionRequest {
+export function normalizeToolSearchRequest(
+  request: ChatCompletionRequest,
+  expectedErrorToolCallIds: readonly string[] = [],
+): ChatCompletionRequest {
   if (!controls(request)) return request;
   const available = catalog(request);
   const discoveredIds = new Map(
@@ -138,7 +142,13 @@ export function normalizeToolSearchRequest(request: ChatCompletionRequest): Chat
         result && Array.isArray(result.content),
         'wrapped result must contain the executed tool result',
       );
-      assert.notEqual(result.isError, true, 'the wrapped tool call failed');
+      assert.ok(
+        result.isError !== true ||
+          expectedErrorToolCallIds.some((id) =>
+            matchesOpenClawAIMockToolCallId(message.tool_call_id ?? '', id),
+          ),
+        'the wrapped tool call failed',
+      );
       return [{ ...message, content: getTextContent(result.content) ?? '' }];
     }),
   };
@@ -191,7 +201,10 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
       match: {
         predicate: (request) =>
           (!needsDiscovery(request) || !!discoveryResult(request)) &&
-          matchFixture([fixture], normalizeToolSearchRequest(request)) !== null,
+          matchFixture(
+            [fixture],
+            normalizeToolSearchRequest(request, scenario.expectedErrorToolCallIds),
+          ) !== null,
       },
       response:
         typeof response !== 'function' && !('toolCalls' in response)
@@ -200,7 +213,9 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
               wrapResponse(
                 request,
                 typeof response === 'function'
-                  ? await response(normalizeToolSearchRequest(request))
+                  ? await response(
+                      normalizeToolSearchRequest(request, scenario.expectedErrorToolCallIds),
+                    )
                   : response,
               ),
     });

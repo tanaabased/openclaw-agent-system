@@ -4,6 +4,7 @@ import { agentExampleScenario } from '../examples/openclaw-agent/model-fixture.t
 import { credentialExampleScenario } from '../examples/credentials/model-fixture.ts';
 import { githubExampleScenario } from '../examples/github/model-fixture.ts';
 import { osExecutionExampleScenario } from '../examples/os-execution/model-fixture.ts';
+import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
 const scenarios = new Map<string, OpenClawAIMockScenario>([
@@ -13,6 +14,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [credentialExampleScenario.id, credentialExampleScenario],
   [githubExampleScenario.id, githubExampleScenario],
   [osExecutionExampleScenario.id, osExecutionExampleScenario],
+  [runtimeBoundaryScenario.id, runtimeBoundaryScenario],
 ]);
 
 export const exampleModelScenarioIds = Object.freeze([...scenarios.keys()]);

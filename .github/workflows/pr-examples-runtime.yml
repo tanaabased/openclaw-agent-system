@@ -26,6 +26,7 @@ jobs:
           - codex-notifications
           - openclaw-agent
           - openclaw-automations
+          - openclaw-runtimes
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -63,9 +64,20 @@ jobs:
         if: startsWith(matrix.example, 'openclaw-')
         uses: tanaabased/actions/setup-openclaw@v1
       - name: Run Leia-backed example
+        if: matrix.example != 'openclaw-runtimes'
         shell: bash
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+      - name: Run live runtime example
+        if: matrix.example == 'openclaw-runtimes'
+        shell: bash
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
+          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
+          OPENAI_MODEL: gpt-5.4-nano
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
