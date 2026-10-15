@@ -124,7 +124,7 @@ describe('example workflows', () => {
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
     assert.equal(job?.['runs-on'], 'ubuntu-24.04');
     assert.equal(job?.strategy?.matrix?.os, undefined);
-    assert.deepEqual(job?.strategy?.matrix?.example, ['codex-install']);
+    assert.deepEqual(job?.strategy?.matrix?.example, ['codex-install', 'codex-automations']);
     assert.ok(example);
     assert.equal(example.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');
     assert.equal(example.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
@@ -132,16 +132,22 @@ describe('example workflows', () => {
     for (const step of steps) {
       assert.ok(!Object.values(step.env ?? {}).some((value) => String(value).includes('secrets.')));
     }
-    const suites = new Leia().parse([resolve('examples', 'codex-install', 'README.md')]);
-    assert.equal(suites.length, 1);
-    const commands = [...(suites[0]?.tests.setup ?? []), ...(suites[0]?.tests.test ?? [])];
+    const commands = (job?.strategy?.matrix?.example ?? []).flatMap((scenario) => {
+      const suites = new Leia().parse([resolve('examples', scenario, 'README.md')]);
+      assert.equal(suites.length, 1, scenario);
+      assert.ok(
+        suites[0]?.tests.test?.some(({ skip }) => !skip),
+        scenario,
+      );
+      return [...(suites[0]?.tests.setup ?? []), ...(suites[0]?.tests.test ?? [])];
+    });
     assert.ok(commands.some(({ command, skip }) => !skip && command.includes('test:codex-plugin')));
     assert.ok(commands.some(({ command, skip }) => !skip && command.includes('binding unbind')));
     assert.ok(commands.every(({ command }) => !/^openclaw\s/m.test(command)));
   });
 
-  it('should retain codex workflow heartbeat assertions while their ci selection is deferred', () => {
-    const suites = new Leia().parse([resolve('examples', 'codex-workflows', 'README.md')]);
+  it('should retain codex notification heartbeat assertions while their ci selection is deferred', () => {
+    const suites = new Leia().parse([resolve('examples', 'codex-notifications', 'README.md')]);
     assert.equal(suites.length, 1);
     assert.ok(suites[0]?.tests.setup?.some(({ skip }) => !skip));
     const heartbeatTests = suites[0]?.tests.test?.filter(

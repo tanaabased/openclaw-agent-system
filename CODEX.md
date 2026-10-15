@@ -484,7 +484,7 @@ not protected by atomic compare-and-swap. For `automation-journal-busy`, confirm
 no reconciliation is running before removing only the stale Agent System `.lock`
 directory. Never repair native scheduler files or delete the ownership ledger.
 
-See the [Codex workflow example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex-workflows/README.md#automation-checks)
+See the [Codex automations example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex-automations/README.md#automation-checks)
 for conversation setup, headless planning, and recovery checks.
 
 ## Development

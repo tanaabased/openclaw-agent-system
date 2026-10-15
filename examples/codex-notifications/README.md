@@ -1,37 +1,11 @@
-# Codex Workflows Example
+# Codex Notifications Example
 
-This scenario verifies packaged automation planning, notification activation boundaries, and durable native conversations in isolated Codex state. Installation, skill discovery, and workspace lifecycle checks live in the [Codex install example](../codex-install/README.md). This scenario remains unscheduled while runtime coverage is migrated.
+Verify packaged notification activation boundaries, intake responses, and work preparation in isolated Codex state. Installation and workspace lifecycle checks live in the [Codex install example](../codex-install/README.md); generic automation planning and conversation persistence live in the [Codex automations example](../codex-automations/README.md). This notification scenario remains unscheduled while runtime coverage is migrated.
 
-## Automation Checks
+## Desktop Acceptance
 
-Automation lookup inputs below are explicit fixtures. The installed runtime's
-`list` and `sync` routes inspect inventory and plan authorized native app actions;
-they do not write scheduler files. The `run` and `runs` checks assert the explicit
-`automation-run-now-unsupported` and `automation-history-unavailable` results.
-
-The trusted `automationRuntime` exposes `threads-sync` under explicit installation
-authorization and a fresh plan digest. It creates per-automation conversations
-through `codex app-server` in the ambient profile, adds an attributed setup
-history item without model generation, and verifies resume through a fresh
-process, including native `auto_review`, `on-request`, and `workspace-write`
-permission readback. Repeated sync reuses those conversations.
-
-The prepare/cancel check retains a pending journal until saved-state verification
-and permits cancellation only while the failed write's target remains unchanged.
-Pending creates also require no new native IDs: an unmarked job could be a partial
-create. Lost-response recovery may acknowledge the exact saved pending definition
-without another create; further writes require a fresh plan. Older journals retain
-the whole-scheduler cancellation check.
-
-Native request/response and saved-state captures live in `fixtures/` with separate
-provenance. Ordinary tests consume reviewed captures without contacting the app;
-constructed failure cases are identified in the tests. This packed/headless
-scenario does not replace separate installed desktop-tool verification.
-
-### Desktop Acceptance
-
-These headless workflow checks verify planning, activation boundaries,
-and native conversation persistence. They do not prove scheduled issue creation,
+These headless notification checks verify planning and activation boundaries.
+They do not prove scheduled issue creation,
 model judgment, or desktop rendering. Those require a separately authorized pilot
 using disposable issues and the installed plugin.
 
@@ -211,7 +185,7 @@ in the owning issue or pull request, and retire disposable fixtures afterward.
 
 ```bash
 # should install and enable the exact prepared codex plugin in isolated state
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 mkdir -p "$root/package"
 tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
 codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
@@ -222,7 +196,7 @@ codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/
 
 ```bash
 # should explain a host permission failure in one heartbeat without accessing tracking state
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access-required"}' \
@@ -231,7 +205,7 @@ printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access
 test ! -e "$root/uncreated-failure-data"
 
 # should format a packaged quiet heartbeat without activating intake or changing its state
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10-09T12:00:00.000Z","intake":{"status":"ready","changed":false},"dispatch":[{"status":"at-capacity","changed":false}]}' \
@@ -240,7 +214,7 @@ printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10
 test ! -e "$root/quiet-data"
 
 # should preserve an actionable earlier result instead of replacing it with quiet text
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10-09T12:00:00.000Z","intake":{"status":"ready","changed":false},"dispatch":[{"status":"completed","changed":true},{"status":"idle","changed":false}]}' \
@@ -248,13 +222,13 @@ printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10
   | jq -e '.status == "not-quiet" and (has("response") | not)'
 
 # should expose packaged intake and plan one owned schedule without activating it
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 mkdir -p "$root/notification-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-workflows/notification-policy-agent.yaml" "$root/notification-workspace/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/codex-workflows/assessment-guidance.md" "$root/notification-workspace/assessment-guidance.md"
+cp "$GITHUB_WORKSPACE/examples/codex-notifications/notification-policy-agent.yaml" "$root/notification-workspace/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex-notifications/assessment-guidance.md" "$root/notification-workspace/assessment-guidance.md"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/notification-workspace" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 node "$runtime" intake inspect --plugin-data "$plugin_data" \
@@ -267,17 +241,17 @@ test ! -e "$root/notification-workspace/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
 
 # should reject removed global feedback before binding or activation
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 mkdir -p "$root/removed-feedback-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-workflows/notification-global-feedback-agent.yaml" "$root/removed-feedback-workspace/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex-notifications/notification-global-feedback-agent.yaml" "$root/removed-feedback-workspace/agent.yaml"
 node "$runtime" binding preview --workspace "$root/removed-feedback-workspace" \
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-notification-global-feedback-removed")'
 test ! -d "$CODEX_HOME/automations"
 
 # should expose packaged dispatch without letting intake-only state launch work
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
@@ -292,14 +266,14 @@ test ! -d "$root/notification-workspace/checkouts"
 test ! -d "$root/notification-workspace/.agent-system/repositories"
 
 # should return an actionable diagnostic for an unsupported stdin flag
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(node "$runtime" dispatch --plugin-data "$root/notification-data" --input - 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and (.message | contains("--plugin-data")) and (.message | contains("stdin")) and (.message | contains("--input"))'
 
 # should reject packaged continuation without newly reconciled work authority
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"next"}' | CODEX_THREAD_ID=fixture-intake node "$runtime" continuation --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
@@ -307,7 +281,7 @@ printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activ
 test ! -d "$CODEX_HOME/automations"
 
 # should reject packaged feedback without a freshly reconciled intake schedule
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"next"}' | CODEX_THREAD_ID=fixture-intake node "$runtime" feedback --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
@@ -315,7 +289,7 @@ printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activ
 test ! -d "$CODEX_HOME/automations"
 
 # should expose packaged delivery while rejecting requests without a valid managed receipt
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" delivery --help | grep -F 'present renders the card and notices even when attachment is pending'
@@ -323,12 +297,12 @@ if output=$(printf '%s\n' '{"action":"publish","id":"missing"}' | node "$runtime
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid" and .notices[0].severity == "error"'
 
 # should accept separate feedback and stage selections while leaving disabled workflows inactive
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/disabled-notification-data"
 mkdir -p "$root/disabled-notification-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-workflows/notification-disabled-agent.yaml" "$root/disabled-notification-workspace/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex-notifications/notification-disabled-agent.yaml" "$root/disabled-notification-workspace/agent.yaml"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/disabled-notification-workspace" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
@@ -337,63 +311,19 @@ if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-policy-disabled"'
 test ! -d "$CODEX_HOME/automations"
 
-# should plan automation sync through the packed runtime without native scheduler writes
-root="$TMPDIR/agent-system-codex-workflows"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-mkdir -p "$root/automation-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-workflows/automation-agent.yaml" "$root/automation-workspace/agent.yaml"
-workspace=$(cd "$root/automation-workspace" && pwd -P)
-node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "$workspace" --confirm
-jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
-node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
-  | tee "$root/automation-plan.json" \
-  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
-node "$runtime" setup install --plugin-data "$root/automation-data" \
-  | jq -e '.status == "requires-native-app-sync"'
-test ! -d "$CODEX_HOME/automations"
-
-# should expose list sync and explicit occurrence gaps through the installed runtime
-root="$TMPDIR/agent-system-codex-workflows"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-node "$runtime" automations --help | grep -F 'run-now'
-node "$runtime" automations list --plugin-data "$root/automation-data" < "$root/automation-input.json" | jq -e '.jobs[0].id == "review" and .jobs[0].nativeId == null'
-node "$runtime" automations sync --plugin-data "$root/automation-data" < "$root/automation-input.json" | jq -e '.status == "requires-native-app-sync"'
-if printf '%s\n' '{"id":"review"}' | node "$runtime" automations run --plugin-data "$root/automation-data" > "$root/run-gap.json"; then exit 1; fi
-jq -e '.code == "automation-run-now-unsupported" and .manualTask.schedulerOccurrence == false and .manualTask.history == "separate-task"' "$root/run-gap.json"
-if printf '%s\n' '{"id":"review"}' | node "$runtime" automations runs --plugin-data "$root/automation-data" > "$root/history-gap.json"; then exit 1; fi
-jq -e '.code == "automation-history-unavailable" and .telemetry.execution == "unavailable"' "$root/history-gap.json"
-test ! -d "$CODEX_HOME/automations"
-
-# should retain a pending native action and cancel only an unchanged failed write
-root="$TMPDIR/agent-system-codex-workflows"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-digest=$(jq -r .digest "$root/automation-plan.json")
-jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" \
-  | node "$runtime" automations prepare --plugin-data "$root/automation-data" \
-  | jq -e '.status == "prepared" and .request.mode == "create"'
-node "$runtime" automations inspect --plugin-data "$root/automation-data" < "$root/automation-input.json" \
-  | jq -e '.status == "blocked" and ([.findings[].code] | index("automation-pending-readback-required") != null)'
-jq -n --arg digest "$digest" '{digest:$digest}' \
-  | node "$runtime" automations cancel --plugin-data "$root/automation-data" \
-  | jq -e '.status == "cancelled"'
-test ! -d "$CODEX_HOME/automations"
-
 # should plan intake conversation setup without a global scanner rule or reload acknowledgment
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 test ! -d "$CODEX_HOME/rules"
 
 # should bind work preparation to the installed runtime in the native schedule request
-root="$TMPDIR/agent-system-codex-workflows"
+root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
-sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-workflows/notification-policy-agent.yaml" > "$root/notification-workspace/agent.yaml"
+sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-notifications/notification-policy-agent.yaml" > "$root/notification-workspace/agent.yaml"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
 jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
 node_executable=$(node -p 'process.execPath')
@@ -401,24 +331,4 @@ printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e --arg node "$node_executable" --arg runtime "$runtime" --arg data "$plugin_data" '.actions[0].expected.prompt | contains([$node,$runtime,"continuation","--plugin-data",$data] | tojson)'
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$CODEX_HOME/rules"
-
-# should create durable conversations with selected models and verified auto review
-root="$TMPDIR/agent-system-codex-workflows"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-mkdir -p "$root/threads-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-workflows/threads-agent.yaml" "$root/threads-workspace/agent.yaml"
-node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$root/threads-workspace" --confirm
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" > "$root/threads-plan.json"
-jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
-
-# should retain conversation identities and model settings after the creating process exits
-root="$TMPDIR/agent-system-codex-workflows"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" > "$root/threads-reused.json"
-jq -S '.threads | map_values(.id)' "$root/threads-created.json" > "$root/threads-ids.json"
-jq -S '.threads | map_values(.id)' "$root/threads-reused.json" | diff - "$root/threads-ids.json"
-test ! -d "$CODEX_HOME/automations"
 ```
