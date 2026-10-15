@@ -40,7 +40,6 @@ jobs:
           - models
           - path
           - prerequisite
-          - routing
           - setup
           - tool
           - validate

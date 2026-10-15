@@ -56,8 +56,8 @@ lifecycle session must own scheduling, continuation, and publication authority.
 
 ### Leia workflow and model boundaries
 
-Keep general Leia examples in `pr-examples-tests.yml` and manually dispatched GitHub notification acceptance scenarios in `notification-tests.yml`. Scope shared test credentials to each workflow's final Leia execution step even though every matrix entry receives that step environment. Use strict AIMock for the `agent` and `github` examples and the `credentials` cache checks; only `approval`, `containment`, `models`, and `path` select a live OpenAI model. The `codex` example uses direct assertions without a model. The assignment mock must match the created issue title and body so a passing fixture proves bounded provider context reached the installed model turn.
+Keep general Leia examples in `pr-examples-tests.yml`. Scope shared test credentials to the workflow's final Leia execution step even though every matrix entry receives that step environment. Use strict AIMock for the `agent` and `github` examples and the `credentials` cache checks; only `approval`, `containment`, `models`, and `path` select a live OpenAI model. The `codex` example uses direct assertions without a model.
 
 ### Shared synthetic SSH preparation
 
-Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path used by both matrices. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
+Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.

@@ -160,14 +160,7 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 they install plugins and mutate isolated OpenClaw or provider state.
 
 - [`examples/`](./examples/) covers general runtime behavior on supported macOS and Ubuntu runners.
-- [`scenarios/`](./scenarios/) covers notification acceptance through the installed Gateway using a release-shaped package.
-- Follow the [example](./examples/AGENTS.md) and [scenario](./scenarios/AGENTS.md) guidance for drivers, fixtures, credentials, and assertions.
-
-#### GitHub Notification Scenarios
-
-- The [pull-request workflow](./.github/workflows/pr-notification-tests.yml) runs deterministic scenarios on Ubuntu with checked-in lifecycle, tool, and publication evidence.
-- The [manual workflow](./.github/workflows/notification-tests.yml) runs selected scenarios or the full matrix with a live provider on Ubuntu or macOS.
-- Mock checks do not establish model reasoning, provider authentication, capacity, latency, or provider-specific format compatibility.
+- Follow the [example guidance](./examples/AGENTS.md) for drivers, fixtures, credentials, and assertions.
 
 #### Lifecycle Approval
 

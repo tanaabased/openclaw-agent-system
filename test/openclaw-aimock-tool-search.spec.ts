@@ -132,24 +132,6 @@ describe('scripts/aimock-tool-search', () => {
     }
   });
 
-  it('should recheck discovery on a later turn before applying session permission assertions', async () => {
-    const scenario = withToolSearch(resolveScenario('operator-access'));
-    const input = request('operator-access unflagged control');
-    input.messages.unshift({
-      role: 'system',
-      content: 'This is the initial turn for an assigned issue',
-    });
-    append(input, (await reply(scenario, input)).response, {
-      results: [{ query: 'sessions', candidates: [] }],
-    });
-    assert.ok('content' in (await reply(scenario, input)).response);
-    input.messages.push({ role: 'user', content: 'operator-access denied control' });
-    const search = (await reply(scenario, input)).response;
-    assert.ok('toolCalls' in search);
-    append(input, search, searchResult(['sessions']));
-    await assert.rejects(reply(scenario, input), /non-owner or denied turn received sessions/u);
-  });
-
   it('should preserve direct calls and the explicitly tool-free readiness turn', async () => {
     const github = withToolSearch(resolveScenario('github'));
     const direct = request();

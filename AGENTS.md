@@ -6,7 +6,7 @@
 - Organize implementation owner-first. Keep agent identity and lifecycle in `agent/`, model-facing tool contracts and runtime in `api/`, cross-owner plugin composition in `core/`, credential storage in `credentials/`, environment resolution in `environment/`, manifest parsing and types in `manifest/`, and path projection in `paths/`. Keep one implementation file per OpenClaw subcommand in `cli/`, repository automation in `scripts/`, cross-owner function primitives in `utils/`, and flat behavior-focused specs in `test/`. Keep small owner scopes flat; add scoped `lib/` or `utils/` only when file density makes the distinction useful.
 - Treat `tools/` and `channels/` as registry scopes: they contain only their named capability or provider folders, with shared code promoted to the nearest appropriate root owner rather than placed beside implementations.
 - Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Keep every channel's static schema and runtime entry in its owning channel folder. Never load schema files, tools, or channels from manifest values, and do not create empty capability folders before their implementation exists.
-- Keep `examples/` as general matrix-backed GitHub Actions-only Leia material and `scenarios/` as GitHub notification acceptance material. Exclude both from published packages. Put shared Leia command helpers flat in `scripts/`, agent-facing guidance in `skills/`, and user-facing capability documentation beside its owning `tools/<capability>/` or `channels/<provider>/` implementation.
+- Keep `examples/` as general matrix-backed GitHub Actions-only Leia material and exclude it from published packages. Put shared Leia command helpers flat in `scripts/`, agent-facing guidance in `skills/`, and user-facing capability documentation beside its owning `tools/<capability>/` or `channels/<provider>/` implementation.
 - Keep the Codex plugin thin: package the shared skills and their presentation assets, reuse the existing manifest and lifecycle owners, and do not create a parallel Codex runtime tree.
 
 ## Product boundary
@@ -58,7 +58,7 @@
 - Use Bun pinned in `.bun-version` for installs, scripts, and builds and Node.js pinned in `.node-version` for tests and OpenClaw. Never run the Gateway under Bun.
 - Keep TypeScript runtime boundaries aligned: root source uses Node.js types, scripts use Bun and Node.js types, and tests use Mocha and Node.js types.
 - Keep the Node-targeted build's package dependencies external.
-- Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation; the GitHub Actions-only Leia material under `examples/` and `scenarios/` is the operational exception.
+- Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation; the GitHub Actions-only Leia material under `examples/` is the operational exception.
 
 ## GitHub notification messages
 
@@ -80,7 +80,7 @@
 
 - Test `validate` as deterministic and side-effect free, `doctor` as read-only inspection, and `install` as explicit reconciliation with unchanged outcomes.
 - Choose the model driver independently of the test folder: use direct assertions by default, strict AIMock when the real OpenClaw agent/tool loop matters but model judgment does not, and a live model only when provider transport, genuine model interpretation, or Codex-native tool behavior is itself under test.
-- Keep general installed/runtime contracts in `examples/` and GitHub notification lifecycle contracts in `scenarios/`; keep model fixtures beside their owning flow and share only provider lifecycle machinery through `scripts/`.
+- Keep general installed/runtime contracts in `examples/`; keep model fixtures beside their owning flow and share only provider lifecycle machinery through `scripts/`.
 - Assert exact values only for stable public, schema, and security contracts. For human messages and logs, assert semantic signal and stable diagnostic codes.
 - Never derive lifecycle state, scheduling, authorization, or deterministic test control from model-authored prose, headings, or formatting. Use trusted structured state for transitions; live Leia may assert bounded publication envelopes and durable side effects, not exact model wording.
 - Fake injected OpenClaw, 1Password, GitHub CLI, and remote boundaries in unit tests. Do not re-test third-party behavior or rely on network, timing, or live host state in the default suite.
@@ -93,6 +93,6 @@
 - Keep Mocha `describe` and `it` descriptions fully lowercase. Preserve required casing only in test inputs, commands, and expected contract values.
 - Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
-- When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material. Change its workflow matrix entry only when scenario selection changes; keep detailed rules in `examples/AGENTS.md` or `scenarios/AGENTS.md`.
-- Never run Leia material or other operational tests from `examples/` or `scenarios/` locally. Both are GitHub Actions-only, including when isolated state would be available.
+- When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material. Change its workflow matrix entry only when scenario selection changes; keep detailed rules in `examples/AGENTS.md`.
+- Never run Leia material or other operational tests from `examples/` locally. They are GitHub Actions-only, including when isolated state would be available.
 - Keep live OpenClaw validation isolated and explicitly requested; repository checks must not mutate the user's normal OpenClaw state.

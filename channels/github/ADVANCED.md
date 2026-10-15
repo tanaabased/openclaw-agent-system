@@ -465,9 +465,7 @@ The Gateway polls independently of issue workers, so new assignments can begin
 while another issue is running. Each issue serializes preparation, comments,
 responses, and retirement across Gateway and CLI processes. Different issues
 can proceed concurrently up to the agent's durable issue-work limit; shared
-repository preparation is serialized. See the
-[assignment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-assignment/README.md)
-for execution-lease and durable-recording checks.
+repository preparation is serialized.
 
 ### Managed Worktrees
 
@@ -487,8 +485,6 @@ operator command.
 Completed assignment retirement removes only the exact clean managed checkout,
 using non-forced Git removal. Missing worktrees complete idempotently; dirty,
 unsafe, or unreadable checkouts, local branches, and remote refs remain untouched.
-See the [retirement scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-retirement/README.md)
-for incomplete-work retention and completed-work cleanup.
 
 ### Pull Request Review Feedback
 
@@ -504,9 +500,7 @@ One review produces one feedback turn. Later edits include only changed findings
 while unchanged summaries and parent replies remain context. The
 [feedback presentation](./PRESENTATION.md#direct-message) preserves source links
 and locations; original locations are historical, and the agent must inspect
-current code before applying an old finding. The
-[comment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-comment/README.md)
-covers grouped reviews, historical locations, and later inline replies.
+current code before applying an old finding.
 
 Discovery pages and consumed member digests survive restarts. Each pass reads a
 bounded page of reviews and inline comments, resumes pagination, and revisits

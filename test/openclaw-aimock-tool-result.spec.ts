@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
 
-import { githubNotificationAssignmentCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import hasOpenClawAIMockToolResult, {
   matchesOpenClawAIMockToolCallId,
   openClawAIMockToolResultText,
 } from '../scripts/aimock-tool-result.ts';
 
+const toolCallId = 'call_example';
+
 describe('scripts/aimock-tool-result', () => {
   it('should recognize only the requested scenario tool result', () => {
     assert.equal(
       hasOpenClawAIMockToolResult(
-        [{ role: 'assistant' }, { role: 'tool', tool_call_id: githubNotificationAssignmentCallId }],
-        githubNotificationAssignmentCallId,
+        [{ role: 'assistant' }, { role: 'tool', tool_call_id: toolCallId }],
+        toolCallId,
       ),
       true,
     );
@@ -20,35 +21,26 @@ describe('scripts/aimock-tool-result', () => {
         [
           {
             role: 'tool',
-            tool_call_id: `${githubNotificationAssignmentCallId}_fc-observed_123`,
+            tool_call_id: `${toolCallId}_fc-observed_123`,
           },
         ],
-        githubNotificationAssignmentCallId,
+        toolCallId,
       ),
       true,
     );
     assert.equal(
-      hasOpenClawAIMockToolResult(
-        [{ role: 'tool', tool_call_id: 'call_other' }],
-        githubNotificationAssignmentCallId,
-      ),
+      hasOpenClawAIMockToolResult([{ role: 'tool', tool_call_id: 'call_other' }], toolCallId),
       false,
     );
   });
 
   it('should reject unrelated suffixes that merely share the authored prefix', () => {
     assert.equal(
-      matchesOpenClawAIMockToolCallId(
-        `${githubNotificationAssignmentCallId}_fc-observed_123`,
-        githubNotificationAssignmentCallId,
-      ),
+      matchesOpenClawAIMockToolCallId(`${toolCallId}_fc-observed_123`, toolCallId),
       true,
     );
     assert.equal(
-      matchesOpenClawAIMockToolCallId(
-        `${githubNotificationAssignmentCallId}_message-observed`,
-        githubNotificationAssignmentCallId,
-      ),
+      matchesOpenClawAIMockToolCallId(`${toolCallId}_message-observed`, toolCallId),
       false,
     );
   });
@@ -61,10 +53,10 @@ describe('scripts/aimock-tool-result', () => {
           {
             content: [{ text: '{"login":"emoriwan"}' }],
             role: 'tool',
-            tool_call_id: `${githubNotificationAssignmentCallId}_fc-observed_123`,
+            tool_call_id: `${toolCallId}_fc-observed_123`,
           },
         ],
-        githubNotificationAssignmentCallId,
+        toolCallId,
       ),
       '{"login":"emoriwan"}',
     );
