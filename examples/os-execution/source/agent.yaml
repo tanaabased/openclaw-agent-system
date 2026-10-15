@@ -1,0 +1,11 @@
+schema-version: 1
+
+agent:
+  id: os-execution
+  name: OS Execution
+  email: os-execution@example.invalid
+
+environment:
+  path-prepend: tools/bin
+
+git: {}

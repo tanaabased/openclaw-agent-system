@@ -65,6 +65,7 @@ describe('scripts/example-model-scenarios', () => {
       'automations',
       'credentials',
       'github',
+      'os-execution',
     ]);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
@@ -87,6 +88,32 @@ describe('scripts/example-model-scenarios', () => {
       content: 'Ready.',
       id: 'agent-system-example-agent-final-response',
     });
+  });
+
+  it('should require the matching native execution receipt before completing either shell mode', () => {
+    const scenario = resolveExampleModelScenario('os-execution');
+    for (const mode of ['pipe', 'pty']) {
+      const prompt = `Run the native execution ${mode} probe through OpenClaw exec.`;
+      const callId = `call_os_execution_${mode}`;
+      const input = request('os-execution', prompt, ['exec']);
+      const invocation = matchFixture([...scenario.fixtures], input)?.response;
+      assert.ok(invocation && typeof invocation !== 'function' && 'toolCalls' in invocation);
+      const call = invocation.toolCalls?.[0];
+      assert.equal(call?.name, 'exec');
+      assert.equal(JSON.parse(call!.arguments).pty, mode === 'pty');
+      assert.equal(JSON.parse(call!.arguments).command, `sh ./probe.sh ${mode}`);
+      for (const [observedCall, content, success] of [
+        [callId, 'os-execution-verified', true],
+        [callId, 'code=agent_not_resolved', false],
+        ['call_unrelated', 'os-execution-verified', false],
+      ] as const) {
+        const result = matchFixture(
+          [...scenario.fixtures],
+          request('os-execution', prompt, ['exec'], { callId: observedCall, content }),
+        );
+        assert.equal(result !== null, success);
+      }
+    }
   });
 
   it('should match collaboration requests against the scenario workspace identities', async () => {

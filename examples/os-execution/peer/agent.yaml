@@ -1,0 +1,8 @@
+schema-version: 1
+
+agent:
+  id: os-execution-peer
+  name: OS Execution Peer
+  email: os-execution-peer@example.invalid
+
+git: {}

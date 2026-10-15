@@ -1,4 +1,4 @@
-name: OS example tests
+name: OS tests
 
 on:
   pull_request:
@@ -27,6 +27,7 @@ jobs:
         example:
           - os-install
           - os-doctor
+          - os-execution
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

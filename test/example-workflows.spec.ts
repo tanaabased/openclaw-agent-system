@@ -74,7 +74,7 @@ describe('example workflows', () => {
     }
   });
 
-  it('should stage only installation and doctor on both operating systems without hosted secrets', async () => {
+  it('should stage native os contracts on both operating systems without hosted secrets', async () => {
     const source = await readFile('.github/workflows/pr-examples-os.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
     const steps = workflow.jobs?.examples?.steps ?? [];
@@ -84,7 +84,7 @@ describe('example workflows', () => {
     assert.equal(workflow.permissions?.contents, 'read');
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
     assert.deepEqual(matrix?.os, ['macos-26', 'ubuntu-24.04']);
-    assert.deepEqual(matrix?.example, ['os-install', 'os-doctor']);
+    assert.deepEqual(matrix?.example, ['os-install', 'os-doctor', 'os-execution']);
     assert.equal(workflow.jobs?.examples?.strategy?.['fail-fast'], false);
     assert.ok(example);
     assert.equal(example?.if, undefined);
