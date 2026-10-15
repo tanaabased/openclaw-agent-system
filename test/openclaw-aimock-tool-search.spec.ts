@@ -254,6 +254,68 @@ describe('scripts/aimock-tool-search', () => {
     }
   });
 
+  it('should read the captured openclaw dispatcher denial as the authored install result', async () => {
+    // openclaw 2026.9.8: actions/runs/38824028415/job/116727128889, denied install result.
+    const denial = {
+      status: 'error',
+      tool: 'tool_call',
+      error:
+        'Denied by user. The tool call did not run.\nThis denial is final: the approval request is closed. Do not mention /approve or any other approval command to the user.\nDo not run the tool call again or ask the user to approve it again.\nIf the user still wants the action, explain that a new tool call will trigger a fresh approval request.',
+    };
+    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const input = request('Call agent_system_install exactly once');
+    append(
+      input,
+      (await reply(scenario, input)).response,
+      searchResult(['agent_system_install', 'agent_system_doctor']),
+    );
+    append(input, (await reply(scenario, input)).response, denial);
+    assert.throws(() => normalizeToolSearchRequest(input));
+    const final = await reply(scenario, input);
+    assert.deepEqual(final.response, {
+      content: 'runtime-install-denied',
+      id: 'runtime-install-final',
+    });
+    const evidence = openClawAIMockEvidence(scenario, [
+      {
+        body: input,
+        method: 'POST',
+        path: '/responses',
+        response: { fixture: final.fixture, status: 200 },
+      },
+    ]);
+    assert.equal(evidence.strictMissCount, 0);
+    assert.equal(evidence.finalResponseCount, 1);
+    assert.equal(
+      evidence.tools.find(({ name }) => name === 'agent_system_install')?.resultRequestCount,
+      1,
+    );
+
+    for (const invalid of [
+      { ...denial, status: 'success' },
+      { ...denial, tool: 'agent_system_install' },
+      { ...denial, error: 'Gateway unavailable.' },
+    ]) {
+      const wrongEnvelope = structuredClone(input);
+      wrongEnvelope.messages.at(-1)!.content = JSON.stringify(invalid);
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongEnvelope, scenario.expectedDeniedToolCalls),
+      );
+    }
+    for (const change of ['id', 'target']) {
+      const wrongBinding = structuredClone(input);
+      const call = wrongBinding.messages.at(-2)!.tool_calls![0]!;
+      if (change === 'id') {
+        call.id = 'call_other_install';
+        wrongBinding.messages.at(-1)!.tool_call_id = call.id;
+      } else
+        call.function.arguments = JSON.stringify({ id: 'openclaw:agent_system_doctor', args: {} });
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongBinding, scenario.expectedDeniedToolCalls),
+      );
+    }
+  });
+
   it('should preserve direct calls and the explicitly tool-free readiness turn', async () => {
     const github = withToolSearch(resolveScenario('github'));
     const direct = request();

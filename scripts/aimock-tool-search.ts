@@ -12,6 +12,7 @@ import type { OpenClawAIMockScenario, OpenClawAIMockToolCall } from './aimock-sc
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
 
 const discoveryPrefix = 'call_aimock_discover_';
+const preExecutionDenial = /^(?:Error: )?Denied by user\. The tool call did not run\.(?:\n|$)/u;
 
 function parse(text: string): Record<string, unknown> {
   const value: unknown = JSON.parse(text);
@@ -91,13 +92,19 @@ export function normalizeToolSearchRequest(
       (call) => call.name === name && matchesOpenClawAIMockToolCallId(callId, call.id),
     );
     // approval may stop the call before tool_call can produce its execution envelope.
-    if (
-      expectedDenial &&
-      /^(?:Error: )?Denied by user\. The tool call did not run\.(?:\n|$)/u.test(content)
-    ) {
+    if (expectedDenial && preExecutionDenial.test(content)) {
       return { name, arguments: JSON.stringify(args.args ?? {}), content };
     }
     const envelope = parse(content);
+    if (
+      expectedDenial &&
+      envelope.status === 'error' &&
+      envelope.tool === 'tool_call' &&
+      typeof envelope.error === 'string' &&
+      preExecutionDenial.test(envelope.error)
+    ) {
+      return { name, arguments: JSON.stringify(args.args ?? {}), content: envelope.error };
+    }
     const tool = envelope.tool as Record<string, unknown> | undefined;
     assert.ok(
       tool && tool.id === args.id && tool.name === name,
