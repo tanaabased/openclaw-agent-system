@@ -96,7 +96,7 @@ export const runtimeBoundaryScenario: OpenClawAIMockScenario = {
   model: { match: model, reference: 'aimock/gpt-5.5' },
   fixtures,
   finalResponses: ['runtime-exec-ready', 'runtime-doctor-ready', 'runtime-install-denied'],
-  expectedErrorToolCallIds: [installCall],
+  expectedDeniedToolCalls: [{ id: installCall, name: 'agent_system_install' }],
   systemPromptSignals: [],
   toolCalls: [
     { id: execCall, name: 'exec' },

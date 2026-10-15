@@ -192,13 +192,66 @@ describe('scripts/aimock-tool-search', () => {
     const callId = wrongCall.messages.at(-1)!.tool_call_id!;
     wrongCall.messages.at(-1)!.tool_call_id = callId.replace('install', 'doctor');
     wrongCall.messages.at(-2)!.tool_calls![0]!.id = callId.replace('install', 'doctor');
-    assert.throws(() => normalizeToolSearchRequest(wrongCall, scenario.expectedErrorToolCallIds));
+    assert.throws(() => normalizeToolSearchRequest(wrongCall, scenario.expectedDeniedToolCalls));
     const wrongResult = structuredClone(input);
     wrongResult.messages.at(-1)!.content = String(wrongResult.messages.at(-1)!.content).replace(
       'Denied by user.',
       'Gateway unavailable.',
     );
-    assert.equal(matchFixture([...scenario.fixtures], wrongResult), null);
+    assert.throws(() => matchFixture([...scenario.fixtures], wrongResult));
+  });
+
+  it('should project an authored pre-execution denial without requiring an execution envelope', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    for (const prefix of ['', 'Error: ']) {
+      const input = request('Call agent_system_install exactly once');
+      append(
+        input,
+        (await reply(scenario, input)).response,
+        searchResult(['agent_system_install', 'agent_system_doctor']),
+      );
+      append(input, (await reply(scenario, input)).response, null);
+      input.messages.at(-1)!.content =
+        `${prefix}Denied by user. The tool call did not run.\nThis denial is final.`;
+      const original = structuredClone(input);
+      assert.throws(() => normalizeToolSearchRequest(input));
+      const final = await reply(scenario, input);
+      assert.deepEqual(final.response, {
+        content: 'runtime-install-denied',
+        id: 'runtime-install-final',
+      });
+      const evidence = openClawAIMockEvidence(scenario, [
+        {
+          body: input,
+          method: 'POST',
+          path: '/responses',
+          response: { fixture: final.fixture, status: 200 },
+        },
+      ]);
+      assert.equal(
+        evidence.tools.find(({ name }) => name === 'agent_system_install')?.resultRequestCount,
+        1,
+      );
+      assert.deepEqual(input, original);
+
+      const wrongTarget = structuredClone(input);
+      wrongTarget.messages.at(-2)!.tool_calls![0]!.function.arguments = JSON.stringify({
+        id: 'openclaw:agent_system_doctor',
+        args: { timeoutMs: 600000 },
+      });
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongTarget, scenario.expectedDeniedToolCalls),
+      );
+      const wrongCall = structuredClone(input);
+      wrongCall.messages.at(-1)!.tool_call_id = 'call_other_install';
+      wrongCall.messages.at(-2)!.tool_calls![0]!.id = 'call_other_install';
+      assert.throws(() => normalizeToolSearchRequest(wrongCall, scenario.expectedDeniedToolCalls));
+      const wrongReason = structuredClone(input);
+      wrongReason.messages.at(-1)!.content = 'Gateway unavailable.';
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongReason, scenario.expectedDeniedToolCalls),
+      );
+    }
   });
 
   it('should preserve direct calls and the explicitly tool-free readiness turn', async () => {

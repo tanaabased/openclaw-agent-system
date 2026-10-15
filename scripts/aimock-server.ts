@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 
 import { LLMock, type Mountable } from '@copilotkit/aimock';
 
+import openClawAIMockDiagnostics from './aimock-diagnostics.ts';
 import openClawAIMockEvidence from './aimock-evidence.ts';
 import resolveOpenClawAIMockScenario from './aimock-scenarios.ts';
 import withToolSearch from './aimock-tool-search.ts';
@@ -43,12 +44,20 @@ mock.addFixtures([...scenario.fixtures]);
 
 const evidenceService: Mountable = {
   async handleRequest(req, res, pathname) {
-    if (pathname !== '/evidence') return false;
+    if (pathname !== '/evidence' && pathname !== '/diagnostics') return false;
     if (req.method !== 'GET') {
       json(res, 405, { error: 'method not allowed' });
       return true;
     }
-    json(res, 200, openClawAIMockEvidence(scenario, mock.getRequests()));
+    if (pathname === '/diagnostics') {
+      json(res, 200, openClawAIMockDiagnostics(scenario, mock.getRequests()));
+      return true;
+    }
+    try {
+      json(res, 200, openClawAIMockEvidence(scenario, mock.getRequests()));
+    } catch {
+      json(res, 500, openClawAIMockDiagnostics(scenario, mock.getRequests()));
+    }
     return true;
   },
 };

@@ -4,6 +4,8 @@ Verify Agent System's native execution boundary on macOS and Linux: manifest PAT
 
 The workspace is copied because the test requires a path containing spaces and writes its own receipts. The probe emits success only after checking the actual child process and the rejected cross-agent invocation.
 
+On mock failure, cleanup reports bounded scenario-owned tool results so a probe failure or timeout remains visible behind a strict fixture mismatch. Execution and model-turn timeouts remain unchanged.
+
 ## Setup
 
 ```bash
@@ -58,6 +60,7 @@ openclaw-aimock evidence \
 # should stop the background gateway cleanly
 openclaw-gateway stop
 
-# should stop the strict mock model cleanly
+# should report mock failures and stop the strict model cleanly
+curl --fail --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 openclaw-aimock stop
 ```

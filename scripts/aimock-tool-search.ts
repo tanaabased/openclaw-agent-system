@@ -8,7 +8,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
+import type { OpenClawAIMockScenario, OpenClawAIMockToolCall } from './aimock-scenario.ts';
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
 
 const discoveryPrefix = 'call_aimock_discover_';
@@ -65,7 +65,7 @@ function catalog(
 /** Present real discovered tools and verified inner results to scenario assertions. */
 export function normalizeToolSearchRequest(
   request: ChatCompletionRequest,
-  expectedErrorToolCallIds: readonly string[] = [],
+  expectedDeniedToolCalls: readonly OpenClawAIMockToolCall[] = [],
 ): ChatCompletionRequest {
   if (!controls(request)) return request;
   const available = catalog(request);
@@ -83,6 +83,38 @@ export function normalizeToolSearchRequest(
       (message.tool_calls ?? []).map((call) => [call.id, call] as const),
     ),
   );
+  function unwrap(callId: string, argumentText: string, content: string) {
+    const args = parse(argumentText);
+    const name = discoveredIds.get(String(args.id));
+    assert.ok(name, 'wrapped call must target a discovered tool');
+    const expectedDenial = expectedDeniedToolCalls.some(
+      (call) => call.name === name && matchesOpenClawAIMockToolCallId(callId, call.id),
+    );
+    // approval may stop the call before tool_call can produce its execution envelope.
+    if (
+      expectedDenial &&
+      /^(?:Error: )?Denied by user\. The tool call did not run\.(?:\n|$)/u.test(content)
+    ) {
+      return { name, arguments: JSON.stringify(args.args ?? {}), content };
+    }
+    const envelope = parse(content);
+    const tool = envelope.tool as Record<string, unknown> | undefined;
+    assert.ok(
+      tool && tool.id === args.id && tool.name === name,
+      'wrapped result must identify the requested tool',
+    );
+    const result = envelope.result as { content?: unknown; isError?: boolean } | undefined;
+    assert.ok(
+      result && Array.isArray(result.content),
+      'wrapped result must contain the executed tool result',
+    );
+    const text = getTextContent(result.content) ?? '';
+    assert.ok(
+      result.isError !== true || (expectedDenial && text.startsWith('Denied by user.')),
+      'the wrapped tool call failed',
+    );
+    return { name, arguments: JSON.stringify(args.args ?? {}), content: text };
+  }
   return {
     ...request,
     tools: [
@@ -103,23 +135,18 @@ export function normalizeToolSearchRequest(
             ...message,
             tool_calls: toolCalls?.map((call) => {
               if (call.function.name !== 'tool_call') return call;
-              const args = parse(call.function.arguments);
               const result = request.messages.find(
                 (candidate) => candidate.role === 'tool' && candidate.tool_call_id === call.id,
               );
               if (!result) return call;
-              const envelope = parse(getTextContent(result.content) ?? '');
-              const tool = envelope.tool as Record<string, unknown> | undefined;
-              assert.ok(
-                tool &&
-                  tool.id === args.id &&
-                  typeof tool.name === 'string' &&
-                  discoveredIds.get(String(tool.id)) === tool.name,
-                'wrapped result must identify the requested tool',
+              const projected = unwrap(
+                call.id,
+                call.function.arguments,
+                getTextContent(result.content) ?? '',
               );
               return {
                 ...call,
-                function: { name: tool.name, arguments: JSON.stringify(args.args ?? {}) },
+                function: { name: projected.name, arguments: projected.arguments },
               };
             }),
           },
@@ -127,29 +154,12 @@ export function normalizeToolSearchRequest(
       }
       const call = calls.get(message.tool_call_id ?? '');
       if (message.role !== 'tool' || call?.function.name !== 'tool_call') return [message];
-      const envelope = parse(getTextContent(message.content) ?? '');
-      const tool = envelope.tool as Record<string, unknown> | undefined;
-      const args = parse(call.function.arguments);
-      assert.ok(
-        tool &&
-          tool.id === args.id &&
-          typeof tool.name === 'string' &&
-          discoveredIds.get(String(tool.id)) === tool.name,
-        'wrapped result must identify the requested tool',
+      const projected = unwrap(
+        call.id,
+        call.function.arguments,
+        getTextContent(message.content) ?? '',
       );
-      const result = envelope.result as { content?: unknown; isError?: boolean } | undefined;
-      assert.ok(
-        result && Array.isArray(result.content),
-        'wrapped result must contain the executed tool result',
-      );
-      assert.ok(
-        result.isError !== true ||
-          expectedErrorToolCallIds.some((id) =>
-            matchesOpenClawAIMockToolCallId(message.tool_call_id ?? '', id),
-          ),
-        'the wrapped tool call failed',
-      );
-      return [{ ...message, content: getTextContent(result.content) ?? '' }];
+      return [{ ...message, content: projected.content }];
     }),
   };
 }
@@ -203,7 +213,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
           (!needsDiscovery(request) || !!discoveryResult(request)) &&
           matchFixture(
             [fixture],
-            normalizeToolSearchRequest(request, scenario.expectedErrorToolCallIds),
+            normalizeToolSearchRequest(request, scenario.expectedDeniedToolCalls),
           ) !== null,
       },
       response:
@@ -214,7 +224,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
                 request,
                 typeof response === 'function'
                   ? await response(
-                      normalizeToolSearchRequest(request, scenario.expectedErrorToolCallIds),
+                      normalizeToolSearchRequest(request, scenario.expectedDeniedToolCalls),
                     )
                   : response,
               ),

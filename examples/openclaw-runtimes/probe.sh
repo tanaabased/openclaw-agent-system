@@ -7,15 +7,18 @@ case "$runtime" in
   codex)
     expected='Runtime Codex <runtime-codex@example.invalid>'
     peer=openclaw
+    test -n "$CODEX_HOME"
+    test -n "$CODEX_THREAD_ID"
     ;;
   openclaw)
     expected='Runtime OpenClaw <runtime-openclaw@example.invalid>'
     peer=codex
+    test -n "$AGENT_SYSTEM_EXEC_AUTHORITY"
+    test -n "$AGENT_SYSTEM_EXEC_CAPABILITY"
     ;;
   *) exit 1 ;;
 esac
 
-test -n "$AGENT_SYSTEM_EXEC_AUTHORITY"
 git var GIT_AUTHOR_IDENT > "$root/$runtime/identity.txt"
 grep -F "$expected" "$root/$runtime/identity.txt"
 
