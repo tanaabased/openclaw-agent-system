@@ -25,8 +25,8 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          # restore os-install and os-doctor after the execution checkpoint passes.
-          - os-execution
+          # restore the proven os examples after the storage checkpoint passes.
+          - os-storage
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

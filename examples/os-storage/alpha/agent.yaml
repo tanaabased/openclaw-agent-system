@@ -1,0 +1,12 @@
+schema-version: 1
+
+agent:
+  id: storage-alpha
+  name: Storage Alpha
+  email: storage-alpha@example.invalid
+
+git:
+  worktrees: {}
+  ssh:
+    private-keys:
+      path: keys/id_ed25519
