@@ -2,7 +2,7 @@
 
 Verify the installed Agent System boundary through native OpenClaw and OpenClaw-hosted Codex. Each runtime executes one manifest-PATH command under its own Git identity, rejects a change into the peer agent's workspace, and rejects unattended operator installation. The installed Control UI approval route then proves denied install, approved install, and read-only Doctor behavior. Assertions use filesystem receipts and native approval events rather than model wording.
 
-Native exec uses an issued command capability; hosted Codex uses its per-agent home and native thread context. The probe checks the appropriate context before exercising the same managed operations. On mock failure, cleanup reports bounded scenario-owned tool results and projection errors without system/user prompts or transport credentials.
+Native exec uses an issued command capability; hosted Codex uses its per-agent home and native thread context. The probe checks the appropriate context before exercising the same managed operations. The evidence assertion prints bounded scenario-owned tool results and preserves HTTP error bodies so Leia retains the diagnostics when that assertion fails. System/user prompts and transport credentials are excluded.
 
 One Ubuntu job installs the prepared package and one agent per runtime. Strict AIMock selects all three native OpenClaw turns while the real Gateway executes their tools and approval decisions. Only the three hosted Codex turns use a live model, because its native shell and dynamic tool discovery are under test. The workflow scopes the existing CI model credential to this example. Workspaces are copied because the Codex model is runtime-derived and the probes write receipts. A conflicting host executable makes incorrect PATH precedence fail immediately. All six turns run once with no retries. A denied tool can end its chat before another model request; the approval driver verifies the exact denial and absent effects independently. Other chat channels and the ordinary worktree/session lifecycle remain outside this example.
 
@@ -67,14 +67,15 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" run
 node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" runtime-codex doctor
 
 # should complete only the three authored native turns through strict aimock
-curl --fail --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResponseCount >= 2 and .finalResponseCount <= 3 and any(.tools[]; .name == "exec" and .callResponseCount == 1 and .resultRequestCount == 1) and any(.tools[]; .name == "agent_system_doctor" and .callResponseCount == 1 and .resultRequestCount == 1) and any(.tools[]; .name == "agent_system_install" and .resultRequestCount <= 1)'
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/runtime-boundaries-evidence.json"
+jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResponseCount >= 2 and .finalResponseCount <= 3 and any(.tools[]; .name == "exec" and .callResponseCount == 1 and .resultRequestCount == 1) and any(.tools[]; .name == "agent_system_doctor" and .callResponseCount == 1 and .resultRequestCount == 1) and any(.tools[]; .name == "agent_system_install" and .resultRequestCount <= 1)' "$TMPDIR/runtime-boundaries-evidence.json"
 ```
 
 ## Cleanup
 
 ```bash
-# should report mock failures and stop the scenario gateway and provider
+# should stop the scenario gateway and mock provider
 openclaw-gateway stop
-curl --fail --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 openclaw-aimock stop
 ```
