@@ -13,7 +13,7 @@ openclaw-setup \
 
 # should prepare an isolated install workspace
 mkdir -p "$TMPDIR/install-data"
-cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/os-install/data/agent.yaml" "$TMPDIR/install-data/agent.yaml"
 ```
 
 ## Testing
@@ -40,7 +40,7 @@ printf '%s\n' "$output" | jq -e '.outcomes | (any(.component == "agent" and .sta
 ```bash
 # should reconcile additive native tool grants while preserving unrelated access
 openclaw config set 'agents.entries.install-data.tools.alsoAllow' '["message"]' --strict-json
-cp "$GITHUB_WORKSPACE/examples/install/with-tools/agent.yaml" "$TMPDIR/install-data/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/os-install/with-tools/agent.yaml" "$TMPDIR/install-data/agent.yaml"
 cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
@@ -81,7 +81,7 @@ printf '%s\n' "$output" | grep -F 'code=agent-tool-access-denied'
 ```bash
 # should remove stale owned grants when capabilities disappear
 openclaw config set 'agents.entries.install-data.tools.deny' '[]' --strict-json
-cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/os-install/data/agent.yaml" "$TMPDIR/install-data/agent.yaml"
 cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
@@ -91,7 +91,7 @@ openclaw config get 'agents.entries.install-data.tools' --json | jq -e '(.allow 
 
 ```bash
 # should validate an unavailable review adapter without rejecting the manifest
-cp "$GITHUB_WORKSPACE/examples/install/unsupported-notifications/agent.yaml" "$TMPDIR/install-data/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/os-install/unsupported-notifications/agent.yaml" "$TMPDIR/install-data/agent.yaml"
 cd "$TMPDIR/install-data"
 openclaw agent-system validate --json | jq -e '.status == "valid" and any(.diagnostics[]; .code == "github-notification-runtime-unsupported" and .severity == "warning")'
 

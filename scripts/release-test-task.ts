@@ -251,7 +251,7 @@ try {
     for (const path of [
       'AGENTS.md',
       '.github/OPTIMIZATION.md',
-      'examples/install/README.md',
+      'examples/os-install/README.md',
       'scripts/openclaw-aimock',
       'scripts/aimock-server.ts',
       'test/encode.spec.ts',

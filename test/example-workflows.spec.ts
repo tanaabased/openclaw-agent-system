@@ -24,6 +24,8 @@ interface WorkflowStep {
 }
 
 interface ExampleWorkflow {
+  permissions?: { contents?: string };
+  concurrency?: { 'cancel-in-progress'?: boolean };
   jobs?: {
     examples?: {
       name?: string;
@@ -72,32 +74,40 @@ describe('example workflows', () => {
     }
   });
 
-  it('should run native codex acceptance through the shared leia matrix step', async () => {
-    const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
+  it('should stage only installation and doctor on both operating systems without hosted secrets', async () => {
+    const source = await readFile('.github/workflows/pr-examples-os.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
     const steps = workflow.jobs?.examples?.steps ?? [];
-    const installOpenClaw = steps.find(({ name }) => name === 'Install OpenClaw');
     const example = steps.find(({ name }) => name === 'Run Leia-backed example');
-    const diagnostics = steps.find(({ name }) => name === 'RUNNING A LEVEL THREE DIAGNOSTICS');
+    const matrix = workflow.jobs?.examples?.strategy?.matrix;
 
-    assert.equal('codex' in (workflow.jobs ?? {}), false);
-    assert.equal(
-      steps.some(({ name }) => name === 'Authenticate isolated Codex'),
-      false,
-    );
-    assert.equal(
-      steps.some(({ name }) => name === 'Run Leia-backed Codex example'),
-      false,
-    );
-    assert.equal(installOpenClaw?.if, undefined);
+    assert.equal(workflow.permissions?.contents, 'read');
+    assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
+    assert.deepEqual(matrix?.os, ['macos-26', 'ubuntu-24.04']);
+    assert.deepEqual(matrix?.example, ['os-install', 'os-doctor']);
+    assert.equal(workflow.jobs?.examples?.strategy?.['fail-fast'], false);
+    assert.ok(example);
     assert.equal(example?.if, undefined);
-    assert.equal(example?.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
-    assert.equal(example?.env?.CODEX_TOOLS_CODEX_HOME, '${{ runner.temp }}/codex-home');
-    assert.equal(example?.env?.OPENAI_API_KEY, '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}');
-    assert.equal(example?.env?.OPENAI_MODEL, 'gpt-5.4-nano');
+    assert.equal(example?.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');
+    assert.equal(
+      example?.env?.DEFAULT_CREDENTIAL_STORE,
+      "${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}",
+    );
     assert.equal(example?.run, 'leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0');
-    assert.equal(diagnostics?.if, 'failure()');
+    for (const step of steps) {
+      assert.ok(!Object.values(step.env ?? {}).some((value) => String(value).includes('secrets.')));
+    }
+    for (const scenario of matrix?.example ?? []) {
+      const suites = new Leia().parse([resolve('examples', scenario, 'README.md')]);
+      assert.equal(suites.length, 1, scenario);
+      assert.ok(
+        suites[0]?.tests.test?.some(({ skip }) => !skip),
+        scenario,
+      );
+    }
+  });
 
+  it('should retain codex heartbeat assertions while runtime ci selection is deferred', () => {
     const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
     assert.equal(suites.length, 1);
     assert.ok(suites[0]?.tests.setup?.some(({ skip }) => !skip));

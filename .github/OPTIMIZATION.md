@@ -56,7 +56,7 @@ lifecycle session must own scheduling, continuation, and publication authority.
 
 ### Leia workflow and model boundaries
 
-Keep general Leia examples in `pr-examples-tests.yml`. Scope shared test credentials to the workflow's final Leia execution step even though every matrix entry receives that step environment. Use strict AIMock for the `agent` and `github` examples and the `credentials` cache checks; only `approval`, `containment`, `models`, and `path` select a live OpenAI model. The `codex` example uses direct assertions without a model.
+Separate native OS coverage from runtime coverage. Stage the replacement in `pr-examples-os.yml`, initially selecting only `os-install` and `os-doctor` on macOS and Ubuntu; retain other examples unscheduled until their owning coverage is migrated. Add native execution, credentials/filesystem, and one complete critical pathway before treating OS coverage as complete. Select contracts before choosing runner counts. Scope credentials to the scenarios that need them; installation and Doctor require no hosted secrets. Use strict AIMock for the `agent` and `github` examples and the `credentials` cache checks; only `approval`, `containment`, `models`, and `path` select a live OpenAI model. The `codex` example uses direct assertions without a model.
 
 ### Shared synthetic SSH preparation
 

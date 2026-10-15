@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 
-import { parse } from 'yaml';
 import parseAgentManifest from '../manifest/parse.ts';
 
 const Leia = createRequire(import.meta.url)('@lando/leia') as new () => {
@@ -11,33 +10,7 @@ const Leia = createRequire(import.meta.url)('@lando/leia') as new () => {
 };
 
 describe('google example workflow', () => {
-  it('should run live tasks through the standard example matrix without a model', async () => {
-    const workflow = parse(await readFile('.github/workflows/pr-examples-tests.yml', 'utf8'));
-    assert.ok(workflow.on.pull_request !== undefined);
-    assert.equal(workflow.on.workflow_dispatch, undefined);
-    assert.deepEqual(Object.keys(workflow.jobs), ['examples']);
-    assert.ok(workflow.jobs.examples.strategy.matrix.example.includes('google'));
-    assert.deepEqual(workflow.jobs.examples.strategy.matrix.os, ['macos-26', 'ubuntu-24.04']);
-    assert.equal(workflow.permissions.contents, 'read');
-    const steps = workflow.jobs.examples.steps as Array<{
-      name: string;
-      if?: string;
-      env?: Record<string, string>;
-      run?: string;
-    }>;
-    assert.ok(!steps.some((step) => step.name === 'Install reviewed GoG'));
-    const pathStep = steps.findIndex((step) => step.name === 'PATH updates');
-    const brewStep = steps.findIndex((step) => step.name === 'Brew updates');
-    assert.ok(pathStep >= 0 && brewStep > pathStep);
-    assert.match(steps[pathStep]?.run ?? '', /\/home\/linuxbrew\/\.linuxbrew\/bin/u);
-    const run = steps.find((step) => step.name === 'Run Leia-backed example');
-    assert.equal(run?.env?.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
-    assert.equal(
-      run?.env?.DBUS_SESSION_BUS_ADDRESS,
-      'unix:path=${{ runner.temp }}/secret-service-bus',
-    );
-    assert.equal(run?.env?.GOG_HOME, '${{ runner.temp }}/google-gog');
-    assert.equal(run?.run, 'leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0');
+  it('should retain the live google contract without a model while ci selection is deferred', async () => {
     const fixture = parseAgentManifest(await readFile('examples/google/agent.yaml', 'utf8'));
     assert.equal(fixture.status, 'valid');
     if (fixture.status !== 'valid') throw new Error();

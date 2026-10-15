@@ -1,10 +1,14 @@
-name: Example tests
+name: OS example tests
 
 on:
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: examples-os-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 env:
   HOMEBREW_NO_AUTO_UPDATE: '1'
@@ -21,29 +25,8 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          - agent
-          - approval
-          - automations
-          - backup
-          - codex
-          - collaboration
-          - containment
-          - credentials
-          - doctor
-          - env
-          - git
-          - github
-          - google
-          - identity
-          - install
-          - memory
-          - models
-          - path
-          - prerequisite
-          - setup
-          - tool
-          - validate
-          - worktree
+          - os-install
+          - os-doctor
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -93,18 +76,12 @@ jobs:
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
           DBUS_SESSION_BUS_ADDRESS: unix:path=${{ runner.temp }}/secret-service-bus
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
-          GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
-          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-          GOG_HOME: ${{ runner.temp }}/google-gog
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
           OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
           OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
-          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
-          OPENAI_MODEL: gpt-5.4-nano
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         # invoke leia directly to preserve the installed openclaw host's position on path.
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS

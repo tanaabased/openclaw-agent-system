@@ -6,7 +6,7 @@
 - Choose the driver from the contract rather than the folder: use direct assertions when state proves the behavior, strict AIMock when the real OpenClaw agent/tool loop matters without model judgment, and a live model only when provider transport, model interpretation, or Codex-native tool behavior is itself under test.
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned model fixtures and expected evidence beside their README. Share only provider lifecycle machinery through `scripts/openclaw-aimock`.
-- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep other examples-level files limited to `AGENTS.md` and `package.json`.
+- Keep examples in a flat list of scenario folders, with `os-`, `shared-`, `openclaw-`, or `codex-` prefixes as coverage is reorganized. Select active scenarios explicitly in the owning example workflow. During the staged replacement, retain unselected examples as migration inputs; their presence does not mean CI runs them. Keep other examples-level files limited to `AGENTS.md` and `package.json`.
 - Use the shared Leia command helpers from `scripts/`; do not recreate or wrap them inside an example.
 
 ## OpenClaw Runtime
@@ -40,4 +40,4 @@
 ## Boundaries
 
 - Do not use literal backticks, braced shell expansions, or numeric backreferences inside executable Leia blocks.
-- Never run Leia examples locally. They are operational tests owned exclusively by `.github/workflows/pr-examples-tests.yml` on fresh GitHub Actions runners.
+- Never run Leia examples locally. They are operational tests owned exclusively by the example workflows under `.github/workflows/` on fresh GitHub Actions runners.

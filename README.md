@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/tanaabased/openclaw-agent-system/releases"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system" alt="Latest release" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-tests.yml?label=Examples" alt="Leia example tests" /></a>
+  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-os.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-os.yml?label=Examples" alt="Leia example tests" /></a>
   <img src="https://img.shields.io/badge/macOS-26-111827" alt="macOS 26" />
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
