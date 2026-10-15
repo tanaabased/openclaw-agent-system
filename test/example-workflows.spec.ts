@@ -130,6 +130,7 @@ describe('example workflows', () => {
       'codex-automations',
       'codex-notifications',
       'openclaw-agent',
+      'openclaw-automations',
     ]);
     assert.ok(example);
     assert.equal(example.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');

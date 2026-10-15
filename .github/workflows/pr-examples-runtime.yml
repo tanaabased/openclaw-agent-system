@@ -25,6 +25,7 @@ jobs:
           - codex-automations
           - codex-notifications
           - openclaw-agent
+          - openclaw-automations
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

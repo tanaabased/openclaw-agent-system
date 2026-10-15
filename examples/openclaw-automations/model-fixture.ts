@@ -27,7 +27,7 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
 }
 
 export const automationExampleScenario: OpenClawAIMockScenario = {
-  id: 'automations',
+  id: 'openclaw-automations',
   model: { match: model, reference: 'aimock/gpt-5.5' },
   finalResponses: ['automation-owner-ready'],
   systemPromptSignals: [identity],

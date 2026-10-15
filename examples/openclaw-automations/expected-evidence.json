@@ -5,7 +5,7 @@
   "provider": "aimock",
   "requestCount": 1,
   "responsesApiRequestCount": 1,
-  "scenario": "automations",
+  "scenario": "openclaw-automations",
   "schemaVersion": 2,
   "strictMissCount": 0,
   "successfulFixtureResponseCount": 1,

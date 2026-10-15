@@ -62,7 +62,7 @@ describe('scripts/example-model-scenarios', () => {
     assert.deepEqual(exampleModelScenarioIds, [
       'openclaw-agent',
       'collaboration',
-      'automations',
+      'openclaw-automations',
       'credentials',
       'github',
       'os-execution',
@@ -177,7 +177,7 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should keep automation ownership strict and report only failed match booleans', () => {
-    const scenario = resolveExampleModelScenario('automations');
+    const scenario = resolveExampleModelScenario('openclaw-automations');
     const diagnostic = mock.method(console, 'error', () => {});
     const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
     valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
