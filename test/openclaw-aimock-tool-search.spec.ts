@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { matchFixture, type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
@@ -54,6 +55,38 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 }
 
 describe('scripts/aimock-tool-search', () => {
+  it('should count an already visible exec tool during discovery as well as execution', async () => {
+    const scenario = withToolSearch(resolveScenario('os-execution'));
+    const entries: Parameters<typeof openClawAIMockEvidence>[1][number][] = [];
+    for (const mode of ['pipe', 'pty']) {
+      const input = request(`Run the native execution ${mode} probe through OpenClaw exec.`);
+      input.tools!.push({ type: 'function', function: { name: 'exec' } });
+      const respond = async () => {
+        const { fixture, response } = await reply(scenario, input);
+        entries.push({
+          body: structuredClone(input),
+          method: 'POST',
+          path: '/responses',
+          response: { fixture, status: 200 },
+        });
+        return response;
+      };
+      append(input, await respond(), searchResult(['exec']));
+      const call = await respond();
+      assert.ok('toolCalls' in call);
+      assert.equal(call.toolCalls?.[0]?.name, 'exec');
+      append(input, call, 'os-execution-verified');
+      await respond();
+    }
+    const expected = JSON.parse(
+      await readFile(
+        new URL('../examples/os-execution/expected-evidence.json', import.meta.url),
+        'utf8',
+      ),
+    );
+    assert.deepEqual(openClawAIMockEvidence(scenario, entries), expected);
+  });
+
   it('should discover and call the real catalog id before accepting the github result', async () => {
     const scenario = withToolSearch(resolveScenario('github'));
     const input = request();

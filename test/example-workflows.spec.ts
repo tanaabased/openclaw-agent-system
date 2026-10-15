@@ -84,7 +84,7 @@ describe('example workflows', () => {
     assert.equal(workflow.permissions?.contents, 'read');
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
     assert.deepEqual(matrix?.os, ['macos-26', 'ubuntu-24.04']);
-    assert.deepEqual(matrix?.example, ['os-install', 'os-doctor', 'os-execution']);
+    assert.deepEqual(matrix?.example, ['os-execution']);
     assert.equal(workflow.jobs?.examples?.strategy?.['fail-fast'], false);
     assert.ok(example);
     assert.equal(example?.if, undefined);
