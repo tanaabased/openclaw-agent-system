@@ -57,6 +57,8 @@ if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
 printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
+node "$runtime" setup inspect --plugin-data "$plugin_data" \
+  | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
 

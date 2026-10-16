@@ -70,8 +70,13 @@ describe('agent/codex-setup', () => {
     );
   });
 
-  it('should report unsupported notification execution before applying setup or granting authority', async () => {
-    await manifest(`github:
+  it('should warn about reviews without blocking independent setup and assignment scheduling', async () => {
+    await manifest(`models:
+  default: { model: openai/gpt-6-luna, effort: medium }
+  low: { model: openai/gpt-6-luna, effort: medium }
+  medium: { model: openai/gpt-6-luna, effort: medium }
+  high: { model: openai/gpt-6-luna, effort: medium }
+github:
   username: pirog
   notifications:
     schema-version: 2
@@ -84,28 +89,31 @@ describe('agent/codex-setup', () => {
       - login: tanaabased
         node-id: O_owner
     issue-assignment:
-      mode: auto
+      mode: plan
       allowed:
         - login: pirog
           node-id: U_pirog
           operator-owner: true
 setup-agent:
-  apply: touch .must-not-apply
+  apply: touch .setup-applied
 `);
-    const inspected = await inspectCodexSetup(pluginData, undefined, dependencies);
+    const deps = { ...dependencies, codexHome: join(root, 'codex') };
+    const inspected = await inspectCodexSetup(pluginData, undefined, deps);
     assert.ok(
       inspected.findings.some(
         ({ code, status }) =>
-          code === 'github-notification-runtime-unsupported' && status === 'blocked',
+          code === 'github-notification-runtime-unsupported' && status === 'warning',
       ),
     );
-    await assert.rejects(
-      installCodexSetup(pluginData, undefined, dependencies),
-      (error: unknown) =>
-        error instanceof CodexSetupError &&
-        error.code === 'github-notification-runtime-unsupported',
+    await assert.rejects(access(join(workspace, '.setup-applied')));
+    const installed = await installCodexSetup(pluginData, undefined, deps);
+    assert.ok(
+      installed.warnings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
     );
-    await assert.rejects(access(join(workspace, '.must-not-apply')));
+    assert.ok(
+      installed.automations.conversations?.some(({ id }) => id === 'github-issue-assignment'),
+    );
+    await access(join(workspace, '.setup-applied'));
   });
 
   it('should inspect and install only setup steps applicable to codex', async () => {

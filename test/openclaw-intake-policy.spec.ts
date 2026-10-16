@@ -28,19 +28,27 @@ describe('agent/openclaw-intake-policy', () => {
     for (const change of [
       { mode: 'work' as const },
       { mode: 'auto' as const },
-      { feedback: true },
       { assessment: { skill: 'custom:assessment' } },
     ]) {
       const value = manifest();
       Object.assign(value.github!.notifications!.issueAssignment!, change);
       assert.deepEqual(openclawIntakeJobs(value), value.automations);
     }
+  });
+
+  it('should retain the assignment schedule when feedback and reviews are unavailable', () => {
     const value = manifest();
+    value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
+    value.github!.notifications!.issueAssignment!.feedback = true;
     value.github!.notifications!.reviewRequest = {
       enabled: true,
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
-    assert.deepEqual(openclawIntakeJobs(value), value.automations);
+    const jobs = openclawIntakeJobs(value);
+    assert.equal(jobs.length, 2);
+    assert.deepEqual(jobs[0], value.automations![0]);
+    assert.equal(jobs[1]?.id, 'github-issue-assignment');
+    assert.equal(jobs[1]?.enabled, true);
   });
 
   it('should still derive supported planning when unsupported triggers are disabled', () => {

@@ -1,7 +1,10 @@
 import { realpath } from 'node:fs/promises';
 
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
+import {
+  githubNotificationRuntimeBlocker,
+  githubNotificationRuntimeDiagnostics,
+} from '../channels/github/notification-policy.ts';
 import IntakeRecordStore, {
   IntakeError,
   intakeLocation,
@@ -146,54 +149,58 @@ export default class OpenClawIntake {
       id: 'github-intake-v2',
       isConfigured: (manifest) => manifest.github?.notifications?.schemaVersion === 2,
       validate: ({ manifest }) => {
-        const blocker = githubNotificationRuntimeBlocker(
+        const diagnostics = githubNotificationRuntimeDiagnostics(
           manifest.github?.notifications,
           'openclaw',
         );
         return {
           code: 'github-notifications-declaration-valid',
           summary: 'GitHub notification declaration',
-          diagnostics: blocker
-            ? [
-                {
-                  code: blocker.code,
-                  message: blocker.message,
-                  fieldPath: '/github/notifications/runtimes',
-                  severity: 'warning' as const,
-                },
-              ]
-            : [],
+          diagnostics: diagnostics.map(({ code, message, fieldPath }) => ({
+            code,
+            message,
+            fieldPath,
+            severity: 'warning' as const,
+          })),
         };
       },
       inspect: async ({ manifest, workspaceDir }) => {
         const result = await this.inspect(manifest, workspaceDir);
+        const diagnostics = githubNotificationRuntimeDiagnostics(
+          manifest.github?.notifications,
+          'openclaw',
+        );
+        if (result.code === 'github-notification-runtime-unsupported') return diagnostics;
         return [
+          ...diagnostics,
           {
             component: 'github-intake-v2',
             status:
-              result.code === 'github-notification-runtime-unsupported'
-                ? 'blocked'
-                : result.code === 'intake-policy-disabled'
-                  ? 'skipped'
-                  : result.code
-                    ? 'drift'
-                    : 'healthy',
+              result.code === 'intake-policy-disabled'
+                ? 'skipped'
+                : result.code
+                  ? 'drift'
+                  : 'healthy',
             code: result.code ?? 'intake-ready',
             message: result.code ?? 'V2 intake baseline and policy are aligned.',
           },
         ];
       },
       reconcile: async ({ manifest, workspaceDir }) => {
-        const blocker = githubNotificationRuntimeBlocker(
+        const diagnostics = githubNotificationRuntimeDiagnostics(
           manifest.github?.notifications,
           'openclaw',
+        );
+        const warnings = diagnostics.map(({ code, message }) => ({ code, message }));
+        const blocker = diagnostics.find(
+          ({ status, workflow }) => status === 'blocked' && workflow === 'issue-assignment',
         );
         if (blocker)
           return {
             outcomes: [{ ...blocker, status: 'skipped' as const }],
-            warnings: [{ code: blocker.code, message: blocker.message }],
+            warnings,
           };
-        if (!assignmentIntakePolicy(manifest, 'openclaw')) return { outcomes: [] };
+        if (!assignmentIntakePolicy(manifest, 'openclaw')) return { outcomes: [], warnings };
         const state = await this.inspect(manifest, workspaceDir);
         if (
           state.code &&
@@ -205,6 +212,7 @@ export default class OpenClawIntake {
           if (result.status !== 'ready')
             throw new IntakeError(result.code ?? 'intake-activation-required');
           return {
+            warnings,
             outcomes: [
               {
                 component: 'github-intake-v2',
@@ -216,6 +224,7 @@ export default class OpenClawIntake {
           };
         }
         return {
+          warnings,
           outcomes: [
             {
               component: 'github-intake-v2',

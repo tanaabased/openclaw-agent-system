@@ -5,6 +5,7 @@ import stringWidth from 'fast-string-width';
 
 import {
   createCliStyles,
+  defaultCliOutput,
   renderCliNotices,
   renderCliSummary,
   writeCliDiagnostics,
@@ -16,6 +17,22 @@ import {
 const plainStyles = createCliStyles({ NO_COLOR: '1' });
 
 describe('cli/output', () => {
+  it('should preserve raw stdout bytes including nul delimiters without appending newlines', () => {
+    const chunks: string[] = [];
+    const write = process.stdout.write;
+    process.stdout.write = ((value: string) => {
+      chunks.push(value);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      for (const value of ['path.ts\0', 'unterminated', 'complete\n', ''])
+        defaultCliOutput.writeStdout(value);
+    } finally {
+      process.stdout.write = write;
+    }
+    assert.deepEqual(chunks, ['path.ts\0', 'unterminated', 'complete\n', '']);
+  });
+
   it('should retain severity on stderr without decorating machine output', () => {
     for (const json of [false, true]) {
       const stdout: string[] = [];
