@@ -8,7 +8,7 @@
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned model fixtures and expected evidence beside their README. Share only provider lifecycle machinery through `scripts/openclaw-aimock`.
 - Keep examples in a flat list of scenario folders, with `os-`, `shared-`, `openclaw-`, or `codex-` prefixes as coverage is reorganized. Select active scenarios explicitly in the owning example workflow. During the staged replacement, retain unselected examples as migration inputs; their presence does not mean CI runs them. Keep other examples-level files limited to `AGENTS.md` and `package.json`.
-- Use one Leia execution step after setup in each example workflow, with all scenario environment variables in that step's `env` block. Unused values may be shared across matrix entries, including test credentials and model settings; do not split the invocation solely to narrow environment scope. Keep credentials off setup steps. Diagnostic and artifact steps may follow the Leia execution.
+- Use one Leia execution step after setup in each example workflow, with all scenario environment variables in that step's `env` block. Unused values may be shared across matrix entries, including test credentials and model settings; do not split the invocation solely to narrow environment scope. Keep credentials off setup steps. Follow Leia with the same generic `failure()` diagnostics block in each example workflow; do not restrict it to selected matrix entries.
 - Use the shared Leia command helpers from `scripts/`; do not recreate or wrap them inside an example.
 
 ## OpenClaw Runtime

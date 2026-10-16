@@ -100,6 +100,10 @@ describe('example workflows', () => {
       "${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}",
     );
     assert.equal(example?.run, 'leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0');
+    const diagnostics = steps.find(({ run }) => run?.includes('openclaw-diagnostics'));
+    assert.ok(diagnostics);
+    assert.equal(diagnostics.if, 'failure()');
+    assert.equal(steps.at(-1), diagnostics);
     for (const step of steps) {
       assert.ok(!Object.values(step.env ?? {}).some((value) => String(value).includes('secrets.')));
     }
@@ -149,6 +153,10 @@ describe('example workflows', () => {
       OP_SERVICE_ACCOUNT_TOKEN: '${{ secrets.TANAAB_OP_TESTVAULT }}',
     });
     assert.equal(example.run, 'leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0');
+    const diagnostics = steps.find(({ run }) => run?.includes('openclaw-diagnostics'));
+    assert.ok(diagnostics);
+    assert.equal(diagnostics.if, 'failure()');
+    assert.equal(steps.at(-1), diagnostics);
     const openClawSetup = steps.find(({ uses }) => uses === 'tanaabased/actions/setup-openclaw@v1');
     assert.equal(openClawSetup?.if, "startsWith(matrix.example, 'openclaw-')");
     for (const step of steps) {

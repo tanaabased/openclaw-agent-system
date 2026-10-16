@@ -77,18 +77,12 @@ jobs:
           OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
-      - name: Capture automation gateway diagnostics
-        if: always() && matrix.example == 'openclaw-automations'
+      - name: RUNNING A LEVEL THREE DIAGNOSTICS
+        if: failure()
         shell: bash
         run: |
-          gateway_log=$(openclaw-gateway log-path)
-          gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
-          tail -n 1000 "$gateway_log" | node "$gateway_redactor" | tee "$RUNNER_TEMP/openclaw-automations-final.log"
-      - name: Retain automation gateway diagnostics
-        if: always() && matrix.example == 'openclaw-automations'
-        uses: actions/upload-artifact@v7
-        with:
-          name: openclaw-automations-gateway
-          path: ${{ runner.temp }}/openclaw-automations-*.log
-          retention-days: 3
-          if-no-files-found: warn
+          if [[ -d "${OPENCLAW_WORKSPACE:-}" ]]; then
+            openclaw-diagnostics
+          else
+            echo "No OpenClaw workspace was created; see the scenario failure output above."
+          fi
