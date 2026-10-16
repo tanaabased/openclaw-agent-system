@@ -5,7 +5,8 @@
 GitHub notifications require `github.notifications.schema-version: 2`. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
 authority, runtime selection, and current support. OpenClaw currently supports
-Plan-mode issue assignment with the default assessment skill and feedback disabled.
+Plan-mode issue assignment with the default assessment skill. Unavailable feedback
+and reviews warn without blocking that workflow.
 Standalone Codex uses its [native workflow controls](../../CODEX.md#github-notification-policy).
 
 ## CLI
@@ -178,7 +179,8 @@ The channel reports setup or synchronization needs, unsupported workflows, sched
 availability, execution/delivery failures, and the last successful scan. Three missed
 scan intervals report overdue intake. Status reads manifest and retained state plus
 native scheduler observations; it never resolves credentials or starts work. If native
-inspection is unavailable it reports unknown. Healthy status describes these observations,
+inspection is unavailable it reports unknown. Missing optional capabilities report
+degraded status while ready intake keeps running. Healthy status describes these observations,
 not a fresh credential probe or a guarantee that the next dispatch will succeed.
 
 Declare V2 authority explicitly and run Install to reconcile its owning schedule.

@@ -48,13 +48,12 @@ openclaw-gateway start
 
 # should enroll dispatch while skipping unavailable reviews without activating issue intake
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .component == "github-intake-v2" and .status == "skipped") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
+openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
 openclaw agent-system tool git -- --version | grep -F 'git version'
 
-# should retain the notification blocker without hiding unrelated readiness findings
+# should warn about unavailable reviews without blocking unrelated readiness
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-if output=$(openclaw agent-system doctor --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e 'any(.findings[]; .component == "github-intake-v2" and .code == "github-notification-runtime-unsupported" and .status == "blocked") and any(.findings[]; .component == "github" and .status == "healthy")'
+openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findings[]; .component == "github-intake-v2" and .code == "github-notification-runtime-unsupported" and .status == "warning") and any(.findings[]; .component == "github" and .status == "healthy")'
 ```
 
 ```bash
@@ -66,8 +65,7 @@ openclaw agent-system install --non-interactive --json | jq -e 'any(.outcomes[];
 openclaw-gateway stop
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-if output=$(openclaw agent-system doctor --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e 'any(.findings[]; .code == "session-dispatch-ready")'
+openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "session-dispatch-ready")'
 
 # should refuse local reset while the exact device remains paired
 device_id=$(openclaw devices list --json | jq -er '.paired[] | select(.displayName == "Agent System") | .deviceId')

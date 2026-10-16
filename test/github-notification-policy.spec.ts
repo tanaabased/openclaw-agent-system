@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 
 import { stringify } from 'yaml';
 
-import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
+import {
+  githubNotificationRuntimeBlocker,
+  githubNotificationRuntimeDiagnostics,
+} from '../channels/github/notification-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 const actor = { login: 'pirog', 'node-id': 'MDQ6VXNlcjcxMzQyNA==' };
@@ -60,14 +63,25 @@ describe('channels/github/notification-policy', () => {
         'issue-assignment': { ...supported['issue-assignment'], ...extra },
       });
       assert.ok(
-        githubNotificationRuntimeBlocker(declaration, 'openclaw')?.message.includes(capability),
+        githubNotificationRuntimeDiagnostics(declaration, 'openclaw').some(({ message }) =>
+          message.includes(capability),
+        ),
+      );
+      assert.equal(
+        githubNotificationRuntimeBlocker(declaration, 'openclaw') === undefined,
+        capability === 'issue feedback',
       );
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
       declaration.issueAssignment!.enabled = false;
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
     }
     const review = parsed({ ...supported, 'review-request': { allowed: [{ ...actor }] } });
-    assert.match(githubNotificationRuntimeBlocker(review, 'openclaw')!.message, /review requests/);
+    assert.equal(githubNotificationRuntimeBlocker(review, 'openclaw'), undefined);
+    assert.ok(
+      githubNotificationRuntimeDiagnostics(review, 'openclaw').some(
+        ({ status, workflow }) => status === 'warning' && workflow === 'review-request',
+      ),
+    );
     for (const skill of [
       'agent-system-issue-assessment',
       'agent-system:agent-system-issue-assessment',
@@ -85,6 +99,49 @@ describe('channels/github/notification-policy', () => {
     }
   });
 
+  it('should report every unavailable capability without hiding required assignment blockers', () => {
+    const declaration = parsed({
+      ...policy,
+      'issue-assignment': {
+        allowed: [actor],
+        mode: 'work',
+        feedback: true,
+        assessment: { skill: 'custom:assess' },
+      },
+      'review-request': { allowed: [{ ...actor }] },
+    });
+    const diagnostics = githubNotificationRuntimeDiagnostics(declaration, 'openclaw');
+    assert.deepEqual(
+      new Set(
+        diagnostics.filter(({ status }) => status === 'warning').map(({ fieldPath }) => fieldPath),
+      ),
+      new Set([
+        '/github/notifications/review-request',
+        '/github/notifications/issue-assignment/feedback',
+      ]),
+    );
+    assert.deepEqual(
+      new Set(
+        diagnostics.filter(({ status }) => status === 'blocked').map(({ fieldPath }) => fieldPath),
+      ),
+      new Set([
+        '/github/notifications/issue-assignment/mode',
+        '/github/notifications/issue-assignment/assessment/skill',
+      ]),
+    );
+    assert.equal(
+      githubNotificationRuntimeBlocker(declaration, 'openclaw')?.workflow,
+      'issue-assignment',
+    );
+    assert.deepEqual(
+      githubNotificationRuntimeDiagnostics(declaration, 'codex').map(({ workflow, status }) => ({
+        workflow,
+        status,
+      })),
+      [{ workflow: 'review-request', status: 'warning' }],
+    );
+  });
+
   it('should preserve trigger switches and authority independently of adapter availability', () => {
     for (const [key, decoded] of [
       ['issue-assignment', 'issueAssignment'],
@@ -99,13 +156,13 @@ describe('channels/github/notification-policy', () => {
           assert.equal(declaration[decoded]?.enabled, enabled);
           assert.equal(declaration[decoded]?.allowed.length, allowed?.length ?? 0);
           assert.equal(
-            githubNotificationRuntimeBlocker(declaration, 'openclaw')?.code,
+            githubNotificationRuntimeDiagnostics(declaration, 'openclaw')[0]?.code,
             key === 'review-request' && (enabled ?? Boolean(allowed?.length))
               ? 'github-notification-runtime-unsupported'
               : undefined,
           );
           assert.equal(
-            githubNotificationRuntimeBlocker(declaration, 'codex')?.code,
+            githubNotificationRuntimeDiagnostics(declaration, 'codex')[0]?.code,
             key !== 'issue-assignment' && (enabled ?? Boolean(allowed?.length))
               ? 'github-notification-runtime-unsupported'
               : undefined,

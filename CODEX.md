@@ -89,6 +89,7 @@ schedule, `plan` and `work` assignments can prepare repositories and create nati
 and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery.
 Issue feedback can resume its owning chat for explanation and a bounded public reply.
 Review requests and Auto-mode execution remain unavailable through this Codex path.
+Unavailable reviews warn without blocking independent setup or issue-assignment scheduling.
 
 Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
 workflow. Install verifies a new chat's saved native approval settings and the saved

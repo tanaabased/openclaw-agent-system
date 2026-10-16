@@ -9,12 +9,14 @@ declared automatic implementation and feedback workflows.
 
 Use `github.notifications.schema-version: 2` in `agent.yaml`. Declare the runtime,
 pinned repository owners, and allowed assignment actors explicitly. For OpenClaw,
-choose Plan mode with feedback disabled and the default assessment skill. See the
+choose Plan mode and the default assessment skill. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for a complete example,
 fields, defaults, and runtime limitations.
 
 Native OpenClaw Work/Auto, feedback, review requests, and replacement assessment
-skills remain unsupported. Disabled or unsupported workflows do not activate intake.
+skills remain unsupported. Unavailable feedback and reviews produce warnings without
+stopping supported assignment intake. Unsupported assignment modes or assessment skills
+block assignment execution; they are never silently replaced.
 
 After reading a retained plan, ask the agent in that issue chat to implement it and
 open a PR, together or separately. The authenticated operator request authorizes

@@ -1,7 +1,7 @@
 import ansis, { Ansis } from 'ansis';
 import stringWidth from 'fast-string-width';
 import { wrapAnsi } from 'fast-wrap-ansi';
-import { defaultRuntime, type OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
+import type { OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
 
 export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
   writeStderr(value: string): void;
@@ -345,5 +345,5 @@ export function writeCliError(
 
 export const defaultCliOutput: CliOutput = {
   writeStderr: (value) => process.stderr.write(value),
-  writeStdout: (value) => defaultRuntime.writeStdout(value),
+  writeStdout: (value) => process.stdout.write(value),
 };

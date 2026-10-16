@@ -57,7 +57,7 @@ async function action<A extends Action['action']>(input: ChatCompletionRequest, 
 }
 
 describe('examples/openclaw-notifications model fixture', () => {
-  it('should declare only native plan intake with feedback disabled and the fixed mock model', async () => {
+  it('should declare native planning with unavailable feedback and reviews for capability isolation', async () => {
     const parsed = parseAgentManifest(
       await readFile('examples/openclaw-notifications/tanaabot/agent.yaml', 'utf8'),
     );
@@ -65,7 +65,8 @@ describe('examples/openclaw-notifications model fixture', () => {
     assert.equal(parsed.manifest?.github?.notifications?.schemaVersion, 2);
     assert.deepEqual(parsed.manifest?.github?.notifications?.runtimes, ['openclaw']);
     assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.mode, 'plan');
-    assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.feedback, false);
+    assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.feedback, true);
+    assert.equal(parsed.manifest?.github?.notifications?.reviewRequest?.enabled, true);
     assert.equal(parsed.manifest?.models?.default.model, 'aimock/gpt-5.5');
     assert.equal(parsed.manifest?.github?.username, 'tanaabot');
     assert.equal(parsed.manifest?.github?.token, 'GH_TOKEN_TANAABOT');
