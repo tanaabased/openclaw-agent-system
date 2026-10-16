@@ -131,6 +131,7 @@ describe('example workflows', () => {
       'codex-automations',
       'codex-notifications',
       'openclaw-agent',
+      'openclaw-workspace',
       'openclaw-automations',
       'openclaw-runtimes',
     ]);
