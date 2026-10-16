@@ -50,7 +50,7 @@ openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bu
 
 # should retain a plan through the installed owning automation
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
-run_id=$(openclaw agent-system notifications refresh --json | jq -er 'select(.status == "queued") | .runId')
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts")
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1 and .observation.items[0].workflow.phase == "plan-ready"'
@@ -64,7 +64,7 @@ openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktree
 
 # should preserve one conversation and assessment across another native scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
-run_id=$(openclaw agent-system notifications refresh --json | jq -er 'select(.status == "queued") | .runId')
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts")
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | tee "$TMPDIR/notification-status-after.json" | jq -e --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" '.status == "ready" and (.items | length) == 1 and .items[0].workflow.phase == "plan-ready" and .items[0].workflow.conversation == $conversation'

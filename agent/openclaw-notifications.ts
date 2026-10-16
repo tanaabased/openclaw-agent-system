@@ -294,6 +294,7 @@ export default class OpenClawNotifications {
             if (execution === 'completed') {
               requested = false;
               runId = undefined;
+              continue;
             }
           } catch (error) {
             return result(
@@ -310,7 +311,7 @@ export default class OpenClawNotifications {
           )
             return result('failed', refreshed.code);
           runId = refreshed.runId;
-          requested = true;
+          requested = refreshed.status === 'queued';
         }
         try {
           await (this.dependencies.sleep ?? abortableDelay)(

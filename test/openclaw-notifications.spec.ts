@@ -292,6 +292,84 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(reads, 2);
   });
 
+  it('should retry scheduler contention then observe the exact queued run through completion', async () => {
+    const f = fixture();
+    let requests = 0;
+    let inspections = 0;
+    f.service.dependencies.requestRun = async () =>
+      ++requests === 1
+        ? { status: 'skipped', reason: 'already-running' }
+        : { status: 'queued', runId: 'next-native-run' };
+    f.service.dependencies.inspectRun = async (_manifest, _workspace, runId) => {
+      assert.equal(runId, 'next-native-run');
+      if (++inspections === 1) return 'pending';
+      f.records.push({
+        ...record(),
+        issueKey: issueKey(f.state!.records[0]!),
+        phase: 'complete',
+        result: {
+          version: 1,
+          outcome: 'plan-ready',
+          summary: 'summary',
+          assessment: 'assessment',
+          plan: 'plan',
+          evidence: [],
+          progress: { completed: [], remaining: [] },
+        },
+      });
+      return 'completed';
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 10_000,
+      refresh: true,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(result.observation.items[0]?.workflow?.phase, 'plan-ready');
+    assert.equal(requests, 2);
+    assert.equal(inspections, 2);
+  });
+
+  it('should bound persistent scheduler contention without inventing a run to inspect', async () => {
+    const f = fixture();
+    let requests = 0;
+    f.service.dependencies.requestRun = async () => {
+      requests++;
+      return { status: 'skipped', reason: 'already-running' };
+    };
+    f.service.dependencies.inspectRun = async () => {
+      assert.fail('no queued native run exists');
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 3000,
+      refresh: true,
+    });
+    assert.equal(result.status, 'timed-out');
+    assert.equal(result.code, 'github-notification-wait-timeout');
+    assert.equal(requests, 3);
+  });
+
+  it('should stop refreshing on a skip other than scheduler contention', async () => {
+    const f = fixture();
+    let requests = 0;
+    f.service.dependencies.requestRun = async () => {
+      requests++;
+      return { status: 'skipped', reason: 'disabled' };
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 3000,
+      refresh: true,
+    });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.code, 'github-notification-refresh-disabled');
+    assert.equal(requests, 1);
+  });
+
   it('should never fall back to legacy state when the native backend is absent', async () => {
     const f = fixture();
     let exit = 0;
