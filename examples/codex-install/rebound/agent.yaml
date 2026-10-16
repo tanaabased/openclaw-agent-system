@@ -1,0 +1,4 @@
+schema-version: 1
+agent:
+  id: codex-example-rebound
+  name: Codex Example Rebound

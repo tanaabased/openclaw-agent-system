@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root="$TMPDIR/runtime-boundaries"
+root=$(cd "$(dirname "$0")/../../.." && pwd -P)
 runtime="$1"
 case "$runtime" in
   codex)

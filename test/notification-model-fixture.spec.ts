@@ -59,7 +59,7 @@ async function action<A extends Action['action']>(input: ChatCompletionRequest, 
 describe('examples/openclaw-notifications model fixture', () => {
   it('should declare only native plan intake with feedback disabled and the fixed mock model', async () => {
     const parsed = parseAgentManifest(
-      await readFile('examples/openclaw-notifications/agent.yaml', 'utf8'),
+      await readFile('examples/openclaw-notifications/tanaabot/agent.yaml', 'utf8'),
     );
     assert.equal(parsed.status, 'valid');
     assert.equal(parsed.manifest?.github?.notifications?.schemaVersion, 2);
@@ -67,6 +67,21 @@ describe('examples/openclaw-notifications model fixture', () => {
     assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.mode, 'plan');
     assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.feedback, false);
     assert.equal(parsed.manifest?.models?.default.model, 'aimock/gpt-5.5');
+    assert.equal(parsed.manifest?.github?.username, 'tanaabot');
+    assert.equal(parsed.manifest?.github?.token, 'GH_TOKEN_TANAABOT');
+    assert.deepEqual(
+      parsed.manifest?.github?.notifications?.issueAssignment?.allowed?.map(
+        ({ login, nodeId }) => ({ login, nodeId }),
+      ),
+      [{ login: 'emoriwan', nodeId: '__ACTOR_NODE_ID__' }],
+    );
+    const actor = parseAgentManifest(
+      await readFile('examples/openclaw-notifications/emori/agent.yaml', 'utf8'),
+    );
+    assert.equal(actor.status, 'valid');
+    assert.equal(actor.manifest?.github?.username, 'emoriwan');
+    assert.equal(actor.manifest?.github?.token, 'GH_TOKEN_EMORI');
+    assert.equal(actor.manifest?.github?.notifications, undefined);
   });
 
   it('should carry native scan and routing receipts through preparation and assessment', async () => {

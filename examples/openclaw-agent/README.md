@@ -8,7 +8,7 @@ manifest discovery. Both intake triggers are disabled; this tests passive loadin
 without activating notification work. The routing turn also requests issue-session dispatch while intake is inactive and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
 passing it does not establish dispatch recovery or single-execution guarantees.
 
-Runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The data workspace is copied because the passive-loading check changes its manifest after installation.
+Runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The passive-loading check changes the checked-in manifest after installation on the disposable runner.
 
 ## Setup
 
@@ -21,8 +21,7 @@ openclaw-setup \
 openclaw-aimock prepare --scenario openclaw-agent
 
 # should install the scenario-owned data workspace through agent system
-cp -R "$GITHUB_WORKSPACE/examples/openclaw-agent/data" "$TMPDIR/data"
-cd "$TMPDIR/data"
+cd "$GITHUB_WORKSPACE/examples/openclaw-agent/data"
 openclaw agent-system install
 
 # should start the default gateway as a supervised background process
@@ -34,15 +33,13 @@ openclaw-gateway start --debug
 
 ```bash
 # should reject retired notification configuration through the public validator
-mkdir -p "$TMPDIR/retired-notifications"
-cp "$GITHUB_WORKSPACE/examples/openclaw-agent/retired-notifications.yaml" "$TMPDIR/retired-notifications/agent.yaml"
-cd "$TMPDIR/retired-notifications"
+cd "$GITHUB_WORKSPACE/examples/openclaw-agent/retired-notifications"
 if openclaw agent-system validate --json > "$TMPDIR/retired-notifications.stdout" 2> "$TMPDIR/retired-notifications.stderr"; then exit 1; fi
 test ! -s "$TMPDIR/retired-notifications.stdout"
 grep -F 'code=github-notification-v1-retired' "$TMPDIR/retired-notifications.stderr"
 
 # should load a v2 agent without activating notification work
-cat "$GITHUB_WORKSPACE/examples/openclaw-agent/v2-notifications.yaml" >> "$TMPDIR/data/agent.yaml"
+cat "$GITHUB_WORKSPACE/examples/openclaw-agent/v2-notifications.yaml" >> "$GITHUB_WORKSPACE/examples/openclaw-agent/data/agent.yaml"
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-github:data:direct:github:issue:r_example:1 \

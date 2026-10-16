@@ -2,7 +2,7 @@
 
 Verify Agent System's native execution boundary on macOS and Linux: manifest PATH projection, workspace paths containing spaces, shell arguments and stdin, exit status, PTYs, and managed identity after a directory change. Strict AIMock selects two fixed OpenClaw exec calls; the Gateway, shell, terminal, and managed Git launcher run normally. No provider credentials or live model are needed. Codex-specific execution remains with runtime coverage.
 
-The workspace is copied because the test requires a path containing spaces and writes its own receipts. The probe emits success only after checking the actual child process and the rejected cross-agent invocation.
+The workspace is copied because the test requires a path containing spaces. The probe emits success only after checking the actual child process and the rejected cross-agent invocation.
 
 On mock failure, cleanup fails after stopping the provider and reports bounded scenario-owned tool results so Leia retains the underlying probe failure or timeout. Each execution has a 120-second limit within a 180-second agent turn.
 

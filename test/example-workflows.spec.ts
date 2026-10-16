@@ -53,6 +53,8 @@ describe('example workflows', () => {
       ['examples/openclaw-tools/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-github/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-github/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      ['examples/openclaw-notifications/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      ['examples/openclaw-notifications/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
     ] as const) {
       const parsed = parseAgentManifest(await readFile(path, 'utf8'));
       assert.equal(parsed.status, 'valid', path);
@@ -180,6 +182,10 @@ describe('example workflows', () => {
         scenario,
       );
       const commands = [...(suites[0]?.tests.setup ?? []), ...(suites[0]?.tests.test ?? [])];
+      if (scenario === 'openclaw-notifications') {
+        const setup = commands.find(({ command }) => /^openclaw-setup\s/m.test(command));
+        assert.ok(setup?.command.includes('--needs-secret-service'));
+      }
       if (scenario.startsWith('codex-')) {
         assert.ok(commands.every(({ command }) => !/^openclaw\s/m.test(command)));
       }

@@ -39,5 +39,5 @@ github:
       mode: plan
       feedback: false
       allowed:
-        - login: tanaabot
+        - login: emoriwan
           node-id: __ACTOR_NODE_ID__

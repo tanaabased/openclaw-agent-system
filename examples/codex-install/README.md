@@ -1,6 +1,6 @@
 # Codex Install Example
 
-Install the prepared plugin in isolated Codex state, discover its skills through a fresh app server, and verify workspace binding, runtime-aware setup, session context, model routing, and unbinding. These direct checks require no model or provider credentials. Run only in GitHub Actions.
+Install the prepared plugin in isolated Codex state, discover its skills through a fresh app server, and verify workspace binding, runtime-aware setup, session context, model routing, and unbinding. The checked-in workspaces run in place; separate manifest snapshots prove they remain unchanged. These direct checks require no model or provider credentials. Run only in GitHub Actions.
 
 ## Setup
 
@@ -17,16 +17,9 @@ bun --cwd "$GITHUB_WORKSPACE" run test:codex-plugin
 
 # should prepare valid, inactive, and replacement workspaces
 root="$TMPDIR/agent-system-codex-install"
-mkdir -p "$root/workspace" "$root/missing-manifest" "$root/rebound-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-install/agent.yaml" "$root/workspace/agent.yaml"
-printf '%s\n' \
-  'schema-version: 1' \
-  'agent:' \
-  '  id: codex-example-rebound' \
-  '  name: Codex Example Rebound' \
-  > "$root/rebound-workspace/agent.yaml"
-cp "$root/workspace/agent.yaml" "$root/workspace/agent.expected.yaml"
-cp "$root/rebound-workspace/agent.yaml" "$root/rebound-workspace/agent.expected.yaml"
+mkdir -p "$root/missing-manifest"
+cp "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.yaml" "$root/workspace.expected.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex-install/rebound/agent.yaml" "$root/rebound.expected.yaml"
 ```
 
 ## Testing
@@ -37,8 +30,8 @@ root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-workspace=$(cd "$root/workspace" && pwd -P)
-node "$runtime" binding preview --workspace "$root/workspace" \
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-install/workspace" && pwd -P)
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-install/workspace" \
   | jq -e --arg workspace "$workspace" '.status == "ready" and .workspaceDir == $workspace and .manifest.status == "valid" and .manifest.agentId == "codex-example"'
 test ! -e "$plugin_data/workspace-binding.json"
 
@@ -47,7 +40,7 @@ root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-if output=$(node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/workspace" 2>&1); then exit 1; fi
+if output=$(node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-install/workspace" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and (.message | contains("require --confirm"))'
 test ! -e "$plugin_data/workspace-binding.json"
 
@@ -56,8 +49,8 @@ root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-workspace=$(cd "$root/workspace" && pwd -P)
-node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/workspace" --confirm \
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-install/workspace" && pwd -P)
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-install/workspace" --confirm \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
@@ -101,24 +94,16 @@ printf '%s\n' "$inspection" \
 installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
 printf '%s\n' "$installed" \
   | jq -e '.status == "installed" and [.outcomes[] | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
-test -f "$root/workspace/.codex-shared"
-test -f "$root/workspace/.codex-only"
-test ! -e "$root/workspace/.openclaw-checked"
-test ! -e "$root/workspace/.openclaw-only"
+test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-shared"
+test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-only"
+test ! -e "$GITHUB_WORKSPACE/examples/codex-install/workspace/.openclaw-checked"
+test ! -e "$GITHUB_WORKSPACE/examples/codex-install/workspace/.openclaw-only"
 
 # should report a blocked setup check when an exited parent leaves inherited pipes open
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-mkdir -p "$root/timeout-workspace"
-printf '%s\n' \
-  'schema-version: 1' \
-  'agent: { id: codex-timeout }' \
-  'setup-agent:' \
-  '  check: { command: sh, args: ["-c", "sleep 3 & exit 0"], timeout-seconds: 1 }' \
-  '  apply: "true"' \
-  > "$root/timeout-workspace/agent.yaml"
-node "$runtime" binding bind --plugin-data "$root/timeout-data" --workspace "$root/timeout-workspace" --confirm
+node "$runtime" binding bind --plugin-data "$root/timeout-data" --workspace "$GITHUB_WORKSPACE/examples/codex-install/timeout" --confirm
 node "$runtime" setup inspect --plugin-data "$root/timeout-data" \
   | jq -e '.status == "inspected" and [.findings[].code] == ["setup-blocked"]'
 
@@ -129,7 +114,7 @@ plugin_root="$root/plugin with spaces"
 cp -R "$cache_root" "$plugin_root"
 hook=$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$plugin_root/hooks/hooks.json")
 plugin_data="$root/plugin-data"
-workspace=$(cd "$root/workspace" && pwd -P)
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-install/workspace" && pwd -P)
 context=$(printf '%s\n' '{"hook_event_name":"SessionStart","source":"startup"}' \
   | PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
   | jq -r '.hookSpecificOutput.additionalContext')
@@ -176,23 +161,23 @@ root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-printf '%s\n' 'models: { default: { effort: xhigh } }' 'setup-agent: { steps: [] }' > "$root/workspace/agent.local.yaml"
-cp "$root/workspace/agent.local.yaml" "$root/local.expected.yaml"
+printf '%s\n' 'models: { default: { effort: xhigh } }' 'setup-agent: { steps: [] }' > "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.local.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.local.yaml" "$root/local.expected.yaml"
 printf '%s\n' '{"hook_event_name":"SessionStart","source":"startup"}' \
   | PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" node "$runtime" session-start \
   | jq -r '.hookSpecificOutput.additionalContext' \
   | sed -n '/^{/,/^}/p' \
   | jq -e '.binding.context.modelRouting.default.thinking == "xhigh"'
-cmp "$root/workspace/agent.expected.yaml" "$root/workspace/agent.yaml"
-cmp "$root/local.expected.yaml" "$root/workspace/agent.local.yaml"
-rm "$root/workspace/agent.local.yaml"
+cmp "$root/workspace.expected.yaml" "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.yaml"
+cmp "$root/local.expected.yaml" "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.local.yaml"
+rm "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.local.yaml"
 
 # should preserve the active binding when a workspace has no agent manifest
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-workspace=$(cd "$root/workspace" && pwd -P)
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-install/workspace" && pwd -P)
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/missing-manifest" --confirm \
   | jq -e '.status == "confirmation-required" and .preview.manifest.status == "missing"'
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
@@ -217,10 +202,10 @@ root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
-workspace=$(cd "$root/rebound-workspace" && pwd -P)
-node "$runtime" binding preview --workspace "$root/rebound-workspace" \
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-install/rebound" && pwd -P)
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-install/rebound" \
   | jq -e --arg workspace "$workspace" '.status == "ready" and .workspaceDir == $workspace and .manifest.agentId == "codex-example-rebound"'
-node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/rebound-workspace" --confirm \
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-install/rebound" --confirm \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace'
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example-rebound"'
@@ -234,6 +219,6 @@ node "$runtime" binding unbind --plugin-data "$plugin_data" --confirm \
   | jq -e '.status == "unbound"'
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e '.status == "unbound"'
-cmp "$root/workspace/agent.expected.yaml" "$root/workspace/agent.yaml"
-cmp "$root/rebound-workspace/agent.expected.yaml" "$root/rebound-workspace/agent.yaml"
+cmp "$root/workspace.expected.yaml" "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.yaml"
+cmp "$root/rebound.expected.yaml" "$GITHUB_WORKSPACE/examples/codex-install/rebound/agent.yaml"
 ```

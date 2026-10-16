@@ -49,10 +49,7 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
-mkdir -p "$root/notification-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-notifications/notification-policy-agent.yaml" "$root/notification-workspace/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/codex-notifications/assessment-guidance.md" "$root/notification-workspace/assessment-guidance.md"
-node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/notification-workspace" --confirm \
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 node "$runtime" intake inspect --plugin-data "$plugin_data" \
   | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
@@ -60,16 +57,14 @@ if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
 printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
-test ! -e "$root/notification-workspace/.setup-applied"
+test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
 
 # should reject removed global feedback before binding or activation
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-mkdir -p "$root/removed-feedback-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-notifications/notification-global-feedback-agent.yaml" "$root/removed-feedback-workspace/agent.yaml"
-node "$runtime" binding preview --workspace "$root/removed-feedback-workspace" \
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/removed-feedback" \
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-notification-global-feedback-removed")'
 test ! -d "$CODEX_HOME/automations"
 
@@ -85,8 +80,8 @@ printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activ
 if output=$(printf '%s\n' '{"action":"handoff","id":"missing"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-handoff-unavailable" and .notice.severity == "error"'
 test ! -d "$CODEX_HOME/automations"
-test ! -d "$root/notification-workspace/checkouts"
-test ! -d "$root/notification-workspace/.agent-system/repositories"
+test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/checkouts"
+test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/.agent-system/repositories"
 
 # should return an actionable diagnostic for an unsupported stdin flag
 root="$TMPDIR/agent-system-codex-notifications"
@@ -124,9 +119,7 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/disabled-notification-data"
-mkdir -p "$root/disabled-notification-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-notifications/notification-disabled-agent.yaml" "$root/disabled-notification-workspace/agent.yaml"
-node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/disabled-notification-workspace" --confirm \
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/disabled" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e '.status == "aligned" and .actions == [] and (.conversations // []) == []'
@@ -146,7 +139,8 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
-sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-notifications/notification-policy-agent.yaml" > "$root/notification-workspace/agent.yaml"
+sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/work-agent.yaml"
+mv "$root/work-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
 jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
 node_executable=$(node -p 'process.execPath')

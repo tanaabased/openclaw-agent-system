@@ -4,7 +4,7 @@ Verify the installed Agent System boundary through native OpenClaw and OpenClaw-
 
 Native exec uses an issued command capability; hosted Codex uses its per-agent home and native thread context. The probe checks the appropriate context before exercising the same managed operations. The evidence assertion prints bounded scenario-owned tool results and preserves HTTP error bodies so Leia retains the diagnostics when that assertion fails. System/user prompts and transport credentials are excluded.
 
-One Ubuntu job installs the prepared package and one agent per runtime. Strict AIMock selects all three native OpenClaw turns while the real Gateway executes their tools and approval decisions. Only the three hosted Codex turns use a live model, because its native shell and dynamic tool discovery are under test. The workflow scopes the existing CI model credential to this example. Workspaces are copied because the Codex model is runtime-derived and the probes write receipts. A conflicting host executable makes incorrect PATH precedence fail immediately. All six turns run once with no retries. A denied tool can end its chat before another model request; the approval driver verifies the exact denial and absent effects independently. Other chat channels and the ordinary worktree/session lifecycle remain outside this example.
+One Ubuntu job installs the prepared package and one agent per runtime. Strict AIMock selects all three native OpenClaw turns while the real Gateway executes their tools and approval decisions. Only the three hosted Codex turns use a live model, because its native shell and dynamic tool discovery are under test. The workflow scopes the existing CI model credential to this example. The checked-in workspaces receive the runtime model selection and probe receipts on the disposable runner. The shared probe is installed into each workspace's declared command directory; this tests the resulting PATH projection. A conflicting host executable makes incorrect PATH precedence fail immediately. All six turns run once with no retries. A denied tool can end its chat before another model request; the approval driver verifies the exact denial and absent effects independently. Other chat channels and the ordinary worktree/session lifecycle remain outside this example.
 
 ## Setup
 
@@ -19,18 +19,18 @@ openclaw-aimock prepare --scenario openclaw-runtimes
 openclaw config set models.mode merge
 
 # should install one owned workspace per runtime without applying setup
-cp -R "$GITHUB_WORKSPACE/examples/openclaw-runtimes" "$TMPDIR/runtime-boundaries"
-mkdir -p "$TMPDIR/runtime-boundaries/codex/tools/bin" "$TMPDIR/runtime-boundaries/openclaw/tools/bin"
-sed "s/__OPENAI_MODEL__/$OPENAI_MODEL/g" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/agent.yaml" > "$TMPDIR/runtime-boundaries/codex/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/openclaw-runtimes/probe.sh" "$TMPDIR/runtime-boundaries/codex/tools/bin/agent-system-runtime-probe"
-cp "$GITHUB_WORKSPACE/examples/openclaw-runtimes/probe.sh" "$TMPDIR/runtime-boundaries/openclaw/tools/bin/agent-system-runtime-probe"
-cd "$TMPDIR/runtime-boundaries/codex"
+mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/tools/bin" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/tools/bin"
+sed "s/__OPENAI_MODEL__/$OPENAI_MODEL/g" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/agent.yaml" > "$TMPDIR/runtime-codex-agent.yaml"
+mv "$TMPDIR/runtime-codex-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/openclaw-runtimes/probe.sh" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/tools/bin/agent-system-runtime-probe"
+cp "$GITHUB_WORKSPACE/examples/openclaw-runtimes/probe.sh" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/tools/bin/agent-system-runtime-probe"
+cd "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex"
 openclaw agent-system install --skip-setup --yes
-cd "$TMPDIR/runtime-boundaries/openclaw"
+cd "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw"
 openclaw agent-system install --skip-setup --yes
 
 # should start the gateway with a conflicting host executable on path
-PATH="$TMPDIR/runtime-boundaries/host-bin:$PATH" openclaw-gateway start
+PATH="$GITHUB_WORKSPACE/examples/openclaw-runtimes/host-bin:$PATH" openclaw-gateway start
 ```
 
 ## Testing
@@ -42,8 +42,8 @@ openclaw agent \
   --session-key agent:runtime-codex:runtime-boundary-exec \
   --message-file "$GITHUB_WORKSPACE/examples/openclaw-runtimes/exec-codex.md" \
   --timeout 600
-grep -F 'Runtime Codex <runtime-codex@example.invalid>' "$TMPDIR/runtime-boundaries/codex/identity.txt"
-grep -Fx verified "$TMPDIR/runtime-boundaries/codex/receipt.txt"
+grep -F 'Runtime Codex <runtime-codex@example.invalid>' "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/identity.txt"
+grep -Fx verified "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/receipt.txt"
 
 # should retain openclaw native execution identity path and operator boundaries
 openclaw agent \
@@ -51,8 +51,8 @@ openclaw agent \
   --session-key agent:runtime-openclaw:runtime-boundary-exec \
   --message-file "$GITHUB_WORKSPACE/examples/openclaw-runtimes/exec-openclaw.md" \
   --timeout 600
-grep -F 'Runtime OpenClaw <runtime-openclaw@example.invalid>' "$TMPDIR/runtime-boundaries/openclaw/identity.txt"
-grep -Fx verified "$TMPDIR/runtime-boundaries/openclaw/receipt.txt"
+grep -F 'Runtime OpenClaw <runtime-openclaw@example.invalid>' "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/identity.txt"
+grep -Fx verified "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/receipt.txt"
 
 # should deny native openclaw installation before any setup effects
 node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" runtime-openclaw

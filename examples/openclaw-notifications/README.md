@@ -4,34 +4,36 @@ Assign one disposable issue in `tanaabased/big-test-bucket`, admit it through th
 
 Strict AIMock supplies routing judgment and assessment text. GitHub authorization, assignment events, native scheduling, session dispatch, managed Git execution, and result retention remain real. This tests the system's assignment-to-plan plumbing; it does not evaluate model judgment or the assessment skill's editorial quality. Implementation and publication are outside this Plan-mode example.
 
-CI supplies the existing Tanaabot token. Runtime identity pins come from GitHub. Installation enrolls dispatch explicitly and registers one disposable SSH authentication key; cleanup closes only this test's issue and removes only that public key. Everything runs on a fresh Ubuntu runner.
+CI supplies the existing EMORI and Tanaabot tokens. EMORI creates and assigns the issue to Tanaabot; only Tanaabot enables notifications. This keeps real EMORI automation from receiving test assignments. Both checked-in agent workspaces run in place, with runtime identity pins from GitHub. Installation enrolls dispatch explicitly and registers one disposable SSH authentication key; cleanup closes only this test's issue and removes only that public key. Everything runs on a fresh Ubuntu runner.
 
 ## Setup
 
 ```bash
 # should prepare the packed plugin and strict notification fixture
-openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-ssh-key --yolo
+openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-notifications
 
 # should prepare the agent with provider-verified identity pins
-mkdir -p "$TMPDIR/notifications-tanaabot/keys" "$HOME/.ssh"
+mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot/keys" "$HOME/.ssh"
 GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
-GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id' > "$TMPDIR/notification-actor-node"
+GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id' > "$TMPDIR/notification-actor-node"
 owner_node=$(cat "$TMPDIR/notification-owner-node")
 actor_node=$(cat "$TMPDIR/notification-actor-node")
 test -n "$owner_node"
 test -n "$actor_node"
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications/agent.yaml" > "$TMPDIR/notifications-tanaabot/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/openclaw-notifications/IDENTITY.md" "$TMPDIR/notifications-tanaabot/IDENTITY.md"
-cp "$HOME/.ssh/big-test-bucket-ssh" "$TMPDIR/notifications-tanaabot/keys/id_ed25519"
-cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$TMPDIR/notifications-tanaabot/keys/id_ed25519.pub"
+sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot/agent.yaml"
+cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot/keys/id_ed25519"
+cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
 # should activate native intake with explicit dispatch enrollment
 openclaw-gateway start
-cd "$TMPDIR/notifications-tanaabot"
-openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
+openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
+openclaw agent-system install --yes --json | tee "$TMPDIR/notification-install.json" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated")'
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
 ```
@@ -39,15 +41,15 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 ## Testing
 
 ```bash
-# should assign one disposable issue after the safe intake baseline
-cd "$TMPDIR/notifications-tanaabot"
+# should assign one disposable issue from emori to tanaabot after the safe intake baseline
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
 openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System notification flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System notification flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
 # should retain a plan through the installed owning automation
-cd "$TMPDIR/notifications-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
 run_id=$(openclaw agent-system notifications refresh --json | jq -er 'select(.status == "queued") | .runId')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
@@ -60,7 +62,7 @@ jq -e --arg conversation "$conversation" --arg issue "$(jq -er .node_id "$TMPDIR
 openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e --arg path "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")" 'length == 1 and .[0].path == $path'
 
 # should preserve one conversation and assessment across another native scan
-cd "$TMPDIR/notifications-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
 run_id=$(openclaw agent-system notifications refresh --json | jq -er 'select(.status == "queued") | .runId')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
@@ -80,14 +82,14 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence
 
 ```bash
 # should close only the disposable issue created by this run
-cd "$TMPDIR/notifications-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
 if test -s "$TMPDIR/notification-issue.json"; then
   number=$(jq -er .number "$TMPDIR/notification-issue.json")
   openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
 fi
 
 # should remove only this run's ssh authentication key
-cd "$TMPDIR/notifications-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
 key_material=$(awk '{print $2}' keys/id_ed25519.pub)
 key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
 if test -n "$key_id"; then

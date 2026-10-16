@@ -4,7 +4,7 @@ Verify installed Agent System storage on macOS and Linux: private managed direct
 
 The file-store fixtures contain synthetic tokens and exercise the public credential removal command. Credential creation and provider validation remain separate: the OP set command requires a real declared 1Password resource. Native Keychain and Secret Service enrollment are covered by `os-install`. The generated SSH key is local and is never registered with a remote service. A private dotenv fixture supplies that key to the declared signing binding; native Git independently verifies the resulting commit against its public key.
 
-Copy the workspaces under runner-owned temporary paths because the checks deliberately change permissions and replace directories with symlinks. Inspect modes through Node instead of platform-specific `stat` flags.
+Copy the workspaces under runner-owned temporary paths containing spaces to exercise native path handling, permissions, and symlink containment against separate outside targets. Inspect modes through Node instead of platform-specific `stat` flags.
 
 ## Setup
 

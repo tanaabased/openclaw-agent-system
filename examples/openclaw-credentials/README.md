@@ -23,8 +23,7 @@ for agent in data peer; do
 done
 
 # should resolve a direct vault key into a verifiable signed commit
-cp -R "$GITHUB_WORKSPACE/examples/openclaw-credentials/direct" "$TMPDIR/credential-direct"
-cd "$TMPDIR/credential-direct"
+cd "$GITHUB_WORKSPACE/examples/openclaw-credentials/direct"
 export XDG_CONFIG_HOME="$TMPDIR/credential-config"
 openclaw agent-system credentials set op --from-env --store file | grep -F file
 env -u OP_SERVICE_ACCOUNT_TOKEN openclaw agent-system install --yes --json | jq -e '.agentId == "credential-direct"'
@@ -32,8 +31,8 @@ mkdir repository
 cd repository
 env -u OP_SERVICE_ACCOUNT_TOKEN openclaw agent-system tool git -- init --quiet
 env -u OP_SERVICE_ACCOUNT_TOKEN openclaw agent-system tool git -- commit --quiet --allow-empty --message 'verify direct vault secret'
-git -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$TMPDIR/credential-direct/allowed_signers" verify-commit HEAD
-cd "$TMPDIR/credential-direct"
+git -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$GITHUB_WORKSPACE/examples/openclaw-credentials/direct/allowed_signers" verify-commit HEAD
+cd "$GITHUB_WORKSPACE/examples/openclaw-credentials/direct"
 openclaw agent-system credentials unset op --store file | grep -F removed
 
 # should start the gateway using stored credentials rather than the process token

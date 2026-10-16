@@ -30,10 +30,7 @@ openclaw memory search --agent memory-tanaabot --query 'cobalt astrolabes' --jso
 
 # should install an embedding secret reference without persisting its value in openclaw configuration
 openclaw-aimock prepare --scenario openclaw-memory
-mkdir -p "$TMPDIR/memory-embeddings/memory"
-cp "$GITHUB_WORKSPACE/examples/openclaw-memory/embedding-agent.yaml" "$TMPDIR/memory-embeddings/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/openclaw-memory/memory/observatory.md" "$TMPDIR/memory-embeddings/memory/observatory.md"
-cd "$TMPDIR/memory-embeddings"
+cd "$GITHUB_WORKSPACE/examples/openclaw-memory/embeddings"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory")'
 openclaw config set agents.entries.memory-embeddings.memory.search.remote.baseUrl http://127.0.0.1:4010/v1
 openclaw config set agents.entries.memory-embeddings.memory.search.remote.batch.enabled false --strict-json
@@ -49,7 +46,7 @@ openclaw gateway call memory.search --params '{"agentId":"memory-embeddings","qu
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence > "$TMPDIR/memory-before-restart.json"
 openclaw-gateway stop --timeout 340
 openclaw-gateway start
-cd "$TMPDIR/memory-embeddings"
+cd "$GITHUB_WORKSPACE/examples/openclaw-memory/embeddings"
 openclaw agent-system doctor --json | tee "$TMPDIR/openclaw-memory-doctor.json"
 jq -e '.findings | any(.code == "agent-memory-openai-ready" and .status == "healthy")' "$TMPDIR/openclaw-memory-doctor.json"
 openclaw gateway call memory.search --params '{"agentId":"memory-embeddings","query":"cobalt astrolabes","maxResults":5}' --timeout 120000 --json | jq -e '.provider == "openai" and any(.results[]; .path == "memory/observatory.md")'

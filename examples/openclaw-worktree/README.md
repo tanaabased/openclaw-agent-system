@@ -10,16 +10,15 @@ Ubuntu coverage also provisions disposable GitHub authentication/signing keys, p
 # should install a disposable agent with a declared local repository
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-worktree
-mkdir -p "$TMPDIR/worktree-tanaabot/source"
-sed -e "s/__GITHUB_RUN_ID__/$GITHUB_RUN_ID/g" -e "s/__GITHUB_RUN_ATTEMPT__/$GITHUB_RUN_ATTEMPT/g" "$GITHUB_WORKSPACE/examples/openclaw-worktree/agent.yaml" > "$TMPDIR/worktree-tanaabot/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/openclaw-worktree/SOUL.md" "$TMPDIR/worktree-tanaabot/SOUL.md"
-cp -R "$GITHUB_WORKSPACE/examples/openclaw-worktree/tools" "$TMPDIR/worktree-tanaabot/tools"
-mkdir -p "$TMPDIR/worktree-tanaabot/keys" "$HOME/.ssh"
-cp "$HOME/.ssh/big-test-bucket-ssh" "$TMPDIR/worktree-tanaabot/keys/id_ed25519"
-cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$TMPDIR/worktree-tanaabot/keys/id_ed25519.pub"
+mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-worktree/source"
+sed -e "s/__GITHUB_RUN_ID__/$GITHUB_RUN_ID/g" -e "s/__GITHUB_RUN_ATTEMPT__/$GITHUB_RUN_ATTEMPT/g" "$GITHUB_WORKSPACE/examples/openclaw-worktree/agent.yaml" > "$TMPDIR/worktree-agent.yaml"
+mv "$TMPDIR/worktree-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-worktree/agent.yaml"
+mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-worktree/keys" "$HOME/.ssh"
+cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-worktree/keys/id_ed25519"
+cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-worktree/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 git init --initial-branch=main source
 printf '%s\n' 'tracked source content' > source/tracked.txt
 git -C source add tracked.txt
@@ -33,14 +32,14 @@ openclaw agent-system install --yes --json | jq -e '.agentId == "worktree-tanaab
 
 ```bash
 # should prepare one managed worktree from the declared local repository
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 openclaw agent-system tool worktree -- prepare fixture 306-critical-path HEAD | tee "$TMPDIR/worktree-created.json" | jq -e '.status == "created" and .repositoryId == "fixture" and (.branch == (.path | split("/") | last))'
 worktree_path=$(jq -er .path "$TMPDIR/worktree-created.json")
 grep -Fx 'tracked source content' "$worktree_path/tracked.txt"
 openclaw agent-system tool worktree -- list fixture | jq -e --arg path "$worktree_path" 'length == 1 and .[0].status == "active" and .[0].path == $path'
 
 # should reuse the same worktree while preserving uncommitted edits
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 worktree_path=$(jq -er .path "$TMPDIR/worktree-created.json")
 printf '%s\n' 'preserve worktree edits' > "$worktree_path/user-work.txt"
 openclaw agent-system tool worktree -- prepare fixture 306-critical-path HEAD | tee "$TMPDIR/worktree-reused.json" | jq -e '.status == "existing"'
@@ -54,7 +53,7 @@ openclaw agent-system tool git -- var GIT_AUTHOR_IDENT | grep -F 'Worktree Tanaa
 "$plugin_dir/bin/git" var GIT_AUTHOR_IDENT | grep -F 'Worktree Tanaabot <tanaabot@tanaab.dev>'
 
 # should refuse to remove a dirty worktree without losing its edits
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 if output=$(openclaw agent-system tool worktree -- remove fixture 306-critical-path 2>&1); then
   printf '%s\n' "$output"
   exit 1
@@ -64,7 +63,7 @@ worktree_path=$(jq -er .path "$TMPDIR/worktree-created.json")
 grep -Fx 'preserve worktree edits' "$worktree_path/user-work.txt"
 
 # should remove the clean worktree while preserving the source checkout and its edits
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 worktree_path=$(jq -er .path "$TMPDIR/worktree-created.json")
 rm "$worktree_path/user-work.txt"
 openclaw agent-system tool worktree -- remove fixture 306-critical-path | jq -e '.status == "removed"'
@@ -79,7 +78,7 @@ grep -Fx 'preserve source edits' source/source-user.txt
 
 ```bash
 # should reuse enrolled keys and prepare a remote worktree through managed ssh
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.code == "github-ssh-keys-unchanged") and any(.code == "github-ssh-signing-keys-unchanged")'
 openclaw agent-system doctor --json | tee "$TMPDIR/openclaw-worktree-doctor.json"
 jq -e '.findings | any(.component == "github" and .status == "healthy")' "$TMPDIR/openclaw-worktree-doctor.json"
@@ -120,7 +119,7 @@ jq -e '.strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .nam
 
 ```bash
 # should remove only the generated account keys
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 key_material=$(awk '{print $2}' keys/id_ed25519.pub)
 for collection in keys ssh_signing_keys; do
   key_id=$(openclaw agent-system tool gh -- api --paginate "/user/$collection" --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")
@@ -132,7 +131,7 @@ for collection in keys ssh_signing_keys; do
 done
 
 # should remove the clean remote worktree
-cd "$TMPDIR/worktree-tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 openclaw agent-system tool worktree -- remove remote 306-runtime-context | jq -e '.status == "removed"'
 
 # should stop the isolated gateway and strict provider

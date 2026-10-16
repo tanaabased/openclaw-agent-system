@@ -46,9 +46,7 @@ codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/
 root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-mkdir -p "$root/automation-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-automations/automation-agent.yaml" "$root/automation-workspace/agent.yaml"
-workspace=$(cd "$root/automation-workspace" && pwd -P)
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-automations/automation" && pwd -P)
 node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "$workspace" --confirm
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
 node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
@@ -90,9 +88,7 @@ test ! -d "$CODEX_HOME/automations"
 root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-mkdir -p "$root/threads-workspace"
-cp "$GITHUB_WORKSPACE/examples/codex-automations/threads-agent.yaml" "$root/threads-workspace/agent.yaml"
-node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$root/threads-workspace" --confirm
+node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$GITHUB_WORKSPACE/examples/codex-automations/threads" --confirm
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" > "$root/threads-plan.json"
 jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
