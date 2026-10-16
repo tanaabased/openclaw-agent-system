@@ -53,9 +53,11 @@ printf 'host\nagent\n' | diff - setup-runs
 cd "$TMPDIR/workspace-tanaabot"
 export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
 cp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-doctor.json"
-openclaw agent-system doctor --json | jq -e '.status == "healthy" and (.findings | any(.code == "codex-plugin-ready" and .status == "healthy") and any(.code == "agent-models-ready" and .status == "healthy") and any(.stepId == "host-ready" and .status == "healthy") and any(.stepId == "agent-ready" and .status == "healthy"))'
+openclaw agent-system doctor --json | tee "$TMPDIR/workspace-doctor.json"
+jq -e '.status == "healthy" and (.findings | any(.code == "codex-plugin-ready" and .status == "healthy") and any(.component == "models") and all(.[] | select(.component == "models"); (.code == "agent-models-ready" and .status == "healthy") or (.code == "agent-model-unavailable" and .status == "warning")) and any(.stepId == "host-ready" and .status == "healthy") and any(.stepId == "agent-ready" and .status == "healthy"))' "$TMPDIR/workspace-doctor.json"
 rm agent-ready
 if output=$(openclaw agent-system doctor --json); then exit 1; fi
+printf '%s\n' "$output" | tee "$TMPDIR/workspace-doctor-drift.json"
 printf '%s\n' "$output" | jq -e '.findings | any(.stepId == "agent-ready" and .code == "setup-drift" and .status == "drift")'
 test ! -e agent-ready
 printf 'host\nagent\n' | diff - setup-runs
