@@ -38,11 +38,14 @@ import {
   safeBackupLink,
 } from './backup-archive.ts';
 import restoreWorkspaceBackup from './backup-restore.ts';
+import BackupAttemptWriter from './backup-attempt.ts';
+import cleanupWorkspaceBackup from './backup-cleanup.ts';
 import {
   backupGit,
   backupPathProtected,
   canonicalBackupPath,
   planWorkspaceBackup,
+  resolveBackupLocations,
 } from './backup-selection.ts';
 import {
   BackupError,
@@ -187,6 +190,7 @@ async function captureWorkspace(
   plan: BackupPlan,
   stage: string,
   signal?: AbortSignal,
+  attempt?: BackupAttemptWriter,
 ): Promise<{ inventory: BackupEntry[]; sources: Map<string, string> }> {
   const inventory: BackupEntry[] = [];
   const sources = new Map<string, string>([
@@ -217,6 +221,7 @@ async function captureWorkspace(
       const mode = before.mode & 0o777;
       if (before.isDirectory()) {
         await mkdir(destination, { mode: 0o700 });
+        await attempt?.add(destination);
         inventory.push({ path, type: 'directory', size: 0, mode });
       } else if (before.isSymbolicLink()) {
         const linkTarget = await readlink(source);
@@ -240,6 +245,7 @@ async function captureWorkspace(
             constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
             0o600,
           );
+          await attempt?.add(destination);
           if (fingerprint(before) !== fingerprint(await sourceHandle.stat()))
             throw new BackupError(
               'backup-source-changed',
@@ -461,6 +467,32 @@ export default class WorkspaceBackupService {
     }
   }
 
+  async cleanup(options: {
+    manifest: AgentManifest;
+    workspaceDir: string;
+    apply: boolean;
+    expectedOutput?: string;
+  }) {
+    const locations = await resolveBackupLocations({
+      ...options,
+      runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
+    });
+    if (
+      options.expectedOutput !== undefined &&
+      options.expectedOutput !== locations.settings.output
+    )
+      throw new BackupError(
+        'backup-cleanup-output-changed',
+        'The checked backup destination changed before cleanup.',
+      );
+    return cleanupWorkspaceBackup({
+      ...locations,
+      agentId: options.manifest.agent.id,
+      output: locations.settings.output,
+      apply: options.apply,
+    });
+  }
+
   async plan(options: {
     manifest: AgentManifest;
     workspaceDir: string;
@@ -484,6 +516,7 @@ export default class WorkspaceBackupService {
     await ensureDirectory(control, true);
     const lock = await acquirePrivateStateFileLock(join(control, 'capture'), lockOptions);
     let stage: string | undefined;
+    let attempt: BackupAttemptWriter | undefined;
     try {
       return await withPrivateStateLock(lock, async () => {
         signal = privateStateLockSignal(signal);
@@ -497,10 +530,23 @@ export default class WorkspaceBackupService {
         await ignoreDestination(plan.workspaceDir, fresh.settings.output);
         await ensureDirectory(fresh.settings.output);
         stage = await mkdtemp(join(control, 'capture-'));
+        attempt = new BackupAttemptWriter(control, {
+          agentId: fresh.agentId,
+          workspaceDir: fresh.workspaceDir,
+          output: fresh.settings.output,
+        });
+        await attempt.add(stage);
         const payload = join(stage, 'workspace');
         await mkdir(payload, { mode: 0o700 });
-        const captured = await captureWorkspace(fresh, payload, signal);
+        await attempt.add(payload);
+        const captured = await captureWorkspace(fresh, payload, signal, attempt);
+        // a failed or interrupted subprocess may outlive its parent; keep that uncertainty durable.
+        attempt.record.snapshotWriter = fresh.settings.openclawState !== 'off';
+        await attempt.save();
         const snapshot = await captureAgentSnapshot(fresh, stage, this.snapshotCommand);
+        attempt.record.snapshotWriter = false;
+        await attempt.save();
+        // snapshot-owned files remain unregistered and therefore preserved after interruption.
         const coverage = {
           ...fresh.coverage,
           stage:
@@ -549,6 +595,7 @@ export default class WorkspaceBackupService {
           manifest,
           signal,
           snapshot.directory,
+          (path) => attempt!.add(path, true),
         );
         await this.verify(temporaryArchive, plan.agentId, signal);
         const destination = join(
@@ -566,6 +613,7 @@ export default class WorkspaceBackupService {
               constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
               0o600,
             );
+            await attempt!.add(pending, true);
             for await (const chunk of source.createReadStream({ autoClose: false })) {
               signal?.throwIfAborted();
               await target.writeFile(chunk);
@@ -605,8 +653,18 @@ export default class WorkspaceBackupService {
         return { archive: destination, manifest, selection: fresh.selection };
       });
     } finally {
-      if (stage) await rm(stage, { recursive: true, force: true });
-      await lock.release();
+      try {
+        lock.assertHeld();
+        if (!attempt?.record.snapshotWriter) {
+          if (stage) await rm(stage, { recursive: true, force: true });
+          if (attempt)
+            await unlink(attempt.path).catch((error) => {
+              if (nodeErrorCode(error) !== 'ENOENT') throw error;
+            });
+        }
+      } finally {
+        await lock.release();
+      }
     }
   }
 

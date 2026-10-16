@@ -22,6 +22,7 @@ import validateAgentSystem from './validate.ts';
 import backupCreate from './backup-create.ts';
 import backupVerify from './backup-verify.ts';
 import backupPrune from './backup-prune.ts';
+import backupCleanup from './backup-cleanup.ts';
 import backupRestore from './backup-restore.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
 import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
@@ -227,7 +228,9 @@ export default function registerAgentSystemCli(
   const backupService = options.backupService ?? new WorkspaceBackupService();
   const backup = agentSystem
     .command('backup')
-    .description('create, verify, prune, and restore private per-agent recovery archives.')
+    .description(
+      'create, clean up, verify, prune, and restore private per-agent recovery archives.',
+    )
     .action(() => writeHelp(backup, output));
   const create = backup
     .command('create')
@@ -287,6 +290,30 @@ export default function registerAgentSystemCli(
       },
     });
   });
+  const cleanup = backup
+    .command('cleanup')
+    .description('preview abandoned incomplete artifacts; only operators may apply cleanup.')
+    .option('--agent <id>', 'select an installed agent (operators only).')
+    .option('--apply', 'remove only proven-abandoned incomplete temporary artifacts.')
+    .option('--json', 'write one structured json result.')
+    .action(async () => {
+      const selected = cleanup.opts();
+      await backupCleanup({
+        ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+        commandAuthority,
+        environment,
+        manifestService: options.manifestService,
+        workspaceDir: cwd(),
+        service: backupService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        json: selected.json === true,
+        apply: selected.apply === true,
+        terminalColumns:
+          options.terminalColumns ?? (process.stdout.isTTY ? process.stdout.columns : undefined),
+      });
+    });
   const prune = backup
     .command('prune')
     .description('retain the newest local backups by embedded capture time.')

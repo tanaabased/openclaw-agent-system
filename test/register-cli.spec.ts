@@ -315,6 +315,7 @@ describe('cli/command-family-fixtures', () => {
     ['credentials', 'unset', 'op'],
     ['credentials', 'cache', 'status'],
     ['credentials', 'cache', 'flush'],
+    ['backup', 'cleanup'],
     ['backup', 'create', '--dry-run'],
     ['backup', 'prune', '--keep', '1', '--dry-run'],
     ['backup', 'verify', '/fixture.tar.gz'],
@@ -329,6 +330,16 @@ describe('cli/command-family-fixtures', () => {
     ['tool', 'gh', '--', 'api', 'user'],
   ];
   class BackupFixture extends WorkspaceBackupService {
+    override async cleanup() {
+      return {
+        agentId: 'tanaabot',
+        workspaceDir: '/workspace',
+        output: '/workspace/backups',
+        wouldDelete: [],
+        deleted: [],
+        preserved: [],
+      };
+    }
     override async plan() {
       return backupPreviewPlan;
     }
@@ -380,7 +391,7 @@ describe('cli/command-family-fixtures', () => {
         if (child.name() === 'automation-execute') return [];
         return child.commands.length ? names(child, `${name} `) : [name];
       });
-    assert.equal(leaves.length, 21);
+    assert.equal(leaves.length, 22);
     assert.deepEqual(
       new Set(names(program.commands[0]!)),
       new Set(
@@ -410,6 +421,7 @@ describe('cli/command-family-fixtures', () => {
     'removed',
     'gateway',
     'scope',
+    'preview',
     'preview',
     'prune',
     'verified',
@@ -1673,6 +1685,46 @@ describe('backup cli registration', () => {
       '--json',
     ]);
     assert.equal(JSON.parse(result.output.join('')).diagnostics[0].code, 'backup-target-required');
+  });
+
+  it('should register cleanup preview and explicit apply for both command spellings', async () => {
+    for (const name of ['agent-system', 'as']) {
+      for (const apply of [false, true]) {
+        const calls: unknown[] = [];
+        class Service extends WorkspaceBackupService {
+          override async cleanup(options: Parameters<WorkspaceBackupService['cleanup']>[0]) {
+            calls.push(options);
+            return {
+              agentId: 'tanaabot',
+              workspaceDir: '/workspace',
+              output: '/workspace/backups',
+              wouldDelete: [],
+              deleted: [],
+              preserved: [],
+            };
+          }
+        }
+        const result = createProgram(undefined, { backupService: new Service() });
+        await result.program.parseAsync([
+          'node',
+          'openclaw',
+          name,
+          'backup',
+          'cleanup',
+          '--json',
+          ...(apply ? ['--apply'] : []),
+        ]);
+        assert.equal(JSON.parse(result.output.join('')).status, apply ? 'applied' : 'preview');
+        assert.deepEqual(calls, [
+          {
+            manifest: validResult.manifest,
+            workspaceDir: '/workspace',
+            apply,
+            expectedOutput: '/workspace/.agent-system/backups',
+          },
+        ]);
+      }
+    }
   });
 
   it('should parse repeated multi-value lists and explicit false without overriding omitted settings', async () => {

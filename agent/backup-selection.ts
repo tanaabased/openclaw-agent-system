@@ -97,15 +97,15 @@ export function resolveBackupConfiguration(
   };
 }
 
-/** prune irrelevant trees while retaining explicitly included ignored descendants. */
-export async function planWorkspaceBackup(options: {
+/** validate backup locations without selecting or requiring source files. */
+export async function resolveBackupLocations(options: {
   manifest: AgentManifest;
   workspaceDir: string;
   overrides?: BackupConfiguration;
   bound?: boolean;
   protectedPaths?: string[];
   runtimeProtection?: BackupRuntimeProtection;
-}): Promise<BackupPlan> {
+}) {
   const workspaceDir = await realpath(options.workspaceDir);
   const configured = options.manifest.backup ?? {};
   const configuration = resolveBackupConfiguration(configured, options.overrides);
@@ -196,6 +196,20 @@ export async function planWorkspaceBackup(options: {
       'The backup destination must not be inside live OpenClaw state.',
     );
   }
+  return { workspaceDir, settings, protectedPaths, agentDir };
+}
+
+/** prune irrelevant trees while retaining explicitly included ignored descendants. */
+export async function planWorkspaceBackup(options: {
+  manifest: AgentManifest;
+  workspaceDir: string;
+  overrides?: BackupConfiguration;
+  bound?: boolean;
+  protectedPaths?: string[];
+  runtimeProtection?: BackupRuntimeProtection;
+}): Promise<BackupPlan> {
+  const { workspaceDir, settings, protectedPaths, agentDir } =
+    await resolveBackupLocations(options);
   const diagnostics: BackupPlan['diagnostics'] = [];
   const candidates: string[] = [];
   const prunedDirectories: string[] = [];
