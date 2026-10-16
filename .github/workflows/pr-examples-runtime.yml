@@ -67,25 +67,14 @@ jobs:
         if: startsWith(matrix.example, 'openclaw-')
         uses: tanaabased/actions/setup-openclaw@v1
       - name: Run Leia-backed example
-        if: matrix.example != 'openclaw-runtimes' && matrix.example != 'openclaw-tools' && matrix.example != 'openclaw-credentials'
         shell: bash
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
-        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
-      - name: Run managed tool example
-        if: matrix.example == 'openclaw-tools'
-        shell: bash
-        env:
-          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
-      - name: Run provider credential example
-        if: matrix.example == 'openclaw-credentials'
-        shell: bash
-        env:
-          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
+          OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: Capture automation gateway diagnostics
@@ -103,13 +92,3 @@ jobs:
           path: ${{ runner.temp }}/openclaw-automations-*.log
           retention-days: 3
           if-no-files-found: warn
-      - name: Run live runtime example
-        if: matrix.example == 'openclaw-runtimes'
-        shell: bash
-        env:
-          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
-          CODEX_HOME: ${{ runner.temp }}/codex-home
-          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
-          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
-          OPENAI_MODEL: gpt-5.4-nano
-        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
