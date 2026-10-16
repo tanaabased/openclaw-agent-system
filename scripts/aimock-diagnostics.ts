@@ -1,6 +1,9 @@
+import { getTextContent, type ChatCompletionRequest } from '@copilotkit/aimock';
+
 import openClawAIMockEvidence from './aimock-evidence.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
+import { normalizeToolSearchRequest } from './aimock-tool-search.ts';
 
 type JournalEntry = Parameters<typeof openClawAIMockEvidence>[1][number];
 
@@ -12,8 +15,43 @@ interface OpenClawAIMockDiagnostics {
     path: string;
     status: number;
     matched: boolean;
+    checks: {
+      model: boolean;
+      systemPrompt: boolean;
+      userPrompt: boolean;
+      toolSearch: boolean;
+      tools: Record<string, boolean>;
+    };
     results: Array<{ callId: string | undefined; content: string }>;
   }>;
+}
+
+function requestChecks(scenario: OpenClawAIMockScenario, entry: JournalEntry) {
+  const request = entry.body as ChatCompletionRequest;
+  const text = (role: string) =>
+    (request.messages ?? [])
+      .filter((message) => message.role === role)
+      .map((message) => getTextContent(message.content) ?? '')
+      .join('\n');
+  const normalized = (() => {
+    try {
+      return normalizeToolSearchRequest(request, scenario.expectedDeniedToolCalls);
+    } catch {
+      return undefined;
+    }
+  })();
+  return {
+    model: scenario.model.match.test(request.model ?? ''),
+    systemPrompt: scenario.systemPromptSignals.every((signal) => text('system').includes(signal)),
+    userPrompt: (scenario.userPromptSignals ?? []).every((signal) => text('user').includes(signal)),
+    toolSearch: normalized !== undefined,
+    tools: Object.fromEntries(
+      scenario.toolCalls.map(({ name }) => [
+        name,
+        normalized?.tools?.some((tool) => tool.function.name === name) === true,
+      ]),
+    ),
+  };
 }
 
 /** Report bounded, scenario-owned tool results without prompts or transport credentials. */
@@ -53,6 +91,7 @@ export default function openClawAIMockDiagnostics(
       path: entry.path,
       status: entry.response.status,
       matched: entry.response.fixture !== null,
+      checks: requestChecks(scenario, entry),
       results: (entry.body?.messages ?? [])
         .filter(
           (message) =>

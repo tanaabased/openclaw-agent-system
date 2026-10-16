@@ -61,8 +61,10 @@ openclaw-aimock evidence \
 openclaw-gateway stop
 
 # should report mock failures and stop the strict model cleanly
-curl --fail --silent --show-error http://127.0.0.1:4010/proof/diagnostics > "$TMPDIR/os-execution-diagnostics.json"
-openclaw-aimock stop
+cleanup_status=0
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics > "$TMPDIR/os-execution-diagnostics.json" || cleanup_status=$?
+openclaw-aimock stop || cleanup_status=$?
 cat "$TMPDIR/os-execution-diagnostics.json"
-jq -e '.failed == false' "$TMPDIR/os-execution-diagnostics.json"
+jq -e '.failed == false' "$TMPDIR/os-execution-diagnostics.json" || cleanup_status=$?
+test "$cleanup_status" -eq 0
 ```

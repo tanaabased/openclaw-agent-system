@@ -44,6 +44,10 @@ describe('scripts/aimock-diagnostics', () => {
     const content = result.requests?.[0]?.results[0]?.content;
     assert.equal(content?.length, 4096);
     assert.ok(content?.endsWith('Command timed out.'));
+    assert.equal(result.requests?.[0]?.checks.model, true);
+    assert.equal(result.requests?.[0]?.checks.systemPrompt, true);
+    assert.equal(result.requests?.[0]?.checks.toolSearch, true);
+    assert.equal(result.requests?.[0]?.checks.tools.exec, false);
     assert.doesNotMatch(JSON.stringify(result), /private|prompt|unrelated/u);
     assert.deepEqual(entry, original);
   });
@@ -66,6 +70,32 @@ describe('scripts/aimock-diagnostics', () => {
     ]);
     assert.equal(result.failed, true);
     assert.ok(result.error);
+    assert.equal(result.requests?.[0]?.checks.toolSearch, false);
     assert.equal(result.requests?.[0]?.results[0]?.content, 'owned denial result');
+  });
+
+  it('should distinguish model and prompt mismatches from unavailable tools without disclosing inputs', () => {
+    const scenario = resolveScenario('openclaw-notifications');
+    const result = diagnostics(scenario, [
+      {
+        method: 'POST',
+        path: '/responses',
+        response: { fixture: null, status: 503 },
+        body: {
+          model: 'private-model',
+          messages: [
+            { role: 'system', content: scenario.systemPromptSignals[0]! + ' private-system' },
+            { role: 'user', content: 'private-user' },
+          ],
+          tools: [{ function: { name: 'agent_system_intake' } }],
+        },
+      },
+    ]);
+    const checks = result.requests?.[0]?.checks;
+    assert.equal(checks?.model, false);
+    assert.equal(checks?.systemPrompt, true);
+    assert.equal(checks?.tools.agent_system_intake, true);
+    assert.equal(checks?.tools.agent_system_dispatch, false);
+    assert.doesNotMatch(JSON.stringify(result), /private-|Name:/u);
   });
 });

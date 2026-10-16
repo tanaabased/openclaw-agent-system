@@ -96,7 +96,7 @@ if test -n "$key_id"; then
   openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
 fi
 
-# should stop the isolated gateway and strict provider
+# should report strict mock failures while stopping the isolated gateway and provider
 cleanup_status=0
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics || cleanup_status=$?
 openclaw-gateway stop --timeout 340 || cleanup_status=$?

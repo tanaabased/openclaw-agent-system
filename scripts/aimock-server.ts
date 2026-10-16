@@ -67,7 +67,8 @@ const evidenceService: Mountable = {
       return true;
     }
     if (pathname === '/diagnostics') {
-      json(res, 200, openClawAIMockDiagnostics(scenario, mock.getRequests()));
+      const diagnostics = openClawAIMockDiagnostics(scenario, mock.getRequests());
+      json(res, diagnostics.failed ? 500 : 200, diagnostics);
       return true;
     }
     try {
