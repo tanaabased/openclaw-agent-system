@@ -107,10 +107,13 @@ openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" --arg 
 openclaw gateway call agent.wait --params '{"runId":"worktree-continued","timeoutMs":120000}' --timeout 130000 --json | jq -e '.status == "ok"'
 grep -Fx verified "$TMPDIR/worktree-continued.receipt"
 cmp "$TMPDIR/worktree-first.pwd" "$TMPDIR/worktree-continued.pwd"
+cat "$TMPDIR/worktree-probe-invocations"
+printf '%s\n' first continued | cmp - "$TMPDIR/worktree-probe-invocations"
 openclaw gateway call chat.history --params '{"sessionKey":"agent:worktree-tanaabot:dashboard:worktree-leia","inputRunIds":["worktree-first","worktree-continued"],"limit":200}' --json > "$TMPDIR/worktree-final-history.json"
 jq '{sessionId, firstInputs: [.messages[] | select(.role == "user" and .idempotencyKey == "worktree-first:user") | .__openclaw.id], continuedInputs: [.messages[] | select(.role == "user" and .idempotencyKey == "worktree-continued:user") | .__openclaw.id], terminalReplies: [.messages[] | select(.role == "assistant" and .__openclaw.runId == "worktree-continued" and .__openclaw.runTerminal != false and .stopReason == "stop") | .__openclaw.id]}' "$TMPDIR/worktree-final-history.json" | tee "$TMPDIR/worktree-history-proof.json"
 jq -e --arg id "$session_id" '.sessionId == $id and (.firstInputs | length) == 1 and (.continuedInputs | length) == 1 and (.terminalReplies | length) == 1 and ([.firstInputs[], .continuedInputs[], .terminalReplies[]] | all(type == "string" and length > 0)) and .firstInputs[0] != .continuedInputs[0]' "$TMPDIR/worktree-history-proof.json"
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .name == "exec" and .callResponseCount == 2)'
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/worktree-model-evidence.json"
+jq -e '.strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .name == "exec" and .callResponseCount == 2)' "$TMPDIR/worktree-model-evidence.json"
 ```
 
 ## Cleanup
