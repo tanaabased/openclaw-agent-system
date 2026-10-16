@@ -1,3 +1,5 @@
+import nativeNotificationDiagnostic from './native-diagnostic.ts';
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
@@ -16,6 +18,7 @@ import type GitHubNotificationStatusService from '../intake/monitor/status-servi
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
 export interface StatusNotificationsAgentSystemOptions {
+  nativeService?: Pick<OpenClawNotifications, 'inspect'>;
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
@@ -55,7 +58,14 @@ async function statusNotificationsAgentSystem(
 
   let result;
   try {
-    result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+    if (manifest.manifest.github?.notifications?.schemaVersion === 2) {
+      if (!options.nativeService) throw new Error('native notification backend is unavailable');
+      result = await options.nativeService.inspect(
+        manifest.manifest,
+        manifest.scope.workspaceDir,
+        selector,
+      );
+    } else result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
   } catch (error) {
     writeCliError(
       options.output,
@@ -97,6 +107,18 @@ async function statusNotificationsAgentSystem(
           value: result.baseline.status,
           valueStyle: result.baseline.status === 'pending' ? 'warning' : 'field',
         },
+        ...(result.scan
+          ? [
+              {
+                label: 'scan',
+                style: 'field' as const,
+                value:
+                  result.scan.completedAt === undefined
+                    ? 'pending'
+                    : `completed at ${new Date(result.scan.completedAt).toISOString()}`,
+              },
+            ]
+          : []),
         {
           label: 'capacity',
           style: 'field',
@@ -116,7 +138,7 @@ async function statusNotificationsAgentSystem(
             label: item.disposition,
             style: 'field',
             quiet: true,
-            value: `${item.itemType} stage=${item.stage ?? 'none'}`,
+            value: `${item.itemType} stage=${item.workflow?.phase ?? item.stage ?? 'none'}`,
           },
         ],
         styles,
@@ -130,6 +152,16 @@ async function statusNotificationsAgentSystem(
             quiet: true,
             value: `${item.worktree}${item.scheduling === undefined ? '' : ` scheduling=${item.scheduling}`}`,
           },
+          ...(item.workflow?.conversation
+            ? [
+                {
+                  label: 'conversation',
+                  style: 'field' as const,
+                  quiet: true,
+                  value: item.workflow.conversation,
+                },
+              ]
+            : []),
           ...(item.waitingReason === undefined
             ? []
             : [{ label: 'waiting', style: 'warning' as const, value: item.waitingReason }]),
@@ -186,6 +218,9 @@ async function statusNotificationsAgentSystem(
       ]);
     }
   }
+  const remediation = nativeNotificationDiagnostic(result.code);
+  if (remediation)
+    writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
   if (result.status === 'degraded') options.setExitCode(1);
 }
 

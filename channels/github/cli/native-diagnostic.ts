@@ -1,0 +1,21 @@
+/** remediation for native backend limitations uses the existing command message section. */
+export default function nativeNotificationDiagnostic(code: string): string | undefined {
+  return {
+    'github-notification-runtime-unsupported':
+      'this workspace does not enable native openclaw notifications',
+    'github-notification-workflow-unsupported':
+      'this command supports the native issue planning workflow; the selected workflow is unsupported',
+    'github-notification-refresh-selector-unsupported':
+      'native refresh runs the owning agent workflow; omit item selectors and use status or wait to observe one issue',
+    'github-notification-selector-unsupported':
+      'native notification observation supports issue selectors; pull-request observation is unavailable',
+    'github-notification-wait-target-unsupported':
+      'native intake does not retain rejected assignments; choose baseline-ready, prepared, worktree-ready, plan-ready, or retired',
+    'github-notification-refresh-outcome-uncertain':
+      'refresh admission is uncertain; inspect native workflow status before requesting another cycle',
+    'intake-activation-required':
+      'run openclaw agent-system install to activate the declared native workflow',
+    'intake-policy-reconciliation-required':
+      'run openclaw agent-system install to reconcile the changed native workflow policy',
+  }[code];
+}

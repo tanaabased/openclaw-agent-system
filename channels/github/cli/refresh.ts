@@ -1,3 +1,6 @@
+import nativeNotificationDiagnostic from './native-diagnostic.ts';
+import type { NotificationRefreshResult } from '../../../agent/openclaw-notifications.ts';
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
@@ -22,6 +25,7 @@ const defaultRefreshSeconds = 300;
 const notificationRefreshLeaseWaitMs = 120_000;
 
 export interface RefreshNotificationsAgentSystemOptions {
+  nativeService?: Pick<OpenClawNotifications, 'refresh'>;
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
@@ -73,16 +77,23 @@ async function refreshNotificationsAgentSystem(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), parsed.timeoutMs);
   timeout.unref();
-  let result;
+  let result: NotificationRefreshResult | undefined;
   try {
-    [result] = await options.monitorService.runOnce({
-      agentId: manifest.manifest.agent.id,
-      bypassInterval: true,
-      executionSurface: 'cli-one-shot',
-      ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
-      signal: controller.signal,
-      waitForLeaseMs: Math.min(notificationRefreshLeaseWaitMs, parsed.timeoutMs),
-    });
+    if (manifest.manifest.github?.notifications?.schemaVersion === 2) {
+      if (!options.nativeService) throw new Error('native notification backend is unavailable');
+      result = await options.nativeService.refresh(manifest.manifest, manifest.scope.workspaceDir, {
+        selector: parsed.selector,
+        signal: controller.signal,
+      });
+    } else
+      [result] = await options.monitorService.runOnce({
+        agentId: manifest.manifest.agent.id,
+        bypassInterval: true,
+        executionSurface: 'cli-one-shot',
+        ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
+        signal: controller.signal,
+        waitForLeaseMs: Math.min(notificationRefreshLeaseWaitMs, parsed.timeoutMs),
+      });
   } catch (error) {
     writeCliError(
       options.output,
@@ -178,6 +189,7 @@ async function refreshNotificationsAgentSystem(
         },
         { label: 'code', style: 'field', value: result.code },
         { label: 'baseline', style: 'field', value: baseline },
+        ...(result.runId ? [{ label: 'run', style: 'field' as const, value: result.runId }] : []),
         ...(result.diagnosticCode
           ? [{ label: 'diagnostic', style: 'field' as const, value: result.diagnosticCode }]
           : []),
@@ -236,7 +248,7 @@ async function refreshNotificationsAgentSystem(
       writeCliDiagnosticNotices(options, [
         { severity: 'notice', message: 'enable github notifications in agent.yaml to refresh' },
       ]);
-    } else if (result.status === 'failed') {
+    } else if (result.status === 'failed' && !nativeNotificationDiagnostic(result.code)) {
       writeCliDiagnosticNotices(options, [
         {
           severity: 'error',
@@ -245,7 +257,15 @@ async function refreshNotificationsAgentSystem(
       ]);
     }
   }
-  if (result.status !== 'completed') options.setExitCode(1);
+  const remediation = nativeNotificationDiagnostic(result.code);
+  if (remediation)
+    writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
+  if (
+    result.status !== 'completed' &&
+    result.status !== 'queued' &&
+    result.code !== 'github-notification-refresh-already-running'
+  )
+    options.setExitCode(1);
 }
 
 export default presentCliCommand(refreshNotificationsAgentSystem);

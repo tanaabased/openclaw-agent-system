@@ -13,17 +13,24 @@ import {
 export type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
 
 export type GitHubNotificationWaitTarget =
-  'assignment-rejected' | 'baseline-ready' | 'prepared' | 'retired' | 'worktree-ready';
+  | 'assignment-rejected'
+  | 'baseline-ready'
+  | 'plan-ready'
+  | 'prepared'
+  | 'retired'
+  | 'worktree-ready';
 
 export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarget>([
   'assignment-rejected',
   'baseline-ready',
+  'plan-ready',
   'prepared',
   'retired',
   'worktree-ready',
 ]);
 
 export interface GitHubNotificationStatusItem {
+  workflow?: { phase: string; conversation?: string };
   cleanup?: GitHubNotificationCleanupState;
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
@@ -45,6 +52,7 @@ export interface GitHubNotificationStatusItem {
 }
 
 export interface GitHubNotificationStatusResult {
+  scan?: { completedAt?: number; attemptedAt?: number };
   agentId: string;
   baseline: { observedAt?: number; status: 'pending' | 'ready' };
   capacity: { active: number; limit: number; queued: number };
@@ -201,9 +209,11 @@ export function evaluateGitHubNotificationWait(
       ? item.disposition === 'rejected'
       : target === 'retired'
         ? item.stage === 'retired'
-        : target === 'prepared'
-          ? item.stage === 'prepared'
-          : item.worktree === 'ready' && ['prepared', 'retired'].includes(item.stage ?? '');
+        : target === 'plan-ready'
+          ? item.workflow?.phase === 'plan-ready'
+          : target === 'prepared'
+            ? item.stage === 'prepared'
+            : item.worktree === 'ready' && ['prepared', 'retired'].includes(item.stage ?? '');
   return reached
     ? { code: `github-notification-${target}`, status: 'reached' }
     : { code: 'github-notification-wait-pending', status: 'pending' };

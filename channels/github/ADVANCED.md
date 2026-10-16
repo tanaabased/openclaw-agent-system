@@ -299,6 +299,17 @@ openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/
 openclaw agent-system notifications refresh
 ```
 
+With `github.notifications.schema-version: 2`, `refresh` requests a run of the
+already installed native OpenClaw issue-planning automation. A successful request
+reports `queued` and its native run ID; it does not claim the scan or assessment
+has completed. Installation and workflow activation remain explicit. Disabled,
+stale, or unreconciled workflows fail without enabling jobs or falling back to V1.
+Native refresh is agent-wide: item selectors return an unsupported diagnostic;
+use scoped `status` or `wait` to observe one issue. An uncertain admission returns
+a diagnostic rather than automatically submitting another run.
+
+With V1 configuration, the following refresh behavior is retained.
+
 Without an item selector, `refresh` processes the agent's eligible assignments.
 A selector limits the cycle to one exact item. A completed cycle may establish
 the baseline, prepare an issue, continue one pending Work implementation,
@@ -337,6 +348,17 @@ openclaw agent-system notifications status [--agent <id>] [--repository <owner/n
 # inspect redacted state for the workspace agent.
 openclaw agent-system notifications status --json
 ```
+
+With V2 configuration, `status` reads the native intake and dispatch records.
+The existing table and JSON envelope report baseline, capacity, item preparation,
+and blockers. An item's optional `workflow` contains its phase and bound
+conversation: queued, routing, uncertain creation, created, assessing, or the
+retained assessment outcome. A created conversation is not a completed plan.
+Only issue selectors and the native OpenClaw Plan workflow are currently supported;
+other runtime/workflow selections fail explicitly. Observation performs no scan,
+credential resolution, scheduler writes, or conversation creation.
+
+With V1 configuration, the following status behavior is retained.
 
 The result reports a redacted baseline and item projection, including lifecycle,
 worktree, cleanup, scheduling state, and aggregate active, queued, and limit
@@ -386,9 +408,19 @@ Supported targets:
 | --------------------- | ----------------- | --------------------------------------------- |
 | `assignment-rejected` | yes               | The selected assignment failed admission      |
 | `baseline-ready`      | no                | The first safe provider observation completed |
+| `plan-ready`          | yes               | Native V2 retained assessment is plan-ready   |
 | `prepared`            | yes               | Lifecycle-owned intake resources are ready    |
 | `retired`             | yes               | The selected assignment retired logically     |
 | `worktree-ready`      | yes               | The selected issue worktree is ready          |
+
+V2 waits use the same native observation as `status`. `prepared` requires a
+verified conversation binding and worktree; `plan-ready` requires the retained
+assessment result. Native intake does not retain rejected assignments, so
+`assignment-rejected` is unsupported there; `plan-ready` is unsupported on V1.
+With `--refresh`, V2 requests the owning agent-wide workflow and observes its exact
+native run receipt. It requests another cycle only after that run completes;
+pending or uncertain execution never causes a blind resubmission. A scoped wait
+still observes only the selected issue.
 
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.

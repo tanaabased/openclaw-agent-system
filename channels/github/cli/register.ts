@@ -1,3 +1,4 @@
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
@@ -14,6 +15,7 @@ import statusNotificationsAgentSystem from './status.ts';
 import waitNotificationsAgentSystem from './wait.ts';
 
 export interface RegisterGitHubNotificationsCliOptions {
+  nativeService?: OpenClawNotifications;
   completeOneShot(code: number): Promise<void>;
   cwd(): string;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
@@ -85,6 +87,7 @@ export default function registerGitHubNotificationsCli(
             itemNumber: commandOptions.number,
             json: commandOptions.json === true,
             manifestService: options.manifestService,
+            nativeService: options.nativeService,
             monitorService: options.monitorService,
             output: options.output,
             repository: commandOptions.repository,
@@ -114,6 +117,7 @@ export default function registerGitHubNotificationsCli(
         itemNumber: commandOptions.number,
         json: commandOptions.json === true,
         manifestService: options.manifestService,
+        nativeService: options.nativeService,
         output: options.output,
         repository: commandOptions.repository,
         setExitCode: options.setExitCode,
@@ -144,6 +148,7 @@ export default function registerGitHubNotificationsCli(
             itemNumber: commandOptions.number,
             json: commandOptions.json === true,
             manifestService: options.manifestService,
+            nativeService: options.nativeService,
             output: options.output,
             refresh: commandOptions.refresh === true,
             repository: commandOptions.repository,

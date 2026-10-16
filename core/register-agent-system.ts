@@ -1,3 +1,5 @@
+import OpenClawNotifications from '../agent/openclaw-notifications.ts';
+import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
 import { readFile } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
@@ -722,6 +724,35 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       automations,
       boundCommands,
       manifestService,
+      nativeNotifications: new OpenClawNotifications({
+        root: join(
+          privateStateRoot ?? api.runtime.state.resolveStateDir(),
+          'agent-system-dispatch-v2',
+        ),
+        intake: intakeV2,
+        inspectRun: async (manifest, workspace, runId, signal) => {
+          signal.throwIfAborted();
+          const history = await automations.runs(manifest, workspace, openclawIntakeAutomationId, {
+            limit: 1,
+            offset: 0,
+            runId,
+          });
+          const entry = history.entries[0];
+          return !entry || entry.execution === 'unavailable'
+            ? 'pending'
+            : entry.execution === 'ok'
+              ? 'completed'
+              : 'failed';
+        },
+        requestRun: (manifest, workspace, signal) =>
+          new AutomationService({
+            ...automationDependencies,
+            request: (method, params) => {
+              signal.throwIfAborted();
+              return requestAutomationGateway(method, params);
+            },
+          }).run(manifest, workspace, openclawIntakeAutomationId),
+      }),
       notificationMonitorService,
       notificationStatusService,
       toolRegistry,

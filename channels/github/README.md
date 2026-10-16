@@ -145,7 +145,11 @@ openclaw agent-system notifications wait \
   --for worktree-ready --refresh --json
 ```
 
-See the [CLI reference](./ADVANCED.md#cli) for item selectors, timeouts, and supported checkpoints.
+The commands select the backend from the manifest. Native V2 OpenClaw Plan
+workflows use the existing automation and durable workflow records; refresh
+reports a queued run, while status and wait report observed progress. V1 keeps
+its existing behavior. See the [CLI reference](./ADVANCED.md#cli) for item
+selectors, timeouts, supported checkpoints, and native workflow limitations.
 
 ## Model Routing
 

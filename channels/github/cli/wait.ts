@@ -1,9 +1,12 @@
+import nativeNotificationDiagnostic from './native-diagnostic.ts';
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  writeCliDiagnosticNotices,
   writeCliError,
   writeCliJson,
   writeCliSummary,
@@ -23,6 +26,7 @@ import {
 const defaultWaitSeconds = 300;
 
 export interface WaitNotificationsAgentSystemOptions {
+  nativeService?: Pick<OpenClawNotifications, 'wait'>;
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
@@ -87,14 +91,26 @@ async function waitNotificationsAgentSystem(
 
   let result;
   try {
-    result = await options.statusService.wait({
-      agentId: manifest.manifest.agent.id,
-      executionSurface: 'cli-one-shot',
-      refresh: options.refresh,
-      ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
-      target: parsed.target,
-      timeoutMs: parsed.timeoutMs,
-    });
+    if (manifest.manifest.github?.notifications?.schemaVersion === 2) {
+      if (!options.nativeService) throw new Error('native notification backend is unavailable');
+      result = await options.nativeService.wait(manifest.manifest, manifest.scope.workspaceDir, {
+        selector: parsed.selector,
+        target: parsed.target,
+        timeoutMs: parsed.timeoutMs,
+        refresh: options.refresh,
+      });
+    } else {
+      if (parsed.target === 'plan-ready')
+        throw new Error('plan-ready requires native notifications');
+      result = await options.statusService.wait({
+        agentId: manifest.manifest.agent.id,
+        executionSurface: 'cli-one-shot',
+        refresh: options.refresh,
+        ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
+        target: parsed.target,
+        timeoutMs: parsed.timeoutMs,
+      });
+    }
   } catch (error) {
     writeCliError(
       options.output,
@@ -168,6 +184,9 @@ async function waitNotificationsAgentSystem(
       { rowPadding: 0 },
     );
   }
+  const remediation = nativeNotificationDiagnostic(result.code);
+  if (remediation)
+    writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
   if (result.status !== 'completed') options.setExitCode(1);
 }
 

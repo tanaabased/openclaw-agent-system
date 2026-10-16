@@ -1,3 +1,4 @@
+import type OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import type { Readable } from 'node:stream';
 import type { Option } from 'commander';
 
@@ -83,6 +84,7 @@ export interface RegisterAgentSystemCliOptions {
   environment?: Readonly<NodeJS.ProcessEnv>;
   setupPrompt?: () => Promise<boolean | symbol>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
+  nativeNotifications?: OpenClawNotifications;
   notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
   output?: CliOutput;
@@ -427,6 +429,7 @@ export default function registerAgentSystemCli(
     cwd,
     manifestService: options.manifestService,
     monitorService: options.notificationMonitorService,
+    nativeService: options.nativeNotifications,
     output,
     setExitCode,
     statusService: options.notificationStatusService,

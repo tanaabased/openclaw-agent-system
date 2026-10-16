@@ -1,3 +1,6 @@
+import OpenClawNotifications from '../agent/openclaw-notifications.ts';
+import notificationStatus from '../channels/github/cli/status.ts';
+import notificationWait from '../channels/github/cli/wait.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -445,6 +448,49 @@ describe('OpenClaw V2 intake slice', () => {
       assert.ok(output!.message.includes(sample.code));
       assert.equal(JSON.stringify(output).includes('private'), false);
     }
+  });
+  it('should inspect and wait through public commands using the native durable baseline', async () => {
+    const f = fixture();
+    await f.service.run(f.value, root, 'activate');
+    const connections = f.connects();
+    const nativeService = new OpenClawNotifications({
+      root: join(root, 'dispatch'),
+      intake: f.service,
+      async inspectRun() {
+        return 'pending' as const;
+      },
+      async requestRun(): Promise<never> {
+        throw Error('read-only commands must not queue');
+      },
+    });
+    const stdout: string[] = [];
+    const options = {
+      nativeService,
+      json: true,
+      workspaceDir: root,
+      manifestService: { ...f.manifests, loadForCommandDirectory: async () => f.loaded },
+      statusService: {
+        async inspect(): Promise<never> {
+          throw Error('legacy state');
+        },
+        async wait(): Promise<never> {
+          throw Error('legacy wait');
+        },
+      },
+      output: {
+        writeStdout: (text: string) => stdout.push(text),
+        writeStderr: (text: string) => {
+          throw Error(text);
+        },
+      },
+      setExitCode: (code: number) => assert.equal(code, 0),
+    };
+    await notificationStatus(options);
+    assert.equal(JSON.parse(stdout.pop()!).baseline.status, 'ready');
+    await notificationWait({ ...options, target: 'baseline-ready', refresh: false });
+    assert.equal(JSON.parse(stdout.pop()!).status, 'completed');
+    assert.equal(f.connects(), connections);
+    assert.deepEqual((await f.service.inspect(f.value, root)).records, []);
   });
   it('should bind the tool to the native agent and reject caller-selected identities or activation', async () => {
     const f = fixture();

@@ -63,6 +63,14 @@ openclaw agent \
   --timeout 120 \
   | grep -F 'routing-default-ready'
 
+# should keep disabled native intake inactive through the public notification commands
+if openclaw agent-system notifications status --agent data --json > "$TMPDIR/notification-status.json"; then exit 1; fi
+jq -e '.status == "degraded" and .code == "github-notification-disabled" and .schemaVersion == 2' "$TMPDIR/notification-status.json"
+if openclaw agent-system notifications refresh --agent data --json > "$TMPDIR/notification-refresh.json"; then exit 1; fi
+jq -e '.status == "failed" and .code == "github-notification-disabled"' "$TMPDIR/notification-refresh.json"
+if openclaw agent-system notifications wait --agent data --for baseline-ready --timeout 1 --json > "$TMPDIR/notification-wait.json"; then exit 1; fi
+jq -e '.status == "failed" and .code == "github-notification-disabled"' "$TMPDIR/notification-wait.json"
+
 # should omit temporary dispatch invocation tracing from runtime logs
 if grep -Fq 'dispatch-invocation ' "$TMPDIR/agent-file.jsonl"; then exit 1; fi
 if grep -Fq 'dispatch-invocation ' "$(openclaw-gateway log-path)"; then exit 1; fi
