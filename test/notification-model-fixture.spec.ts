@@ -123,6 +123,44 @@ describe('examples/openclaw-notifications model fixture', () => {
     }
   });
 
+  it('should stop on journal contention and let a later coordinator turn scan again', async () => {
+    const routing = {
+      status: 'routing-required',
+      id,
+      digest,
+      context: { source, body: 'disposable Agent System notification-flow fixture' },
+    };
+    const paths: Array<Array<[string, unknown]>> = [
+      [],
+      [['next', routing]],
+      [['next', { status: 'assessment-required', id }]],
+      [['next', { status: 'reconcile-required', id }]],
+      [
+        ['next', { status: 'reconcile-required', id }],
+        ['reconcile', { status: 'session-created', id }],
+      ],
+    ];
+    for (const path of paths) {
+      const input = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+      append(input, 'scan', { status: 'ready' });
+      for (const [stage, result] of path) append(input, stage, result);
+      const pending = await response(input);
+      assert.ok('toolCalls' in pending && pending.toolCalls?.length === 1);
+      const stage = JSON.parse(pending.toolCalls[0]!.arguments).action;
+      append(input, stage, { status: 'busy', code: 'private-state-file-lock-busy', id });
+      assert.deepEqual(await response(input), { content: 'notification-intake-busy' });
+      input.messages.push({
+        role: 'user',
+        content: `Advance at most one issue per run. Policy digest: ${digest}`,
+      });
+      await action(input, 'scan');
+    }
+    const invalid = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    append(invalid, 'scan', { status: 'ready' });
+    append(invalid, 'next', { status: 'busy', code: 'unexpected-failure' });
+    assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+  });
+
   it('should retain a plan only after native context and git verify its worktree', async () => {
     const input = request(
       `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,

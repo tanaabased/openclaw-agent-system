@@ -9,6 +9,7 @@ import openclawIntakeJobs, {
   openclawIntakeAutomationId,
 } from '../../agent/openclaw-intake-policy.ts';
 import OpenClawDispatch, {
+  openClawDispatchFailureCode,
   type OpenClawDispatchDependencies,
 } from '../../agent/openclaw-dispatch.ts';
 import type { DispatchCaller } from '../../agent/openclaw-session-create.ts';
@@ -205,10 +206,7 @@ export default function createDispatchTool(input: {
               .catch((error: unknown) => {
                 return {
                   status: 'blocked',
-                  code:
-                    error instanceof Error && /^[a-z][a-z0-9-]{2,127}$/.test(error.message)
-                      ? error.message
-                      : 'dispatch-operation-failed',
+                  code: openClawDispatchFailureCode(error),
                 };
               });
           }

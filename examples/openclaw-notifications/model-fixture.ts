@@ -26,6 +26,10 @@ function currentTurn(request: ChatCompletionRequest) {
   );
 }
 
+function isBusy(result: Record<string, unknown> | undefined) {
+  return result?.status === 'busy' && result.code === 'private-state-file-lock-busy';
+}
+
 function call(stage: string, name: string, args: unknown): FixtureResponse {
   return { toolCalls: [{ id: prefix + stage, name, arguments: JSON.stringify(args) }] };
 }
@@ -50,6 +54,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (scan.status !== 'ready') return;
     const next = result('next');
     if (!next) return dispatch('next', { action: 'next' });
+    if (isBusy(next)) return { content: 'notification-intake-busy' };
     if (next.status === 'idle') return { content: 'notification-intake-idle' };
     if (typeof next.id !== 'string' || !/^[a-f0-9]{64}$/u.test(next.id)) return;
     if (next.status === 'routing-required') {
@@ -72,14 +77,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           fallback: 'default',
           title: 'Document disposable test issue cleanup',
         });
+      if (isBusy(prepared)) return { content: 'notification-intake-busy' };
       if (prepared.status !== 'session-created') return;
     } else if (!['assessment-required', 'reconcile-required'].includes(String(next.status))) return;
     const stage = next.status === 'reconcile-required' ? 'reconcile' : 'assess';
     const advanced = result(stage);
     if (!advanced) return dispatch(stage, { action: stage, id: next.id });
+    if (isBusy(advanced)) return { content: 'notification-intake-busy' };
     if (advanced.status === 'session-created' || advanced.status === 'working-turn-completed') {
       const assessed = result('assess');
       if (!assessed) return dispatch('assess', { action: 'assess', id: next.id });
+      if (isBusy(assessed)) return { content: 'notification-intake-busy' };
       if (!['assessment-pending', 'assessment-completed'].includes(String(assessed.status))) return;
     } else if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status)))
       return;

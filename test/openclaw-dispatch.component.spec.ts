@@ -7,6 +7,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { AssessmentResult } from '../agent/assessment-result.ts';
 import AgentSystemToolError from '../api/error.ts';
+import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
@@ -457,9 +458,16 @@ describe('agent/openclaw issue dispatch', () => {
       },
     });
     await entered.promise;
-    await assert.rejects(service.run(manifest, root, coordinator, { action: 'next' }), /lock/i);
-    controller.abort();
-    release.resolve();
+    try {
+      assert.deepEqual(await service.run(manifest, root, coordinator, { action: 'next' }), {
+        status: 'busy',
+        code: privateStateFileLockBusyErrorCode,
+      });
+    } finally {
+      controller.abort();
+      release.resolve();
+      await first;
+    }
     assert.equal((await first).status, 'blocked');
     assert.equal(creates().length, 0);
   });
@@ -959,10 +967,36 @@ describe('agent/openclaw issue dispatch', () => {
       },
     });
     await entered.promise;
-    await assert.rejects(start(input.id), /lock/i);
-    release.resolve();
+    try {
+      assert.deepEqual(await start(input.id), {
+        status: 'busy',
+        code: privateStateFileLockBusyErrorCode,
+        id: input.id,
+      });
+    } finally {
+      release.resolve();
+      await first;
+    }
     assert.equal((await first).status, 'working-turn-pending');
     assert.equal(sends().length, 1);
+  });
+
+  it('should preserve an attempted send when a lock error occurs after entering the journal', async () => {
+    const input = await next();
+    await prepare(input);
+    const result = await start(input.id, {
+      assertCurrent: async () => {
+        if ((await record()).firstTurn)
+          throw Object.assign(new Error('The private state file lock is busy.'), {
+            code: privateStateFileLockBusyErrorCode,
+          });
+      },
+    });
+    assert.equal(result.status, 'blocked');
+    assert.ok('code' in result && result.code === privateStateFileLockBusyErrorCode);
+    assert.equal((await record()).firstTurn?.status, 'attempted');
+    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal(sends().length, 0);
   });
 
   it('should retain a persisted attempt if authority is revoked before its send reaches the host', async () => {
@@ -1105,6 +1139,67 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await assess(input.id)).status, 'assessment-completed');
     assert.equal(sends().length, 1);
     assert.equal(creates().length, 1);
+  });
+
+  it('should defer an overlapping coordinator scan and later observe the same completed assessment', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await context(input.id);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const completing = service.run(
+      manifest,
+      root,
+      assessor(input.id),
+      { action: 'result', id: input.id, result: plan },
+      false,
+      {
+        assertCurrent: async () => {
+          entered.resolve();
+          await release.promise;
+        },
+      },
+    );
+    await entered.promise;
+    try {
+      const before = await record();
+      const callsBefore = calls.length;
+      assert.deepEqual(await service.run(manifest, root, coordinator, { action: 'next' }), {
+        status: 'busy',
+        code: privateStateFileLockBusyErrorCode,
+      });
+      assert.deepEqual(await record(), before);
+      assert.equal(calls.length, callsBefore);
+    } finally {
+      release.resolve();
+      await completing;
+    }
+    assert.equal((await completing).status, 'recorded');
+    const saved = await record();
+    assert.deepEqual(saved.result, plan);
+    assessmentReply(input.id);
+    service = new OpenClawDispatch(service.dependencies);
+    const resumed = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(resumed.status, 'reconcile-required');
+    assert.ok('id' in resumed && resumed.id === input.id);
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id }))
+        .status,
+      'assessment-completed',
+    );
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'idle',
+    );
+    const completed = await record();
+    assert.deepEqual(completed.result, saved.result);
+    assert.deepEqual(completed.stageReceipt, saved.stageReceipt);
+    assert.equal(completed.threadId, saved.threadId);
+    assert.equal(completed.worktree, saved.worktree);
+    assert.equal(creates().length, 1);
+    assert.equal(sends().length, 1);
+    assert.equal(preparedWorktrees, 1);
   });
 
   for (const debug of [false, true]) {

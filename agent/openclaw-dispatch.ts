@@ -27,6 +27,10 @@ import type {
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
 import AgentSystemToolError from '../api/error.ts';
+import {
+  privateStateFileLockBusyErrorCode,
+  privateStateFileLockLostErrorCode,
+} from '../core/private-state-file-lock.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
@@ -61,7 +65,10 @@ function pendingAssignment({
 }) {
   return !record || (!record.request && (!record.blocker || record.intakeId !== intake.id));
 }
-function failureCode(error: unknown): string {
+export function openClawDispatchFailureCode(error: unknown): string {
+  const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+  if (code === privateStateFileLockBusyErrorCode || code === privateStateFileLockLostErrorCode)
+    return code;
   if (error instanceof GitCommandError) return error.diagnosticCode;
   if (error instanceof AgentSystemToolError) {
     if (error.cause instanceof GitCommandError) return error.cause.diagnosticCode;
@@ -82,7 +89,7 @@ export default class OpenClawDispatch {
     error: unknown,
     stage?: OpenClawDispatchRecord['failureStage'],
   ) {
-    const code = failureCode(error);
+    const code = openClawDispatchFailureCode(error);
     await store.exclusive(async (state, save) => {
       const record = state.records.find((entry) => entry.id === id);
       if (record) {
@@ -281,7 +288,7 @@ export default class OpenClawDispatch {
             };
           } catch (error) {
             record.phase = 'blocked';
-            record.blocker = failureCode(error);
+            record.blocker = openClawDispatchFailureCode(error);
             await save();
             return { status: 'blocked', id: record.id, code: record.blocker };
           }
@@ -468,7 +475,19 @@ export default class OpenClawDispatch {
         }
         throw new Error('dispatch-action-invalid');
       }, childAction)
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
+        if (
+          !enteredJournal &&
+          !childAction &&
+          openClawDispatchFailureCode(error) === privateStateFileLockBusyErrorCode
+        ) {
+          authority.signal?.throwIfAborted();
+          return {
+            status: 'busy' as const,
+            code: privateStateFileLockBusyErrorCode,
+            ...('id' in input ? { id: input.id } : {}),
+          };
+        }
         if (!enteredJournal) throw error;
         if (
           input.action === 'prepare' ||

@@ -7,6 +7,10 @@ import type {
 } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
+import {
+  privateStateFileLockBusyErrorCode,
+  privateStateFileLockLostErrorCode,
+} from '../core/private-state-file-lock.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 
 interface HookContext {
@@ -153,13 +157,23 @@ describe('tools/dispatch/tool', () => {
   });
 
   it('should return bounded dispatch blockers without exposing raw transport errors', async () => {
-    for (const [message, code] of [
-      ['dispatch-intake-activation-required', 'dispatch-intake-activation-required'],
-      ['private fixture token details', 'dispatch-operation-failed'],
-    ]) {
+    for (const [error, code] of [
+      [new Error('dispatch-intake-activation-required'), 'dispatch-intake-activation-required'],
+      [new Error('private fixture token details'), 'dispatch-operation-failed'],
+      ...[privateStateFileLockBusyErrorCode, privateStateFileLockLostErrorCode].map((code) => [
+        Object.assign(new Error('private fixture lock details'), { code }),
+        code,
+      ]),
+      [
+        Object.assign(new Error('private fixture token details'), {
+          code: 'private-fixture-token',
+        }),
+        'dispatch-operation-failed',
+      ],
+    ] as const) {
       const f = fixture();
       f.adapter.service.run = async () => {
-        throw new Error(message);
+        throw error;
       };
       const call = { ...event, params: { action: 'next' } };
       await f.hook(call, coordinator);
