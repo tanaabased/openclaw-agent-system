@@ -91,6 +91,11 @@ describe('agent/codex-dispatch-native', () => {
       content: [{ type: 'text', text: 'Quoted trigger: ' + trigger.content[0]!.text }],
     };
     await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
+    item = {
+      ...trigger,
+      content: [{ type: 'text', text: 'I authorize ongoing intake for eligible assignments.' }],
+    };
+    await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
   });
 
   it('should require one exact terminal native rejection rather than reported denial or uncertainty', async () => {

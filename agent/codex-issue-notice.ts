@@ -21,6 +21,13 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string): NoticeCopy {
+  if (code === 'dispatch-native-occurrence-unavailable')
+    return {
+      severity: 'warning',
+      title: 'Waiting for a scheduled intake run',
+      summary: 'This operation could not verify a current native scheduled intake run.',
+      next: 'After an ordinary operator message, wait for the next scheduled intake. Do not repeat the authorization or reuse an earlier trigger. If this happens during a scheduled run, inspect its native trigger and retained state; do not reset assignments or create replacement chats.',
+    };
   if (code === 'delivery-body-required')
     return {
       severity: 'warning',

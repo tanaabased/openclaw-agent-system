@@ -3,6 +3,23 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should distinguish waiting for a scheduled trigger from an approval rejection', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'dispatch-native-occurrence-unavailable',
+      changed: true,
+    });
+    assert.equal(notice.severity, 'warning');
+    assert.match(notice.next, /wait for the next scheduled intake/i);
+    assert.match(notice.next, /during a scheduled run/);
+    assert.match(notice.message, /dispatch-native-occurrence-unavailable/);
+    assert.equal(
+      codexIssueNotice({ event: 'failure', code: 'native-approval-denied', changed: true })
+        .severity,
+      'error',
+    );
+  });
+
   it('should describe lock contention as retryable without implying identity corruption', () => {
     const notice = codexIssueNotice({
       event: 'failure',
