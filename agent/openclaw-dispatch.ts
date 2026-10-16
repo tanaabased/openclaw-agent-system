@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Static } from 'typebox';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-assessment.ts';
-import createIssueSession, { type DispatchCaller } from './openclaw-session-create.ts';
+import createIssueSession, {
+  IssueSessionMismatchError,
+  type DispatchCaller,
+} from './openclaw-session-create.ts';
 import advanceIssueTurn from './openclaw-session-turn.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
@@ -30,6 +34,7 @@ import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 
 export interface OpenClawDispatchDependencies {
   root: string;
+  config(): OpenClawConfig;
   intake: OpenClawIntake;
   connect(
     input: { manifest: AgentManifest; workspaceDir: string },
@@ -87,7 +92,13 @@ export default class OpenClawDispatch {
         await save();
       }
     }, true);
-    return { status: 'blocked' as const, id, code, ...(stage ? { stage } : {}) };
+    return {
+      status: 'blocked' as const,
+      id,
+      code,
+      ...(stage ? { stage } : {}),
+      ...(error instanceof IssueSessionMismatchError ? { mismatchedField: error.field } : {}),
+    };
   }
 
   async scope(manifest: AgentManifest, workspace: string) {
@@ -329,6 +340,7 @@ export default class OpenClawDispatch {
               intake,
               workspace: current.workspace,
               policy: manifest.github?.notifications,
+              config: this.dependencies.config(),
               debug: manifest.debug,
               ...input,
               save,
@@ -446,6 +458,7 @@ export default class OpenClawDispatch {
             });
           }
           return (working ? advanceIssueTurn : createIssueSession)({
+            config: this.dependencies.config(),
             credential: this.dependencies.credential,
             record,
             save,

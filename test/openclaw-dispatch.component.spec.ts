@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { AssessmentResult } from '../agent/assessment-result.ts';
 import AgentSystemToolError from '../api/error.ts';
@@ -21,6 +22,7 @@ describe('agent/openclaw issue dispatch', () => {
   let fixture: ReturnType<typeof intakeFixture>;
   let manifest: AgentManifest;
   let service: OpenClawDispatch;
+  let config: OpenClawConfig;
   let session: Record<string, unknown> | null;
   let calls: Array<{ method: string; params: Record<string, unknown> }>;
   let lost: boolean;
@@ -120,8 +122,10 @@ describe('agent/openclaw issue dispatch', () => {
     acceptSend = true;
     consumeSend = false;
     preparedWorktrees = 0;
+    config = {};
     service = new OpenClawDispatch({
       root: join(root, 'dispatch'),
+      config: () => config,
       intake,
       now: () => now,
       coordinator: async () => coordinator.sessionKey,
@@ -164,8 +168,11 @@ describe('agent/openclaw issue dispatch', () => {
                     spawnedCwd: params.cwd,
                     label: params.label,
                     category: params.category,
-                    model: params.model,
+                    modelProvider: String(params.model).split('/')[0],
+                    model: String(params.model).split('/').slice(1).join('/'),
                     thinkingLevel: params.thinkingLevel,
+                    parentSessionKey: 'agent:receiver:main',
+                    spawnDepth: 0,
                   };
                 if (lost) throw new Error('response-lost');
                 return { key: params.key, sessionId: 'ordinary-id', runStarted: false };
@@ -470,24 +477,32 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     const original = { ...session! };
-    for (const change of [
-      { sessionId: 'replacement' },
-      { agentId: 'other' },
-      { model: 'other/model' },
-      { thinkingLevel: 'low' },
-      { category: 'other' },
-      { label: 'other' },
-      { spawnedCwd: '/' },
-      { parentSessionKey: 'parent' },
-      { spawnDepth: 1 },
-      { archived: true },
-    ]) {
+    for (const [change, field] of [
+      [{ key: 'agent:receiver:other' }, 'key'],
+      [{ sessionId: 'replacement' }, 'sessionId'],
+      [{ agentId: 'other' }, 'agentId'],
+      [{ model: 'other/model' }, 'model'],
+      [{ thinkingLevel: 'low' }, 'thinkingLevel'],
+      [{ category: 'other' }, 'category'],
+      [{ label: 'other' }, 'label'],
+      [{ spawnedCwd: '/' }, 'cwd'],
+      [{ parentSessionKey: 'agent:other:main' }, 'parentSessionKey'],
+      [{ parentSessionKey: 'agent:receiver:unrelated' }, 'parentSessionKey'],
+      [{ spawnedBy: 'agent:receiver:main' }, 'spawnedBy'],
+      [{ spawnDepth: 1 }, 'spawnDepth'],
+      [{ archived: true }, 'archived'],
+    ] as const) {
       session = { ...original, ...change };
       const result = await service.run(manifest, root, coordinator, {
         action: 'reconcile',
         id: input.id,
       });
       assert.ok('code' in result && result.code === 'dispatch-session-mismatch');
+      assert.ok('mismatchedField' in result && result.mismatchedField === field);
+      assert.doesNotMatch(
+        JSON.stringify(result),
+        /replacement|other\/model|agent:other:main|agent:receiver:unrelated/u,
+      );
     }
     session = original;
     active = true;
@@ -497,6 +512,59 @@ describe('agent/openclaw issue dispatch', () => {
     });
     assert.ok('code' in result && result.code === 'dispatch-session-not-empty-idle');
     assert.equal(creates().length, 1);
+  });
+
+  it('should accept an unlinked session and only the configured same-agent main parent', async () => {
+    const input = await next();
+    assert.equal((await prepare(input)).status, 'session-created');
+    assert.equal(session!.parentSessionKey, 'agent:receiver:main');
+    config = { session: { mainKey: 'inbox' } };
+    session!.parentSessionKey = 'agent:receiver:inbox';
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id }))
+        .status,
+      'session-created',
+    );
+    for (const settings of [
+      { mainKey: 'other' },
+      { mainKey: 'inbox', dmScope: 'per-channel-peer' },
+      { mainKey: 'inbox', scope: 'global' },
+    ] as const) {
+      config = { session: settings };
+      const blocked = await service.run(manifest, root, coordinator, {
+        action: 'reconcile',
+        id: input.id,
+      });
+      assert.ok('code' in blocked && blocked.code === 'dispatch-session-mismatch');
+      assert.ok('mismatchedField' in blocked && blocked.mismatchedField === 'parentSessionKey');
+    }
+    delete session!.parentSessionKey;
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id }))
+        .status,
+      'session-created',
+    );
+    assert.equal(creates().length, 1);
+  });
+
+  it('should recover a retained parent mismatch without creating a replacement session', async () => {
+    const input = await next();
+    config = { session: { mainKey: 'other' } };
+    const blocked = await prepare(input);
+    assert.ok('mismatchedField' in blocked && blocked.mismatchedField === 'parentSessionKey');
+    const previous = await record();
+    config = {};
+    service = new OpenClawDispatch(service.dependencies);
+    const recovered = await service.run(manifest, root, coordinator, {
+      action: 'reconcile',
+      id: input.id,
+    });
+    assert.equal(recovered.status, 'session-created');
+    assert.ok('effect' in recovered && recovered.effect === 'reconciled');
+    assert.equal((await record()).sessionCreation?.sessionId, previous.sessionCreation?.sessionId);
+    assert.deepEqual((await record()).request, previous.request);
+    assert.equal(creates().length, 1);
+    assert.equal(preparedWorktrees, 1);
   });
 
   it('should keep classified preparation failures value-free and explicitly retryable', async () => {

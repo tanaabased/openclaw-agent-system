@@ -85,6 +85,7 @@ describe('tools/dispatch/tool', () => {
     } as unknown as OpenClawPluginApi;
     const adapter = createDispatchTool({
       api,
+      config: () => ({}),
       manifestService: {
         async loadForAgentId() {
           return { status: 'loaded', manifest, scope: { workspaceDir } };

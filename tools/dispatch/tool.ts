@@ -50,6 +50,7 @@ function caller(
 /** Host hooks supply invocation identity and receipts; the model cannot assert either. */
 export default function createDispatchTool(input: {
   api: OpenClawPluginApi;
+  config: OpenClawDispatchDependencies['config'];
   root: string;
   intake: OpenClawIntake;
   connect: OpenClawDispatchDependencies['connect'];
@@ -69,6 +70,7 @@ export default function createDispatchTool(input: {
   };
   const service = new OpenClawDispatch({
     root: input.root,
+    config: input.config,
     credential: input.credential,
     intake: input.intake,
     worktrees: input.worktrees,

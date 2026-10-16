@@ -3,6 +3,7 @@ import issueTurnReply from './openclaw-session-reply.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
 
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import {
   describeIssueSession,
@@ -54,6 +55,7 @@ export default async function advanceIssueTurn(input: {
   save(): Promise<void>;
   authority: DispatchAuthority;
   assessment?: boolean;
+  config: OpenClawConfig;
 }) {
   const { record, save, authority } = input;
   const slot = input.assessment ? 'assessmentTurn' : 'firstTurn';
@@ -79,7 +81,7 @@ export default async function advanceIssueTurn(input: {
       if (input.assessment && record.firstTurn) {
         if (record.firstTurn.status !== 'completed')
           throw new Error('dispatch-investigation-incomplete');
-        await describeIssueSession(request, record);
+        await describeIssueSession(request, record, input.config);
         const history = sessionObject(
           await request('chat.history', { sessionKey: expected.key, limit: 1 }),
         );
@@ -97,7 +99,7 @@ export default async function advanceIssueTurn(input: {
         )
           throw new Error('dispatch-assessment-session-not-idle');
         leaf = info.activeLeafEntryId;
-      } else await verifyEmptyIssueSession(request, record, true);
+      } else await verifyEmptyIssueSession(request, record, input.config, true);
       const message = input.assessment ? assessmentTurnMessage(record) : firstTurnMessage(record);
       const runId = `${record.id}:${input.assessment ? 'assessment' : 'first-turn'}`;
       const params = {
@@ -122,7 +124,7 @@ export default async function advanceIssueTurn(input: {
       await save();
     }
     const turn = record[slot]!;
-    await describeIssueSession(request, record);
+    await describeIssueSession(request, record, input.config);
     if (turn.status !== 'completed') {
       const history = sessionObject(
         await request('chat.history', {

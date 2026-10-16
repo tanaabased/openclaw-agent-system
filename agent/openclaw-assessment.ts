@@ -1,5 +1,7 @@
 import { basename, isAbsolute } from 'node:path';
 
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
 import assessmentGuidance from './assessment-guidance.ts';
 import { assessmentResultSchema } from './assessment-result.ts';
 import assessmentSkillSource from './assessment-skill-source.ts';
@@ -95,6 +97,7 @@ export async function issueAssessmentAction(input: {
   intake: IntakeRecord;
   workspace: string;
   policy: unknown;
+  config: OpenClawConfig;
   debug?: boolean;
   action: 'context' | 'result';
   result?: unknown;
@@ -112,7 +115,7 @@ export async function issueAssessmentAction(input: {
     caller.runId === record.firstTurn?.runId
   )
     throw new Error('dispatch-assessment-caller-mismatch');
-  await describeIssueSession(request, record);
+  await describeIssueSession(request, record, input.config);
   let inputEventId =
     record.assessmentCaller?.runId === caller.runId
       ? record.assessmentCaller.inputEventId

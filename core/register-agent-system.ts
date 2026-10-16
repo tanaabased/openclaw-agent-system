@@ -251,6 +251,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const automationService = new AutomationService(automationDependencies);
   const dispatchV2 = createDispatchTool({
     api,
+    config: readRuntimeConfig,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
     intake: intakeV2,
     credential: sessionDispatch,
