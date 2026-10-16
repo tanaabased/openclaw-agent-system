@@ -24,7 +24,7 @@
 - When an unattended OpenClaw CI scenario invokes tools, pass `--yolo` to `openclaw-setup`; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
 - Make live 1Password requests only when the test verifies 1Password behavior. Use host environment variables with explicit manifest imports for ordinary test authentication.
 - Keep workflow-provided model credentials optional for scenarios that do not invoke a live agent.
-- Use strict AIMock for `os-execution`, `openclaw-agent`, `openclaw-automations`, `openclaw-credentials`, `openclaw-collaboration`, `openclaw-github`, `openclaw-worktree`, and native OpenClaw turns in `openclaw-runtimes`. Memory's embedding fixture uses strict AIMock with synthetic authentication and fixed vectors rather than a model turn. Only hosted Codex turns in `openclaw-runtimes` use a live model. Other examples use direct assertions; shared live-model credentials never select a scenario's driver.
+- Use strict AIMock for `os-execution`, `openclaw-agent`, `openclaw-automations`, `openclaw-credentials`, `openclaw-collaboration`, `openclaw-github`, `openclaw-worktree`, `openclaw-notifications`, and native OpenClaw turns in `openclaw-runtimes`. Memory's embedding fixture uses strict AIMock with synthetic authentication and fixed vectors rather than a model turn. Only hosted Codex turns in `openclaw-runtimes` use a live model. Other examples use direct assertions; shared live-model credentials never select a scenario's driver.
 - Keep shared command success output stable, route diagnostics to standard error, and use `OPENCLAW_DEBUG`, `OPENCLAW_LOG_LEVEL=debug`, `DEBUG`, or runner debug mode for opt-in diagnostics.
 
 ## Assertions

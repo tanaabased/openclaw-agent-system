@@ -135,6 +135,7 @@ describe('example workflows', () => {
       'openclaw-google',
       'openclaw-tools',
       'openclaw-worktree',
+      'openclaw-notifications',
       'openclaw-collaboration',
       'openclaw-memory',
       'openclaw-backup',
