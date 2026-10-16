@@ -10,7 +10,7 @@ export default function nativeNotificationDiagnostic(code: string): string | und
     'github-notification-selector-unsupported':
       'native notification observation supports issue selectors; pull-request observation is unavailable',
     'github-notification-wait-target-unsupported':
-      'native intake does not retain rejected assignments; choose baseline-ready, prepared, worktree-ready, plan-ready, or retired',
+      'native openclaw notifications do not support rejection or retirement waits; choose baseline-ready, prepared, worktree-ready, or plan-ready',
     'github-notification-refresh-outcome-uncertain':
       'refresh admission is uncertain; inspect native workflow status before requesting another cycle',
     'intake-activation-required':

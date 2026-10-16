@@ -276,7 +276,7 @@ export default class OpenClawNotifications {
           target: input.target,
           observation,
         });
-        if (input.target === 'assignment-rejected')
+        if (input.target === 'assignment-rejected' || input.target === 'retired')
           return result('failed', 'github-notification-wait-target-unsupported');
         const reached = evaluateGitHubNotificationWait(observation, input.target, input.selector);
         if (observation.diagnosticCode) return result('failed', observation.diagnosticCode);

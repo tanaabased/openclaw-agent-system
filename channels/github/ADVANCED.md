@@ -125,13 +125,13 @@ Supported targets:
 | `baseline-ready` | no                | The first safe provider observation completed |
 | `plan-ready`     | yes               | Native V2 retained assessment is plan-ready   |
 | `prepared`       | yes               | Lifecycle-owned intake resources are ready    |
-| `retired`        | yes               | The selected assignment retired logically     |
 | `worktree-ready` | yes               | The selected issue worktree is ready          |
 
 V2 waits use the same native observation as `status`. `prepared` requires a
 verified conversation binding and worktree; `plan-ready` requires the retained
-assessment result. Native intake does not retain rejected assignments, so
-`assignment-rejected` is unsupported.
+assessment result. Native OpenClaw notifications do not retain rejected assignments
+or support assignment retirement. `assignment-rejected` and `retired` return
+`github-notification-wait-target-unsupported` immediately without requesting a refresh.
 With `--refresh`, V2 requests the owning agent-wide workflow and observes its exact
 native run receipt. It requests another cycle only after that run completes;
 pending or uncertain execution never causes a blind resubmission. A scoped wait

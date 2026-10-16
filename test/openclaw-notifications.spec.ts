@@ -441,6 +441,26 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(f.requests, 0);
   });
 
+  it('should reject retirement waits without polling or requesting a native run', async () => {
+    const f = fixture();
+    let sleeps = 0;
+    const sleep = f.service.dependencies.sleep!;
+    f.service.dependencies.sleep = async (ms, signal) => {
+      sleeps++;
+      await sleep(ms, signal);
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'retired',
+      timeoutMs: 100,
+      refresh: true,
+    });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.code, 'github-notification-wait-target-unsupported');
+    assert.equal(f.requests, 0);
+    assert.equal(sleeps, 0);
+  });
+
   it('should cancel before a run and retain uncertainty when a queue request is interrupted', async () => {
     const f = fixture();
     const abort = new AbortController();
