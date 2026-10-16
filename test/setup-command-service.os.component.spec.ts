@@ -225,6 +225,27 @@ describe('agent/setup-command-service', function () {
     });
   }
 
+  function useBoundRunner(command: string, argv: string[], catchFailure = false) {
+    dependencies.runCommandWithTimeout = async (_argv, options) => {
+      assert.ok(typeof options === 'object');
+      const environment = options.env ?? {};
+      childEnvironments.push(environment);
+      const client = new AgentCommandAuthority({
+        manifestService: dependencies.manifestService,
+        rootDir: authorityRoot,
+      });
+      const binding = await client.resolve(environment, options.cwd!);
+      assert.ok(binding?.executeCommand);
+      const result = await binding.executeCommand({ command, argv });
+      return {
+        ...success,
+        code: catchFailure ? 0 : result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    };
+  }
+
   it('should run pre-agent commands with host tools and without managed authority or secrets', async () => {
     const service = new SetupCommandService(dependencies);
     await service.runPreAgent(command('touch pre-agent-ready'), {
@@ -265,7 +286,8 @@ describe('agent/setup-command-service', function () {
     assert.deepEqual(childEnvironments, []);
   });
 
-  it('should use agent credentials through real managed launcher subprocesses in every command form', async () => {
+  it('should bind each command form without exposing credentials to the command environment', async () => {
+    useBoundRunner('gh', ['api', 'user', '--jq', '.login']);
     for (const apply of [
       'gh api user --jq .login',
       ['gh', 'api', 'user', '--jq', '.login'],
@@ -371,6 +393,7 @@ describe('agent/setup-command-service', function () {
   });
 
   it('should apply tool policy before resolving credentials', async () => {
+    useBoundRunner('gh', ['release', 'delete', 'v1', '--repo', 'owner/repo', '--yes']);
     await assert.rejects(run('gh release delete v1 --repo owner/repo --yes'), {
       code: 'setup-tool-unavailable',
     });
@@ -379,6 +402,7 @@ describe('agent/setup-command-service', function () {
   });
 
   it('should fail when credentials are missing without using operator credentials', async () => {
+    useBoundRunner('gh', ['api', 'user']);
     credentials = {};
     await assert.rejects(run('gh api user'), { code: 'setup-tool-unavailable' });
     assert.deepEqual(environmentCalls, ['emori']);
@@ -386,6 +410,7 @@ describe('agent/setup-command-service', function () {
   });
 
   it('should inspect managed configuration during checks without repairing it', async () => {
+    useBoundRunner('gh', ['api', 'user'], true);
     assert.equal((await run('gh api user', 'check')).exitCode, 0);
     assert.equal(configurationRepairs, 0);
     requests.length = 0;
@@ -398,6 +423,7 @@ describe('agent/setup-command-service', function () {
   });
 
   it('should distinguish ordinary tool exit one from unavailable tool execution', async () => {
+    useBoundRunner('gh', ['api', 'repos/owner/missing']);
     loaded.manifest.github = { token: 'EMORI_TOKEN' };
     const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
     const launcherBindings = dependencies.toolRegistry.launcherBindings.bind(
@@ -417,6 +443,7 @@ describe('agent/setup-command-service', function () {
   });
 
   it('should surface managed tool timeouts and signals even when a script catches failure', async () => {
+    useBoundRunner('gh', ['api', 'user'], true);
     const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
     const launcherBindings = dependencies.toolRegistry.launcherBindings.bind(
       dependencies.toolRegistry,

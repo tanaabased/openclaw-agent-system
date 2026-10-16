@@ -77,6 +77,7 @@
 
 ## Test design
 
+- Treat a Mocha timeout or repeatedly slow unit/component case as a test-design review before increasing its timeout. Inject incidental process, network, and timing boundaries; keep filesystem fixtures small and tied to native contracts. Consolidate installed functional flows in their owning Leia example, preserving distinct safety and OS assertions before removing duplicated source coverage. Move volume and stress cases to opt-in coverage rather than disguising them as component tests.
 - Test `validate` as deterministic and side-effect free, `doctor` as read-only inspection, and `install` as explicit reconciliation with unchanged outcomes.
 - Choose the model driver independently of the test folder: use direct assertions by default, strict AIMock when the real OpenClaw agent/tool loop matters but model judgment does not, and a live model only when provider transport, genuine model interpretation, or Codex-native tool behavior is itself under test.
 - Keep general installed/runtime contracts in `examples/`; keep model fixtures beside their owning flow and share only provider lifecycle machinery through `scripts/`.

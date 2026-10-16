@@ -10,3 +10,5 @@ backup:
   include:
     - MEMORY.md
     - memory/**
+    - memory-link
+    - run.sh

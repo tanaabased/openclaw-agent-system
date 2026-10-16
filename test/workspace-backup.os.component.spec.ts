@@ -337,27 +337,6 @@ describe('workspace backup', () => {
     assert.equal(await readFile(result.archive).then((bytes) => bytes.length > 0), true);
   });
 
-  it('should restore workspace files and safe links into an empty target', async () => {
-    await writeFile(join(workspace, 'run.sh'), '#!/bin/sh\nexit 0\n');
-    await chmod(join(workspace, 'run.sh'), 0o755);
-    await symlink('MEMORY.md', join(workspace, 'memory-link'));
-    const created = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
-    const target = join(root, 'recovered');
-    await mkdir(target, { mode: 0o700 });
-    const recovered = await service.restore(created.archive, target, 'tanaabot');
-    assert.equal(recovered.database, undefined);
-    assert.equal(
-      await readFile(join(target, 'workspace', 'memory-link'), 'utf8'),
-      'private memory\n',
-    );
-    assert.equal((await lstat(join(target, 'workspace', 'run.sh'))).mode & 0o777, 0o755);
-    assert.equal(
-      JSON.parse(await readFile(join(target, 'manifest.json'), 'utf8')).agentId,
-      'tanaabot',
-    );
-    assert.equal(await readFile(join(workspace, 'MEMORY.md'), 'utf8'), 'private memory\n');
-  });
-
   it('should reject live and nonempty targets without changing them', async () => {
     const created = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
     const selected = new WorkspaceBackupService(async () => ({

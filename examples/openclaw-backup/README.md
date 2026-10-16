@@ -39,13 +39,20 @@ kill "$fixture_pid"
 wait "$fixture_pid" || true
 trap - EXIT
 
-# should restore the captured memory into fresh staging while preserving the source
+# should restore memory safe links and executable modes into empty staging while preserving the source
 cd "$TMPDIR/backup-tanaabot"
 archive=$(jq -er .archive "$TMPDIR/backup-created.json")
+mkdir -m 700 "$TMPDIR/backup-recovered"
 openclaw agent-system backup restore "$archive" --target "$TMPDIR/backup-recovered" --json | jq -e '.status == "restored" and .agentId == "backup-tanaabot" and .coverage.openclawState == "captured"'
 node "$GITHUB_WORKSPACE/examples/openclaw-backup/agent-state-fixture.mjs" verify "$TMPDIR/backup-recovered/openclaw-state/openclaw-agent.sqlite"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/MEMORY.md" "$TMPDIR/backup-recovered/workspace/MEMORY.md"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/memory/day.md" "$TMPDIR/backup-recovered/workspace/memory/day.md"
+test -L "$TMPDIR/backup-recovered/workspace/memory-link"
+test "$(readlink "$TMPDIR/backup-recovered/workspace/memory-link")" = MEMORY.md
+cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/MEMORY.md" "$TMPDIR/backup-recovered/workspace/memory-link"
+test -x "$TMPDIR/backup-recovered/workspace/run.sh"
+cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/run.sh" "$TMPDIR/backup-recovered/workspace/run.sh"
+jq -e '.agentId == "backup-tanaabot"' "$TMPDIR/backup-recovered/manifest.json"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/MEMORY.md" MEMORY.md
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/memory/day.md" memory/day.md
 
