@@ -148,13 +148,24 @@ reply-staging tool, and task-PR tool have been removed. Native OpenClaw Work/Aut
 feedback, review requests, and custom assessment skills remain unavailable.
 Retirement does not imply feature parity.
 
-Before upgrading an installation that still has V1 configuration, pause its old
-intake, retain a configuration backup, and remove only its retired
-`channels.agent-system-github` account/binding entries and
-`plugins.entries.agent-system.config.githubNotifications` setting. Do not remove
-unrelated channel bindings, schedules, or independently owned grants. Old
-notification checkpoint, conversation, publication, and grant receipts are left
-untouched; there is no automatic import, deletion, or grant revocation.
+The channel id `agent-system-github` remains registered as a read-only readiness
+surface. Existing accounts and bindings remain valid; the deprecated plugin
+`githubNotifications` limits are accepted but unused. Legacy configuration never
+activates V2 intake. Install adopts an old account only when its matching
+Agent System-managed binding establishes ownership; conflicting accounts require
+operator resolution. Historical receipts and grants remain untouched.
+
+Install manages each agent's channel account from its enabled OpenClaw notification
+workflows. Removing or disabling those workflows requires another Install to disable
+that account. Other agents and operator-owned entries are preserved. With no enabled
+accounts, the channel is inactive; its schema remains registered for compatibility.
+
+The channel reports setup or synchronization needs, unsupported workflows, scheduler
+availability, execution/delivery failures, and the last successful scan. Three missed
+scan intervals report overdue intake. Status reads manifest and retained state plus
+native scheduler observations; it never resolves credentials or starts work. If native
+inspection is unavailable it reports unknown. Healthy status describes these observations,
+not a fresh credential probe or a guarantee that the next dispatch will succeed.
 
 Declare V2 authority explicitly and run Install to reconcile its owning schedule.
 Old checkpoints and conversations do not establish V2 activation or completion.

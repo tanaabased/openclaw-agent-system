@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { githubChannelMetadata, githubChannelSchema } from '../channels/github/channel-schema.ts';
+
 import pluginMetadataFailures, {
   type CodexPluginManifest,
   type PackageMetadata,
@@ -47,6 +49,7 @@ const packageMetadata: PackageMetadata = {
     'LICENSE',
   ],
   openclaw: {
+    channel: githubChannelMetadata,
     agentSystem: { codexPlugin: '@openclaw/codex@2026.9.8' },
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
@@ -68,6 +71,8 @@ const packageMetadata: PackageMetadata = {
 };
 
 const manifest: PluginManifest = {
+  channels: ['agent-system-github'],
+  channelConfigs: { 'agent-system-github': { schema: githubChannelSchema } },
   description: 'Better per-agent management for OpenClaw.',
   id: 'agent-system',
   name: 'Agent System',
@@ -180,6 +185,7 @@ describe('core/plugin-metadata-failures', () => {
         'canonical-command-alias',
         'short-command-alias',
         'cli-command-contract',
+        'channel-contract',
         'tool-contract',
         'tool-policy-contract',
         'skill-contract',
@@ -264,7 +270,7 @@ describe('core/plugin-metadata-failures', () => {
       [
         {
           code: 'channel-contract',
-          message: 'retired GitHub polling channel metadata must not be published',
+          message: 'GitHub readiness channel metadata must match its static runtime contract',
         },
       ],
     );
@@ -291,7 +297,7 @@ describe('core/plugin-metadata-failures', () => {
       [
         {
           code: 'channel-contract',
-          message: 'retired GitHub polling channel metadata must not be published',
+          message: 'GitHub readiness channel metadata must match its static runtime contract',
         },
       ],
     );

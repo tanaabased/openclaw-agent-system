@@ -16,7 +16,7 @@ describe('index', () => {
     assert.equal(plugin.configSchema.jsonSchema?.additionalProperties, false);
     assert.equal(
       Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('githubNotifications'),
-      false,
+      true,
     );
     assert.ok(Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('opCache'));
   });
@@ -159,9 +159,16 @@ describe('index', () => {
       'session_start',
       'before_prompt_build',
     ]);
-    assert.deepEqual(channelIds, []);
+    assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(commandNames, []);
-    assert.deepEqual(serviceIds, ['agent-system-op-cache', 'agent-system-command-authority']);
+    assert.deepEqual(
+      new Set(serviceIds),
+      new Set([
+        'agent-system-github-readiness',
+        'agent-system-op-cache',
+        'agent-system-command-authority',
+      ]),
+    );
     assert.deepEqual(toolNames, [
       'agent_system_dispatch',
       'agent_system_intake',

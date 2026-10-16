@@ -28,8 +28,13 @@ cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-not
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
-# should activate native intake with explicit dispatch enrollment
+# should boot with retained legacy channel configuration
+openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
+openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
 openclaw-gateway start
+openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
+
+# should activate native intake with explicit dispatch enrollment
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
 openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
@@ -41,6 +46,10 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 ## Testing
 
 ```bash
+# should expose the install-managed account through the native channel status interface
+openclaw gateway call channels.status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "notifications-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and (.statusState == "healthy" or .statusState == "awaiting-first-scan"))'
+openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["notifications-tanaabot"].enabled == true'
+
 # should assign one disposable issue from emori to tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
 openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"

@@ -31,6 +31,12 @@ openclaw agent-system notifications status --json
 openclaw agent-system notifications refresh --json
 ```
 
+Install also manages the **GitHub Notifications** readiness channel. It shows when
+an agent needs setup or automation synchronization, and reports recent intake
+health. Disable notifications in the manifest and run Install to deactivate that
+agent's account; there is no separate channel setup. See [channel readiness and
+compatibility](./ADVANCED.md#v1-retirement) for observation limits.
+
 A queued refresh is an admission receipt. It does not prove a completed scan,
 created conversation, or finished plan. Status reads durable intake and dispatch
 records; `wait --for plan-ready` requires the retained assessment result.
