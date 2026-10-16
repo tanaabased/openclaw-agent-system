@@ -1,9 +1,19 @@
+import type {
+  GitHubNotificationItemDisposition,
+  GitHubNotificationIntakeStage,
+  GitHubNotificationCleanupState,
+  GitHubNotificationItemFailure,
+} from '../../cli/contracts.ts';
 import type { GitHubRepositoryPermission } from '../../provider/work-item.ts';
 import type { GitHubNotificationLifecycleId } from '../../lifecycles/types.ts';
 
-export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejected' | 'retired';
-
-export type GitHubNotificationIntakeStage = 'admitted' | 'prepared' | 'retired';
+export type {
+  GitHubNotificationItemDisposition,
+  GitHubNotificationIntakeStage,
+  GitHubNotificationCleanupStatus,
+  GitHubNotificationCleanupState,
+  GitHubNotificationItemFailure,
+} from '../../cli/contracts.ts';
 
 export type GitHubNotificationSchedulingStatus = 'active' | 'queued' | 'waiting';
 
@@ -11,15 +21,6 @@ export interface GitHubNotificationSchedulingState {
   reasonCode?: string;
   sequence: number;
   status: GitHubNotificationSchedulingStatus;
-}
-
-export type GitHubNotificationCleanupStatus = 'completed' | 'failed' | 'skipped';
-
-export interface GitHubNotificationCleanupState {
-  reasonCode: string;
-  session: 'archived' | 'failed' | 'missing' | 'pinned';
-  status: GitHubNotificationCleanupStatus;
-  worktree: 'dirty' | 'failed' | 'missing' | 'not-applicable' | 'removed' | 'unsafe';
 }
 
 export interface GitHubNotificationPullRequestState {
@@ -65,15 +66,6 @@ export interface GitHubNotificationItemState {
   repositoryOwner: string;
   repositoryOwnerNodeId: string;
   repositoryPermission: GitHubRepositoryPermission;
-}
-
-export interface GitHubNotificationItemFailure {
-  cause: 'repository-permission-denied';
-  itemType: 'issue' | 'pull-request';
-  number: number;
-  repository: string;
-  stage: 'permission-check';
-  updatedAt?: string;
 }
 
 export interface GitHubNotificationMonitorState {

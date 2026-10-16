@@ -8,11 +8,11 @@ import GitHubNotificationAssignmentProvider from '../channels/github/intake/assi
 import type { AgentSystemCliResult } from '../api/types.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import {
-  approvedNotificationItem,
   notificationAccount,
   notificationActor,
   notificationRepository,
-} from './github-notification-fixtures.ts';
+} from './github-provider-fixtures.ts';
+import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 const workspaceDir = '/workspace';
 const config: OpenClawConfig = {

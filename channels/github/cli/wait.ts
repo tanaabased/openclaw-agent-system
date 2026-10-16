@@ -13,10 +13,7 @@ import {
 } from '../../../cli/output.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
-import {
-  githubNotificationWaitTargets,
-  type GitHubNotificationWaitTarget,
-} from '../intake/monitor/status.ts';
+import { githubNotificationWaitTargets, type GitHubNotificationWaitTarget } from './contracts.ts';
 import {
   NotificationCliOptionError,
   notificationItemSelector,

@@ -6,12 +6,12 @@ import {
   reviewFeedbackPresentation,
   reviewFeedbackContext,
   type GitHubCanonicalFeedback,
-} from './review-feedback.ts';
+} from '../provider/review-feedback.ts';
 
 import type { Logger } from '../../../core/logger.ts';
-import { githubNotificationCommentPresentation } from '../events/comment.ts';
+import { githubNotificationCommentPresentation } from '../presentation/comment.ts';
 import githubNotificationCommentContext from './context/comment.ts';
-import type { GitHubCommentMention, GitHubCommentRevision } from './comment-admission.ts';
+import type { GitHubCommentMention, GitHubCommentRevision } from '../provider/comment-admission.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {

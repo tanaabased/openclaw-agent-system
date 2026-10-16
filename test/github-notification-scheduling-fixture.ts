@@ -19,11 +19,13 @@ import acquirePrivateStateFileLock, {
 import type abortableDelay from '../utils/abortable-delay.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import {
-  approvedNotificationItem,
   notificationAccount,
   notificationActor,
-  notificationMonitorState,
   notificationRepository,
+} from './github-provider-fixtures.ts';
+import {
+  approvedNotificationItem,
+  notificationMonitorState,
 } from './github-notification-fixtures.ts';
 
 export const schedulingIssueA = approvedNotificationItem();

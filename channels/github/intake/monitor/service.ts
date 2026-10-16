@@ -1,6 +1,7 @@
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import type { GitHubNotificationRefreshResult } from '../../cli/contracts.ts';
 import { legacyGitHubNotifications } from '../../config-schema.ts';
 import { githubNotificationRuntimeBlocker } from '../../notification-policy.ts';
 import {
@@ -15,7 +16,6 @@ import abortableDelay from '../../../../utils/abortable-delay.ts';
 import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
-  type GitHubNotificationItemFailure,
 } from './state.ts';
 import type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
@@ -67,23 +67,9 @@ export interface GitHubNotificationMonitorRunOptions {
   waitForLeaseMs?: number;
 }
 
-export interface GitHubNotificationMonitorRunResult {
-  agentId: string;
-  approved?: number;
-  baseline?: number;
-  baselineAt?: number;
-  baselineEstablished?: boolean;
-  code: string;
-  diagnosticCode?: string;
-  duplicates?: number;
-  itemFailures?: GitHubNotificationItemFailure[];
-  lastSuccessfulPollAt?: number;
-  nextPollAt?: number;
-  rejected?: number;
-  retryAt?: number;
-  retired?: number;
+export type GitHubNotificationMonitorRunResult = Omit<GitHubNotificationRefreshResult, 'status'> & {
   status: 'completed' | 'failed' | 'skipped';
-}
+};
 
 export type GitHubNotificationMonitorCycleListener = (
   result: GitHubNotificationMonitorRunResult,

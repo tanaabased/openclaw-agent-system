@@ -6,7 +6,7 @@ import {
   reviewFeedback,
   reviewFeedbackRevision,
   type GitHubReviewFeedback,
-} from '../channels/github/conversation/review-feedback.ts';
+} from '../channels/github/provider/review-feedback.ts';
 
 import type { ChannelInboundTurnPlan } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -19,7 +19,7 @@ import GitHubNotificationCommentTurnService, {
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/conversation/comment-admission.ts';
+} from '../channels/github/provider/comment-admission.ts';
 import GitHubNotificationModelTurnCoordinator from '../channels/github/conversation/model-turn-coordinator.ts';
 import GitHubNotificationModelTurnDispatcher, {
   type GitHubNotificationHostDispatchResult,
@@ -29,11 +29,8 @@ import {
   type GitHubNotificationReplyCandidateTurnInput,
 } from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
-import {
-  notificationActor,
-  notificationItemKey,
-  notificationMonitorState,
-} from './github-notification-fixtures.ts';
+import { notificationActor } from './github-provider-fixtures.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 const agentId = 'tanaabot';

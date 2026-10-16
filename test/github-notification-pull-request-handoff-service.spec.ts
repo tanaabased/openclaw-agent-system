@@ -10,7 +10,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
-import { githubCommentRevision } from '../channels/github/conversation/comment-admission.ts';
+import { githubCommentRevision } from '../channels/github/provider/comment-admission.ts';
 import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
@@ -23,11 +23,8 @@ import type { GitHubNotificationTurnContract } from '../channels/github/conversa
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
-import {
-  notificationAccount,
-  notificationActor,
-  approvedNotificationItem,
-} from './github-notification-fixtures.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
+import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';

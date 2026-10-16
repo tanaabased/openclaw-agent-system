@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
-import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
-import { defaultMaximumCommentCharacters } from '../provider/comment-limit.ts';
-import type { GitHubIdentity } from '../provider/work-item.ts';
+import type { GitHubIdentityPin } from '../config-schema.ts';
+import { defaultMaximumCommentCharacters } from './comment-limit.ts';
+import type { GitHubIdentity } from './work-item.ts';
 
 export interface GitHubCanonicalIssueComment {
   author?: GitHubIdentity;
@@ -44,6 +44,11 @@ export type GitHubCommentAdmission =
 export interface GitHubCommentRevision {
   bodyDigest: string;
   revisionId: string;
+}
+
+export interface GitHubCommentAdmissionPolicy {
+  approvedFeedbackAuthors?: GitHubIdentityPin[];
+  approvedActors?: GitHubIdentityPin[];
 }
 
 function exactMentionPattern(login: string, global = false): RegExp {
@@ -142,7 +147,7 @@ export function admitGitHubComment(input: {
   account: GitHubIdentity;
   allowSelf?: boolean;
   comment: GitHubCanonicalIssueComment;
-  configuration: GitHubNotificationsConfiguration;
+  configuration: GitHubCommentAdmissionPolicy;
   maximumCommentCharacters?: number;
 }): GitHubCommentAdmission {
   const author = input.comment.author;

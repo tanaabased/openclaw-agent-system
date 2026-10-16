@@ -5,14 +5,14 @@ import {
   isReviewFeedback,
   readReviewFeedback,
   reviewFeedbackRevision,
-} from '../conversation/review-feedback.ts';
+} from '../provider/review-feedback.ts';
 import { resolve } from 'node:path';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type AgentManifestService from '../../../manifest/service.ts';
 import { authorizeGitHubOperation, classifyGitHubOperation } from '../../../tools/github/policy.ts';
-import { admitGitHubComment, githubCommentRevision } from '../conversation/comment-admission.ts';
+import { admitGitHubComment, githubCommentRevision } from '../provider/comment-admission.ts';
 import type {
   GitHubNotificationCommentRevisionState,
   GitHubNotificationConversationSource,

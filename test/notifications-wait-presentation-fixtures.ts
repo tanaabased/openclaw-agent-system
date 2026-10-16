@@ -1,9 +1,7 @@
 import { createCliStyles } from '../cli/output.ts';
 import waitNotificationsAgentSystem from '../channels/github/cli/wait.ts';
-import type {
-  GitHubNotificationWaitInput,
-  GitHubNotificationWaitResult,
-} from '../channels/github/intake/monitor/status-service.ts';
+import type { GitHubNotificationWaitResult } from '../channels/github/cli/contracts.ts';
+import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 const manifest: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {

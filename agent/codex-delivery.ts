@@ -26,8 +26,8 @@ import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
-import workflowInstructions from '../channels/github/conversation/presentation/workflow-instructions.ts';
-import { githubNotificationPullRequestOpenedCard } from '../channels/github/events/pull-request-opened.ts';
+import workflowInstructions from '../channels/github/presentation/workflow-instructions.ts';
+import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,

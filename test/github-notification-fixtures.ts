@@ -3,23 +3,13 @@ import type {
   GitHubNotificationMonitorState,
 } from '../channels/github/intake/monitor/state.ts';
 
-export const notificationAccount = { login: 'tanaabot', nodeId: 'U_agent', type: 'User' };
-export const notificationActor = { login: 'pirog', nodeId: 'U_actor', type: 'User' };
-export const notificationOwner = {
-  login: 'tanaabased',
-  nodeId: 'O_owner',
-  type: 'Organization',
-};
-export const notificationRepository = {
-  archived: false,
-  cloneUrl: 'https://github.com/tanaabased/example.git',
-  databaseId: 3,
-  defaultBranch: 'main',
-  disabled: false,
-  name: 'example',
-  nodeId: 'R_repo',
-  owner: notificationOwner,
-};
+import {
+  notificationAccount,
+  notificationActor,
+  notificationOwner,
+  notificationRepository,
+} from './github-provider-fixtures.ts';
+
 export const notificationItemKey = 'github:R_repo:12';
 export const notificationPullRequestItemKey = 'github:R_repo:13';
 export const notificationPullRequestHeadSha = 'a'.repeat(40);

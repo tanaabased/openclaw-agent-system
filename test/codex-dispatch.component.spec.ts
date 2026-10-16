@@ -14,7 +14,7 @@ import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { githubNotificationMarkdownText } from '../channels/github/conversation/presentation/card.ts';
+import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';

@@ -1,9 +1,9 @@
-import type { GitHubNotificationAssignmentEvent } from '../channel.ts';
-
 /** retain the same conversation identity across runtime adapters. */
-export function githubNotificationConversationId(
-  event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'lifecycleId' | 'repositoryId'>,
-): string {
+export function githubNotificationConversationId(event: {
+  itemNumber: number;
+  lifecycleId: 'issue' | 'pull-request' | 'pull-request-review';
+  repositoryId: string;
+}): string {
   if (!Number.isSafeInteger(event.itemNumber) || event.itemNumber < 1) {
     throw new Error('GitHub notification item numbers must be positive safe integers.');
   }

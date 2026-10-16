@@ -2,8 +2,8 @@ import type { AssessmentResult } from './assessment-result.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { RoutingDecision } from './model-routing.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
-import renderAssessmentResult from '../channels/github/conversation/presentation/assessment-result.ts';
-import type { WorkflowInstructionsPresentation } from '../channels/github/conversation/presentation/workflow-instructions.ts';
+import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
+import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 
 function repository(record: IntakeRecord) {
   return record.repository.owner.login + '/' + record.repository.name;

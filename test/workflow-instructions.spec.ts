@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 
-import workflowInstructions from '../channels/github/conversation/presentation/workflow-instructions.ts';
+import workflowInstructions from '../channels/github/presentation/workflow-instructions.ts';
 import feedbackResponse, {
   feedbackReplyPresentation,
-} from '../channels/github/conversation/presentation/feedback-response.ts';
+} from '../channels/github/presentation/feedback-response.ts';
 
 const selection = {
   defaultSkill: false,
   skill: { name: 'piroplugin:piro-feedback-reply', path: '/skills/latin reply/SKILL.md' },
 };
-describe('channels/github/conversation/presentation/workflow-instructions', () => {
+describe('channels/github/presentation/workflow-instructions', () => {
   it('should quote the verified reply recipient and every multiline body line', () => {
     const body = '@contributor\r\n\r\nFirst paragraph.\n\n- Item\n\n> Nested quote';
     const card = feedbackReplyPresentation('contributor', body);

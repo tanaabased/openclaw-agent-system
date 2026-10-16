@@ -5,7 +5,7 @@ import { githubNotificationConversationId } from '../channels/github/channel.ts'
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/conversation/comment-admission.ts';
+} from '../channels/github/provider/comment-admission.ts';
 import GitHubNotificationCommentOrchestrator from '../channels/github/conversation/comment-orchestrator.ts';
 import {
   createGitHubNotificationConversationSnapshot,
@@ -22,12 +22,8 @@ import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubNotificationCommentPublicationService from '../channels/github/publication/comment-publication-service.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
-import {
-  notificationAccount,
-  notificationActor,
-  notificationItemKey,
-  notificationMonitorState,
-} from './github-notification-fixtures.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 import { createGitHubNotificationTurnDefinitions } from './github-notification-turn-fixtures.ts';
 import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 

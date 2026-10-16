@@ -1,5 +1,5 @@
-import { githubNotificationMarkdownText } from '../conversation/presentation/card.ts';
-import assignmentCard from '../conversation/presentation/assignment-card.ts';
+import { githubNotificationMarkdownText } from '../presentation/card.ts';
+import assignmentCard from '../presentation/assignment-card.ts';
 import githubNotificationAssignmentEventInstructions from '../conversation/prompts/event-assignment.ts';
 import githubNotificationAssignmentResponseInstructions from '../conversation/prompts/response-assignment.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';

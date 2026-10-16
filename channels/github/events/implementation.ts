@@ -1,4 +1,4 @@
-import githubNotificationCard from '../conversation/presentation/card.ts';
+import githubNotificationCard from '../presentation/card.ts';
 import githubNotificationImplementationEventInstructions from '../conversation/prompts/event-implementation.ts';
 import githubNotificationImplementationResponseInstructions from '../conversation/prompts/response-implementation.ts';
 import type { GitHubNotificationEvent } from './types.ts';

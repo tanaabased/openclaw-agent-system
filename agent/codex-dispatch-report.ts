@@ -8,7 +8,7 @@ import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import {
   githubNotificationMarkdownText as text,
   githubNotificationQuote,
-} from '../channels/github/conversation/presentation/card.ts';
+} from '../channels/github/presentation/card.ts';
 
 /** summarize intake facts only; assessment results never become intake announcements. */
 export default function prepareDispatchReport(input: {

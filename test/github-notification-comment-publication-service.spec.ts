@@ -8,7 +8,7 @@ import {
 import {
   reviewFeedback,
   reviewFeedbackRevision,
-} from '../channels/github/conversation/review-feedback.ts';
+} from '../channels/github/provider/review-feedback.ts';
 
 import { conversationSnapshot } from './github-notification-conversation-fixtures.ts';
 
@@ -28,7 +28,7 @@ import type { GitHubNotificationPublicationClient } from '../channels/github/pro
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/conversation/comment-admission.ts';
+} from '../channels/github/provider/comment-admission.ts';
 import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
@@ -39,12 +39,8 @@ import {
 } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import {
-  notificationAccount,
-  notificationActor,
-  notificationItemKey,
-  notificationMonitorState,
-} from './github-notification-fixtures.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';

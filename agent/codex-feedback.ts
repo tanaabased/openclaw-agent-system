@@ -16,7 +16,7 @@ import { scanCodexFeedback, applyFeedbackScans } from './codex-feedback-scan.ts'
 import selectFeedbackStage from './feedback-stage.ts';
 import feedbackResponse, {
   feedbackReplyPresentation,
-} from '../channels/github/conversation/presentation/feedback-response.ts';
+} from '../channels/github/presentation/feedback-response.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 import { admitCodexFeedback, feedbackRevision } from './codex-feedback-source.ts';
 import { feedbackResultSchema } from './codex-feedback-state.ts';
@@ -33,8 +33,8 @@ import {
   reviewFeedbackContext,
   reviewFeedbackPresentation,
   type GitHubCanonicalFeedback,
-} from '../channels/github/conversation/review-feedback.ts';
-import { githubNotificationCommentPresentation } from '../channels/github/events/comment.ts';
+} from '../channels/github/provider/review-feedback.ts';
+import { githubNotificationCommentPresentation } from '../channels/github/presentation/comment.ts';
 import { githubNotificationAttributedReplyText } from '../channels/github/publication/publication-contract.ts';
 import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch.ts';

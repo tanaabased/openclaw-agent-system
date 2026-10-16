@@ -1,6 +1,6 @@
 import GitHubReviewClient from './review-client.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import type { GitHubRateLimit } from './api-response.ts';
 import GitHubIssueCommentClient from './issue-comment-client.ts';
 import readItemContext from './read-item-context.ts';

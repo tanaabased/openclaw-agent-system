@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
 import { githubNotificationCommenterToken } from '../channels/github/publication/publication.ts';
-import { approvedNotificationItem } from './github-notification-fixtures.ts';
+import { publicationItem } from './github-provider-fixtures.ts';
 
 function input() {
   return {
     intent: 'github-reply' as const,
-    item: approvedNotificationItem(),
+    item: publicationItem(),
     source: { commentDatabaseId: 89, revisionId: 'a'.repeat(64) },
     text: `Thanks for flagging this, ${githubNotificationCommenterToken}. I checked the current behavior.`,
   };
@@ -179,7 +179,7 @@ describe('channels/github/publication/comment-publisher', () => {
 
     await publisher.publish({
       intent: 'initial-acknowledgment',
-      item: approvedNotificationItem(),
+      item: publicationItem(),
       publicationId: 'EV_assignment',
       text: "Got it — I'm starting on this now.",
     });

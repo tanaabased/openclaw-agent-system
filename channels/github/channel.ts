@@ -195,4 +195,4 @@ export interface GitHubNotificationAssignmentEvent {
   title: string;
 }
 
-export { githubNotificationConversationId } from './conversation/identity.ts';
+export { githubNotificationConversationId } from './publication/conversation-identity.ts';

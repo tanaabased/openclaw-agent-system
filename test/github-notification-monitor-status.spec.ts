@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 
-import {
-  evaluateGitHubNotificationWait,
-  githubNotificationMonitorStatus,
-} from '../channels/github/intake/monitor/status.ts';
+import { evaluateGitHubNotificationWait } from '../channels/github/cli/contracts.ts';
+import { githubNotificationMonitorStatus } from '../channels/github/intake/monitor/status.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 describe('channels/github/intake/monitor/status', () => {

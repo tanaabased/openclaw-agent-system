@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
-import { githubNotificationMarkdownText, githubNotificationQuote } from './presentation/card.ts';
+import { GitHubWorkEventClientError } from './work-event-api-client.ts';
+import { githubNotificationMarkdownText, githubNotificationQuote } from '../presentation/card.ts';
 import {
   admitGitHubComment,
   type GitHubCanonicalIssueComment,
@@ -12,7 +12,7 @@ import type {
   GitHubPullRequestReview,
   GitHubPullRequestReviewComment,
   GitHubPullRequestReviewClient,
-} from '../provider/review-types.ts';
+} from './review-types.ts';
 
 export interface GitHubReviewReceipt {
   kind: 'review' | 'review-comment';

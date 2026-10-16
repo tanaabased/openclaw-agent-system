@@ -3,7 +3,7 @@ import type {
   GitHubPullRequestReviewComment,
   GitHubPullRequestReviewClient,
 } from '../channels/github/provider/review-types.ts';
-import { notificationActor } from './github-notification-fixtures.ts';
+import { notificationActor } from './github-provider-fixtures.ts';
 
 export function reviewFixture(
   overrides: Partial<GitHubPullRequestReview> = {},

@@ -7,7 +7,7 @@ import {
   notificationActor as actor,
   notificationOwner as owner,
   notificationRepository,
-} from './github-notification-fixtures.ts';
+} from './github-provider-fixtures.ts';
 
 const event = {
   actor,

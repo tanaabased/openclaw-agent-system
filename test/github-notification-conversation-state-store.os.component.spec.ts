@@ -18,7 +18,7 @@ import { reviewFixture, reviewCommentFixture } from './github-review-fixtures.ts
 import {
   reviewFeedback,
   reviewFeedbackRevision,
-} from '../channels/github/conversation/review-feedback.ts';
+} from '../channels/github/provider/review-feedback.ts';
 
 import GitHubNotificationConversationStateStore from '../channels/github/conversation/conversation-state-store.ts';
 import GitHubNotificationAssignmentAcknowledgmentService from '../channels/github/conversation/assignment-acknowledgment-service.ts';

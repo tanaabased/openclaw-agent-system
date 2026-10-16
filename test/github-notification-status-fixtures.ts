@@ -1,6 +1,6 @@
 import statusNotificationsAgentSystem from '../channels/github/cli/status.ts';
 import GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
-import type { GitHubNotificationItemSelector } from '../channels/github/intake/monitor/status.ts';
+import type { GitHubNotificationItemSelector } from '../channels/github/cli/contracts.ts';
 import { createCliStyles } from '../cli/output.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import {

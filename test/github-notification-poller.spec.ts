@@ -14,9 +14,9 @@ import type { GitHubRepositoryPermission } from '../channels/github/provider/wor
 import {
   notificationAccount as account,
   notificationActor as actor,
-  notificationMonitorState,
   notificationRepository as repository,
-} from './github-notification-fixtures.ts';
+} from './github-provider-fixtures.ts';
+import { notificationMonitorState } from './github-notification-fixtures.ts';
 
 const baselineAt = Date.parse('2026-08-11T12:00:00.000Z');
 const candidate = {

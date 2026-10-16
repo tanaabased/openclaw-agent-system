@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import githubNotificationMessage, {
   githubNotificationMarkdownText,
   githubNotificationQuote,
-} from '../channels/github/conversation/presentation/card.ts';
+} from '../channels/github/presentation/card.ts';
 
-describe('channels/github/conversation/presentation', () => {
+describe('channels/github/presentation', () => {
   it('should preserve nested markdown and whitespace inside one complete quote', () => {
     assert.equal(
       githubNotificationQuote(

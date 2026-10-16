@@ -2,11 +2,12 @@ import type GitHubNotificationMonitorService from './service.ts';
 import type GitHubNotificationMonitorStateStore from './state-store.ts';
 import {
   evaluateGitHubNotificationWait,
-  githubNotificationMonitorStatus,
   type GitHubNotificationItemSelector,
   type GitHubNotificationStatusResult,
   type GitHubNotificationWaitTarget,
-} from './status.ts';
+  type GitHubNotificationWaitResult,
+} from '../../cli/contracts.ts';
+import { githubNotificationMonitorStatus } from './status.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
 
 const defaultPollIntervalMs = 1_000;
@@ -27,15 +28,6 @@ export interface GitHubNotificationWaitInput {
   selector?: GitHubNotificationItemSelector;
   target: GitHubNotificationWaitTarget;
   timeoutMs: number;
-}
-
-export interface GitHubNotificationWaitResult {
-  agentId: string;
-  code: string;
-  observation: GitHubNotificationStatusResult;
-  schemaVersion: 2;
-  status: 'completed' | 'failed' | 'timed-out';
-  target: GitHubNotificationWaitTarget;
 }
 
 function defaultSleep(milliseconds: number): Promise<void> {

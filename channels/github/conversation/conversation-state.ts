@@ -1,4 +1,4 @@
-import type { GitHubReviewReceipt } from './review-feedback.ts';
+import type { GitHubReviewReceipt } from '../provider/review-feedback.ts';
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { validModelRouting, type ModelRouting } from './model-routing.ts';

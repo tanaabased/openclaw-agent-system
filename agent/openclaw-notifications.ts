@@ -2,22 +2,19 @@ import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import dispatchCapacity from './dispatch-capacity.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type { GitHubNotificationMonitorRunResult } from '../channels/github/intake/monitor/service.ts';
 import {
   evaluateGitHubNotificationWait,
   type GitHubNotificationItemSelector,
+  type GitHubNotificationRefreshResult,
   type GitHubNotificationStatusResult,
   type GitHubNotificationWaitTarget,
-} from '../channels/github/intake/monitor/status.ts';
-import type { GitHubNotificationWaitResult } from '../channels/github/intake/monitor/status-service.ts';
+  type GitHubNotificationWaitResult,
+} from '../channels/github/cli/contracts.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import abortableDelay from '../utils/abortable-delay.ts';
 
-export type NotificationRefreshResult = Omit<GitHubNotificationMonitorRunResult, 'status'> & {
-  status: GitHubNotificationMonitorRunResult['status'] | 'queued';
-  runId?: string;
-};
+export type NotificationRefreshResult = GitHubNotificationRefreshResult;
 
 interface Dependencies {
   root: string;

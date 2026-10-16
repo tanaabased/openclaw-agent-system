@@ -9,7 +9,7 @@ import {
 import {
   isReviewFeedback,
   reviewFeedbackContext,
-} from '../channels/github/conversation/review-feedback.ts';
+} from '../channels/github/provider/review-feedback.ts';
 import type { GitHubNotificationCommentTurnInput } from '../channels/github/conversation/comment-turn-service.ts';
 
 import {
@@ -31,7 +31,7 @@ import type {
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/conversation/comment-admission.ts';
+} from '../channels/github/provider/comment-admission.ts';
 import {
   decodeGitHubNotificationConversationRecord,
   createGitHubNotificationConversationState,
@@ -46,12 +46,8 @@ import type { GitHubNotificationMonitorState } from '../channels/github/intake/m
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
-import {
-  notificationAccount,
-  notificationActor,
-  notificationItemKey,
-  notificationMonitorState,
-} from './github-notification-fixtures.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 import { createGitHubNotificationTurnDefinitions } from './github-notification-turn-fixtures.ts';
 
 const agentId = 'tanaabot';

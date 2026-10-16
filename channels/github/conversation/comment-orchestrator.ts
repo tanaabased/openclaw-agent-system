@@ -7,7 +7,7 @@ import {
   reviewFeedbackRevision,
   type GitHubCanonicalFeedback,
   type GitHubReviewFeedback,
-} from './review-feedback.ts';
+} from '../provider/review-feedback.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import {
@@ -16,7 +16,7 @@ import {
   type GitHubCanonicalIssueComment,
   type GitHubCommentMention,
   type GitHubCommentRevision,
-} from './comment-admission.ts';
+} from '../provider/comment-admission.ts';
 import {
   createGitHubNotificationConversationSnapshot,
   githubNotificationPublicTextDigest,

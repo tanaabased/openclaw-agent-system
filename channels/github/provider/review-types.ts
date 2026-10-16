@@ -1,4 +1,4 @@
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 
 export interface GitHubPullRequestReview extends GitHubCanonicalIssueComment {
   commitId: string;

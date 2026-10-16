@@ -50,12 +50,12 @@ import {
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { assessmentSchema } from './model-routing.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
-import assignmentCard from '../channels/github/conversation/presentation/assignment-card.ts';
+import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import {
   githubNotificationMarkdownText,
   githubNotificationQuote,
-} from '../channels/github/conversation/presentation/card.ts';
+} from '../channels/github/presentation/card.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,

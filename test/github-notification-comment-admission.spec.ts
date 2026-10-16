@@ -1,18 +1,15 @@
 import assert from 'node:assert/strict';
 
-import type { GitHubNotificationsConfiguration } from '../channels/github/config-schema.ts';
 import {
   admitGitHubComment,
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/conversation/comment-admission.ts';
-import { notificationAccount, notificationActor } from './github-notification-fixtures.ts';
+  type GitHubCommentAdmissionPolicy,
+} from '../channels/github/provider/comment-admission.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
 
 const configuration = {
-  assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
-  intervalMinutes: 5,
-  maxConcurrentIssues: 2,
 };
 
 function comment(
@@ -31,10 +28,12 @@ function comment(
   };
 }
 
-describe('channels/github/conversation/comment-admission', () => {
+describe('channels/github/provider/comment-admission', () => {
   it('should separate feedback authors from assigners with independent legacy fallback', () => {
     const cases: Array<{
-      configuration: Partial<GitHubNotificationsConfiguration>;
+      configuration: GitHubCommentAdmissionPolicy & {
+        approvedIssueAssigners?: (typeof notificationActor)[];
+      };
       approved: boolean;
     }> = [
       { configuration: { approvedActors: [notificationActor] }, approved: true },

@@ -2,8 +2,8 @@ import {
   isReviewFeedback,
   reviewFeedbackContext,
   type GitHubCanonicalFeedback,
-} from '../review-feedback.ts';
-import type { GitHubCommentRevision } from '../comment-admission.ts';
+} from '../../provider/review-feedback.ts';
+import type { GitHubCommentRevision } from '../../provider/comment-admission.ts';
 import type { GitHubNotificationConversationSource } from '../conversation-state.ts';
 
 export interface GitHubNotificationCommentContextInput {
