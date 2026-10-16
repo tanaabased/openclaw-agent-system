@@ -110,13 +110,13 @@ openclaw-gateway start
 
 # should enroll dispatch while skipping unavailable reviews without activating issue intake
 cd "$TMPDIR/install-data"
-openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .component == "github-notifications" and .status == "skipped") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
+openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .component == "github-intake-v2" and .status == "skipped") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
 openclaw agent-system tool git -- --version | grep -F 'git version'
 
 # should retain the notification blocker without hiding unrelated readiness findings
 cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e 'any(.findings[]; .component == "github-notifications" and .code == "github-notification-runtime-unsupported" and .status == "blocked") and any(.findings[]; .component == "github" and .status == "healthy")'
+printf '%s\n' "$output" | jq -e 'any(.findings[]; .component == "github-intake-v2" and .code == "github-notification-runtime-unsupported" and .status == "blocked") and any(.findings[]; .component == "github" and .status == "healthy")'
 ```
 
 ```bash

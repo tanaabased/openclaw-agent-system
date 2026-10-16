@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 
 import { stringify } from 'yaml';
 
-import { legacyGitHubNotifications } from '../channels/github/config-schema.ts';
 import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
@@ -29,6 +28,18 @@ function parsed(notifications: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
+  it('should reject retired unversioned notifications with explicit migration guidance', () => {
+    for (const old of [{}, { 'approved-actors': [actor] }, { 'assignment-types': ['issue'] }]) {
+      const result = parse(old);
+      assert.equal(result.status, 'invalid');
+      const diagnostic = result.diagnostics.find(
+        (d) => d.code === 'github-notification-v1-retired',
+      );
+      assert.equal(diagnostic?.fieldPath, '/github/notifications');
+      assert.match(diagnostic?.message ?? '', /schema-version: 2/u);
+    }
+  });
+
   it('should allow openclaw planning while naming unsupported enabled capabilities', () => {
     const supported = {
       ...policy,
@@ -171,7 +182,6 @@ describe('channels/github/notification-policy', () => {
     const declaration = parsed({ ...policy, 'issue-assignment': {} });
     assert.deepEqual(declaration.issueAssignment, { allowed: [], mode: 'plan' });
     assert.equal(declaration.reviewRequest, undefined);
-    assert.equal(legacyGitHubNotifications(declaration), undefined);
   });
 
   it('should preserve independent trigger grants and explicit operator flags in each mode', () => {
@@ -256,14 +266,5 @@ describe('channels/github/notification-policy', () => {
         .status,
       'invalid',
     );
-  });
-
-  it('should leave legacy declarations unchanged and never project them into codex', () => {
-    const result = parse({ 'approved-actors': [actor] });
-    assert.ok(result.status === 'valid');
-    const declaration = result.manifest.github?.notifications;
-    assert.equal(legacyGitHubNotifications(declaration), declaration);
-    assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
-    assert.equal(githubNotificationRuntimeBlocker(undefined, 'codex'), undefined);
   });
 });

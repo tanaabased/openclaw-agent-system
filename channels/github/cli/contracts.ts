@@ -7,24 +7,6 @@ export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejec
 
 export type GitHubNotificationIntakeStage = 'admitted' | 'prepared' | 'retired';
 
-export type GitHubNotificationCleanupStatus = 'completed' | 'failed' | 'skipped';
-
-export interface GitHubNotificationCleanupState {
-  reasonCode: string;
-  session: 'archived' | 'failed' | 'missing' | 'pinned';
-  status: GitHubNotificationCleanupStatus;
-  worktree: 'dirty' | 'failed' | 'missing' | 'not-applicable' | 'removed' | 'unsafe';
-}
-
-export interface GitHubNotificationItemFailure {
-  cause: 'repository-permission-denied';
-  itemType: 'issue' | 'pull-request';
-  number: number;
-  repository: string;
-  stage: 'permission-check';
-  updatedAt?: string;
-}
-
 export type { GitHubNotificationItemSelector } from '../provider/work-item.ts';
 
 export type GitHubNotificationWaitTarget =
@@ -46,7 +28,6 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 
 export interface GitHubNotificationStatusItem {
   workflow?: { phase: string; conversation?: string };
-  cleanup?: GitHubNotificationCleanupState;
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
   itemType: 'issue' | 'pull-request';
@@ -74,7 +55,6 @@ export interface GitHubNotificationStatusResult {
   code: string;
   diagnosticCode?: string;
   items: GitHubNotificationStatusItem[];
-  itemFailures?: GitHubNotificationItemFailure[];
   schemaVersion: 2;
   status: 'degraded' | 'pending' | 'ready';
 }
@@ -103,11 +83,6 @@ export function evaluateGitHubNotificationWait(
       ? { code: 'github-notification-baseline-ready', status: 'reached' }
       : { code: 'github-notification-wait-pending', status: 'pending' };
   }
-  if (selector && result.itemFailures?.length)
-    return {
-      code: 'github-notification-item-permission-denied',
-      status: 'failed',
-    };
   const item = selector
     ? result.items.find((candidate) => matchesSelector(candidate, selector))
     : undefined;
@@ -131,21 +106,11 @@ export function evaluateGitHubNotificationWait(
 
 export interface GitHubNotificationRefreshResult {
   agentId: string;
-  approved?: number;
-  baseline?: number;
   baselineAt?: number;
-  baselineEstablished?: boolean;
   code: string;
   diagnosticCode?: string;
-  duplicates?: number;
-  itemFailures?: GitHubNotificationItemFailure[];
-  lastSuccessfulPollAt?: number;
-  nextPollAt?: number;
-  rejected?: number;
-  retryAt?: number;
-  retired?: number;
-  status: 'completed' | 'failed' | 'queued' | 'skipped';
   runId?: string;
+  status: 'failed' | 'queued' | 'skipped';
 }
 
 export interface GitHubNotificationWaitResult {
@@ -155,4 +120,11 @@ export interface GitHubNotificationWaitResult {
   schemaVersion: 2;
   status: 'completed' | 'failed' | 'timed-out';
   target: GitHubNotificationWaitTarget;
+}
+
+export interface GitHubNotificationWaitInput {
+  refresh: boolean;
+  selector?: GitHubNotificationItemSelector;
+  target: GitHubNotificationWaitTarget;
+  timeoutMs: number;
 }

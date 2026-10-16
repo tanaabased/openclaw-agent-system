@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
+import OpenClawIntake from '../agent/openclaw-intake.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import AgentManifestService from '../manifest/service.ts';
 
@@ -179,10 +179,12 @@ describe('manifest/service', () => {
       throw new Error('manifest loading must not touch runtime resources');
     };
     const registry = new AgentSystemLifecycleRegistry([
-      createNotificationLifecycleContribution({
-        hookAccess: { inspect: unused, reconcile: unused },
-        routingService: { inspect: unused, reconcile: unused },
-      }),
+      new OpenClawIntake({
+        root,
+        namespace: 'fixture',
+        manifestService: { loadForAgentId: unused },
+        connect: unused,
+      }).contribution(),
     ]);
     const { service } = createService({ tanaabot: root }, (manifest, workspaceDir) =>
       registry.validate({ manifest, workspaceDir }),

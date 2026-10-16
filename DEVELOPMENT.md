@@ -47,9 +47,6 @@ or memory secret-provider source:
 2. Run `openclaw agent-system install` from the agent workspace.
 3. Restart the Gateway.
 
-Agent installation grants conversation-hook access when notifications are
-configured; no separate config command is needed. See
-[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
 Memory credentials remain SecretRefs; linked installs resolve them through the
 built standalone provider.
 

@@ -1,24 +1,5 @@
-import type {
-  GitHubIdentityPin,
-  GitHubNotificationsConfiguration,
-  GitHubPullRequestRecipient,
-} from './config-schema.ts';
+import type { GitHubIdentityPin, GitHubPullRequestRecipient } from './config-schema.ts';
 import { githubIdentitySet } from './provider/work-item.ts';
-
-export function legacyPullRequestRecipients(
-  configuration: GitHubNotificationsConfiguration['pullRequest'],
-): GitHubPullRequestRecipient[] {
-  const assignees = configuration?.assignees ?? 'assignment-actor';
-  return [
-    ...(assignees === 'assignment-actor'
-      ? [{ source: 'assignment-actor' as const, roles: ['assignee' as const] }]
-      : assignees.map((identity) => ({ ...identity, roles: ['assignee' as const] }))),
-    ...(configuration?.reviewers ?? []).map((identity) => ({
-      ...identity,
-      roles: ['reviewer' as const],
-    })),
-  ];
-}
 
 export default function resolvePullRequestRecipients(
   entries: readonly GitHubPullRequestRecipient[] | undefined,

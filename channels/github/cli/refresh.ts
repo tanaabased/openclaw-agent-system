@@ -14,7 +14,6 @@ import {
   writeCliLines,
 } from '../../../cli/output.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import {
   NotificationCliOptionError,
   notificationItemSelector,
@@ -22,7 +21,6 @@ import {
 } from './options.ts';
 
 const defaultRefreshSeconds = 300;
-const notificationRefreshLeaseWaitMs = 120_000;
 
 export interface RefreshNotificationsAgentSystemOptions {
   nativeService?: Pick<OpenClawNotifications, 'refresh'>;
@@ -31,7 +29,6 @@ export interface RefreshNotificationsAgentSystemOptions {
   itemNumber?: unknown;
   json: boolean;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   output: CliOutput;
   repository?: unknown;
   setExitCode(code: number): void;
@@ -55,7 +52,7 @@ function refreshOptions(options: RefreshNotificationsAgentSystemOptions) {
   };
 }
 
-/** Run one bounded notification intake cycle from a one-shot CLI process. */
+/** Request a bounded native notification workflow run from the CLI. */
 async function refreshNotificationsAgentSystem(
   options: RefreshNotificationsAgentSystemOptions,
 ): Promise<void> {
@@ -79,21 +76,11 @@ async function refreshNotificationsAgentSystem(
   timeout.unref();
   let result: NotificationRefreshResult | undefined;
   try {
-    if (manifest.manifest.github?.notifications?.schemaVersion === 2) {
-      if (!options.nativeService) throw new Error('native notification backend is unavailable');
-      result = await options.nativeService.refresh(manifest.manifest, manifest.scope.workspaceDir, {
-        selector: parsed.selector,
-        signal: controller.signal,
-      });
-    } else
-      [result] = await options.monitorService.runOnce({
-        agentId: manifest.manifest.agent.id,
-        bypassInterval: true,
-        executionSurface: 'cli-one-shot',
-        ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
-        signal: controller.signal,
-        waitForLeaseMs: Math.min(notificationRefreshLeaseWaitMs, parsed.timeoutMs),
-      });
+    if (!options.nativeService) throw new Error('native notification backend is unavailable');
+    result = await options.nativeService.refresh(manifest.manifest, manifest.scope.workspaceDir, {
+      selector: parsed.selector,
+      signal: controller.signal,
+    });
   } catch (error) {
     writeCliError(
       options.output,
@@ -122,50 +109,16 @@ async function refreshNotificationsAgentSystem(
   if (options.json) {
     writeCliJson(options.output, result);
   } else {
-    const counts = [
-      ['baseline', result.baseline],
-      ['approved', result.approved],
-      ['rejected', result.rejected],
-      ['duplicate', result.duplicates],
-      ['retired', result.retired],
-    ]
-      .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
-      .map(([label, value]) => `${label}=${value}`)
-      .join(' ');
     const baseline =
       result.baselineAt === undefined
         ? 'pending'
-        : result.baselineEstablished
-          ? `established at ${new Date(result.baselineAt).toISOString()} with ${result.baseline ?? 0} existing assignments`
-          : `ready since ${new Date(result.baselineAt).toISOString()}`;
-    const styles = options.styles;
-    const tableOptions = {
-      rowPadding: 0 as const,
-      terminalColumns: options.terminalColumns ?? process.stdout.columns,
-    };
-    const disabled = result.code === 'github-notification-disabled';
-    const throttled = result.code === 'github-notification-provider-throttle-active';
-    const failures = result.itemFailures ?? [];
-    const status =
-      result.status === 'failed'
-        ? 'failed'
-        : disabled
-          ? 'disabled'
-          : throttled
-            ? 'throttled'
-            : failures.length && result.status === 'completed'
-              ? 'completed with item failures'
-              : result.status;
+        : `ready since ${new Date(result.baselineAt).toISOString()}`;
     const statusStyle =
       result.status === 'failed'
-        ? 'error'
-        : disabled
-          ? 'field'
-          : throttled || failures.length
-            ? 'warning'
-            : result.status === 'completed'
-              ? 'status'
-              : 'field';
+        ? ('error' as const)
+        : result.status === 'queued'
+          ? ('status' as const)
+          : ('field' as const);
     const summary = renderCliSummary(
       [
         { label: 'agent', style: 'target', value: result.agentId },
@@ -179,92 +132,33 @@ async function refreshNotificationsAgentSystem(
         {
           label: 'timeout',
           style: 'field',
-          value: `${parsed.timeoutMs / 1_000}s${options.timeoutSeconds === undefined ? ' (default)' : ''}`,
+          value: `${parsed.timeoutMs / 1000}s${options.timeoutSeconds === undefined ? ' (default)' : ''}`,
         },
-        {
-          label: 'status',
-          style: statusStyle,
-          valueStyle: statusStyle,
-          value: status,
-        },
+        { label: 'status', style: statusStyle, valueStyle: statusStyle, value: result.status },
         { label: 'code', style: 'field', value: result.code },
         { label: 'baseline', style: 'field', value: baseline },
         ...(result.runId ? [{ label: 'run', style: 'field' as const, value: result.runId }] : []),
         ...(result.diagnosticCode
           ? [{ label: 'diagnostic', style: 'field' as const, value: result.diagnosticCode }]
           : []),
-        ...(result.retryAt === undefined
-          ? []
-          : [
-              {
-                label: 'retry',
-                style: 'field' as const,
-                value: new Date(result.retryAt).toISOString(),
-              },
-            ]),
-        ...(result.nextPollAt === undefined
-          ? []
-          : [
-              {
-                label: 'next poll',
-                style: 'field' as const,
-                value: new Date(result.nextPollAt).toISOString(),
-              },
-            ]),
-        ...(counts ? [{ label: 'items', style: 'field' as const, value: counts }] : []),
       ],
-      styles,
-      tableOptions,
+      options.styles,
+      { rowPadding: 0, terminalColumns: options.terminalColumns ?? process.stdout.columns },
     );
-    const failureRows = renderCliSummary(
-      failures.map((failure) => ({
-        component: `${failure.repository}#${failure.number}`,
-        label: 'failure',
-        style: 'error' as const,
-        value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause}`,
-      })),
-      styles,
-      tableOptions,
-    );
-    writeCliLines(options.output, [
-      '',
-      ...summary,
-      ...(failureRows.length ? ['', ...failureRows] : []),
-      '',
-    ]);
-    if (failures.length) {
-      writeCliDiagnosticNotices(options, [
-        { severity: 'error', message: 'check repository write access and retry refresh' },
-      ]);
-    }
-    if (throttled) {
-      writeCliDiagnosticNotices(options, [
-        {
-          severity: 'warning',
-          message: 'provider rate limit; wait for it to clear before refreshing again',
-        },
-      ]);
-    } else if (disabled) {
-      writeCliDiagnosticNotices(options, [
-        { severity: 'notice', message: 'enable github notifications in agent.yaml to refresh' },
-      ]);
-    } else if (result.status === 'failed' && !nativeNotificationDiagnostic(result.code)) {
+    writeCliLines(options.output, ['', ...summary, '']);
+    if (result.status === 'failed' && !nativeNotificationDiagnostic(result.code))
       writeCliDiagnosticNotices(options, [
         {
           severity: 'error',
-          message: 'inspect the reported code and retry refresh after resolving the cause',
+          message:
+            'inspect the reported code and resolve the cause before requesting another refresh',
         },
       ]);
-    }
   }
   const remediation = nativeNotificationDiagnostic(result.code);
   if (remediation)
     writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
-  if (
-    result.status !== 'completed' &&
-    result.status !== 'queued' &&
-    result.code !== 'github-notification-refresh-already-running'
-  )
+  if (result.status !== 'queued' && result.code !== 'github-notification-refresh-already-running')
     options.setExitCode(1);
 }
 

@@ -453,6 +453,18 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]!.id, identity);
     assert.equal(native[0]!.enabled, true);
     assert.equal(sessions.size, 1);
+    policy.issueAssignment!.mode = 'work';
+    const unsupported = await service.reconcile(manifest, root);
+    assert.ok(
+      unsupported.outcomes.some((outcome) => outcome.code === 'automation-disabled-retained'),
+    );
+    assert.equal(native[0]!.enabled, false);
+    assert.equal(native[0]!.id, identity);
+    policy.issueAssignment!.mode = 'plan';
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.enabled, true);
+    assert.equal(native.length, 1);
+    assert.equal(sessions.size, 1);
   });
 
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {

@@ -246,7 +246,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(result.status, 'queued');
     assert.equal(result.runId, 'native-run');
     assert.equal(f.requests, 1);
-    assert.equal(result.lastSuccessfulPollAt, undefined);
+    assert.equal('lastSuccessfulPollAt' in result, false);
     const waited = await f.service.wait(f.manifest, '/workspace', {
       selector,
       target: 'prepared',
@@ -294,7 +294,6 @@ describe('agent/openclaw-notifications', () => {
 
   it('should never fall back to legacy state when the native backend is absent', async () => {
     const f = fixture();
-    let legacy = false;
     let exit = 0;
     const errors: string[] = [];
     const loaded = {
@@ -313,12 +312,7 @@ describe('agent/openclaw-notifications', () => {
         loadForAgentId: async () => loaded,
         loadForCommandDirectory: async () => loaded,
       },
-      statusService: {
-        inspect: async (): Promise<never> => {
-          legacy = true;
-          throw Error('legacy state');
-        },
-      },
+
       output: {
         writeStdout() {
           throw Error('no successful json result');
@@ -329,7 +323,6 @@ describe('agent/openclaw-notifications', () => {
         exit = code;
       },
     });
-    assert.equal(legacy, false);
     assert.equal(exit, 1);
     assert.match(errors.join(''), /github-notification-status-failed/u);
   });
@@ -413,19 +406,7 @@ describe('agent/openclaw-notifications', () => {
         loadForAgentId: async () => loaded,
         loadForCommandDirectory: async () => loaded,
       },
-      monitorService: {
-        runOnce: async (): Promise<never> => {
-          throw Error('legacy scan');
-        },
-      },
-      statusService: {
-        inspect: async (): Promise<never> => {
-          throw Error('legacy state');
-        },
-        wait: async (): Promise<never> => {
-          throw Error('legacy wait');
-        },
-      },
+
       output: {
         writeStdout: (text: string) => stdout.push(text),
         writeStderr: (text: string) => stderr.push(text),

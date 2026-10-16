@@ -236,10 +236,11 @@ describe('agent/codex-context', () => {
           git: { worktrees: { root: 'worktrees' } },
           github: {
             notifications: {
-              assignmentTypes: ['issue'],
-              approvedActors: [{ login: 'operator', nodeId: 'U_operator' }],
+              schemaVersion: 2,
+              runtimes: ['codex'],
+              allowedRepositoryOwners: [{ login: 'example', nodeId: 'O_example' }],
               intervalMinutes: 5,
-              maxConcurrentIssues: 2,
+              maxConcurrentItems: 2,
             },
           },
         },

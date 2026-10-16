@@ -1,4 +1,5 @@
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
+import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
 import { projectRoutingProfile } from './model-routing.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
@@ -11,6 +12,7 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
   const jobs = manifest.automations ?? [];
   if (jobs.some((job) => job.id === openclawIntakeAutomationId))
     throw new IntakeError('intake-automation-id-reserved');
+  if (githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw')) return jobs;
   const selected = assignmentIntakePolicy(manifest, 'openclaw');
   if (!selected) return jobs;
   if (!manifest.models?.default) throw new IntakeError('intake-default-profile-required');

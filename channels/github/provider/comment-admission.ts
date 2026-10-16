@@ -48,7 +48,6 @@ export interface GitHubCommentRevision {
 
 export interface GitHubCommentAdmissionPolicy {
   approvedFeedbackAuthors?: GitHubIdentityPin[];
-  approvedActors?: GitHubIdentityPin[];
 }
 
 function exactMentionPattern(login: string, global = false): RegExp {
@@ -158,8 +157,7 @@ export function admitGitHubComment(input: {
   if (author.type !== 'User') {
     return { code: 'comment-actor-unsupported', disposition: 'rejected' };
   }
-  const authors =
-    input.configuration.approvedFeedbackAuthors ?? input.configuration.approvedActors ?? [];
+  const authors = input.configuration.approvedFeedbackAuthors ?? [];
   if (!authors.some(({ nodeId }) => nodeId === author.nodeId)) {
     return { code: 'comment-actor-unapproved', disposition: 'rejected' };
   }

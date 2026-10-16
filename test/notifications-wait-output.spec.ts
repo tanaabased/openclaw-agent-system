@@ -57,9 +57,8 @@ describe('channels/github/cli/wait presentation', () => {
   it('should preserve the wait request and json result contract', async () => {
     const baseline = await captureWaitPreview('baseline-success', { json: true });
     assert.deepEqual(baseline.waitInput, {
-      agentId: 'fixture-agent',
-      executionSurface: 'cli-one-shot',
       refresh: false,
+      selector: undefined,
       target: 'baseline-ready',
       timeoutMs: 12_000,
     });
@@ -75,8 +74,6 @@ describe('channels/github/cli/wait presentation', () => {
 
     const item = await captureWaitPreview('item-success', { json: true });
     assert.deepEqual(item.waitInput, {
-      agentId: 'fixture-agent',
-      executionSurface: 'cli-one-shot',
       refresh: true,
       selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
       target: 'prepared',

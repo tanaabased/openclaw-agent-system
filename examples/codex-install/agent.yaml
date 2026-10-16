@@ -29,7 +29,4 @@ git:
   worktrees:
     root: worktrees
 github:
-  notifications:
-    approved-actors:
-      - login: operator
-        node-id: U_operator
+  username: codex-example

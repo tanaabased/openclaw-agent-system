@@ -35,17 +35,13 @@ Keep release package inspection, npm publication, and ClawHub publication as sep
 
 Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.
 
-### Unsupported monitor-state schema 2
+### V1 notification retirement
 
-Treat GitHub notification monitor-state schema 2 as unsupported legacy state. The only known installation was manually upgraded before schema 3 became the active contract, so keep the decoder rejection test and do not recommend a schema 2 migration or retroactive activation unless the support policy changes or repository evidence shows additional persisted users.
-
-### Monitor-state schema projections
-
-Project monitor-state schema 3 into current schema 5 by retaining assignment,
-lifecycle, worktree, failure, and retirement facts while dropping its removed
-session, publication, mode, and comment-tracking fields. Project schema 4 into
-schema 5 without inventing provider-retirement proof or cleanup outcomes. Do
-not restore removed fields to the active intake schema for compatibility.
+V1 notification runtime and configuration support are retired by operator decision.
+Keep its historical on-disk records untouched; do not restore a decoder, scanner,
+channel, or compatibility engine to manufacture parity. Preserve shared provider,
+publication, presentation, and native V2 authority/receipt contracts. Missing V2
+features remain explicit limitations and separate implementation work.
 
 ### Lifecycle-neutral provider primitives
 

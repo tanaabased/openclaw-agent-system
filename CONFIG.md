@@ -4,7 +4,6 @@ Set plugin-wide options under `plugins.entries.agent-system.config` in OpenClaw
 configuration. Workspace declarations belong in the [manifest](./MANIFEST.md).
 
 - [`collaboration`](#collaboration)
-- [`githubNotifications`](#githubnotifications)
 - [`opCache`](#opcache)
 
 ## `collaboration`
@@ -73,20 +72,6 @@ only introduced grants (exact IDs or `*`), selection, and empty-list shutdown.
 Do not edit or delete it: effective access alone never proves ownership.
 Configuration and ownership commit together. Standalone Codex does not manage
 this OpenClaw capability.
-
-## `githubNotifications`
-
-| Field                  | Type    | Required | Default | Description                                       |
-| ---------------------- | ------- | -------- | ------- | ------------------------------------------------- |
-| `maxCommentCharacters` | integer | no       | `8000`  | Incoming comment limit, from `1` through `64000`. |
-
-Overlong comments are rejected without executing truncated prose. This does not
-change outgoing reply or routing-assessment excerpt limits.
-
-```sh
-# reject incoming comments longer than twelve thousand characters.
-openclaw config set plugins.entries.agent-system.config.githubNotifications.maxCommentCharacters 12000 --strict-json
-```
 
 ## `opCache`
 

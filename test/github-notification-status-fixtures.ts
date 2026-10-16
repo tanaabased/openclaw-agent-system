@@ -1,25 +1,14 @@
 import statusNotificationsAgentSystem from '../channels/github/cli/status.ts';
-import GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
-import type { GitHubNotificationItemSelector } from '../channels/github/cli/contracts.ts';
+import type {
+  GitHubNotificationStatusResult,
+  GitHubNotificationItemSelector,
+} from '../channels/github/cli/contracts.ts';
 import { createCliStyles } from '../cli/output.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
-import {
-  approvedNotificationItem,
-  approvedPullRequestNotificationItem,
-  notificationMonitorState,
-} from './github-notification-fixtures.ts';
-
 // illustrative data only; command and projection run against injected services.
 export const statusFixtureAgent = 'Agent-MixedCase';
 export const statusFixtureRepository = 'MixedCaseOwner/Long-Notification-Repository-With-MixedCase';
-export const statusFixtureNames = [
-  'empty',
-  'healthy',
-  'pending',
-  'degraded',
-  'cleanup',
-  'filtered',
-] as const;
+export const statusFixtureNames = ['empty', 'healthy', 'pending', 'degraded', 'filtered'] as const;
 export type StatusFixtureName = (typeof statusFixtureNames)[number];
 export const statusFixtureSelector: GitHubNotificationItemSelector = {
   repository: statusFixtureRepository,
@@ -27,79 +16,68 @@ export const statusFixtureSelector: GitHubNotificationItemSelector = {
   number: 12,
 };
 
-export function statusFixtureState(name: StatusFixtureName) {
-  if (name === 'pending') return undefined;
-  const state = notificationMonitorState();
-  state.agentId = statusFixtureAgent;
-  state.lastSuccessfulPollAt = 2;
-  const active = approvedNotificationItem();
-  active.repositoryOwner = 'MixedCaseOwner';
-  active.repositoryName = 'Long-Notification-Repository-With-MixedCase';
-  active.intake = {
-    ...active.intake!,
-    scheduling: { sequence: 1, status: 'active' },
-    stage: 'prepared',
-    worktreeBranch: 'PrivateBranch-MixedCase',
-    worktreePath: '/Private/Worktree-MixedCase',
+export function statusFixtureResult(
+  name: StatusFixtureName,
+  selector?: GitHubNotificationItemSelector,
+): GitHubNotificationStatusResult {
+  const failed = name === 'degraded' || name === 'filtered';
+  const items: GitHubNotificationStatusResult['items'] =
+    name === 'empty' || name === 'pending'
+      ? []
+      : [
+          {
+            disposition: 'approved',
+            itemType: 'issue',
+            lifecycleId: 'issue',
+            number: 12,
+            reasonCode: 'assignment-approved',
+            repository: statusFixtureRepository,
+            scheduling: failed ? 'waiting' : 'active',
+            stage: 'prepared',
+            worktree: 'ready',
+            ...(failed
+              ? {
+                  failureCode: 'github-notification-intake-failed',
+                  waitingReason: 'github-notification-WaitReason-MixedCase',
+                }
+              : {}),
+          },
+          {
+            disposition: 'approved',
+            itemType: 'issue',
+            lifecycleId: 'issue',
+            number: 14,
+            reasonCode: 'assignment-approved',
+            repository: 'tanaabased/example',
+            scheduling: 'queued',
+            stage: 'admitted',
+            worktree: 'pending',
+          },
+        ];
+  return {
+    agentId: statusFixtureAgent,
+    baseline: { status: name === 'pending' ? 'pending' : 'ready' },
+    capacity: {
+      active: name === 'empty' || name === 'pending' || failed ? 0 : 1,
+      queued: items.length ? 1 : 0,
+      limit: 2,
+    },
+    code:
+      name === 'degraded'
+        ? 'github-notification-native-state-unavailable'
+        : 'github-notification-status-ready',
+    ...(name === 'degraded'
+      ? { diagnosticCode: 'github-notification-native-state-unavailable' }
+      : {}),
+    items: items.filter(
+      (item) =>
+        !selector ||
+        (item.repository.toLowerCase() === selector.repository.toLowerCase() &&
+          item.number === selector.number),
+    ),
+    schemaVersion: 2,
+    status: name === 'degraded' ? 'degraded' : name === 'pending' ? 'pending' : 'ready',
   };
-  const queued = approvedNotificationItem();
-  queued.number = 14;
-  const pullRequest = approvedPullRequestNotificationItem();
-  state.items = { active, queued, pullRequest };
-  if (name === 'empty') state.items = {};
-  if (name === 'degraded' || name === 'filtered') {
-    active.intake.failureCode = 'github-notification-intake-failed';
-    active.intake.scheduling = {
-      sequence: 1,
-      status: 'waiting',
-      reasonCode: 'github-notification-WaitReason-MixedCase',
-    };
-    state.itemFailures = [
-      {
-        repository: 'OtherOwner/Long-Repository-Without-Write-Access',
-        itemType: 'issue',
-        number: 271,
-        stage: 'permission-check',
-        cause: 'repository-permission-denied',
-        updatedAt: '2026-09-01T00:00:00.000Z',
-      },
-      {
-        repository: 'OtherOwner/Second-Repository-Without-Write-Access',
-        itemType: 'pull-request',
-        number: 272,
-        stage: 'permission-check',
-        cause: 'repository-permission-denied',
-        updatedAt: '2026-09-01T00:00:00.000Z',
-      },
-    ];
-  }
-  if (name === 'cleanup') {
-    active.disposition = 'retired';
-    active.intake.stage = 'retired';
-    active.intake.cleanup = {
-      status: 'skipped',
-      session: 'archived',
-      worktree: 'dirty',
-      reasonCode: 'github-notification-cleanup-worktree-dirty',
-    };
-    queued.disposition = 'retired';
-    queued.intake!.stage = 'retired';
-    queued.intake!.cleanup = {
-      status: 'failed',
-      session: 'failed',
-      worktree: 'failed',
-      reasonCode: 'github-notification-cleanup-failed',
-    };
-    pullRequest.disposition = 'retired';
-    pullRequest.intake!.stage = 'retired';
-    pullRequest.intake!.cleanup = {
-      status: 'completed',
-      session: 'missing',
-      worktree: 'not-applicable',
-      reasonCode: 'github-notification-cleanup-completed',
-    };
-  }
-  return state;
 }
 
 export async function captureStatusFixture(
@@ -125,18 +103,6 @@ export async function captureStatusFixture(
   const events: Array<{ stream: 'stdout' | 'stderr'; text: string }> = [];
   const calls: unknown[][] = [];
   let exitCode = 0;
-  const service = new GitHubNotificationStatusService({
-    monitorService: {
-      async runOnce() {
-        throw new Error('status must never refresh');
-      },
-    },
-    stateStore: {
-      async read() {
-        return statusFixtureState(name);
-      },
-    },
-  });
   const manifest: AgentManifestLoadResult =
     manifestStatus === 'loaded'
       ? {
@@ -173,10 +139,10 @@ export async function captureStatusFixture(
         return manifest;
       },
     },
-    statusService: {
-      async inspect(...args) {
-        calls.push(args);
-        return service.inspect(...args);
+    nativeService: {
+      async inspect(manifest, _workspace, selector) {
+        calls.push([manifest.agent.id, selector]);
+        return statusFixtureResult(name, selector);
       },
     },
     output: {

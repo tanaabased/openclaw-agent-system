@@ -18,7 +18,7 @@ import {
 } from './github-review-fixtures.ts';
 
 const configuration = {
-  approvedActors: [notificationActor],
+  approvedFeedbackAuthors: [notificationActor],
 };
 const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
@@ -102,7 +102,6 @@ describe('channels/github/provider/review-feedback', () => {
           comment,
           configuration: {
             ...configuration,
-            approvedActors: undefined,
             approvedFeedbackAuthors: [notificationActor],
           },
         }).disposition,

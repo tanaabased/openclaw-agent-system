@@ -12,7 +12,6 @@ import {
   writeCliSummary,
 } from '../../../cli/output.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import { githubNotificationWaitTargets, type GitHubNotificationWaitTarget } from './contracts.ts';
 import {
   NotificationCliOptionError,
@@ -33,7 +32,6 @@ export interface WaitNotificationsAgentSystemOptions {
   refresh: boolean;
   repository?: unknown;
   setExitCode(code: number): void;
-  statusService: Pick<GitHubNotificationStatusService, 'wait'>;
   styles?: CliStyles;
   target?: unknown;
   timeoutSeconds?: unknown;
@@ -88,26 +86,13 @@ async function waitNotificationsAgentSystem(
 
   let result;
   try {
-    if (manifest.manifest.github?.notifications?.schemaVersion === 2) {
-      if (!options.nativeService) throw new Error('native notification backend is unavailable');
-      result = await options.nativeService.wait(manifest.manifest, manifest.scope.workspaceDir, {
-        selector: parsed.selector,
-        target: parsed.target,
-        timeoutMs: parsed.timeoutMs,
-        refresh: options.refresh,
-      });
-    } else {
-      if (parsed.target === 'plan-ready')
-        throw new Error('plan-ready requires native notifications');
-      result = await options.statusService.wait({
-        agentId: manifest.manifest.agent.id,
-        executionSurface: 'cli-one-shot',
-        refresh: options.refresh,
-        ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
-        target: parsed.target,
-        timeoutMs: parsed.timeoutMs,
-      });
-    }
+    if (!options.nativeService) throw new Error('native notification backend is unavailable');
+    result = await options.nativeService.wait(manifest.manifest, manifest.scope.workspaceDir, {
+      selector: parsed.selector,
+      target: parsed.target,
+      timeoutMs: parsed.timeoutMs,
+      refresh: options.refresh,
+    });
   } catch (error) {
     writeCliError(
       options.output,

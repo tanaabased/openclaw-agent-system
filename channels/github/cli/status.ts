@@ -14,7 +14,6 @@ import {
   writeCliLines,
 } from '../../../cli/output.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
 export interface StatusNotificationsAgentSystemOptions {
@@ -27,7 +26,6 @@ export interface StatusNotificationsAgentSystemOptions {
   output: CliOutput;
   repository?: unknown;
   setExitCode(code: number): void;
-  statusService: Pick<GitHubNotificationStatusService, 'inspect'>;
   styles?: CliStyles;
   terminalColumns?: number;
   workspaceDir: string;
@@ -58,14 +56,12 @@ async function statusNotificationsAgentSystem(
 
   let result;
   try {
-    if (manifest.manifest.github?.notifications?.schemaVersion === 2) {
-      if (!options.nativeService) throw new Error('native notification backend is unavailable');
-      result = await options.nativeService.inspect(
-        manifest.manifest,
-        manifest.scope.workspaceDir,
-        selector,
-      );
-    } else result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+    if (!options.nativeService) throw new Error('native notification backend is unavailable');
+    result = await options.nativeService.inspect(
+      manifest.manifest,
+      manifest.scope.workspaceDir,
+      selector,
+    );
   } catch (error) {
     writeCliError(
       options.output,
@@ -168,40 +164,11 @@ async function statusNotificationsAgentSystem(
           ...(item.failureCode === undefined
             ? []
             : [{ label: 'failure', style: 'error' as const, value: item.failureCode }]),
-          ...(item.cleanup === undefined
-            ? []
-            : [
-                {
-                  label: 'cleanup',
-                  style:
-                    item.cleanup.status === 'failed'
-                      ? ('error' as const)
-                      : item.cleanup.status === 'skipped'
-                        ? ('warning' as const)
-                        : ('field' as const),
-                  quiet: true,
-                  value: [
-                    item.cleanup.status,
-                    `session=${item.cleanup.session} cleanup-worktree=${item.cleanup.worktree}`,
-                    `cleanup-reason=${item.cleanup.reasonCode}`,
-                  ].join('\n'),
-                },
-              ]),
         ],
         styles,
         tableOptions,
       ),
     ]);
-    const failures = renderCliSummary(
-      (result.itemFailures ?? []).map((failure) => ({
-        component: `${failure.repository}#${failure.number}`,
-        label: 'failure',
-        style: 'error',
-        value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause}`,
-      })),
-      styles,
-      tableOptions,
-    );
     writeCliLines(options.output, [
       '',
       ...summary,
@@ -209,14 +176,8 @@ async function statusNotificationsAgentSystem(
       styles.bold('items'),
       '',
       ...(items.length ? items : [styles.field(selector ? 'no matching items' : 'no items')]),
-      ...(failures.length ? ['', styles.bold('attention'), '', ...failures] : []),
       '',
     ]);
-    if (failures.length) {
-      writeCliDiagnosticNotices(options, [
-        { severity: 'error', message: 'check repository write access and retry refresh' },
-      ]);
-    }
   }
   const remediation = nativeNotificationDiagnostic(result.code);
   if (remediation)

@@ -3,11 +3,9 @@
 This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, read-only model routing, and value-free lifecycle logging without depending on live model behavior.
 
 The readiness turn uses a GitHub-shaped session key after the installed agent's
-manifest switches to notification V2. It must reach the mock model without a
-legacy conversation record or V1 prompt attestation. The declaration disables
-both intake triggers; this tests passive version selection, not notification
-installation or polling. Unit coverage supplies stale V1 state as the negative
-control. The routing turn also requests issue-session dispatch while intake is inactive and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
+manifest declares notification V2. It must reach the mock model using passive
+manifest discovery. Both intake triggers are disabled; this tests passive loading
+without activating notification work. The routing turn also requests issue-session dispatch while intake is inactive and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
 passing it does not establish dispatch recovery or single-execution guarantees.
 
 Runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The data workspace is copied because the passive-loading check changes its manifest after installation.
@@ -35,7 +33,15 @@ openclaw-gateway start --debug
 ## Testing
 
 ```bash
-# should keep a v2 agent out of legacy github prompt processing
+# should reject retired notification configuration through the public validator
+mkdir -p "$TMPDIR/retired-notifications"
+cp "$GITHUB_WORKSPACE/examples/openclaw-agent/retired-notifications.yaml" "$TMPDIR/retired-notifications/agent.yaml"
+cd "$TMPDIR/retired-notifications"
+if openclaw agent-system validate --json > "$TMPDIR/retired-notifications.stdout" 2> "$TMPDIR/retired-notifications.stderr"; then exit 1; fi
+test ! -s "$TMPDIR/retired-notifications.stdout"
+grep -F 'code=github-notification-v1-retired' "$TMPDIR/retired-notifications.stderr"
+
+# should load a v2 agent without activating notification work
 cat "$GITHUB_WORKSPACE/examples/openclaw-agent/v2-notifications.yaml" >> "$TMPDIR/data/agent.yaml"
 openclaw agent \
   --agent data \

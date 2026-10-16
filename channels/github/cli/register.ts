@@ -8,21 +8,17 @@ import {
 } from '../../../cli/output.ts';
 import type { CommandLike } from '../../../cli/register.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
-import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import refreshNotificationsAgentSystem from './refresh.ts';
 import statusNotificationsAgentSystem from './status.ts';
 import waitNotificationsAgentSystem from './wait.ts';
 
 export interface RegisterGitHubNotificationsCliOptions {
-  nativeService?: OpenClawNotifications;
+  nativeService?: Pick<OpenClawNotifications, 'inspect' | 'refresh' | 'wait'>;
   completeOneShot(code: number): Promise<void>;
   cwd(): string;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   output: CliOutput;
   setExitCode(code: number): void;
-  statusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
   styles?: CliStyles;
 }
 
@@ -88,7 +84,6 @@ export default function registerGitHubNotificationsCli(
             json: commandOptions.json === true,
             manifestService: options.manifestService,
             nativeService: options.nativeService,
-            monitorService: options.monitorService,
             output: options.output,
             repository: commandOptions.repository,
             setExitCode,
@@ -121,7 +116,6 @@ export default function registerGitHubNotificationsCli(
         output: options.output,
         repository: commandOptions.repository,
         setExitCode: options.setExitCode,
-        statusService: options.statusService,
         styles: options.styles,
         workspaceDir: options.cwd(),
       });
@@ -153,7 +147,6 @@ export default function registerGitHubNotificationsCli(
             refresh: commandOptions.refresh === true,
             repository: commandOptions.repository,
             setExitCode,
-            statusService: options.statusService,
             styles: options.styles,
             target: commandOptions.for,
             timeoutSeconds: commandOptions.timeout,

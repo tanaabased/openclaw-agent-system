@@ -1,4 +1,5 @@
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
+import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
 import dispatchCapacity from './dispatch-capacity.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
@@ -96,6 +97,8 @@ export default class OpenClawNotifications {
     });
     if (policy?.schemaVersion !== 2 || !policy.runtimes.includes('openclaw'))
       return blocked('github-notification-runtime-unsupported');
+    const runtimeBlocker = githubNotificationRuntimeBlocker(policy, 'openclaw');
+    if (runtimeBlocker) return blocked('github-notification-workflow-unsupported');
     if (!policy.issueAssignment || policy.issueAssignment.enabled === false)
       return blocked('github-notification-disabled');
     if (policy.issueAssignment.mode !== 'plan')

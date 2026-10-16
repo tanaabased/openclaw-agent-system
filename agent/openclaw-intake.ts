@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
+import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
 import IntakeRecordStore, {
   IntakeError,
   intakeLocation,
@@ -42,6 +43,15 @@ export default class OpenClawIntake {
     return { selected, store, workspace };
   }
   async inspect(manifest: AgentManifest, workspaceDir: string) {
+    const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
+    if (blocker)
+      return {
+        status: 'blocked',
+        code: blocker.code,
+        baselineAt: null,
+        checkpoint: null,
+        records: [],
+      };
     const { selected, store } = await this.select(manifest, workspaceDir);
     const state = await store.read();
     const code = !selected
@@ -67,6 +77,8 @@ export default class OpenClawIntake {
     signal?: AbortSignal,
   ) {
     signal?.throwIfAborted();
+    const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
+    if (blocker) throw new IntakeError(blocker.code);
     const deadline = AbortSignal.timeout(action === 'check' ? 25000 : 120000);
     const { selected, store, workspace } = await this.select(manifest, workspaceDir);
     if (!selected) throw new IntakeError('intake-policy-disabled');
@@ -133,23 +145,54 @@ export default class OpenClawIntake {
     return {
       id: 'github-intake-v2',
       isConfigured: (manifest) => manifest.github?.notifications?.schemaVersion === 2,
+      validate: ({ manifest }) => {
+        const blocker = githubNotificationRuntimeBlocker(
+          manifest.github?.notifications,
+          'openclaw',
+        );
+        return {
+          code: 'github-notifications-declaration-valid',
+          summary: 'GitHub notification declaration',
+          diagnostics: blocker
+            ? [
+                {
+                  code: blocker.code,
+                  message: blocker.message,
+                  fieldPath: '/github/notifications/runtimes',
+                  severity: 'warning' as const,
+                },
+              ]
+            : [],
+        };
+      },
       inspect: async ({ manifest, workspaceDir }) => {
         const result = await this.inspect(manifest, workspaceDir);
         return [
           {
             component: 'github-intake-v2',
             status:
-              result.code === 'intake-policy-disabled'
-                ? 'skipped'
-                : result.code
-                  ? 'drift'
-                  : 'healthy',
+              result.code === 'github-notification-runtime-unsupported'
+                ? 'blocked'
+                : result.code === 'intake-policy-disabled'
+                  ? 'skipped'
+                  : result.code
+                    ? 'drift'
+                    : 'healthy',
             code: result.code ?? 'intake-ready',
             message: result.code ?? 'V2 intake baseline and policy are aligned.',
           },
         ];
       },
       reconcile: async ({ manifest, workspaceDir }) => {
+        const blocker = githubNotificationRuntimeBlocker(
+          manifest.github?.notifications,
+          'openclaw',
+        );
+        if (blocker)
+          return {
+            outcomes: [{ ...blocker, status: 'skipped' as const }],
+            warnings: [{ code: blocker.code, message: blocker.message }],
+          };
         if (!assignmentIntakePolicy(manifest, 'openclaw')) return { outcomes: [] };
         const state = await this.inspect(manifest, workspaceDir);
         if (

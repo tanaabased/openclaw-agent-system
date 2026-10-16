@@ -15,7 +15,6 @@ import { dirname, join } from 'node:path';
 import loadBoundToolManifest from '../api/manifest-binding.ts';
 import { previewCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { projectCodexManifest } from '../agent/codex-context.ts';
-import { legacyGitHubNotifications } from '../channels/github/config-schema.ts';
 import discoverManifest, { maximumManifestBytes } from '../manifest/discover.ts';
 import { loadDiscoveredManifest } from '../manifest/load.ts';
 import mergeManifestDocuments from '../manifest/merge-documents.ts';
@@ -176,12 +175,14 @@ describe('manifest/overlays', () => {
 environment: { dotenv: [], required: [], op: [], path-prepend: [] }
 git: { ssh: { private-keys: [] } }
 github:
+  username: data
   ssh-keys: []
   ssh-signing-keys: []
   notifications:
-    assignment-types: []
-    approved-actors: []
-    allowed-repository-owners: []
+    schema-version: 2
+    runtimes: [codex]
+    allowed-repository-owners: [{login: tanaabased, node-id: O_owner}]
+    issue-assignment: {allowed: []}
 setup-host: { steps: [] }
 setup-agent: { apply: [echo, safe], runtimes: [] }
 automations:
@@ -194,9 +195,7 @@ backup: { include: [], exclude: [] }
     if (result.status !== 'loaded') return;
     assert.deepEqual(result.manifest.environment?.dotenv, []);
     assert.deepEqual(result.manifest.environment?.required, []);
-    const notifications = legacyGitHubNotifications(result.manifest.github?.notifications);
-    assert.deepEqual(notifications?.assignmentTypes, []);
-    assert.deepEqual(notifications?.approvedActors, []);
+    assert.deepEqual(result.manifest.github?.notifications?.issueAssignment?.allowed, []);
     assert.deepEqual(result.manifest.setupHost?.steps, []);
     assert.deepEqual(result.manifest.setup?.steps[0]?.runtimes, []);
     assert.deepEqual(result.manifest.automations?.[0]?.runtimes, []);
@@ -285,7 +284,7 @@ git: { worktrees: { root: /machine-${index}/worktrees, repositories: { local: {}
 environment:
   dotenv: [missing-local.env]
   set: { LOCAL: machine-${index}, SECRET: { from-op: 'op://vault/item/password' } }
-github: { notifications: { assignment-types: ${index === 0 ? '[]' : '[issue]'} } }
+github: { username: data, notifications: { schema-version: 2, runtimes: [codex], allowed-repository-owners: [{login: tanaabased, node-id: O_owner}], issue-assignment: {allowed: ${index === 0 ? '[]' : '[{login: operator, node-id: U_operator}]'}} } }
 setup-agent: { apply: 'touch must-not-run' }
 `,
       );

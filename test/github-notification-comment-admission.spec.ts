@@ -4,12 +4,11 @@ import {
   admitGitHubComment,
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-  type GitHubCommentAdmissionPolicy,
 } from '../channels/github/provider/comment-admission.ts';
 import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
 
 const configuration = {
-  approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
+  approvedFeedbackAuthors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
 };
 
 function comment(
@@ -29,50 +28,23 @@ function comment(
 }
 
 describe('channels/github/provider/comment-admission', () => {
-  it('should separate feedback authors from assigners with independent legacy fallback', () => {
-    const cases: Array<{
-      configuration: GitHubCommentAdmissionPolicy & {
-        approvedIssueAssigners?: (typeof notificationActor)[];
-      };
-      approved: boolean;
-    }> = [
-      { configuration: { approvedActors: [notificationActor] }, approved: true },
-      { configuration: { approvedFeedbackAuthors: [notificationActor] }, approved: true },
-      { configuration: { approvedIssueAssigners: [notificationActor] }, approved: false },
-      { configuration: {}, approved: false },
-      {
-        configuration: { approvedActors: [notificationActor], approvedIssueAssigners: [] },
-        approved: true,
-      },
-      {
-        configuration: { approvedActors: [notificationActor], approvedFeedbackAuthors: [] },
-        approved: false,
-      },
-      {
-        configuration: {
-          approvedActors: [notificationActor],
-          approvedFeedbackAuthors: [notificationAccount],
-        },
-        approved: false,
-      },
-      {
-        configuration: {
-          approvedActors: [notificationAccount],
-          approvedFeedbackAuthors: [notificationActor],
-          approvedIssueAssigners: [],
-        },
-        approved: true,
-      },
-    ];
-    const settings = { ...configuration, approvedActors: undefined };
-    for (const entry of cases) {
+  it('should require explicit feedback grants and ignore assignment-only authority', () => {
+    for (const [settings, approved] of [
+      [{ approvedFeedbackAuthors: [notificationActor] }, true],
+      [{}, false],
+      [{ approvedFeedbackAuthors: [] }, false],
+      [{ approvedIssueAssigners: [notificationActor] }, false],
+    ] as const) {
       const result = admitGitHubComment({
         account: notificationAccount,
         comment: comment('@tanaabot continue'),
-        configuration: { ...settings, ...entry.configuration },
+        configuration: {
+          ...settings,
+          approvedFeedbackAuthors:
+            'approvedFeedbackAuthors' in settings ? [...settings.approvedFeedbackAuthors] : [],
+        },
       });
-      assert.equal(result.disposition, entry.approved ? 'approved' : 'rejected');
-      if (!entry.approved) assert.equal(result.code, 'comment-actor-unapproved');
+      assert.equal(result.disposition, approved ? 'approved' : 'rejected');
     }
   });
 

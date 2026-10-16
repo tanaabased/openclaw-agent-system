@@ -37,9 +37,6 @@ export function admitCodexFeedback(
     allowSelf: true,
     configuration: {
       approvedFeedbackAuthors: authors,
-      assignmentTypes: [],
-      intervalMinutes: 5,
-      maxConcurrentIssues: 3,
     },
   };
   if (

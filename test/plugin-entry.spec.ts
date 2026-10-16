@@ -14,8 +14,9 @@ describe('index', () => {
     assert.equal(plugin.description, 'Better per-agent management for OpenClaw.');
     assert.equal(typeof plugin.register, 'function');
     assert.equal(plugin.configSchema.jsonSchema?.additionalProperties, false);
-    assert.ok(
+    assert.equal(
       Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('githubNotifications'),
+      false,
     );
     assert.ok(Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('opCache'));
   });
@@ -147,20 +148,18 @@ describe('index', () => {
 
     plugin.register(api as never);
 
-    assert.equal(channelInboundDispatchAccessed, true);
+    assert.equal(channelInboundDispatchAccessed, false);
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, [
-      'after_tool_call',
       'before_tool_call',
       'after_tool_call',
       'before_tool_call',
       'resolve_exec_env',
       'before_tool_call',
-      'before_agent_run',
       'session_start',
       'before_prompt_build',
     ]);
-    assert.deepEqual(channelIds, ['agent-system-github']);
+    assert.deepEqual(channelIds, []);
     assert.deepEqual(commandNames, []);
     assert.deepEqual(serviceIds, ['agent-system-op-cache', 'agent-system-command-authority']);
     assert.deepEqual(toolNames, [
@@ -170,8 +169,6 @@ describe('index', () => {
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_google',
-      'agent_system_github_reply',
-      'agent_system_github_task_pr',
       'agent_system_install',
       'agent_system_doctor',
       'agent_system_model_routing',

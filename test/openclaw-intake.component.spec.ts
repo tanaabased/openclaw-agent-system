@@ -13,7 +13,6 @@ import OpenClawIntake from '../agent/openclaw-intake.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
-import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { automationPatch, projectAutomation } from '../agent/automation-projection.ts';
 import type { NativeAutomation } from '../agent/automation-gateway.ts';
@@ -89,42 +88,16 @@ describe('OpenClaw V2 intake slice', () => {
       },
     };
   }
-  it('should report supported planning through combined doctor and install without starting legacy monitoring', async () => {
+  it('should report supported planning through native doctor and install without starting issue sessions', async () => {
     const f = fixture();
-    const unused = async () => {
-      throw Error('legacy monitoring must not be activated');
+    const unused = async (): Promise<never> => {
+      throw Error('unexpected diagnostic');
     };
-    let cleanupCalls = 0;
-    const legacy = createNotificationLifecycleContribution({
-      hookAccess: { inspect: unused, reconcile: unused },
-      monitorService: { runOnce: unused },
-      routingService: {
-        async inspect(desired) {
-          assert.equal(desired.enabled, false);
-          return { kind: 'noop', code: 'notification-routing-disabled', message: 'disabled' };
-        },
-        async reconcile(desired) {
-          assert.equal(desired.enabled, false);
-          return {
-            configChanged: false,
-            plan: { kind: 'noop', code: 'notification-routing-disabled', message: 'disabled' },
-            receiptAction: 'none',
-            requiresManualRestart: false,
-          };
-        },
-      },
-      stateStore: {
-        read: async () => undefined,
-        remove: async () => {
-          cleanupCalls++;
-          return false;
-        },
-      },
-    });
-    const registry = new AgentSystemLifecycleRegistry([legacy, f.service.contribution()]);
+    const contribution = f.service.contribution();
+    const registry = new AgentSystemLifecycleRegistry([contribution]);
     const doctor = new AgentDoctorService({ lifecycleRegistry: registry });
     const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
-    assert.deepEqual(legacy.validate!(context)?.diagnostics, []);
+    assert.deepEqual(contribution.validate!(context)?.diagnostics, []);
     async function inspect(expected: 'healthy' | 'drift', code: string) {
       const output: string[] = [];
       const exits: number[] = [];
@@ -152,11 +125,32 @@ describe('OpenClaw V2 intake slice', () => {
     const installed = await registry.reconcile(context);
     assert.deepEqual(installed.warnings, []);
     assert.ok(installed.outcomes.some((item) => item.code === 'intake-activated'));
-    assert.equal(cleanupCalls, 1);
     await inspect('healthy', 'intake-ready');
     const notifications = f.value.github.notifications;
     notifications.intervalMinutes++;
     await inspect('drift', 'intake-policy-reconciliation-required');
+  });
+
+  it('should block unsupported native workflows before provider access or activation', async () => {
+    const f = fixture();
+    f.value.github.notifications.issueAssignment!.mode = 'work';
+    const contribution = f.service.contribution();
+    const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
+    assert.equal(
+      contribution.validate!(context)?.diagnostics?.[0]?.code,
+      'github-notification-runtime-unsupported',
+    );
+    assert.equal(
+      (await f.service.inspect(f.value, root)).code,
+      'github-notification-runtime-unsupported',
+    );
+    const result = await contribution.reconcile!(context);
+    assert.equal(result.outcomes[0]?.status, 'skipped');
+    assert.equal(result.warnings?.[0]?.code, 'github-notification-runtime-unsupported');
+    await assert.rejects(f.service.run(f.value, root, 'activate'), {
+      code: 'github-notification-runtime-unsupported',
+    });
+    assert.equal(f.connects(), 0);
   });
 
   it('should share the Codex policy contract and isolate runtime identity and V1 files', async () => {
@@ -469,14 +463,7 @@ describe('OpenClaw V2 intake slice', () => {
       json: true,
       workspaceDir: root,
       manifestService: { ...f.manifests, loadForCommandDirectory: async () => f.loaded },
-      statusService: {
-        async inspect(): Promise<never> {
-          throw Error('legacy state');
-        },
-        async wait(): Promise<never> {
-          throw Error('legacy wait');
-        },
-      },
+
       output: {
         writeStdout: (text: string) => stdout.push(text),
         writeStderr: (text: string) => {
