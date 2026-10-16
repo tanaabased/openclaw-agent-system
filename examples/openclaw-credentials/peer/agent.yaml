@@ -1,0 +1,13 @@
+schema-version: 1
+
+agent:
+  id: credential-peer
+  name: Credential Peer
+  email: credential-peer@example.test
+
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+  required:
+    - VIBES
+
+git: {}

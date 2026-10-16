@@ -64,6 +64,7 @@ describe('scripts/example-model-scenarios', () => {
       'collaboration',
       'openclaw-automations',
       'credentials',
+      'openclaw-credentials',
       'github',
       'os-execution',
       'openclaw-runtimes',
@@ -326,37 +327,39 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should complete each cache turn only after a successful local git tool result', () => {
-    const scenario = resolveExampleModelScenario('credentials');
-    for (const { agentId, callId, prompt } of credentialExampleChecks) {
-      const initial = matchFixture(
-        [...scenario.fixtures],
-        request(agentId, prompt, ['agent_system_git']),
-      );
-      assert.deepEqual(initial?.response, {
-        id: `${callId}_tool_response`,
-        toolCalls: [
-          {
-            arguments: JSON.stringify({ argv: ['--version'] }),
-            id: callId,
-            name: 'agent_system_git',
-          },
-        ],
-      });
-      assert.equal(
-        matchFixture(
+    for (const scenarioId of ['credentials', 'openclaw-credentials']) {
+      const scenario = resolveExampleModelScenario(scenarioId);
+      for (const { agentId, callId, prompt } of credentialExampleChecks) {
+        const initial = matchFixture(
           [...scenario.fixtures],
-          request(agentId, prompt, ['agent_system_git'], {
-            callId,
-            content: 'credential unavailable',
-          }),
-        ),
-        null,
-      );
-      const final = matchFixture(
-        [...scenario.fixtures],
-        request(agentId, prompt, ['agent_system_git'], { callId, content: 'git version 2.50.0' }),
-      );
-      assert.deepEqual(final?.response, { content: 'git ready', id: `${callId}_final_response` });
+          request(agentId, prompt, ['agent_system_git']),
+        );
+        assert.deepEqual(initial?.response, {
+          id: `${callId}_tool_response`,
+          toolCalls: [
+            {
+              arguments: JSON.stringify({ argv: ['--version'] }),
+              id: callId,
+              name: 'agent_system_git',
+            },
+          ],
+        });
+        assert.equal(
+          matchFixture(
+            [...scenario.fixtures],
+            request(agentId, prompt, ['agent_system_git'], {
+              callId,
+              content: 'credential unavailable',
+            }),
+          ),
+          null,
+        );
+        const final = matchFixture(
+          [...scenario.fixtures],
+          request(agentId, prompt, ['agent_system_git'], { callId, content: 'git version 2.50.0' }),
+        );
+        assert.deepEqual(final?.response, { content: 'git ready', id: `${callId}_final_response` });
+      }
     }
   });
 });

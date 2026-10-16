@@ -40,7 +40,7 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId,
 # should complete one command under the owning managed git identity
 cd "$TMPDIR/automation-agent"
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')
-node "$GITHUB_WORKSPACE/examples/openclaw-automations/wait-for-run.mjs" identity "$run_id"
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' identity.git
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
@@ -56,7 +56,7 @@ cd "$TMPDIR/automation-agent"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 run_id=$(openclaw agent-system automations run prompt --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')
-node "$GITHUB_WORKSPACE/examples/openclaw-automations/wait-for-run.mjs" prompt "$run_id"
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id"
 openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automations/expected-evidence.json"
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 ```

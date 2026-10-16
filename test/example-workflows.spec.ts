@@ -121,6 +121,8 @@ describe('example workflows', () => {
     const steps = job?.steps ?? [];
     const example = steps.find(({ name }) => name === 'Run Leia-backed example');
     const liveExample = steps.find(({ name }) => name === 'Run live runtime example');
+    const toolExample = steps.find(({ name }) => name === 'Run managed tool example');
+    const credentialExample = steps.find(({ name }) => name === 'Run provider credential example');
 
     assert.equal(workflow.permissions?.contents, 'read');
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
@@ -132,12 +134,17 @@ describe('example workflows', () => {
       'codex-notifications',
       'openclaw-agent',
       'openclaw-workspace',
+      'openclaw-tools',
+      'openclaw-credentials',
       'openclaw-automations',
       'openclaw-runtimes',
     ]);
     assert.ok(example);
     assert.ok(liveExample);
-    assert.equal(example.if, "matrix.example != 'openclaw-runtimes'");
+    assert.equal(
+      example.if,
+      "matrix.example != 'openclaw-runtimes' && matrix.example != 'openclaw-tools' && matrix.example != 'openclaw-credentials'",
+    );
     assert.equal(liveExample.if, "matrix.example == 'openclaw-runtimes'");
     assert.equal(example.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');
     assert.equal(example.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
@@ -149,14 +156,29 @@ describe('example workflows', () => {
     assert.equal(typeof liveExample.env?.OPENAI_MODEL, 'string');
     assert.ok(liveExample.env?.OPENAI_MODEL);
     assert.equal(liveExample.run, example.run);
+    assert.ok(toolExample);
+    assert.equal(toolExample.if, "matrix.example == 'openclaw-tools'");
+    assert.equal(toolExample.run, example.run);
+    assert.equal(toolExample.env?.AGENT_SYSTEM_PACKAGE, example.env?.AGENT_SYSTEM_PACKAGE);
+    assert.equal(toolExample.env?.GH_TOKEN_TANAABOT, '${{ secrets.GH_TOKEN_TANAABOT }}');
+    assert.ok(credentialExample);
+    assert.equal(credentialExample.if, "matrix.example == 'openclaw-credentials'");
+    assert.equal(credentialExample.run, example.run);
+    assert.equal(credentialExample.env?.AGENT_SYSTEM_PACKAGE, example.env?.AGENT_SYSTEM_PACKAGE);
+    assert.equal(
+      credentialExample.env?.OP_SERVICE_ACCOUNT_TOKEN,
+      '${{ secrets.TANAAB_OP_TESTVAULT }}',
+    );
     const openClawSetup = steps.find(({ uses }) => uses === 'tanaabased/actions/setup-openclaw@v1');
     assert.equal(openClawSetup?.if, "startsWith(matrix.example, 'openclaw-')");
     for (const step of steps) {
-      if (step !== liveExample) {
+      if (![liveExample, toolExample, credentialExample].includes(step)) {
         assert.ok(
           !Object.values(step.env ?? {}).some((value) => String(value).includes('secrets.')),
         );
       }
+      if (step !== toolExample) assert.equal(step.env?.GH_TOKEN_TANAABOT, undefined);
+      if (step !== credentialExample) assert.equal(step.env?.OP_SERVICE_ACCOUNT_TOKEN, undefined);
     }
     const commands = (job?.strategy?.matrix?.example ?? []).flatMap((scenario) => {
       const suites = new Leia().parse([resolve('examples', scenario, 'README.md')]);

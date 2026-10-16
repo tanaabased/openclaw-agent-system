@@ -2,6 +2,7 @@ import { collaborationExampleScenario } from '../examples/collaboration/model-fi
 import { automationExampleScenario } from '../examples/openclaw-automations/model-fixture.ts';
 import { agentExampleScenario } from '../examples/openclaw-agent/model-fixture.ts';
 import { credentialExampleScenario } from '../examples/credentials/model-fixture.ts';
+import { credentialExampleScenario as openClawCredentialScenario } from '../examples/openclaw-credentials/model-fixture.ts';
 import { githubExampleScenario } from '../examples/github/model-fixture.ts';
 import { osExecutionExampleScenario } from '../examples/os-execution/model-fixture.ts';
 import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fixture.ts';
@@ -12,6 +13,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [collaborationExampleScenario.id, collaborationExampleScenario],
   [automationExampleScenario.id, automationExampleScenario],
   [credentialExampleScenario.id, credentialExampleScenario],
+  [openClawCredentialScenario.id, openClawCredentialScenario],
   [githubExampleScenario.id, githubExampleScenario],
   [osExecutionExampleScenario.id, osExecutionExampleScenario],
   [runtimeBoundaryScenario.id, runtimeBoundaryScenario],
