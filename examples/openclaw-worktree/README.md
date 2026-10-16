@@ -52,6 +52,12 @@ cd "$(jq -er .path "$TMPDIR/worktree-created.json")"
 openclaw agent-system tool git -- var GIT_AUTHOR_IDENT | grep -F 'Worktree Tanaabot <tanaabot@tanaab.dev>'
 "$plugin_dir/bin/git" var GIT_AUTHOR_IDENT | grep -F 'Worktree Tanaabot <tanaabot@tanaab.dev>'
 
+# should preserve nul-delimited git output through both managed entrypoints
+plugin_dir=$(openclaw plugins inspect agent-system --json | jq -er '.plugin.rootDir')
+cd "$(jq -er .path "$TMPDIR/worktree-created.json")"
+openclaw agent-system tool git -- ls-files -z -- tracked.txt | node -e 'require("node:assert/strict").equal(require("node:fs").readFileSync(0,"utf8"),"tracked.txt\u0000")'
+"$plugin_dir/bin/git" ls-files -z -- tracked.txt | node -e 'require("node:assert/strict").equal(require("node:fs").readFileSync(0,"utf8"),"tracked.txt\u0000")'
+
 # should refuse to remove a dirty worktree without losing its edits
 cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 if output=$(openclaw agent-system tool worktree -- remove fixture 306-critical-path 2>&1); then
