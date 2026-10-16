@@ -71,6 +71,21 @@ jobs:
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+      - name: Capture automation gateway diagnostics
+        if: always() && matrix.example == 'openclaw-automations'
+        shell: bash
+        run: |
+          gateway_log=$(openclaw-gateway log-path)
+          gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+          tail -n 1000 "$gateway_log" | node "$gateway_redactor" | tee "$RUNNER_TEMP/openclaw-automations-final.log"
+      - name: Retain automation gateway diagnostics
+        if: always() && matrix.example == 'openclaw-automations'
+        uses: actions/upload-artifact@v7
+        with:
+          name: openclaw-automations-gateway
+          path: ${{ runner.temp }}/openclaw-automations-*.log
+          retention-days: 3
+          if-no-files-found: warn
       - name: Run live runtime example
         if: matrix.example == 'openclaw-runtimes'
         shell: bash

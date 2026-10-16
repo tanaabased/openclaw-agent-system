@@ -23,7 +23,7 @@ cd "$TMPDIR/automation-agent"
 openclaw agent-system install --yes --json
 
 # should start the gateway with the installed agent
-openclaw-gateway start
+OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ```
 
 ## Testing
@@ -45,8 +45,13 @@ grep -F 'Tanaabot <tanaabot@tanaab.dev>' identity.git
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 # should preserve routing across restart and complete a prompt in the owning agent context
-openclaw-gateway stop
-openclaw-gateway start
+gateway_log=$(openclaw-gateway log-path)
+gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+shutdown_status=0
+openclaw-gateway stop --timeout 340 || shutdown_status=$?
+tail -n 1000 "$gateway_log" | node "$gateway_redactor" | tee "$TMPDIR/openclaw-automations-before-restart.log"
+test "$shutdown_status" -eq 0
+OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 cd "$TMPDIR/automation-agent"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
@@ -60,6 +65,8 @@ test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 ```bash
 # should stop the gateway and strict mock provider
-openclaw-gateway stop
+shutdown_status=0
+openclaw-gateway stop --timeout 340 || shutdown_status=$?
 openclaw-aimock stop
+test "$shutdown_status" -eq 0
 ```
