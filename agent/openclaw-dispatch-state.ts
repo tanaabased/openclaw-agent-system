@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 
 import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
+import { openclawWorkStateSchema } from './openclaw-work-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const issueTurnSchema = Type.Object(
@@ -51,6 +52,7 @@ const sessionCreationRequestSchema = Type.Object(
 export const openclawDispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    work: Type.Optional(openclawWorkStateSchema),
     request: Type.Optional(Type.Union([legacyCreationSchema, sessionCreationRequestSchema])),
     sessionCreation: Type.Optional(
       Type.Object(
@@ -164,6 +166,10 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
       validRecord: (record) => {
         if (record.request && 'key' in record.request) {
           return Boolean(
+            (!record.work ||
+              (record.handoff &&
+                record.result?.outcome === 'plan-ready' &&
+                record.work.assessmentDigest === record.stageReceipt?.resultDigest)) &&
             record.sessionCreation &&
             record.worktree === record.request.cwd &&
             !record.native &&
@@ -200,6 +206,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
           );
         }
         return (
+          !record.work &&
           !record.sessionCreation &&
           !record.firstTurn &&
           !record.assessmentTurn &&

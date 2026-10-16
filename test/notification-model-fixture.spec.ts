@@ -233,4 +233,50 @@ describe('examples/openclaw-notifications model fixture', () => {
     append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
     assert.equal(matchFixture([...scenario.fixtures], invalid), null);
   });
+  it('should wait for native handoff before implementation and use the same delivery for an operator retry', async () => {
+    const input = request(
+      `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
+    );
+    assert.equal((await action(input, 'handoff')).permission, 'implementation-and-publication');
+    append(input, 'handoff-preview', { status: 'handoff-available', digest });
+    assert.equal((await action(input, 'handoff')).digest, digest);
+    append(input, 'handoff', { status: 'handed-off' });
+    await action(input, 'implementation-context');
+    append(input, 'work-context', {
+      status: 'verified',
+      runtime: 'openclaw',
+      publicationAuthorized: true,
+      project: { path: '/tmp/owned' },
+    });
+    for (const stage of ['apply', 'add', 'commit']) {
+      const next = await response(input);
+      assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+      assert.equal(next.toolCalls[0]!.name, 'agent_system_git');
+      assert.equal(JSON.parse(next.toolCalls[0]!.arguments).cwd, '/tmp/owned');
+      append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
+    }
+    await action(input, 'implementation-result');
+    append(input, 'work-result', { status: 'recorded' });
+    assert.equal((await action(input, 'delivery')).operation, 'prepare');
+    append(input, 'delivery-prepare', { status: 'prepared', digest });
+    assert.equal((await action(input, 'delivery')).digest, digest);
+    append(input, 'delivery-publish', { status: 'published' });
+    assert.equal((await action(input, 'delivery')).operation, 'reconcile');
+    append(input, 'delivery-reconcile', { status: 'ready' });
+    assert.equal((await action(input, 'delivery')).operation, 'present');
+    append(input, 'delivery-present', { status: 'presented', presentation: '> PR card' });
+    assert.deepEqual(await response(input), { content: '> PR card' });
+    const retry = request(
+      `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
+    );
+    assert.equal((await action(retry, 'delivery')).operation, 'prepare');
+  });
+
+  it('should stop when native authority rejects the operator handoff', async () => {
+    const input = request(
+      `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
+    );
+    append(input, 'handoff-preview', { status: 'blocked', code: 'dispatch-operator-required' });
+    assert.equal(matchFixture([...scenario.fixtures], input), null);
+  });
 });

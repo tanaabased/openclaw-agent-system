@@ -1,6 +1,7 @@
 import { Type, type TProperties } from 'typebox';
 import { assessmentResultSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
+import { implementationResultSchema } from '../../agent/implementation-result.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
@@ -21,6 +22,31 @@ export const dispatchParameters = Type.Union([
   object({ action: Type.Literal('start'), id }),
   object({ action: Type.Literal('assess'), id }),
   object({ action: Type.Literal('context'), id }),
+  object({
+    action: Type.Literal('handoff'),
+    id,
+    permission: Type.Union([
+      Type.Literal('implementation'),
+      Type.Literal('publication'),
+      Type.Literal('implementation-and-publication'),
+    ]),
+    digest: Type.Optional(id),
+  }),
+  object({ action: Type.Literal('implementation-context'), id }),
+  object({ action: Type.Literal('implementation-result'), id, result: implementationResultSchema }),
+  object({
+    action: Type.Literal('delivery'),
+    id,
+    operation: Type.Union([
+      Type.Literal('prepare'),
+      Type.Literal('publish'),
+      Type.Literal('reconcile'),
+      Type.Literal('present'),
+    ]),
+    digest: Type.Optional(id),
+    title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
+    body: Type.Optional(Type.String({ minLength: 1, maxLength: 65536, pattern: '\\S' })),
+  }),
   object({
     action: Type.Literal('result'),
     id,

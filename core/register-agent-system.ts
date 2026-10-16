@@ -263,6 +263,36 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
+    async delivery({ manifest, workspaceDir, worktree, caller, signal }) {
+      const account = await githubCapability.accountClient.connect(
+        { manifest, workspaceDir },
+        'service',
+        signal,
+      );
+      return {
+        account,
+        async git(argv) {
+          const result = await toolRuntime.executeCli(
+            gitCapability.definition,
+            { argv: ['-C', worktree, ...argv] },
+            {
+              source: 'tool',
+              admittedWorkingDirectories: [worktree],
+              toolContext: {
+                agentId: manifest.agent.id,
+                workspaceDir: worktree,
+                sessionKey: caller.sessionKey,
+                sessionId: caller.sessionId,
+              },
+            },
+            signal,
+          );
+          if (result.output.exitCode !== 0 || result.output.truncated)
+            throw new Error('delivery-git-operation-failed');
+          return result.output.stdout;
+        },
+      };
+    },
     async connect(input, signal) {
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkEventClient(connected);

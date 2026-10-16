@@ -1502,4 +1502,117 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await service.check(manifest, root)).changed, false);
     assert.equal(sends().length, 1);
   });
+  async function operatorFollowup(owner = true) {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await context(input.id);
+    await submit(input.id);
+    assessmentReply(input.id);
+    messages.push({
+      role: 'user',
+      content: 'Implement this plan and open a PR.',
+      idempotencyKey: 'operator:user',
+      __openclaw: { id: 'operator-event', idempotencyKey: 'operator:user', senderIsOwner: owner },
+    });
+    return { id: input.id, who: assessor(input.id, 'operator') };
+  }
+
+  it('should retain explicit implementation and publication permission without replacing the assessment', async () => {
+    const { id, who } = await operatorFollowup();
+    const request = {
+      action: 'handoff' as const,
+      id,
+      permission: 'implementation-and-publication' as const,
+    };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    assert.equal((await record()).work, undefined);
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    const retained = await record();
+    assert.deepEqual(retained.result, plan);
+    assert.equal(retained.work?.publication?.inputEventId, 'operator-event');
+    assert.equal(retained.work?.implementation?.runId, 'operator');
+    const verified = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation-context', id },
+      true,
+    );
+    assert.equal(verified.status, 'verified');
+    assert.ok('assessment' in verified);
+    assert.deepEqual(verified.assessment, plan);
+    const result = {
+      outcome: 'done' as const,
+      summary: 'Implemented.',
+      fullResult: 'Implemented and checked the change.',
+    };
+    await service.run(manifest, root, who, { action: 'implementation-result', id, result }, true);
+    assert.deepEqual((await record()).work?.result, result);
+    await assert.rejects(context(id, who), /dispatch-policy-changed/);
+    await assert.rejects(
+      service.run(manifest, root, who, { ...request, digest: preview.digest }, true),
+      /dispatch-handoff-stale/,
+    );
+  });
+
+  it('should keep implementation-only handoff separate from publication and require context before its result', async () => {
+    const { id, who } = await operatorFollowup();
+    const request = { action: 'handoff' as const, id, permission: 'implementation' as const };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    assert.equal((await record()).work?.publication, undefined);
+    await assert.rejects(
+      service.run(
+        manifest,
+        root,
+        who,
+        {
+          action: 'implementation-result',
+          id,
+          result: { outcome: 'done', summary: 'Done', fullResult: 'Done' },
+        },
+        true,
+      ),
+      /dispatch-implementation-context-required/,
+    );
+    const delivery = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'delivery', operation: 'prepare', id },
+      true,
+    );
+    assert.equal(delivery.status, 'blocked');
+    assert.ok('code' in delivery && delivery.code === 'delivery-human-publication-required');
+  });
+
+  it('should reject owner-looking tool requests without native owner input evidence', async () => {
+    const { id, who } = await operatorFollowup(false);
+    const request = {
+      action: 'handoff' as const,
+      id,
+      permission: 'implementation-and-publication' as const,
+    };
+    await assert.rejects(
+      service.run(manifest, root, who, request, true),
+      /dispatch-operator-input-unverified/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, who, request, false),
+      /dispatch-operator-required/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, coordinator, request, true),
+      /dispatch-assessment-caller-mismatch/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, assessor(id), request, true),
+      /dispatch-operator-followup-required/,
+    );
+    assert.equal((await record()).work, undefined);
+    assert.deepEqual((await record()).result, plan);
+  });
 });
