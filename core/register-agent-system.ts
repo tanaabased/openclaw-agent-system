@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
+import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
@@ -272,24 +273,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return {
         account,
         async git(argv) {
-          const result = await toolRuntime.executeCli(
-            gitCapability.definition,
-            { argv: ['-C', worktree, ...argv] },
-            {
-              source: 'tool',
-              admittedWorkingDirectories: [worktree],
-              toolContext: {
-                agentId: manifest.agent.id,
-                workspaceDir: worktree,
-                sessionKey: caller.sessionKey,
-                sessionId: caller.sessionId,
-              },
-            },
+          return executeOpenClawDeliveryGit({
+            runtime: toolRuntime,
+            definition: gitCapability.definition,
+            agentId: manifest.agent.id,
+            worktree,
+            caller,
             signal,
-          );
-          if (result.output.exitCode !== 0 || result.output.truncated)
-            throw new Error('delivery-git-operation-failed');
-          return result.output.stdout;
+            argv,
+          });
         },
       };
     },
