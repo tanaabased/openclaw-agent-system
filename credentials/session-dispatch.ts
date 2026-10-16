@@ -75,7 +75,8 @@ export default class SessionDispatchCredential {
 
   async needsEnrollment() {
     const record = await this.read();
-    return !record?.token;
+    if (!record?.token) return true;
+    return (await this.inspect()).code === 'session-dispatch-credential-revoked';
   }
 
   async inspect() {
@@ -88,8 +89,7 @@ export default class SessionDispatchCredential {
         remediation: 'Run Install and approve session dispatch enrollment.',
       };
     const pairing = await this.dependencies.pairing(record.device.deviceId);
-    const deviceId = record.device.deviceId;
-    const suffix = ` Device ${deviceId}.`;
+    const suffix = ` Device ${record.device.deviceId}.`;
     if (!record.token)
       return {
         code: 'session-dispatch-pairing-pending',
@@ -104,7 +104,8 @@ export default class SessionDispatchCredential {
         code: 'session-dispatch-credential-revoked',
         status: 'blocked' as const,
         message: `Session dispatch device authorization is missing, revoked, or lacks required scopes.${suffix}`,
-        remediation: `Remove this exact device in Devices, then run openclaw agent-system session-dispatch reset ${deviceId} before explicitly re-enrolling.`,
+        remediation:
+          'Remove this device in Devices, then rerun Install with enrollment consent to replace the retained identity.',
       };
     try {
       const connected = await this.dependencies.connect(record, false, {});
@@ -141,20 +142,34 @@ export default class SessionDispatchCredential {
       let record = await this.read();
       if (record?.token) {
         const finding = await this.inspect();
-        if (finding.status !== 'healthy')
+        if (
+          finding.code === 'session-dispatch-credential-revoked' &&
+          authority.sessionDispatchConsent
+        ) {
+          const pairing = await this.dependencies.pairing(record.device.deviceId);
+          if (pairing.paired || pairing.requestId)
+            dispatchCredentialError(
+              finding.code,
+              `${finding.message} Remove this exact device and any pending request in Devices before retrying Install.`,
+            );
+          await this.clearRetained(record, guard);
+          record = undefined;
+        } else if (finding.status !== 'healthy') {
           dispatchCredentialError(finding.code, `${finding.message} ${finding.remediation ?? ''}`);
-        await guard();
-        if (record.bootstrap) {
-          await this.dependencies.revoke(record.bootstrap.token);
-          delete record.bootstrap;
+        } else {
           await guard();
-          await this.write(record);
+          if (record.bootstrap) {
+            await this.dependencies.revoke(record.bootstrap.token);
+            delete record.bootstrap;
+            await guard();
+            await this.write(record);
+          }
+          return {
+            code: 'session-dispatch-unchanged',
+            status: 'unchanged' as const,
+            message: finding.message,
+          };
         }
-        return {
-          code: 'session-dispatch-unchanged',
-          status: 'unchanged' as const,
-          message: finding.message,
-        };
       }
       if (!authority.sessionDispatchConsent)
         dispatchCredentialError(
@@ -276,38 +291,6 @@ export default class SessionDispatchCredential {
     });
   }
 
-  async reset(deviceId: string) {
-    return this.dependencies.lock(async (assertHeld) => {
-      const record = await this.read();
-      if (!record || record.device.deviceId !== deviceId)
-        dispatchCredentialError(
-          'session-dispatch-reset-mismatch',
-          'The exact retained session dispatch device ID is required.',
-        );
-      const pairing = await this.dependencies.pairing(deviceId);
-      if (pairing.paired || pairing.requestId)
-        dispatchCredentialError(
-          'session-dispatch-reset-still-authorized',
-          'Remove this exact device and any pending request in Devices before clearing local enrollment.',
-        );
-      assertHeld();
-      if (record.bootstrap) await this.dependencies.revoke(record.bootstrap.token);
-      assertHeld();
-      const result = await this.dependencies.store.remove(this.dependencies.key);
-      if (result.status !== 'removed' && result.status !== 'missing')
-        dispatchCredentialError(
-          'session-dispatch-storage-unavailable',
-          'Protected session dispatch storage could not be cleared.',
-        );
-      if (await this.read())
-        dispatchCredentialError(
-          'session-dispatch-reset-unverified',
-          'Local enrollment reset could not be verified.',
-        );
-      return { status: 'removed', deviceId };
-    });
-  }
-
   private verifyScopes(scopes: string[]) {
     if (
       scopes.length !== sessionDispatchScopes.length ||
@@ -316,6 +299,31 @@ export default class SessionDispatchCredential {
       dispatchCredentialError(
         'session-dispatch-scope-mismatch',
         'Gateway session dispatch grants differ from the approved read/write scopes.',
+      );
+  }
+
+  private async clearRetained(record: DispatchCredential, guard: () => Promise<void>) {
+    await guard();
+    const current = await this.read();
+    if (!current || current.device.deviceId !== record.device.deviceId)
+      dispatchCredentialError(
+        'session-dispatch-storage-unavailable',
+        'Retained session dispatch identity changed before Install could replace it.',
+      );
+    await guard();
+    if (record.bootstrap) await this.dependencies.revoke(record.bootstrap.token);
+    await guard();
+    const result = await this.dependencies.store.remove(this.dependencies.key);
+    if (result.status !== 'removed' && result.status !== 'missing')
+      dispatchCredentialError(
+        'session-dispatch-storage-unavailable',
+        'Protected session dispatch storage could not be cleared.',
+      );
+    await guard();
+    if (await this.read())
+      dispatchCredentialError(
+        'session-dispatch-reset-unverified',
+        'Local enrollment replacement could not be verified.',
       );
   }
 

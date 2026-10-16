@@ -653,7 +653,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       environmentService,
       input: process.stdin,
       installService: operatorInstall,
-      sessionDispatch,
       automations,
       boundCommands,
       manifestService,

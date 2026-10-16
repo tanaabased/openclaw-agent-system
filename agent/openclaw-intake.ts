@@ -146,7 +146,7 @@ export default class OpenClawIntake {
   }
   contribution(): AgentSystemLifecycleContribution {
     return {
-      id: 'github-intake-v2',
+      id: 'github-intake',
       isConfigured: (manifest) => manifest.github?.notifications?.schemaVersion === 2,
       validate: ({ manifest }) => {
         const diagnostics = githubNotificationRuntimeDiagnostics(
@@ -174,7 +174,7 @@ export default class OpenClawIntake {
         return [
           ...diagnostics,
           {
-            component: 'github-intake-v2',
+            component: 'github-intake',
             status:
               result.code === 'intake-policy-disabled'
                 ? 'skipped'
@@ -182,7 +182,7 @@ export default class OpenClawIntake {
                   ? 'drift'
                   : 'healthy',
             code: result.code ?? 'intake-ready',
-            message: result.code ?? 'V2 intake baseline and policy are aligned.',
+            message: result.code ?? 'Intake baseline and policy are aligned.',
           },
         ];
       },
@@ -215,10 +215,10 @@ export default class OpenClawIntake {
             warnings,
             outcomes: [
               {
-                component: 'github-intake-v2',
+                component: 'github-intake',
                 status: 'updated',
                 code: 'intake-activated',
-                message: 'V2 intake baseline and policy retained; no issue sessions created.',
+                message: 'Intake baseline and policy retained; no issue sessions created.',
               },
             ],
           };
@@ -227,10 +227,10 @@ export default class OpenClawIntake {
           warnings,
           outcomes: [
             {
-              component: 'github-intake-v2',
+              component: 'github-intake',
               status: 'unchanged',
               code: 'intake-retained',
-              message: 'V2 intake evidence retained.',
+              message: 'Intake evidence retained.',
             },
           ],
         };
