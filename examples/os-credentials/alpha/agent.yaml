@@ -5,8 +5,15 @@ agent:
   name: Storage Alpha
   email: storage-alpha@example.invalid
 
+environment:
+  dotenv:
+    - .signing.env
+
 git:
   worktrees: {}
+  signing:
+    key: OS_SIGNING_KEY
+    allowed-signers-file: allowed_signers
   ssh:
     private-keys:
       path: keys/id_ed25519

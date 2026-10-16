@@ -1,8 +1,8 @@
 # OS Credentials Example
 
-Verify installed Agent System storage on macOS and Linux: private managed directories, agent-scoped file credentials, native SSH private-key access, and refusal to follow unsafe paths. Commands run directly without starting a Gateway or model and without contacting external services.
+Verify installed Agent System storage on macOS and Linux: private managed directories, agent-scoped file credentials, native SSH private-key access, trusted commit signing, and refusal to follow unsafe paths. Commands run directly without starting a Gateway or model and without contacting external services.
 
-The file-store fixtures contain synthetic tokens and exercise the public credential removal command. Credential creation and provider validation remain separate: the OP set command requires a real declared 1Password resource. Native Keychain and Secret Service enrollment are covered by `os-install`. The generated SSH key is local and is never registered with a remote service.
+The file-store fixtures contain synthetic tokens and exercise the public credential removal command. Credential creation and provider validation remain separate: the OP set command requires a real declared 1Password resource. Native Keychain and Secret Service enrollment are covered by `os-install`. The generated SSH key is local and is never registered with a remote service. A private dotenv fixture supplies that key to the declared signing binding; native Git independently verifies the resulting commit against its public key.
 
 Copy the workspaces under runner-owned temporary paths because the checks deliberately change permissions and replace directories with symlinks. Inspect modes through Node instead of platform-specific `stat` flags.
 
@@ -21,6 +21,8 @@ cp -R "$GITHUB_WORKSPACE/examples/os-credentials/alpha" "$TMPDIR/os storage/alph
 cp -R "$GITHUB_WORKSPACE/examples/os-credentials/beta" "$TMPDIR/os storage/beta"
 mkdir "$TMPDIR/os storage/alpha/keys"
 ssh-keygen -q -t ed25519 -N '' -f "$TMPDIR/os storage/alpha/keys/id_ed25519"
+node -e 'const fs=require("node:fs");fs.writeFileSync(process.argv[1],"OS_SIGNING_KEY="+JSON.stringify(fs.readFileSync(process.argv[2],"utf8"))+"\n",{mode:0o600});' "$TMPDIR/os storage/alpha/.signing.env" "$TMPDIR/os storage/alpha/keys/id_ed25519"
+printf 'storage-alpha@example.invalid %s\n' "$(cat "$TMPDIR/os storage/alpha/keys/id_ed25519.pub")" > "$TMPDIR/os storage/alpha/allowed_signers"
 mkdir -p "$TMPDIR/os storage/config/tanaab/agent-system/storage-alpha" "$TMPDIR/os storage/config/tanaab/agent-system/storage-beta"
 printf '%s' synthetic-alpha-credential > "$TMPDIR/os storage/config/tanaab/agent-system/storage-alpha/op-token"
 printf '%s' synthetic-beta-credential > "$TMPDIR/os storage/config/tanaab/agent-system/storage-beta/op-token"
@@ -65,9 +67,13 @@ if printf '%s\n' "$output" | grep -F synthetic-; then exit 1; fi
 test -L "$credential"
 node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");assert.equal(fs.readFileSync(process.argv[1],"utf8"),"synthetic-beta-credential");' "$TMPDIR/os storage/config/tanaab/agent-system/storage-beta/op-token"
 
-# should use a local private ssh key through the installed managed git command
-cd "$TMPDIR/os storage/alpha"
-openclaw agent-system tool git -- var GIT_AUTHOR_IDENT | grep -F 'Storage Alpha <storage-alpha@example.invalid>'
+# should create a trusted signed commit under the installed managed identity
+mkdir "$TMPDIR/os storage/alpha/repository"
+cd "$TMPDIR/os storage/alpha/repository"
+openclaw agent-system tool git -- init --quiet
+openclaw agent-system tool git -- commit --quiet --allow-empty --message 'verify managed signing'
+git log -1 --format='%an <%ae> | %cn <%ce>' | grep -Fx 'Storage Alpha <storage-alpha@example.invalid> | Storage Alpha <storage-alpha@example.invalid>'
+git -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$TMPDIR/os storage/alpha/allowed_signers" verify-commit HEAD
 
 # should reject a group-readable ssh key without repairing its permissions
 cd "$TMPDIR/os storage/alpha"
