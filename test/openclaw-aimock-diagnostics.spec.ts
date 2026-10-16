@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import diagnostics from '../scripts/aimock-diagnostics.ts';
-import resolveScenario from '../scripts/aimock-scenarios.ts';
+import resolveScenario from '../scripts/example-model-scenarios.ts';
 
 type Entry = Parameters<typeof diagnostics>[1][number];
 

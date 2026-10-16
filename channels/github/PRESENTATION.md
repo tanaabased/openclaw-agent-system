@@ -16,8 +16,8 @@ notification workflows. It describes their appearance and composition only. The
 - Give private lifecycle results a report-like structure with stable sections
   for the complete assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
-  reports. Legacy OpenClaw ordinary comments mirror their public answer privately;
-  Codex feedback presents the complete private response and a separate public quote.
+  reports. Codex feedback presents the complete private response and a separate
+  public quote.
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 

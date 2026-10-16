@@ -2,7 +2,7 @@
 
 Verify the installed managed worktree lifecycle against a disposable local repository: prepare, reuse without losing edits, execute Git with the owning agent identity, and remove safely. Public Agent System commands own preparation and removal; both the public Git command and the packaged contextual shim must discover the agent from inside the worktree.
 
-Ubuntu coverage also provisions disposable GitHub authentication/signing keys, prepares a remote SSH worktree, and runs an ordinary native agent session there. Strict AIMock requires canonical workspace guidance before issuing either real execution call. A continuation after Gateway restart must retain its session, working directory, and Git identity. CI supplies only the existing Tanaabot token; generated public keys are removed after the test.
+Ubuntu coverage also provisions disposable GitHub authentication/signing keys, prepares a remote SSH worktree, and runs an ordinary native agent session there. Strict AIMock requires canonical workspace guidance before issuing either real execution call. An explicit session label keeps automatic model-generated titles outside this execution contract. A continuation after Gateway restart must retain its session, working directory, and Git identity. CI supplies only the existing Tanaabot token; generated public keys are removed after the test.
 
 ## Setup
 
@@ -90,7 +90,7 @@ openclaw agent-system tool git -- remote get-url origin | grep -Fx git@github.co
 # should execute an ordinary worktree session with canonical agent context and identity
 openclaw-gateway start
 worktree_path=$(jq -er .path "$TMPDIR/worktree-remote.json")
-openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",cwd:$cwd}')" --json | tee "$TMPDIR/worktree-session.json" | jq -e '.runStarted == false and (.sessionId | type == "string")'
+openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json | tee "$TMPDIR/worktree-session.json" | jq -e '.runStarted == false and (.sessionId | type == "string")'
 session_id=$(jq -er .sessionId "$TMPDIR/worktree-session.json")
 openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree first probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"worktree-first"}')" --json | jq -e '.runId == "worktree-first"'
 openclaw gateway call agent.wait --params '{"runId":"worktree-first","timeoutMs":120000}' --timeout 130000 --json | jq -e '.status == "ok"'

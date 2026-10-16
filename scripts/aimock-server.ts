@@ -5,7 +5,7 @@ import { LLMock, type Mountable } from '@copilotkit/aimock';
 
 import openClawAIMockDiagnostics from './aimock-diagnostics.ts';
 import openClawAIMockEvidence from './aimock-evidence.ts';
-import resolveOpenClawAIMockScenario from './aimock-scenarios.ts';
+import resolveExampleModelScenario from './example-model-scenarios.ts';
 import withToolSearch from './aimock-tool-search.ts';
 
 const { values: options } = parseArgs({
@@ -18,7 +18,7 @@ const { values: options } = parseArgs({
 });
 const providerHost = options.host.trim();
 const providerPort = Number(options.port);
-const scenario = withToolSearch(resolveOpenClawAIMockScenario(options.scenario?.trim() ?? ''));
+const scenario = withToolSearch(resolveExampleModelScenario(options.scenario?.trim() ?? ''));
 if (
   !providerHost ||
   !Number.isSafeInteger(providerPort) ||

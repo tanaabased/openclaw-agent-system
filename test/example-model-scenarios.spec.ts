@@ -14,7 +14,6 @@ import {
 import resolveExampleModelScenario, {
   exampleModelScenarioIds,
 } from '../scripts/example-model-scenarios.ts';
-import resolveOpenClawAIMockScenario from '../scripts/aimock-scenarios.ts';
 
 function request(
   agentId: string,
@@ -70,9 +69,9 @@ describe('scripts/example-model-scenarios', () => {
       'openclaw-memory',
       'openclaw-worktree',
     ]);
-    assert.equal(resolveOpenClawAIMockScenario('openclaw-agent').id, 'openclaw-agent');
-    assert.equal(resolveOpenClawAIMockScenario('openclaw-credentials').id, 'openclaw-credentials');
-    assert.equal(resolveOpenClawAIMockScenario('openclaw-github').id, 'openclaw-github');
+    assert.equal(resolveExampleModelScenario('openclaw-agent').id, 'openclaw-agent');
+    assert.equal(resolveExampleModelScenario('openclaw-credentials').id, 'openclaw-credentials');
+    assert.equal(resolveExampleModelScenario('openclaw-github').id, 'openclaw-github');
     assert.throws(
       () => resolveExampleModelScenario('unsupported'),
       /Unsupported example model scenario: unsupported/u,

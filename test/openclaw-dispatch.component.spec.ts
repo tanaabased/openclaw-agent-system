@@ -203,7 +203,6 @@ describe('agent/openclaw issue dispatch', () => {
                       idempotencyKey: `${params.idempotencyKey}:user`,
                       __openclaw: {
                         id: 'input-event',
-                        runId: params.idempotencyKey,
                         idempotencyKey: `${params.idempotencyKey}:user`,
                       },
                     },
@@ -1162,7 +1161,8 @@ describe('agent/openclaw issue dispatch', () => {
     messages.push({
       role: 'user',
       content: 'Yes, the API caller.',
-      __openclaw: { id: 'answer-event', runId: 'followup' },
+      idempotencyKey: 'followup:user',
+      __openclaw: { id: 'answer-event', idempotencyKey: 'followup:user' },
     });
     active = true;
     const who = assessor(input.id, 'followup');
@@ -1200,6 +1200,34 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
+  it('should reject conflicting followup custody before retaining a new assessment caller', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await context(input.id);
+    await submit(input.id);
+    assessmentReply(input.id);
+    const followup = {
+      role: 'user',
+      content: 'Revise the plan.',
+      idempotencyKey: 'followup:user',
+      __openclaw: { id: 'followup-event', idempotencyKey: 'followup:user' },
+    };
+    const who = assessor(input.id, 'followup');
+    for (const changed of [
+      { ...followup, idempotencyKey: 'unrelated:user' },
+      { ...followup, __openclaw: { ...followup.__openclaw, runId: 'unrelated' } },
+      { ...followup, __openclaw: { ...followup.__openclaw, truncated: true } },
+    ]) {
+      messages.push(changed);
+      await assert.rejects(context(input.id, who), /dispatch-assessment-input-unverified/);
+      messages.pop();
+      assert.equal((await record()).assessmentCaller?.runId, `${input.id}:assessment`);
+      assert.deepEqual((await record()).result, plan);
+    }
+    assert.equal(sends().length, 1);
+  });
+
   it('should preserve missing-result failure evidence and permit repair in the same session', async () => {
     const input = await next();
     await prepare(input);
@@ -1212,7 +1240,8 @@ describe('agent/openclaw issue dispatch', () => {
     messages.push({
       role: 'user',
       content: 'Retain the completed plan.',
-      __openclaw: { id: 'repair-event', runId: 'repair' },
+      idempotencyKey: 'repair:user',
+      __openclaw: { id: 'repair-event', idempotencyKey: 'repair:user' },
     });
     const who = assessor(input.id, 'repair');
     await context(input.id, who);
@@ -1276,7 +1305,8 @@ describe('agent/openclaw issue dispatch', () => {
       {
         role: 'user',
         content: 'Revise the plan.',
-        __openclaw: { id: 'later-event', runId: 'later' },
+        idempotencyKey: 'later:user',
+        __openclaw: { id: 'later-event', idempotencyKey: 'later:user' },
       },
     ];
     assert.equal((await context(input.id, assessor(input.id, 'later'))).status, 'verified');

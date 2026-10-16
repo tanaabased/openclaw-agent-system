@@ -5,7 +5,7 @@ import { matchFixture, type ChatCompletionRequest, type FixtureResponse } from '
 
 import { githubExampleTanaabotPrompt } from '../examples/openclaw-github/model-fixture.ts';
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
-import resolveScenario from '../scripts/aimock-scenarios.ts';
+import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
