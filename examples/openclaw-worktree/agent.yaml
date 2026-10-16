@@ -1,0 +1,12 @@
+schema-version: 1
+
+agent:
+  id: worktree-tanaabot
+  name: Worktree Tanaabot
+  email: tanaabot@tanaab.dev
+
+git:
+  worktrees:
+    repositories:
+      local:
+        fixture: source

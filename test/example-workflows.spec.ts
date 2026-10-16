@@ -136,6 +136,7 @@ describe('example workflows', () => {
       'openclaw-agent',
       'openclaw-workspace',
       'openclaw-tools',
+      'openclaw-worktree',
       'openclaw-credentials',
       'openclaw-automations',
       'openclaw-runtimes',
