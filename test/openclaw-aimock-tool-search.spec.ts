@@ -22,7 +22,7 @@ function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
 function append(request: ChatCompletionRequest, response: FixtureResponse, result: unknown): void {
   assert.ok('toolCalls' in response && response.toolCalls?.length === 1);
   const call = response.toolCalls[0]!;
-  const id = `${call.id}_fc-observed_123`;
+  const id = `${call.id}_fc-observed_${request.messages.length}`;
   request.messages.push(
     {
       role: 'assistant',
@@ -55,6 +55,153 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 }
 
 describe('scripts/aimock-tool-search', () => {
+  it('should carry notification assessment and operator delivery through wrapped tools and retained history', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications'));
+    const id = 'a'.repeat(64);
+    const digest = 'b'.repeat(64);
+    const input = request(
+      `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+    );
+    input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
+    const discover = async () => {
+      append(
+        input,
+        (await reply(scenario, input)).response,
+        searchResult(['agent_system_intake', 'agent_system_dispatch', 'agent_system_git']),
+      );
+    };
+    const step = async (stage: string, name: string, result: unknown) => {
+      const response = (await reply(scenario, input)).response;
+      assert.ok('toolCalls' in response && response.toolCalls?.length === 1);
+      const call = response.toolCalls[0]!;
+      assert.equal(call.id, `call_notifications_${stage}`);
+      assert.equal(call.name, 'tool_call');
+      const args = JSON.parse(call.arguments);
+      assert.equal(args.id, `openclaw:${name}`);
+      append(input, response, {
+        tool: { id: args.id, name, source: 'openclaw' },
+        result: { content: [{ type: 'text', text: JSON.stringify(result) }] },
+      });
+      return args.args;
+    };
+    await discover();
+    assert.equal(
+      (
+        await step('context', 'agent_system_dispatch', {
+          status: 'verified',
+          runtime: 'openclaw',
+          id,
+          project: { path: '/tmp/owned' },
+          assessment: {},
+          resultContract: 'assessment-result/v1',
+        })
+      ).id,
+      id,
+    );
+    await step('git', 'agent_system_git', {
+      exitCode: 0,
+      stdout: '/tmp/owned\n',
+      truncated: false,
+    });
+    const saved = await step('result', 'agent_system_dispatch', {
+      status: 'recorded',
+      presentation: '> Retained plan',
+    });
+    assert.equal(saved.result.outcome, 'plan-ready');
+    assert.deepEqual((await reply(scenario, input)).response, { content: '> Retained plan' });
+    input.messages.push(
+      { role: 'assistant', content: '> Retained plan' },
+      {
+        role: 'user',
+        content: `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
+      },
+    );
+    await discover();
+    assert.equal(
+      (
+        await step('handoff-preview', 'agent_system_dispatch', {
+          status: 'handoff-available',
+          digest,
+        })
+      ).permission,
+      'implementation-and-publication',
+    );
+    assert.equal(
+      (await step('handoff', 'agent_system_dispatch', { status: 'handed-off' })).digest,
+      digest,
+    );
+    await step('work-context', 'agent_system_dispatch', {
+      status: 'verified',
+      runtime: 'openclaw',
+      publicationAuthorized: true,
+      project: { path: '/tmp/owned' },
+    });
+    for (const stage of ['apply', 'add', 'commit']) {
+      assert.equal(
+        (await step(stage, 'agent_system_git', { exitCode: 0, truncated: false })).cwd,
+        '/tmp/owned',
+      );
+    }
+    await step('work-result', 'agent_system_dispatch', { status: 'recorded' });
+    for (const retry of [false, true]) {
+      if (retry) {
+        input.messages.push(
+          { role: 'assistant', content: '> PR card' },
+          {
+            role: 'user',
+            content: `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
+          },
+        );
+        await discover();
+      }
+      await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
+      assert.equal(
+        (await step('delivery-publish', 'agent_system_dispatch', { status: 'published' })).digest,
+        digest,
+      );
+      await step('delivery-reconcile', 'agent_system_dispatch', { status: 'ready' });
+      await step('delivery-present', 'agent_system_dispatch', {
+        status: 'presented',
+        presentation: '> PR card',
+      });
+      assert.deepEqual((await reply(scenario, input)).response, { content: '> PR card' });
+    }
+  });
+
+  it('should identify a rejected notification tool envelope without exposing call arguments', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications'));
+    const input = request(
+      `Stop before implementation. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
+    );
+    input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
+    append(
+      input,
+      (await reply(scenario, input)).response,
+      searchResult(['agent_system_intake', 'agent_system_dispatch', 'agent_system_git']),
+    );
+    append(input, (await reply(scenario, input)).response, {
+      status: 'error',
+      tool: 'tool_call',
+      error: 'native-dispatch-error ' + 'x'.repeat(2000),
+    });
+    const call = input.messages.at(-2)!.tool_calls![0]!;
+    const args = JSON.parse(call.function.arguments);
+    args.args.private = 'private-tool-argument';
+    call.function.arguments = JSON.stringify(args);
+    assert.throws(
+      () => normalizeToolSearchRequest(input),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /call_notifications_context/u);
+        assert.match(error.message, /agent_system_dispatch/u);
+        assert.match(error.message, /native-dispatch-error/u);
+        assert.doesNotMatch(error.message, /private-tool-argument/u);
+        assert.ok(error.message.length < 1800);
+        return true;
+      },
+    );
+  });
+
   it('should continue the worktree fixture with retained first-turn tool history', async () => {
     const scenario = withToolSearch(resolveScenario('openclaw-worktree'));
     const input = request('Execute the worktree first probe.');

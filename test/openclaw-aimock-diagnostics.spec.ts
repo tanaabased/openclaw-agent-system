@@ -74,6 +74,30 @@ describe('scripts/aimock-diagnostics', () => {
     assert.equal(result.requests?.[0]?.results[0]?.content, 'owned denial result');
   });
 
+  it('should retain the first failed request after retries and later failures fill the journal', () => {
+    const scenario = resolveScenario('openclaw-notifications');
+    const entries: Entry[] = Array.from({ length: 12 }, (_, index) => ({
+      method: 'POST',
+      path: '/responses',
+      response: { fixture: index === 0 ? {} : null, status: index === 0 ? 200 : 500 },
+      body: {
+        model: 'gpt-5.5',
+        messages: [
+          {
+            role: 'tool',
+            tool_call_id: 'call_notifications_context_fc-native',
+            content: index === 1 ? 'original tool failure' : `later result ${index}`,
+          },
+        ],
+      },
+    }));
+    const result = diagnostics(scenario, entries);
+    assert.equal(result.requests?.length, 6);
+    assert.equal(result.requests?.[0]?.results[0]?.content, 'original tool failure');
+    assert.equal(result.requests?.at(-1)?.results[0]?.content, 'later result 11');
+    assert.equal(diagnostics(scenario, entries.slice(0, 2)).requests?.length, 2);
+  });
+
   it('should distinguish model and prompt mismatches from unavailable tools without disclosing inputs', () => {
     const scenario = resolveScenario('openclaw-notifications');
     const result = diagnostics(scenario, [

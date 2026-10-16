@@ -74,15 +74,25 @@ export default function openClawAIMockDiagnostics(
         entry.body !== null && (entry.response.fixture === null || entry.response.status >= 400),
     );
   if (!failed) return { scenario: scenario.id, failed: false };
-  const relevant = entries
-    .filter(
-      (entry, index) =>
-        entry.body !== null &&
-        (index >= entries.length - 4 ||
-          entry.response.fixture === null ||
-          entry.response.status >= 400),
+  const firstFailure = entries.findIndex(
+    (entry) =>
+      entry.body !== null && (entry.response.fixture === null || entry.response.status >= 400),
+  );
+  const recent = entries
+    .flatMap((entry, index) =>
+      entry.body !== null &&
+      (index >= entries.length - 4 ||
+        entry.response.fixture === null ||
+        entry.response.status >= 400)
+        ? [index]
+        : [],
     )
-    .slice(-6);
+    .slice(firstFailure === -1 ? -6 : -5);
+  const relevant = (
+    firstFailure === -1
+      ? recent
+      : [firstFailure, ...recent.filter((index) => index !== firstFailure)]
+  ).map((index) => entries[index]!);
   return {
     scenario: scenario.id,
     failed: true,
