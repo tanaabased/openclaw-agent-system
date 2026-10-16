@@ -1,99 +1,30 @@
 import refreshNotificationsAgentSystem from '../channels/github/cli/refresh.ts';
-import type {
-  GitHubNotificationMonitorRunOptions,
-  GitHubNotificationMonitorRunResult,
-} from '../channels/github/intake/monitor/service.ts';
+import type { GitHubNotificationRefreshResult } from '../channels/github/cli/contracts.ts';
+import type OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import { createCliStyles } from '../cli/output.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 export const refreshFixtureAgent = 'Agent-MixedCase';
 export const refreshFixtureRepository =
   'MixedCaseOwner/Long-Notification-Repository-With-MixedCase';
-export const refreshFixtureNames = [
-  'baseline-establishment',
-  'no-new-work',
-  'filtered',
-  'throttled',
-  'partial-failure',
-  'disabled',
-  'failed',
-] as const;
+export const refreshFixtureNames = ['queued', 'already-running', 'disabled', 'failed'] as const;
 type RefreshFixtureName = (typeof refreshFixtureNames)[number];
 
-export function refreshFixtureResult(name: RefreshFixtureName): GitHubNotificationMonitorRunResult {
-  const baselineAt = Date.parse('2026-09-01T00:00:00.000Z');
-  const ready = {
+export function refreshFixtureResult(name: RefreshFixtureName): GitHubNotificationRefreshResult {
+  return {
     agentId: refreshFixtureAgent,
-    approved: 0,
-    baseline: 3,
-    baselineAt,
-    baselineEstablished: false,
-    code: 'github-notification-poll-complete',
-    duplicates: 0,
-    nextPollAt: baselineAt + 60_000,
-    rejected: 0,
-    retired: 0,
-    status: 'completed' as const,
+    baselineAt: Date.parse('2026-09-01T00:00:00.000Z'),
+    code:
+      name === 'queued'
+        ? 'github-notification-refresh-queued'
+        : name === 'already-running'
+          ? 'github-notification-refresh-already-running'
+          : name === 'disabled'
+            ? 'github-notification-disabled'
+            : 'github-notification-refresh-outcome-uncertain',
+    status: name === 'queued' ? 'queued' : name === 'already-running' ? 'skipped' : 'failed',
+    ...(name === 'queued' ? { runId: 'NativeRun-MixedCase' } : {}),
   };
-  switch (name) {
-    case 'baseline-establishment':
-      return {
-        ...ready,
-        baselineEstablished: true,
-        code: 'github-notification-baseline-established',
-      };
-    case 'filtered':
-      return { ...ready, approved: 1 };
-    case 'throttled':
-      return {
-        agentId: refreshFixtureAgent,
-        baselineAt,
-        code: 'github-notification-provider-throttle-active',
-        diagnosticCode: 'github-notification-rate-limited',
-        nextPollAt: baselineAt + 60_000,
-        retryAt: baselineAt + 120_000,
-        status: 'skipped',
-      };
-    case 'partial-failure':
-      return {
-        ...ready,
-        approved: 1,
-        code: 'github-notification-poll-partial',
-        itemFailures: [
-          {
-            repository: refreshFixtureRepository,
-            itemType: 'issue',
-            number: 12,
-            stage: 'permission-check',
-            cause: 'repository-permission-denied',
-          },
-          {
-            repository: 'OtherOwner/Second-Repository',
-            itemType: 'pull-request',
-            number: 34,
-            stage: 'permission-check',
-            cause: 'repository-permission-denied',
-          },
-        ],
-      };
-    case 'disabled':
-      return {
-        agentId: refreshFixtureAgent,
-        code: 'github-notification-disabled',
-        status: 'skipped',
-      };
-    case 'failed':
-      return {
-        agentId: refreshFixtureAgent,
-        baselineAt,
-        code: 'github-notification-request-failed',
-        diagnosticCode: 'ExternalDiagnostic-MixedCase',
-        retryAt: baselineAt + 60_000,
-        status: 'failed',
-      };
-    default:
-      return ready;
-  }
 }
 
 export async function captureRefreshFixture(
@@ -103,10 +34,10 @@ export async function captureRefreshFixture(
     columns = 120,
     color = false,
     warnings = false,
-    itemKind = name === 'filtered' ? 'pull-request' : undefined,
-    repository = name === 'filtered' ? refreshFixtureRepository : undefined,
-    itemNumber = name === 'filtered' ? '12' : undefined,
-    timeoutSeconds = name === 'filtered' ? '12' : undefined,
+    itemKind = undefined,
+    repository = undefined,
+    itemNumber = undefined,
+    timeoutSeconds = undefined,
   }: {
     json?: boolean;
     columns?: number;
@@ -119,7 +50,7 @@ export async function captureRefreshFixture(
   } = {},
 ) {
   const events: Array<{ stream: 'stdout' | 'stderr'; text: string }> = [];
-  const calls: GitHubNotificationMonitorRunOptions[] = [];
+  const calls: Parameters<OpenClawNotifications['refresh']>[2][] = [];
   const loads: string[] = [];
   let exitCode = 0;
   const result = refreshFixtureResult(name);
@@ -156,11 +87,10 @@ export async function captureRefreshFixture(
         throw new Error('fixture uses selected agent');
       },
     },
-    monitorService: {
-      async runOnce(input = {}) {
-        if ('aborted' in input) throw new Error('fixture refresh unexpectedly aborted');
+    nativeService: {
+      async refresh(_manifest, _workspace, input) {
         calls.push(input);
-        return [result];
+        return result;
       },
     },
     output: {

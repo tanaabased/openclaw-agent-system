@@ -1,4 +1,0 @@
-schema-version: 1
-agent:
-  id: native-agent
-  name: Native Agent

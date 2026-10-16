@@ -55,4 +55,5 @@ messages
 ✖ error
   github-notifications: invalid wait options
   code=github-notification-wait-options-invalid message=for must be one of
-  assignment-rejected, baseline-ready, prepared, retired, worktree-ready.
+  assignment-rejected, baseline-ready, plan-ready, prepared, retired,
+  worktree-ready.

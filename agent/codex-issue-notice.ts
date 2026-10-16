@@ -1,6 +1,6 @@
 import githubNotificationCard, {
   githubNotificationMarkdownText as text,
-} from '../channels/github/conversation/presentation/card.ts';
+} from '../channels/github/presentation/card.ts';
 
 export type IssueNoticeEvent = 'intake-recovered' | 'failure';
 

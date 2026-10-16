@@ -1,6 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
 
-import { githubNotificationChannelMetadata } from '../channels/github/metadata.ts';
 import { agentSystemPluginIdentity } from './plugin-identity.ts';
 import codexPluginRequirement from './codex-plugin-metadata.ts';
 
@@ -97,8 +96,6 @@ export type PluginMetadataFailureCode =
   | 'short-command-alias'
   | 'cli-command-contract'
   | 'channel-contract'
-  | 'channel-config-contract'
-  | 'channel-metadata-contract'
   | 'tool-contract'
   | 'tool-policy-contract'
   | 'skill-contract'
@@ -118,7 +115,6 @@ export interface PluginMetadataFailure {
 }
 
 const supportedOperatingSystems = ['darwin', 'linux'];
-const githubNotificationChannelId = 'agent-system-github';
 const cliCommands = [
   {
     name: 'agent-system',
@@ -131,30 +127,6 @@ const cliCommands = [
     hasSubcommands: true,
   },
 ];
-const githubNotificationChannelConfigs = {
-  [githubNotificationChannelId]: {
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        accounts: {
-          type: 'object',
-          additionalProperties: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              enabled: {
-                type: 'boolean',
-              },
-            },
-            required: ['enabled'],
-          },
-        },
-      },
-      required: ['accounts'],
-    },
-  },
-};
 const requiredPackageFiles = [
   '.codex-plugin/',
   'dist/',
@@ -314,19 +286,11 @@ export default function pluginMetadataFailures(
     'plugin must declare exact root CLI metadata without loading its runtime',
   );
   check(
-    containsExactly(manifest.channels, [githubNotificationChannelId]),
+    manifest.channels === undefined &&
+      manifest.channelConfigs === undefined &&
+      packageMetadata.openclaw?.channel === undefined,
     'channel-contract',
-    'plugin must declare exactly the registered Agent System channels',
-  );
-  check(
-    isDeepStrictEqual(manifest.channelConfigs, githubNotificationChannelConfigs),
-    'channel-config-contract',
-    'plugin must declare the exact Agent System channel configuration schema',
-  );
-  check(
-    isDeepStrictEqual(packageMetadata.openclaw?.channel, githubNotificationChannelMetadata),
-    'channel-metadata-contract',
-    'package must publish exact GitHub notification channel metadata',
+    'retired GitHub polling channel metadata must not be published',
   );
   check(
     containsExactly(manifest.contracts?.tools, [
@@ -339,8 +303,6 @@ export default function pluginMetadataFailures(
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_google',
-      'agent_system_github_reply',
-      'agent_system_github_task_pr',
     ]),
     'tool-contract',
     'plugin must declare exactly the registered Agent System tools',

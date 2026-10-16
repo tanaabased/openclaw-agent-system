@@ -274,14 +274,13 @@ uses native host authorization and separately verifies saved project registratio
 Preparation is serialized per repository; concurrent callers reuse the same
 worktree, while different repositories can prepare independently. Waiting callers
 honor cancellation and stop after ten minutes if the repository remains busy.
-See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/worktree/README.md)
-for lock-loss and recovery checks.
+See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
+for preparation, repeated reuse, agent-session execution, and safe removal.
 
 Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
 all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
 from canonical GitHub HTTPS URLs and use isolated SSH credentials. Configure SSH
-before enabling private-repository notification delivery. Channel-specific origin
-changes and retirement follow the [notification worktree lifecycle](../../channels/github/ADVANCED.md#managed-worktrees).
+before enabling private-repository notification work.
 
 `install` creates workspace-local roots with owner-only permissions and adds
 them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored
@@ -448,8 +447,7 @@ Preparation is idempotent.
 For ordinary managed work, Agent System names both the branch and directory
 `<work-id-slug>-<digest>`. Prefer `<task-id>-<brief-kebab-case-description>` for
 the work id when a description is available; otherwise use `<task-id>`.
-See [notification worktrees](../../channels/github/ADVANCED.md#managed-worktrees)
-for issue branch naming and retirement.
+Native issue workflows retain their worktree binding in the owning runtime.
 
 ### `openclaw agent-system tool worktree -- remove`
 

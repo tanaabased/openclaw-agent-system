@@ -1,3 +1,5 @@
+import nativeNotificationDiagnostic from './native-diagnostic.ts';
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
@@ -12,10 +14,10 @@ import {
   writeCliLines,
 } from '../../../cli/output.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
 export interface StatusNotificationsAgentSystemOptions {
+  nativeService?: Pick<OpenClawNotifications, 'inspect'>;
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
@@ -24,7 +26,6 @@ export interface StatusNotificationsAgentSystemOptions {
   output: CliOutput;
   repository?: unknown;
   setExitCode(code: number): void;
-  statusService: Pick<GitHubNotificationStatusService, 'inspect'>;
   styles?: CliStyles;
   terminalColumns?: number;
   workspaceDir: string;
@@ -55,7 +56,12 @@ async function statusNotificationsAgentSystem(
 
   let result;
   try {
-    result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+    if (!options.nativeService) throw new Error('native notification backend is unavailable');
+    result = await options.nativeService.inspect(
+      manifest.manifest,
+      manifest.scope.workspaceDir,
+      selector,
+    );
   } catch (error) {
     writeCliError(
       options.output,
@@ -97,6 +103,18 @@ async function statusNotificationsAgentSystem(
           value: result.baseline.status,
           valueStyle: result.baseline.status === 'pending' ? 'warning' : 'field',
         },
+        ...(result.scan
+          ? [
+              {
+                label: 'scan',
+                style: 'field' as const,
+                value:
+                  result.scan.completedAt === undefined
+                    ? 'pending'
+                    : `completed at ${new Date(result.scan.completedAt).toISOString()}`,
+              },
+            ]
+          : []),
         {
           label: 'capacity',
           style: 'field',
@@ -116,7 +134,7 @@ async function statusNotificationsAgentSystem(
             label: item.disposition,
             style: 'field',
             quiet: true,
-            value: `${item.itemType} stage=${item.stage ?? 'none'}`,
+            value: `${item.itemType} stage=${item.workflow?.phase ?? item.stage ?? 'none'}`,
           },
         ],
         styles,
@@ -130,46 +148,27 @@ async function statusNotificationsAgentSystem(
             quiet: true,
             value: `${item.worktree}${item.scheduling === undefined ? '' : ` scheduling=${item.scheduling}`}`,
           },
+          ...(item.workflow?.conversation
+            ? [
+                {
+                  label: 'conversation',
+                  style: 'field' as const,
+                  quiet: true,
+                  value: item.workflow.conversation,
+                },
+              ]
+            : []),
           ...(item.waitingReason === undefined
             ? []
             : [{ label: 'waiting', style: 'warning' as const, value: item.waitingReason }]),
           ...(item.failureCode === undefined
             ? []
             : [{ label: 'failure', style: 'error' as const, value: item.failureCode }]),
-          ...(item.cleanup === undefined
-            ? []
-            : [
-                {
-                  label: 'cleanup',
-                  style:
-                    item.cleanup.status === 'failed'
-                      ? ('error' as const)
-                      : item.cleanup.status === 'skipped'
-                        ? ('warning' as const)
-                        : ('field' as const),
-                  quiet: true,
-                  value: [
-                    item.cleanup.status,
-                    `session=${item.cleanup.session} cleanup-worktree=${item.cleanup.worktree}`,
-                    `cleanup-reason=${item.cleanup.reasonCode}`,
-                  ].join('\n'),
-                },
-              ]),
         ],
         styles,
         tableOptions,
       ),
     ]);
-    const failures = renderCliSummary(
-      (result.itemFailures ?? []).map((failure) => ({
-        component: `${failure.repository}#${failure.number}`,
-        label: 'failure',
-        style: 'error',
-        value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause}`,
-      })),
-      styles,
-      tableOptions,
-    );
     writeCliLines(options.output, [
       '',
       ...summary,
@@ -177,15 +176,12 @@ async function statusNotificationsAgentSystem(
       styles.bold('items'),
       '',
       ...(items.length ? items : [styles.field(selector ? 'no matching items' : 'no items')]),
-      ...(failures.length ? ['', styles.bold('attention'), '', ...failures] : []),
       '',
     ]);
-    if (failures.length) {
-      writeCliDiagnosticNotices(options, [
-        { severity: 'error', message: 'check repository write access and retry refresh' },
-      ]);
-    }
   }
+  const remediation = nativeNotificationDiagnostic(result.code);
+  if (remediation)
+    writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
   if (result.status === 'degraded') options.setExitCode(1);
 }
 

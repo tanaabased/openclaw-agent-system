@@ -1,0 +1,36 @@
+schema-version: 1
+
+agent:
+  id: worktree-tanaabot
+  name: Worktree Tanaabot
+  email: tanaabot@tanaab.dev
+
+git:
+  ssh:
+    private-keys:
+      path: keys/id_ed25519
+  worktrees:
+    repositories:
+      local:
+        fixture: source
+
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+
+environment:
+  path-prepend: tools/bin
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required: [GH_TOKEN_TANAABOT]
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  ssh-keys:
+    path: keys/id_ed25519.pub
+    title: agent-system-worktree-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-authentication
+  ssh-signing-keys:
+    path: keys/id_ed25519.pub
+    title: agent-system-worktree-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-signing

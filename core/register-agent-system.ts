@@ -1,3 +1,5 @@
+import OpenClawNotifications from '../agent/openclaw-notifications.ts';
+import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
 import { readFile } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
@@ -12,12 +14,10 @@ import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
-import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';
 
 import { withPrivateStateLock } from './private-state-lock-context.ts';
-import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
 import createGoogleCapability from '../tools/google/capability.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
@@ -79,11 +79,6 @@ import createAgentToolAccessGrants from '../api/tool-access-grants.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
-import ConversationHookAccess, {
-  inspectConversationHookPolicy,
-  inspectRunningConversationHook,
-  requiredConversationHooks,
-} from './conversation-hook-access.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 import resolvePackageDirectory from './package-directory.ts';
 import registerOpCache from './register-op-cache.ts';
@@ -233,55 +228,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
-  const registrationPolicy = inspectConversationHookPolicy(api.config ?? {});
-  const hookAccess = new ConversationHookAccess({
-    readConfig,
-    mutateConfigFile: (params) => api.runtime.config.mutateConfigFile(params),
-    inspectPlugin(workspaceDir) {
-      return runPluginCommandWithTimeout({
-        argv: [...openClawCommand, 'plugins', 'inspect', 'agent-system', '--runtime', '--json'],
-        cwd: workspaceDir,
-        timeoutMs: 30_000,
-      });
-    },
-  });
-  const inspectRuntimeHook = () =>
-    inspectRunningConversationHook({
-      config: readRuntimeConfig(),
-      registrationPolicy,
-      hasRequiredHooks: requiredConversationHooks.every(
-        (name) => getGlobalHookRunner()?.hasHooks(name) === true,
-      ),
-    });
-  const notificationRuntime = createGitHubNotificationRuntime({
-    modelRoutingRuntime: {
-      complete: (params) => api.runtime.llm.complete(params),
-      session: api.runtime.agent.session,
-      resolveThinkingPolicy: (params) => api.runtime.agent.resolveThinkingPolicy(params),
-      resolveAllowedModelRef: (params) => api.runtime.modelConfig.resolveAllowedModelRef(params),
-    },
-    hookAccess,
-    inspectRuntimeHook,
-    accountClient: githubCapability.accountClient,
-    ...(currentUid === undefined ? {} : { currentUid }),
-    dispatchChannelInboundTurn: api.runtime.channel.inbound.dispatch,
-    lifecycleLogger,
-    mutateConfigFile(params) {
-      return api.runtime.config.mutateConfigFile(params);
-    },
-    ...(privateStateRoot === undefined ? {} : { privateStateRoot }),
-    readConfig,
-    readRuntimeConfig,
-    replyToolLogger: logger,
-    resolveAgentWorkspaceDir(config, agentId) {
-      return api.runtime.agent.resolveAgentWorkspaceDir(config, agentId);
-    },
-    sessionRuntime: api.runtime.agent.session,
-    worktrees: gitCapability.trustedWorktreeService,
-  });
-  api.on('after_tool_call', (event, context) =>
-    notificationRuntime.sessionSetup.observe(event, context),
-  );
   const intakeV2 = new OpenClawIntake({
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     namespace: api.runtime.state.resolveStateDir(),
@@ -305,6 +251,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const automationService = new AutomationService(automationDependencies);
   const dispatchV2 = createDispatchTool({
     api,
+    config: readRuntimeConfig,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
     intake: intakeV2,
     credential: sessionDispatch,
@@ -329,8 +276,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...gitCapability.tools,
     ...githubCapability.tools,
     ...googleCapability.tools,
-    notificationRuntime.replyTool,
-    notificationRuntime.taskPullRequestTool,
     createInstallTool((): AgentLifecycleApproval => lifecycleApproval),
     createDoctorTool((): AgentLifecycleApproval => lifecycleApproval),
     createModelRoutingTool({
@@ -517,7 +462,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     createSessionDispatchLifecycle(sessionDispatch),
-    notificationRuntime.lifecycleContribution,
     intakeV2.contribution(),
     automationService.contribution(),
   ];
@@ -595,32 +539,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     installService,
   });
   registerLifecycleApprovalHook(api, lifecycleApproval);
-  const {
-    channel: notificationChannel,
-    monitorService: notificationMonitorService,
-    statusService: notificationStatusService,
-  } = notificationRuntime.assemble(manifestService, {
-    async execute(input) {
-      const result = await toolRuntime.executeCli(
-        gitCapability.definition,
-        {
-          argv: input.argv,
-          ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
-        },
-        {
-          agentId: input.agentId,
-          source: 'command',
-          workspaceDir: input.workspaceDir,
-        },
-        input.signal,
-      );
-      return result.commandResult;
-    },
-  });
-
-  api.registerChannel({
-    plugin: notificationChannel,
-  });
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService);
   registerAgentCommandAuthority(api, {
@@ -635,17 +553,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry, {
-    beforeRun: (context, manifest) =>
-      notificationRuntime.promptGuidance.beforeRun(context, manifest?.github?.notifications),
-    async instructions(context, manifest) {
-      const guidance = await notificationRuntime.promptGuidance.instructions(
-        context,
-        manifest?.github?.notifications,
-      );
-      return guidance;
-    },
-  });
+  registerAgentSystemHooks(api, manifestService, toolRegistry);
   api.registerCli(({ program }) => {
     const automations = new AutomationService({
       ...automationDependencies,
@@ -722,8 +630,35 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       automations,
       boundCommands,
       manifestService,
-      notificationMonitorService,
-      notificationStatusService,
+      nativeNotifications: new OpenClawNotifications({
+        root: join(
+          privateStateRoot ?? api.runtime.state.resolveStateDir(),
+          'agent-system-dispatch-v2',
+        ),
+        intake: intakeV2,
+        inspectRun: async (manifest, workspace, runId, signal) => {
+          signal.throwIfAborted();
+          const history = await automations.runs(manifest, workspace, openclawIntakeAutomationId, {
+            limit: 1,
+            offset: 0,
+            runId,
+          });
+          const entry = history.entries[0];
+          return !entry || entry.execution === 'unavailable'
+            ? 'pending'
+            : entry.execution === 'ok'
+              ? 'completed'
+              : 'failed';
+        },
+        requestRun: (manifest, workspace, signal) =>
+          new AutomationService({
+            ...automationDependencies,
+            request: (method, params) => {
+              signal.throwIfAborted();
+              return requestAutomationGateway(method, params);
+            },
+          }).run(manifest, workspace, openclawIntakeAutomationId),
+      }),
       toolRegistry,
       toolRuntime,
     });

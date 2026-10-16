@@ -2,7 +2,6 @@ import type {
   GitHubIssueCommentReceipt,
   GitHubNotificationPublicationClient,
 } from '../provider/work-event-client.ts';
-import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
   githubNotificationAttributedReplyText,
   githubNotificationPublicationComment,
@@ -10,12 +9,10 @@ import {
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
   type GitHubNotificationPublicationSource,
+  type GitHubNotificationPublicationItem,
 } from './publication-contract.ts';
 
-type PublicationItem = Pick<
-  GitHubNotificationItemState,
-  'lifecycleId' | 'number' | 'repositoryName' | 'repositoryNodeId' | 'repositoryOwner'
->;
+type PublicationItem = GitHubNotificationPublicationItem;
 
 export type GitHubNotificationCommentPublicationInput = {
   conversationId?: string;

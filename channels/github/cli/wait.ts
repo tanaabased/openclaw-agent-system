@@ -1,19 +1,18 @@
+import nativeNotificationDiagnostic from './native-diagnostic.ts';
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  writeCliDiagnosticNotices,
   writeCliError,
   writeCliJson,
   writeCliSummary,
 } from '../../../cli/output.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
-import {
-  githubNotificationWaitTargets,
-  type GitHubNotificationWaitTarget,
-} from '../intake/monitor/status.ts';
+import { githubNotificationWaitTargets, type GitHubNotificationWaitTarget } from './contracts.ts';
 import {
   NotificationCliOptionError,
   notificationItemSelector,
@@ -23,6 +22,7 @@ import {
 const defaultWaitSeconds = 300;
 
 export interface WaitNotificationsAgentSystemOptions {
+  nativeService?: Pick<OpenClawNotifications, 'wait'>;
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
@@ -32,7 +32,6 @@ export interface WaitNotificationsAgentSystemOptions {
   refresh: boolean;
   repository?: unknown;
   setExitCode(code: number): void;
-  statusService: Pick<GitHubNotificationStatusService, 'wait'>;
   styles?: CliStyles;
   target?: unknown;
   timeoutSeconds?: unknown;
@@ -87,13 +86,12 @@ async function waitNotificationsAgentSystem(
 
   let result;
   try {
-    result = await options.statusService.wait({
-      agentId: manifest.manifest.agent.id,
-      executionSurface: 'cli-one-shot',
-      refresh: options.refresh,
-      ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
+    if (!options.nativeService) throw new Error('native notification backend is unavailable');
+    result = await options.nativeService.wait(manifest.manifest, manifest.scope.workspaceDir, {
+      selector: parsed.selector,
       target: parsed.target,
       timeoutMs: parsed.timeoutMs,
+      refresh: options.refresh,
     });
   } catch (error) {
     writeCliError(
@@ -168,6 +166,9 @@ async function waitNotificationsAgentSystem(
       { rowPadding: 0 },
     );
   }
+  const remediation = nativeNotificationDiagnostic(result.code);
+  if (remediation)
+    writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
   if (result.status !== 'completed') options.setExitCode(1);
 }
 

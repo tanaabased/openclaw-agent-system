@@ -7,7 +7,7 @@ import { createAutomationGateway } from '../agent/automation-gateway.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
-import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
+import type { GitHubNotificationWaitInput } from '../channels/github/cli/contracts.ts';
 import { createCliStyles } from '../cli/output.ts';
 import { backupPreviewPlan } from './backup-presentation-fixtures.ts';
 import { pruneFixture } from './backup-prune-presentation-fixtures.ts';
@@ -98,7 +98,7 @@ function createProgram(
       agentId: string;
       selector?: { itemType: string; number: number; repository: string };
     }>,
-    notificationWait: [] as GitHubNotificationWaitInput[],
+    notificationWait: [] as Array<GitHubNotificationWaitInput & { agentId: string }>,
     oneShotCompletion: [] as number[],
     tool: [] as Array<{
       argv: string[];
@@ -209,36 +209,27 @@ function createProgram(
         return dependencies.manifestResult ?? validResult;
       },
     },
-    notificationMonitorService: {
-      async runOnce(options = {}) {
-        const refreshOptions = 'aborted' in options ? {} : options;
-        const { signal, ...recorded } = refreshOptions;
+    nativeNotifications: {
+      async refresh(manifest, _workspace, input) {
         calls.notificationRefresh.push({
-          ...recorded,
-          signalPresent: signal instanceof AbortSignal,
+          agentId: manifest.agent.id,
+          ...(input.selector ? { selector: input.selector } : {}),
+          signalPresent: input.signal instanceof AbortSignal,
         });
-        return [
-          {
-            agentId: refreshOptions.agentId ?? 'tanaabot',
-            approved: 1,
-            baseline: 0,
-            baselineAt: 1_000,
-            baselineEstablished: true,
-            code: 'github-notification-poll-complete',
-            duplicates: 0,
-            rejected: 0,
-            retired: 0,
-            status: 'completed' as const,
-          },
-        ];
+        return {
+          agentId: manifest.agent.id,
+          baselineAt: 1000,
+          code: 'github-notification-refresh-queued',
+          runId: 'native-run',
+          status: 'queued' as const,
+        };
       },
-    },
-    notificationStatusService: {
-      async inspect(agentId, selector) {
+      async inspect(manifest, _workspace, selector) {
+        const agentId = manifest.agent.id;
         calls.notificationStatus.push({ agentId, ...(selector ? { selector } : {}) });
         return {
           agentId,
-          baseline: { observedAt: 1_000, status: 'ready' as const },
+          baseline: { observedAt: 1000, status: 'ready' as const },
           capacity: { active: 0, limit: 2, queued: 0 },
           code: 'github-notification-status-ready',
           items: [],
@@ -246,15 +237,15 @@ function createProgram(
           status: 'ready' as const,
         };
       },
-      async wait(input) {
-        calls.notificationWait.push(input);
+      async wait(manifest, _workspace, input) {
+        calls.notificationWait.push({ agentId: manifest.agent.id, ...input });
         if (dependencies.notificationWaitError) throw dependencies.notificationWaitError;
         return {
-          agentId: input.agentId,
+          agentId: manifest.agent.id,
           code: `github-notification-${input.target}`,
           observation: {
-            agentId: input.agentId,
-            baseline: { observedAt: 1_000, status: 'ready' as const },
+            agentId: manifest.agent.id,
+            baseline: { status: 'ready' as const },
             capacity: { active: 0, limit: 2, queued: 0 },
             code: 'github-notification-status-ready',
             items: [],
@@ -427,7 +418,7 @@ describe('cli/command-family-fixtures', () => {
     'synchronized',
     'queued',
     'ok',
-    'completed',
+    'queued',
     'ready',
     'checkpoint reached',
     'tanaabot',
@@ -1126,13 +1117,10 @@ describe('cli/register', () => {
     assert.deepEqual(calls.notificationRefresh, [
       {
         agentId: 'tanaabot',
-        bypassInterval: true,
-        executionSurface: 'cli-one-shot',
         signalPresent: true,
-        waitForLeaseMs: 120_000,
       },
     ]);
-    assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
+    assert.equal(JSON.parse(output.join('')).code, 'github-notification-refresh-queued');
     assert.deepEqual(calls.oneShotCompletion, [0]);
   });
 
@@ -1141,10 +1129,7 @@ describe('cli/register', () => {
 
     await program.parseAsync(['node', 'openclaw', 'agent-system', 'notifications', 'refresh']);
 
-    assert.match(
-      output.join(''),
-      /baseline\s+established at 1970-01-01T00:00:01.000Z with 0 existing assignments/,
-    );
+    assert.match(output.join(''), /baseline\s+ready since 1970-01-01T00:00:01.000Z/);
   });
 
   it('should target one notification item during refresh', async () => {
@@ -1172,7 +1157,6 @@ describe('cli/register', () => {
       number: 12,
       repository: 'tanaabased/example',
     });
-    assert.equal(calls.notificationRefresh[0]?.waitForLeaseMs, 45_000);
   });
 
   it('should inspect one notification item through the status command', async () => {
@@ -1231,7 +1215,6 @@ describe('cli/register', () => {
     assert.deepEqual(calls.notificationWait, [
       {
         agentId: 'tanaabot',
-        executionSurface: 'cli-one-shot',
         refresh: true,
         selector: {
           itemType: 'pull-request',

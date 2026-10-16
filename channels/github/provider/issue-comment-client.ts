@@ -1,4 +1,4 @@
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import {
   GitHubWorkEventClientError,
   githubRepositoryEndpoint,

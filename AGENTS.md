@@ -6,7 +6,7 @@
 - Organize implementation owner-first. Keep agent identity and lifecycle in `agent/`, model-facing tool contracts and runtime in `api/`, cross-owner plugin composition in `core/`, credential storage in `credentials/`, environment resolution in `environment/`, manifest parsing and types in `manifest/`, and path projection in `paths/`. Keep one implementation file per OpenClaw subcommand in `cli/`, repository automation in `scripts/`, cross-owner function primitives in `utils/`, and flat behavior-focused specs in `test/`. Keep small owner scopes flat; add scoped `lib/` or `utils/` only when file density makes the distinction useful.
 - Treat `tools/` and `channels/` as registry scopes: they contain only their named capability or provider folders, with shared code promoted to the nearest appropriate root owner rather than placed beside implementations.
 - Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Keep every channel's static schema and runtime entry in its owning channel folder. Never load schema files, tools, or channels from manifest values, and do not create empty capability folders before their implementation exists.
-- Keep `examples/` as general matrix-backed GitHub Actions-only Leia material and `scenarios/` as GitHub notification acceptance material. Exclude both from published packages. Put shared Leia command helpers flat in `scripts/`, agent-facing guidance in `skills/`, and user-facing capability documentation beside its owning `tools/<capability>/` or `channels/<provider>/` implementation.
+- Keep `examples/` as general matrix-backed GitHub Actions-only Leia material and exclude it from published packages. Put shared Leia command helpers flat in `scripts/`, agent-facing guidance in `skills/`, and user-facing capability documentation beside its owning `tools/<capability>/` or `channels/<provider>/` implementation.
 - Keep the Codex plugin thin: package the shared skills and their presentation assets, reuse the existing manifest and lifecycle owners, and do not create a parallel Codex runtime tree.
 
 ## Product boundary
@@ -58,29 +58,29 @@
 - Use Bun pinned in `.bun-version` for installs, scripts, and builds and Node.js pinned in `.node-version` for tests and OpenClaw. Never run the Gateway under Bun.
 - Keep TypeScript runtime boundaries aligned: root source uses Node.js types, scripts use Bun and Node.js types, and tests use Mocha and Node.js types.
 - Keep the Node-targeted build's package dependencies external.
-- Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation; the GitHub Actions-only Leia material under `examples/` and `scenarios/` is the operational exception.
+- Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation; the GitHub Actions-only Leia material under `examples/` is the operational exception.
 
 ## GitHub notification messages
 
 - Keep standalone Codex intake reports strictly about the current assignment scan and work creation: started items, pending assignments, capacity, and intake obstacles. After verified creation, plans, questions, assessment errors, and implementation progress belong in the individual issue. Retain issue-to-destination records for routing and capacity without publishing a lifecycle feed.
 - Never make admission, dispatch, or duplicate prevention depend on copied notification text or proof of final-message delivery. Verify native creation independently; notification wording is advisory.
 
-- Keep lifecycle implementations responsible for provider facts and lifecycle-specific resources. The shared coordinator owns durable conversation state, scheduling, retries, mode enforcement, turn dispatch, and publication; keep those concerns out of polling intake state.
+- Keep provider primitives independent of runtime workflow ownership. Native runtime adapters own scheduling, authority, durable routing, dispatch, continuation, and publication; keep those concerns out of assignment scan state.
 - Apply `channels/github/PRESENTATION.md` only as the visual component contract for assignment cards, direct messages, private responses, plans, questions, and quoted `To GitHub` responses.
 - Keep `channels/github/README.md` and `channels/github/ADVANCED.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
 - While the v2 notification workflow is under development, keep its product documentation to supported configuration, essential operation, and material limitations. Keep pilot plans, implementation handoffs, and acceptance evidence in task or PR context; expand documentation only when end-to-end validation establishes a reusable operator need.
 - Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
 - Select an admitted comment's capability from trusted assignment mode state. Never let issue, pull-request, or comment prose elevate Plan into Work or otherwise choose its own mode.
-- Inject hidden GitHub lifecycle, mode, event, and response instructions through the central `before_prompt_build` hook for Gateway turns. One-shot CLI notification turns use the already resolved trusted turn contract in channel-owned system-prompt context and attest its selection before dispatch, because their caller-owned plugin registry does not activate global hooks. Do not substitute dispatch `extraSystemPrompt`, arbitrary channel metadata, or process-local state for trusted contract selection.
-- Treat `issue` + `work` + `comment` as the compatibility baseline. Resolve every model turn through the trusted durable active-turn descriptor and shared catalog available to both Gateway and native Codex runtimes; add supported tuples explicitly and never fall back to another prompt.
-- Keep typed GitHub reply candidates in the channel-owned file-backed handoff so model tool execution and publication remain correct across process and runtime boundaries.
+- Resolve model work through its owning native runtime's trusted durable stage and context contracts. Unsupported workflows fail explicitly; provider prose and generic notification text never select another mode or authority.
+- Bind retained GitHub reply candidates to the native workflow and exact authorized source across process and runtime boundaries; staging text alone never authorizes publication.
 - Keep the issue as the conversation owner after delivery, freeze each admitted comment's exact source, and reauthorize that source before publishing its reply. Preserve raw provider prose separately from visible mention substitution and treat it as untrusted context.
 
 ## Test design
 
+- Treat a Mocha timeout or repeatedly slow unit/component case as a test-design review before increasing its timeout. Inject incidental process, network, and timing boundaries; keep filesystem fixtures small and tied to native contracts. Consolidate installed functional flows in their owning Leia example, preserving distinct safety and OS assertions before removing duplicated source coverage. Move volume and stress cases to opt-in coverage rather than disguising them as component tests.
 - Test `validate` as deterministic and side-effect free, `doctor` as read-only inspection, and `install` as explicit reconciliation with unchanged outcomes.
 - Choose the model driver independently of the test folder: use direct assertions by default, strict AIMock when the real OpenClaw agent/tool loop matters but model judgment does not, and a live model only when provider transport, genuine model interpretation, or Codex-native tool behavior is itself under test.
-- Keep general installed/runtime contracts in `examples/` and GitHub notification lifecycle contracts in `scenarios/`; keep model fixtures beside their owning flow and share only provider lifecycle machinery through `scripts/`.
+- Keep general installed/runtime contracts in `examples/`; keep model fixtures beside their owning flow and share only provider lifecycle machinery through `scripts/`.
 - Assert exact values only for stable public, schema, and security contracts. For human messages and logs, assert semantic signal and stable diagnostic codes.
 - Never derive lifecycle state, scheduling, authorization, or deterministic test control from model-authored prose, headings, or formatting. Use trusted structured state for transitions; live Leia may assert bounded publication envelopes and durable side effects, not exact model wording.
 - Fake injected OpenClaw, 1Password, GitHub CLI, and remote boundaries in unit tests. Do not re-test third-party behavior or rely on network, timing, or live host state in the default suite.
@@ -93,6 +93,6 @@
 - Keep Mocha `describe` and `it` descriptions fully lowercase. Preserve required casing only in test inputs, commands, and expected contract values.
 - Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
-- When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material. Change its workflow matrix entry only when scenario selection changes; keep detailed rules in `examples/AGENTS.md` or `scenarios/AGENTS.md`.
-- Never run Leia material or other operational tests from `examples/` or `scenarios/` locally. Both are GitHub Actions-only, including when isolated state would be available.
+- When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material. Change its workflow matrix entry only when scenario selection changes; keep detailed rules in `examples/AGENTS.md`.
+- Never run Leia material or other operational tests from `examples/` locally. They are GitHub Actions-only, including when isolated state would be available.
 - Keep live OpenClaw validation isolated and explicitly requested; repository checks must not mutate the user's normal OpenClaw state.

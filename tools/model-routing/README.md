@@ -55,4 +55,4 @@ Use the newest trusted hook's `routingRuntime.argvPrefix`, append `--plugin-data
 
 Pass the inspection's `reportGuidance` with the saved decision to routed work. Its first assessment includes a short **Model routing** blockquote with model, effort, complexity, evidence source, reason, and overrides. Label unresolved default use. Keep recommendations, requested application, and verified execution separate. Ordinary follow-ups, resume, and compaction preserve the saved selection.
 
-GitHub intake uses the same resolver with its existing bounded classifier and durable conversation state. It explicitly selects its frozen default for unresolved complexity, retains the reason, and permits later manual selection. Its routing block remains private; see [GitHub routing](../../channels/github/ADVANCED.md#model-routing).
+Native issue workflows use the same resolver with bounded routing evidence and durable workflow state. Their routing block remains private; see [Codex routing](../../CODEX.md#model-routing).

@@ -47,9 +47,6 @@ or memory secret-provider source:
 2. Run `openclaw agent-system install` from the agent workspace.
 3. Restart the Gateway.
 
-Agent installation grants conversation-hook access when notifications are
-configured; no separate config command is needed. See
-[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
 Memory credentials remain SecretRefs; linked installs resolve them through the
 built standalone provider.
 
@@ -112,13 +109,17 @@ bun run typecheck
 
 `bun run lint` runs ESLint, the Prettier formatting check, and ShellCheck.
 
-### Unit Tests
+### Source Tests
 
 ```sh
 bun run test
 ```
 
-The default Mocha suite keeps behavior-focused specifications flat in [`test/`](./test/).
+The Mocha suites keep behavior-focused specifications flat in [`test/`](./test/). `bun run test` remains the fast unit alias; `bun run test:all` builds the helper artifacts and runs all ordinary source tests. Use `bun run test:unit` for deterministic in-process and read-only contract checks, `bun run test:component` for portable component checks, and `bun run test:os` for native component contracts.
+
+Portable components use `*.component.spec.ts`; native process, permission, symlink, and socket checks use `*.os.component.spec.ts`. CI runs units and portable components on Ubuntu and native components on both Ubuntu and macOS. Mixed files remain components until their deterministic cases are extracted. Installed-runtime acceptance stays in Leia examples.
+
+`bun run test:stress` explicitly runs `*.stress.spec.ts`, including the 100,000-entry backup fixture. Stress checks are excluded from default tests and PR workflows; ordinary coverage checks pruning with a small filesystem fixture and the inventory limit in memory.
 
 ### Recorded CLI Fixtures
 
@@ -159,19 +160,13 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 [Leia](https://github.com/lando/leia) suites run **only in GitHub Actions**:
 they install plugins and mutate isolated OpenClaw or provider state.
 
-- [`examples/`](./examples/) covers general runtime behavior on supported macOS and Ubuntu runners.
-- [`scenarios/`](./scenarios/) covers notification acceptance through the installed Gateway using a release-shaped package.
-- Follow the [example](./examples/AGENTS.md) and [scenario](./scenarios/AGENTS.md) guidance for drivers, fixtures, credentials, and assertions.
-
-#### GitHub Notification Scenarios
-
-- The [pull-request workflow](./.github/workflows/pr-notification-tests.yml) runs deterministic scenarios on Ubuntu with checked-in lifecycle, tool, and publication evidence.
-- The [manual workflow](./.github/workflows/notification-tests.yml) runs selected scenarios or the full matrix with a live provider on Ubuntu or macOS.
-- Mock checks do not establish model reasoning, provider authentication, capacity, latency, or provider-specific format compatibility.
+- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-examples-os.yml) select installation, Doctor, execution, and credentials on macOS and Ubuntu; [Runtime tests](./.github/workflows/pr-examples-runtime.yml) cover standalone Codex and OpenClaw contracts on Ubuntu.
+- Only explicitly selected examples run in CI. Unselected folders remain migration inputs; their presence is not evidence of active coverage.
+- Follow the [example guidance](./examples/AGENTS.md) for drivers, fixtures, credentials, and assertions.
 
 #### Lifecycle Approval
 
-See the [approval example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/approval/README.md)
+See the [runtime boundary example](./examples/openclaw-runtimes/README.md)
 for installed Control UI approval coverage across native OpenClaw and
 OpenClaw-hosted Codex. Other chat channels are outside this matrix.
 

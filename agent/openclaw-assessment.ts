@@ -1,5 +1,7 @@
 import { basename, isAbsolute } from 'node:path';
 
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
 import assessmentGuidance from './assessment-guidance.ts';
 import { assessmentResultSchema } from './assessment-result.ts';
 import assessmentSkillSource from './assessment-skill-source.ts';
@@ -7,7 +9,7 @@ import { automationHash } from './automation-hash.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import issueInputEvent from './openclaw-session-input.ts';
+import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
 import issueTurnReply from './openclaw-session-reply.ts';
 import {
   describeIssueSession,
@@ -95,6 +97,7 @@ export async function issueAssessmentAction(input: {
   intake: IntakeRecord;
   workspace: string;
   policy: unknown;
+  config: OpenClawConfig;
   debug?: boolean;
   action: 'context' | 'result';
   result?: unknown;
@@ -112,7 +115,7 @@ export async function issueAssessmentAction(input: {
     caller.runId === record.firstTurn?.runId
   )
     throw new Error('dispatch-assessment-caller-mismatch');
-  await describeIssueSession(request, record);
+  await describeIssueSession(request, record, input.config);
   let inputEventId =
     record.assessmentCaller?.runId === caller.runId
       ? record.assessmentCaller.inputEventId
@@ -128,13 +131,16 @@ export async function issueAssessmentAction(input: {
     );
     if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
       throw new Error('dispatch-assessment-history-unverified');
+    const key = `${caller.runId}:user`;
     const users = history.messages
       .map(sessionObject)
       .filter(
         (entry) =>
           entry.role === 'user' &&
           entry.__openclaw &&
-          sessionObject(entry.__openclaw).runId === caller.runId,
+          (sessionObject(entry.__openclaw).runId === caller.runId ||
+            sessionObject(entry.__openclaw).idempotencyKey === key ||
+            entry.idempotencyKey === key),
       );
     if (users.length !== 1) throw new Error('dispatch-assessment-input-unverified');
     const user = users[0]!;
@@ -144,11 +150,14 @@ export async function issueAssessmentAction(input: {
     if (caller.runId === record.assessmentTurn.runId) {
       if (issueInputEvent(user, record.assessmentTurn) !== meta.id)
         throw new Error('dispatch-assessment-input-mismatch');
-    } else if (
-      record.assessmentTurn.status !== 'completed' &&
-      !issueTurnReply(history.messages, record.assessmentTurn.runId)
-    ) {
-      throw new Error('dispatch-assessment-continuation-not-ready');
+    } else {
+      if (issueInputEventId(user, caller.runId) !== meta.id)
+        throw new Error('dispatch-assessment-input-unverified');
+      if (
+        record.assessmentTurn.status !== 'completed' &&
+        !issueTurnReply(history.messages, record.assessmentTurn.runId)
+      )
+        throw new Error('dispatch-assessment-continuation-not-ready');
     }
     inputEventId = meta.id;
   }

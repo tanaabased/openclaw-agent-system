@@ -9,8 +9,8 @@ import {
   reviewFeedbackPresentation,
   reviewFeedbackRevision,
   reviewReplyFeedback,
-} from '../channels/github/conversation/review-feedback.ts';
-import { notificationAccount, notificationActor } from './github-notification-fixtures.ts';
+} from '../channels/github/provider/review-feedback.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
 import {
   reviewFixture,
   reviewCommentFixture,
@@ -18,15 +18,12 @@ import {
 } from './github-review-fixtures.ts';
 
 const configuration = {
-  assignmentTypes: ['issue' as const],
-  approvedActors: [notificationActor],
-  intervalMinutes: 5,
-  maxConcurrentIssues: 2,
+  approvedFeedbackAuthors: [notificationActor],
 };
 const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
-describe('channels/github/conversation/review-feedback', () => {
+describe('channels/github/provider/review-feedback', () => {
   it('should quote complete review and inline cards with exact source links and historical locations', () => {
     const review = reviewFixture({ body: 'Review summary.\n\n> Quoted context.' });
     const finding = reviewCommentFixture({
@@ -93,6 +90,11 @@ describe('channels/github/conversation/review-feedback', () => {
         finding,
       ),
     ];
+    const assignmentOnly = {
+      ...configuration,
+      approvedFeedbackAuthors: [],
+      approvedIssueAssigners: [notificationActor],
+    };
     for (const comment of feedbacks) {
       assert.equal(
         admitReviewFeedback({
@@ -100,7 +102,6 @@ describe('channels/github/conversation/review-feedback', () => {
           comment,
           configuration: {
             ...configuration,
-            approvedActors: undefined,
             approvedFeedbackAuthors: [notificationActor],
           },
         }).disposition,
@@ -110,11 +111,7 @@ describe('channels/github/conversation/review-feedback', () => {
         admitReviewFeedback({
           account: notificationAccount,
           comment,
-          configuration: {
-            ...configuration,
-            approvedFeedbackAuthors: [],
-            approvedIssueAssigners: [notificationActor],
-          },
+          configuration: assignmentOnly,
         }).code,
         'comment-actor-unapproved',
       );

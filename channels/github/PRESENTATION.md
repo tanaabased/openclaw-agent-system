@@ -1,9 +1,9 @@
 # GitHub Notification Presentation
 
 This guide defines the reusable human-visible components for the GitHub
-notifications channel. It describes their appearance and composition only. The
-[advanced guide](./ADVANCED.md#processing-and-lifecycle) describes lifecycle behavior, and the
-[channel README](./README.md) describes the current implementation.
+notification workflows. It describes their appearance and composition only. The
+[advanced guide](./ADVANCED.md) describes lifecycle behavior, and the
+[notification README](./README.md) describes the current implementation.
 
 ## Style
 
@@ -16,8 +16,8 @@ notifications channel. It describes their appearance and composition only. The
 - Give private lifecycle results a report-like structure with stable sections
   for the complete assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
-  reports. Legacy OpenClaw ordinary comments mirror their public answer privately;
-  Codex feedback presents the complete private response and a separate public quote.
+  reports. Codex feedback presents the complete private response and a separate
+  public quote.
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 
@@ -143,9 +143,10 @@ publication; native attachment warnings accompany the card without suppressing i
 Use the shared info, warning, and error components for delivery notices. The card
 itself is not delivery proof.
 
-Use the quoted card for the private `pull-request-opened` turn. The deterministic
-GitHub handoff retains the same content without the private outer quote. See [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
-session ownership, and publication.
+Use the quoted card for a private delivery notice. The deterministic GitHub
+handoff retains the same content without the private outer quote. See
+[native workflows](../../CODEX.md#github-notification-policy) for scheduling,
+conversation ownership, and publication.
 
 ## Implementation Card
 
@@ -355,12 +356,6 @@ source commenter linked to their GitHub profile. Quote every line, including
 blank lines, lists, and code fences. Use the same card for the publication preview
 and final response. Address the verified source commenter where it reads
 naturally rather than imposing a fixed mention position.
-
-## Ordinary Comment Response
-
-Legacy OpenClaw ordinary comments use one concise final answer, without a
-public-reply wrapper or a second model-authored answer. The
-[security and lifecycle](./ADVANCED.md#security-and-lifecycle) reference describes its private/public mirroring.
 
 ## Private and Public Composition
 

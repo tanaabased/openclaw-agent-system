@@ -9,6 +9,7 @@ import openclawIntakeJobs, {
   openclawIntakeAutomationId,
 } from '../../agent/openclaw-intake-policy.ts';
 import OpenClawDispatch, {
+  openClawDispatchFailureCode,
   type OpenClawDispatchDependencies,
 } from '../../agent/openclaw-dispatch.ts';
 import type { DispatchCaller } from '../../agent/openclaw-session-create.ts';
@@ -50,6 +51,7 @@ function caller(
 /** Host hooks supply invocation identity and receipts; the model cannot assert either. */
 export default function createDispatchTool(input: {
   api: OpenClawPluginApi;
+  config: OpenClawDispatchDependencies['config'];
   root: string;
   intake: OpenClawIntake;
   connect: OpenClawDispatchDependencies['connect'];
@@ -69,6 +71,7 @@ export default function createDispatchTool(input: {
   };
   const service = new OpenClawDispatch({
     root: input.root,
+    config: input.config,
     credential: input.credential,
     intake: input.intake,
     worktrees: input.worktrees,
@@ -203,10 +206,7 @@ export default function createDispatchTool(input: {
               .catch((error: unknown) => {
                 return {
                   status: 'blocked',
-                  code:
-                    error instanceof Error && /^[a-z][a-z0-9-]{2,127}$/.test(error.message)
-                      ? error.message
-                      : 'dispatch-operation-failed',
+                  code: openClawDispatchFailureCode(error),
                 };
               });
           }

@@ -1,0 +1,3 @@
+Use `exec_command` exactly once to run the literal command `agent-system-runtime-probe codex` from the current workspace. The executable must resolve through the manifest PATH. Do not inspect or run its file by another path, modify PATH, create result files yourself, or repair a failure.
+
+Set `yield_time_ms` to `30000` and `max_output_tokens` to `1000`. If the tool reports a running session, poll that exact session with `write_stdin`, empty input, and `yield_time_ms: 300000` until it exits. Never launch another copy. The probe verifies the expected security rejections itself and exits zero only when they pass. Report the exit code and stop.

@@ -1,4 +1,4 @@
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import type { GitHubIdentity } from './work-item.ts';
 import { defaultMaximumCommentCharacters } from './comment-limit.ts';
 

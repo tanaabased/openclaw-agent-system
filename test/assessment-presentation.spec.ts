@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { AssessmentResult } from '../agent/assessment-result.ts';
-import renderAssessmentResult from '../channels/github/conversation/presentation/assessment-result.ts';
+import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 
 const context = {
   issue: { label: 'owner/repo#7', url: 'https://github.com/owner/repo/issues/7' },
@@ -27,7 +27,7 @@ const common = {
   progress: { completed: ['Read the owning implementation.'], remaining: ['Resolve retention.'] },
 };
 
-describe('channels/github/conversation/presentation/assessment-result', () => {
+describe('channels/github/presentation/assessment-result', () => {
   it('should show auto decisions regardless of debug without claiming authority or leaking credentials', () => {
     for (const { action, debug } of (['proceed', 'wait'] as const).flatMap((action) =>
       [false, true].map((debug) => ({ action, debug })),

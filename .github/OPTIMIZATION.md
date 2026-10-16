@@ -35,17 +35,13 @@ Keep release package inspection, npm publication, and ClawHub publication as sep
 
 Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.
 
-### Unsupported monitor-state schema 2
+### V1 notification retirement
 
-Treat GitHub notification monitor-state schema 2 as unsupported legacy state. The only known installation was manually upgraded before schema 3 became the active contract, so keep the decoder rejection test and do not recommend a schema 2 migration or retroactive activation unless the support policy changes or repository evidence shows additional persisted users.
-
-### Monitor-state schema projections
-
-Project monitor-state schema 3 into current schema 5 by retaining assignment,
-lifecycle, worktree, failure, and retirement facts while dropping its removed
-session, publication, mode, and comment-tracking fields. Project schema 4 into
-schema 5 without inventing provider-retirement proof or cleanup outcomes. Do
-not restore removed fields to the active intake schema for compatibility.
+V1 notification runtime and configuration support are retired by operator decision.
+Keep its historical on-disk records untouched; do not restore a decoder, scanner,
+channel, or compatibility engine to manufacture parity. Preserve shared provider,
+publication, presentation, and native V2 authority/receipt contracts. Missing V2
+features remain explicit limitations and separate implementation work.
 
 ### Lifecycle-neutral provider primitives
 
@@ -56,8 +52,18 @@ lifecycle session must own scheduling, continuation, and publication authority.
 
 ### Leia workflow and model boundaries
 
-Keep general Leia examples in `pr-examples-tests.yml` and manually dispatched GitHub notification acceptance scenarios in `notification-tests.yml`. Scope shared test credentials to each workflow's final Leia execution step even though every matrix entry receives that step environment. Use strict AIMock for the `agent` and `github` examples and the `credentials` cache checks; only `approval`, `containment`, `models`, and `path` select a live OpenAI model. The `codex` example uses direct assertions without a model. The assignment mock must match the created issue title and body so a passing fixture proves bounded provider context reached the installed model turn.
+Separate native OS coverage from runtime coverage and select contracts before runner counts. Keep `os-install`, `os-execution`, and `os-credentials` on macOS and Ubuntu: native enrollment and restart/revocation, shell/PATH/PTY execution, private filesystem state, and trusted signing. Keep portable Doctor presentation, aliases, and tool-grant variants in `openclaw-doctor` on Ubuntu. Preserve one basic Doctor inspection in native installation; do not duplicate portable permutations across both OSes.
+
+Keep the runtime examples on Ubuntu. Workspace coverage owns validation, environment-backed identity, setup ordering, shared Codex prerequisites, model configuration, convergence, and read-only inspection. Tools cover public commands and contextual shims plus bound setup/automation descendants, including stdin and uncontaminated machine output. GitHub coverage verifies two account identities and native profile consumption. Worktree coverage includes local reuse, dirty-removal refusal, disposable remote SSH enrollment, and an ordinary agent session retaining canonical guidance, identity, exact input custody, and working directory across restart. Credentials cover both 1Password Environments and a direct vault-secret consumer. Memory covers keyword retrieval and installed embedding-secret resolution across restart. Backup captures and restores workspace files and a real agent database with committed WAL content. Preserve source tests for parser permutations, provider failures, collaboration selection variants, archive safety, retention, and lock-loss guards; retire duplicated legacy Leia material and orphaned fixtures/helpers.
+
+Use strict AIMock where the real native agent/tool loop matters and fixed authenticated embedding fixtures for the memory handoff. Keep only hosted Codex native-tool turns on a live model. Standalone Codex install, automation, and notification examples verify packaged boundaries without a model. Notification activation/rejection checks do not establish successful admission or planning: the next end-to-end slice is assignment → admission → one retained plan, with repeat scans proving no duplication. Implementation and delivery are outside that slice.
+
+Use one Leia execution step after setup with one shared environment block per workflow; unused test credentials and model settings may be shared across entries. Keep credentials off setup steps. Follow Leia with the same generic `failure()` diagnostics block in each example workflow. The OS examples require no hosted secrets. Do not make OS and runtime axes an automatic cross-product. Keep runner batching and timing optimization separate from coverage selection.
 
 ### Shared synthetic SSH preparation
 
-Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path used by both matrices. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
+Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
+
+### Source test boundaries
+
+Keep source specs flat under `test/`. Select deterministic and read-only contract checks with `test:unit` on Ubuntu, portable `*.component.spec.ts` with `test:component` on Ubuntu, and native `*.os.component.spec.ts` with `test:os` on both supported OSes. Keep mixed specs in the component selection until their unit-shaped cases are extracted. The built memory helper belongs to portable component coverage. Keep the 100,000-entry backup fixture opt-in under `test:stress`; preserve normal PR coverage with bounded filesystem pruning and pure payload/parent-limit checks. `bun run test` remains the fast unit alias; `bun run test:all` covers all ordinary selections and excludes stress. Never remove a component from CI merely by excluding it from the unit glob.

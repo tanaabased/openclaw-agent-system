@@ -1,5 +1,0 @@
-- id: timeout
-  runtimes: [openclaw]
-  schedule: in 30 seconds
-  timeout-seconds: 30
-  run: [sleep, '180']

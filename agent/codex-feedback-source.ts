@@ -5,7 +5,7 @@ import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import {
   admitGitHubComment,
   githubCommentRevision,
-} from '../channels/github/conversation/comment-admission.ts';
+} from '../channels/github/provider/comment-admission.ts';
 import {
   admitReviewFeedback,
   isReviewFeedback,
@@ -13,7 +13,7 @@ import {
   reviewFeedback,
   reviewReplyFeedback,
   type GitHubCanonicalFeedback,
-} from '../channels/github/conversation/review-feedback.ts';
+} from '../channels/github/provider/review-feedback.ts';
 import type { GitHubNotificationCommentClient } from '../channels/github/provider/work-event-types.ts';
 import type { GitHubIdentity } from '../channels/github/provider/work-item.ts';
 
@@ -37,9 +37,6 @@ export function admitCodexFeedback(
     allowSelf: true,
     configuration: {
       approvedFeedbackAuthors: authors,
-      assignmentTypes: [],
-      intervalMinutes: 5,
-      maxConcurrentIssues: 3,
     },
   };
   if (

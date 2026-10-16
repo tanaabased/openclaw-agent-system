@@ -13,6 +13,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { externalBackupSchema } from '../manifest/backup-schema.ts';
+import { maximumBackupInventoryEntries } from './backup-payload-paths.ts';
 import { safeBackupRelativePath } from './backup-selection.ts';
 import {
   BackupError,
@@ -41,7 +42,7 @@ const manifestBase = {
   format: Type.Literal('agent-system-backup'),
   agentId: Type.String({ pattern: '^[a-z0-9][a-z0-9-]*$' }),
   capturedAt: Type.String(),
-  inventory: Type.Array(entrySchema, { maxItems: 100_000 }),
+  inventory: Type.Array(entrySchema, { maxItems: maximumBackupInventoryEntries }),
   diagnostics: Type.Array(diagnosticSchema),
 };
 const legacySettingsSchema = Type.Object(

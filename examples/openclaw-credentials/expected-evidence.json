@@ -1,0 +1,21 @@
+{
+  "discoveryRequestCount": 5,
+  "finalResponseCount": 5,
+  "model": "aimock/gpt-5.5",
+  "promptRequestCount": 15,
+  "provider": "aimock",
+  "requestCount": 15,
+  "responsesApiRequestCount": 15,
+  "scenario": "openclaw-credentials",
+  "schemaVersion": 2,
+  "strictMissCount": 0,
+  "successfulFixtureResponseCount": 15,
+  "tools": [
+    {
+      "callResponseCount": 5,
+      "name": "agent_system_git",
+      "projectionRequestCount": 10,
+      "resultRequestCount": 5
+    }
+  ]
+}

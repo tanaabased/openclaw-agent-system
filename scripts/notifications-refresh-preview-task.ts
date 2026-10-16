@@ -13,7 +13,7 @@ for (const name of refreshFixtureNames) {
   const { events, exitCode } = await captureRefreshFixture(name, {
     columns,
     color,
-    warnings: name === 'partial-failure',
+    warnings: name === 'failed',
   });
   for (const { stream, text } of events) process.stdout.write(`[${stream}]\n${text}`);
   process.stdout.write(`[exit ${exitCode}]\n`);

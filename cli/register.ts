@@ -1,3 +1,4 @@
+import type OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import type { Readable } from 'node:stream';
 import type { Option } from 'commander';
 
@@ -24,8 +25,6 @@ import backupPrune from './backup-prune.ts';
 import backupRestore from './backup-restore.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
 import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
-import type GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
-import type GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
 import {
   type default as AgentCommandAuthority,
@@ -83,8 +82,7 @@ export interface RegisterAgentSystemCliOptions {
   environment?: Readonly<NodeJS.ProcessEnv>;
   setupPrompt?: () => Promise<boolean | symbol>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
-  notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
+  nativeNotifications?: Pick<OpenClawNotifications, 'inspect' | 'refresh' | 'wait'>;
   output?: CliOutput;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke' | 'hostFallback'>;
   toolRuntime: AgentSystemToolRuntime;
@@ -426,10 +424,9 @@ export default function registerAgentSystemCli(
     completeOneShot,
     cwd,
     manifestService: options.manifestService,
-    monitorService: options.notificationMonitorService,
+    nativeService: options.nativeNotifications,
     output,
     setExitCode,
-    statusService: options.notificationStatusService,
     styles: options.styles,
   });
   const tool = agentSystem

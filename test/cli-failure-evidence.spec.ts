@@ -178,13 +178,13 @@ describe('cli/failure-evidence', () => {
           throw Object.assign(new Error('private notification prose'), { code: 'EACCES' });
         };
         if (command === 'status')
-          await statusNotifications({ ...f, statusService: { inspect: fail } });
+          await statusNotifications({ ...f, nativeService: { inspect: fail } });
         else
           await waitNotifications({
             ...f,
             refresh: false,
             target: 'baseline-ready',
-            statusService: { wait: fail },
+            nativeService: { wait: fail },
           });
         assert.deepEqual(f.codes, [1]);
         assert.equal(f.events.length, 1);

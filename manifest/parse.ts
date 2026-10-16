@@ -406,6 +406,21 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,
     ]),
+    ...(isRecord(value) &&
+    isRecord(value.github) &&
+    isRecord(value.github.notifications) &&
+    (value.github.notifications['schema-version'] === undefined ||
+      value.github.notifications['schema-version'] === 1)
+      ? [
+          {
+            code: 'github-notification-v1-retired',
+            fieldPath: '/github/notifications',
+            message:
+              'V1 GitHub notifications have been retired. Declare schema-version: 2 and explicit runtime, owner and trigger policies; old state is retained and is not migrated automatically.',
+            severity: 'error' as const,
+          },
+        ]
+      : []),
     ...legacyPolicyDiagnostics(value),
     ...modelTierGroupDiagnostics(value),
     ...globalFeedbackDiagnostics(value),

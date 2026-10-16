@@ -80,13 +80,15 @@ git:
 
 github:
   notifications:
-    assignment-types: []
+    issue-assignment:
+      enabled: false
 ```
 
 Mappings merge recursively. Scalars and complete arrays replace inherited values;
 arrays do not merge by index or job ID. `[]` clears a configurable list, while `{}`
-retains inherited mapping entries. Empty runtime lists select no runtimes; empty
-assignment types disable new assignment discovery. Command vectors still need an
+retains inherited mapping entries. The notification overlay above pauses issue
+assignments while retaining the base's V2 policy. Empty allowed lists grant no
+admission authority. Command vectors still need an
 executable. `null` is not deletion: it is accepted only where the field's schema
 allows it, such as an automation's `thread`.
 
@@ -107,17 +109,17 @@ state. Use the owning runtime's explicit lifecycle operation to apply changes.
 
 ## Component Configuration
 
-| Type    | ID                          | Manifest key           | Configuration                                                                    |
-| ------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
-| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
-| tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
-| tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
-| tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
-| tool    | `agent_system_google`       | `google`               | [Configuration reference](./tools/google/README.md#configuration)                |
+| Type     | ID                          | Manifest key           | Configuration                                                                    |
+| -------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| workflow | GitHub notifications        | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
+| tool     | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
+| tool     | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
+| tool     | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
+| tool     | `agent_system_google`       | `google`               | [Configuration reference](./tools/google/README.md#configuration)                |
 
 Declare a component's manifest key to request it, then use `install` to reconcile
-supported runtime behavior. The [version 2 notification contract](#githubnotifications)
-is accepted as desired state but does not yet have an execution adapter.
+supported runtime behavior. See the [version 2 notification contract](#githubnotifications)
+for each runtime's supported workflows and limitations.
 
 ## Configuration
 
@@ -462,9 +464,9 @@ identifiers remain literal and are never casing-converted. See
 
 ### `github.notifications`
 
-An unversioned block retains the existing [OpenClaw channel contract](./channels/github/ADVANCED.md#configuration-reference).
-A block with `schema-version: 2` declares portable notification policy. The outer
-manifest remains `schema-version: 1`; legacy and v2 notification keys cannot mix.
+Notification policy requires `schema-version: 2`. Unversioned V1 declarations
+are rejected with `github-notification-v1-retired`; the outer workspace manifest
+remains `schema-version: 1`. See [V1 retirement](./channels/github/ADVANCED.md#v1-retirement) before upgrading an old installation.
 
 **Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
@@ -480,8 +482,8 @@ OpenClaw Work/Auto modes, issue feedback, review requests, and replacement asses
 skills remain unsupported. Enabling one produces a validation warning, a skipped
 notification install outcome, and a blocked Doctor finding; other components remain
 usable. Supported Plan-mode declarations are checked by the enrollment, intake, and
-automation lifecycle owners without activating legacy monitoring. A Codex-only declaration does not
-enable the OpenClaw channel. Binding and passive discovery never activate work.
+automation lifecycle owners. A Codex-only declaration does not activate OpenClaw
+intake. Binding and passive discovery never activate work.
 OpenClaw also derives an `Agent System: github-issue-assignment`
 automation from enabled v2 policy. It uses the existing automation reconciler,
 `models.default`, and a read-only condition before a durable scan. Its retained
@@ -510,7 +512,6 @@ installation reconciles them through the existing automation lifecycle.
 It processes no comments.
 Operator automation synchronization is required;
 native chat Install/Doctor cannot yet reconcile or inspect the scheduler.
-The legacy channel remains blocked for v2 declarations.
 
 See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
 
@@ -524,7 +525,7 @@ See [Codex intake](./CODEX.md#github-notification-policy) for inspection and rec
 | `max-concurrent-items`      | no       | `3`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
 | `review-request`            | no       | absent              | Requests to start an independent PR review; not direct PR assignment.                                                               |
 | `runtimes`                  | no       | `[openclaw, codex]` | Nonempty unique selection of `openclaw` and/or `codex`. Each runtime owns its reconciliation; no cross-runtime claiming is implied. |
-| `schema-version`            | yes      | none                | Exactly `2`. Omission selects the legacy contract.                                                                                  |
+| `schema-version`            | yes      | none                | Exactly `2`. Unversioned V1 declarations are rejected.                                                                              |
 
 Each workflow accepts `allowed`, an optional list of actor identity records.
 Omission or `[]` grants no authority for that trigger. An absent trigger is not
@@ -760,30 +761,6 @@ Independent review remains outside the current Codex support. Auto uses the same
 configured assessment and implementation stages, subject to its recorded decision
 and freshly reconciled authority.
 
-#### Legacy compatibility
-
-| Legacy key                                         | Existing consumer                                                  | Version 2 decision                                                                                              |
-| -------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `allowed-repository-owners`                        | Assignment admission and monitor polling                           | Retained, explicitly required and pinned.                                                                       |
-| `approved-actors`                                  | Assignment/comment fallback, direct PR assignment, operator access | Legacy only; no fallback in v2.                                                                                 |
-| `approved-feedback-authors`                        | Comment admission                                                  | Replaced by explicit per-workflow `feedback` choices.                                                           |
-| `approved-issue-assigners`                         | Issue assignment admission                                         | Replaced by `issue-assignment.allowed`.                                                                         |
-| `assignment-types`                                 | Provider discovery, poller selection, model-routing access         | Replaced by trigger sections; direct PR assignment remains legacy-only.                                         |
-| `initial-mode`                                     | Assignment and comment mode selection                              | Replaced by issue-specific `mode`; feedback inherits existing authority.                                        |
-| `interval-minutes`                                 | Monitor scheduling                                                 | Retained as shared cadence.                                                                                     |
-| `max-concurrent-issues`                            | Monitor and model-turn capacity                                    | Replaced by `max-concurrent-items`.                                                                             |
-| `operator-owner` within `approved-actors`          | Operator access reconciliation                                     | Retained legacy grants; v2 stores explicit flags under trigger `allowed` entries without provisioning them yet. |
-| `pull-request.assignees`, `pull-request.reviewers` | Issue delivery and recipient guidance                              | Legacy delivery policy; v2 placement waits for delivery work.                                                   |
-
-Unversioned declarations retain their defaults, authority fallbacks, direct PR
-assignment behavior, and operator grants from [#240](https://github.com/tanaabased/openclaw-agent-system/issues/240).
-Changing a declaration to v2 is an explicit migration; old installed packages
-reject the new structure. The nested version distinguishes incompatible authority
-defaults, trigger selection, mode semantics, and runtime routing; interpreting an
-old block as v2 would change its behavior. No global manifest-version bump or
-automatic migration is required. Do not switch an active OpenClaw installation to
-v2 before its adapter is available.
-
 ### `memory`
 
 `memory` is optional. Omitting it leaves the bound agent's existing OpenClaw
@@ -873,7 +850,7 @@ support without authentication or inference. OpenClaw owns runtime health.
 Explicit unavailability produces a warning; unknown availability is not failure.
 Inspection errors remain distinct from known unsupported models or efforts.
 
-Complete work tiers enable [GitHub issue model routing](channels/github/ADVANCED.md#model-routing)
+Complete work tiers enable [GitHub issue model routing](./tools/model-routing/README.md)
 for new issue conversations. A default-only manifest keeps ordinary model behavior.
 
 For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-routing).
@@ -1095,8 +1072,10 @@ keys](./tools/git/README.md#configuration-reference) and [GitHub username, token
 and public keys](./tools/github/README.md#configuration-reference). Supply host
 executables directly or install them in `setup-host`; credential sources and
 key files must be available before agent-bound setup. The
-[setup example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/setup/README.md)
-exercises checked SSH cloning with OpenClaw's managed tools. They use the declared
+[tools example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-tools/README.md)
+exercises agent-bound setup commands; the
+[worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
+exercises declared SSH checkout with OpenClaw's managed tools. They use the declared
 agent identities without operator-identity fallback; the process still runs as
 the installing OS user.
 

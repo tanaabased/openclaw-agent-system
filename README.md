@@ -6,8 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/tanaabased/openclaw-agent-system/releases"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system" alt="Latest release" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-tests.yml?label=Examples" alt="Leia example tests" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-notification-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-notification-tests.yml?label=Notifications" alt="GitHub notification tests" /></a>
+  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-os.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-os.yml?label=Examples" alt="Leia example tests" /></a>
   <img src="https://img.shields.io/badge/macOS-26-111827" alt="macOS 26" />
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
@@ -17,8 +16,8 @@ configuration in the repo alongside setup steps for installing dependencies and
 configuring the workspace. Clone the repo and run
 `openclaw agent-system install` to get your agent ready for work.
 
-Enable [GitHub notifications in Work mode](./channels/github/README.md), assign
-an issue to the agent, and watch it work toward a delivery pull request.
+Enable [GitHub notifications](./channels/github/README.md) and assign an issue
+for native OpenClaw planning or standalone Codex implementation and PR delivery.
 
 Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
@@ -34,7 +33,7 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 ## Overview
 
 - **Configuration travels with the repo:** keep identity, environment, credential bindings, and setup in `agent.yaml`; activate them with `openclaw agent-system install`.
-- **Assign work like you would to a developer:** the GitHub notification channel turns issue assignments into agent work and delivery pull requests.
+- **Assign work like you would to a developer:** native GitHub workflows turn issue assignments into OpenClaw plans or Codex work and delivery pull requests.
 - **An identity of its own:** each agent gets its own Git authorship, signing, and GitHub account.
 - **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
 - **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
@@ -50,14 +49,13 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
 - [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
 - [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
-- [`agent_system_github_task_pr`](./channels/github/ADVANCED.md#agent_system_github_task_pr) — Publish and link delivery pull requests from prepared issue-owned sessions.
 - [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
 - [`agent_system_model_routing`](./tools/model-routing/README.md) — Resolve model and effort candidates from the agent's profiles.
 
-### Channels
+### GitHub Workflows
 
-- [`agent-system-github`](./channels/github/README.md) — Polls and admits approved GitHub assignments, prepares managed issue worktrees, and keeps issue and delivery pull-request comments in one lifecycle session.
+- [GitHub notifications](./channels/github/README.md) — Admit approved assignments through runtime-owned automations and retain issue conversation and assessment evidence.
 
 ### CLI
 
@@ -106,9 +104,7 @@ openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 ```
 
 Both commands accept the declared capabilities, register the plugin, and enable
-it. When GitHub notifications are configured, `openclaw agent-system install`
-also grants and verifies the required conversation-hook access; see
-[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
+it. GitHub workflows require explicit [configuration and installation](./channels/github/README.md#configuration).
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 

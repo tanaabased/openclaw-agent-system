@@ -675,7 +675,6 @@ Installation:
 - Rejects an agent id already bound to another workspace.
 - Reconciles manifest-selected Git, worktree, GitHub, and Google tool grants while preserving unrelated grants.
 - Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
-- Grants and verifies [conversation-hook access](./channels/github/ADVANCED.md#required-conversation-hook) when notifications are configured.
 
 Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
 

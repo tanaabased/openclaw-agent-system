@@ -2,8 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
-import { githubNotificationConversationId } from '../conversation/identity.ts';
-import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
+import { githubNotificationConversationId } from './conversation-identity.ts';
 import { maximumGitHubNotificationReplyLength } from './limits.ts';
 
 const maximumAcknowledgmentLength = 200;
@@ -142,6 +141,14 @@ export interface GitHubNotificationPublicationSource {
   revisionId: string;
 }
 
+export interface GitHubNotificationPublicationItem {
+  lifecycleId: 'issue' | 'pull-request' | 'pull-request-review';
+  number: number;
+  repositoryName: string;
+  repositoryNodeId: string;
+  repositoryOwner: string;
+}
+
 type GitHubNotificationPublicationConversation =
   | {
       conversationId: string;
@@ -149,7 +156,7 @@ type GitHubNotificationPublicationConversation =
     }
   | {
       conversationId?: never;
-      item: Pick<GitHubNotificationItemState, 'lifecycleId' | 'number' | 'repositoryNodeId'>;
+      item: Pick<GitHubNotificationPublicationItem, 'lifecycleId' | 'number' | 'repositoryNodeId'>;
     };
 
 type GitHubNotificationPublicationTargetInput = GitHubNotificationPublicationConversation &

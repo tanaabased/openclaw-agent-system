@@ -1,0 +1,9 @@
+schema-version: 1
+
+agent:
+  id: storage-beta
+  name: Storage Beta
+  email: storage-beta@example.invalid
+
+git:
+  worktrees: {}

@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 
-import resolveRecipients, {
-  legacyPullRequestRecipients,
-} from '../channels/github/pull-request-recipients.ts';
+import resolveRecipients from '../channels/github/pull-request-recipients.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 const actor = { login: 'assigner', nodeId: 'U_actor' };
@@ -74,19 +72,5 @@ describe('channels/github/pull-request-recipients', () => {
       [{ ...pin, roles: ['owner'] }],
     ])
       assert.equal(parse(recipients).status, 'invalid', JSON.stringify(recipients));
-  });
-  it('should retain legacy defaults and two-list behavior through the shared resolver', () => {
-    assert.deepEqual(
-      resolveRecipients(legacyPullRequestRecipients(undefined), actor),
-      resolveRecipients(undefined, actor),
-    );
-    assert.deepEqual(
-      resolveRecipients(legacyPullRequestRecipients({ assignees: [], reviewers: [actor] })),
-      { assignees: [], reviewers: [actor] },
-    );
-    assert.deepEqual(
-      resolveRecipients(legacyPullRequestRecipients({ assignees: [actor], reviewers: [actor] })),
-      { assignees: [actor], reviewers: [actor] },
-    );
   });
 });

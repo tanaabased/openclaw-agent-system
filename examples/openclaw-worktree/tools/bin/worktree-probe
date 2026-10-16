@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+phase=$1
+printf '%s\n' "$phase" >> "$TMPDIR/worktree-probe-invocations"
+expected=$(jq -er .path "$TMPDIR/worktree-remote.json")
+test "$(pwd -P)" = "$expected"
+test "$(agent-system-git rev-parse --show-toplevel)" = "$expected"
+agent-system-git var GIT_AUTHOR_IDENT | grep -F 'Worktree Tanaabot <tanaabot@tanaab.dev>'
+printf '%s\n' "$expected" > "$TMPDIR/worktree-$phase.pwd"
+printf '%s\n' verified > "$TMPDIR/worktree-$phase.receipt"
+printf '%s\n' "worktree-$phase-verified"

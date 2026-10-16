@@ -1,6 +1,8 @@
 import { realpath } from 'node:fs/promises';
 
 import { validateSessionsCreateParams } from '@openclaw/gateway-protocol';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import { buildAgentMainSessionKey } from 'openclaw/plugin-sdk/routing';
 
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
@@ -13,6 +15,12 @@ export interface DispatchCaller {
   toolCallId: string;
 }
 
+export class IssueSessionMismatchError extends Error {
+  constructor(readonly field: string) {
+    super('dispatch-session-mismatch');
+  }
+}
+
 export function sessionObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('dispatch-session-response-invalid');
@@ -22,6 +30,7 @@ export function sessionObject(value: unknown): Record<string, unknown> {
 export async function describeIssueSession(
   request: DispatchRequest,
   record: OpenClawDispatchRecord,
+  config: OpenClawConfig,
 ) {
   const expected = record.request;
   if (!expected || !('key' in expected) || !record.sessionCreation)
@@ -34,34 +43,43 @@ export async function describeIssueSession(
       ? row.model
       : `${String(row.modelProvider)}/${String(row.model)}`;
   const cwd = row.spawnedCwd ?? row.workspaceDir;
-  if (
-    row.key !== expected.key ||
-    row.agentId !== expected.agentId ||
-    typeof row.sessionId !== 'string' ||
-    !row.sessionId ||
-    (record.sessionCreation.sessionId && row.sessionId !== record.sessionCreation.sessionId) ||
-    typeof cwd !== 'string' ||
-    (await realpath(cwd)) !== (await realpath(expected.cwd)) ||
-    model !== expected.model ||
-    row.thinkingLevel !== expected.thinkingLevel ||
-    row.label !== expected.label ||
-    row.category !== expected.category ||
-    row.parentSessionKey ||
-    row.spawnedBy ||
-    (row.spawnDepth !== undefined && row.spawnDepth !== 0) ||
-    row.archived === true ||
-    row.archivedAt
-  )
-    throw new Error('dispatch-session-mismatch');
+  const mainParent =
+    (config.session?.dmScope ?? 'main') === 'main' && config.session?.scope !== 'global'
+      ? buildAgentMainSessionKey({ agentId: expected.agentId, mainKey: config.session?.mainKey })
+      : undefined;
+  function match(condition: unknown, field: string): asserts condition {
+    if (!condition) throw new IssueSessionMismatchError(field);
+  }
+  match(row.key === expected.key, 'key');
+  match(row.agentId === expected.agentId, 'agentId');
+  match(
+    typeof row.sessionId === 'string' &&
+      row.sessionId &&
+      (!record.sessionCreation.sessionId || row.sessionId === record.sessionCreation.sessionId),
+    'sessionId',
+  );
+  match(typeof cwd === 'string' && (await realpath(cwd)) === (await realpath(expected.cwd)), 'cwd');
+  match(model === expected.model, 'model');
+  match(row.thinkingLevel === expected.thinkingLevel, 'thinkingLevel');
+  match(row.label === expected.label, 'label');
+  match(row.category === expected.category, 'category');
+  match(
+    row.parentSessionKey === undefined || row.parentSessionKey === mainParent,
+    'parentSessionKey',
+  );
+  match(!row.spawnedBy, 'spawnedBy');
+  match(row.spawnDepth === undefined || row.spawnDepth === 0, 'spawnDepth');
+  match(row.archived !== true && !row.archivedAt, 'archived');
   return row.sessionId;
 }
 
 export async function verifyEmptyIssueSession(
   request: DispatchRequest,
   record: OpenClawDispatchRecord,
+  config: OpenClawConfig,
   requirePending = false,
 ) {
-  const sessionId = await describeIssueSession(request, record);
+  const sessionId = await describeIssueSession(request, record, config);
   const history = sessionObject(
     await request('chat.history', {
       sessionKey:
@@ -88,6 +106,7 @@ export default async function createIssueSession(input: {
   record: OpenClawDispatchRecord;
   save(): Promise<void>;
   authority: DispatchAuthority;
+  config: OpenClawConfig;
 }) {
   const { record, save, authority } = input;
   const params = record.request;
@@ -118,7 +137,7 @@ export default async function createIssueSession(input: {
       creation.sessionId = created.sessionId;
       await save();
     }
-    creation.sessionId = await verifyEmptyIssueSession(request, record);
+    creation.sessionId = await verifyEmptyIssueSession(request, record, input.config);
     await guard();
     creation.verified = true;
     record.threadId = params.key;

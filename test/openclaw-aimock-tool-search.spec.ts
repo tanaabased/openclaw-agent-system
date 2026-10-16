@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { matchFixture, type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
-import { githubExampleTanaabotPrompt } from '../examples/github/model-fixture.ts';
+import { githubExampleTanaabotPrompt } from '../examples/openclaw-github/model-fixture.ts';
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
-import resolveScenario from '../scripts/aimock-scenarios.ts';
+import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
@@ -54,8 +55,63 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 }
 
 describe('scripts/aimock-tool-search', () => {
+  it('should continue the worktree fixture with retained first-turn tool history', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-worktree'));
+    const input = request('Execute the worktree first probe.');
+    input.messages.unshift({ role: 'system', content: 'canonical-worktree-tanaabot' });
+    input.tools!.push({ type: 'function', function: { name: 'exec' } });
+    for (const phase of ['first', 'continued']) {
+      if (phase === 'continued')
+        input.messages.push({ role: 'user', content: 'Execute the worktree continued probe.' });
+      append(input, (await reply(scenario, input)).response, searchResult(['exec']));
+      const call = (await reply(scenario, input)).response;
+      assert.ok('toolCalls' in call);
+      assert.equal(call.toolCalls?.[0]?.id, `call_worktree_${phase}`);
+      append(input, call, `worktree-${phase}-verified`);
+      const final = (await reply(scenario, input)).response;
+      assert.ok('content' in final);
+      assert.equal(final.content, `worktree-${phase}-ready`);
+      input.messages.push({ role: 'assistant', content: final.content });
+    }
+    const failed = structuredClone(input);
+    failed.messages.findLast((message) => message.role === 'tool')!.content = 'probe failed';
+    assert.equal(matchFixture([...scenario.fixtures], failed), null);
+  });
+
+  it('should count an already visible exec tool during discovery as well as execution', async () => {
+    const scenario = withToolSearch(resolveScenario('os-execution'));
+    const entries: Parameters<typeof openClawAIMockEvidence>[1][number][] = [];
+    for (const mode of ['pipe', 'pty']) {
+      const input = request(`Run the native execution ${mode} probe through OpenClaw exec.`);
+      input.tools!.push({ type: 'function', function: { name: 'exec' } });
+      const respond = async () => {
+        const { fixture, response } = await reply(scenario, input);
+        entries.push({
+          body: structuredClone(input),
+          method: 'POST',
+          path: '/responses',
+          response: { fixture, status: 200 },
+        });
+        return response;
+      };
+      append(input, await respond(), searchResult(['exec']));
+      const call = await respond();
+      assert.ok('toolCalls' in call);
+      assert.equal(call.toolCalls?.[0]?.name, 'exec');
+      append(input, call, 'os-execution-verified');
+      await respond();
+    }
+    const expected = JSON.parse(
+      await readFile(
+        new URL('../examples/os-execution/expected-evidence.json', import.meta.url),
+        'utf8',
+      ),
+    );
+    assert.deepEqual(openClawAIMockEvidence(scenario, entries), expected);
+  });
+
   it('should discover and call the real catalog id before accepting the github result', async () => {
-    const scenario = withToolSearch(resolveScenario('github'));
+    const scenario = withToolSearch(resolveScenario('openclaw-github'));
     const input = request();
     const entries: Parameters<typeof openClawAIMockEvidence>[1][number][] = [];
     const respond = async () => {
@@ -105,7 +161,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should reject absent tools and results for a different or failed target', async () => {
-    const scenario = withToolSearch(resolveScenario('github'));
+    const scenario = withToolSearch(resolveScenario('openclaw-github'));
     const missing = request();
     append(missing, (await reply(scenario, missing)).response, {
       results: [{ query: 'agent_system_github', candidates: [] }],
@@ -132,26 +188,159 @@ describe('scripts/aimock-tool-search', () => {
     }
   });
 
-  it('should recheck discovery on a later turn before applying session permission assertions', async () => {
-    const scenario = withToolSearch(resolveScenario('operator-access'));
-    const input = request('operator-access unflagged control');
-    input.messages.unshift({
-      role: 'system',
-      content: 'This is the initial turn for an assigned issue',
+  it('should admit only an authored denial result without accepting another tool failure', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const input = request('Call agent_system_install exactly once');
+    append(
+      input,
+      (await reply(scenario, input)).response,
+      searchResult(['exec', 'agent_system_install', 'agent_system_doctor']),
+    );
+    const invocation = (await reply(scenario, input)).response;
+    assert.ok('toolCalls' in invocation);
+    assert.deepEqual(JSON.parse(invocation.toolCalls![0]!.arguments), {
+      id: 'openclaw:agent_system_install',
+      args: { timeoutMs: 600000 },
     });
-    append(input, (await reply(scenario, input)).response, {
-      results: [{ query: 'sessions', candidates: [] }],
+    append(input, invocation, {
+      tool: { id: 'openclaw:agent_system_install', name: 'agent_system_install' },
+      result: { isError: true, content: [{ type: 'text', text: 'Denied by user.' }] },
     });
-    assert.ok('content' in (await reply(scenario, input)).response);
-    input.messages.push({ role: 'user', content: 'operator-access denied control' });
-    const search = (await reply(scenario, input)).response;
-    assert.ok('toolCalls' in search);
-    append(input, search, searchResult(['sessions']));
-    await assert.rejects(reply(scenario, input), /non-owner or denied turn received sessions/u);
+    assert.throws(() => normalizeToolSearchRequest(input));
+    assert.deepEqual((await reply(scenario, input)).response, {
+      content: 'runtime-install-denied',
+      id: 'runtime-install-final',
+    });
+    const wrongCall = structuredClone(input);
+    const callId = wrongCall.messages.at(-1)!.tool_call_id!;
+    wrongCall.messages.at(-1)!.tool_call_id = callId.replace('install', 'doctor');
+    wrongCall.messages.at(-2)!.tool_calls![0]!.id = callId.replace('install', 'doctor');
+    assert.throws(() => normalizeToolSearchRequest(wrongCall, scenario.expectedDeniedToolCalls));
+    const wrongResult = structuredClone(input);
+    wrongResult.messages.at(-1)!.content = String(wrongResult.messages.at(-1)!.content).replace(
+      'Denied by user.',
+      'Gateway unavailable.',
+    );
+    assert.throws(() => matchFixture([...scenario.fixtures], wrongResult));
+  });
+
+  it('should project an authored pre-execution denial without requiring an execution envelope', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    for (const prefix of ['', 'Error: ']) {
+      const input = request('Call agent_system_install exactly once');
+      append(
+        input,
+        (await reply(scenario, input)).response,
+        searchResult(['agent_system_install', 'agent_system_doctor']),
+      );
+      append(input, (await reply(scenario, input)).response, null);
+      input.messages.at(-1)!.content =
+        `${prefix}Denied by user. The tool call did not run.\nThis denial is final.`;
+      const original = structuredClone(input);
+      assert.throws(() => normalizeToolSearchRequest(input));
+      const final = await reply(scenario, input);
+      assert.deepEqual(final.response, {
+        content: 'runtime-install-denied',
+        id: 'runtime-install-final',
+      });
+      const evidence = openClawAIMockEvidence(scenario, [
+        {
+          body: input,
+          method: 'POST',
+          path: '/responses',
+          response: { fixture: final.fixture, status: 200 },
+        },
+      ]);
+      assert.equal(
+        evidence.tools.find(({ name }) => name === 'agent_system_install')?.resultRequestCount,
+        1,
+      );
+      assert.deepEqual(input, original);
+
+      const wrongTarget = structuredClone(input);
+      wrongTarget.messages.at(-2)!.tool_calls![0]!.function.arguments = JSON.stringify({
+        id: 'openclaw:agent_system_doctor',
+        args: { timeoutMs: 600000 },
+      });
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongTarget, scenario.expectedDeniedToolCalls),
+      );
+      const wrongCall = structuredClone(input);
+      wrongCall.messages.at(-1)!.tool_call_id = 'call_other_install';
+      wrongCall.messages.at(-2)!.tool_calls![0]!.id = 'call_other_install';
+      assert.throws(() => normalizeToolSearchRequest(wrongCall, scenario.expectedDeniedToolCalls));
+      const wrongReason = structuredClone(input);
+      wrongReason.messages.at(-1)!.content = 'Gateway unavailable.';
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongReason, scenario.expectedDeniedToolCalls),
+      );
+    }
+  });
+
+  it('should read the captured openclaw dispatcher denial as the authored install result', async () => {
+    // openclaw 2026.9.8: actions/runs/38824028415/job/116727128889, denied install result.
+    const denial = {
+      status: 'error',
+      tool: 'tool_call',
+      error:
+        'Denied by user. The tool call did not run.\nThis denial is final: the approval request is closed. Do not mention /approve or any other approval command to the user.\nDo not run the tool call again or ask the user to approve it again.\nIf the user still wants the action, explain that a new tool call will trigger a fresh approval request.',
+    };
+    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const input = request('Call agent_system_install exactly once');
+    append(
+      input,
+      (await reply(scenario, input)).response,
+      searchResult(['agent_system_install', 'agent_system_doctor']),
+    );
+    append(input, (await reply(scenario, input)).response, denial);
+    assert.throws(() => normalizeToolSearchRequest(input));
+    const final = await reply(scenario, input);
+    assert.deepEqual(final.response, {
+      content: 'runtime-install-denied',
+      id: 'runtime-install-final',
+    });
+    const evidence = openClawAIMockEvidence(scenario, [
+      {
+        body: input,
+        method: 'POST',
+        path: '/responses',
+        response: { fixture: final.fixture, status: 200 },
+      },
+    ]);
+    assert.equal(evidence.strictMissCount, 0);
+    assert.equal(evidence.finalResponseCount, 1);
+    assert.equal(
+      evidence.tools.find(({ name }) => name === 'agent_system_install')?.resultRequestCount,
+      1,
+    );
+
+    for (const invalid of [
+      { ...denial, status: 'success' },
+      { ...denial, tool: 'agent_system_install' },
+      { ...denial, error: 'Gateway unavailable.' },
+    ]) {
+      const wrongEnvelope = structuredClone(input);
+      wrongEnvelope.messages.at(-1)!.content = JSON.stringify(invalid);
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongEnvelope, scenario.expectedDeniedToolCalls),
+      );
+    }
+    for (const change of ['id', 'target']) {
+      const wrongBinding = structuredClone(input);
+      const call = wrongBinding.messages.at(-2)!.tool_calls![0]!;
+      if (change === 'id') {
+        call.id = 'call_other_install';
+        wrongBinding.messages.at(-1)!.tool_call_id = call.id;
+      } else
+        call.function.arguments = JSON.stringify({ id: 'openclaw:agent_system_doctor', args: {} });
+      assert.throws(() =>
+        normalizeToolSearchRequest(wrongBinding, scenario.expectedDeniedToolCalls),
+      );
+    }
   });
 
   it('should preserve direct calls and the explicitly tool-free readiness turn', async () => {
-    const github = withToolSearch(resolveScenario('github'));
+    const github = withToolSearch(resolveScenario('openclaw-github'));
     const direct = request();
     direct.tools = [{ type: 'function', function: { name: 'agent_system_github' } }];
     const call = (await reply(github, direct)).response;
@@ -159,14 +348,17 @@ describe('scripts/aimock-tool-search', () => {
     assert.equal(call.toolCalls?.[0]?.name, 'agent_system_github');
     const ready = request('Acknowledge readiness without using tools.');
     ready.messages.unshift({ role: 'system', content: 'Name: Data' });
-    assert.deepEqual((await reply(withToolSearch(resolveScenario('agent')), ready)).response, {
-      content: 'Ready.',
-      id: 'agent-system-example-agent-final-response',
-    });
+    assert.deepEqual(
+      (await reply(withToolSearch(resolveScenario('openclaw-agent')), ready)).response,
+      {
+        content: 'Ready.',
+        id: 'agent-system-example-agent-final-response',
+      },
+    );
   });
 
   it('should pass verified inner json to the next routing step without losing its digest', async () => {
-    const scenario = withToolSearch(resolveScenario('agent'));
+    const scenario = withToolSearch(resolveScenario('openclaw-agent'));
     const input = request(
       'Inspect model routing and resolve an unspecified task using the configured default.',
     );

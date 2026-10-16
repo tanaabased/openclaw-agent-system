@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 
-import { githubNotificationChannelMetadata } from '../channels/github/metadata.ts';
 import pluginMetadataFailures, {
   type CodexPluginManifest,
   type PackageMetadata,
@@ -51,7 +50,6 @@ const packageMetadata: PackageMetadata = {
     agentSystem: { codexPlugin: '@openclaw/codex@2026.9.8' },
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
-    channel: githubNotificationChannelMetadata,
     compat: {
       pluginApi: openclawCompatibilityRange,
       minGatewayVersion: minimumOpenClawVersion,
@@ -94,31 +92,6 @@ const manifest: PluginManifest = {
       hasSubcommands: true,
     },
   ],
-  channels: ['agent-system-github'],
-  channelConfigs: {
-    'agent-system-github': {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          accounts: {
-            type: 'object',
-            additionalProperties: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                enabled: {
-                  type: 'boolean',
-                },
-              },
-              required: ['enabled'],
-            },
-          },
-        },
-        required: ['accounts'],
-      },
-    },
-  },
   contracts: {
     tools: [
       'agent_system_intake',
@@ -130,8 +103,6 @@ const manifest: PluginManifest = {
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_google',
-      'agent_system_github_reply',
-      'agent_system_github_task_pr',
     ],
     trustedToolPolicies: [
       'agent-system.git',
@@ -209,9 +180,6 @@ describe('core/plugin-metadata-failures', () => {
         'canonical-command-alias',
         'short-command-alias',
         'cli-command-contract',
-        'channel-contract',
-        'channel-config-contract',
-        'channel-metadata-contract',
         'tool-contract',
         'tool-policy-contract',
         'skill-contract',
@@ -287,7 +255,7 @@ describe('core/plugin-metadata-failures', () => {
           ...packageMetadata,
           openclaw: {
             ...packageMetadata.openclaw,
-            channel: { ...githubNotificationChannelMetadata, label: 'Other channel' },
+            channel: { id: 'agent-system-github' },
           },
         },
         manifest,
@@ -295,8 +263,8 @@ describe('core/plugin-metadata-failures', () => {
       ),
       [
         {
-          code: 'channel-metadata-contract',
-          message: 'package must publish exact GitHub notification channel metadata',
+          code: 'channel-contract',
+          message: 'retired GitHub polling channel metadata must not be published',
         },
       ],
     );
@@ -323,11 +291,7 @@ describe('core/plugin-metadata-failures', () => {
       [
         {
           code: 'channel-contract',
-          message: 'plugin must declare exactly the registered Agent System channels',
-        },
-        {
-          code: 'channel-config-contract',
-          message: 'plugin must declare the exact Agent System channel configuration schema',
+          message: 'retired GitHub polling channel metadata must not be published',
         },
       ],
     );

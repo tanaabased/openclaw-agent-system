@@ -1,5 +1,0 @@
-schema-version: 1
-
-agent:
-  id: notification-data
-  name: Notification Data

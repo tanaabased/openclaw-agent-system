@@ -1,9 +1,9 @@
 import { createCliStyles } from '../cli/output.ts';
 import waitNotificationsAgentSystem from '../channels/github/cli/wait.ts';
 import type {
-  GitHubNotificationWaitInput,
   GitHubNotificationWaitResult,
-} from '../channels/github/intake/monitor/status-service.ts';
+  GitHubNotificationWaitInput,
+} from '../channels/github/cli/contracts.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 const manifest: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
@@ -81,8 +81,8 @@ export async function captureWaitPreview(
     setExitCode: (code) => {
       exitCode = code;
     },
-    statusService: {
-      wait: async (input) => {
+    nativeService: {
+      wait: async (_manifest, _workspace, input) => {
         waitInput = input;
         return result;
       },
