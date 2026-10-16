@@ -53,7 +53,7 @@ openclaw agent-system tool git -- --version | grep -F 'git version'
 
 # should warn about unavailable reviews without blocking unrelated readiness
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findings[]; .component == "github-intake-v2" and .code == "github-notification-runtime-unsupported" and .status == "warning") and any(.findings[]; .component == "github" and .status == "healthy")'
+openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findings[]; .component == "github-intake" and .code == "github-notification-runtime-unsupported" and .status == "warning") and any(.findings[]; .component == "github" and .status == "healthy")'
 ```
 
 ```bash
@@ -67,20 +67,6 @@ openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "session-dispatch-ready")'
 
-# should refuse local reset while the exact device remains paired
-device_id=$(openclaw devices list --json | jq -er '.paired[] | select(.displayName == "Agent System") | .deviceId')
-printf '%s' "$device_id" > "$TMPDIR/session-dispatch-device"
-if openclaw agent-system session-dispatch reset "$device_id"; then exit 1; fi
-
-# should report revocation and require explicit enrollment after exact reset
-device_id=$(cat "$TMPDIR/session-dispatch-device")
-openclaw devices remove "$device_id"
-cd "$GITHUB_WORKSPACE/examples/os-install/data"
-if output=$(openclaw agent-system doctor --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e 'any(.findings[]; .code == "session-dispatch-credential-revoked")'
-openclaw agent-system session-dispatch reset "$device_id" | jq -e '.status == "removed"'
-if output=$(openclaw agent-system doctor --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e 'any(.findings[]; .code == "session-dispatch-credential-missing")'
 ```
 
 ## Cleanup

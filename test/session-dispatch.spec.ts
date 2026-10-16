@@ -217,23 +217,20 @@ describe('credentials/session-dispatch', () => {
     assert.equal(f.calls.filter((call) => call === 'issue').length, 2);
   });
 
-  it('should block revoked credentials and reset only the exact device after removal', async () => {
+  it('should replace a revoked identity only after device removal and explicit install consent', async () => {
     const f = fixture();
     await f.service.enroll({ sessionDispatchConsent: true });
-    const id = f.record()!.device.deviceId;
-    await assert.rejects(f.service.reset('wrong'), { code: 'session-dispatch-reset-mismatch' });
-    await assert.rejects(f.service.reset(id), { code: 'session-dispatch-reset-still-authorized' });
+    const previousId = f.record()!.device.deviceId;
     f.setPaired(false);
     assert.equal((await f.service.inspect()).code, 'session-dispatch-credential-revoked');
     const before = [...f.calls];
-    await assert.rejects(f.service.enroll({ sessionDispatchConsent: true }), {
+    await assert.rejects(f.service.enroll({}), {
       code: 'session-dispatch-credential-revoked',
     });
     assert.deepEqual(f.calls, before);
-    assert.equal((await f.service.reset(id)).status, 'removed');
-    assert.equal(f.record(), undefined);
-    await f.service.enroll({ sessionDispatchConsent: true });
-    assert.notEqual(f.record()!.device.deviceId, id);
+    assert.equal((await f.service.enroll({ sessionDispatchConsent: true })).status, 'created');
+    assert.notEqual(f.record()!.device.deviceId, previousId);
+    assert.equal(f.calls.filter((call) => call === 'remove').length, 1);
   });
 
   it('should preserve authorization uncertainty without exposing connection errors or re-enrolling', async () => {
