@@ -74,54 +74,80 @@ export function validateGitHubNotificationPolicy(
   return diagnostics;
 }
 
-/** report unsupported enabled workflows; lifecycle owners inspect runtime readiness separately. */
+export interface GitHubNotificationRuntimeDiagnostic {
+  code: 'github-notification-runtime-unsupported';
+  fieldPath: string;
+  message: string;
+  remediation: string;
+  status: 'blocked' | 'warning';
+  workflow: 'issue-assignment' | 'review-request';
+}
+
+/** scope missing capabilities to their workflow; optional feedback never gates assignment. */
+export function githubNotificationRuntimeDiagnostics(
+  declaration: GitHubNotificationsDeclaration | undefined,
+  runtime: 'openclaw' | 'codex',
+): GitHubNotificationRuntimeDiagnostic[] {
+  if (declaration?.schemaVersion !== 2 || !declaration.runtimes.includes(runtime)) return [];
+  const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
+  const issue = declaration.issueAssignment;
+  const review = declaration.reviewRequest;
+  if (review?.enabled ?? Boolean(review?.allowed.length))
+    diagnostics.push({
+      code: 'github-notification-runtime-unsupported',
+      fieldPath: '/github/notifications/review-request',
+      message: `${runtime === 'openclaw' ? 'OpenClaw' : 'Codex'} V2 does not support review requests. Issue assignment is independent.`,
+      remediation:
+        'Disable review requests or wait for its execution adapter; supported issue assignment can continue.',
+      status: 'warning',
+      workflow: 'review-request',
+    });
+  if (runtime !== 'openclaw' || !issue || !(issue.enabled ?? Boolean(issue.allowed.length)))
+    return diagnostics;
+  if (issue.mode !== 'plan')
+    diagnostics.push({
+      code: 'github-notification-runtime-unsupported',
+      fieldPath: '/github/notifications/issue-assignment/mode',
+      message: `OpenClaw V2 does not support ${issue.mode} issue assignment.`,
+      remediation:
+        'Choose Plan mode explicitly to enable issue assignment; no mode is substituted automatically.',
+      status: 'blocked',
+      workflow: 'issue-assignment',
+    });
+  if (feedbackIdentities(issue.allowed, issue.feedback).length)
+    diagnostics.push({
+      code: 'github-notification-runtime-unsupported',
+      fieldPath: '/github/notifications/issue-assignment/feedback',
+      message:
+        'OpenClaw V2 does not support issue feedback. Assignment intake and planning can continue without processing comments.',
+      remediation: 'Disable feedback to clear this warning or wait for its execution adapter.',
+      status: 'warning',
+      workflow: 'issue-assignment',
+    });
+  if (
+    issue.assessment?.skill &&
+    ![defaultAssessmentSkill, defaultAssessmentSkill.split(':').at(-1)!].includes(
+      issue.assessment.skill,
+    )
+  )
+    diagnostics.push({
+      code: 'github-notification-runtime-unsupported',
+      fieldPath: '/github/notifications/issue-assignment/assessment/skill',
+      message: 'OpenClaw V2 does not support replacement assessment skills.',
+      remediation:
+        'Choose the default assessment skill explicitly to enable issue assignment; no skill is substituted automatically.',
+      status: 'blocked',
+      workflow: 'issue-assignment',
+    });
+  return diagnostics;
+}
+
+/** only required assignment capabilities may prevent its intake and scheduling. */
 export function githubNotificationRuntimeBlocker(
   declaration: GitHubNotificationsDeclaration | undefined,
   runtime: 'openclaw' | 'codex',
 ) {
-  if (declaration?.schemaVersion !== 2 || !declaration.runtimes.includes(runtime)) return;
-  const triggers = [declaration.issueAssignment, declaration.reviewRequest];
-  if (
-    triggers.some((trigger) => trigger?.enabled === false) &&
-    triggers.every((trigger) => !trigger || trigger.enabled === false)
-  )
-    return;
-  if (runtime === 'openclaw') {
-    const issue = declaration.issueAssignment;
-    const review = declaration.reviewRequest;
-    const issueEnabled = issue && (issue.enabled ?? Boolean(issue.allowed.length));
-    let capability: string | undefined;
-    if (review?.enabled ?? Boolean(review?.allowed.length)) capability = 'review requests';
-    else if (issueEnabled && issue.mode !== 'plan') capability = `${issue.mode} issue assignment`;
-    else if (issueEnabled && feedbackIdentities(issue.allowed, issue.feedback).length)
-      capability = 'issue feedback';
-    else if (
-      issueEnabled &&
-      issue.assessment?.skill &&
-      ![defaultAssessmentSkill, defaultAssessmentSkill.split(':').at(-1)!].includes(
-        issue.assessment.skill,
-      )
-    )
-      capability = 'replacement assessment skills';
-    if (!capability) return;
-    return {
-      code: 'github-notification-runtime-unsupported',
-      message: `OpenClaw V2 does not support ${capability}.`,
-      remediation:
-        'Use Plan-mode issue assignment with the default assessment skill and feedback disabled; disable review requests. Enrollment, intake and automation readiness are checked separately.',
-      status: 'blocked' as const,
-    };
-  }
-  if (
-    runtime === 'codex' &&
-    !(declaration.reviewRequest?.enabled ?? Boolean(declaration.reviewRequest?.allowed.length))
-  )
-    return;
-  return {
-    code: 'github-notification-runtime-unsupported',
-    message: `Version 2 GitHub notifications are declared for ${runtime}, but its execution adapter is not implemented.`,
-    remediation:
-      'Keep this as inactive profile preparation until the notification runtime is available; no monitoring was activated.',
-    status: 'blocked' as const,
-  };
+  return githubNotificationRuntimeDiagnostics(declaration, runtime).find(
+    ({ status, workflow }) => status === 'blocked' && workflow === 'issue-assignment',
+  );
 }

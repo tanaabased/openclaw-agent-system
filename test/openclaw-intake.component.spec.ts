@@ -35,7 +35,7 @@ function manifest() {
   } satisfies AgentManifest;
 }
 
-describe('OpenClaw V2 intake slice', () => {
+describe('openclaw v2 intake slice', () => {
   let root: string;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/openclaw-intake-'));
@@ -151,6 +151,37 @@ describe('OpenClaw V2 intake slice', () => {
       code: 'github-notification-runtime-unsupported',
     });
     assert.equal(f.connects(), 0);
+  });
+
+  it('should activate and scan assignments while warning about independent unavailable capabilities', async () => {
+    const f = fixture();
+    f.value.github.notifications.issueAssignment!.feedback = { inherit: true, allowed: [] };
+    f.value.github.notifications.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
+    const contribution = f.service.contribution();
+    const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
+    const diagnostics = contribution.validate!(context)?.diagnostics;
+    assert.equal(diagnostics?.length, 2);
+    assert.ok(diagnostics?.every(({ severity }) => severity === 'warning'));
+    assert.equal((await f.service.inspect(f.value, root)).code, 'intake-activation-required');
+    assert.equal(f.connects(), 0);
+    const result = await contribution.reconcile!(context);
+    assert.equal(result.outcomes[0]?.code, 'intake-activated');
+    assert.equal(result.warnings?.length, 2);
+    const findings = await contribution.inspect!(context);
+    assert.ok(findings.some(({ code, status }) => code === 'intake-ready' && status === 'healthy'));
+    assert.equal(findings.filter(({ status }) => status === 'warning').length, 2);
+    assert.ok(!findings.some(({ status }) => status === 'blocked'));
+    f.provider.events.push(...intakeFixture().events);
+    f.setNow(baseline + 120000);
+    const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
+    assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, true);
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 1);
+    assert.equal((await f.service.inspect(f.value, root)).records.length, 1);
+    assert.equal(openclawIntakeJobs(f.value).length, 1);
+    assert.equal((await contribution.reconcile!(context)).outcomes[0]?.code, 'intake-retained');
   });
 
   it('should share the Codex policy contract and isolate runtime identity and V1 files', async () => {

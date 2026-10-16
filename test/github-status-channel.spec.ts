@@ -194,6 +194,29 @@ describe('github readiness channel', () => {
       automation = expected;
       assert.equal((await snapshot()).stateReason, expected);
     }
+    automation = undefined;
+    checkpoint = baseline;
+    value.github!.notifications!.issueAssignment!.feedback = true;
+    value.github!.notifications!.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
+    const degraded = await snapshot();
+    assert.equal(degraded.statusState, 'degraded');
+    assert.equal(degraded.lifecycle, 'ready');
+    assert.equal(degraded.running, true);
+    assert.match(degraded.lastError!, /feedback/);
+    assert.match(degraded.lastError!, /review requests/);
+    checkpoint = null;
+    assert.equal((await snapshot()).stateReason, 'github-notification-capabilities-degraded');
+    checkpoint = baseline - 20 * 60_000;
+    assert.equal((await snapshot()).stateReason, 'intake-scan-overdue');
+    code = 'intake-policy-reconciliation-required';
+    assert.equal((await snapshot()).statusState, 'sync-required');
+    code = undefined;
+    checkpoint = baseline;
+    value.github!.notifications!.issueAssignment!.mode = 'work';
+    assert.equal((await snapshot()).statusState, 'blocked');
     fail = true;
     const failed = await snapshot();
     assert.equal(failed.statusState, 'unknown');

@@ -8,7 +8,10 @@ import {
   ownsGitHubChannelAccount,
   wantsGitHubChannel,
 } from './channel-config.ts';
-import { githubNotificationRuntimeBlocker } from './notification-policy.ts';
+import {
+  githubNotificationRuntimeBlocker,
+  githubNotificationRuntimeDiagnostics,
+} from './notification-policy.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import type OpenClawIntake from '../../agent/openclaw-intake.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
@@ -109,11 +112,25 @@ export default function createGitHubStatusChannel(
           automation,
           fields,
         );
-      if (!intake.checkpoint) return result('awaiting-first-scan');
+      const warnings = githubNotificationRuntimeDiagnostics(
+        loaded.manifest.github?.notifications,
+        'openclaw',
+      ).filter(({ status }) => status === 'warning');
+      if (!intake.checkpoint && !warnings.length) return result('awaiting-first-scan');
       const policy = loaded.manifest.github!.notifications!;
       const interval = policy.schemaVersion === 2 ? policy.intervalMinutes : 5;
-      if ((dependencies.now?.() ?? Date.now()) - intake.checkpoint > interval * 60_000 * 3)
+      if (
+        intake.checkpoint &&
+        (dependencies.now?.() ?? Date.now()) - intake.checkpoint > interval * 60_000 * 3
+      )
         return result('degraded', 'intake-scan-overdue', fields);
+      if (warnings.length)
+        return result('degraded', 'github-notification-capabilities-degraded', {
+          ...fields,
+          lifecycle: 'ready',
+          running: true,
+          lastError: warnings.map(({ message }) => message).join(' '),
+        });
       return result('healthy', undefined, fields);
     } catch {
       return result('unknown', 'github-channel-inspection-unavailable');

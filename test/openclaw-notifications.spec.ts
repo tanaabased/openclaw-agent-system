@@ -135,6 +135,128 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
 
+  it('should expose capability warnings without failing supported refreshes and waits', async () => {
+    const f = fixture();
+    f.manifest.github!.notifications!.issueAssignment!.feedback = true;
+    f.manifest.github!.notifications!.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
+    f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
+    const observed = await f.service.inspect(f.manifest, '/workspace');
+    assert.equal(observed.status, 'degraded');
+    assert.equal(observed.code, 'github-notification-capabilities-degraded');
+    assert.equal(observed.diagnosticCode, undefined);
+    assert.equal(observed.warnings?.length, 2);
+    assert.equal(observed.baseline.status, 'ready');
+    assert.equal(observed.items.length, 1);
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
+        .status,
+      'queued',
+    );
+    assert.equal(f.requests, 1);
+    assert.equal(
+      (
+        await f.service.wait(f.manifest, '/workspace', {
+          target: 'baseline-ready',
+          timeoutMs: 10,
+          refresh: false,
+        })
+      ).status,
+      'completed',
+    );
+    f.records.push({
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: {
+        version: 1,
+        outcome: 'plan-ready',
+        summary: 'summary',
+        assessment: 'assessment',
+        plan: 'plan',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+      },
+    });
+    assert.equal(
+      (
+        await f.service.wait(f.manifest, '/workspace', {
+          selector,
+          target: 'plan-ready',
+          timeoutMs: 10,
+          refresh: false,
+        })
+      ).status,
+      'completed',
+    );
+    f.state!.blocker = {
+      code: 'intake-provider-unavailable',
+      since: baseline,
+      retryAfter: baseline + 1000,
+    };
+    const blocked = await f.service.inspect(f.manifest, '/workspace');
+    assert.equal(blocked.diagnosticCode, 'intake-provider-unavailable');
+    assert.equal(blocked.warnings?.length, 2);
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
+        .status,
+      'failed',
+    );
+  });
+
+  it('should print capability warnings after status output and preserve structured degraded results', async () => {
+    const f = fixture();
+    f.manifest.github!.notifications!.issueAssignment!.feedback = true;
+    f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
+    const loaded = {
+      status: 'loaded' as const,
+      manifest: f.manifest,
+      scope: { workspaceDir: '/workspace' },
+      path: '/workspace/agent.yaml',
+      digest: 'digest',
+      diagnostics: [],
+      validationChecks: [],
+    };
+    for (const json of [false, true]) {
+      const events: { stream: string; text: string }[] = [];
+      const exits: number[] = [];
+      await status({
+        json,
+        styles: createCliStyles({ NO_COLOR: '1' }),
+        workspaceDir: '/workspace',
+        nativeService: f.service,
+        manifestService: {
+          loadForAgentId: async () => loaded,
+          loadForCommandDirectory: async () => loaded,
+        },
+        output: {
+          writeStdout: (text) => events.push({ stream: 'stdout', text }),
+          writeStderr: (text) => events.push({ stream: 'stderr', text }),
+        },
+        setExitCode: (code) => exits.push(code),
+      });
+      assert.deepEqual(
+        events.map(({ stream }) => stream),
+        ['stdout', 'stderr'],
+      );
+      assert.match(events[1]!.text, /feedback/);
+      assert.deepEqual(exits, [1]);
+      if (json) {
+        const result = JSON.parse(events[0]!.text);
+        assert.equal(result.status, 'degraded');
+        assert.equal(
+          result.warnings[0].fieldPath,
+          '/github/notifications/issue-assignment/feedback',
+        );
+        assert.equal(result.diagnosticCode, undefined);
+      } else {
+        assert.equal((events[1]!.text.match(/messages/g) ?? []).length, 1);
+      }
+    }
+  });
+
   it('should distinguish creation uncertainty preparation assessment and retained plan completion', async () => {
     const f = fixture();
     const r = record();

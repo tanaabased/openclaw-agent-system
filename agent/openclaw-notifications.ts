@@ -1,5 +1,8 @@
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { githubNotificationRuntimeBlocker } from '../channels/github/notification-policy.ts';
+import {
+  githubNotificationRuntimeBlocker,
+  githubNotificationRuntimeDiagnostics,
+} from '../channels/github/notification-policy.ts';
 import dispatchCapacity from './dispatch-capacity.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
@@ -76,7 +79,11 @@ export default class OpenClawNotifications {
     selector?: GitHubNotificationItemSelector,
   ): Promise<GitHubNotificationStatusResult> {
     const policy = manifest.github?.notifications;
+    const warnings = githubNotificationRuntimeDiagnostics(policy, 'openclaw').filter(
+      ({ status }) => status === 'warning',
+    );
     const base: GitHubNotificationStatusResult = {
+      ...(warnings.length ? { warnings } : {}),
       agentId: manifest.agent.id,
       baseline: { status: 'pending' },
       capacity: {
@@ -189,7 +196,7 @@ export default class OpenClawNotifications {
               item.number === selector.number),
         ),
         status:
-          code || items.some((item) => item.failureCode)
+          code || warnings.length || items.some((item) => item.failureCode)
             ? 'degraded'
             : state.checkpoint === undefined
               ? 'pending'
@@ -198,7 +205,9 @@ export default class OpenClawNotifications {
           code ??
           (state.checkpoint === undefined
             ? 'github-notification-scan-pending'
-            : 'github-notification-status-ready'),
+            : warnings.length
+              ? 'github-notification-capabilities-degraded'
+              : 'github-notification-status-ready'),
         ...(code ? { diagnosticCode: code } : {}),
       };
     } catch (error) {

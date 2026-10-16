@@ -479,9 +479,9 @@ through the same implementation and delivery stages. Review requests remain unav
 OpenClaw v2 supports the default assessment skill in Plan mode; broader workflow rollout
 remains separate.
 OpenClaw Work/Auto modes, issue feedback, review requests, and replacement assessment
-skills remain unsupported. Enabling one produces a validation warning, a skipped
-notification install outcome, and a blocked Doctor finding; other components remain
-usable. Supported Plan-mode declarations are checked by the enrollment, intake, and
+skills remain unsupported. Unavailable feedback and reviews produce warnings without
+blocking supported issue assignment. Unsupported assignment modes and assessment skills
+block only the dependent assignment workflow; no fallback mode or skill is selected. Supported Plan-mode declarations are checked by the enrollment, intake, and
 automation lifecycle owners. A Codex-only declaration does not activate OpenClaw
 intake. Binding and passive discovery never activate work.
 OpenClaw also derives an `Agent System: github-issue-assignment`

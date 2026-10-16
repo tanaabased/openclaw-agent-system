@@ -1,3 +1,4 @@
+import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
 import {
   githubNotificationItemMatchesSelector,
   type GitHubNotificationItemSelector,
@@ -57,6 +58,7 @@ export interface GitHubNotificationStatusResult {
   items: GitHubNotificationStatusItem[];
   schemaVersion: 2;
   status: 'degraded' | 'pending' | 'ready';
+  warnings?: GitHubNotificationRuntimeDiagnostic[];
 }
 
 export interface GitHubNotificationWaitObservation {

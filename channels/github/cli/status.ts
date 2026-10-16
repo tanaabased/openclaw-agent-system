@@ -179,6 +179,18 @@ async function statusNotificationsAgentSystem(
       '',
     ]);
   }
+  if (result.warnings?.length)
+    writeCliDiagnosticNotices(
+      options,
+      result.warnings
+        .filter(
+          (warning) =>
+            !manifest.diagnostics.some(
+              ({ code, fieldPath }) => code === warning.code && fieldPath === warning.fieldPath,
+            ),
+        )
+        .map(({ message }) => ({ severity: 'warning' as const, message })),
+    );
   const remediation = nativeNotificationDiagnostic(result.code);
   if (remediation)
     writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);

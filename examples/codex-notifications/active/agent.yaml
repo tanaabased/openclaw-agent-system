@@ -36,7 +36,7 @@ github:
         guidance:
           file: assessment-guidance.md
     review-request:
-      enabled: false
+      enabled: true
       allowed:
         - login: example-operator
           node-id: U_operator
