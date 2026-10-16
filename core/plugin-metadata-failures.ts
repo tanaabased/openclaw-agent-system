@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { agentSystemPluginIdentity } from './plugin-identity.ts';
 import codexPluginRequirement from './codex-plugin-metadata.ts';
+import { githubChannelMetadata, githubChannelSchema } from '../channels/github/channel-schema.ts';
 
 export interface PackageMetadata {
   dependencies?: Record<string, string>;
@@ -286,11 +287,13 @@ export default function pluginMetadataFailures(
     'plugin must declare exact root CLI metadata without loading its runtime',
   );
   check(
-    manifest.channels === undefined &&
-      manifest.channelConfigs === undefined &&
-      packageMetadata.openclaw?.channel === undefined,
+    containsExactly(manifest.channels, ['agent-system-github']) &&
+      isDeepStrictEqual(manifest.channelConfigs, {
+        'agent-system-github': { schema: githubChannelSchema },
+      }) &&
+      isDeepStrictEqual(packageMetadata.openclaw?.channel, githubChannelMetadata),
     'channel-contract',
-    'retired GitHub polling channel metadata must not be published',
+    'GitHub readiness channel metadata must match its static runtime contract',
   );
   check(
     containsExactly(manifest.contracts?.tools, [

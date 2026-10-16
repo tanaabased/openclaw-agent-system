@@ -185,6 +185,48 @@
             "type": "boolean"
           }
         }
+      },
+      "githubNotifications": {
+        "description": "Deprecated V1 limits; accepted for compatibility and unused by V2.",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "maxCommentCharacters": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64000,
+            "default": 8000
+          }
+        }
+      }
+    }
+  },
+  "channels": ["agent-system-github"],
+  "channelConfigs": {
+    "agent-system-github": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "managedWorkspace": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": ["enabled"]
+            }
+          }
+        },
+        "required": ["accounts"]
       }
     }
   }

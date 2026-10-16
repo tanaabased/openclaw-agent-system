@@ -1,3 +1,8 @@
+import createGitHubStatusChannel from '../channels/github/channel.ts';
+import createGitHubChannelLifecycle from '../agent/github-channel-lifecycle.ts';
+import notificationAutomationReadiness, {
+  type NotificationScheduler,
+} from '../agent/automation-readiness.ts';
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
 import { readFile } from 'node:fs/promises';
@@ -349,6 +354,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
     }),
+    createGitHubChannelLifecycle({
+      readConfig,
+      mutateConfigFile: (params) => api.runtime.config.mutateConfigFile(params),
+    }),
     collaboration,
     createModelLifecycleContribution({
       async inspectConfiguredModels({ agentId, workspaceDir }) {
@@ -483,6 +492,24 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   manifestServiceRef.current = manifestService;
+  let readScheduler: (() => NotificationScheduler | undefined) | undefined;
+  api.registerService({
+    id: 'agent-system-github-readiness',
+    start(context) {
+      readScheduler = context.getCron;
+    },
+    stop() {
+      readScheduler = undefined;
+    },
+  });
+  api.registerChannel({
+    plugin: createGitHubStatusChannel({
+      manifestService,
+      intake: intakeV2,
+      automationReadiness: (manifest, workspace) =>
+        notificationAutomationReadiness(automationService, manifest, workspace, readScheduler?.()),
+    }),
+  });
   const environmentService = new AgentEnvironmentService({
     hostEnvironment: process.env,
     logger: lifecycleLogger,
