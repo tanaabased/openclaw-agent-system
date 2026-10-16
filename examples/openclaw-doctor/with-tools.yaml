@@ -1,0 +1,12 @@
+schema-version: 1
+
+agent:
+  id: doctor-data
+  name: Install Data
+  email: doctor-data@example.com
+  description: Agent System lifecycle installation scenario
+
+git:
+  worktrees: {}
+
+github: {}

@@ -50,9 +50,9 @@ describe('example workflows', () => {
       GH_TOKEN_TANAABOT: 'synthetic-tanaabot-token',
     };
     for (const [path, token, username] of [
-      ['examples/tool/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
-      ['examples/github/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
-      ['examples/github/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      ['examples/openclaw-tools/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/openclaw-github/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/openclaw-github/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
     ] as const) {
       const parsed = parseAgentManifest(await readFile(path, 'utf8'));
       assert.equal(parsed.status, 'valid', path);
@@ -85,12 +85,7 @@ describe('example workflows', () => {
     assert.equal(workflow.permissions?.contents, 'read');
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
     assert.deepEqual(matrix?.os, ['macos-26', 'ubuntu-24.04']);
-    assert.deepEqual(matrix?.example, [
-      'os-install',
-      'os-doctor',
-      'os-execution',
-      'os-credentials',
-    ]);
+    assert.deepEqual(matrix?.example, ['os-install', 'os-execution', 'os-credentials']);
     assert.equal(workflow.jobs?.examples?.strategy?.['fail-fast'], false);
     assert.ok(example);
     assert.equal(example?.if, undefined);
@@ -135,6 +130,9 @@ describe('example workflows', () => {
       'codex-notifications',
       'openclaw-agent',
       'openclaw-workspace',
+      'openclaw-doctor',
+      'openclaw-github',
+      'openclaw-google',
       'openclaw-tools',
       'openclaw-worktree',
       'openclaw-collaboration',
@@ -151,6 +149,9 @@ describe('example workflows', () => {
       AGENT_SYSTEM_PACKAGE: '${{ steps.pack.outputs.tarball-path }}',
       CODEX_HOME: '${{ runner.temp }}/codex-home',
       CODEX_TOOLS_CODEX_HOME: '${{ runner.temp }}/codex-home',
+      GH_TOKEN_EMORI: '${{ secrets.GH_TOKEN_EMORI }}',
+      GOG_HOME: '${{ runner.temp }}/gog-home',
+      XDG_CONFIG_HOME: '${{ runner.temp }}/agent-system-config',
       GH_TOKEN_TANAABOT: '${{ secrets.GH_TOKEN_TANAABOT }}',
       OPENAI_API_KEY: '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}',
       OPENAI_MODEL: 'gpt-5.4-nano',

@@ -4,13 +4,13 @@ import { mock } from 'node:test';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
-import { credentialExampleChecks } from '../examples/credentials/model-fixture.ts';
+import { credentialExampleChecks } from '../examples/openclaw-credentials/model-fixture.ts';
 import {
   githubExampleEmoriCallId,
   githubExampleEmoriPrompt,
   githubExampleTanaabotCallId,
   githubExampleTanaabotPrompt,
-} from '../examples/github/model-fixture.ts';
+} from '../examples/openclaw-github/model-fixture.ts';
 import resolveExampleModelScenario, {
   exampleModelScenarioIds,
 } from '../scripts/example-model-scenarios.ts';
@@ -61,18 +61,18 @@ describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
     assert.deepEqual(exampleModelScenarioIds, [
       'openclaw-agent',
-      'collaboration',
       'openclaw-collaboration',
       'openclaw-automations',
-      'credentials',
       'openclaw-credentials',
-      'github',
+      'openclaw-github',
       'os-execution',
       'openclaw-runtimes',
+      'openclaw-memory',
+      'openclaw-worktree',
     ]);
     assert.equal(resolveOpenClawAIMockScenario('openclaw-agent').id, 'openclaw-agent');
-    assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
-    assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
+    assert.equal(resolveOpenClawAIMockScenario('openclaw-credentials').id, 'openclaw-credentials');
+    assert.equal(resolveOpenClawAIMockScenario('openclaw-github').id, 'openclaw-github');
     assert.throws(
       () => resolveExampleModelScenario('unsupported'),
       /Unsupported example model scenario: unsupported/u,
@@ -91,6 +91,42 @@ describe('scripts/example-model-scenarios', () => {
       content: 'Ready.',
       id: 'agent-system-example-agent-final-response',
     });
+  });
+
+  it('should require canonical worktree guidance and the current phase execution receipt', async () => {
+    const scenario = resolveExampleModelScenario('openclaw-worktree');
+    const guidance = await readFile('examples/openclaw-worktree/SOUL.md', 'utf8');
+    for (const phase of ['first', 'continued']) {
+      const input = request('worktree-tanaabot', `Execute the worktree ${phase} probe.`, ['exec']);
+      input.messages[0]!.content = 'Name: Worktree Tanaabot';
+      assert.equal(matchFixture([...scenario.fixtures], input), null);
+      input.messages[0]!.content += `\n${guidance}`;
+      assert.ok(matchFixture([...scenario.fixtures], input));
+      const finish = (callId: string, content: string) => {
+        const value = request(
+          'worktree-tanaabot',
+          `Execute the worktree ${phase} probe.`,
+          ['exec'],
+          { callId, content },
+        );
+        value.messages[0]!.content = input.messages[0]!.content;
+        return value;
+      };
+      assert.equal(
+        matchFixture([...scenario.fixtures], finish(`call_worktree_${phase}`, 'failed')),
+        null,
+      );
+      assert.equal(
+        matchFixture([...scenario.fixtures], finish('another-call', `worktree-${phase}-verified`)),
+        null,
+      );
+      const valid = finish(`call_worktree_${phase}`, `worktree-${phase}-verified`);
+      assert.deepEqual(matchFixture([...scenario.fixtures], valid)?.response, {
+        content: `worktree-${phase}-ready`,
+      });
+      valid.messages.push({ role: 'user', content: 'An unrelated turn.' });
+      assert.equal(matchFixture([...scenario.fixtures], valid), null);
+    }
   });
 
   it('should complete native runtime fixtures only after their own execution or doctor result', () => {
@@ -170,66 +206,6 @@ describe('scripts/example-model-scenarios', () => {
         assert.equal(result !== null, success);
       }
     }
-  });
-
-  it('should match collaboration requests against the scenario workspace identities', async () => {
-    const scenario = resolveExampleModelScenario('collaboration');
-    for (const [agentId, prompt, fixtureIndex] of [
-      ['beta', 'collaboration-ready', 0],
-      ['beta', 'collaboration-ping', 1],
-      ['alpha', 'collaboration-send', 2],
-    ] as const) {
-      const input = request(agentId, prompt, ['sessions_send']);
-      input.messages[0]!.content = await readFile(
-        new URL(`../examples/collaboration/${agentId}/IDENTITY.md`, import.meta.url),
-        'utf8',
-      );
-      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
-      input.messages.push({
-        role: 'user',
-        content:
-          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nRuntime facts.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
-      });
-      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
-      input.messages[0]!.content = 'Name: Someone Else';
-      assert.equal(matchFixture([...scenario.fixtures], input), null);
-    }
-  });
-
-  it('should match the current collaboration turn without replaying readiness from history', () => {
-    const scenario = resolveExampleModelScenario('collaboration');
-    const input = request('beta', 'collaboration-ready', []);
-    input.messages[0]!.content = 'Name: Beta';
-    input.messages.push(
-      { role: 'assistant', content: 'collaboration-ready' },
-      { role: 'user', content: 'collaboration-ping' },
-      {
-        role: 'user',
-        content:
-          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nRuntime facts.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
-      },
-    );
-    assert.deepEqual(matchFixture([...scenario.fixtures], input)?.response, {
-      content: 'collaboration-pong',
-    });
-    input.messages.push({ role: 'user', content: 'An unrelated request.' });
-    assert.equal(matchFixture([...scenario.fixtures], input), null);
-  });
-
-  it('should accept collaboration completion only after a successful peer reply', () => {
-    const scenario = resolveExampleModelScenario('collaboration');
-    const result = (status: string, reply: string) =>
-      request('alpha', 'collaboration-send', ['sessions_send'], {
-        callId: 'call_collaboration_send',
-        content: JSON.stringify({ status, reply }),
-      });
-    const success = matchFixture([...scenario.fixtures], result('ok', 'collaboration-pong'));
-    assert.deepEqual(success?.response, { content: 'collaboration-exchange-complete' });
-    assert.equal(
-      matchFixture([...scenario.fixtures], result('forbidden', 'collaboration-pong')),
-      null,
-    );
-    assert.equal(matchFixture([...scenario.fixtures], result('ok', 'wrong peer')), null);
   });
 
   it('should match the focused collaboration turns only for their workspace identities', async () => {
@@ -341,7 +317,7 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should return each login only after validating the real tool result', () => {
-    const scenario = resolveExampleModelScenario('github');
+    const scenario = resolveExampleModelScenario('openclaw-github');
     const cases = [
       {
         agentId: 'tanaabot',
@@ -401,7 +377,7 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should complete each cache turn only after a successful local git tool result', () => {
-    for (const scenarioId of ['credentials', 'openclaw-credentials']) {
+    for (const scenarioId of ['openclaw-credentials']) {
       const scenario = resolveExampleModelScenario(scenarioId);
       for (const { agentId, callId, prompt } of credentialExampleChecks) {
         const initial = matchFixture(

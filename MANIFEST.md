@@ -1072,8 +1072,10 @@ keys](./tools/git/README.md#configuration-reference) and [GitHub username, token
 and public keys](./tools/github/README.md#configuration-reference). Supply host
 executables directly or install them in `setup-host`; credential sources and
 key files must be available before agent-bound setup. The
-[setup example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/setup/README.md)
-exercises checked SSH cloning with OpenClaw's managed tools. They use the declared
+[tools example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-tools/README.md)
+exercises agent-bound setup commands; the
+[worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
+exercises declared SSH checkout with OpenClaw's managed tools. They use the declared
 agent identities without operator-identity fallback; the process still runs as
 the installing OS user.
 

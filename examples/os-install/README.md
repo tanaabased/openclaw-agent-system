@@ -1,6 +1,6 @@
 # Install Example
 
-This scenario installs the prepared Agent System package on a fresh GitHub Actions runner and verifies explicit lifecycle installation, human output, JSON output, idempotency, and manifest-derived native tool access reconciliation.
+Verify installation, repeat convergence, read-only Doctor inspection, and native credential enrollment on macOS and Ubuntu. Portable help, presentation, and tool-grant variants belong to the Ubuntu Doctor example.
 
 ## Setup
 
@@ -19,14 +19,6 @@ cp "$GITHUB_WORKSPACE/examples/os-install/data/agent.yaml" "$TMPDIR/install-data
 ## Testing
 
 ```bash
-# should expose the canonical command tree and its alias
-openclaw agent-system --help | grep -F 'validate'
-openclaw as --help | grep -F 'validate'
-
-# should expose lowercase owned descriptions without changing host help headings
-openclaw agent-system install --help | grep -F 'including required session dispatch'
-openclaw as status --help | grep -F 'inspect agent system agent, path, and configured capability drift.'
-
 # should install the scenario agent with a component-first table without color
 cd "$TMPDIR/install-data"
 NO_COLOR=1 openclaw agent-system install | grep -E '^agent[[:space:]]+created[[:space:]]' | grep -F 'OpenClaw agent install-data'
@@ -35,58 +27,7 @@ NO_COLOR=1 openclaw agent-system install | grep -E '^agent[[:space:]]+created[[:
 cd "$TMPDIR/install-data"
 output=$(openclaw agent-system install --json)
 printf '%s\n' "$output" | jq -e '.outcomes | (any(.component == "agent" and .status == "unchanged") and any(.component == "path" and .status == "unchanged"))'
-```
-
-```bash
-# should reconcile additive native tool grants while preserving unrelated access
-openclaw config set 'agents.entries.install-data.tools.alsoAllow' '["message"]' --strict-json
-cp "$GITHUB_WORKSPACE/examples/os-install/with-tools/agent.yaml" "$TMPDIR/install-data/agent.yaml"
-cd "$TMPDIR/install-data"
-if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
-openclaw config get 'agents.entries.install-data.tools.alsoAllow' --json | jq -e 'index("message") != null'
-openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
-```
-
-```bash
-# should reconcile selected native tools through an exact allowlist
-openclaw config unset 'agents.entries.install-data.tools.alsoAllow'
-openclaw config set 'agents.entries.install-data.tools.allow' '["read"]' --strict-json
-cd "$TMPDIR/install-data"
-if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
-openclaw config get 'agents.entries.install-data.tools.allow' --json | jq -e 'index("read") != null'
-openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
-```
-
-```bash
-# should leave converged native tool access unchanged
-cd "$TMPDIR/install-data"
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "agent-tool-access-unchanged")'
-openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
-```
-
-```bash
-# should block a selected native tool denied by operator policy
-openclaw config set 'agents.entries.install-data.tools.deny' '["agent_system_github"]' --strict-json
-cd "$TMPDIR/install-data"
-if output=$(openclaw agent-system doctor --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.findings | any(.component == "tool-access" and .status == "blocked" and .code == "agent-tool-access-denied" and (.message | contains("agent_system_github")))'
-if output=$(openclaw agent-system install --json 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'code=agent-tool-access-denied'
-```
-
-```bash
-# should remove stale owned grants when capabilities disappear
-openclaw config set 'agents.entries.install-data.tools.deny' '[]' --strict-json
-cp "$GITHUB_WORKSPACE/examples/os-install/data/agent.yaml" "$TMPDIR/install-data/agent.yaml"
-cd "$TMPDIR/install-data"
-if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
-openclaw config get 'agents.entries.install-data.tools' --json | jq -e '(.allow | sort) == (["read", "agent_system_install", "agent_system_doctor"] | sort) and (has("alsoAllow") | not)'
+openclaw agent-system doctor --json | jq -e '.status == "healthy"'
 ```
 
 ```bash

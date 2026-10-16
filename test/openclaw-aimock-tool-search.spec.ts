@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 import { matchFixture, type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
-import { githubExampleTanaabotPrompt } from '../examples/github/model-fixture.ts';
+import { githubExampleTanaabotPrompt } from '../examples/openclaw-github/model-fixture.ts';
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveScenario from '../scripts/aimock-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
@@ -88,7 +88,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should discover and call the real catalog id before accepting the github result', async () => {
-    const scenario = withToolSearch(resolveScenario('github'));
+    const scenario = withToolSearch(resolveScenario('openclaw-github'));
     const input = request();
     const entries: Parameters<typeof openClawAIMockEvidence>[1][number][] = [];
     const respond = async () => {
@@ -138,7 +138,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should reject absent tools and results for a different or failed target', async () => {
-    const scenario = withToolSearch(resolveScenario('github'));
+    const scenario = withToolSearch(resolveScenario('openclaw-github'));
     const missing = request();
     append(missing, (await reply(scenario, missing)).response, {
       results: [{ query: 'agent_system_github', candidates: [] }],
@@ -317,7 +317,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should preserve direct calls and the explicitly tool-free readiness turn', async () => {
-    const github = withToolSearch(resolveScenario('github'));
+    const github = withToolSearch(resolveScenario('openclaw-github'));
     const direct = request();
     direct.tools = [{ type: 'function', function: { name: 'agent_system_github' } }];
     const call = (await reply(github, direct)).response;

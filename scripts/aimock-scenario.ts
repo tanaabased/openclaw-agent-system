@@ -7,6 +7,7 @@ export interface OpenClawAIMockToolCall {
 
 /** One strict fixture set and its expected observable exchange. */
 export interface OpenClawAIMockScenario {
+  embeddingAuthorization?: string;
   expectedDeniedToolCalls?: readonly OpenClawAIMockToolCall[];
   skipToolSearch?: (request: ChatCompletionRequest) => boolean;
   toolSearchDiscoveryFixture?: Fixture;

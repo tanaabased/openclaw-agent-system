@@ -26,7 +26,6 @@ jobs:
           - ubuntu-24.04
         example:
           - os-install
-          - os-doctor
           - os-execution
           - os-credentials
     steps:

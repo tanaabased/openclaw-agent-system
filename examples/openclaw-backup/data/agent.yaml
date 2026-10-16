@@ -6,7 +6,7 @@ agent:
 
 backup:
   git-ignore: true
-  openclaw-state: off
+  openclaw-state: required
   include:
     - MEMORY.md
     - memory/**

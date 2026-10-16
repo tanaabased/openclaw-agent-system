@@ -42,6 +42,23 @@ const mock = new LLMock({
 });
 mock.addFixtures([...scenario.fixtures]);
 
+let authenticatedEmbeddings = 0;
+let rejectedEmbeddings = 0;
+if (scenario.embeddingAuthorization) {
+  mock.mount('/v1', {
+    async handleRequest(req, res, pathname) {
+      if (pathname !== '/embeddings') return false;
+      if (req.headers.authorization !== scenario.embeddingAuthorization) {
+        rejectedEmbeddings += 1;
+        json(res, 401, { error: 'fixture credential required' });
+        return true;
+      }
+      authenticatedEmbeddings += 1;
+      return false;
+    },
+  });
+}
+
 const evidenceService: Mountable = {
   async handleRequest(req, res, pathname) {
     if (pathname !== '/evidence' && pathname !== '/diagnostics') return false;
@@ -54,7 +71,17 @@ const evidenceService: Mountable = {
       return true;
     }
     try {
-      json(res, 200, openClawAIMockEvidence(scenario, mock.getRequests()));
+      json(res, 200, {
+        ...openClawAIMockEvidence(scenario, mock.getRequests()),
+        ...(scenario.embeddingAuthorization
+          ? {
+              embeddingAuthentication: {
+                accepted: authenticatedEmbeddings,
+                rejected: rejectedEmbeddings,
+              },
+            }
+          : {}),
+      });
     } catch {
       json(res, 500, openClawAIMockDiagnostics(scenario, mock.getRequests()));
     }

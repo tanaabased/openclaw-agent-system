@@ -26,6 +26,10 @@ cd "$TMPDIR/tools-tanaabot"
 openclaw agent-system tool git -- var GIT_AUTHOR_IDENT | grep -F 'Tools Tanaabot <tanaabot@tanaab.dev>'
 openclaw agent-system tool gh -- api user --jq .login | grep -Fx tanaabot
 
+# should forward stdin while keeping debug logs out of machine output
+cd "$TMPDIR/tools-tanaabot"
+printf '%s' '{"query":"query { viewer { login } }"}' | OPENCLAW_LOG_LEVEL=debug openclaw agent-system tool gh -- api graphql --input - | jq -se 'length == 1 and .[0].data.viewer.login == "tanaabot"'
+
 # should retain the same identities through installed package shims
 cd "$TMPDIR/tools-tanaabot"
 plugin_dir=$(openclaw plugins inspect agent-system --json | jq -er '.plugin.rootDir')

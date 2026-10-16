@@ -10,8 +10,10 @@ const Leia = createRequire(import.meta.url)('@lando/leia') as new () => {
 };
 
 describe('google example workflow', () => {
-  it('should retain the live google contract without a model while ci selection is deferred', async () => {
-    const fixture = parseAgentManifest(await readFile('examples/google/agent.yaml', 'utf8'));
+  it('should retain the live google contract without a model through the packed plugin', async () => {
+    const fixture = parseAgentManifest(
+      await readFile('examples/openclaw-google/agent.yaml', 'utf8'),
+    );
     assert.equal(fixture.status, 'valid');
     if (fixture.status !== 'valid') throw new Error();
     assert.equal(fixture.manifest.google?.credentialEncoding, 'base64');
@@ -34,16 +36,16 @@ describe('google example workflow', () => {
         'brew tap openclaw/tap\nbrew trust --tap openclaw/tap\nbrew bundle install --file=Brewfile\n',
       timeoutSeconds: 600,
     });
-    const brewfile = await readFile('examples/google/Brewfile', 'utf8');
+    const brewfile = await readFile('examples/openclaw-google/Brewfile', 'utf8');
     assert.match(brewfile, /tap "openclaw\/tap", trusted: true/u);
     assert.match(brewfile, /brew "openclaw\/tap\/gogcli"/u);
-    const suites = new Leia().parse([resolve('examples/google/README.md')]);
+    const suites = new Leia().parse([resolve('examples/openclaw-google/README.md')]);
     assert.equal(suites.length, 1);
     const commands = Object.values(suites[0]!.tests)
       .flat()
       .map(({ command }) => command)
       .join('\n');
-    assert.match(commands, /--needs-secret-service/u);
+    assert.match(commands, /--store file/u);
     assert.match(commands, /credentials set op --from-env/u);
     assert.match(commands, /tasks lists list --max 1 --readonly/u);
     assert.match(commands, /google-credentials-unchanged/u);

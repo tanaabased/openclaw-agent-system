@@ -274,8 +274,8 @@ uses native host authorization and separately verifies saved project registratio
 Preparation is serialized per repository; concurrent callers reuse the same
 worktree, while different repositories can prepare independently. Waiting callers
 honor cancellation and stop after ten minutes if the repository remains busy.
-See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/worktree/README.md)
-for lock-loss and recovery checks.
+See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
+for preparation, repeated reuse, agent-session execution, and safe removal.
 
 Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
 all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
