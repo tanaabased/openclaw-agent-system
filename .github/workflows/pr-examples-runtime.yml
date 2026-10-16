@@ -28,6 +28,9 @@ jobs:
           - openclaw-workspace
           - openclaw-tools
           - openclaw-worktree
+          - openclaw-collaboration
+          - openclaw-memory
+          - openclaw-backup
           - openclaw-credentials
           - openclaw-automations
           - openclaw-runtimes

@@ -62,6 +62,7 @@ describe('scripts/example-model-scenarios', () => {
     assert.deepEqual(exampleModelScenarioIds, [
       'openclaw-agent',
       'collaboration',
+      'openclaw-collaboration',
       'openclaw-automations',
       'credentials',
       'openclaw-credentials',
@@ -229,6 +230,79 @@ describe('scripts/example-model-scenarios', () => {
       null,
     );
     assert.equal(matchFixture([...scenario.fixtures], result('ok', 'wrong peer')), null);
+  });
+
+  it('should match the focused collaboration turns only for their workspace identities', async () => {
+    const scenario = resolveExampleModelScenario('openclaw-collaboration');
+    for (const [agentId, prompt, tool, fixtureIndex] of [
+      ['beta', 'collaboration-ready', '', 0],
+      ['beta', 'collaboration-ping', '', 1],
+      ['alpha', 'collaboration-send', 'sessions_send', 2],
+      ['alpha', 'collaboration-read', 'sessions_history', 4],
+    ] as const) {
+      const input = request(agentId, prompt, tool ? [tool] : []);
+      input.messages[0]!.content = await readFile(
+        new URL(`../examples/openclaw-collaboration/${agentId}/IDENTITY.md`, import.meta.url),
+        'utf8',
+      );
+      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
+      input.messages[0]!.content = 'Name: External';
+      assert.equal(matchFixture([...scenario.fixtures], input), null);
+    }
+  });
+
+  it('should complete the focused collaboration exchange only for its successful peer result', () => {
+    const scenario = resolveExampleModelScenario('openclaw-collaboration');
+    const input = (callId: string, content: string) => {
+      const value = request('alpha', 'collaboration-send', ['sessions_send'], { callId, content });
+      value.messages[0]!.content = 'Name: Alpha';
+      return value;
+    };
+    const reply = JSON.stringify({ status: 'ok', reply: 'collaboration-pong' });
+    assert.deepEqual(
+      matchFixture([...scenario.fixtures], input('call_collaboration_send', reply))?.response,
+      { content: 'collaboration-exchange-complete' },
+    );
+    for (const [callId, content] of [
+      ['another-call', reply],
+      ['call_collaboration_send', '{"status":"forbidden","reply":"collaboration-pong"}'],
+      ['call_collaboration_send', '{"status":"ok","reply":"wrong peer"}'],
+      ['call_collaboration_send', 'not json'],
+    ]) {
+      assert.equal(matchFixture([...scenario.fixtures], input(callId!, content!)), null);
+    }
+    const stale = input('call_collaboration_send', reply);
+    stale.messages.push({ role: 'user', content: 'An unrelated request.' });
+    assert.equal(matchFixture([...scenario.fixtures], stale), null);
+  });
+
+  it('should verify focused collaboration history only for the requested peer transcript', () => {
+    const scenario = resolveExampleModelScenario('openclaw-collaboration');
+    const history = {
+      sessionKey: 'agent:beta:collaboration',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'collaboration-pong' }] }],
+    };
+    const input = (value: unknown, callId = 'call_collaboration_history') => {
+      const valueRequest = request('alpha', 'collaboration-read', ['sessions_history'], {
+        callId,
+        content: JSON.stringify(value),
+      });
+      valueRequest.messages[0]!.content = 'Name: Alpha';
+      return valueRequest;
+    };
+    assert.deepEqual(matchFixture([...scenario.fixtures], input(history))?.response, {
+      content: 'collaboration-history-verified',
+    });
+    for (const value of [
+      { status: 'forbidden' },
+      { ...history, sessionKey: 'agent:external:collaboration' },
+      { ...history, messages: [{ role: 'user', content: 'collaboration-pong' }] },
+      { ...history, messages: [{ role: 'assistant', content: 'collaboration-ready' }] },
+      { ...history, messages: [null] },
+    ]) {
+      assert.equal(matchFixture([...scenario.fixtures], input(value)), null);
+    }
+    assert.equal(matchFixture([...scenario.fixtures], input(history, 'another-call')), null);
   });
 
   it('should keep automation ownership strict and report only failed match booleans', () => {
