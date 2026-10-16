@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 
 import { matchFixture, type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
+import { Value } from 'typebox/value';
 
 import { githubExampleTanaabotPrompt } from '../examples/openclaw-github/model-fixture.ts';
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
+import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
@@ -56,6 +59,17 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 
 describe('scripts/aimock-tool-search', () => {
   it('should carry notification assessment and operator delivery through wrapped tools and retained history', async () => {
+    // test the pinned host's actual projection without importing it into plugin runtime code.
+    const hostRequire = createRequire(
+      createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
+    );
+    const { normalizeToolParameterSchema } = await import(
+      hostRequire.resolve('@openclaw/ai/internal/tool-schema')
+    );
+    const normalizedDispatch = normalizeToolParameterSchema(dispatchParameters, {
+      modelProvider: 'aimock',
+      modelId: 'gpt-5.5',
+    });
     const scenario = withToolSearch(resolveScenario('openclaw-notifications'));
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
@@ -78,6 +92,10 @@ describe('scripts/aimock-tool-search', () => {
       assert.equal(call.name, 'tool_call');
       const args = JSON.parse(call.arguments);
       assert.equal(args.id, `openclaw:${name}`);
+      if (name === 'agent_system_dispatch') {
+        assert.ok(Value.Check(dispatchParameters, args.args), `${stage}: declared schema`);
+        assert.ok(Value.Check(normalizedDispatch, args.args), `${stage}: normalized schema`);
+      }
       append(input, response, {
         tool: { id: args.id, name, source: 'openclaw' },
         result: { content: [{ type: 'text', text: JSON.stringify(result) }] },

@@ -33,7 +33,11 @@ export const dispatchParameters = Type.Union([
     digest: Type.Optional(id),
   }),
   object({ action: Type.Literal('implementation-context'), id }),
-  object({ action: Type.Literal('implementation-result'), id, result: implementationResultSchema }),
+  object({
+    action: Type.Literal('implementation-result'),
+    id,
+    implementationResult: implementationResultSchema,
+  }),
   object({
     action: Type.Literal('delivery'),
     id,

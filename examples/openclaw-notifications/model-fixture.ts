@@ -152,7 +152,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return dispatch('work-result', {
           action: 'implementation-result',
           id: operatorId,
-          result: {
+          implementationResult: {
             outcome: 'done',
             summary: 'Committed the disposable cleanup note.',
             fullResult:

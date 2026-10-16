@@ -124,12 +124,12 @@ export default async function openClawWorkAction(input: {
   }
   if (!record.work.caller || automationHash(record.work.caller) !== automationHash(source))
     throw new Error('dispatch-implementation-context-required');
-  record.work.result = action.result;
+  record.work.result = action.implementationResult;
   await input.save();
   return {
     status: 'recorded',
     id: record.id,
-    outcome: action.result.outcome,
-    presentation: action.result.fullResult,
+    outcome: action.implementationResult.outcome,
+    presentation: action.implementationResult.fullResult,
   };
 }

@@ -1548,7 +1548,13 @@ describe('agent/openclaw issue dispatch', () => {
       summary: 'Implemented.',
       fullResult: 'Implemented and checked the change.',
     };
-    await service.run(manifest, root, who, { action: 'implementation-result', id, result }, true);
+    await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation-result', id, implementationResult: result },
+      true,
+    );
     assert.deepEqual((await record()).work?.result, result);
     await assert.rejects(context(id, who), /dispatch-policy-changed/);
     await assert.rejects(
@@ -1572,7 +1578,7 @@ describe('agent/openclaw issue dispatch', () => {
         {
           action: 'implementation-result',
           id,
-          result: { outcome: 'done', summary: 'Done', fullResult: 'Done' },
+          implementationResult: { outcome: 'done', summary: 'Done', fullResult: 'Done' },
         },
         true,
       ),
