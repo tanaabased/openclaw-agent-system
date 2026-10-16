@@ -4,7 +4,7 @@ Verify Agent System's native execution boundary on macOS and Linux: manifest PAT
 
 The workspace is copied because the test requires a path containing spaces and writes its own receipts. The probe emits success only after checking the actual child process and the rejected cross-agent invocation.
 
-On mock failure, cleanup reports bounded scenario-owned tool results so a probe failure or timeout remains visible behind a strict fixture mismatch. Execution and model-turn timeouts remain unchanged.
+On mock failure, cleanup fails after stopping the provider and reports bounded scenario-owned tool results so Leia retains the underlying probe failure or timeout. Each execution has a 120-second limit within a 180-second agent turn.
 
 ## Setup
 
@@ -37,7 +37,7 @@ openclaw agent \
   --agent os-execution \
   --session-key agent:os-execution:os-execution-pipe \
   --message-file "$GITHUB_WORKSPACE/examples/os-execution/pipe.md" \
-  --timeout 120
+  --timeout 180
 grep -Fx verified "$TMPDIR/os execution/source/pipe.result"
 
 # should preserve the same agent execution boundary through a native pty
@@ -45,7 +45,7 @@ openclaw agent \
   --agent os-execution \
   --session-key agent:os-execution:os-execution-pty \
   --message-file "$GITHUB_WORKSPACE/examples/os-execution/pty.md" \
-  --timeout 120
+  --timeout 180
 grep -Fx verified "$TMPDIR/os execution/source/pty.result"
 
 # should complete only the two authored exec exchanges without mock misses
@@ -61,6 +61,8 @@ openclaw-aimock evidence \
 openclaw-gateway stop
 
 # should report mock failures and stop the strict model cleanly
-curl --fail --silent --show-error http://127.0.0.1:4010/proof/diagnostics
+curl --fail --silent --show-error http://127.0.0.1:4010/proof/diagnostics > "$TMPDIR/os-execution-diagnostics.json"
 openclaw-aimock stop
+cat "$TMPDIR/os-execution-diagnostics.json"
+jq -e '.failed == false' "$TMPDIR/os-execution-diagnostics.json"
 ```

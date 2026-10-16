@@ -55,6 +55,29 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 }
 
 describe('scripts/aimock-tool-search', () => {
+  it('should continue the worktree fixture with retained first-turn tool history', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-worktree'));
+    const input = request('Execute the worktree first probe.');
+    input.messages.unshift({ role: 'system', content: 'canonical-worktree-tanaabot' });
+    input.tools!.push({ type: 'function', function: { name: 'exec' } });
+    for (const phase of ['first', 'continued']) {
+      if (phase === 'continued')
+        input.messages.push({ role: 'user', content: 'Execute the worktree continued probe.' });
+      append(input, (await reply(scenario, input)).response, searchResult(['exec']));
+      const call = (await reply(scenario, input)).response;
+      assert.ok('toolCalls' in call);
+      assert.equal(call.toolCalls?.[0]?.id, `call_worktree_${phase}`);
+      append(input, call, `worktree-${phase}-verified`);
+      const final = (await reply(scenario, input)).response;
+      assert.ok('content' in final);
+      assert.equal(final.content, `worktree-${phase}-ready`);
+      input.messages.push({ role: 'assistant', content: final.content });
+    }
+    const failed = structuredClone(input);
+    failed.messages.findLast((message) => message.role === 'tool')!.content = 'probe failed';
+    assert.equal(matchFixture([...scenario.fixtures], failed), null);
+  });
+
   it('should count an already visible exec tool during discovery as well as execution', async () => {
     const scenario = withToolSearch(resolveScenario('os-execution'));
     const entries: Parameters<typeof openClawAIMockEvidence>[1][number][] = [];

@@ -3,6 +3,15 @@ import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copil
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
+function currentTurn(request: ChatCompletionRequest) {
+  const index = request.messages.findLastIndex(
+    ({ role, content }) =>
+      role === 'user' &&
+      !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+  );
+  return request.messages.slice(Math.max(0, index));
+}
+
 function currentPrompt(request: ChatCompletionRequest, phase: string): boolean {
   return (
     request.messages
@@ -19,10 +28,11 @@ const fixtures: Fixture[] = phases.flatMap((phase) => {
   return [
     {
       match: {
-        hasToolResult: false,
         systemMessage: ['canonical-worktree-tanaabot'],
         toolName: 'exec',
-        predicate: (request) => currentPrompt(request, phase),
+        predicate: (request) =>
+          currentPrompt(request, phase) &&
+          !currentTurn(request).some(({ role }) => role === 'tool'),
       },
       response: {
         toolCalls: [
