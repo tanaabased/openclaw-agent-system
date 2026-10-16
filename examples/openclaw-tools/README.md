@@ -1,6 +1,6 @@
 # OpenClaw Tools Example
 
-Verify managed Git and GitHub execution through the public command, the installed package's shims, agent setup, and a native command automation. The operator check uses the explicit `agent-system-git` and `agent-system-gh` names; scripts use the ordinary `git` and `gh` shims. Each path must retain Tanaabot's identity; setup and automation descendants must not receive the declared GitHub token. The GitHub operation reads account identity and creates no remote fixture. No model is needed.
+Verify managed Git and GitHub execution through the public command, the installed package's shims, agent setup, and a native command automation. The operator and setup checks use contextual `git` and `gh` shims; the automation uses strict `agent-system-git` and `agent-system-gh` launchers under trusted agent authority. Each path must retain Tanaabot's identity; setup and automation descendants must not receive the declared GitHub token. The GitHub operation reads account identity and creates no remote fixture. No model is needed.
 
 Runtime tests run this example on Ubuntu with `GH_TOKEN_TANAABOT`. The copied workspace owns setup and automation receipts. Signed commits and native credential-store protections remain in OS coverage.
 
@@ -29,8 +29,8 @@ openclaw agent-system tool gh -- api user --jq .login | grep -Fx tanaabot
 # should retain the same identities through installed package shims
 cd "$TMPDIR/tools-tanaabot"
 plugin_dir=$(openclaw plugins inspect agent-system --json | jq -er '.plugin.rootDir')
-"$plugin_dir/bin/agent-system-git" var GIT_AUTHOR_IDENT | grep -F 'Tools Tanaabot <tanaabot@tanaab.dev>'
-"$plugin_dir/bin/agent-system-gh" api user --jq .login | grep -Fx tanaabot
+"$plugin_dir/bin/git" var GIT_AUTHOR_IDENT | grep -F 'Tools Tanaabot <tanaabot@tanaab.dev>'
+"$plugin_dir/bin/gh" api user --jq .login | grep -Fx tanaabot
 
 # should complete setup through bound shims without exposing credentials to its script
 cd "$TMPDIR/tools-tanaabot"
@@ -41,7 +41,7 @@ test "$(wc -l < setup.runs | tr -d ' ')" = 1
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.stepId == "tool-identity" and .status == "unchanged")'
 test "$(wc -l < setup.runs | tr -d ' ')" = 1
 
-# should complete a native automation through the same bound shims exactly once
+# should complete a native automation through strict bound launchers exactly once
 openclaw-gateway start
 cd "$TMPDIR/tools-tanaabot"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
