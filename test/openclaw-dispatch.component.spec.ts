@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
+import { automationHash } from '../agent/automation-hash.ts';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import type { AssessmentResult } from '../agent/assessment-result.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import openClawCapacity from '../agent/openclaw-capacity.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import { Value } from 'typebox/value';
@@ -34,6 +37,7 @@ describe('agent/openclaw issue dispatch', () => {
   let onCreate: (() => void) | undefined;
   let onSend: (() => void) | undefined;
   let messages: Array<Record<string, unknown>>;
+  let anchoredMessages: Array<Record<string, unknown>>;
   let inputReceipts: Array<Record<string, unknown>>;
   let waitResult: Record<string, unknown>;
   let loseSend: boolean;
@@ -117,6 +121,7 @@ describe('agent/openclaw issue dispatch', () => {
     onCreate = undefined;
     onSend = undefined;
     messages = [];
+    anchoredMessages = [];
     inputReceipts = [];
     waitResult = { status: 'timeout' };
     loseSend = false;
@@ -192,9 +197,14 @@ describe('agent/openclaw issue dispatch', () => {
                 };
               if (method === 'sessions.describe') return { session };
               if (method === 'chat.send') {
-                const turn = String(params.idempotencyKey).endsWith(':assessment')
-                  ? (await record()).assessmentTurn
-                  : (await record()).firstTurn;
+                const feedbackTurn = (await record()).feedback?.events.find(
+                  (event) => event.turn?.runId === params.idempotencyKey,
+                )?.turn;
+                const turn =
+                  feedbackTurn ??
+                  (String(params.idempotencyKey).endsWith(':assessment')
+                    ? (await record()).assessmentTurn
+                    : (await record()).firstTurn);
                 assert.equal(turn?.status, 'attempted');
                 assert.equal(turn?.message, params.message);
                 onSend?.();
@@ -233,7 +243,14 @@ describe('agent/openclaw issue dispatch', () => {
                 throw new Error('sessionId requires messageId');
               return {
                 sessionId: historySessionId ?? session?.sessionId,
-                messages: params.limit === 1 ? messages.slice(-1) : messages,
+                messages: params.messageId
+                  ? [...messages, ...anchoredMessages].filter(
+                      (entry) =>
+                        (entry.__openclaw as Record<string, unknown>)?.id === params.messageId,
+                    )
+                  : params.limit === 1
+                    ? messages.slice(-1)
+                    : messages,
                 inputReceipts,
                 pendingInputs: {
                   total: inputReceipts.filter((entry) => entry.state === 'pending').length,
@@ -1518,6 +1535,272 @@ describe('agent/openclaw issue dispatch', () => {
     return { id: input.id, who: assessor(input.id, 'operator') };
   }
 
+  async function publishedFollowup(onInspect: () => Promise<void> = async () => {}) {
+    const { id, who } = await operatorFollowup();
+    const request = { action: 'handoff' as const, id, permission: 'publication' as const };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    const { journal, admitted } = await service.scope(manifest, root);
+    const retained = await record();
+    const intake = admitted.records.find((entry) => entry.id === retained.intakeId)!;
+    const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
+    const head = 'a'.repeat(40);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.work!.delivery = {
+        id: 'd'.repeat(64),
+        title: 'Fix the result',
+        body: 'Closes #3',
+        creationAttempted: true,
+        reconciled: true,
+        pushedHead: head,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          sessionId: who.sessionId,
+          threadId: who.sessionKey,
+          worktree: retained.worktree!,
+          branch: 'issue-3',
+          base: 'main',
+          head,
+          authorId: 'U_agent',
+          policyDigest: retained.manifestDigest,
+        },
+      };
+      await save();
+    });
+    const effects: string[][] = [];
+    service.dependencies.delivery = async () => ({
+      async git(argv) {
+        effects.push(argv);
+        if (argv[0] === 'branch') return 'issue-3';
+        if (argv.includes('--show-toplevel')) return retained.worktree!;
+        if (argv[0] === 'rev-parse') return head;
+        if (argv[0] === 'status' || argv[0] === 'check-ref-format') return '';
+        if (argv[0] === 'rev-list') return '1';
+        if (argv[0] === 'remote') return `git@github.com:${repository}.git`;
+        assert.fail(`unexpected git operation: ${argv[0]}`);
+      },
+      account: {
+        identity: { login: 'agent', nodeId: 'U_agent' },
+        async execute(argv) {
+          effects.push(argv);
+          let value: unknown;
+          if (argv.includes(`repos/${repository}/pulls`)) {
+            assert.ok(argv.includes('GET'));
+            await onInspect();
+            value = [
+              {
+                itemNodeId: 'PR_7',
+                number: 7,
+                state: 'open',
+                baseRef: 'main',
+                headRef: 'issue-3',
+                headRepository: repository,
+                title: 'Fix the result',
+                body: 'Closes #3',
+              },
+            ];
+          } else {
+            assert.ok(argv.includes(`repos/${repository}/pulls/7`));
+            value = {
+              nodeId: 'PR_7',
+              number: 7,
+              state: 'open',
+              baseRef: 'main',
+              headRef: 'issue-3',
+              repositoryId: intake.repository.nodeId,
+              headRepositoryId: intake.repository.nodeId,
+              headSha: head,
+              authorId: 'U_agent',
+            };
+          }
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify(value),
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      },
+    });
+    const present = (authority = {}) =>
+      service.run(
+        manifest,
+        root,
+        who,
+        { action: 'delivery', operation: 'present', id },
+        true,
+        authority,
+      );
+    return { id, who, journal, present, effects };
+  }
+
+  it('should release the presentation lock during provider reads and recover the same complete card', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const { journal, present, effects } = await publishedFollowup(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const before = (await record()).work!.delivery!;
+    const pending = present();
+    await entered.promise;
+    try {
+      await journal.exclusive(async (state) => {
+        assert.deepEqual(state.records[0]!.work!.delivery, before);
+      });
+    } finally {
+      release.resolve();
+    }
+    const shown = await pending;
+    assert.ok('presentation' in shown && typeof shown.presentation === 'string');
+    assert.match(shown.presentation, /^> ## 🔀 Pull request opened/m);
+    assert.match(shown.presentation, /issues\/3/);
+    assert.match(shown.presentation, /pull\/7/);
+    service = new OpenClawDispatch(service.dependencies);
+    const retried = await present();
+    assert.ok('presentation' in retried);
+    assert.equal(retried.presentation, shown.presentation);
+    assert.deepEqual(
+      { ...(await record()).work!.delivery, presentation: undefined },
+      { ...before, presentation: undefined },
+    );
+    assert.ok(
+      effects.every(
+        (argv) => !argv.includes('push') && !argv.includes('POST') && !argv.includes('PATCH'),
+      ),
+    );
+  });
+
+  it('should report enabled feedback when recovering a published pr card', async () => {
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    const { present } = await publishedFollowup();
+    const shown = await present();
+    assert.ok('presentation' in shown && typeof shown.presentation === 'string');
+    assert.match(shown.presentation, /Approved feedback/);
+    assert.doesNotMatch(shown.presentation, /feedback delivery is not available/);
+    assert.equal((await record()).work!.delivery!.presentation, shown.presentation);
+  });
+
+  for (const stage of ['snapshot', 'commit'] as const) {
+    it(`should report retryable ${stage} contention without changing the publication receipt`, async () => {
+      const held = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let locking: Promise<void> | undefined;
+      const setup = await publishedFollowup(async () => {
+        if (stage === 'commit' && !locking) {
+          locking = setup.journal.exclusive(async () => {
+            held.resolve();
+            await release.promise;
+          });
+          await held.promise;
+        }
+      });
+      if (stage === 'snapshot') {
+        locking = setup.journal.exclusive(async () => {
+          held.resolve();
+          await release.promise;
+        });
+        await held.promise;
+      }
+      const before = await record();
+      try {
+        const result = await setup.present();
+        assert.equal(result.status, 'busy');
+        assert.ok(
+          'retryable' in result && result.retryable && 'stage' in result && result.stage === stage,
+        );
+        assert.deepEqual(await record(), before);
+      } finally {
+        release.resolve();
+        await locking;
+      }
+      assert.equal((await setup.present()).status, 'presented');
+    });
+  }
+
+  it('should reject a changed record instead of saving a stale presentation snapshot', async () => {
+    const setup = await publishedFollowup(async () => {
+      await setup.journal.exclusive(async (state, save) => {
+        state.records[0]!.work!.delivery!.reconciled = false;
+        await save();
+      });
+    });
+    const result = await setup.present();
+    assert.ok('code' in result && result.code === 'delivery-presentation-state-changed');
+    assert.equal((await record()).work!.delivery!.reconciled, false);
+    assert.equal((await record()).work!.delivery!.presentation, undefined);
+  });
+
+  it('should preserve the published receipt across cancellation and later owner recovery', async () => {
+    const controller = new AbortController();
+    let cancel = true;
+    const setup = await publishedFollowup(async () => {
+      if (cancel) controller.abort(new Error('dispatch-test-cancelled'));
+    });
+    const before = await record();
+    await assert.rejects(setup.present({ signal: controller.signal }), /dispatch-test-cancelled/);
+    assert.deepEqual(await record(), before);
+    cancel = false;
+    setup.who.runId = 'later-owner';
+    anchoredMessages = [
+      {
+        role: 'user',
+        content: 'Show the existing PR.',
+        __openclaw: {
+          id: 'later-event',
+          runId: 'later-owner',
+          idempotencyKey: 'later-owner:user',
+          senderIsOwner: true,
+        },
+      },
+    ];
+    inputReceipts = [{ runId: 'later-owner', state: 'consumed', consumedByEventId: 'later-event' }];
+    assert.equal((await setup.present()).status, 'presented');
+    inputReceipts = [];
+    service = new OpenClawDispatch(service.dependencies);
+    assert.equal((await setup.present()).status, 'presented');
+    const retained = await record();
+    assert.deepEqual(retained.work!.operatorInput, {
+      runId: 'later-owner',
+      inputEventId: 'later-event',
+    });
+    assert.deepEqual(retained.work!.publication, before.work!.publication);
+    assert.equal(retained.work!.caller, undefined);
+  });
+
+  for (const code of [
+    'private-state-file-lock-busy',
+    'private-state-file-lock-lost',
+    'dispatch-policy-changed',
+  ]) {
+    it(`should not classify verification failure ${code} as presentation acquisition contention`, async () => {
+      const setup = await publishedFollowup(async () => {
+        throw Object.assign(new Error(code), { code });
+      });
+      const before = await record();
+      const result = await setup.present();
+      assert.equal(result.status, 'blocked');
+      assert.ok('code' in result && result.code === code);
+      assert.equal('retryable' in result, false);
+      assert.deepEqual(await record(), before);
+    });
+  }
+
+  it('should reject revoked assignment authority during presentation and preserve the receipt', async () => {
+    const setup = await publishedFollowup(async () => {
+      fixture.item.assignees = [];
+    });
+    const before = await record();
+    const result = await setup.present();
+    assert.ok('code' in result && result.code === 'dispatch-assignment-authority-revoked');
+    assert.deepEqual(await record(), before);
+  });
+
   it('should retain explicit implementation and publication permission without replacing the assessment', async () => {
     const { id, who } = await operatorFollowup();
     const request = {
@@ -1560,6 +1843,31 @@ describe('agent/openclaw issue dispatch', () => {
     await assert.rejects(
       service.run(manifest, root, who, { ...request, digest: preview.digest }, true),
       /dispatch-handoff-stale/,
+    );
+  });
+
+  it('should verify the retained owner input after it leaves the recent history page', async () => {
+    const { id, who } = await operatorFollowup();
+    const request = { action: 'handoff' as const, id, permission: 'implementation' as const };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    anchoredMessages = [messages.pop()!];
+    const verified = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation-context', id },
+      true,
+    );
+    assert.equal(verified.status, 'verified');
+    assert.ok(
+      calls.some(
+        ({ method, params }) =>
+          method === 'chat.history' &&
+          params.messageId === 'operator-event' &&
+          params.sessionId === who.sessionId,
+      ),
     );
   });
 
@@ -1620,5 +1928,223 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal((await record()).work, undefined);
     assert.deepEqual((await record()).result, plan);
+  });
+  async function feedbackOwner() {
+    const { id, who } = await operatorFollowup();
+    const handoff = {
+      action: 'handoff' as const,
+      id,
+      permission: 'implementation-and-publication' as const,
+    };
+    const preview = await service.run(manifest, root, who, handoff, true);
+    assert.ok('digest' in preview);
+    await service.run(manifest, root, who, { ...handoff, digest: preview.digest }, true);
+    const oldDigest = (await record()).manifestDigest;
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    const comments: Array<GitHubCanonicalIssueComment> = [];
+    service.dependencies.feedbackConnect = async () => ({
+      ...fixture.client,
+      getItemContext: async () => ({
+        title: 'issue',
+        body: '',
+        comments: [],
+        labels: [],
+        truncated: false,
+      }),
+      listIssueComments: async () => ({ comments, truncated: false }),
+      getIssueComment: async (_o, _n, _i, id) => {
+        const comment = comments.find((c) => c.databaseId === id);
+        if (!comment) throw new Error('comment-deleted');
+        return comment;
+      },
+      createIssueComment: async () => {
+        throw new Error('unexpected publication');
+      },
+      findOwnIssueComment: async () => undefined,
+      replies: {
+        create: async () => {
+          throw new Error('unexpected reply');
+        },
+        find: async () => undefined,
+      },
+    });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).manifestDigest, oldDigest);
+    comments.push({
+      nodeId: 'C_feedback',
+      databaseId: 99,
+      author: fixture.client.identity,
+      body: '@receiver explain this',
+      bodyTruncated: false,
+      createdAt: '2026-10-07T10:03:00Z',
+      updatedAt: '2026-10-07T10:03:00Z',
+    });
+    return { id, who, comments };
+  }
+  it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
+    const { id } = await feedbackOwner();
+    assert.equal((await service.check(manifest, root)).changed, true);
+    assert.equal((await record()).feedback!.events.length, 0);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.ok(event.turn);
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).result?.fullAssessment, plan.fullAssessment);
+    const who = assessor(id, event.turn.runId);
+    const context = await service.run(manifest, root, who, {
+      action: 'feedback',
+      operation: 'context',
+      id,
+      eventId: event.id,
+    });
+    assert.equal(context.status, 'verified');
+    for (const action of ['context', 'implementation-context'] as const)
+      await assert.rejects(
+        service.run(manifest, root, who, { action, id }, true),
+        /feedback-work-authority-denied/,
+      );
+    const result = await service.run(manifest, root, who, {
+      action: 'feedback',
+      operation: 'result',
+      id,
+      eventId: event.id,
+      privateText: 'Complete private answer.',
+    });
+    assert.equal(result.status, 'recorded');
+    assert.equal((await record()).feedback!.events[0]!.phase, 'published');
+    assert.equal(creates().length, 1);
+  });
+  it('should queue feedback during operator work and revoke an edited or removed source before sending', async () => {
+    const { comments } = await feedbackOwner();
+    active = true;
+    const before = sends().length;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.phase, 'queued');
+    assert.equal(sends().length, before);
+    comments[0]!.body = 'mention removed';
+    active = false;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.phase, 'blocked');
+    assert.equal(sends().length, before);
+  });
+  it('should reconcile an uncertain feedback send after restart without sending twice', async () => {
+    await feedbackOwner();
+    loseSend = true;
+    const before = sends().length;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.turn?.status, 'attempted');
+    loseSend = false;
+    service = new OpenClawDispatch(service.dependencies);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.turn?.status, 'accepted');
+    assert.equal(sends().length, before + 1);
+  });
+  it('should release an idle feedback owner after its admitted policy changes without resending', async () => {
+    await feedbackOwner();
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.phase, 'running');
+    const before = sends().length;
+    manifest.github!.notifications!.intervalMinutes += 1;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const saved = await record();
+    assert.equal(saved.feedback!.events[0]!.code, 'feedback-authority-changed');
+    assert.equal(saved.feedback!.events[0]!.phase, 'blocked');
+    assert.equal(openClawCapacity([saved], 1).available, 0);
+    active = false;
+    inputReceipts = [];
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(openClawCapacity([await record()], 1).available, 1);
+    assert.equal(sends().length, before);
+  });
+  for (const olderAssignment of [true, false]) {
+    it(`should select the oldest eligible ${olderAssignment ? 'assignment' : 'feedback'} in one capacity pool`, async () => {
+      await feedbackOwner();
+      const { store } = await service.dependencies.intake.select(manifest, root);
+      const createdAt = olderAssignment ? '2026-10-07T10:01:30Z' : '2026-10-07T10:04:00Z';
+      const other = { ...fixture.item, nodeId: 'I_other', databaseId: 21, number: 4 };
+      const assignment = { ...fixture.events[0]!, nodeId: 'E_other', databaseId: 31, createdAt };
+      const getItem = fixture.client.getItem;
+      fixture.client.getItem = async (owner, name, number) =>
+        number === 4 ? other : getItem(owner, name, number);
+      fixture.client.listAssignmentEvents = async (_owner, _name, number) => ({
+        events: number === 4 ? [assignment] : fixture.events,
+        truncated: false,
+      });
+      await store.exclusive(async (state, save) => {
+        state!.records.push({
+          ...state!.records[0]!,
+          id: automationHash([
+            state!.scope,
+            state!.records[0]!.repository.nodeId,
+            other.nodeId,
+            assignment.nodeId,
+          ]),
+          issue: { nodeId: other.nodeId, databaseId: other.databaseId, number: other.number },
+          assignment: { ...assignment, event: 'assigned' },
+        });
+        await save(state!);
+      });
+      const selected = await service.run(manifest, root, coordinator, { action: 'next' });
+      assert.equal(selected.status, olderAssignment ? 'routing-required' : 'feedback-pending');
+      assert.equal(Boolean((await record()).feedback!.events[0]!.turn), !olderAssignment);
+    });
+  }
+  it('should discard a stale provider snapshot without holding the journal during discovery', async () => {
+    await feedbackOwner();
+    active = true;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const connect = service.dependencies.feedbackConnect!;
+    const started = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    service.dependencies.feedbackConnect = async (...args) => {
+      const provider = await connect(...args);
+      const list = provider.listIssueComments;
+      provider.listIssueComments = async (...parameters) => {
+        started.resolve();
+        await released.promise;
+        return list(...parameters);
+      };
+      return provider;
+    };
+    const scan = service.run(manifest, root, coordinator, { action: 'next' });
+    await started.promise;
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      const event = state.records[0]!.feedback!.events[0]!;
+      event.phase = 'blocked';
+      event.code = 'test-concurrent-revocation';
+      await save();
+    });
+    released.resolve();
+    await scan;
+    assert.equal((await record()).feedback!.events[0]!.code, 'test-concurrent-revocation');
+  });
+  it('should refuse reconciliation as a way to send a queued event past capacity', async () => {
+    const { id } = await feedbackOwner();
+    active = true;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    await assert.rejects(
+      service.run(manifest, root, coordinator, {
+        action: 'feedback',
+        operation: 'reconcile',
+        id,
+        eventId: event.id,
+      }),
+      /feedback-send-unverified/,
+    );
+    assert.equal(event.turn, undefined);
+  });
+  it('should preserve the feedback baseline through initial routing and native creation', async () => {
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    const input = await next();
+    const baseline = (await record()).feedback?.startedAt;
+    assert.equal(typeof baseline, 'number');
+    assert.equal((await prepare(input)).status, 'session-created');
+    assert.equal((await record()).feedback?.startedAt, baseline);
+    assert.deepEqual((await record()).feedback?.events, []);
   });
 });

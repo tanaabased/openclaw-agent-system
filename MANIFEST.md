@@ -438,7 +438,7 @@ destination restrictions, and sensitive-archive handling.
 Set `debug: true` at the top level to show private workflow instruction cards:
 selected skills (including defaults), guidance sources, and retained inline guidance.
 Codex uses this for assessment, implementation delivery, and feedback replies;
-OpenClaw's shared assessment renderer uses the same switch. When omitted or false,
+OpenClaw's assessment and feedback renderers use the same switch. When omitted or false,
 these cards are hidden. Errors, blockers, responses, and publication outcomes remain
 visible. This controls presentation only; it does not enable runtime logging,
 change permissions, or change the skill or guidance applied to a turn.
@@ -478,9 +478,9 @@ verified delivery PR. Codex Auto conditionally continues a recorded proceed deci
 through the same implementation and delivery stages. Review requests remain unavailable.
 OpenClaw v2 supports the default assessment skill in Plan mode; broader workflow rollout
 remains separate.
-OpenClaw Work/Auto modes, issue feedback, review requests, and replacement assessment
-skills remain unsupported. Unavailable feedback and reviews produce warnings without
-blocking supported issue assignment. Unsupported assignment modes and assessment skills
+OpenClaw Work/Auto modes, independent review requests, and replacement assessment
+skills remain unsupported. Unavailable review requests warn without blocking
+supported issue assignment or configured feedback. Unsupported assignment modes and assessment skills
 block only the dependent assignment workflow; no fallback mode or skill is selected. Supported Plan-mode declarations are checked by the enrollment, intake, and
 automation lifecycle owners. A Codex-only declaration does not activate OpenClaw
 intake. Binding and passive discovery never activate work.
@@ -497,8 +497,9 @@ The coordinator then starts one journaled assessment turn. The issue session use
 `agent_system_dispatch` actions `context` and `result` to verify its binding and
 retain a complete plan, clarification, or setup blocker through the shared assessment
 contract. Later answers refresh context and revise the retained result in the same
-session. Replacement assessment skills and implementation handoff are not supported
-in OpenClaw. Uncertain creation or send effects are retained, never repeated.
+session. An authenticated operator can authorize implementation and linked PR delivery
+in that chat. Feedback never inherits those grants. Uncertain creation or send
+effects are retained, never repeated.
 For blocked creation confirmation, inspect with `agent_system_dispatch` action
 `inspect` (no `id`), then request action `reconcile` with the saved receipt `id`
 in the existing `ISSUE ASSIGNMENTS` coordinator. Reconciliation reads back the
@@ -509,7 +510,17 @@ owning issue chat. `retry` cannot reset an already prepared creation request.
 The scheduled conversation uses its owning agent's existing tool access without
 an intake-specific narrowing. Automation inspection detects stale allowances;
 installation reconciles them through the existing automation lifecycle.
-It processes no comments.
+Configured issue feedback uses this same installed schedule and a shared oldest-eligible
+capacity pool. Approved mentions in issue and linked PR conversation comments,
+submitted review bodies/findings, and inline replies resume the owning issue session.
+A busy session queues feedback. Private responses are retained separately from replies
+composed with the selected feedback skill and guidance; missing or changed skills stop
+composition. Replies are source-bound and reauthorized before publication. Edited or
+deleted comments, removed mentions, and reassignment revoke pending replies without
+erasing retained answers or attempts. New eligible edits are admitted once. Moving a
+review's code coordinates alone does not create a new feedback revision. Unknown sends
+and publication outcomes are reconciled, never repeated; confirmed receipts suppress
+self-reply loops. This does not activate independent review assignments.
 Operator automation synchronization is required;
 native chat Install/Doctor cannot yet reconcile or inspect the scheduler.
 

@@ -92,6 +92,59 @@ describe('openclaw v2 intake slice', () => {
       },
     };
   }
+  it('should restrict both native check and scan to each isolated fixtures selected issue', async () => {
+    const f = fixture();
+    const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
+    const second = new OpenClawIntake({ ...f.service.dependencies, root: join(root, 'second') });
+    await f.service.run(f.value, root, 'activate');
+    await second.run(f.value, root, 'activate');
+    f.provider.events.push(...intakeFixture().events);
+    f.setNow(baseline + 120000);
+    f.provider.client.discoverAssigned = async () => {
+      throw Error('must not scan the shared inbox');
+    };
+    f.provider.client.getItem = async (_owner, _repo, number) => ({
+      ...f.provider.item,
+      number,
+      nodeId: `I_${number}`,
+      databaseId: number,
+    });
+    for (const [service, number] of [
+      [f.service, 3],
+      [second, 4],
+    ] as const) {
+      const selector = { itemType: 'issue' as const, repository: 'owner/repo', number };
+      const check = await service.run(f.value, root, 'check', digest, undefined, selector);
+      assert.equal(check.changed, true);
+      assert.deepEqual((await service.inspect(f.value, root)).records, []);
+      await service.run(f.value, root, 'scan', digest, undefined, selector);
+      assert.deepEqual(
+        (await service.inspect(f.value, root)).records.map((record) => record.issue.number),
+        [number],
+      );
+      assert.equal((await service.inspect(f.value, root)).checkpoint, baseline);
+    }
+    f.provider.client.discoverAssigned = async () => ({
+      candidates: [3, 4].map((number) => ({
+        itemType: 'issue',
+        repositoryPath: '/repos/owner/repo',
+        number,
+        nodeId: `I_${number}`,
+        databaseId: number,
+        updatedAt: f.provider.item.updatedAt,
+      })),
+      incomplete: false,
+      truncated: false,
+      totalCount: 2,
+    });
+    await f.service.run(f.value, root, 'scan', digest);
+    assert.deepEqual(
+      (await f.service.inspect(f.value, root)).records.map((record) => record.issue.number),
+      [3, 4],
+    );
+    assert.equal((await f.service.inspect(f.value, root)).checkpoint, baseline + 120000);
+  });
+
   it('should report supported planning through native doctor and install without starting issue sessions', async () => {
     const f = fixture();
     const unused = async (): Promise<never> => {
@@ -243,16 +296,33 @@ describe('openclaw v2 intake slice', () => {
     const contribution = f.service.contribution();
     const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
     const diagnostics = contribution.validate!(context)?.diagnostics;
-    assert.equal(diagnostics?.length, 2);
-    assert.ok(diagnostics?.every(({ severity }) => severity === 'warning'));
+    assert.deepEqual(
+      diagnostics?.map(({ code, fieldPath, severity }) => ({ code, fieldPath, severity })),
+      [
+        {
+          code: 'github-notification-runtime-unsupported',
+          fieldPath: '/github/notifications/review-request',
+          severity: 'warning',
+        },
+      ],
+    );
     assert.equal((await f.service.inspect(f.value, root)).code, 'intake-activation-required');
     assert.equal(f.connects(), 0);
     const result = await contribution.reconcile!(context);
     assert.equal(result.outcomes[0]?.code, 'intake-activated');
-    assert.equal(result.warnings?.length, 2);
+    assert.deepEqual(
+      result.warnings?.map(({ code }) => code),
+      ['github-notification-runtime-unsupported'],
+    );
+    assert.match(result.warnings![0]!.message, /review requests/i);
     const findings = await contribution.inspect!(context);
     assert.ok(findings.some(({ code, status }) => code === 'intake-ready' && status === 'healthy'));
-    assert.equal(findings.filter(({ status }) => status === 'warning').length, 2);
+    const warnings = findings.filter(({ status }) => status === 'warning');
+    assert.deepEqual(
+      warnings.map(({ code }) => code),
+      ['github-notification-runtime-unsupported'],
+    );
+    assert.match(warnings[0]!.message, /review requests/i);
     assert.ok(!findings.some(({ status }) => status === 'blocked'));
     f.provider.events.push(...intakeFixture().events);
     f.setNow(baseline + 120000);
@@ -561,6 +631,9 @@ describe('openclaw v2 intake slice', () => {
     const nativeService = new OpenClawNotifications({
       root: join(root, 'dispatch'),
       intake: f.service,
+      async scanSelected() {
+        throw Error('read-only commands must not scan');
+      },
       async inspectRun() {
         return 'pending' as const;
       },

@@ -40,6 +40,64 @@ describe('channels/github/intake/records', () => {
       },
     };
   }
+  it('should admit only the selected issue without searching or advancing the global checkpoint', async () => {
+    const { input, store, client, item, events } = setup('openclaw');
+    const assigned = events.splice(0);
+    await scanAssignments({ ...input, activate: true });
+    events.push(...assigned);
+    const checkpoint = (await store.read())!.checkpoint;
+    const fetched: number[] = [];
+    client.discoverAssigned = async () => {
+      throw Error('targeted intake must not search');
+    };
+    client.getItem = async (owner, repo, number) => {
+      assert.equal(owner, 'owner');
+      assert.equal(repo, 'repo');
+      fetched.push(number);
+      return { ...item, number, nodeId: `I_${number}`, databaseId: number };
+    };
+    for (const number of [3, 4]) {
+      const result = await scanAssignments({
+        ...input,
+        now: baseline + 120000,
+        selector: { itemType: 'issue', repository: 'owner/repo', number },
+      });
+      assert.equal(result.admitted, 1);
+      assert.deepEqual(
+        (await store.read())!.records.map((record) => record.issue.number),
+        number === 3 ? [3] : [3, 4],
+      );
+      assert.equal((await store.read())!.checkpoint, checkpoint);
+    }
+    assert.deepEqual(fetched, [3, 4]);
+  });
+
+  it('should still require assignment, actor and owner authorization for selected intake', async () => {
+    const { input, store, client, item, events, repository } = setup('openclaw');
+    const assigned = events.splice(0);
+    await scanAssignments({ ...input, activate: true });
+    events.push(...assigned);
+    client.discoverAssigned = async () => {
+      throw Error('targeted intake must not search');
+    };
+    const selected = {
+      ...input,
+      now: baseline + 120000,
+      selector: { itemType: 'issue' as const, repository: 'owner/repo', number: 3 },
+    };
+    const assignees = item.assignees;
+    item.assignees = [];
+    assert.equal((await scanAssignments(selected)).admitted, 0);
+    item.assignees = assignees;
+    const actor = events[0]!.actor;
+    events[0]!.actor = { ...actor, nodeId: 'unapproved' };
+    assert.equal((await scanAssignments(selected)).admitted, 0);
+    events[0]!.actor = actor;
+    repository.owner = { ...repository.owner, nodeId: 'unpinned' };
+    assert.equal((await scanAssignments(selected)).admitted, 0);
+    assert.deepEqual((await store.read())!.records, []);
+  });
+
   it('should preserve a filesystem denial during scan persistence without recording a provider failure', async () => {
     const { input, store } = setup();
     await scanAssignments({ ...input, activate: true });

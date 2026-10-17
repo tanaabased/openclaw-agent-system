@@ -166,7 +166,11 @@ async function refreshNotificationsAgentSystem(
         ],
       },
     ]);
-  if (result.status !== 'queued' && result.code !== 'github-notification-refresh-already-running')
+  if (
+    result.status !== 'queued' &&
+    result.status !== 'completed' &&
+    result.code !== 'github-notification-refresh-already-running'
+  )
     options.setExitCode(1);
 }
 

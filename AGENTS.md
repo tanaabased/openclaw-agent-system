@@ -86,6 +86,7 @@
 - Fake injected OpenClaw, 1Password, GitHub CLI, and remote boundaries in unit tests. Do not re-test third-party behavior or rely on network, timing, or live host state in the default suite.
 - Use `tanaabased/big-test-bucket` as the default hosted repository for manual and GitHub-backed tests that can use a Tanaab organization repository.
 - Use `pirog/me` only when a test specifically requires a non-organization, user-owned repository.
+- Assign live GitHub test issues and pull requests only to `tanaabot`, which has no production OpenClaw instance. Never assign fixtures or request reviews from EMORI (`emoriwan`) or another production agent; their real intake can consume the work. EMORI may create fixtures and post test comments.
 - Keep created GitHub fixtures bounded and disposable, clean them up after capturing evidence, and do not spread live testing across unrelated repositories.
 
 ## Validation
