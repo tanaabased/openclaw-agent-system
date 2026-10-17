@@ -7,6 +7,7 @@ import openClawAIMockDiagnostics from './aimock-diagnostics.ts';
 import openClawAIMockEvidence from './aimock-evidence.ts';
 import resolveExampleModelScenario from './example-model-scenarios.ts';
 import withToolSearch from './aimock-tool-search.ts';
+import observeAIMockWire from './aimock-wire.ts';
 
 const { values: options } = parseArgs({
   options: {
@@ -41,6 +42,13 @@ const mock = new LLMock({
   strict: true,
 });
 mock.addFixtures([...scenario.fixtures]);
+const wire = observeAIMockWire();
+if (scenario.id === 'openclaw-runtimes') {
+  mock.mount('/v1', wire.observer);
+  mock.mount('/responses', {
+    handleRequest: (req, res) => wire.observer.handleRequest(req, res, '/responses'),
+  });
+}
 
 let authenticatedEmbeddings = 0;
 let rejectedEmbeddings = 0;
@@ -61,9 +69,13 @@ if (scenario.embeddingAuthorization) {
 
 const evidenceService: Mountable = {
   async handleRequest(req, res, pathname) {
-    if (pathname !== '/evidence' && pathname !== '/diagnostics') return false;
+    if (!['/evidence', '/diagnostics', '/wire'].includes(pathname)) return false;
     if (req.method !== 'GET') {
       json(res, 405, { error: 'method not allowed' });
+      return true;
+    }
+    if (pathname === '/wire') {
+      json(res, 200, { scenario: scenario.id, requests: wire.requests });
       return true;
     }
     if (pathname === '/diagnostics') {
