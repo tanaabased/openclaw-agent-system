@@ -72,6 +72,7 @@ describe('agent/openclaw-delivery', () => {
       source,
       base: 'main',
       recipients: [],
+      feedbackEnabled: false,
       signal: new AbortController().signal,
       intake: {
         id: record.intakeId,

@@ -13,6 +13,7 @@ import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lo
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import openClawCapacity from '../agent/openclaw-capacity.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import { Value } from 'typebox/value';
@@ -2038,6 +2039,24 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.turn?.status, 'accepted');
     assert.equal(sends().length, before + 1);
+  });
+  it('should release an idle feedback owner after its admitted policy changes without resending', async () => {
+    await feedbackOwner();
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.phase, 'running');
+    const before = sends().length;
+    manifest.github!.notifications!.intervalMinutes += 1;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const saved = await record();
+    assert.equal(saved.feedback!.events[0]!.code, 'feedback-authority-changed');
+    assert.equal(saved.feedback!.events[0]!.phase, 'blocked');
+    assert.equal(openClawCapacity([saved], 1).available, 0);
+    active = false;
+    inputReceipts = [];
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(openClawCapacity([await record()], 1).available, 1);
+    assert.equal(sends().length, before);
   });
   for (const olderAssignment of [true, false]) {
     it(`should select the oldest eligible ${olderAssignment ? 'assignment' : 'feedback'} in one capacity pool`, async () => {

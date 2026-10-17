@@ -26,7 +26,7 @@ export default async function openClawDelivery(input: {
   source: { runId: string; inputEventId: string };
   base: string;
   recipients?: GitHubPullRequestRecipient[];
-  feedbackEnabled?: boolean;
+  feedbackEnabled: boolean;
   connect(): Promise<OpenClawDeliveryConnection>;
   assertCurrent(): Promise<void>;
   save(): Promise<void>;
