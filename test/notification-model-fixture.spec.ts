@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
+import { parse } from '@lando/leia/parse';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -66,6 +67,39 @@ async function action<A extends Action['action']>(input: ChatCompletionRequest, 
 }
 
 describe('examples/openclaw-notifications model fixture', () => {
+  it('should discover the native acceptance cases with independent recovery setup', () => {
+    const [harness] = parse(['examples/openclaw-notifications/README.md'], {
+      shell: 'bash',
+      retry: 0,
+    });
+    assert.ok(harness);
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(harness.tests).map(([section, cases]) => [section, cases.length]),
+      ),
+      { setup: 4, test: 11, cleanup: 5 },
+    );
+    for (const name of [
+      'should show ordered native entry cards without debug instructions or private facts',
+      'should warn once for native projection drift and keep identical checks model free',
+      'should reconcile explicitly show recovery once and then keep healthy checks model free',
+      'should recover the same issue after restart with fresh private facts and debug instructions',
+    ])
+      assert.ok(
+        harness.tests.test?.some((entry) => entry.describe.includes(name)),
+        name,
+      );
+    const recovery = harness.tests.test!.find((entry) =>
+      entry.describe.includes(
+        'should reconcile explicitly show recovery once and then keep healthy checks model free',
+      ),
+    )!;
+    const lines = recovery.command.split('\n').filter(Boolean);
+    assert.equal(lines[0], 'cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"');
+    assert.ok(lines[1]?.startsWith('native=$(openclaw agent-system automations list --json'));
+    assert.ok(lines[2]?.startsWith('openclaw agent-system install '));
+  });
+
   it('should declare native planning with unavailable feedback and reviews for capability isolation', async () => {
     const parsed = parseAgentManifest(
       await readFile('examples/openclaw-notifications/tanaabot/agent.yaml', 'utf8'),

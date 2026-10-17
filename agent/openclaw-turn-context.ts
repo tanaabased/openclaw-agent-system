@@ -1,7 +1,7 @@
 import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 
-/** only native session/incarnation/input identities select retained, non-secret turn facts. */
+/** native session/incarnation/run identities select retained facts; explicit tools verify authority. */
 export default function openclawTurnContext(
   record: OpenClawDispatchRecord,
   binding: {
@@ -14,7 +14,6 @@ export default function openclawTurnContext(
 ) {
   if (
     !binding.runId ||
-    !binding.inputId ||
     !record.request ||
     !('key' in record.request) ||
     record.request.agentId !== binding.agentId ||

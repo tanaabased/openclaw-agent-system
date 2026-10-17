@@ -28,12 +28,18 @@ describe('agent/openclaw-turn-context', () => {
     assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
     assert.match(output.appendSystemContext, /explicit tool verifies current authority/);
   });
-  it('should refuse wrong agent, session, incarnation, missing input and premature later turns', () => {
+  it('should bind native runs without inventing an optional input id', () => {
+    const output = openclawTurnContext(record, { ...binding, inputId: undefined })!;
+    assert.match(output.appendContext, /PRIVATE-GITHUB-FACT/);
+    assert.match(output.appendContext, /"runId":"assessment"/);
+    assert.doesNotMatch(output.appendContext, /inputId/);
+  });
+  it('should refuse wrong agent, session, incarnation, missing run and premature later turns', () => {
     for (const change of [
       { agentId: 'other' },
       { sessionKey: 'other' },
       { sessionId: 'replaced' },
-      { inputId: undefined },
+      { runId: undefined },
       { runId: 'later' },
     ])
       assert.equal(openclawTurnContext(record, { ...binding, ...change }), undefined);

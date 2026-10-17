@@ -38,7 +38,7 @@ export default function registerAgentSystemHooks(
       guidance.push(agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest));
       const canonical = await worktreeGuidance(result, context);
       if (canonical) guidance.push(canonical);
-      if (turnContext && context.runId && event.currentUserMessageId) {
+      if (turnContext && context.runId) {
         try {
           const retained = await turnContext(result.manifest, result.scope.workspaceDir, {
             agentId: context.agentId,

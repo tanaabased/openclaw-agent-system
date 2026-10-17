@@ -109,6 +109,8 @@ jq -e '.status == "skipped"' "$TMPDIR/notification-drift-repeat.json"
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount | diff - "$TMPDIR/notification-drift-model-count"
 
 # should reconcile explicitly show recovery once and then keep healthy checks model free
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
+native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component == "automations" and .status == "updated")'
 openclaw cron run "$native" --wait --wait-timeout 5m --json | jq -e '.completionStatus == "succeeded"'
 jq -es 'any(.[]; .intakeReport.response | contains("Intake resumed"))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
