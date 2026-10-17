@@ -38,6 +38,10 @@ github:
     issue-assignment:
       mode: plan
       feedback: true
+      pull-request:
+        recipients:
+          - source: assignment-actor
+            roles: [assignee, reviewer]
       allowed:
         - login: emoriwan
           node-id: __ACTOR_NODE_ID__

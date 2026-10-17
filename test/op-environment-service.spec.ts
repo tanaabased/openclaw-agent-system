@@ -145,11 +145,11 @@ describe('environment/op-service', () => {
     assert.deepEqual(environmentCalls, ['env-team', 'env-agent']);
   });
 
-  it('should hide sdk errors and environment ids from failure diagnostics', async () => {
+  it('should retain sdk errors while redacting environment ids', async () => {
     const service = new OpEnvironmentService({
       createClient: async () => ({
         async getVariables() {
-          throw new Error('private-sdk-response');
+          throw new Error('HTTP 503: unavailable for private-environment-id');
         },
         async resolveSecret() {
           throw new Error('not expected');
@@ -173,7 +173,7 @@ describe('environment/op-service', () => {
     });
 
     assert.equal(result.status, 'invalid');
-    assert.equal(JSON.stringify(result).includes('private-sdk-response'), false);
+    assert.match(JSON.stringify(result), /HTTP 503: unavailable for \[redacted\]/u);
     assert.equal(JSON.stringify(result).includes('private-environment-id'), false);
   });
 
@@ -320,7 +320,10 @@ describe('environment/op-service', () => {
     assert.doesNotMatch(JSON.stringify(result), /synthetic-secret-value|synthetic-resource-value/u);
     if (result.status !== 'invalid') throw new Error('expected candidate validation failure');
     assert.equal(result.diagnostics[0]?.code, 'op-authentication-failed');
-    assert.equal(result.diagnostics[0]?.providerDiagnostic?.explanation.includes('withheld'), true);
+    assert.equal(
+      result.diagnostics[0]?.providerDiagnostic?.providerMessage,
+      'provider rejected [redacted] for [redacted]',
+    );
   });
 
   it('should resolve direct secrets and environments through one authenticated sdk client', async () => {
@@ -373,14 +376,14 @@ describe('environment/op-service', () => {
     assert.deepEqual(calls, ['secret:op://vault/item/private key', 'environment:env-id']);
   });
 
-  it('should hide direct secret references and sdk errors from failure diagnostics', async () => {
+  it('should retain sdk errors while redacting direct secret references', async () => {
     const service = new OpEnvironmentService({
       createClient: async () => ({
         async getVariables() {
           throw new Error('not expected');
         },
         async resolveSecret() {
-          throw new Error('private-sdk-error');
+          throw new Error('HTTP 403: denied op://private-vault/private-item/private-field');
         },
       }),
       credentialService: {
@@ -401,7 +404,7 @@ describe('environment/op-service', () => {
     });
 
     assert.equal(result.status, 'invalid');
-    assert.equal(JSON.stringify(result).includes('private-sdk-error'), false);
+    assert.match(JSON.stringify(result), /HTTP 403: denied \[redacted\]/u);
     assert.equal(JSON.stringify(result).includes('private-vault'), false);
     assert.equal(JSON.stringify(result).includes('SSH_KEY'), true);
   });

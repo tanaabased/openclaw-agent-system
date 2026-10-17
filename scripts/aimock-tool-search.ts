@@ -108,7 +108,16 @@ export function normalizeToolSearchRequest(
     const tool = envelope.tool as Record<string, unknown> | undefined;
     assert.ok(
       tool && tool.id === args.id && tool.name === name,
-      'wrapped result must identify the requested tool',
+      `wrapped result must identify the requested tool: ${JSON.stringify({
+        callId: callId.slice(0, 256),
+        expected: { id: String(args.id).slice(0, 256), name: name.slice(0, 256) },
+        actual: {
+          id: typeof tool?.id === 'string' ? tool.id.slice(0, 256) : undefined,
+          name: typeof tool?.name === 'string' ? tool.name.slice(0, 256) : undefined,
+          status: typeof envelope.status === 'string' ? envelope.status.slice(0, 64) : undefined,
+          error: typeof envelope.error === 'string' ? envelope.error.slice(0, 1024) : undefined,
+        },
+      })}`,
     );
     const result = envelope.result as { content?: unknown; isError?: boolean } | undefined;
     assert.ok(

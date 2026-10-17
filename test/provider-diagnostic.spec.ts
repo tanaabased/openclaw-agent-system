@@ -318,17 +318,80 @@ describe('safe provider diagnostics', () => {
     }
     for (const error of [
       new Error(hostile),
-      Object.assign(new Error('HTTP 429'), {
-        name: 'RateLimitExceededError',
-        status: 429,
-        resetAt: 123,
-      }),
+      Object.assign(new Error('request 429 was rejected'), { name: 'RateLimitExceededError' }),
       { constructor: { name: 'AuthExpiredError' } },
     ]) {
       const result = opDiagnostic(error, 'secret-resolve');
       assert.equal(result.classification, 'unknown');
       assert.equal(result.httpStatus, null);
       redacted(result);
+    }
+  });
+
+  it('should retain a bounded redacted sdk message and explicit http evidence without changing classification', () => {
+    for (const [error, status, source] of [
+      [Object.assign(new Error('Service unavailable'), { statusCode: 503 }), 503, 'structured'],
+      [new Error('request failed: HTTP 429 Too many requests'), 429, 'message'],
+      [new Error('unexpected status code: 401'), 401, 'message'],
+      [new Error('request 429 failed'), null, undefined],
+      [new Error('connection reset by peer'), null, undefined],
+    ] as const) {
+      const result = opDiagnostic(error, 'environment-read');
+      assert.equal(result.httpStatus, status);
+      assert.equal(result.httpStatusSource, source);
+      assert.equal(result.providerMessage, error.message);
+      assert.equal(result.classification, 'unknown');
+      const formatted = formatProviderDiagnostic(result);
+      assert.ok(formatted.includes(JSON.stringify(error.message)));
+      assert.ok(!result.explanation.includes('withheld'));
+    }
+    const privateValue = 'sensitive returned value';
+    const result = opDiagnostic(
+      new Error(
+        `HTTP 503: failed for ${privateValue} and ${encodeURIComponent(privateValue)}; ops_PRIVATE_TOKEN op://vault/item/key\nAuthorization: Bearer PRIVATE_VALUE\n{"password":"PRIVATE_RESPONSE"}\n${'x'.repeat(2000)}`,
+      ),
+      'secret-resolve',
+      [privateValue],
+    );
+    assert.ok(result.providerMessage!.startsWith('HTTP 503: failed for [redacted]'));
+    assert.ok(result.providerMessage!.length <= 1025);
+    assert.ok(!result.providerMessage!.includes(privateValue));
+    assert.ok(!result.providerMessage!.includes(encodeURIComponent(privateValue)));
+    redacted(formatProviderDiagnostic(result));
+    const boundary = providerDiagnostic('1password', 'secret-resolve', 'unknown', {
+      providerMessage: hostile,
+    });
+    redacted(boundary);
+    assert.equal(
+      providerDiagnostic('github', 'api-request', 'unknown', { providerMessage: hostile })
+        .providerMessage,
+      undefined,
+    );
+  });
+
+  it('should preserve sdk evidence through environment failures and retained backoff', async () => {
+    for (const creation of [false, true]) {
+      const f = fixture(new Error('HTTP 429: Too many requests for ops_PRIVATE_TOKEN'), creation);
+      const result = await f.environment.loadForAgentId('data');
+      assert.equal(result.status, 'invalid');
+      if (result.status !== 'invalid') return;
+      const evidence = result.diagnostics.find(
+        (entry) => entry.providerDiagnostic,
+      )?.providerDiagnostic;
+      assert.equal(evidence?.httpStatus, 429);
+      assert.equal(evidence?.providerMessage, 'HTTP 429: Too many requests for [redacted]');
+      redacted(result);
+      const repeat = await f.environment.loadForAgentId('data');
+      assert.equal(repeat.status, 'invalid');
+      if (repeat.status === 'invalid') {
+        assert.equal(
+          repeat.diagnostics.find((entry) => entry.providerDiagnostic)?.providerDiagnostic
+            ?.httpStatus,
+          429,
+        );
+        redacted(repeat);
+      }
+      assert.equal(f.calls(), 1);
     }
   });
 
@@ -425,7 +488,7 @@ describe('safe provider diagnostics', () => {
   });
 
   it('should render safe environment diagnostics without contaminating json stdout', async () => {
-    const f = fixture(new RateLimitExceededError(hostile));
+    const f = fixture(new RateLimitExceededError(`HTTP 429: Too many requests ${hostile}`));
     const stdout: string[] = [];
     const stderr: string[] = [];
     await envAgentSystem({
@@ -445,6 +508,8 @@ describe('safe provider diagnostics', () => {
     });
     assert.deepEqual(stdout, []);
     assert.match(stderr.join(''), /classification="rate-limit"/);
+    assert.match(stderr.join(''), /httpStatus=429/);
+    assert.match(stderr.join(''), /providerMessage="HTTP 429: Too many requests/);
     redacted(stderr);
   });
 });

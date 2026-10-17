@@ -8,6 +8,7 @@ import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry
 import AgentSystemToolError from '../api/error.ts';
 import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
+import executeOpenClawDeliveryGit from '../core/openclaw-delivery-git.ts';
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
 import { createGitTool, createGitToolDefinition } from '../tools/git/tool.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -162,6 +163,37 @@ describe('tools/git/tool', () => {
     );
     assert.equal(requests.length, 2);
     assert.equal(environmentCalls.length, 2);
+  });
+
+  it('should prepare delivery through managed git and reject a changed worktree binding', async () => {
+    manifest.git = { worktrees: {} };
+    const worktree = join(workspaceDir, '.agent-system/worktrees/repo-id/issue-id');
+    const admin = join(workspaceDir, '.agent-system/repositories/repo-id.git/worktrees/issue-id');
+    await mkdir(worktree, { recursive: true });
+    await mkdir(admin, { recursive: true });
+    await writeFile(join(worktree, '.git'), `gitdir: ${admin}\n`);
+    await writeFile(join(admin, 'gitdir'), `${worktree}/.git\n`);
+    await writeFile(join(admin, 'commondir'), '../..\n');
+    const requests: AgentSystemCliRunRequest[] = [];
+    const environmentCalls: string[] = [];
+    const input = {
+      runtime: createRuntime(requests, environmentCalls),
+      definition: createGitToolDefinition(),
+      agentId: 'data',
+      worktree,
+      caller: { sessionKey: 'agent:data:dashboard:fixture', sessionId: 'one', runId: 'operator' },
+      signal: new AbortController().signal,
+      argv: ['branch', '--show-current'],
+    };
+    assert.equal(await executeOpenClawDeliveryGit(input), 'Data <data@example.com>\n');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]!.cwd, worktree);
+    assert.deepEqual(requests[0]!.argv, ['branch', '--show-current']);
+    assert.equal(requests[0]!.environment.GIT_AUTHOR_NAME, 'Data');
+    await writeFile(join(admin, 'gitdir'), `${workspaceDir}/.git\n`);
+    await assert.rejects(executeOpenClawDeliveryGit(input), { code: 'agent_not_resolved' });
+    assert.equal(requests.length, 1);
+    assert.deepEqual(environmentCalls, ['data']);
   });
 
   it('should preserve a nested command directory and project the agent git identity', async () => {

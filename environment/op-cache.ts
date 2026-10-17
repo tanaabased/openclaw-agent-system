@@ -231,6 +231,7 @@ export default class OpCache {
     workspaceDir: string;
     fingerprint: string;
     token: string;
+    diagnosticRedactions?: readonly string[];
     generation: object;
     requestOrder: number;
     retain: boolean;
@@ -310,7 +311,13 @@ export default class OpCache {
         })();
         result = await input.fetch(await selected.client);
       } catch (error) {
-        const evidence = this.failure(input.token, opDiagnostic(error, 'client-create'));
+        const evidence = this.failure(
+          input.token,
+          opDiagnostic(error, 'client-create', [
+            input.token,
+            ...(input.diagnosticRedactions ?? []),
+          ]),
+        );
         result = {
           status: 'invalid',
           diagnostics: [

@@ -141,6 +141,20 @@ still observes only the selected issue.
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.
 
+## Operator-Requested PR Delivery
+
+An authenticated operator can continue a retained Plan-mode assessment in its
+owning issue chat. Request implementation, PR publication, or both explicitly;
+assignment and a completed plan alone authorize neither. The agent retains the
+complete plan and uses the existing chat, managed worktree, and model selection.
+
+Delivery requires committed work on the task branch. It applies configured
+`issue-assignment.pull-request.recipients`, verifies GitHub's closing link, and
+returns the shared quoted PR card. After an interrupted publication, ask the same
+chat to reconcile the existing PR. A retained attempt with no verifiable PR remains
+blocked rather than risking a second creation. Native denial, reassignment, or a
+changed session/worktree stops the operation without discarding the work.
+
 ## V1 Retirement
 
 Unversioned notification declarations are rejected with

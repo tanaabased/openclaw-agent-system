@@ -93,6 +93,113 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       return;
     return { content: 'notification-intake-advanced' };
   }
+  const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  if (operatorId) {
+    const retry = prompt.includes('Reconcile the existing PR and show its card again.');
+    const title = 'Document disposable notification fixture cleanup';
+    const body = 'Document closing disposable test issues after their evidence is captured.';
+    if (!retry) {
+      const preview = result('handoff-preview');
+      if (!preview)
+        return dispatch('handoff-preview', {
+          action: 'handoff',
+          id: operatorId,
+          permission: 'implementation-and-publication',
+        });
+      if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
+      const handed = result('handoff');
+      if (!handed)
+        return dispatch('handoff', {
+          action: 'handoff',
+          id: operatorId,
+          permission: 'implementation-and-publication',
+          digest: preview.digest,
+        });
+      if (handed.status !== 'handed-off') return;
+      const context = result('work-context');
+      if (!context)
+        return dispatch('work-context', { action: 'implementation-context', id: operatorId });
+      const path = (context.project as { path?: string } | undefined)?.path;
+      if (
+        context.status !== 'verified' ||
+        context.runtime !== 'openclaw' ||
+        !path ||
+        context.publicationAuthorized !== true
+      )
+        return;
+      const file = `notification-fixture-${operatorId}.md`;
+      const patch = `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`;
+      const steps = [
+        { stage: 'apply', argv: ['apply', '-'], stdin: patch },
+        { stage: 'add', argv: ['add', '--', file] },
+        {
+          stage: 'commit',
+          argv: ['commit', '-m', 'document disposable issue cleanup', '--', file],
+        },
+      ];
+      for (const step of steps) {
+        const executed = result(step.stage);
+        if (!executed)
+          return call(step.stage, 'agent_system_git', {
+            argv: step.argv,
+            cwd: path,
+            ...('stdin' in step ? { stdin: step.stdin } : {}),
+          });
+        if (executed.exitCode !== 0 || executed.truncated !== false) return;
+      }
+      const saved = result('work-result');
+      if (!saved)
+        return dispatch('work-result', {
+          action: 'implementation-result',
+          id: operatorId,
+          implementationResult: {
+            outcome: 'done',
+            summary: 'Committed the disposable cleanup note.',
+            fullResult:
+              'Added and committed the one-line cleanup note through managed Git in the verified issue worktree.',
+          },
+        });
+      if (saved.status !== 'recorded') return;
+    }
+    const prepared = result('delivery-prepare');
+    if (!prepared)
+      return dispatch('delivery-prepare', {
+        action: 'delivery',
+        operation: 'prepare',
+        id: operatorId,
+        title,
+        body,
+      });
+    if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+    const published = result('delivery-publish');
+    if (!published)
+      return dispatch('delivery-publish', {
+        action: 'delivery',
+        operation: 'publish',
+        id: operatorId,
+        digest: prepared.digest,
+        title,
+        body,
+      });
+    if (published.status !== 'published') return;
+    const reconciled = result('delivery-reconcile');
+    if (!reconciled)
+      return dispatch('delivery-reconcile', {
+        action: 'delivery',
+        operation: 'reconcile',
+        id: operatorId,
+      });
+    if (reconciled.status !== 'ready') return;
+    const presented = result('delivery-present');
+    if (!presented)
+      return dispatch('delivery-present', {
+        action: 'delivery',
+        operation: 'present',
+        id: operatorId,
+      });
+    if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
+    return { content: presented.presentation };
+  }
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
   )?.[1];
@@ -173,11 +280,29 @@ export const notificationExampleScenario: OpenClawAIMockScenario = {
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
-    ...['next', 'prepare', 'assess', 'reconcile', 'context', 'result'].map((stage) => ({
+    ...[
+      'next',
+      'prepare',
+      'assess',
+      'reconcile',
+      'context',
+      'result',
+      'handoff-preview',
+      'handoff',
+      'work-context',
+      'work-result',
+      'delivery-prepare',
+      'delivery-publish',
+      'delivery-reconcile',
+      'delivery-present',
+    ].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_dispatch',
     })),
-    { id: prefix + 'git', name: 'agent_system_git' },
+    ...['git', 'apply', 'add', 'commit'].map((stage) => ({
+      id: prefix + stage,
+      name: 'agent_system_git',
+    })),
   ],
   fixtures: [
     {

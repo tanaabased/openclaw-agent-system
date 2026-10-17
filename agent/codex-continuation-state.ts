@@ -1,18 +1,11 @@
 import { Type, type Static } from 'typebox';
 
+import { implementationResultSchema } from './implementation-result.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
-export const implementationResultSchema = Type.Object(
-  {
-    outcome: Type.Union([Type.Literal('done'), Type.Literal('blocked')]),
-    summary: Type.String({ minLength: 1, maxLength: 32000, pattern: '\\S' }),
-    fullResult: Type.String({ minLength: 1, maxLength: 64000, pattern: '\\S' }),
-  },
-  { additionalProperties: false },
-);
 const attemptSchema = Type.Object(
   {
     id: hash,

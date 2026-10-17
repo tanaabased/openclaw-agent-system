@@ -7,7 +7,7 @@ import { Value } from 'typebox/value';
 import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
-import { implementationResultSchema } from './codex-continuation-state.ts';
+import { implementationResultSchema } from './implementation-result.ts';
 import runCodexDelivery, { type CodexDeliveryDependencies } from './codex-delivery.ts';
 import { revalidateDispatchAssignment, type CodexDispatchDependencies } from './codex-dispatch.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';

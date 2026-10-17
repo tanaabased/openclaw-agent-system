@@ -35,6 +35,8 @@ import GitCommandError from '../tools/git/command-error.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import openClawWorkAction, { verifyOpenClawOperator } from './openclaw-work.ts';
+import openClawDelivery, { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 
 export interface OpenClawDispatchDependencies {
   root: string;
@@ -48,6 +50,13 @@ export interface OpenClawDispatchDependencies {
   coordinator(manifest: AgentManifest, workspace: string): Promise<string>;
   credential: Pick<SessionDispatchCredential, 'use'>;
   now?: () => number;
+  delivery?(input: {
+    manifest: AgentManifest;
+    workspaceDir: string;
+    worktree: string;
+    caller: DispatchCaller;
+    signal: AbortSignal;
+  }): Promise<OpenClawDeliveryConnection>;
 }
 
 function source(intake: IntakeRecord) {
@@ -124,7 +133,12 @@ export default class OpenClawDispatch {
     };
   }
 
-  async validate(manifest: AgentManifest, workspace: string, record: OpenClawDispatchRecord) {
+  async validate(
+    manifest: AgentManifest,
+    workspace: string,
+    record: OpenClawDispatchRecord,
+    work = false,
+  ) {
     const current = await this.scope(manifest, workspace);
     const fresh = await this.dependencies.intake.dependencies.manifestService.loadForAgentId(
       manifest.agent.id,
@@ -138,7 +152,7 @@ export default class OpenClawDispatch {
       current.manifestDigest !== record.manifestDigest ||
       record.retired ||
       record.reset ||
-      record.handoff
+      (record.handoff && !work)
     )
       throw new Error('dispatch-policy-changed');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
@@ -191,7 +205,13 @@ export default class OpenClawDispatch {
     authority: DispatchAuthority = {},
   ) {
     if (input.action === 'check') return this.check(manifest, workspace);
-    const childAction = input.action === 'context' || input.action === 'result';
+    const workAction =
+      input.action === 'handoff' ||
+      input.action === 'implementation-context' ||
+      input.action === 'implementation-result' ||
+      input.action === 'delivery';
+    const childAction = input.action === 'context' || input.action === 'result' || workAction;
+    if (workAction && !operator) throw new Error('dispatch-operator-required');
     const current = await this.scope(manifest, workspace);
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
     let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
@@ -317,7 +337,80 @@ export default class OpenClawDispatch {
             !record.assessmentTurn)
         )
           throw new Error('dispatch-assessment-caller-mismatch');
-        const { intake, worktreeInput } = await this.validate(manifest, workspace, record);
+        const { intake, worktreeInput, repo } = await this.validate(
+          manifest,
+          workspace,
+          record,
+          workAction,
+        );
+        if (
+          input.action === 'handoff' ||
+          input.action === 'implementation-context' ||
+          input.action === 'implementation-result' ||
+          input.action === 'delivery'
+        ) {
+          const signal = authority.signal
+            ? AbortSignal.any([authority.signal, lockSignal])
+            : lockSignal;
+          const assertCurrent = async () => {
+            signal.throwIfAborted();
+            await authority.assertCurrent?.();
+            await this.validate(manifest, workspace, record, true);
+            signal.throwIfAborted();
+          };
+          return this.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
+            const source = await verifyOpenClawOperator({
+              record,
+              caller,
+              operator,
+              request,
+              config: this.dependencies.config(),
+            });
+            await assertCurrent();
+            if (input.action !== 'delivery')
+              return openClawWorkAction({
+                record,
+                caller,
+                source,
+                action: input,
+                now,
+                assertCurrent,
+                save,
+              });
+            return openClawDelivery({
+              record,
+              intake,
+              action: input,
+              source,
+              base: repo.defaultBranch,
+              recipients: current.policy.policy.issueAssignment?.pullRequest?.recipients,
+              signal,
+              assertCurrent,
+              save,
+              connect: async () => {
+                if (!this.dependencies.delivery) throw new Error('delivery-runtime-unavailable');
+                return this.dependencies.delivery({
+                  manifest,
+                  workspaceDir: current.workspace,
+                  worktree: record.worktree!,
+                  caller,
+                  signal,
+                });
+              },
+            }).catch((error: unknown) => {
+              signal.throwIfAborted();
+              const code = openClawDispatchFailureCode(error);
+              return {
+                status: 'blocked' as const,
+                id: record.id,
+                code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
+                pullRequest: record.work?.delivery?.pullRequest,
+                instructions:
+                  'Preserve this operation and all work. Stop on denial or lost authority. For an interrupted publication, use delivery prepare again in this issue chat to reconcile the existing attempt. Never create a replacement PR or discard its retained binding.',
+              };
+            });
+          });
+        }
         if (input.action === 'context' || input.action === 'result') {
           const signal = authority.signal
             ? AbortSignal.any([authority.signal, lockSignal])

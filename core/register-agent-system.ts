@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
+import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
@@ -263,6 +264,27 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
+    async delivery({ manifest, workspaceDir, worktree, caller, signal }) {
+      const account = await githubCapability.accountClient.connect(
+        { manifest, workspaceDir },
+        'service',
+        signal,
+      );
+      return {
+        account,
+        async git(argv) {
+          return executeOpenClawDeliveryGit({
+            runtime: toolRuntime,
+            definition: gitCapability.definition,
+            agentId: manifest.agent.id,
+            worktree,
+            caller,
+            signal,
+            argv,
+          });
+        },
+      };
+    },
     async connect(input, signal) {
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkEventClient(connected);
