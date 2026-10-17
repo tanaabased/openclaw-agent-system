@@ -9,11 +9,17 @@ export default async function waitForGatewayAgent(agentId: string): Promise<void
   const deadline = performance.now() + 30_000;
   let observedGateway = false;
   while (performance.now() < deadline) {
+    const requestBudget = deadline - performance.now();
+    // do not start a gateway request with only the deadline's fractional tail left.
+    if (requestBudget < 1000) {
+      if (requestBudget > 0) await setTimeout(requestBudget);
+      break;
+    }
     let response: unknown;
     try {
       response = await callGatewayFromCli(
         'agents.list',
-        { timeout: String(Math.max(1, Math.min(10_000, Math.ceil(deadline - performance.now())))) },
+        { timeout: String(Math.min(10_000, Math.floor(requestBudget))) },
         {},
         { progress: false, scopes: ['operator.read'], sharedStateMode: 'read-only' },
       );
