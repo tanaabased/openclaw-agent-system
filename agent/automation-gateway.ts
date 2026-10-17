@@ -24,7 +24,10 @@ export class AutomationError extends Error {
     readonly code: string,
     readonly diagnostic?: AutomationGatewayDiagnostic,
   ) {
-    super(`Automation operation failed (${code}).`);
+    super(
+      `Automation operation failed (${code}).` +
+        (diagnostic?.reason ? ` ${diagnostic.method}: ${diagnostic.reason}.` : ''),
+    );
   }
 }
 

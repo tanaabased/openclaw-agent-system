@@ -25,6 +25,7 @@ export async function verifyOpenClawOperator(input: {
 }) {
   const { record, caller } = input;
   if (
+    record.feedback?.events.some((event) => event.turn?.runId === caller.runId) ||
     !input.operator ||
     caller.sessionKey !== record.threadId ||
     caller.sessionId !== record.sessionCreation?.sessionId ||

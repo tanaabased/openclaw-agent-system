@@ -29,6 +29,7 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 
 export interface GitHubNotificationStatusItem {
   workflow?: { phase: string; conversation?: string };
+  feedback?: { queued: number; active: number; blocked: number };
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
   itemType: 'issue' | 'pull-request';
@@ -112,7 +113,8 @@ export interface GitHubNotificationRefreshResult {
   code: string;
   diagnosticCode?: string;
   runId?: string;
-  status: 'failed' | 'queued' | 'skipped';
+  admitted?: number;
+  status: 'completed' | 'failed' | 'queued' | 'skipped';
 }
 
 export interface GitHubNotificationWaitResult {

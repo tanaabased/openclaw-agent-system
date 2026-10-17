@@ -3,7 +3,7 @@ import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
 } from '../channels/github/notification-policy.ts';
-import dispatchCapacity from './dispatch-capacity.ts';
+import dispatchCapacity from './openclaw-capacity.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import {
@@ -40,6 +40,12 @@ interface Dependencies {
     runId?: string;
     reason?: string;
   }>;
+  scanSelected(
+    manifest: AgentManifest,
+    workspace: string,
+    selector: GitHubNotificationItemSelector,
+    signal: AbortSignal,
+  ): Promise<{ status: 'ready' | 'blocked'; code?: string; admitted?: number }>;
   inspectRun(
     manifest: AgentManifest,
     workspace: string,
@@ -141,6 +147,10 @@ export default class OpenClawNotifications {
               record.effective?.status === 'verified' &&
               record.setupComplete)),
         );
+        const feedback = record?.feedback;
+        const latestFeedback = feedback?.events.at(-1);
+        const feedbackFailure =
+          feedback?.code ?? (latestFeedback?.phase === 'blocked' ? latestFeedback.code : undefined);
         const phase = record?.retired
           ? 'retired'
           : (record?.result?.outcome ??
@@ -152,6 +162,7 @@ export default class OpenClawNotifications {
           number: item.issue.number,
           disposition: record?.retired ? 'retired' : 'approved',
           reasonCode:
+            feedbackFailure ??
             record?.blocker ??
             (record?.result?.outcome === 'operator-setup-blocker'
               ? record.result.code
@@ -171,6 +182,19 @@ export default class OpenClawNotifications {
             ? { waitingReason: 'clarification-needed' }
             : {}),
           worktree: record?.worktree ? 'ready' : 'pending',
+          ...(feedbackFailure ? { failureCode: feedbackFailure } : {}),
+          ...(feedback
+            ? {
+                feedback: {
+                  queued: feedback.events.filter((event) => event.phase === 'queued').length,
+                  active: feedback.events.filter(
+                    (event) =>
+                      event.phase !== 'blocked' && event.turn && event.turn.status !== 'completed',
+                  ).length,
+                  blocked: feedback.events.filter((event) => event.phase === 'blocked').length,
+                },
+              }
+            : {}),
           ...(record?.blocker
             ? { failureCode: record.blocker }
             : record?.result?.outcome === 'operator-setup-blocker'
@@ -186,7 +210,14 @@ export default class OpenClawNotifications {
         scan: { completedAt: state.checkpoint, attemptedAt: state.lastAttemptAt },
         capacity: {
           active: capacity.occupied,
-          queued: pending.filter(({ record }) => !record?.request).length,
+          queued:
+            pending.filter(({ record }) => !record?.request).length +
+            journal.records.reduce(
+              (count, record) =>
+                count +
+                (record.feedback?.events.filter((event) => event.phase === 'queued').length ?? 0),
+              0,
+            ),
           limit: selected.policy.maxConcurrentItems,
         },
         items: items.filter(
@@ -226,11 +257,25 @@ export default class OpenClawNotifications {
       diagnosticCode: code,
       status: 'failed',
     });
-    if (options.selector) return fail('github-notification-refresh-selector-unsupported');
+    if (options.selector?.itemType === 'pull-request')
+      return fail('github-notification-refresh-selector-unsupported');
     const observation = await this.inspect(manifest, workspace);
     if (observation.diagnosticCode) return fail(observation.diagnosticCode);
     if (options.signal.aborted) return fail('github-notification-refresh-cancelled');
     try {
+      if (options.selector) {
+        const scan = await boundedRequest(options.signal, () =>
+          this.dependencies.scanSelected(manifest, workspace, options.selector!, options.signal),
+        );
+        if (scan.status !== 'ready') return fail(scan.code ?? 'github-notification-intake-failed');
+        return {
+          agentId: manifest.agent.id,
+          status: 'completed',
+          code: 'github-notification-intake-completed',
+          admitted: scan.admitted,
+          baselineAt: observation.baseline.observedAt,
+        };
+      }
       const result = await boundedRequest(options.signal, () =>
         this.dependencies.requestRun(manifest, workspace, options.signal),
       );
@@ -313,14 +358,21 @@ export default class OpenClawNotifications {
           }
         }
         if (input.refresh && !requested) {
-          const refreshed = await this.refresh(manifest, workspace, { signal: controller.signal });
+          const refreshed = await this.refresh(manifest, workspace, {
+            signal: controller.signal,
+            selector: input.selector,
+          });
           if (
             refreshed.status !== 'queued' &&
+            refreshed.status !== 'completed' &&
             refreshed.code !== 'github-notification-refresh-already-running'
           )
             return result('failed', refreshed.code);
           runId = refreshed.runId;
-          requested = refreshed.status === 'queued';
+          requested =
+            refreshed.status === 'queued' ||
+            (refreshed.status === 'completed' &&
+              ((refreshed.admitted ?? 0) > 0 || observation.items.length > 0));
         }
         try {
           await (this.dependencies.sleep ?? abortableDelay)(

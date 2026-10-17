@@ -72,6 +72,7 @@ describe('agent/openclaw-delivery', () => {
       source,
       base: 'main',
       recipients: [],
+      feedbackEnabled: false,
       signal: new AbortController().signal,
       intake: {
         id: record.intakeId,
@@ -164,14 +165,18 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, title: 'Fix issue', body: 'Closes #3' });
   }
-  it('should publish once and retain the issue pr session binding with a quoted card without feedback', async () => {
+  it('should publish once and retain the issue pr session binding with a quoted card and truthful feedback availability', async () => {
     assert.equal((await publish()).status, 'published');
     const shown = await request('present');
     assert.ok('presentation' in shown);
     assert.match(shown.presentation!, /^> ## 🔀 Pull request opened/m);
     assert.match(shown.presentation!, /issues\/3/);
     assert.match(shown.presentation!, /pull\/7/);
-    assert.doesNotMatch(shown.presentation!, /feedback|Comment flow/i);
+    assert.match(shown.presentation!, /Automatic GitHub feedback delivery is not available/);
+    input.feedbackEnabled = true;
+    const enabled = await request('present');
+    assert.ok('presentation' in enabled);
+    assert.match(enabled.presentation!, /originating item or review thread/);
     const binding = record.work!.delivery!.binding;
     assert.equal(binding.sessionId, 'issue-session');
     assert.equal(binding.threadId, 'issue-chat');

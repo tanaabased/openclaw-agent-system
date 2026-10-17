@@ -38,7 +38,7 @@ function pullRequestOpenedCard(
                     ? 'This pull request is linked to the original issue chat. Automatic GitHub feedback delivery is not available.'
                     : input.commentFlow === 'unverified'
                       ? 'This pull request is linked to the original issue chat. Feedback is configured, but its active intake could not be verified.'
-                      : input.commentFlow === 'codex'
+                      : input.commentFlow === 'codex' || input.commentFlow === 'openclaw'
                         ? 'Approved feedback on this issue and its delivery pull request returns to the original issue chat; public replies return to their originating item or review thread.'
                         : 'This issue and its delivery pull request share this session; each reply returns to its originating item.',
               },

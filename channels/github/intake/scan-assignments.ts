@@ -8,6 +8,7 @@ import {
   githubRepositoryPath,
   githubIdentityMatches as identityMatches,
   type GitHubIdentity,
+  type GitHubNotificationItemSelector,
 } from '../provider/work-item.ts';
 import {
   type default as IntakeRecordStore,
@@ -24,6 +25,7 @@ export interface AssignmentScanInput {
   policyDigest: string;
   now: number;
   activate?: boolean;
+  selector?: GitHubNotificationItemSelector;
   connect(signal: AbortSignal): Promise<GitHubNotificationIntakeClient>;
   assertCurrent(): Promise<void>;
 }
@@ -44,6 +46,8 @@ export default async function scanAssignments(
 ): Promise<AssignmentScanResult> {
   if (input.policy.issueAssignment?.enabled === false)
     throw new IntakeError('intake-policy-disabled');
+  if (input.selector?.itemType === 'pull-request')
+    throw new IntakeError('intake-selector-unsupported');
   return input.store.exclusive(async (previous, save, signal) => {
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
     if (!input.activate && previous?.policyDigest !== input.policyDigest)
@@ -72,9 +76,21 @@ export default async function scanAssignments(
             records: [],
           };
       // repeat from the baseline: search indexing delays must not strand an eligible assignment.
-      const discovery = await client.discoverAssigned(new Date(state.baselineAt).toISOString(), [
-        'issue',
-      ]);
+      const discovery = input.selector
+        ? {
+            candidates: [
+              {
+                itemType: 'issue' as const,
+                repositoryPath: `/repos/${input.selector.repository}`,
+                number: input.selector.number,
+                nodeId: undefined,
+                databaseId: undefined,
+              },
+            ],
+            incomplete: false,
+            truncated: false,
+          }
+        : await client.discoverAssigned(new Date(state.baselineAt).toISOString(), ['issue']);
       if (discovery.truncated || discovery.incomplete)
         throw new IntakeError('intake-search-incomplete');
       const records: IntakeRecord[] = [];
@@ -99,8 +115,8 @@ export default async function scanAssignments(
           continue;
         const item = await client.getItem(coordinates.owner, coordinates.name, candidate.number);
         if (
-          item.nodeId !== candidate.nodeId ||
-          item.databaseId !== candidate.databaseId ||
+          (candidate.nodeId !== undefined && item.nodeId !== candidate.nodeId) ||
+          (candidate.databaseId !== undefined && item.databaseId !== candidate.databaseId) ||
           item.number !== candidate.number
         )
           throw new IntakeError('intake-resource-changed');
@@ -171,7 +187,7 @@ export default async function scanAssignments(
         throw new IntakeError('intake-account-changed');
       await input.assertCurrent();
       state.policyDigest = input.policyDigest;
-      state.checkpoint = input.now;
+      if (!input.selector) state.checkpoint = input.now;
       state.lastAttemptAt = input.now;
       state.records.push(...records);
       const recovered = Boolean(state.blocker);

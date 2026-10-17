@@ -1,0 +1,66 @@
+import { Type, type Static } from 'typebox';
+import { assessmentSelectionSchema } from './assessment-selection.ts';
+import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
+
+const text = Type.String({ minLength: 1, maxLength: 4096 });
+const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
+export const feedbackResultSchema = Type.Object(
+  {
+    privateText: Type.String({ minLength: 1, maxLength: 32000 }),
+    publicText: Type.Optional(
+      Type.String({ minLength: 1, maxLength: maximumGitHubNotificationReplyLength }),
+    ),
+  },
+  { additionalProperties: false },
+);
+export const feedbackSourceEventSchema = Type.Object(
+  {
+    id: hash,
+    sourceId: text,
+    number: Type.Integer({ minimum: 1 }),
+    nodeId: text,
+    itemType: Type.Union([Type.Literal('issue'), Type.Literal('pull-request')]),
+    source: Type.String({ minLength: 1, maxLength: 128000 }),
+    revision: hash,
+    createdAt: Type.Integer({ minimum: 0 }),
+    policyDigest: hash,
+    phase: Type.Union([
+      Type.Literal('queued'),
+      Type.Literal('prepared'),
+      Type.Literal('running'),
+      Type.Literal('responded'),
+      Type.Literal('published'),
+      Type.Literal('blocked'),
+    ]),
+    result: Type.Optional(feedbackResultSchema),
+    replyRequested: Type.Optional(Type.Boolean()),
+    composition: Type.Optional(assessmentSelectionSchema),
+    publicationAttempted: Type.Optional(Type.Boolean()),
+    receipt: Type.Optional(
+      Type.Object(
+        { nodeId: text, databaseId: Type.Integer({ minimum: 1 }) },
+        { additionalProperties: false },
+      ),
+    ),
+    reported: Type.Optional(Type.Boolean()),
+    code: Type.Optional(text),
+  },
+  { additionalProperties: false },
+);
+export const feedbackSourceStateSchema = Type.Object(
+  {
+    startedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    scannedAt: Type.Optional(Type.String()),
+    scannedTime: Type.Optional(Type.Integer({ minimum: 0 })),
+    lastServedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    baseline: Type.Record(
+      Type.String(),
+      Type.Record(Type.String(), Type.String({ maxLength: 128000 })),
+    ),
+    events: Type.Array(feedbackSourceEventSchema, { maxItems: 400 }),
+    code: Type.Optional(text),
+  },
+  { additionalProperties: false },
+);
+export type FeedbackSourceEvent = Static<typeof feedbackSourceEventSchema>;
+export type FeedbackSourceState = Static<typeof feedbackSourceStateSchema>;
