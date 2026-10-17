@@ -6,7 +6,7 @@ Each manual refresh admits only this example’s issue, then asks the existing n
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. EMORI creates and assigns the issue to Tanaabot. Only Tanaabot receives test assignments; EMORI has a production OpenClaw instance. Both workspaces and the enrolled SSH key are disposable CI fixtures. Review-request warnings remain independent of supported planning and feedback.
 
-A failed activation preserves its original exit status and reports the install result, configured and Gateway-visible agent registration, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
+A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
 ## Setup
 
@@ -47,8 +47,6 @@ activation_diagnostics() {
     openclaw config get gateway --json | jq -c '{reloadMode: (.reload.mode // "hybrid")}' || true
     tail -n 300 "$gateway_log" | node "$gateway_redactor" || true
     cat "$TMPDIR/notification-install.json" || true
-    openclaw agents list --json | jq -c '{configured: any(.[]; .id == "notifications-tanaabot")}' || true
-    openclaw gateway call agents.list --timeout 10000 --json | jq -c '{gateway: any(.agents[]; .id == "notifications-tanaabot")}' || true
     openclaw agent-system automations list --json || true
   fi
   exit "$activation_status"
