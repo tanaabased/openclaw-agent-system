@@ -47,6 +47,7 @@ import { registerLifecycleApprovalHook } from './lifecycle-approval-hook.ts';
 import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
+import waitForGatewayAgent from '../agent/wait-for-gateway-agent.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
 import createCodexPluginLifecycleContribution from '../agent/codex-plugin-lifecycle.ts';
 import codexPluginRequirement from './codex-plugin-metadata.ts';
@@ -234,10 +235,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
+  let readScheduler: (() => NotificationScheduler | undefined) | undefined;
   const intakeV2 = new OpenClawIntake({
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     namespace: api.runtime.state.resolveStateDir(),
     manifestService: lifecycleManifestService,
+    readiness: (manifest, workspace) =>
+      notificationAutomationReadiness(automationService, manifest, workspace, readScheduler?.()),
     async connect(input, signal) {
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkItemClient(new GitHubWorkEventApiClient(connected));
@@ -370,6 +374,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
     }),
     createAgentLifecycleContribution({
+      waitForGatewayAgent,
       environmentService: lifecycleEnvironmentService,
       readConfig,
       resolveAgentWorkspaceDir(config, agentId) {
@@ -518,7 +523,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   manifestServiceRef.current = manifestService;
-  let readScheduler: (() => NotificationScheduler | undefined) | undefined;
   api.registerService({
     id: 'agent-system-github-readiness',
     start(context) {
@@ -606,11 +610,40 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry);
+  registerAgentSystemHooks(
+    api,
+    manifestService,
+    toolRegistry,
+    async (manifest, workspace, binding) => {
+      if (
+        !binding.sessionKey ||
+        !binding.sessionId ||
+        manifest.github?.notifications?.schemaVersion !== 2
+      )
+        return;
+      const entry = api.runtime.agent.session.getSessionEntry({
+        sessionKey: binding.sessionKey,
+        readConsistency: 'latest',
+      });
+      if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
+      return dispatchV2.service.promptContext(manifest, workspace, binding);
+    },
+  );
   api.registerCli(({ program }) => {
     const automations = new AutomationService({
       ...automationDependencies,
       request: requestAutomationGateway,
+    });
+    const operatorIntake = new OpenClawIntake({
+      ...intakeV2.dependencies,
+      readiness: (manifest, workspace) =>
+        notificationAutomationReadiness(
+          automations,
+          manifest,
+          workspace,
+          undefined,
+          requestAutomationGateway,
+        ),
     });
     const operatorRegistry = new AgentSystemLifecycleRegistry(
       [
@@ -687,10 +720,17 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           privateStateRoot ?? api.runtime.state.resolveStateDir(),
           'agent-system-dispatch-v2',
         ),
-        intake: intakeV2,
+        intake: operatorIntake,
         scanSelected: async (manifest, workspace, selector, signal) => {
-          const { selected } = await intakeV2.select(manifest, workspace);
-          return intakeV2.run(manifest, workspace, 'scan', selected?.digest, signal, selector);
+          const { selected } = await operatorIntake.select(manifest, workspace);
+          return operatorIntake.run(
+            manifest,
+            workspace,
+            'scan',
+            selected?.digest,
+            signal,
+            selector,
+          );
         },
         inspectRun: async (manifest, workspace, runId, signal) => {
           signal.throwIfAborted();

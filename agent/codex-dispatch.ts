@@ -1,3 +1,4 @@
+import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import codexCapacity from './codex-capacity.ts';
 import { randomUUID } from 'node:crypto';
@@ -641,6 +642,12 @@ export async function runCodexDispatch(
             sourceThreadId: activation.sourceThreadId,
             phase: 'routing',
             createdAt: now,
+            ...(feedbackIdentities(
+              current.policy?.policy.issueAssignment?.allowed ?? [],
+              current.policy?.policy.issueAssignment?.feedback,
+            ).length
+              ? { feedback: { startedAt: now, baseline: {}, events: [] } }
+              : {}),
             manifestDigest: current.digest,
           };
           state.records.push(record);

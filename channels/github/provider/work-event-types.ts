@@ -38,6 +38,7 @@ export interface GitHubNotificationItemContext {
 }
 
 export interface GitHubAssignedItemDiscovery {
+  nextPage?: number;
   candidates: GitHubAssignedItemCandidate[];
   incomplete: boolean;
   totalCount: number;
@@ -63,6 +64,7 @@ export interface GitHubNotificationIntakeClient {
   discoverAssigned(
     updatedSince: string,
     assignmentTypes: readonly ('issue' | 'pull-request')[],
+    page?: number,
   ): Promise<GitHubAssignedItemDiscovery>;
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem>;
   getPermission(owner: string, name: string, login: string): Promise<GitHubRepositoryPermission>;
@@ -94,6 +96,13 @@ export interface GitHubNotificationCommentClient {
     number: number,
     commentDatabaseId: number,
   ): Promise<GitHubCanonicalIssueComment>;
+  listIssueCommentPage?(
+    owner: string,
+    name: string,
+    number: number,
+    page: number,
+    since: string,
+  ): Promise<GitHubIssueCommentPage>;
   listIssueComments(owner: string, name: string, number: number): Promise<GitHubIssueCommentPage>;
 }
 

@@ -25,6 +25,7 @@ export interface AgentLifecycleCommandResult {
 export interface AgentLifecycleDependencies {
   environmentService?: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  waitForGatewayAgent?(agentId: string): Promise<void>;
   resolveAgentWorkspaceDir?(config: OpenClawConfig, agentId: string): string;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentLifecycleCommandResult>;
 }
@@ -276,6 +277,8 @@ export default function createAgentLifecycleContribution(
           `OpenClaw agent ${desired.agentId} did not match its manifest after installation.`,
         );
       }
+
+      await dependencies.waitForGatewayAgent?.(desired.agentId);
 
       return {
         outcomes:

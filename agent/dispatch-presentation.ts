@@ -24,8 +24,8 @@ export default function assessmentPresentation(
     issue: { label: repository(intake) + '#' + intake.issue.number, url: issueUrl(intake) },
     routing: {
       ...decision,
-      model: record.effective?.model ?? decision.selection!.model,
-      effort: record.effective?.effort ?? decision.selection!.effort,
+      model: decision.selection!.model,
+      effort: decision.selection!.effort,
     },
     effective: record.effective,
     workspace,

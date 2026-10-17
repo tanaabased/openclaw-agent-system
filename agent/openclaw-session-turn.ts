@@ -1,3 +1,4 @@
+import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { reconcileOpenClawTurn } from './openclaw-turn.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
 
@@ -33,6 +34,11 @@ export default async function advanceIssueTurn(input: {
   authority: DispatchAuthority;
   assessment?: boolean;
   config: OpenClawConfig;
+  presentation?: {
+    intake: IntakeRecord;
+    workspace: string;
+    debug?: boolean;
+  };
 }) {
   const { record, save, authority } = input;
   const slot = input.assessment ? 'assessmentTurn' : 'firstTurn';
@@ -77,7 +83,9 @@ export default async function advanceIssueTurn(input: {
           throw new Error('dispatch-assessment-session-not-idle');
         leaf = info.activeLeafEntryId;
       } else await verifyEmptyIssueSession(request, record, input.config, true);
-      const message = input.assessment ? assessmentTurnMessage(record) : firstTurnMessage(record);
+      const message = input.assessment
+        ? assessmentTurnMessage(record, input.presentation)
+        : firstTurnMessage(record);
       const runId = `${record.id}:${input.assessment ? 'assessment' : 'first-turn'}`;
       const params = {
         sessionKey: expected.key,

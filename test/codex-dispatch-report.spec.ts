@@ -22,6 +22,18 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should show progress transitions as information cards without repeating unchanged notices', () => {
+    const progress = { pending: true, sources: 4, reported: undefined as boolean | undefined };
+    const current = { ...input, state: { ...state, discoveryProgress: progress } };
+    assert.match(prepareDispatchReport(current).response, /> ## ℹ️ Intake discovery continues/u);
+    assert.doesNotMatch(prepareDispatchReport(current).response, /DONT_NOTIFY/);
+    progress.reported = true;
+    assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
+    progress.pending = false;
+    assert.match(prepareDispatchReport(current).response, /> ## ℹ️ Intake discovery caught up/u);
+    progress.reported = false;
+    assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
+  });
   it('should render quiet counts using the existing message rotation', () => {
     const report = prepareDispatchReport(input);
     assert.match(report.response, /DONT_NOTIFY/);
