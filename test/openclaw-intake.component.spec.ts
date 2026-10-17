@@ -112,7 +112,7 @@ describe('openclaw v2 intake slice', () => {
       const selector = { itemType: 'issue' as const, repository: 'owner/repo', number };
       const check = await service.run(f.value, root, 'check', digest, undefined, selector);
       assert.equal(check.changed, true);
-      assert.deepEqual((await service.inspect(f.value, root)).records, []);
+      assert.equal((await service.inspect(f.value, root)).records.length, 1);
       await service.run(f.value, root, 'scan', digest, undefined, selector);
       assert.deepEqual(
         (await service.inspect(f.value, root)).records.map((record) => record.issue.number),
@@ -248,7 +248,7 @@ describe('openclaw v2 intake slice', () => {
     f.setNow(baseline + 120000);
     const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
     assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, true);
-    assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 1);
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 0);
     assert.equal((await f.service.inspect(f.value, root)).records.length, 1);
     assert.equal(openclawIntakeJobs(f.value).length, 1);
     assert.equal((await contribution.reconcile!(context)).outcomes[0]?.code, 'intake-retained');
@@ -274,7 +274,7 @@ describe('openclaw v2 intake slice', () => {
     assert.equal(await readFile(join(root, 'v1-state.json'), 'utf8'), 'untouched');
     assert.equal((await store.read())!.records.length, 0);
   });
-  it('should keep checks read-only, commit a real assignment once and retain only admission evidence', async () => {
+  it('should checkpoint discovery once and retain only admission evidence', async () => {
     const f = fixture();
     const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
     const { store } = await f.service.select(f.value, root);
@@ -289,8 +289,8 @@ describe('openclaw v2 intake slice', () => {
     f.setNow(baseline + 120000);
     const before = JSON.stringify(await store.read());
     assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, true);
-    assert.equal(JSON.stringify(await store.read()), before);
-    assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 1);
+    assert.notEqual(JSON.stringify(await store.read()), before);
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 0);
     assert.equal((await f.service.run(f.value, root, 'scan', digest)).admitted, 0);
     assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, false);
     const state = (await store.read())!;
@@ -333,7 +333,7 @@ describe('openclaw v2 intake slice', () => {
     });
     assert.equal(f.connects(), 0);
   });
-  it('should expose failed and recovered previews without writing a checkpoint', async () => {
+  it('should persist failed discovery and recover without resetting its baseline', async () => {
     const f = fixture();
     await f.service.run(f.value, root, 'activate');
     const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
@@ -347,13 +347,13 @@ describe('openclaw v2 intake slice', () => {
     assert.equal(preview.changed, true);
     assert.equal(preview.code, 'intake-provider-unavailable');
     assert.equal(JSON.stringify(preview).includes('secret'), false);
-    assert.equal(JSON.stringify(await store.read()), before);
+    assert.notEqual(JSON.stringify(await store.read()), before);
     await f.service.run(f.value, root, 'scan', digest);
     assert.equal((await f.service.run(f.value, root, 'check', digest)).changed, false);
     f.setNow(baseline + 300001);
     f.provider.client.discoverAssigned = discover;
     assert.equal((await f.service.run(f.value, root, 'check', digest)).recovered, true);
-    assert.ok((await store.read())!.blocker);
+    assert.equal((await store.read())!.blocker, undefined);
     await f.service.run(f.value, root, 'scan', digest);
     assert.equal((await store.read())!.blocker, undefined);
   });
@@ -451,8 +451,7 @@ describe('openclaw v2 intake slice', () => {
     for (const changed of [false, true]) {
       let output: { fire: boolean } | undefined;
       await runInNewContext(`(async()=>{${script}})()`, {
-        agent_system_dispatch: async () => ({ status: 'ready', changed: false }),
-        agent_system_intake: async (args: unknown) => {
+        agent_system_dispatch: async (args: unknown) => {
           assert.equal((args as { action: string }).action, 'check');
           return {
             content: [{ type: 'text', text: JSON.stringify({ status: 'ready', changed }) }],
@@ -506,12 +505,14 @@ describe('openclaw v2 intake slice', () => {
         f.provider.events.push(...intakeFixture().events);
         f.setNow(baseline + 120000);
       }
-      const before = JSON.stringify(await store.read());
       let output: { fire: boolean; state: { status: string } } | undefined;
       await runInNewContext(`(async()=>{${script}})()`, {
-        agent_system_dispatch: async () => ({ status: 'ready', changed: false }),
-        agent_system_intake: async (args: unknown) => {
-          const result = await tool.execute('condition', args);
+        agent_system_dispatch: async (args: unknown) => {
+          assert.equal((args as { action: string }).action, 'check');
+          const result = await tool.execute('condition', {
+            action: 'check',
+            policyDigest: assignmentIntakePolicy(f.value, 'openclaw')!.digest,
+          });
           assert.deepEqual(
             result.details,
             JSON.parse((result.content[0] as { text: string }).text),
@@ -524,17 +525,12 @@ describe('openclaw v2 intake slice', () => {
       });
       assert.equal(output!.fire, changed);
       assert.equal(output!.state.status, 'ready');
-      assert.equal(JSON.stringify(await store.read()), before);
+      assert.equal((await store.read())!.records.length, changed ? 1 : 0);
     }
   });
   it('should retain the failed check stage and safe diagnostic without exposing raw errors', async () => {
     const script = openclawIntakeJobs(manifest())[0]!.internalOpenClaw!.trigger.script;
     const cases = [
-      {
-        stage: 'intake',
-        error: new Error('private transport detail'),
-        code: 'intake-condition-failed',
-      },
       {
         stage: 'dispatch',
         error: new Error('dispatch-native-caller-unavailable'),

@@ -154,6 +154,7 @@ export default class GitHubReviewClient implements GitHubPullRequestReviewClient
     page: number,
     suffix: string,
     comment: boolean,
+    since?: string,
   ) {
     positive(page);
     const endpoint = pullEndpoint(owner, name, number);
@@ -170,6 +171,7 @@ export default class GitHubReviewClient implements GitHubPullRequestReviewClient
         `per_page=${size}`,
         '-F',
         `page=${page}`,
+        ...(since ? ['-f', `since=${since}`] : []),
         '--jq',
         `[.[]|${this.#projection(comment)}]`,
       ],
@@ -197,8 +199,9 @@ export default class GitHubReviewClient implements GitHubPullRequestReviewClient
     name: string,
     number: number,
     page: number,
+    since?: string,
   ): Promise<GitHubReviewPage<GitHubPullRequestReviewComment>> {
-    const result = await this.#page(owner, name, number, page, 'comments', true);
+    const result = await this.#page(owner, name, number, page, 'comments', true, since);
     return {
       values: result.raw.map((value) => this.#comment(value, result.endpoint)),
       nextPage: result.nextPage,
@@ -241,6 +244,27 @@ export default class GitHubReviewClient implements GitHubPullRequestReviewClient
     const comment = this.#comment(response.value, endpoint);
     if (comment.databaseId !== id) throw new Error('GitHub returned another review comment.');
     return comment;
+  }
+
+  async getReviewCommentPage(
+    owner: string,
+    name: string,
+    number: number,
+    id: number,
+    page: number,
+  ): Promise<GitHubReviewPage<GitHubPullRequestReviewComment>> {
+    const result = await this.#page(
+      owner,
+      name,
+      number,
+      page,
+      `reviews/${positive(id)}/comments`,
+      true,
+    );
+    const values = result.raw.map((raw) => this.#comment(raw, result.endpoint));
+    if (values.some((value) => value.reviewId !== id))
+      throw new Error('GitHub returned a comment for another review.');
+    return { values, nextPage: result.nextPage };
   }
 
   async getReviewComments(

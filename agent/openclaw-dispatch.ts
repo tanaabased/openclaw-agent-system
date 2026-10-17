@@ -1,3 +1,7 @@
+import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
+import discoveryCheckpoint from './discovery-checkpoint.ts';
+import discoveryNotice from './discovery-notice.ts';
+import DiscoveryBudget from './discovery-budget.ts';
 import { randomUUID } from 'node:crypto';
 
 import type { Static } from 'typebox';
@@ -34,7 +38,10 @@ import pendingAssignments, { issueKey } from './dispatch-pending.ts';
 import revalidateAssignment from './dispatch-assignment.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
-import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import OpenClawDispatchStore, {
+  preserveOpenClawProgress,
+  type OpenClawDispatchRecord,
+} from './openclaw-dispatch-state.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
 import { IntakeError, type IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
@@ -102,7 +109,11 @@ function pendingAssignment({
 }
 export function openClawDispatchFailureCode(error: unknown): string {
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
-  if (code === privateStateFileLockBusyErrorCode || code === privateStateFileLockLostErrorCode)
+  if (
+    code === privateStateFileLockBusyErrorCode ||
+    code === privateStateFileLockLostErrorCode ||
+    code === stateSnapshotConflictCode
+  )
     return code;
   if (error instanceof IntakeError && /^[a-z][a-z0-9-]{0,127}$/.test(error.code)) return error.code;
   if (error instanceof GitCommandError) return error.diagnosticCode;
@@ -172,6 +183,8 @@ export default class OpenClawDispatch {
     record: OpenClawDispatchRecord,
     work = false,
     feedback = false,
+    connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
+    signal?: AbortSignal,
   ) {
     const current = await this.scope(manifest, workspace);
     const fresh = await this.dependencies.intake.dependencies.manifestService.loadForAgentId(
@@ -191,10 +204,12 @@ export default class OpenClawDispatch {
       throw new Error('dispatch-policy-changed');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
     if (!intake) throw new Error('dispatch-admission-missing');
-    const client = await this.dependencies.connect(
-      { manifest, workspaceDir: current.workspace },
-      AbortSignal.timeout(25000),
-    );
+    const client =
+      connection ??
+      (await this.dependencies.connect(
+        { manifest, workspaceDir: current.workspace },
+        signal ?? AbortSignal.timeout(25000),
+      ));
     const repo = await revalidateAssignment(current.policy, intake, client);
     const worktreeInput = {
       agentId: manifest.agent.id,
@@ -351,60 +366,92 @@ export default class OpenClawDispatch {
     }
   }
 
-  /** read-only presentation comparison; verified creation remains the admission boundary. */
-  async check(manifest: AgentManifest, workspace: string, observation?: IntakeObservation) {
+  /** bounded private discovery; only saved actionable work or a progress notice wakes the model. */
+  async check(
+    manifest: AgentManifest,
+    workspace: string,
+    signal?: AbortSignal,
+    observation?: IntakeObservation,
+  ) {
     if (
       manifest.github?.notifications?.schemaVersion !== 2 ||
       manifest.github.notifications.issueAssignment?.mode !== 'plan'
     )
       return { status: 'ready' as const, changed: false };
-    const current = await this.reportScope(manifest, workspace);
-    const state = await current.journal.read();
-    const observed = observation ?? (await this.observe(manifest, workspace));
+    const budget = new DiscoveryBudget(20000, signal);
+    const reporting = await this.reportScope(manifest, workspace);
+    const intake =
+      observation ??
+      (await this.dependencies.intake.run(
+        manifest,
+        workspace,
+        'check',
+        reporting.selected.digest,
+        signal,
+        undefined,
+        new DiscoveryBudget(7000, budget.signal),
+      ));
+    const state = await reporting.journal.read();
     const report = openclawIntakeReport({
       state,
-      intake: await current.store.read(),
-      slots: current.selected.policy.maxConcurrentItems,
-      observation: observed,
+      intake: await reporting.store.read(),
+      slots: reporting.selected.policy.maxConcurrentItems,
+      observation: intake,
     });
-    if (observed.status !== 'ready') return { status: 'ready' as const, changed: report.changed };
+    if (intake.status !== 'ready')
+      return {
+        status: 'ready' as const,
+        changed: report.changed,
+        outcome: 'failed',
+        code: intake.code,
+      };
+    const current = await this.scope(manifest, workspace);
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
+    const cycleAt = state.discoveryCycleAt ?? (this.dependencies.now ?? Date.now)();
+    const previousCodes = new Map(
+      state.records.map((record) => [record.id, record.feedback?.code]),
+    );
     const scans = await scanOpenClawFeedback({
       service: this,
       state,
       manifest,
       workspace: current.workspace,
       sourceThreadId,
-      authority: {},
+      authority: { signal: budget.signal },
+      budget,
       now: (this.dependencies.now ?? Date.now)(),
+      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
     });
-    const feedbackChanged = scans.some((scan) => {
-      const previous = state.records.find((record) => record.id === scan.id)?.feedback;
-      return (
-        !previous ||
-        automationHash([
-          previous.baseline,
-          previous.events,
-          previous.code,
-          previous.activity?.busy,
-        ]) !==
-          automationHash([
-            scan.feedback.baseline,
-            scan.feedback.events,
-            scan.feedback.code,
-            scan.feedback.activity?.busy,
-          ])
-      );
-    });
-    // a bounded read-only check must still advance the scan cursor for larger owner sets.
-    const feedbackRotation =
-      openClawFeedbackEnabled(manifest) &&
-      state.records.filter(
-        (record) =>
-          !record.retired && !record.reset && record.sessionCreation?.verified && record.threadId,
-      ).length > 12;
     applyOpenClawFeedbackScans(state.records, scans);
-    const capacity = dispatchCapacity(state.records, current.selected.policy.maxConcurrentItems);
+    const owners = state.records.filter(
+      (r) => !r.retired && !r.reset && r.sessionCreation?.verified && r.threadId,
+    );
+    const more = Boolean(
+      ('more' in intake && intake.more) ||
+      (openClawFeedbackEnabled(manifest) &&
+        owners.some(
+          (r) =>
+            (r.feedback?.scannedTime ?? 0) < cycleAt ||
+            r.feedback?.discoveryPending ||
+            Object.keys(r.feedback?.discovery ?? {}).length > 0,
+        )),
+    );
+    await current.journal.exclusive(async (fresh, save) => {
+      fresh.discoveryCheckedAt = Date.now();
+      if (more) fresh.discoveryCycleAt = cycleAt;
+      else delete fresh.discoveryCycleAt;
+      if (more || fresh.discoveryProgress)
+        fresh.discoveryProgress = {
+          pending: more,
+          sources: owners.length,
+          ...(fresh.discoveryProgress?.pending === more
+            ? { reported: fresh.discoveryProgress.reported }
+            : {}),
+        };
+      state.discoveryProgress = fresh.discoveryProgress;
+      await save();
+    });
+    const capacity = dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems);
     const feedbackPending = state.records.some((record) =>
       record.feedback?.events.some(
         (event) =>
@@ -415,17 +462,26 @@ export default class OpenClawDispatch {
       ),
     );
     const recoverable = state.records.some((record) => continuationStatus(record));
-    const admitted = await current.store.read();
-    const pending = admitted && pendingAssignments(state, admitted).some(pendingAssignment);
+    const pending = pendingAssignments(state, current.admitted).some(pendingAssignment);
+    const actionable = feedbackPending || recoverable || (capacity.available > 0 && pending);
+    const code = state.records.find(
+      (record) => !record.retired && !record.reset && record.feedback?.code,
+    )?.feedback?.code;
     return {
       status: 'ready' as const,
+      more,
+      outcome: code ? 'failed' : actionable ? 'actionable' : more ? 'paused' : 'unchanged',
+      ...(code ? { code } : {}),
       changed:
         report.changed ||
-        feedbackChanged ||
-        feedbackRotation ||
-        feedbackPending ||
-        recoverable ||
-        (capacity.available > 0 && pending),
+        scans.some(
+          (scan) => scan.feedback.code && scan.feedback.code !== previousCodes.get(scan.id),
+        ) ||
+        Boolean(
+          state.discoveryProgress &&
+          state.discoveryProgress.reported !== state.discoveryProgress.pending,
+        ) ||
+        actionable,
     };
   }
 
@@ -486,7 +542,8 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
-    if (input.action === 'check') return this.check(manifest, workspace, input.observation);
+    if (input.action === 'check')
+      return this.check(manifest, workspace, authority.signal, input.observation);
     if (input.action === 'report')
       return this.report(manifest, workspace, caller, authority).catch((error: unknown) => {
         if (openClawDispatchFailureCode(error) === privateStateFileLockBusyErrorCode)
@@ -507,7 +564,7 @@ export default class OpenClawDispatch {
       return this.present(manifest, workspace, caller, input, operator, authority, current);
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
     let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
-    let enteredJournal = false;
+    let enteredTransaction = false;
     if (input.action === 'retry' && !operator) throw new Error('dispatch-operator-required');
     if (
       !childAction &&
@@ -515,21 +572,62 @@ export default class OpenClawDispatch {
       !(operator && ['inspect', 'retry'].includes(input.action))
     )
       throw new Error('dispatch-intake-caller-required');
+    const snapshot = await current.journal.read();
     const scans =
-      input.action === 'next'
+      input.action === 'next' &&
+      (!snapshot.discoveryCheckedAt || Date.now() - snapshot.discoveryCheckedAt > 120000)
         ? await scanOpenClawFeedback({
             service: this,
-            state: await current.journal.read(),
+            state: snapshot,
             manifest,
             workspace: current.workspace,
             sourceThreadId,
             authority,
             now: (this.dependencies.now ?? Date.now)(),
+            checkpoint: (scan) =>
+              discoveryCheckpoint(current.journal, scan, authority.assertCurrent),
           })
         : [];
+    const transactionOptions: Parameters<typeof current.journal.transaction>[1] = {
+      signal: authority.signal,
+      reconcile: preserveOpenClawProgress,
+      validate: (before, after) => {
+        const newlyReserved = after.records.some(
+          (record) =>
+            record.request &&
+            !before.records.find((previous) => previous.id === record.id)?.request,
+        );
+        if (
+          newlyReserved &&
+          dispatchCapacity(after.records, current.policy.policy.maxConcurrentItems).occupied >
+            current.policy.policy.maxConcurrentItems
+        )
+          throw new Error('dispatch-at-capacity');
+        const activeKeys = after.records
+          .filter((record) => !record.retired && !record.reset)
+          .map((record) => record.issueKey);
+        if (new Set(activeKeys).size !== activeKeys.length)
+          throw new Error(stateSnapshotConflictCode);
+      },
+    };
     return current.journal
-      .exclusive(async (state, save, lockSignal) => {
-        enteredJournal = true;
+      .transaction(async (state, save, transactionSignal) => {
+        enteredTransaction = true;
+        if (input.action === 'next') {
+          delete state.discoveryCheckedAt;
+          const presentation = discoveryNotice(state.discoveryProgress);
+          if (presentation) {
+            state.discoveryProgress!.reported = state.discoveryProgress!.pending;
+            state.discoveryCheckedAt = Date.now();
+            await save();
+            return {
+              status: 'discovery-progress',
+              presentation,
+              instruction:
+                'Present this status card, then call next again to process available work.',
+            };
+          }
+        }
         if (scans.length) {
           await authority.assertCurrent?.();
           if (
@@ -577,8 +675,8 @@ export default class OpenClawDispatch {
         if (input.action === 'next') {
           const continuing = state.records.find((record) => continuationStatus(record));
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const unfinished = state.records.flatMap((record) =>
             (record.feedback?.events ?? [])
               .filter(
@@ -701,6 +799,7 @@ export default class OpenClawDispatch {
               ),
             };
           } catch (error) {
+            if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode) throw error;
             record.phase = 'blocked';
             record.blocker = openClawDispatchFailureCode(error);
             await save();
@@ -723,7 +822,9 @@ export default class OpenClawDispatch {
             throw new Error('feedback-owner-caller-required');
           return this.feedback(manifest, current.workspace, record, event, caller, input, save, {
             ...authority,
-            signal: authority.signal ? AbortSignal.any([authority.signal, lockSignal]) : lockSignal,
+            signal: authority.signal
+              ? AbortSignal.any([authority.signal, transactionSignal])
+              : transactionSignal,
           });
         }
         if (record.feedback?.events.some((event) => event.turn?.runId === caller.runId))
@@ -763,8 +864,8 @@ export default class OpenClawDispatch {
           input.action === 'delivery'
         ) {
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const assertCurrent = async () => {
             signal.throwIfAborted();
             await authority.assertCurrent?.();
@@ -827,8 +928,8 @@ export default class OpenClawDispatch {
         }
         if (input.action === 'context' || input.action === 'result') {
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const childAuthority = {
             signal,
             assertCurrent: async () => {
@@ -959,8 +1060,8 @@ export default class OpenClawDispatch {
               ? 'first-turn'
               : 'session-create';
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const turnAuthority = {
             signal,
             assertCurrent: async () => {
@@ -1000,10 +1101,10 @@ export default class OpenClawDispatch {
           });
         }
         throw new Error('dispatch-action-invalid');
-      }, childAction)
+      }, transactionOptions)
       .catch(async (error: unknown) => {
         if (
-          !enteredJournal &&
+          !enteredTransaction &&
           !childAction &&
           openClawDispatchFailureCode(error) === privateStateFileLockBusyErrorCode
         ) {
@@ -1014,7 +1115,9 @@ export default class OpenClawDispatch {
             ...('id' in input ? { id: input.id } : {}),
           };
         }
-        if (!enteredJournal) throw error;
+        if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode)
+          return { status: 'busy' as const, code: stateSnapshotConflictCode };
+        if (!enteredTransaction) throw error;
         if (
           input.action === 'prepare' ||
           input.action === 'reconcile' ||

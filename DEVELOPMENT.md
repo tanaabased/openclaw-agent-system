@@ -100,6 +100,20 @@ shows DevGuard policy audit records rather than the plugin logger stream.
 
 Run the narrowest relevant check while iterating, then complete the repository-only suite before handoff.
 
+### Verification Categories
+
+Classify each assertion by what it proves, not its filename or test runner:
+
+- **Unit tests** execute an owned function or small code unit with controlled inputs and assert its outputs, decisions, or boundary calls. Reading fixture data does not change the category. Renderer snapshots and parser rejection cases can be valid unit tests.
+- **Component tests** exercise cooperating units through real process, filesystem, or platform boundaries. Installed OpenClaw journeys belong in the GitHub Actions-only Leia examples.
+- **Static checks** inspect source, configuration, documentation, or artifacts without exercising the behavior they describe. They establish an invariant, not successful runtime execution.
+
+Keep a static check only when its invariant has a concrete correctness, compatibility, safety, or maintenance consequence and existing validation does not already establish it. Examples include credential isolation in workflows, forbidden private SDK imports, package metadata consistency, and stale configured paths. Prefer existing parsers and the owning lint, plugin, package, or fixture validator.
+
+Do not preserve prose, file layout, current runner matrices, command spelling, or occurrence counts merely because they are present today. Exact details belong in checks only when independently required by a supported contract. Finding a command in Markdown does not prove that it works. Delete checks with no distinct invariant rather than moving them to another suite.
+
+For mixed specs, classify assertions separately and preserve useful behavioral coverage. Run retained `*.static.spec.ts` checks with `bun run test:static`. They run in the existing unit workflow as a separate step and are included in `test:all`, but excluded from `test:unit`. Any migration must keep retained checks running in CI and update the documented selection in the same change.
+
 ### Linting And Type Checking
 
 ```sh
@@ -115,7 +129,7 @@ bun run typecheck
 bun run test
 ```
 
-The Mocha suites keep behavior-focused specifications flat in [`test/`](./test/). `bun run test` remains the fast unit alias; `bun run test:all` builds the helper artifacts and runs all ordinary source tests. Use `bun run test:unit` for deterministic in-process and read-only contract checks, `bun run test:component` for portable component checks, and `bun run test:os` for native component contracts.
+The Mocha suites keep behavior-focused specifications flat in [`test/`](./test/). `bun run test` remains the fast unit alias; `bun run test:all` builds the helper artifacts and runs all ordinary source tests. Use `bun run test:unit` for deterministic in-process behavior, `bun run test:static` for repository invariants, `bun run test:component` for portable component checks, and `bun run test:os` for native component contracts.
 
 Portable components use `*.component.spec.ts`; native process, permission, symlink, and socket checks use `*.os.component.spec.ts`. CI runs units and portable components on Ubuntu and native components on both Ubuntu and macOS. Mixed files remain components until their deterministic cases are extracted. Installed-runtime acceptance stays in Leia examples.
 

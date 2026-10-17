@@ -36,6 +36,7 @@ describe('agent/openclaw issue dispatch', () => {
   let historyRejected: boolean;
   let onCreate: (() => void) | undefined;
   let onSend: (() => void) | undefined;
+  let afterSend: (() => Promise<void>) | undefined;
   let messages: Array<Record<string, unknown>>;
   let anchoredMessages: Array<Record<string, unknown>>;
   let inputReceipts: Array<Record<string, unknown>>;
@@ -120,6 +121,7 @@ describe('agent/openclaw issue dispatch', () => {
     historyRejected = false;
     onCreate = undefined;
     onSend = undefined;
+    afterSend = undefined;
     messages = [];
     anchoredMessages = [];
     inputReceipts = [];
@@ -226,6 +228,7 @@ describe('agent/openclaw issue dispatch', () => {
                     },
                   ];
                 }
+                await afterSend?.();
                 if (loseSend) throw new Error('SECRET lost response');
                 return { runId: params.idempotencyKey, status: 'started' };
               }
@@ -512,7 +515,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.length, 0);
   });
 
-  it('should preserve cancellation and refuse simultaneous creation attempts', async () => {
+  it('should preserve cancellation while allowing a coordinator to inspect pending creation', async () => {
     const input = await next();
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
@@ -527,8 +530,8 @@ describe('agent/openclaw issue dispatch', () => {
     await entered.promise;
     try {
       assert.deepEqual(await service.run(manifest, root, coordinator, { action: 'next' }), {
-        status: 'busy',
-        code: privateStateFileLockBusyErrorCode,
+        status: 'reconcile-required',
+        id: input.id,
       });
     } finally {
       controller.abort();
@@ -1028,7 +1031,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).firstTurn?.executionModel, 'openai/gpt-6.1-sol');
   });
 
-  it('should refuse concurrent first-turn operations while the journal lock is held', async () => {
+  it('should reserve only one send when concurrent first-turn operations overlap', async () => {
     const input = await next();
     await prepare(input);
     const entered = Promise.withResolvers<void>();
@@ -1041,16 +1044,13 @@ describe('agent/openclaw issue dispatch', () => {
     });
     await entered.promise;
     try {
-      assert.deepEqual(await start(input.id), {
-        status: 'busy',
-        code: privateStateFileLockBusyErrorCode,
-        id: input.id,
-      });
+      assert.equal((await start(input.id)).status, 'working-turn-pending');
     } finally {
       release.resolve();
       await first;
     }
-    assert.equal((await first).status, 'working-turn-pending');
+    assert.ok('code' in (await first) && (await first).status === 'blocked');
+    assert.equal((await start(input.id)).status, 'working-turn-pending');
     assert.equal(sends().length, 1);
   });
 
@@ -1223,6 +1223,22 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
+  it('should let the child retain its plan before the coordinator send returns', async () => {
+    const input = await next();
+    await prepare(input);
+    afterSend = async () => {
+      assert.equal((await context(input.id)).status, 'verified');
+      assert.equal((await submit(input.id)).status, 'recorded');
+      assessmentReply(input.id);
+    };
+    const result = await assess(input.id);
+    assert.equal(result.status, 'assessment-completed');
+    assert.equal((await record()).phase, 'complete');
+    assert.deepEqual((await record()).result, plan);
+    assert.equal((await record()).assessmentTurn?.status, 'completed');
+    assert.equal(sends().length, 1);
+  });
+
   it('should retain a full assessment with native caller binding and free capacity without another send', async () => {
     const input = await next();
     await prepare(input);
@@ -1255,7 +1271,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
-  it('should defer an overlapping coordinator scan and later observe the same completed assessment', async () => {
+  it('should allow an overlapping coordinator scan and preserve the completed assessment', async () => {
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -1280,8 +1296,8 @@ describe('agent/openclaw issue dispatch', () => {
       const before = await record();
       const callsBefore = calls.length;
       assert.deepEqual(await service.run(manifest, root, coordinator, { action: 'next' }), {
-        status: 'busy',
-        code: privateStateFileLockBusyErrorCode,
+        status: 'reconcile-required',
+        id: input.id,
       });
       assert.deepEqual(await record(), before);
       assert.equal(calls.length, callsBefore);
@@ -2082,10 +2098,44 @@ describe('agent/openclaw issue dispatch', () => {
     });
     return { id, who, comments };
   }
+  it('should validate each feedback owner once during discovery and consume the saved result', async () => {
+    await feedbackOwner();
+    const validate = service.validate.bind(service);
+    let validations = 0;
+    service.validate = async (...args) => {
+      validations++;
+      return validate(...args);
+    };
+    const check = await service.check(manifest, root);
+    assert.equal(check.changed, true);
+    assert.equal(validations, 1);
+    assert.equal((await record()).feedback!.events.length, 1);
+    const discovery = (await record()).feedback!.watermarks;
+    assert.ok(discovery && Object.keys(discovery).length === 1);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events.length, 1);
+  });
+  it('should retain pending discovery when interrupted before reading comments', async () => {
+    await feedbackOwner();
+    const controller = new AbortController();
+    const validate = service.validate.bind(service);
+    service.validate = async (...args) => {
+      const result = await validate(...args);
+      controller.abort();
+      return result;
+    };
+    const check = await service.check(manifest, root, controller.signal);
+    assert.ok('more' in check && check.more);
+    assert.ok('outcome' in check && check.outcome === 'paused');
+    assert.equal((await record()).feedback!.discoveryPending, true);
+    service.validate = validate;
+    await service.check(manifest, root);
+    assert.equal((await record()).feedback!.discoveryPending, false);
+  });
   it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
     const { id } = await feedbackOwner();
     assert.equal((await service.check(manifest, root)).changed, true);
-    assert.equal((await record()).feedback!.events.length, 0);
+    assert.equal((await record()).feedback!.events.length, 1);
     await service.run(manifest, root, coordinator, { action: 'next' });
     const event = (await record()).feedback!.events[0]!;
     assert.ok(event.turn);

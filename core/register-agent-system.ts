@@ -47,6 +47,7 @@ import { registerLifecycleApprovalHook } from './lifecycle-approval-hook.ts';
 import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
+import waitForGatewayAgent from '../agent/wait-for-gateway-agent.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
 import createCodexPluginLifecycleContribution from '../agent/codex-plugin-lifecycle.ts';
 import codexPluginRequirement from './codex-plugin-metadata.ts';
@@ -373,6 +374,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
     }),
     createAgentLifecycleContribution({
+      waitForGatewayAgent,
       environmentService: lifecycleEnvironmentService,
       readConfig,
       resolveAgentWorkspaceDir(config, agentId) {

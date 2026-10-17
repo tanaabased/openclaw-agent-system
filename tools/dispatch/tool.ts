@@ -167,6 +167,7 @@ export default function createDispatchTool(input: {
             result = await service.check(
               binding.manifest,
               binding.scope.workspaceDir,
+              signal,
               params.observation,
             );
           else {

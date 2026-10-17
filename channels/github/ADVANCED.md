@@ -10,6 +10,12 @@ on retained issues and their linked delivery PRs. Independent review requests wa
 without blocking those workflows.
 Standalone Codex uses its [native workflow controls](../../CODEX.md#github-notification-policy).
 
+Both runtimes save bounded discovery progress and resume on later polls. Ordinary
+comments are fetched by update time; unchanged history does not trigger feedback.
+OpenClaw keeps discovery inside one condition budget and wakes the coordinator for
+saved actionable work or a one-time progress/recovery card. After upgrading, run
+Install to reconcile the changed condition before relying on scheduled intake.
+
 ## CLI
 
 Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
