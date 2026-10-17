@@ -31,7 +31,6 @@ github:
     schema-version: 2
     runtimes: [openclaw]
     interval-minutes: 1440
-    max-concurrent-items: 1
     allowed-repository-owners:
       - login: tanaabased
         node-id: __OWNER_NODE_ID__

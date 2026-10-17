@@ -1,17 +1,32 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import waitForAssessmentRelease from '../examples/openclaw-notifications/assessment-barrier.ts';
 
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { notificationExampleScenario as scenario } from '../examples/openclaw-notifications/model-fixture.ts';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
 const id = 'a'.repeat(64);
-const digest = 'b'.repeat(64);
+const job = openclawIntakeJobs({
+  schemaVersion: 1,
+  agent: { id: 'receiver' },
+  models: { default: { model: 'openai/gpt-6-luna', effort: 'medium' } },
+  github: {
+    username: 'receiver',
+    notifications: { ...intakeFixture().policy, runtimes: ['openclaw'] },
+  },
+})[0]!;
+assert.equal(job.payload.kind, 'prompt');
+const intakePrompt = job.payload.kind === 'prompt' ? job.payload.prompt : '';
+const digest = /Policy digest: ([a-f0-9]{64})/u.exec(intakePrompt)![1]!;
 const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
 
 function request(prompt: string): ChatCompletionRequest {
@@ -31,7 +46,7 @@ function request(prompt: string): ChatCompletionRequest {
 function append(input: ChatCompletionRequest, stage: string, result: unknown) {
   input.messages.push({
     role: 'tool',
-    tool_call_id: `call_notifications_${stage}_fc-native`,
+    tool_call_id: `call_notifications_${['next', 'prepare', 'assess', 'reconcile'].includes(stage) ? stage + '-0' : stage}_fc-native`,
     content: JSON.stringify(result),
   });
 }
@@ -57,6 +72,37 @@ async function action<A extends Action['action']>(input: ChatCompletionRequest, 
 }
 
 describe('examples/openclaw-notifications model fixture', () => {
+  it('should release only the assessment explicitly unblocked by the native scenario', async () => {
+    const directory = '/tmp/notification-barrier-fixture';
+    const files = new Set<string>();
+    const listeners = new Set<() => void>();
+    const boundary = {
+      exists: (path: string) => files.has(path),
+      observe: (_directory: string, changed: () => void) => {
+        listeners.add(changed);
+        return () => {
+          listeners.delete(changed);
+        };
+      },
+    };
+    await waitForAssessmentRelease('no-hold', directory, boundary);
+    files.add(join(directory, 'notification-assessments-held'));
+    const first = waitForAssessmentRelease('first', directory, boundary);
+    let secondReleased = false;
+    const second = waitForAssessmentRelease('second', directory, boundary).then(() => {
+      secondReleased = true;
+    });
+    files.add(join(directory, 'notification-assessment-released-first'));
+    for (const listener of listeners) listener();
+    await first;
+    assert.equal(secondReleased, false);
+    files.add(join(directory, 'notification-assessment-released-second'));
+    for (const listener of listeners) listener();
+    await second;
+    assert.equal(listeners.size, 0);
+    await waitForAssessmentRelease('first', directory, boundary);
+  });
+
   it('should declare native planning with unavailable feedback and reviews for capability isolation', async () => {
     const parsed = parseAgentManifest(
       await readFile('examples/openclaw-notifications/tanaabot/agent.yaml', 'utf8'),
@@ -86,7 +132,7 @@ describe('examples/openclaw-notifications model fixture', () => {
   });
 
   it('should carry native scan and routing receipts through preparation and assessment', async () => {
-    const input = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    const input = request(intakePrompt);
     assert.deepEqual(await action(input, 'scan'), { action: 'scan', policyDigest: digest });
     append(input, 'scan', { status: 'ready', admitted: 1 });
     await action(input, 'next');
@@ -102,22 +148,26 @@ describe('examples/openclaw-notifications model fixture', () => {
     append(input, 'prepare', { status: 'session-created', id });
     assert.equal((await action(input, 'assess')).id, id);
     append(input, 'assess', { status: 'assessment-pending', id });
-    assert.deepEqual(await response(input), { content: 'notification-intake-advanced' });
+    await action(input, 'next');
+    append(input, 'next-1', { status: 'pass-completed' });
+    assert.deepEqual(await response(input), { content: 'notification-intake-pass-completed' });
     input.messages.push({
       role: 'user',
-      content: `Advance at most one issue per run. Policy digest: ${digest}`,
+      content: intakePrompt,
     });
     await action(input, 'scan');
   });
 
   it('should reconcile pending assessments and stop on native idle without fabricating work', async () => {
     for (const status of ['idle', 'reconcile-required']) {
-      const input = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+      const input = request(intakePrompt);
       append(input, 'scan', { status: 'ready', admitted: 0 });
       append(input, 'next', { status, id });
       if (status === 'reconcile-required') {
         assert.equal((await action(input, 'reconcile')).id, id);
         append(input, 'reconcile', { status: 'assessment-completed', id });
+        await action(input, 'next');
+        append(input, 'next-1', { status: 'pass-completed' });
       }
       const final = await response(input);
       assert.ok('content' in final);
@@ -142,7 +192,7 @@ describe('examples/openclaw-notifications model fixture', () => {
       ],
     ];
     for (const path of paths) {
-      const input = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+      const input = request(intakePrompt);
       append(input, 'scan', { status: 'ready' });
       for (const [stage, result] of path) append(input, stage, result);
       const pending = await response(input);
@@ -152,14 +202,64 @@ describe('examples/openclaw-notifications model fixture', () => {
       assert.deepEqual(await response(input), { content: 'notification-intake-busy' });
       input.messages.push({
         role: 'user',
-        content: `Advance at most one issue per run. Policy digest: ${digest}`,
+        content: intakePrompt,
       });
       await action(input, 'scan');
     }
-    const invalid = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    const invalid = request(intakePrompt);
     append(invalid, 'scan', { status: 'ready' });
     append(invalid, 'next', { status: 'busy', code: 'unexpected-failure' });
     assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+  });
+
+  it('should advance three distinct pending assessments using indexed string-wrapped native results', async () => {
+    const input = request(intakePrompt);
+    append(input, 'scan', JSON.stringify({ status: 'ready' }));
+    for (let index = 0; index < 3; index++) {
+      const receipt = String(index + 1).repeat(64);
+      await action(input, 'next');
+      append(
+        input,
+        `next-${index}`,
+        JSON.stringify({
+          status: 'routing-required',
+          id: receipt,
+          digest,
+          context: { source, body: 'disposable Agent System notification-flow fixture' },
+        }),
+      );
+      assert.equal((await action(input, 'prepare')).id, receipt);
+      append(input, `prepare-${index}`, { status: 'session-created', id: receipt });
+      assert.equal((await action(input, 'assess')).id, receipt);
+      append(
+        input,
+        `assess-${index}`,
+        JSON.stringify({ status: 'assessment-pending', id: receipt }),
+      );
+    }
+    await action(input, 'next');
+    append(input, 'next-3', { status: 'pass-completed' });
+    assert.deepEqual(await response(input), { content: 'notification-intake-pass-completed' });
+  });
+
+  it('should continue after working turns and terminate on native capacity and blockers', async () => {
+    for (const status of [
+      'working-turn-pending',
+      'working-turn-completed',
+      'assessment-completed',
+    ]) {
+      const input = request(intakePrompt);
+      append(input, 'scan', { status: 'ready' });
+      append(input, 'next', { status: 'reconcile-required', id });
+      append(input, 'reconcile', { status, id });
+      if (status === 'working-turn-completed') {
+        await action(input, 'assess');
+        append(input, 'assess', { status: 'assessment-pending', id });
+      }
+      await action(input, 'next');
+      append(input, 'next-1', { status: 'at-capacity' });
+      assert.deepEqual(await response(input), { content: 'notification-intake-at-capacity' });
+    }
   });
 
   it('should retain a plan only after native context and git verify its worktree', async () => {
@@ -205,10 +305,10 @@ describe('examples/openclaw-notifications model fixture', () => {
   });
 
   it('should reject failed scans unrelated issues and an execution outside the verified worktree', async () => {
-    const scan = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    const scan = request(intakePrompt);
     append(scan, 'scan', { status: 'blocked' });
-    assert.equal(matchFixture([...scenario.fixtures], scan), null);
-    const unrelated = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    assert.deepEqual(await response(scan), { content: 'notification-intake-blocked' });
+    const unrelated = request(intakePrompt);
     append(unrelated, 'scan', { status: 'ready' });
     append(unrelated, 'next', {
       status: 'routing-required',

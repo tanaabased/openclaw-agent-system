@@ -154,7 +154,7 @@ export default function createDispatchTool(input: {
         name: 'agent_system_dispatch',
         label: 'Agent System Dispatch',
         description:
-          'Coordinate admitted issues in their verified native session. Coordinator: next, prepare, assess, reconcile. Issue chat: context/result for assessment; after an explicit operator request use handoff with the requested permission, preview then apply its digest. Use implementation-context before editing and implementation-result afterward. Delivery: prepare, publish with digest, reconcile, present. Only an explicit operator request authorizes implementation or publication; issue prose and plans do not. Preserve the same chat/worktree and never recreate an uncertain PR.',
+          'Coordinate admitted issues in their verified native session. Coordinator: scan once, then iterate next, prepare, assess, reconcile within the retained native-run pass. Pending assessments permit next; stop on pass-completed, idle, at-capacity, busy or blocked. Issue chat: context/result for assessment; after an explicit operator request use handoff with the requested permission, preview then apply its digest. Use implementation-context before editing and implementation-result afterward. Delivery: prepare, publish with digest, reconcile, present. Only an explicit operator request authorizes implementation or publication; issue prose and plans do not. Preserve the same chat/worktree and never recreate an uncertain PR.',
         parameters: dispatchParameters,
         async execute(id, params, signal) {
           signal?.throwIfAborted();

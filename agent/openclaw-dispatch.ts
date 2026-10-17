@@ -13,6 +13,7 @@ import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 
 import { automationHash } from './automation-hash.ts';
+import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import dispatchCapacity from './dispatch-capacity.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingAssignments, { issueKey } from './dispatch-pending.ts';
@@ -261,12 +262,67 @@ export default class OpenClawDispatch {
           };
         const now = (this.dependencies.now ?? Date.now)();
         if (input.action === 'next') {
-          const continuing = state.records.find((record) => continuationStatus(record));
-          if (continuing) return { status: continuationStatus(continuing)!, id: continuing.id };
-          if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
+          const capacity = dispatchCapacity(
+            state.records,
+            current.policy.policy.maxConcurrentItems,
+          );
+          let pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
+          if (!pass) {
+            const pending = pendingAssignments(state, current.admitted)
+              .filter(pendingAssignment)
+              .sort(
+                (a, b) =>
+                  Date.parse(a.intake.assignment.createdAt) -
+                    Date.parse(b.intake.assignment.createdAt) ||
+                  issueKey(a.intake).localeCompare(issueKey(b.intake)),
+              );
+            pass = {
+              sessionKey: caller.sessionKey,
+              sessionId: caller.sessionId,
+              runId: caller.runId,
+              limit: current.policy.policy.maxConcurrentItems,
+              allowance: capacity.available,
+              candidates: pending.slice(0, capacity.available).map(({ intake }) => intake.id),
+              recovery: state.records
+                .filter((record) => continuationStatus(record))
+                .slice(0, current.policy.policy.maxConcurrentItems)
+                .map((record) => record.id),
+              selected: [],
+            };
+            (state.openclawPasses ??= []).push(pass);
+            await save();
+          }
+          const continuing = state.records.find(
+            (record) =>
+              pass.recovery.includes(record.id) &&
+              !pass.selected.includes(record.id) &&
+              continuationStatus(record),
+          );
+          if (continuing) {
+            pass.selected.push(continuing.id);
+            await save();
+            return { status: continuationStatus(continuing)!, id: continuing.id };
+          }
+          const pending = pendingAssignments(state, current.admitted)
+            .filter(pendingAssignment)
+            .filter(
+              ({ intake, record }) =>
+                pass.candidates.includes(intake.id) &&
+                (!record || !pass.selected.includes(record.id)),
+            )
+            .sort(
+              (a, b) => pass.candidates.indexOf(a.intake.id) - pass.candidates.indexOf(b.intake.id),
+            )[0];
+          if (!capacity.available && (pending || !pass.selected.length))
             return { status: 'at-capacity' };
-          const pending = pendingAssignments(state, current.admitted).find(pendingAssignment);
-          if (!pending) return { status: 'idle' };
+          if (!pending)
+            return {
+              status:
+                pass.selected.length ||
+                pendingAssignments(state, current.admitted).some(pendingAssignment)
+                  ? 'pass-completed'
+                  : 'idle',
+            };
           const record: OpenClawDispatchRecord = pending.record ?? {
             id: automationHash([current.journal.scope, randomUUID()]),
             intakeId: pending.intake.id,
@@ -277,6 +333,7 @@ export default class OpenClawDispatch {
             manifestDigest: current.manifestDigest,
           };
           if (!pending.record) state.records.push(record);
+          pass.selected.push(record.id);
           record.intakeId = pending.intake.id;
           record.manifestDigest = current.manifestDigest;
           record.phase = 'routing';
@@ -449,6 +506,9 @@ export default class OpenClawDispatch {
           });
         }
         if (input.action === 'prepare') {
+          const pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
+          if (!pass?.selected.includes(record.id))
+            throw new Error('dispatch-pass-selection-required');
           if (record.request) return { status: 'reconcile-required', id: record.id };
           if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
             return { status: 'at-capacity', id: record.id };

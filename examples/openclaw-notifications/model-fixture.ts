@@ -7,6 +7,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
+import waitForAssessmentRelease from './assessment-barrier.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -43,55 +44,80 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     .join('\n');
   const result = (stage: string): Record<string, unknown> | undefined => {
     const text = openClawAIMockToolResultText(messages, prefix + stage);
-    return text === undefined ? undefined : JSON.parse(text);
+    if (text === undefined) return;
+    let value = JSON.parse(text);
+    while (typeof value === 'string') value = JSON.parse(value);
+    return value;
   };
   const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
-  if (prompt.includes('Advance at most one issue per run.')) {
+  if (prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
     if (!digest) return;
     const scan = result('scan');
     if (!scan) return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
+    if (scan.status === 'blocked') return { content: 'notification-intake-blocked' };
     if (scan.status !== 'ready') return;
-    const next = result('next');
-    if (!next) return dispatch('next', { action: 'next' });
-    if (isBusy(next)) return { content: 'notification-intake-busy' };
-    if (next.status === 'idle') return { content: 'notification-intake-idle' };
-    if (typeof next.id !== 'string' || !/^[a-f0-9]{64}$/u.test(next.id)) return;
-    if (next.status === 'routing-required') {
-      const context = next.context as Record<string, unknown> | undefined;
+    const terminal = (value: Record<string, unknown>) => {
+      if (isBusy(value)) return { content: 'notification-intake-busy' };
+      if (['idle', 'at-capacity', 'pass-completed', 'blocked'].includes(String(value.status)))
+        return { content: `notification-intake-${value.status}` };
+    };
+    // indexed calls bind each repeated stage to its own native result.
+    for (let index = 0; index <= messages.length; index++) {
+      const stage = (name: string) => `${name}-${index}`;
+      const next = result(stage('next'));
+      if (!next) return dispatch(stage('next'), { action: 'next' });
+      const stopped = terminal(next);
+      if (stopped) return stopped;
+      if (typeof next.id !== 'string' || !/^[a-f0-9]{64}$/u.test(next.id)) return;
+      let advanced = next;
+      if (next.status === 'routing-required') {
+        const context = next.context as Record<string, unknown> | undefined;
+        if (
+          typeof next.digest !== 'string' ||
+          !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
+            String(context?.source),
+          ) ||
+          !String(context?.body).includes('disposable Agent System notification-flow fixture')
+        )
+          return;
+        const prepared = result(stage('prepare'));
+        if (!prepared)
+          return dispatch(stage('prepare'), {
+            action: 'prepare',
+            id: next.id,
+            digest: next.digest,
+            assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
+            fallback: 'default',
+            title: 'Document disposable test issue cleanup',
+          });
+        advanced = prepared;
+      } else if (next.status === 'reconcile-required') {
+        const reconciled = result(stage('reconcile'));
+        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
+        advanced = reconciled;
+      }
+      const stoppedAdvance = terminal(advanced);
+      if (stoppedAdvance) return stoppedAdvance;
       if (
-        typeof next.digest !== 'string' ||
-        !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
-          String(context?.source),
-        ) ||
-        !String(context?.body).includes('disposable Agent System notification-flow fixture')
+        ['assessment-required', 'session-created', 'working-turn-completed'].includes(
+          String(advanced.status),
+        )
+      ) {
+        const assessed = result(stage('assess'));
+        if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
+        advanced = assessed;
+      }
+      const stoppedAssessment = terminal(advanced);
+      if (stoppedAssessment) return stoppedAssessment;
+      if (
+        !['assessment-pending', 'assessment-completed', 'working-turn-pending'].includes(
+          String(advanced.status),
+        )
       )
         return;
-      const prepared = result('prepare');
-      if (!prepared)
-        return dispatch('prepare', {
-          action: 'prepare',
-          id: next.id,
-          digest: next.digest,
-          assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
-          fallback: 'default',
-          title: 'Document disposable test issue cleanup',
-        });
-      if (isBusy(prepared)) return { content: 'notification-intake-busy' };
-      if (prepared.status !== 'session-created') return;
-    } else if (!['assessment-required', 'reconcile-required'].includes(String(next.status))) return;
-    const stage = next.status === 'reconcile-required' ? 'reconcile' : 'assess';
-    const advanced = result(stage);
-    if (!advanced) return dispatch(stage, { action: stage, id: next.id });
-    if (isBusy(advanced)) return { content: 'notification-intake-busy' };
-    if (advanced.status === 'session-created' || advanced.status === 'working-turn-completed') {
-      const assessed = result('assess');
-      if (!assessed) return dispatch('assess', { action: 'assess', id: next.id });
-      if (isBusy(assessed)) return { content: 'notification-intake-busy' };
-      if (!['assessment-pending', 'assessment-completed'].includes(String(assessed.status))) return;
-    } else if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status)))
-      return;
-    return { content: 'notification-intake-advanced' };
+    }
+    return;
   }
   const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
@@ -281,10 +307,9 @@ export const notificationExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     ...[
-      'next',
-      'prepare',
-      'assess',
-      'reconcile',
+      ...Array.from({ length: 8 }, (_, index) =>
+        ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
+      ).flat(),
       'context',
       'result',
       'handoff-preview',
@@ -311,9 +336,11 @@ export const notificationExampleScenario: OpenClawAIMockScenario = {
         systemMessage: [identity],
         predicate: (request) => 'toolCalls' in (response(request) ?? {}),
       },
-      response: (request) => {
+      response: async (request) => {
         const value = response(request);
         assert.ok(value && 'toolCalls' in value);
+        const context = value.toolCalls?.find((tool) => tool.id === prefix + 'context');
+        if (context) await waitForAssessmentRelease(JSON.parse(context.arguments).id);
         return value;
       },
     },

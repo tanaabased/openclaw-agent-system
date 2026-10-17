@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import { issueKey } from '../agent/dispatch-pending.ts';
 import type { AssessmentResult } from '../agent/assessment-result.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
@@ -40,6 +41,16 @@ describe('agent/openclaw issue dispatch', () => {
   let acceptSend: boolean;
   let consumeSend: boolean;
   let preparedWorktrees: number;
+  let multiple: boolean;
+  const sessions = new Map<string, Record<string, unknown>>();
+  const histories = new Map<
+    string,
+    {
+      messages: Array<Record<string, unknown>>;
+      inputReceipts: Array<Record<string, unknown>>;
+      active: boolean;
+    }
+  >();
   const coordinator: DispatchCaller = {
     sessionKey: 'agent:receiver:automation:intake',
     sessionId: 'coordinator-id',
@@ -123,6 +134,9 @@ describe('agent/openclaw issue dispatch', () => {
     acceptSend = true;
     consumeSend = false;
     preparedWorktrees = 0;
+    multiple = false;
+    sessions.clear();
+    histories.clear();
     config = {};
     service = new OpenClawDispatch({
       root: join(root, 'dispatch'),
@@ -143,11 +157,15 @@ describe('agent/openclaw issue dispatch', () => {
         },
       }),
       worktrees: {
-        prepareGitHub: async () => {
+        prepareGitHub: async (input) => {
           preparedWorktrees++;
-          return worktree;
+          if (!multiple) return worktree;
+          const path = join(root, `worktree-${input.itemNumber}`);
+          await mkdir(path, { recursive: true });
+          return { ...worktree, path };
         },
-        inspectGitHub: async () => worktree,
+        inspectGitHub: async (input) =>
+          multiple ? { ...worktree, path: join(root, `worktree-${input.itemNumber}`) } : worktree,
       },
       credential: {
         async use(authority, operation) {
@@ -157,15 +175,19 @@ describe('agent/openclaw issue dispatch', () => {
               authority.signal?.throwIfAborted();
               calls.push({ method, params });
               if (method === 'sessions.create') {
-                const persisted = (await (await service.scope(manifest, root)).journal.read())
-                  .records[0]!;
+                const persisted = (
+                  await (await service.scope(manifest, root)).journal.read()
+                ).records.find(
+                  (record) =>
+                    record.request && 'key' in record.request && record.request.key === params.key,
+                )!;
                 assert.equal(persisted.sessionCreation?.attempted, true);
                 onCreate?.();
                 if (!absent)
                   session = {
                     key: params.key,
                     agentId: params.agentId,
-                    sessionId: 'ordinary-id',
+                    sessionId: multiple ? `ordinary-${persisted.id}` : 'ordinary-id',
                     spawnedCwd: params.cwd,
                     label: params.label,
                     category: params.category,
@@ -175,8 +197,16 @@ describe('agent/openclaw issue dispatch', () => {
                     parentSessionKey: 'agent:receiver:main',
                     spawnDepth: 0,
                   };
+                if (multiple && session) {
+                  sessions.set(String(params.key), session);
+                  histories.set(String(params.key), {
+                    messages: [],
+                    inputReceipts: [],
+                    active: false,
+                  });
+                }
                 if (lost) throw new Error('response-lost');
-                return { key: params.key, sessionId: 'ordinary-id', runStarted: false };
+                return { key: params.key, sessionId: session?.sessionId, runStarted: false };
               }
               if (method === 'skills.status')
                 return {
@@ -190,14 +220,16 @@ describe('agent/openclaw issue dispatch', () => {
                     },
                   ],
                 };
-              if (method === 'sessions.describe') return { session };
+              if (method === 'sessions.describe')
+                return { session: multiple ? sessions.get(String(params.key)) : session };
               if (method === 'chat.send') {
                 const turn = String(params.idempotencyKey).endsWith(':assessment')
-                  ? (await record()).assessmentTurn
-                  : (await record()).firstTurn;
+                  ? (await record(String(params.sessionKey))).assessmentTurn
+                  : (await record(String(params.sessionKey))).firstTurn;
                 assert.equal(turn?.status, 'attempted');
                 assert.equal(turn?.message, params.message);
                 onSend?.();
+                if (multiple) messages = histories.get(String(params.sessionKey))!.messages;
                 if (acceptSend) {
                   active = true;
                   inputReceipts = consumeSend
@@ -216,6 +248,8 @@ describe('agent/openclaw issue dispatch', () => {
                     },
                   ];
                 }
+                if (multiple)
+                  histories.set(String(params.sessionKey), { active, messages, inputReceipts });
                 if (loseSend) throw new Error('SECRET lost response');
                 return { runId: params.idempotencyKey, status: 'started' };
               }
@@ -231,17 +265,27 @@ describe('agent/openclaw issue dispatch', () => {
                 });
               if (params.sessionId !== undefined && params.messageId === undefined)
                 throw new Error('sessionId requires messageId');
+              const saved = multiple
+                ? histories.get(String(params.sessionKey))!
+                : { messages, inputReceipts, active };
+              const currentMessages = saved.messages;
+              const currentReceipts = saved.inputReceipts;
               return {
-                sessionId: historySessionId ?? session?.sessionId,
-                messages: params.limit === 1 ? messages.slice(-1) : messages,
-                inputReceipts,
+                sessionId:
+                  historySessionId ??
+                  (multiple
+                    ? sessions.get(String(params.sessionKey))?.sessionId
+                    : session?.sessionId),
+                messages: params.limit === 1 ? currentMessages.slice(-1) : currentMessages,
+                inputReceipts: currentReceipts,
                 pendingInputs: {
-                  total: inputReceipts.filter((entry) => entry.state === 'pending').length,
+                  total: currentReceipts.filter((entry) => entry.state === 'pending').length,
                 },
                 sessionInfo: {
-                  hasActiveRun: active,
-                  activeLeafEntryId: messages.length
-                    ? (messages.at(-1)!.__openclaw as Record<string, unknown> | undefined)?.id
+                  hasActiveRun: saved.active,
+                  activeLeafEntryId: currentMessages.length
+                    ? (currentMessages.at(-1)!.__openclaw as Record<string, unknown> | undefined)
+                        ?.id
                     : null,
                 },
               };
@@ -282,10 +326,271 @@ describe('agent/openclaw issue dispatch', () => {
       authority,
     );
   }
-  async function record() {
-    return (await (await service.scope(manifest, root)).journal.read()).records[0]!;
+  async function record(key?: string) {
+    const records = (await (await service.scope(manifest, root)).journal.read()).records;
+    return (key ? records.find((record) => record.threadId === key) : records[0])!;
   }
   const creates = () => calls.filter(({ method }) => method === 'sessions.create');
+
+  async function assignments(count: number, limit: number) {
+    multiple = true;
+    manifest.github!.notifications!.maxConcurrentItems = limit;
+    const items = Array.from({ length: count }, (_, index) => ({
+      ...fixture.item,
+      nodeId: index ? `I_issue_${index}` : fixture.item.nodeId,
+      databaseId: 20 + index,
+      number: 3 + index,
+    }));
+    const events = items.map((_, index) => ({
+      ...fixture.events[0]!,
+      nodeId: index ? `E_assignment_${index}` : fixture.events[0]!.nodeId,
+      databaseId: 30 + index,
+      createdAt: new Date(baseline + 60000 + index * 1000).toISOString(),
+    }));
+    fixture.client.discoverAssigned = async () => ({
+      candidates: items
+        .toReversed()
+        .map((item) => ({ ...item, repositoryPath: '/repos/owner/repo' })),
+      incomplete: false,
+      totalCount: items.length,
+      truncated: false,
+    });
+    fixture.client.getItem = async (_owner, _name, number) =>
+      items.find((item) => item.number === number)!;
+    fixture.client.listAssignmentEvents = async (_owner, _name, number) => ({
+      events: [events[number - 3]!],
+      truncated: false,
+    });
+    // both consumers share this injected provider, including live assignment reauthorization.
+    service.dependencies.connect = async () => ({
+      ...fixture.client,
+      getItemContext: async () => ({
+        title: 'Repair',
+        body: 'Return result.',
+        comments: [],
+        labels: [],
+        truncated: false,
+      }),
+    });
+    const intake = service.dependencies.intake;
+    intake.dependencies.now = () => baseline;
+    await intake.run(manifest, root, 'activate');
+    intake.dependencies.now = () => baseline + 120000;
+    await intake.run(
+      manifest,
+      root,
+      'scan',
+      (await intake.select(manifest, root)).selected!.digest,
+    );
+    return { items, events };
+  }
+
+  async function completeAssessment(id: string) {
+    assert.equal((await context(id)).status, 'verified');
+    assert.equal((await submit(id)).status, 'recorded');
+    const history = histories.get(assessor(id).sessionKey)!;
+    history.active = false;
+    history.inputReceipts = [];
+    history.messages.push({
+      role: 'assistant',
+      stopReason: 'stop',
+      content: [{ type: 'text', text: 'Retained plan.' }],
+      __openclaw: { id: `reply-${id}`, runId: `${id}:assessment`, runTerminal: true },
+    });
+    const completed = await assess(id);
+    assert.equal(completed.status, 'assessment-completed', JSON.stringify(completed));
+  }
+
+  for (const [limit, occupied, expected] of [
+    [3, 0, 3],
+    [3, 1, 2],
+    [3, 3, 0],
+    [1, 0, 1],
+    [5, 0, 5],
+  ] as const) {
+    it(`should fill ${expected} initially free slots with limit ${limit} and ${occupied} occupied`, async () => {
+      await assignments(limit + 3, limit);
+      for (let index = 0; index < occupied; index++) {
+        const input = await next();
+        await prepare(input);
+        await assess(input.id);
+      }
+      const who = { ...coordinator, runId: 'scheduled-pass' };
+      for (let index = 0; index < occupied; index++) {
+        const recovery = await service.run(manifest, root, who, { action: 'next' });
+        assert.equal(recovery.status, 'reconcile-required');
+        assert.ok('id' in recovery);
+        assert.equal(
+          (
+            await service.run(manifest, root, who, {
+              action: 'reconcile',
+              id: recovery.id as string,
+            })
+          ).status,
+          'assessment-pending',
+        );
+      }
+      const ids = [];
+      for (let index = 0; index < expected; index++) {
+        const input = await service.run(manifest, root, who, { action: 'next' });
+        assert.ok(
+          'digest' in input &&
+            'id' in input &&
+            typeof input.digest === 'string' &&
+            typeof input.id === 'string',
+        );
+        ids.push(input.id);
+        assert.equal(
+          (
+            await service.run(manifest, root, who, {
+              action: 'prepare',
+              id: input.id,
+              digest: input.digest,
+              title: 'repair the result',
+              assessment: { complexity: 'medium', reason: 'Bounded fixture.' },
+            })
+          ).status,
+          'session-created',
+        );
+        assert.equal(
+          (await service.run(manifest, root, who, { action: 'assess', id: input.id })).status,
+          'assessment-pending',
+        );
+      }
+      const state = await (await service.scope(manifest, root)).journal.read();
+      assert.equal(state.records.filter((record) => record.request).length, occupied + expected);
+      assert.equal(creates().length, occupied + expected);
+      assert.equal(sends().length, occupied + expected);
+      assert.equal(
+        new Set(state.records.map((record) => record.threadId)).size,
+        occupied + expected,
+      );
+      assert.equal(
+        state.records.every((record) => !record.result),
+        true,
+      );
+      assert.equal(new Set(ids).size, expected);
+      const terminal = await service.run(manifest, root, who, { action: 'next' });
+      assert.equal(terminal.status, occupied + expected ? 'pass-completed' : 'at-capacity');
+      assert.equal(
+        (await service.run(manifest, root, who, { action: 'next' })).status,
+        terminal.status,
+      );
+    });
+  }
+
+  it('should persist exhaustion across reconstruction without replenishing fast completions', async () => {
+    await assignments(6, 3);
+    for (let index = 0; index < 3; index++) {
+      const input = await next();
+      assert.equal((await prepare(input)).status, 'session-created');
+      await assess(input.id);
+      await completeAssessment(input.id);
+      service = new OpenClawDispatch(service.dependencies);
+    }
+    for (let index = 0; index < 2; index++)
+      assert.equal(
+        (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+        'pass-completed',
+      );
+    assert.equal(creates().length, 3);
+    const state = await (await service.scope(manifest, root)).journal.read();
+    assert.deepEqual(
+      creates().map(({ params }) => params.label),
+      ['#3: REPAIR THE RESULT', '#4: REPAIR THE RESULT', '#5: REPAIR THE RESULT'],
+    );
+    const later = { ...coordinator, runId: 'later-pass' };
+    const input = await service.run(manifest, root, later, { action: 'next' });
+    assert.equal(input.status, 'routing-required');
+    assert.equal(state.openclawPasses![0]!.selected.length, 3);
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'pass-completed',
+    );
+  });
+
+  it('should not absorb assignments admitted after the native pass snapshot', async () => {
+    await assignments(2, 3);
+    const first = await next();
+    await prepare(first);
+    await assess(first.id);
+    await assignments(4, 3);
+    const second = await next();
+    await prepare(second);
+    await assess(second.id);
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'pass-completed',
+    );
+    assert.equal(creates().length, 2);
+    const later = await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'new-admissions' },
+      { action: 'next' },
+    );
+    assert.equal(later.status, 'reconcile-required');
+  });
+
+  it('should recheck authoritative capacity when another reservation arrives before preparation', async () => {
+    await assignments(4, 2);
+    const first = await next();
+    await prepare(first);
+    await assess(first.id);
+    const second = await next();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const reservation = structuredClone(state.records[0]!);
+      const admission = current.admitted.records.find(
+        (entry) => !state.records.some((record) => record.intakeId === entry.id),
+      )!;
+      reservation.id = 'f'.repeat(64);
+      reservation.intakeId = admission.id;
+      reservation.issueKey = issueKey(admission);
+      reservation.threadId = `agent:receiver:dashboard:agent-system-issue-${reservation.id}`;
+      assert.ok(reservation.request && 'key' in reservation.request);
+      reservation.request.key = reservation.threadId;
+      reservation.request.idempotencyKey = reservation.id;
+      delete reservation.assessmentTurn;
+      delete reservation.assessment;
+      reservation.phase = 'created';
+      state.records.push(reservation);
+      await save();
+    });
+    assert.equal((await prepare(second)).status, 'at-capacity');
+    assert.equal(creates().length, 1);
+    assert.equal(preparedWorktrees, 1);
+  });
+
+  it('should reserve uncertain creations across restart and refuse new work at full capacity', async () => {
+    await assignments(4, 1);
+    const input = await next();
+    lost = true;
+    absent = true;
+    await prepare(input);
+    service = new OpenClawDispatch(service.dependencies);
+    assert.equal(
+      (await service.run(manifest, root, { ...coordinator, runId: 'later' }, { action: 'next' }))
+        .status,
+      'at-capacity',
+    );
+    assert.equal(creates().length, 1);
+  });
+
+  it('should require this native run selection before preparing', async () => {
+    await assignments(4, 1);
+    const input = await next();
+    const foreign = { ...coordinator, runId: 'unselected' };
+    const unauthorized = await service.run(manifest, root, foreign, {
+      action: 'prepare',
+      id: input.id,
+      digest: input.digest,
+      title: 'repair the result',
+      assessment: { complexity: 'medium', reason: 'Bounded fixture.' },
+    });
+    assert.ok('code' in unauthorized && unauthorized.code === 'dispatch-pass-selection-required');
+    assert.equal(creates().length, 0);
+  });
 
   it('should create one ordinary issue session with routed settings and no initial turn', async () => {
     assert.equal((await service.check(manifest, root)).changed, true);
@@ -661,10 +966,18 @@ describe('agent/openclaw issue dispatch', () => {
   it('should select the created session at capacity and persist exactly one useful working turn', async () => {
     const input = await next();
     await prepare(input);
-    assert.deepEqual(await service.run(manifest, root, coordinator, { action: 'next' }), {
-      status: 'assessment-required',
-      id: input.id,
-    });
+    assert.deepEqual(
+      await service.run(
+        manifest,
+        root,
+        { ...coordinator, runId: 'recovery-created' },
+        { action: 'next' },
+      ),
+      {
+        status: 'assessment-required',
+        id: input.id,
+      },
+    );
     assert.equal((await start(input.id)).status, 'working-turn-pending');
     const sent = sends()[0]!.params;
     assert.equal(sent.sessionId, 'ordinary-id');
@@ -674,10 +987,18 @@ describe('agent/openclaw issue dispatch', () => {
     assert.match(String(sent.message), /Return the missing result/);
     assert.match(String(sent.message), /untrusted issue evidence/);
     assert.match(String(sent.message), /Do not change files/);
-    assert.deepEqual(await service.run(manifest, root, coordinator, { action: 'next' }), {
-      status: 'reconcile-required',
-      id: input.id,
-    });
+    assert.deepEqual(
+      await service.run(
+        manifest,
+        root,
+        { ...coordinator, runId: 'recovery-pending' },
+        { action: 'next' },
+      ),
+      {
+        status: 'reconcile-required',
+        id: input.id,
+      },
+    );
     await start(input.id);
     const completed = await finish(input.id);
     assert.equal(completed.status, 'working-turn-completed');
@@ -730,10 +1051,18 @@ describe('agent/openclaw issue dispatch', () => {
     });
     service = new OpenClawDispatch(service.dependencies);
     assert.equal((await service.check(manifest, root)).changed, true);
-    assert.deepEqual(await service.run(manifest, root, coordinator, { action: 'next' }), {
-      status: 'reconcile-required',
-      id: input.id,
-    });
+    assert.deepEqual(
+      await service.run(
+        manifest,
+        root,
+        { ...coordinator, runId: 'recovery-pending' },
+        { action: 'next' },
+      ),
+      {
+        status: 'reconcile-required',
+        id: input.id,
+      },
+    );
     assert.equal((await finish(input.id)).status, 'working-turn-completed');
     assert.equal((await record()).blocker, undefined);
     assert.equal((await record()).firstTurn?.replyEventId, 'reply-event');
@@ -861,7 +1190,14 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
     assert.equal((await service.check(manifest, root)).changed, false);
     assert.equal(
-      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      (
+        await service.run(
+          manifest,
+          root,
+          { ...coordinator, runId: 'capacity-check' },
+          { action: 'next' },
+        )
+      ).status,
       'at-capacity',
     );
   });
@@ -1082,7 +1418,7 @@ describe('agent/openclaw issue dispatch', () => {
   const assess = (id: string) => service.run(manifest, root, coordinator, { action: 'assess', id });
   const assessor = (id: string, runId = `${id}:assessment`): DispatchCaller => ({
     sessionKey: `agent:receiver:dashboard:agent-system-issue-${id}`,
-    sessionId: 'ordinary-id',
+    sessionId: multiple ? `ordinary-${id}` : 'ordinary-id',
     runId,
     toolCallId: 'assessment-tool',
   });
@@ -1133,7 +1469,14 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await assess(input.id)).status, 'assessment-completed');
     assert.equal((await service.check(manifest, root)).changed, false);
     assert.equal(
-      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      (
+        await service.run(
+          manifest,
+          root,
+          { ...coordinator, runId: 'empty-run' },
+          { action: 'next' },
+        )
+      ).status,
       'idle',
     );
     assert.equal((await assess(input.id)).status, 'assessment-completed');
@@ -1180,7 +1523,12 @@ describe('agent/openclaw issue dispatch', () => {
     assert.deepEqual(saved.result, plan);
     assessmentReply(input.id);
     service = new OpenClawDispatch(service.dependencies);
-    const resumed = await service.run(manifest, root, coordinator, { action: 'next' });
+    const resumed = await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'after-result' },
+      { action: 'next' },
+    );
     assert.equal(resumed.status, 'reconcile-required');
     assert.ok('id' in resumed && resumed.id === input.id);
     assert.equal(
@@ -1189,7 +1537,14 @@ describe('agent/openclaw issue dispatch', () => {
       'assessment-completed',
     );
     assert.equal(
-      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      (
+        await service.run(
+          manifest,
+          root,
+          { ...coordinator, runId: 'empty-run' },
+          { action: 'next' },
+        )
+      ).status,
       'idle',
     );
     const completed = await record();
