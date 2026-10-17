@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { automationHash } from './automation-hash.ts';
 import { AutomationError } from './automation-gateway.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
@@ -108,7 +109,7 @@ export default class AutomationStore {
       staleMs: 30_000,
     });
     try {
-      return await run();
+      return await withPrivateStateLock(lock, run);
     } finally {
       await lock.release();
     }

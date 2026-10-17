@@ -1,8 +1,15 @@
+import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialInput from '../credentials/op-input.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
-import { type CliOutput, type CliStyles, writeCliError, writeCliSummary } from './output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  writeCliError,
+  writeCliDiagnosticNotices,
+  writeCliSummary,
+} from './output.ts';
 import { formatDiagnostic } from '../core/logger.ts';
 
 export interface SetCredentialsAgentSystemOptions {
@@ -21,16 +28,22 @@ export interface SetCredentialsAgentSystemOptions {
 }
 
 /** Validate and persist an OP service-account token from one explicit or interactive source. */
-export default async function setCredentialsAgentSystem(
-  options: SetCredentialsAgentSystemOptions,
-): Promise<void> {
+async function setCredentialsAgentSystem(options: SetCredentialsAgentSystemOptions): Promise<void> {
   if (options.credential !== 'op') {
-    writeCliError(options.output, `credentials: unsupported credential ${options.credential}`);
+    writeCliError(
+      options.output,
+      `credentials: unsupported credential ${options.credential}`,
+      options,
+    );
     options.setExitCode(1);
     return;
   }
   if (options.fromEnvironment && options.fromStdin) {
-    writeCliError(options.output, 'credentials: --from-env and --stdin cannot be used together');
+    writeCliError(
+      options.output,
+      'credentials: --from-env and --stdin cannot be used together',
+      options,
+    );
     options.setExitCode(1);
     return;
   }
@@ -44,6 +57,7 @@ export default async function setCredentialsAgentSystem(
     writeCliError(
       options.output,
       formatDiagnostic({ code: input.code, component: 'credentials', message: input.message }),
+      options,
     );
     options.setExitCode(1);
     return;
@@ -51,36 +65,49 @@ export default async function setCredentialsAgentSystem(
 
   const result = await options.credentialManager.set(loaded.manifest, input.token, options.storeId);
   if (result.gatewayInvalidation === 'pending') {
-    writeCliError(
-      options.output,
-      'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
-    );
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'warning',
+        message:
+          'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
+      },
+    ]);
   }
   if (result.status === 'invalid') {
     writeCliError(
       options.output,
       formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),
+      options,
     );
     options.setExitCode(1);
     return;
-  }
-  if (result.gatewayInvalidation === 'confirmed') {
-    writeCliSummary(
-      options.output,
-      [{ label: 'gateway cache', style: 'status', value: 'invalidation confirmed' }],
-      options.styles,
-    );
   }
   writeCliSummary(
     options.output,
     [
       {
-        label: result.status,
+        label: 'credential',
         style: result.status === 'stored' ? 'action' : 'status',
-        value: `op credential for ${result.agentId}`,
+        value: `op for ${result.agentId} ${result.status}`,
       },
       { label: 'store', style: 'target', value: result.storeId },
+      { label: 'input source', style: 'field', value: input.source },
+      {
+        label: 'gateway cache',
+        style:
+          result.gatewayInvalidation === 'pending'
+            ? 'warning'
+            : result.gatewayInvalidation === 'confirmed'
+              ? 'status'
+              : 'field',
+        value: result.gatewayInvalidation
+          ? `invalidation ${result.gatewayInvalidation}`
+          : 'invalidation not required',
+      },
     ],
     options.styles,
+    { rowPadding: 0 },
   );
 }
+
+export default presentCliCommand(setCredentialsAgentSystem);

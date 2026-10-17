@@ -151,10 +151,12 @@ function parseCommand(argv: string[]): GitWorktreeToolInput {
 
 function normalizeToolError(error: unknown): AgentSystemToolError {
   if (error instanceof AgentSystemToolError) return error;
-  return new AgentSystemToolError(
+  const normalized = new AgentSystemToolError(
     'execution_failed',
     error instanceof Error ? error.message : 'The Git worktree request failed.',
   );
+  Object.defineProperty(normalized, 'cause', { configurable: true, value: error, writable: true });
+  return normalized;
 }
 
 /** Define the semantic Git worktree operation contract shared by native and CLI surfaces. */

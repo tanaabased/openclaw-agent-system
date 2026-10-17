@@ -6,24 +6,23 @@
 
 <p align="center">
   <a href="https://github.com/tanaabased/openclaw-agent-system/releases"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system" alt="Latest release" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-tests.yml?label=Examples" alt="Leia example tests" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-notification-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-notification-tests.yml?label=Notifications" alt="GitHub notification tests" /></a>
+  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-os.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-os.yml?label=Examples" alt="Leia example tests" /></a>
   <img src="https://img.shields.io/badge/macOS-26-111827" alt="macOS 26" />
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System puts your OpenClaw agent's identity, environment, and credential
+Agent System puts your OpenClaw agent's identity, environment, automations, and credential
 configuration in the repo alongside setup steps for installing dependencies and
 configuring the workspace. Clone the repo and run
 `openclaw agent-system install` to get your agent ready for work.
 
-Enable [GitHub notifications in Work mode](./channels/github/README.md), assign
-an issue to the agent, and watch it work toward a delivery pull request.
+Enable [GitHub notifications](./channels/github/README.md) and assign an issue
+for native OpenClaw planning or standalone Codex implementation and PR delivery.
 
 Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 > [!NOTE]
-> The OpenClaw integration requires 2026.9.7 or newer and is developed against 2026.9.7. See
+> The OpenClaw integration requires 2026.9.8 or newer and is developed against 2026.9.8. See
 > [version compatibility](#version-compatibility).
 
 > [!WARNING]
@@ -34,11 +33,12 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 ## Overview
 
 - **Configuration travels with the repo:** keep identity, environment, credential bindings, and setup in `agent.yaml`; activate them with `openclaw agent-system install`.
-- **Assign work like you would to a developer:** the GitHub notification channel turns issue assignments into agent work and delivery pull requests.
+- **Assign work like you would to a developer:** native GitHub workflows turn issue assignments into OpenClaw plans or Codex work and delivery pull requests.
 - **An identity of its own:** each agent gets its own Git authorship, signing, and GitHub account.
 - **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
 - **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
 - **The right model for the work:** route GitHub issues to declared model tiers by complexity.
+- **Put recurring work on the clock:** schedule repository commands and agent prompts from `agent.yaml`.
 - **Repeatable setup:** rerun Install to reconcile configuration and checked dependency installation; use Doctor to find drift.
 
 ## Ships With
@@ -53,12 +53,14 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
 - [`agent_system_model_routing`](./tools/model-routing/README.md) — Resolve model and effort candidates from the agent's profiles.
 
-### Channels
+### GitHub Workflows
 
-- [`agent-system-github`](./channels/github/README.md) — Polls and admits approved GitHub assignments, prepares managed issue worktrees, and keeps issue and delivery pull-request comments in one lifecycle session.
+- [GitHub notifications](./channels/github/README.md) — Admit approved assignments through runtime-owned automations and retain issue conversation and assessment evidence.
 
 ### CLI
 
+- [`openclaw agent-system automations`](./CLI.md#openclaw-agent-system-automations-list) — Inspect, sync, and run declared jobs and read their history.
+- [`openclaw agent-system backup`](./CLI.md#openclaw-agent-system-backup-create) — Create, verify, restore, and prune workspace backups.
 - [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
 - [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
 - [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
@@ -102,9 +104,7 @@ openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 ```
 
 Both commands accept the declared capabilities, register the plugin, and enable
-it. When GitHub notifications are configured, `openclaw agent-system install`
-also grants and verifies the required conversation-hook access; see
-[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
+it. GitHub workflows require explicit [configuration and installation](./channels/github/README.md#configuration).
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 
@@ -112,7 +112,8 @@ For a development checkout, follow [Install from source](./DEVELOPMENT.md#instal
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Unreleased           | 2026.9.7         | 2026.9.7           |
+| 0.9.0                | 2026.9.8         | 2026.9.8           |
+| 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |
 | 0.6.0                | 2026.9.2         | 2026.9.3           |
 | 0.5.3                | 2026.7.1         | 2026.7.2           |
@@ -206,6 +207,23 @@ openclaw agent-system tool gh -- api user --jq .login
 for consent interactively; CI or `--yes` runs unattended. Doctor runs setup
 checks without repairs. Make applies safe to repeat: earlier effects are not
 rolled back on failure. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
+
+Add recurring work to the same manifest, then rerun Install:
+
+```yaml
+automations:
+  - id: daily-review
+    schedule: every 24 hours
+    prompt: Review the repository for actionable maintenance work and report the highest-priority finding.
+  - id: daily-backup
+    runtimes: [openclaw]
+    schedule: every 24 hours
+    run: [openclaw, agent-system, backup, create, --json]
+```
+
+OpenClaw runs command jobs without a model; standalone Codex supports recurring
+prompt jobs through the desktop app. See [automation configuration](./MANIFEST.md#automations)
+and [Codex support](./CODEX.md#repository-automations) for runtime requirements.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See

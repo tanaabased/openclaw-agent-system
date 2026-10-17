@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Issue Implementation'
+  short_description: 'Implement an issue plan and report verified work or blockers'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-issue-implementation to carry this authorized issue plan through implementation and validation in its existing worktree.'

@@ -1,120 +1,73 @@
 import assert from 'node:assert/strict';
-
-import refreshNotificationsAgentSystem from '../channels/github/cli/refresh.ts';
-import type { GitHubNotificationMonitorRunOptions } from '../channels/github/intake/monitor/service.ts';
+import refresh from '../channels/github/cli/refresh.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
-const manifest: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
+const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
   scope: { workspaceDir: '/workspace' },
   path: '/workspace/agent.yaml',
-  digest: 'abc123',
-  manifest: { schemaVersion: 1, agent: { id: 'tanaabot' } },
+  digest: 'fixture',
+  manifest: { schemaVersion: 1, agent: { id: 'receiver' } },
   diagnostics: [],
   validationChecks: [],
 };
 
-function createOutput() {
-  const stderr: string[] = [];
-  const stdout: string[] = [];
-  return {
-    output: {
-      writeStderr: (value: string) => stderr.push(value),
-      writeStdout: (value: string) => stdout.push(value),
-    },
-    stderr,
-    stdout,
-  };
-}
-
 describe('channels/github/cli/refresh', () => {
-  it('should mark the refresh as one-shot and write one json result', async () => {
-    const calls: GitHubNotificationMonitorRunOptions[] = [];
-    const test = createOutput();
-
-    await refreshNotificationsAgentSystem({
+  it('should forward a bounded native request and write one queued json receipt', async () => {
+    const stdout: string[] = [];
+    await refresh({
       json: true,
+      workspaceDir: '/workspace',
+      timeoutSeconds: '45',
       manifestService: {
-        loadForAgentId: async () => manifest,
-        loadForCommandDirectory: async () => manifest,
+        loadForAgentId: async () => loaded,
+        loadForCommandDirectory: async () => loaded,
       },
-      monitorService: {
-        async runOnce(options = {}) {
-          assert.equal('aborted' in options, false);
-          if (!('aborted' in options)) calls.push(options);
-          return [
-            {
-              agentId: 'tanaabot',
-              code: 'github-notification-poll-complete',
-              status: 'completed',
-            },
-          ];
+      nativeService: {
+        async refresh(manifest, workspace, input) {
+          assert.equal(manifest.agent.id, 'receiver');
+          assert.equal(workspace, '/workspace');
+          assert.ok(input.signal instanceof AbortSignal);
+          assert.equal(input.signal.aborted, false);
+          return {
+            agentId: 'receiver',
+            code: 'github-notification-refresh-queued',
+            runId: 'native-run',
+            status: 'queued',
+          };
         },
       },
-      output: test.output,
-      setExitCode() {},
-      workspaceDir: '/workspace',
+      output: {
+        writeStdout: (text) => stdout.push(text),
+        writeStderr: (text) => assert.fail(text),
+      },
+      setExitCode: (code) => assert.fail(`unexpected exit ${code}`),
     });
-
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0]?.executionSurface, 'cli-one-shot');
-    assert.equal(calls[0]?.signal instanceof AbortSignal, true);
-    assert.equal(calls[0]?.waitForLeaseMs, 120_000);
-    assert.equal(JSON.parse(test.stdout.join('')).code, 'github-notification-poll-complete');
-    assert.deepEqual(test.stderr, []);
+    assert.deepEqual(JSON.parse(stdout.join('')), {
+      agentId: 'receiver',
+      code: 'github-notification-refresh-queued',
+      runId: 'native-run',
+      status: 'queued',
+    });
   });
-
-  it('should keep unexpected refresh failures out of json stdout', async () => {
-    const test = createOutput();
-    const exitCodes: number[] = [];
-
-    await refreshNotificationsAgentSystem({
+  it('should reject an invalid timeout before loading or queueing', async () => {
+    let exit = 0;
+    const diagnostics: string[] = [];
+    const never = async (): Promise<never> => assert.fail('must reject before manifest loading');
+    await refresh({
       json: true,
-      manifestService: {
-        loadForAgentId: async () => manifest,
-        loadForCommandDirectory: async () => manifest,
-      },
-      monitorService: {
-        async runOnce() {
-          throw new Error('refresh failed');
-        },
-      },
-      output: test.output,
-      setExitCode: (code) => exitCodes.push(code),
       workspaceDir: '/workspace',
-    });
-
-    assert.deepEqual(test.stdout, []);
-    assert.match(test.stderr.join(''), /github-notification-refresh-failed/u);
-    assert.deepEqual(exitCodes, [1]);
-  });
-
-  it('should reject an invalid timeout before starting a refresh', async () => {
-    const test = createOutput();
-    const exitCodes: number[] = [];
-    let refreshes = 0;
-
-    await refreshNotificationsAgentSystem({
-      json: true,
-      manifestService: {
-        loadForAgentId: async () => manifest,
-        loadForCommandDirectory: async () => manifest,
+      timeoutSeconds: '2147484',
+      manifestService: { loadForAgentId: never, loadForCommandDirectory: never },
+      output: {
+        writeStdout: () => assert.fail('no json result'),
+        writeStderr: (text) => diagnostics.push(text),
       },
-      monitorService: {
-        async runOnce() {
-          refreshes += 1;
-          return [];
-        },
+      setExitCode: (code) => {
+        exit = code;
       },
-      output: test.output,
-      setExitCode: (code) => exitCodes.push(code),
-      timeoutSeconds: '0',
-      workspaceDir: '/workspace',
     });
-
-    assert.equal(refreshes, 0);
-    assert.deepEqual(test.stdout, []);
-    assert.match(test.stderr.join(''), /github-notification-refresh-options-invalid/u);
-    assert.deepEqual(exitCodes, [2]);
+    assert.equal(exit, 2);
+    assert.match(diagnostics.join(''), /github-notification-refresh-options-invalid/u);
   });
 });

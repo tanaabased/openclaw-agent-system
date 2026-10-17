@@ -1,5 +1,5 @@
 import type { GitHubPullRequestReviewClient } from './review-types.ts';
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import type { RoutingMetadata } from './routing-metadata.ts';
 import type {
   GitHubAssignedItemCandidate,
@@ -11,6 +11,7 @@ import type {
 } from './work-item.ts';
 
 export interface GitHubNotificationItemContextComment {
+  url?: string;
   authorLogin: string;
   body: string;
   createdAt: string;
@@ -26,6 +27,7 @@ export interface GitHubNotificationItemContextFile {
 }
 
 export interface GitHubNotificationItemContext {
+  nativeRoutingMetadata?: RoutingMetadata;
   routingMetadata?: RoutingMetadata;
   body: string;
   comments: GitHubNotificationItemContextComment[];

@@ -8,37 +8,6 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('manifest/parse', () => {
-  it('should accept operator opt-in only on approved actor records', () => {
-    const source = (flag: string, field = 'approved-actors') => `
-schema-version: 1
-agent:
-  id: data
-  email: data@example.com
-git:
-  worktrees: {}
-github:
-  username: data
-  token: GH_TOKEN_DATA
-  notifications:
-    approved-actors:
-      - login: actor
-        node-id: U_actor
-${field === 'approved-actors' ? `        operator-owner: ${flag}` : `    allowed-repository-owners:\n      - login: owner\n        node-id: O_owner\n        operator-owner: ${flag}`}
-`;
-    for (const flag of ['true', 'false']) {
-      const result = parseAgentManifest(source(flag));
-      assert.equal(result.status, 'valid');
-      if (result.status === 'valid')
-        assert.equal(
-          result.manifest.github?.notifications?.approvedActors[0]?.operatorOwner,
-          flag === 'true',
-        );
-    }
-    for (const flag of ['"true"', '1', 'null', '[]'])
-      assert.equal(parseAgentManifest(source(flag)).status, 'invalid');
-    assert.equal(parseAgentManifest(source('true', 'allowed-repository-owners')).status, 'invalid');
-  });
-
   it('should parse github identity and an environment-only credential binding', () => {
     const result = parseAgentManifest(`
 schema-version: 1
@@ -102,156 +71,6 @@ github:
     assert.deepEqual(result.manifest.github?.policy, {
       releases: 'allow',
     });
-  });
-
-  it('should parse github notification trust pins and defaults', () => {
-    const result = parseAgentManifest(`
-schema-version: 1
-agent:
-  id: tanaabot
-github:
-  username: tanaabot
-  token: GH_TOKEN_TANAABOT
-  notifications:
-    approved-actors:
-      - login: pirog
-        node-id: U_kgDOB9x7Qw
-    allowed-repository-owners:
-      - login: tanaabased
-        node-id: O_kgDOB7x6Qw
-`);
-
-    assert.equal(result.status, 'valid');
-    if (result.status !== 'valid') return;
-    assert.deepEqual(result.manifest.github?.notifications, {
-      assignmentTypes: ['issue', 'pull-request'],
-      approvedActors: [{ login: 'pirog', nodeId: 'U_kgDOB9x7Qw' }],
-      allowedRepositoryOwners: [{ login: 'tanaabased', nodeId: 'O_kgDOB7x6Qw' }],
-      initialMode: 'work',
-      intervalMinutes: 5,
-      maxConcurrentIssues: 2,
-      pullRequest: { assignees: 'assignment-actor', reviewers: [] },
-    });
-  });
-
-  it('should parse pull request recipient overrides and reject more than ten assignees', () => {
-    const prefix = `\nschema-version: 1\nagent:\n  id: data\ngithub:\n  notifications:\n    approved-actors:\n      - login: pirog\n        node-id: U_actor\n    pull-request:\n`;
-    const result = parseAgentManifest(
-      `${prefix}      assignees: []\n      reviewers:\n        - login: reviewer\n          node-id: U_reviewer\n`,
-    );
-    assert.equal(result.status, 'valid');
-    if (result.status === 'valid')
-      assert.deepEqual(result.manifest.github?.notifications?.pullRequest, {
-        assignees: [],
-        reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
-      });
-    const assignees = Array.from(
-      { length: 11 },
-      (_, index) => `        - login: user${index}\n          node-id: U_${index}`,
-    ).join('\n');
-    assert.equal(parseAgentManifest(`${prefix}      assignees:\n${assignees}\n`).status, 'invalid');
-  });
-
-  it('should parse a guided github notification initial mode', () => {
-    const result = parseAgentManifest(`
-schema-version: 1
-agent:
-  id: tanaabot
-github:
-  notifications:
-    initial-mode: guided
-    approved-actors:
-      - login: pirog
-        node-id: U_1
-`);
-
-    assert.equal(result.status, 'valid');
-    if (result.status !== 'valid') return;
-    assert.equal(result.manifest.github?.notifications?.initialMode, 'guided');
-  });
-
-  it('should parse and validate github notification issue concurrency', () => {
-    const result = parseAgentManifest(`
-schema-version: 1
-agent:
-  id: tanaabot
-github:
-  notifications:
-    max-concurrent-issues: 4
-    approved-actors:
-      - login: pirog
-        node-id: U_1
-`);
-
-    assert.equal(result.status, 'valid');
-    if (result.status === 'valid') {
-      assert.equal(result.manifest.github?.notifications?.maxConcurrentIssues, 4);
-    }
-    for (const value of ['0', '-1', '1.5', 'many']) {
-      assert.equal(
-        parseAgentManifest(`
-schema-version: 1
-agent:
-  id: tanaabot
-github:
-  notifications:
-    max-concurrent-issues: ${value}
-    approved-actors:
-      - login: pirog
-        node-id: U_1
-`).status,
-        'invalid',
-      );
-    }
-  });
-
-  it('should reject unsafe github notification configuration', () => {
-    assert.equal(
-      diagnosticCodes(`
-schema-version: 1
-agent:
-  id: tanaabot
-github:
-  notifications:
-    approved-actors: []
-`).has('manifest-schema'),
-      true,
-    );
-    assert.equal(
-      diagnosticCodes(`
-schema-version: 1
-agent:
-  id: tanaabot
-github:
-  notifications:
-    interval-minutes: 1
-    approved-actors:
-      - login: pirog
-        node-id: U_1
-    repository-policy:
-      minimum-permission: write
-`).has('manifest-unknown-key'),
-      true,
-    );
-  });
-
-  it('should parse an explicit github notification assignment-type filter', () => {
-    const result = parseAgentManifest(`
-schema-version: 1
-agent:
-  id: tanaabot
-github:
-  notifications:
-    assignment-types:
-      - issue
-    approved-actors:
-      - login: pirog
-        node-id: U_1
-`);
-
-    assert.equal(result.status, 'valid');
-    if (result.status !== 'valid') return;
-    assert.deepEqual(result.manifest.github?.notifications?.assignmentTypes, ['issue']);
   });
 
   it('should reject legacy github ask decisions with exact migration guidance', () => {
@@ -348,7 +167,7 @@ github:
     });
   });
 
-  it('should reject empty key arrays and ambiguous github key objects', () => {
+  it('should accept cleared key arrays and reject ambiguous github key objects', () => {
     assert.equal(
       diagnosticCodes(`
 schema-version: 1
@@ -357,7 +176,7 @@ agent:
 github:
   ssh-keys: []
 `).has('manifest-schema'),
-      true,
+      false,
     );
     const ambiguous = parseAgentManifest(`
 schema-version: 1

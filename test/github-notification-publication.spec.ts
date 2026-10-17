@@ -11,13 +11,13 @@ import {
   parseGitHubNotificationPublicationTarget,
 } from '../channels/github/publication/publication.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
-import { approvedNotificationItem } from './github-notification-fixtures.ts';
+import { publicationItem } from './github-provider-fixtures.ts';
 
 describe('channels/github/publication/publication', () => {
   it('should mint one opaque target and hidden marker for a publication intent', () => {
     const target = githubNotificationPublicationTarget({
       intent: 'initial-acknowledgment',
-      item: approvedNotificationItem(),
+      item: publicationItem(),
       publicationId: 'EV_assignment',
     });
     const marker = githubNotificationPublicationMarker(target);

@@ -14,8 +14,9 @@ describe('index', () => {
     assert.equal(plugin.description, 'Better per-agent management for OpenClaw.');
     assert.equal(typeof plugin.register, 'function');
     assert.equal(plugin.configSchema.jsonSchema?.additionalProperties, false);
-    assert.ok(
+    assert.equal(
       Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('githubNotifications'),
+      true,
     );
     assert.ok(Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('opCache'));
   });
@@ -117,8 +118,28 @@ describe('index', () => {
       registerService(service: { id: string }) {
         serviceIds.push(service.id);
       },
-      registerTool(_tool: unknown, toolOptions?: { name?: string }) {
-        if (toolOptions?.name) toolNames.push(toolOptions.name);
+      registerTool(
+        factory: Parameters<OpenClawPluginApi['registerTool']>[0],
+        toolOptions?: Parameters<OpenClawPluginApi['registerTool']>[1],
+      ) {
+        if (toolOptions?.name) {
+          toolNames.push(toolOptions.name);
+          return;
+        }
+        const context = {
+          agentId: 'data',
+          workspaceDir: '/workspace',
+          senderIsOwner: true,
+          assertInvocationCurrent() {},
+        };
+        const tools =
+          typeof factory === 'function'
+            ? factory(context)
+            : 'create' in factory
+              ? factory.create(context)
+              : factory;
+        assert.ok(tools);
+        for (const tool of Array.isArray(tools) ? tools : [tools]) toolNames.push(tool.name);
       },
       registerTrustedToolPolicy(policy: { id: string }) {
         policyIds.push(policy.id);
@@ -127,27 +148,34 @@ describe('index', () => {
 
     plugin.register(api as never);
 
-    assert.equal(channelInboundDispatchAccessed, true);
+    assert.equal(channelInboundDispatchAccessed, false);
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, [
+      'before_tool_call',
       'after_tool_call',
       'before_tool_call',
       'resolve_exec_env',
       'before_tool_call',
-      'before_agent_run',
       'session_start',
       'before_prompt_build',
     ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(commandNames, []);
-    assert.deepEqual(serviceIds, ['agent-system-op-cache', 'agent-system-command-authority']);
+    assert.deepEqual(
+      new Set(serviceIds),
+      new Set([
+        'agent-system-github-readiness',
+        'agent-system-op-cache',
+        'agent-system-command-authority',
+      ]),
+    );
     assert.deepEqual(toolNames, [
+      'agent_system_dispatch',
+      'agent_system_intake',
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_google',
-      'agent_system_github_reply',
-      'agent_system_github_task_pr',
       'agent_system_install',
       'agent_system_doctor',
       'agent_system_model_routing',

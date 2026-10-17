@@ -72,7 +72,6 @@ jobs:
         with:
           tarball: ${{ steps.pack.outputs.tarball-path }}
           sync-edge-tag: true
-          channel-token: ${{ secrets.TANAAB_NPM_DEPLOY }}
 
   release-clawhub:
     name: Publish ClawHub package

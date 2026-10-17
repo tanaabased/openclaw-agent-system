@@ -90,7 +90,7 @@ export async function assertBackupArchiveLocation(
 /** retain the authority boundary when a configured external destination contains another manifest. */
 export async function assertBackupLocationOwner(
   options: BackupCommandContext,
-  binding: AgentCommandBinding,
+  binding: Pick<AgentCommandBinding, 'agentId'>,
   path: string,
 ): Promise<void> {
   const selected = await options.manifestService.loadForCommandDirectory(path, 'cli');

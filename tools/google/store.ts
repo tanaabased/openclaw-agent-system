@@ -4,6 +4,10 @@ import { lstat, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile } from 'n
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
+import {
+  withPrivateStateLock,
+  assertPrivateStateLocksHeld,
+} from '../../core/private-state-lock-context.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
@@ -271,75 +275,78 @@ export default class GoogleStore {
       );
     });
     try {
-      const previous = await this.#receipt(agentId, configuredHome);
-      const status = await this.inspect(agentId, account, material, configuredHome);
-      if (status === 'ready') {
-        const lease = await this.acquire(
-          agentId,
-          account,
-          material,
-          undefined,
-          [],
-          undefined,
-          configuredHome,
-        );
-        try {
-          await client.verify(lease.environment, workspaceDir, account);
-        } finally {
-          await lease.dispose();
-        }
-        return 'unchanged';
-      }
-      const generation = randomUUID();
-      const home = join(paths.directory, generation);
-      await mkdir(home, { mode: 0o700 });
-      let installed = false;
-      try {
-        for (const kind of ['config', 'data', 'state', 'cache'])
-          await mkdir(join(home, kind), { mode: 0o700 });
-        await writeFile(join(home, 'config', 'config.json'), '{"keyring_backend":"file"}\n', {
-          mode: 0o600,
-          flag: 'wx',
-        });
-        const environment = this.environment(home, material.password);
-        // version checking also happens before imports, so unknown GoG versions cannot write state.
-        await client.checkVersion(environment, workspaceDir, account);
-        assertGoogleResult(
-          await client.run(
-            environment,
-            workspaceDir,
-            account,
-            ['auth', 'credentials', '-'],
-            material.clientJSON,
-          ),
-        );
-        assertGoogleResult(
-          await client.run(
-            environment,
-            workspaceDir,
-            account,
-            ['auth', 'tokens', 'import', '-'],
-            material.tokenJSON,
-          ),
-        );
-        await client.verify(environment, workspaceDir, account);
-        const contents = await this.#copy(home);
-        await paths.receipt.write(
-          JSON.stringify({
+      return await withPrivateStateLock(lock, async () => {
+        const previous = await this.#receipt(agentId, configuredHome);
+        const status = await this.inspect(agentId, account, material, configuredHome);
+        if (status === 'ready') {
+          const lease = await this.acquire(
             agentId,
-            generation,
             account,
-            fingerprint: material.fingerprint,
-            contents,
-          }),
-        );
-        installed = true;
-        if (previous)
-          await rm(join(paths.directory, previous.generation), { recursive: true, force: true });
-        return status === 'missing' ? 'created' : 'updated';
-      } finally {
-        if (!installed) await rm(home, { recursive: true, force: true });
-      }
+            material,
+            undefined,
+            [],
+            undefined,
+            configuredHome,
+          );
+          try {
+            await client.verify(lease.environment, workspaceDir, account);
+          } finally {
+            await lease.dispose();
+          }
+          return 'unchanged';
+        }
+        const generation = randomUUID();
+        const home = join(paths.directory, generation);
+        await mkdir(home, { mode: 0o700 });
+        let installed = false;
+        try {
+          for (const kind of ['config', 'data', 'state', 'cache'])
+            await mkdir(join(home, kind), { mode: 0o700 });
+          await writeFile(join(home, 'config', 'config.json'), '{"keyring_backend":"file"}\n', {
+            mode: 0o600,
+            flag: 'wx',
+          });
+          const environment = this.environment(home, material.password);
+          // version checking also happens before imports, so unknown GoG versions cannot write state.
+          await client.checkVersion(environment, workspaceDir, account);
+          assertGoogleResult(
+            await client.run(
+              environment,
+              workspaceDir,
+              account,
+              ['auth', 'credentials', '-'],
+              material.clientJSON,
+            ),
+          );
+          assertGoogleResult(
+            await client.run(
+              environment,
+              workspaceDir,
+              account,
+              ['auth', 'tokens', 'import', '-'],
+              material.tokenJSON,
+            ),
+          );
+          await client.verify(environment, workspaceDir, account);
+          const contents = await this.#copy(home);
+          await paths.receipt.write(
+            JSON.stringify({
+              agentId,
+              generation,
+              account,
+              fingerprint: material.fingerprint,
+              contents,
+            }),
+          );
+          installed = true;
+          assertPrivateStateLocksHeld();
+          if (previous)
+            await rm(join(paths.directory, previous.generation), { recursive: true, force: true });
+          return status === 'missing' ? 'created' : 'updated';
+        } finally {
+          if (!installed) await rm(home, { recursive: true, force: true });
+        }
+      });
     } finally {
       await lock.release();
     }

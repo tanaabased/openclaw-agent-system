@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 
@@ -75,18 +75,22 @@ async function freshSkills(
   codex: string,
   env: NodeJS.ProcessEnv,
   cwd: string,
-): Promise<Set<string>> {
-  return new Promise<Set<string>>((resolveSkills, reject) => {
+): Promise<Map<string, { path: string; scope: string }>> {
+  return new Promise<Map<string, { path: string; scope: string }>>((resolveSkills, reject) => {
     const child = spawn(codex, ['app-server'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let buffer = '';
     let settled = false;
-    const finish = (error?: Error, skills?: Set<string>, signal: NodeJS.Signals = 'SIGTERM') => {
+    const finish = (
+      error?: Error,
+      skills?: Map<string, { path: string; scope: string }>,
+      signal: NodeJS.Signals = 'SIGTERM',
+    ) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       child.kill(signal);
       if (error) reject(error);
-      else resolveSkills(skills ?? new Set());
+      else resolveSkills(skills ?? new Map());
     };
     const timer = setTimeout(
       () => finish(new Error('fresh Codex skill discovery timed out'), undefined, 'SIGKILL'),
@@ -124,17 +128,19 @@ async function freshSkills(
           finish(new Error('fresh Codex skill discovery omitted the requested directory'));
           return;
         }
-        const names = new Set<string>();
+        const names = new Map<string, { path: string; scope: string }>();
         for (const skill of entries[0].skills) {
           if (
             !record(skill) ||
             typeof skill.name !== 'string' ||
+            typeof skill.path !== 'string' ||
+            typeof skill.scope !== 'string' ||
             typeof skill.enabled !== 'boolean'
           ) {
             finish(new Error('fresh Codex skill discovery returned a malformed skill record'));
             return;
           }
-          if (skill.enabled) names.add(skill.name);
+          if (skill.enabled) names.set(skill.name, { path: skill.path, scope: skill.scope });
         }
         finish(undefined, names);
       }
@@ -230,7 +236,12 @@ try {
       await readFile(join(skillsRoot, directory, 'SKILL.md'), 'utf8'),
     );
   }
-  for (const path of ['dist/codex/codex-runtime.js', 'hooks/hooks.json']) {
+  for (const path of [
+    'dist/codex/codex-runtime.js',
+    'hooks/hooks.json',
+    'agent/assessment-result.ts',
+    'channels/github/PRESENTATION.md',
+  ]) {
     assert.equal(
       await readFile(join(cacheRoot, path), 'utf8'),
       await readFile(join(packageRoot, path), 'utf8'),
@@ -242,6 +253,41 @@ try {
     .map((name) => `${manifest.name}:${name}`)
     .filter((name) => !discovered.has(name));
   assert.deepEqual(missing, [], `fresh Codex task omitted skills: ${missing.join(', ')}`);
+  const implementation = discovered.get('agent-system:agent-system-issue-implementation');
+  assert.ok(implementation, 'the bundled implementation default must be discoverable');
+  assert.equal(
+    await realpath(implementation.path),
+    join(cacheRoot, 'skills/issue-implementation/SKILL.md'),
+  );
+  const assessment = discovered.get('agent-system:agent-system-issue-assessment');
+  assert.equal(
+    await realpath(assessment!.path),
+    join(cacheRoot, 'skills/issue-assessment/SKILL.md'),
+  );
+  const fixtureWorkspace = join(temporaryRoot, 'assessment-workspace');
+  const fixtures = [
+    ['fixture-assessment', 'assessment-skill'],
+    ['generic-assessment', 'generic-assessment-skill'],
+  ] as const;
+  for (const [name, directory] of fixtures) {
+    const fixtureSkill = join(fixtureWorkspace, '.agents/skills', name);
+    await mkdir(fixtureSkill, { recursive: true });
+    await cp(
+      resolve('examples/codex-install', directory, 'SKILL.md'),
+      join(fixtureSkill, 'SKILL.md'),
+    );
+  }
+  const replacements = await freshSkills(codex, environment, fixtureWorkspace);
+  for (const [name, directory] of fixtures) {
+    const replacement = replacements.get(name);
+    const path = join(fixtureWorkspace, '.agents/skills', name, 'SKILL.md');
+    assert.equal(replacement?.scope, 'repo');
+    assert.equal(await realpath(replacement!.path), path);
+    assert.equal(
+      await readFile(path, 'utf8'),
+      await readFile(resolve('examples/codex-install', directory, 'SKILL.md'), 'utf8'),
+    );
+  }
   process.stdout.write(`Codex plugin checks: ok (${expectedSkillNames.size} skills)\n`);
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

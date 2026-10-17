@@ -1,4 +1,5 @@
-import { resolve } from 'node:path';
+import presentCliCommand from './presentation.ts';
+import { dirname, resolve } from 'node:path';
 
 import type WorkspaceBackupService from '../agent/backup-service.ts';
 import {
@@ -16,7 +17,7 @@ import {
 import { writeCliJson, writeCliSummary } from './output.ts';
 
 /** inspect an archive without extracting it or requiring an operator's live workspace. */
-export default async function backupVerify(
+async function backupVerify(
   options: BackupCommandContext &
     BackupCliOutput & { service: WorkspaceBackupService; archive: string },
 ): Promise<void> {
@@ -31,27 +32,30 @@ export default async function backupVerify(
         loaded.manifest.backup?.output,
       );
     }
-    if (binding) await assertBackupLocationOwner(options, binding, archive);
+    if (binding) await assertBackupLocationOwner(options, binding, dirname(archive));
     const manifest = await options.service.verify(archive, binding?.agentId ?? options.agentId);
     if (options.json) writeCliJson(options.output, { status: 'verified', archive, ...manifest });
     else
       writeCliSummary(
         options.output,
         [
-          { label: 'backup', style: 'status', value: 'verified' },
+          { label: 'verification', style: 'status', value: 'verified' },
           { label: 'agent', style: 'target', value: manifest.agentId },
           { label: 'archive', style: 'target', value: archive },
           { label: 'entries', style: 'field', value: String(manifest.inventory.length) },
           {
             label: 'coverage',
-            style: manifest.coverage.openclawState === 'captured' ? 'status' : 'warning',
+            style: manifest.coverage.openclawState === 'captured' ? 'status' : 'field',
             value: `workspace and agent state: ${manifest.coverage.openclawState}`,
           },
         ],
         options.styles,
+        { rowPadding: 0 },
       );
     writeBackupDiagnostics(options, manifest.diagnostics);
   } catch (error) {
-    writeBackupFailure(options, error);
+    writeBackupFailure(options, error, undefined, 'verification');
   }
 }
+
+export default presentCliCommand(backupVerify);

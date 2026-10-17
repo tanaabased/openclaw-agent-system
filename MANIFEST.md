@@ -5,15 +5,18 @@ Configure an agent workspace through `agent.yaml`. Start with the
 for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or inspect declarations.
 
 - [Discovery](#discovery)
+- [Machine-local overrides](#machine-local-overrides)
 - [Component configuration](#component-configuration)
 - [Configuration](#configuration)
-  - [`schema-version`](#schema-version)
   - [`agent`](#agent)
-  - [`models`](#models)
-  - [`memory`](#memory)
-  - [`environment`](#environment)
-  - [`backup`](#backup)
   - [`automations`](#automations)
+  - [`backup`](#backup)
+  - [`debug`](#debug)
+  - [`environment`](#environment)
+  - [`github.notifications`](#githubnotifications)
+  - [`memory`](#memory)
+  - [`models`](#models)
+  - [`schema-version`](#schema-version)
   - [Setup](#setup)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
@@ -27,7 +30,7 @@ Agent System discovers one manifest from an agent workspace:
 agent.yaml                 # shorthand
 ```
 
-The preferred file wins when both exist; the files never merge. Passive loading
+The preferred base file wins when both exist; the two base files never merge. Passive loading
 validates the manifest but does not resolve environment values or mutate state.
 The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks,
 files larger than 1 MiB, invalid UTF-8, duplicate keys, and unsupported YAML
@@ -47,17 +50,76 @@ environment:
     NODE_ENV: development
 ```
 
+## Machine-local Overrides
+
+One shared profile, local machine choices. Add an optional `agent.local.yaml`
+**beside the selected base**: `.agent-system/agent.local.yaml` for the preferred
+location, or root `agent.local.yaml` for the shorthand. The loader ignores local
+files elsewhere; an overlay without a base does not establish a managed workspace.
+
+Before creating the local file, append these missing entries to the workspace's
+`.gitignore`, preserving existing content. Keep the base tracked; do not replace
+an existing local file during setup.
+
+```gitignore
+/agent.local.yaml
+/.agent-system/agent.local.yaml
+```
+
+The overlay can contain any schema-supported setting without repeating required
+base fields. For example:
+
+```yaml
+models:
+  default:
+    effort: medium
+
+git:
+  worktrees:
+    root: /local/agent-worktrees
+
+github:
+  notifications:
+    issue-assignment:
+      enabled: false
+```
+
+Mappings merge recursively. Scalars and complete arrays replace inherited values;
+arrays do not merge by index or job ID. `[]` clears a configurable list, while `{}`
+retains inherited mapping entries. The notification overlay above pauses issue
+assignments while retaining the base's V2 policy. Empty allowed lists grant no
+admission authority. Command vectors still need an
+executable. `null` is not deletion: it is accepted only where the field's schema
+allows it, such as an automation's `thread`.
+
+Both documents must be mappings and meet the same file and YAML protections.
+The merged document must pass the complete schema, including unknown-key checks
+and the active runtime's agent-ID and workspace-binding checks. Referenced files
+remain relative to the selected manifest directory; workspace-relative settings
+retain their existing anchors.
+
+Shared-loader results retain effective declarations' source files and YAML field
+paths; validation diagnostics attribute field errors to those sources. Overlay
+presence and contents affect the manifest digest and cache freshness, including
+addition, edits, and removal. A change requires fresh lifecycle approval.
+
+Codex and OpenClaw consume the same effective manifest within their existing runtime
+ownership. Loading it does not read secrets, run setup, or reconcile installed
+state. Use the owning runtime's explicit lifecycle operation to apply changes.
+
 ## Component Configuration
 
-| Type    | ID                          | Manifest key           | Configuration                                                                    |
-| ------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
-| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
-| tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
-| tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
-| tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
-| tool    | `agent_system_google`       | `google`               | [Configuration reference](./tools/google/README.md#configuration)                |
+| Type     | ID                          | Manifest key           | Configuration                                                                    |
+| -------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| workflow | GitHub notifications        | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
+| tool     | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
+| tool     | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
+| tool     | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
+| tool     | `agent_system_google`       | `google`               | [Configuration reference](./tools/google/README.md#configuration)                |
 
-Declare a component's manifest key to enable it.
+Declare a component's manifest key to request it, then use `install` to reconcile
+supported runtime behavior. See the [version 2 notification contract](#githubnotifications)
+for each runtime's supported workflows and limitations.
 
 ## Configuration
 
@@ -107,14 +169,6 @@ environment:
     - AGENT_EMAIL
 ```
 
-### `schema-version`
-
-| Type    | Required | Default |
-| ------- | -------- | ------- |
-| integer | yes      | `1`     |
-
-Identifies the manifest schema. Version `1` is the only accepted value.
-
 ### `agent`
 
 | Field         | Type                               | Required      | Default                  | Behavior                                                         |
@@ -125,6 +179,7 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 | `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
 | `id`          | string                             | yes           | none                     | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
 | `name`        | string or `from-environment` value | for `install` | none                     | Agent display name applied to OpenClaw by `install`.             |
+| `runtime`     | `codex`                            | no            | none                     | Selects the Codex prerequisite and declared model runtime.       |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:
@@ -141,116 +196,202 @@ dollar-prefixed scalar in these fields remains literal.
 Identity fields do not configure tools by themselves; a tool may explicitly use
 them as defaults.
 
-### `models`
+Set `agent.runtime: codex` to select the shared Codex prerequisite. With `models`
+declared, `install` also creates agent-scoped Codex bindings for those profiles
+without an existing route or workspace routing patch. Without `models`, existing
+model bindings remain untouched. The declaration does not pin a plugin version.
+Existing agent-specific or inherited `agentRuntime` bindings also select the
+prerequisite. An `openai/*` model name alone does not.
 
-`models` is optional. Omitting it leaves the agent's existing model configuration
-untouched. When present, `default` is required; `low`, `medium`, and `high` are an
-additive work-tier group and must be declared together or omitted together.
+### `automations`
 
-Each profile requires both fields:
+Declare an inline list or `{ file: ./automations.yaml }` naming one YAML list;
+omission and `[]` declare no jobs. OpenClaw operator Install reconciles these
+jobs through the running Gateway; Doctor inspects them without running or changing
+jobs. Standalone Codex Install plans recurring prompt jobs and applies authorized
+native app actions; Doctor inspects saved definitions. See the [Codex support
+matrix](./CODEX.md#repository-automations) for schedules, targets, and limitations.
+Operator [list](./CLI.md#openclaw-agent-system-automations-list),
+[sync](./CLI.md#openclaw-agent-system-automations-sync),
+[run](./CLI.md#openclaw-agent-system-automations-run), and
+[history](./CLI.md#openclaw-agent-system-automations-runs) use these same declarations.
 
-| Field    | Type                         | Required | Default | Behavior                                                      |
-| -------- | ---------------------------- | -------- | ------- | ------------------------------------------------------------- |
-| `effort` | `medium`, `high`, or `xhigh` | yes      | none    | Explicit profile effort, intersected with runtime support.    |
-| `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
+| Field             | Type                                                       | Required         | Default       | Description                                                                    |
+| ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |
+| `enabled`         | boolean                                                    | no               | `true`        | Desired enabled state.                                                         |
+| `id`              | lowercase kebab-case string                                | yes              | none          | Stable unique ID within the workspace.                                         |
+| `overrides`       | runtime mapping                                            | no               | none          | Prompt-only `openclaw` / `codex` settings below.                               |
+| `payload`         | command or prompt object                                   | one payload form | none          | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
+| `prompt`          | nonblank string or `{ file: relative-path }`               | one payload form | none          | Inline text or UTF-8 prompt file.                                              |
+| `run`             | nonblank shell string, argv array, or `{ command, args? }` | one payload form | none          | Command; argv stays literal and ordered.                                       |
+| `runtimes`        | unique list of `openclaw` / `codex`                        | no               | both          | Runtime applicability.                                                         |
+| `schedule`        | string or object                                           | yes              | none          | Schedule forms below.                                                          |
+| `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`          | Shell strings only; place inside `payload` for long-form commands.             |
+| `thread`          | null, nonblank string, or `{ id?: string, name?: string }` | no               | independent   | Persistent prompt conversation; at least one object field is required.         |
+| `timeout-seconds` | integer, 1–3600                                            | no               | runtime-owned | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
 
-The [routing helper](./tools/model-routing/README.md) validates assessments and
-explicit selections against these profiles; it has no built-in model or effort
-defaults. Configuration generators can read `profiles.default` from `inspect`.
+Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
+[setup command syntax](#syntax), without setup checks, steps, or timeout defaults.
+Each `overrides.openclaw` or `overrides.codex` object accepts only:
 
-Model refs cannot select an authentication profile. Runtime and credential
-configuration remain outside the manifest.
+| Field    | Type                                              | Required | Default                                |
+| -------- | ------------------------------------------------- | -------- | -------------------------------------- |
+| `effort` | nonblank string                                   | no       | adapter-resolved                       |
+| `model`  | nonblank string                                   | no       | adapter-resolved                       |
+| `target` | `independent` or `{ thread: existing-native-id }` | no       | shared `thread`, otherwise independent |
 
-OpenClaw's `agents.entries.<id>.models` map stores per-model metadata such as
-`agentRuntime`; it does not authorize selection. Selection is governed by the
-agent's effective `modelPolicy.allow`, which may come from the agent entry or
-`agents.defaults`.
-
-`install` applies declared models to the bound agent:
-
-- Sets the primary model and thinking effort from `default`.
-- Binds declared models to the agent's established runtime route without resolving credentials.
-- Extends a restrictive per-agent `modelPolicy.allow` only as needed, preserving inherited permissions. Unrestricted or matching wildcard policies need no repair.
-- Preserves global defaults, fallbacks, other agents, unrelated model settings, and existing sessions.
-
-> [!NOTE]
-> An incompatible or ambiguous runtime binding blocks installation. Removing
-> profiles later does not undo defaults or policy entries.
-
-`doctor` checks configuration, selection policy, model presence, and effort
-support without authentication or inference. OpenClaw owns runtime health.
-Explicit unavailability produces a warning; unknown availability is not failure.
-Inspection errors remain distinct from known unsupported models or efforts.
-
-Complete work tiers enable [GitHub issue model routing](channels/github/ADVANCED.md#model-routing)
-for new issue conversations. A default-only manifest keeps ordinary model behavior.
-
-For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-routing).
-
-### `memory`
-
-`memory` is optional. Omitting it leaves the bound agent's existing OpenClaw
-memory search configuration untouched. When present, `search.provider` is
-required:
-
-| Field      | Type                      | Required | Default | Behavior                                                                  |
-| ---------- | ------------------------- | -------- | ------- | ------------------------------------------------------------------------- |
-| `api-key`  | environment name          | no       | none    | Reads one declared Agent System environment binding; valid with `openai`. |
-| `model`    | string                    | no       | none    | Overrides OpenClaw's embedding model; valid only with `openai`.           |
-| `provider` | `none`, `local`, `openai` | yes      | none    | Selects keyword-only, local embedding, or OpenAI embedding search.        |
-
-`install` sets the bound agent's provider and fallback, plus the optional model
-and API-key reference, while preserving other memory settings and agents. The
-`none` provider retains keyword search. Configure `local` through OpenClaw before
-expecting semantic search:
-
-```sh
-openclaw models --agent tanaabot auth login --provider llama-cpp --method local
+```yaml
+# .agent-system/agent.yaml
+automations:
+  file: ./automations.yaml
 ```
 
-An OpenAI `api-key` becomes an agent-and-binding-scoped `SecretRef`. Use a
-declared dotenv file or stored 1Password credential so it survives restarts.
-Agent System resolves only that reference when OpenClaw loads its secret snapshot.
-
-> [!NOTE]
-> Source-linked installs use the checkout's built standalone provider because
-> OpenClaw cannot load plugin integrations from a `config` origin. Build before
-> installation; restart the Gateway after changing the provider form or binding.
-> An operator who can rewrite `openclaw.json` can copy the reference.
-
-Doctor preserves the memory database and checks readiness by provider:
-
-- `none`: keyword index.
-- `local`: local provider availability.
-- `openai`: the configured credential and one bounded embedding probe; an unrelated fallback credential cannot establish readiness.
-
-Authentication, permission, billing/quota, and transport failures omit upstream
-error bodies. Index identity and synchronization drift are separate findings.
-
-Use OpenClaw's explicit memory commands when you intend to mutate the index:
-
-```sh
-# inspect the bound agent without rebuilding its index.
-openclaw memory status --agent tanaabot --deep --json
-
-# rebuild only when doctor reports index drift and you intend the write.
-openclaw memory status --index --agent tanaabot
+```yaml
+# .agent-system/automations.yaml
+- id: review
+  schedule: every 1 hour
+  prompt:
+    file: ../prompts/review.md
+- id: github-check
+  runtimes: [openclaw]
+  schedule: '0 9 * * 1-5'
+  run: [gh, api, user, --jq, .login]
 ```
 
-### `environment`
+Files resolve relative to their containing file; execution cwd remains the
+workspace root. References stay within the workspace and follow the [loader's
+size and encoding rules](#discovery). External YAML contains a list, without recursive inclusion.
+Missing or invalid references fail validation rather than declaring no jobs.
 
-| Field          | Type                    | Required | Default | Behavior                                                              |
-| -------------- | ----------------------- | -------- | ------- | --------------------------------------------------------------------- |
-| `dotenv`       | string or string list   | no       | none    | Ordered workspace-relative dotenv files.                              |
-| `op`           | string or string list   | no       | none    | Ordered 1Password Environment IDs merged after `set`.                 |
-| `path-prepend` | string or string list   | no       | none    | Ordered workspace-relative executable directories.                    |
-| `required`     | string list             | no       | none    | Names that fail complete environment resolution when absent or empty. |
-| `set`          | string or `from-op` map | no       | none    | Explicit values merged over dotenv values.                            |
+#### Persistent conversations
 
-Schema-owned YAML keys use kebab-case. Environment names and user-defined
-identifiers remain literal and are never casing-converted. See
-[Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
-[Path](#path) for executable projection.
+Omit `thread` or use `null` for independent runs. A string or `{ name: "Activity" }`
+keeps one named conversation per automation. Matching names never combine jobs.
+
+```yaml
+automations:
+  - id: check-builds
+    schedule: every 1 hour
+    prompt: Review failed builds.
+    thread: { id: project-activity, name: Project activity }
+  - id: review-prs
+    schedule: every 2 hours
+    prompt: Review open pull requests.
+    thread: { id: project-activity, name: Project activity }
+```
+
+| Runtime  | Result for these two jobs                                                                                                                       |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenClaw | Two native schedules in one persistent conversation, with shared history.                                                                       |
+| Codex    | Two native schedules in two persistent conversations, each retaining its own history. Codex permits only one active heartbeat per conversation. |
+
+Bindings are private and scoped to the runtime profile, canonical workspace, and
+owning agent. OpenClaw shares an explicit `thread.id`; Codex additionally scopes it
+by automation ID. Names and YAML order do not determine identity. Removing a job
+retains its binding; reintroducing its ID reuses the conversation.
+
+An explicit ID first reuses its saved binding, otherwise adopts an exact available
+native conversation in the same workspace, otherwise creates one. Unknown IDs are
+managed identifiers—even a mistyped native ID creates a new conversation. OpenClaw
+resolves native IDs to persistent session keys, not interchangeable transcript IDs.
+Permission or lookup failures never count as absence. Missing or archived saved
+conversations require recovery; synchronization will not silently replace them.
+
+An explicit name sets the title; omission preserves it. Conflicting explicit names
+for one resolved conversation are rejected. OpenClaw uses nonunique automatic titles
+for managed conversations; adopting and renaming an existing explicitly titled chat
+retains native label-uniqueness restrictions. Automation names remain separate.
+
+An explicit runtime `target` overrides the **entire** shared declaration for that
+runtime. `independent` stays independent; `{ thread: existing-native-id }` requires
+an exact existing target and never creates a replacement. Multiple active Codex jobs
+explicitly targeting the same native conversation fail with a conflict.
+
+Conversation creation is journaled before native writes. An interrupted OpenClaw
+creation can recover by its persisted session key. Codex saves the returned ID before
+materialization; loss of that response leaves an ambiguous-create recovery barrier,
+not another create. Keep the journal and resolve the native identity before retrying.
+
+OpenClaw changes routing on its existing native job. Codex changes between independent
+and persistent routing by first pausing and retaining the old native schedule, then
+creating its replacement. Old schedule history and conversation bindings remain.
+
+#### OpenClaw execution and ownership
+
+The Gateway must be running and the invoking operator must have native cron read
+and administration permissions. The adapter uses the public CLI transport.
+Install may defer unavailable initial scheduler discovery without changing jobs;
+see [Install](./CLI.md#openclaw-agent-system-install). Explicit synchronization and
+incompatible RPCs still fail.
+Model-facing Install and Doctor report that operator synchronization is required;
+they do not acquire operator transport authority.
+
+Commands run without a model through a fixed owned-job entrypoint. It rechecks the
+installed workspace, declaration, ownership, enabled state, and synchronized hash
+before issuing temporary agent authority. Plain `git` and `gh` use managed launchers;
+tool policy precedes invocation-scoped credentials. Arbitrary executables remain
+operator-authored host commands, with the same [containment boundary](./CLI.md#trust-boundary)
+as setup. Changes to command declarations require another Install.
+
+Prompt jobs default to the owning agent in an independent isolated session. Omitted model
+and effort follow native agent defaults; explicit model and supported native
+thinking levels are passed to OpenClaw. Persistent prompt jobs instead use their
+verified session key and retain conversation history. Output delivery defaults to none; native history
+retains execution results. Command summaries contain bounded status codes, not
+captured script output or credentials.
+
+Timeouts apply to the whole native invocation, including runner startup, and
+range from 1 to 3600 seconds (default 1800). Native same-job serialization,
+retry/backoff, interrupted-run recovery, and DST behavior remain authoritative.
+There is no Agent System retry loop. Normal completion, cancellation, and timeout
+revoke temporary authority and release managed resources. Uncatchable process
+termination cannot guarantee synchronous filesystem cleanup.
+
+Private ownership records live outside the repository, scoped by OpenClaw
+profile, canonical workspace, agent ID, and manifest ID. Unchanged jobs receive
+no native writes. Removal disables a job while retaining its mapping and native
+history; reintroducing its ID reuses that job. Relative one-shot anchors persist
+across payload edits, pause/resume, and removal. Completed one-shots stay consumed;
+only changing the manifest trigger rearms scheduling. Native safety auto-disable
+requires operator recovery.
+
+Native UI edits are drift. Explicit Install restores owned settings using native
+revision checks. Missing jobs, missing ownership, ambiguous recovery, or concurrent
+changes stop reconciliation with bounded diagnostics and partial results. A name
+match never permits adoption or recreation. Doctor distinguishes execution and
+delivery failures without replaying a payload; absent native telemetry is not
+proof of delivery.
+
+#### Schedules
+
+| Form               | Example                                                           | Meaning                                |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
+| Absolute one-shot  | `'2026-10-01T09:00:00-04:00'` or `{ at: '2026-10-01T13:00:00Z' }` | RFC 3339 timestamp, normalized to UTC. |
+| Cron               | `'0 9 * * 1-5'` or `{ cron: '0 9 * * 1-5' }`                      | Numeric five-field calendar schedule.  |
+| Recurring interval | `every 1 hour` or `{ every: 60 minutes }`                         | Elapsed-time recurrence.               |
+| Relative one-shot  | `in 1 hour` or `{ in: 60 minutes }`                               | Delay from initial activation.         |
+
+Durations use positive integers with matching singular/plural seconds, minutes,
+hours, or days (86,400 seconds). Timestamps require seconds and an explicit offset,
+with at most millisecond precision and no leap seconds.
+
+Cron fields are minute 0–59, hour 0–23, day 1–31, month 1–12, and weekday 0–6.
+Use `*`, numbers, ascending ranges, lists, and positive steps on `*` or ranges.
+Day-of-month and day-of-week use OR when both are restricted.
+
+Schedule objects accept exactly one trigger key, plus:
+
+| Field        | Type                  | Required | Default  | Description               |
+| ------------ | --------------------- | -------- | -------- | ------------------------- |
+| `missed-run` | `native`              | no       | `native` | Native catch-up behavior. |
+| `timezone`   | IANA zone or `native` | no       | `native` | Cron only.                |
+
+#### Effective content and trigger identity
+
+Formatting-only edits do not cause drift; prompt/script content and argv order do.
+Only the selected runtime's overrides apply. Executable dependencies are not
+recursively hashed. Payload, timeout, and enabled-state edits preserve one-shot
+trigger identity; activation and completion state belong to reconciliation.
 
 ### `backup`
 
@@ -288,140 +429,439 @@ exclusions. Exclude previous custom destinations explicitly.
 See the [backup command](./CLI.md#openclaw-agent-system-backup-create) for coverage,
 destination restrictions, and sensitive-archive handling.
 
-### `automations`
+### `debug`
 
-Declare an inline list or `{ file: ./automations.yaml }` naming one YAML list;
-omission and `[]` declare no jobs. OpenClaw operator Install reconciles these
-jobs through the running Gateway; Doctor inspects them without running or changing
-jobs. Standalone Codex Install plans recurring prompt jobs and applies authorized
-native app actions; Doctor inspects saved definitions. See the [Codex support
-matrix](./CODEX.md#repository-automations) for schedules, targets, and limitations.
-Operator [list](./CLI.md#openclaw-agent-system-automations-list),
-[sync](./CLI.md#openclaw-agent-system-automations-sync),
-[run](./CLI.md#openclaw-agent-system-automations-run), and
-[history](./CLI.md#openclaw-agent-system-automations-runs) use these same declarations.
+| Type    | Required | Default |
+| ------- | -------- | ------- |
+| boolean | no       | `false` |
 
-| Field             | Type                                                       | Required         | Default       | Description                                                                    |
-| ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |
-| `enabled`         | boolean                                                    | no               | `true`        | Desired enabled state.                                                         |
-| `id`              | lowercase kebab-case string                                | yes              | none          | Stable unique ID within the workspace.                                         |
-| `overrides`       | runtime mapping                                            | no               | none          | Prompt-only `openclaw` / `codex` settings below.                               |
-| `payload`         | command or prompt object                                   | one payload form | none          | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
-| `prompt`          | nonblank string or `{ file: relative-path }`               | one payload form | none          | Inline text or UTF-8 prompt file.                                              |
-| `run`             | nonblank shell string, argv array, or `{ command, args? }` | one payload form | none          | Command; argv stays literal and ordered.                                       |
-| `runtimes`        | unique nonempty list of `openclaw` / `codex`               | no               | both          | Runtime applicability.                                                         |
-| `schedule`        | string or object                                           | yes              | none          | Schedule forms below.                                                          |
-| `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`          | Shell strings only; place inside `payload` for long-form commands.             |
-| `timeout-seconds` | integer, 1–3600                                            | no               | runtime-owned | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
+Set `debug: true` at the top level to show private workflow instruction cards:
+selected skills (including defaults), guidance sources, and retained inline guidance.
+Codex uses this for assessment, implementation delivery, and feedback replies;
+OpenClaw's shared assessment renderer uses the same switch. When omitted or false,
+these cards are hidden. Errors, blockers, responses, and publication outcomes remain
+visible. This controls presentation only; it does not enable runtime logging,
+change permissions, or change the skill or guidance applied to a turn.
 
-Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
-[setup command syntax](#syntax), without setup checks, steps, or timeout defaults.
-Each `overrides.openclaw` or `overrides.codex` object accepts only:
+Inline guidance links to its verified manifest source when available. The text
+shown is the retained snapshot, while the linked file may have changed since then.
+Only inline guidance text is expanded; file guidance retains its source link.
 
-| Field    | Type                                              | Required | Default          |
-| -------- | ------------------------------------------------- | -------- | ---------------- |
-| `effort` | nonblank string                                   | no       | adapter-resolved |
-| `model`  | nonblank string                                   | no       | adapter-resolved |
-| `target` | `independent` or `{ thread: existing-native-id }` | no       | `independent`    |
+### `environment`
+
+| Field          | Type                    | Required | Default | Behavior                                                              |
+| -------------- | ----------------------- | -------- | ------- | --------------------------------------------------------------------- |
+| `dotenv`       | string or string list   | no       | none    | Ordered workspace-relative dotenv files.                              |
+| `op`           | string or string list   | no       | none    | Ordered 1Password Environment IDs merged after `set`.                 |
+| `path-prepend` | string or string list   | no       | none    | Ordered workspace-relative executable directories.                    |
+| `required`     | string list             | no       | none    | Names that fail complete environment resolution when absent or empty. |
+| `set`          | string or `from-op` map | no       | none    | Explicit values merged over dotenv values.                            |
+
+Schema-owned YAML keys use kebab-case. Environment names and user-defined
+identifiers remain literal and are never casing-converted. See
+[Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
+[Path](#path) for executable projection.
+
+### `github.notifications`
+
+Notification policy requires `schema-version: 2`. Unversioned V1 declarations
+are rejected with `github-notification-v1-retired`; the outer workspace manifest
+remains `schema-version: 1`. See [V1 retirement](./channels/github/ADVANCED.md#v1-retirement) before upgrading an old installation.
+
+**Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
+intake, and assessment dispatch are implemented. Authorized Install reconciles the
+owned schedule. Work mode continues actionable assessments through implementation
+and managed PR delivery; Plan mode stops after assessment. Explicitly authorized
+manual delivery remains available after implementation handoff. Configured Codex issue
+feedback resumes the owning chat for explanation and bounded replies, including on its
+verified delivery PR. Codex Auto conditionally continues a recorded proceed decision
+through the same implementation and delivery stages. Review requests remain unavailable.
+OpenClaw v2 supports the default assessment skill in Plan mode; broader workflow rollout
+remains separate.
+OpenClaw Work/Auto modes, issue feedback, review requests, and replacement assessment
+skills remain unsupported. Unavailable feedback and reviews produce warnings without
+blocking supported issue assignment. Unsupported assignment modes and assessment skills
+block only the dependent assignment workflow; no fallback mode or skill is selected. Supported Plan-mode declarations are checked by the enrollment, intake, and
+automation lifecycle owners. A Codex-only declaration does not activate OpenClaw
+intake. Binding and passive discovery never activate work.
+OpenClaw also derives an `Agent System: github-issue-assignment`
+automation from enabled v2 policy. It uses the existing automation reconciler,
+`models.default`, and a read-only condition before a durable scan. Its retained
+`ISSUE ASSIGNMENTS` conversation belongs in **Agent System**. Intake uses the
+Codex/V2 admission schema in separate OpenClaw state; it never uses legacy
+notification files or stores assessment/session status. The separate plan-mode
+dispatch adapter retains routing and native receipts in its own journal. It uses
+the retained credential to create one empty ordinary issue session in the managed
+worktree, then verifies its identity, selected model and effort, and empty/idle state.
+The coordinator then starts one journaled assessment turn. The issue session uses
+`agent_system_dispatch` actions `context` and `result` to verify its binding and
+retain a complete plan, clarification, or setup blocker through the shared assessment
+contract. Later answers refresh context and revise the retained result in the same
+session. Replacement assessment skills and implementation handoff are not supported
+in OpenClaw. Uncertain creation or send effects are retained, never repeated.
+For blocked creation confirmation, inspect with `agent_system_dispatch` action
+`inspect` (no `id`), then request action `reconcile` with the saved receipt `id`
+in the existing `ISSUE ASSIGNMENTS` coordinator. Reconciliation reads back the
+original session and attempted turn; it does not create a replacement or resend.
+Ordinary polling recovers accepted/consumed turns missing delivery evidence, but
+skips other blockers. A missing structured result requires continuation in the
+owning issue chat. `retry` cannot reset an already prepared creation request.
+The scheduled conversation uses its owning agent's existing tool access without
+an intake-specific narrowing. Automation inspection detects stale allowances;
+installation reconciles them through the existing automation lifecycle.
+It processes no comments.
+Operator automation synchronization is required;
+native chat Install/Doctor cannot yet reconcile or inspect the scheduler.
+
+See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
+
+#### Version 2 fields
+
+| Field                       | Required | Default             | Contract                                                                                                                            |
+| --------------------------- | -------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `allowed-repository-owners` | yes      | none                | Nonempty list of pinned repository owners; omission never means unrestricted access.                                                |
+| `interval-minutes`          | no       | `5`                 | Shared monitoring cadence, integer from `1` through `1440`.                                                                         |
+| `issue-assignment`          | no       | absent              | Issue intake and the assessment, planning, and implementation journey selected by its mode.                                         |
+| `max-concurrent-items`      | no       | `3`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
+| `review-request`            | no       | absent              | Requests to start an independent PR review; not direct PR assignment.                                                               |
+| `runtimes`                  | no       | `[openclaw, codex]` | Nonempty unique selection of `openclaw` and/or `codex`. Each runtime owns its reconciliation; no cross-runtime claiming is implied. |
+| `schema-version`            | yes      | none                | Exactly `2`. Unversioned V1 declarations are rejected.                                                                              |
+
+Each workflow accepts `allowed`, an optional list of actor identity records.
+Omission or `[]` grants no authority for that trigger. An absent trigger is not
+monitored. An issue assigner, review requester, and feedback author are distinct
+roles: membership in one list never implies membership in another. There is no
+`approved-actors` fallback in v2.
+
+Each workflow also accepts optional boolean `enabled`. Omission preserves existing
+trigger behavior. `false` pauses new intake without clearing its allowed identities,
+mode, or assessment settings, and requires no execution adapter for that workflow.
+Explicit `true` requires a supported adapter but never grants authority to an empty
+`allowed` list. Disabled declarations still require valid identity pins.
+
+Every identity record requires `login` and immutable `node-id`, using the existing
+GitHub identity syntax. Logins (case-insensitive) and node IDs must be unique
+within each authority list. PR recipients merge matching identities as described
+below. The same identity may appear in separate lists deliberately.
+Repository-owner records carry only these two fields. Trigger `allowed` records
+also accept `operator-owner`, a boolean defaulting to `false`. It records a separate
+OpenClaw operator grant, never an implied consequence of trigger membership and
+never Codex authority. V2 currently provisions no such grants. A future OpenClaw
+adapter must reconcile explicit grants and existing provenance; a `false` entry in
+one trigger does not veto an explicit `true` grant in another.
+
+V2 requires a literal `github.username`; it cannot resolve that value from the
+environment. `github.host` remains `github.com`. Native Codex host authorization
+supplies GitHub access, without an OpenClaw token, managed Git or `gh` configuration,
+or an operator-owner grant.
+
+#### Pull request recipients
+
+`issue-assignment.pull-request` configures delivery recipients; it does not activate
+publication or grant feedback authority.
+
+| Field                              | Required           | Default                               | Contract                                                              |
+| ---------------------------------- | ------------------ | ------------------------------------- | --------------------------------------------------------------------- |
+| `recipients`                       | no                 | Original assignment actor as assignee | Explicit lists replace this default; `[]` adds nobody.                |
+| `recipients[].login` and `node-id` | For pinned people  | none                                  | Pinned GitHub identity; mutually exclusive with `source`.             |
+| `recipients[].roles`               | yes                | none                                  | Nonempty unique list of `assignee` and/or `reviewer`.                 |
+| `recipients[].source`              | For dynamic people | none                                  | Only `assignment-actor`, resolved from the retained assignment event. |
 
 ```yaml
-# .agent-system/agent.yaml
-automations:
-  file: ./automations.yaml
+issue-assignment:
+  pull-request:
+    recipients:
+      - source: assignment-actor
+        roles: [assignee]
+      - login: maintainer
+        node-id: U_maintainer
+        roles: [assignee, reviewer]
 ```
+
+Matching identities merge their roles; conflicting pins are rejected. Delivery
+adds missing recipients without removing existing assignees or review requests,
+including CODEOWNERS requests. Completed reviews are not requested again.
+
+#### Issue modes
+
+`issue-assignment.mode` is optional and defaults to `plan`. Assessment includes
+investigation and initial planning; workspace preparation belongs to runtime dispatch.
+
+| Mode   | Authorized journey                                                                                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` | Assess, then recommend whether to stop for input or proceed through implementation, validation, and PR delivery. The runtime applies that recommendation within the same PR-delivery ceiling as `work`. |
+| `plan` | Assess the issue and produce an actionable plan or focused questions, then stop before implementation.                                                                                                  |
+| `work` | Assess and plan, then continue through implementation, validation, and verified PR delivery unless blocked or clarification is required.                                                                |
+
+No mode grants merge, deployment, expanded repository scope, or authority to
+change its own mode. Feedback continues the existing work's trusted mode and
+cannot turn planning into implementation. `review-request` and nested feedback do not
+accept a separate mode in this contract. Review behavior will be specified with
+its lifecycle, not borrowed from issue Work mode. Codex supports `plan`, `work`, and opt-in [`auto`](./CODEX.md#auto-mode). Auto requires
+explicit saved workflow activation and a recorded proceed decision; OpenClaw Auto
+execution remains unavailable.
+
+#### Feedback permissions
+
+Set `feedback` independently beneath `issue-assignment` and `review-request`.
+Issue feedback covers the admitted issue and its verified linked delivery PRs in
+all issue modes. Review feedback belongs to the independent reviewer conversation.
+Neither scope grants the other scope or permission to start new work.
+
+| Value                             | Meaning                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------- |
+| omitted or `false`                | No feedback authority (default).                                          |
+| `true`                            | Inherit that workflow's current `allowed` identities.                     |
+| `{allowed: [...]}`                | Use exactly the supplied identities.                                      |
+| `{inherit: true, allowed: [...]}` | Combine the workflow's `allowed` identities with the supplied identities. |
+
+In object form, `inherit` is an optional boolean defaulting to `false`; `allowed`
+is an optional list of `{login, node-id}` records defaulting to `[]`. Feedback
+identities do not accept `operator-owner`. Matching identities are deduplicated by
+immutable node ID, with case-insensitive login comparison; conflicting pins are
+rejected. Inheritance follows the current reconciled policy rather than copying
+an old list. A workflow's `enabled` switch controls new intake; it does not erase
+permissions for retained work.
+
+Top-level v2 `feedback` is rejected, including disabled declarations. Remove it
+and explicitly choose feedback permissions beneath each intended workflow.
+Use `true` only when assigners/requesters should also provide feedback; otherwise
+use an explicit list. Migration never copies the old list into both scopes.
+Codex supports feedback in the owning issue chat; independent reviewer intake and
+OpenClaw v2 feedback execution still require their execution adapters.
+
+Object-form feedback also accepts optional `skill` and `guidance` using the
+[assessment selection](#assessment-selection) value shapes. Both workflows default
+to `agent-system:agent-system-feedback-reply`; each may replace that skill or add
+inline or contained-file guidance independently. These composition fields grant
+no feedback authority: choose `inherit` or `allowed` explicitly. Missing or changed
+selected skills stop composition instead of silently falling back.
+
+#### Assessment selection
+
+Configure `github.notifications.issue-assignment.assessment` to select one assessment
+skill and optionally supplement it with trusted profile guidance. Neither field grants
+implementation or publication authority. Applicable repository instructions and runtime
+boundaries remain controlling.
+
+| Field      | Type               | Required | Default                                      | Description                                                                |
+| ---------- | ------------------ | -------- | -------------------------------------------- | -------------------------------------------------------------------------- |
+| `guidance` | string or `{file}` | no       | none                                         | Nonempty single-line or multiline text, or one UTF-8 file; at most 32 KiB. |
+| `skill`    | string             | no       | `agent-system:agent-system-issue-assessment` | ID of one enabled, host-discoverable skill.                                |
+
+Skill IDs accept `skill-name`, `$skill-name`, `plugin:skill-name`, and
+`$plugin:skill-name`. Surrounding spaces and the optional `$` are removed; case is
+preserved. An unqualified name must identify exactly one enabled skill. Use its
+plugin-qualified name to disambiguate. Paths, URLs, inline workflows, and automatic
+skill installation are unsupported. Repository-owned skills are eligible when the
+host discovers them; a skill file path is not a manifest selection mechanism.
 
 ```yaml
-# .agent-system/automations.yaml
-- id: review
-  schedule: every 1 hour
-  prompt:
-    file: ../prompts/review.md
-- id: github-check
-  runtimes: [openclaw]
-  schedule: '0 9 * * 1-5'
-  run: [gh, api, user, --jq, .login]
+issue-assignment:
+  mode: plan
+  assessment:
+    skill: $agent-system:agent-system-issue-assessment
+    guidance: |
+      Challenge unnecessary scope.
+      Prefer small, independently reviewable changes.
 ```
 
-Files resolve relative to their containing file; execution cwd remains the
-workspace root. References stay within the workspace and follow the [loader's
-size and encoding rules](#discovery). External YAML contains a list, without recursive inclusion.
-Missing or invalid references fail validation rather than declaring no jobs.
+Alternatively, use `guidance: {file: guidance/assessment.md}`. Paths resolve from the
+stable bound agent workspace, not the issue worktree or manifest directory. Absolute
+paths, traversal, symlinks, nonregular files, invalid UTF-8, empty text, and NULs are
+rejected. Inline and file forms are mutually exclusive. Guidance files contain
+instructions, not secrets; their contents are retained privately with the assessment.
 
-#### OpenClaw execution and ownership
+Omitting both fields uses the default skill. Guidance alone supplements that default;
+a replacement runs alone, with guidance when supplied. Agent System owns generic
+defaults, company skills may live in Canon, and the bound workspace owns selection
+and preferences. A replacement may use the recommended structured result and direct
+submission, as the default skill does, or produce an ordinary assessment without
+Agent System commands, result fields, or required headings. For ordinary output, the
+host supplies verified context, retains the complete assessment, and derives the same
+internal result for saving and display. Integrated results are not adapted a second
+time. The full assessment remains the source of truth for either approach; summaries
+and status must preserve its conditions, uncertainty, and unresolved decisions.
 
-The Gateway must be running and the invoking operator must have native cron read
-and administration permissions. The adapter uses the public CLI transport tested
-with OpenClaw 2026.9.6. Unavailable or incompatible RPCs block reconciliation.
-Model-facing Install and Doctor report that operator synchronization is required;
-they do not acquire operator transport authority.
+Selection and guidance are captured when native creation is prepared. Continuation
+uses the saved guidance; a fresh assessment observes later guidance-file edits without
+reinstallation. Manifest changes follow the existing Install reconciliation contract.
+Missing, disabled, ambiguous, or changed skills and invalid guidance stop the affected
+assessment with an actionable diagnostic instead of silently changing its procedure.
+Currently, skill resolution supports host-discovered local `SKILL.md` sources.
 
-Commands run without a model through a fixed owned-job entrypoint. It rechecks the
-installed workspace, declaration, ownership, enabled state, and synchronized hash
-before issuing temporary agent authority. Plain `git` and `gh` use managed launchers;
-tool policy precedes invocation-scoped credentials. Arbitrary executables remain
-operator-authored host commands, with the same [containment boundary](./CLI.md#trust-boundary)
-as setup. Changes to command declarations require another Install; dependencies
-of an executable script are not recursively hashed.
+#### Implementation and review selection
 
-Prompt jobs use the owning agent in an independent isolated session. Omitted model
-and effort follow native agent defaults; explicit model and supported native
-thinking levels are passed to OpenClaw. Named thread targets currently report
-`automation-target-unsupported`. Output delivery defaults to none; native history
-retains execution results. Command summaries contain bounded status codes, not
-captured script output or credentials.
+`issue-assignment.implementation` and `review-request.review` accept the same
+optional `skill` and `guidance` fields and contained guidance forms as
+[assessment selection](#assessment-selection). Implementation defaults to
+`agent-system:agent-system-issue-implementation`; review has no executable default
+yet. Omit `skill` to retain the stage default, including when supplying only guidance. These declarations alone do not enable
+execution. In standalone Codex, activating Work mode through Install authorizes
+assessment, implementation with the selected skill, and managed PR publication
+without routine stage approvals; see [Work mode](./CODEX.md#work-mode). Assessment is shared by Plan, Work, and Auto; Work and Auto share
+implementation. Independent PR review has its own review stage. Arbitrary stage
+graphs are unsupported.
 
-Timeouts apply to the whole native invocation, including runner startup, and
-range from 1 to 3600 seconds (default 1800). Native same-job serialization,
-retry/backoff, interrupted-run recovery, and DST behavior remain authoritative.
-There is no Agent System retry loop. Normal completion, cancellation, and timeout
-revoke temporary authority and release managed resources. Uncatchable process
-termination cannot guarantee synchronous filesystem cleanup.
+The surrounding Agent System workflow owns the internal versioned result contract:
+`assessment-result/v1`, `implementation-result/v1`, or `review-result/v1`. Selected
+implementation and review skills provide substantive analysis; they need not know
+Agent System commands, receipt fields, result payloads, or output headings. The
+workflow must preserve their evidence, plans, questions, and uncertainty when
+adapting output, without inventing missing findings. The runtime binds results to
+admitted work, the native turn/worktree, routing and skill selection, policy, and
+processed evidence. Review results report continue, wait, done, or a blocker;
+the skill owns tests, analysis, findings, and substantive completion criteria.
+Done may occur on the first pass and covers only the evidence processed. New
+head/base revisions, check attempts/results (including same-commit reruns),
+authorized feedback revisions, or request events can warrant another pass.
+Closure or lost authority is a stop reason, not a successful review.
 
-Private ownership records live outside the repository, scoped by OpenClaw
-profile, canonical workspace, agent ID, and manifest ID. Unchanged jobs receive
-no native writes. Removal disables a job while retaining its mapping and native
-history; reintroducing its ID reuses that job. Relative one-shot anchors persist
-across payload edits, pause/resume, and removal. Completed one-shots stay consumed;
-only changing the manifest trigger rearms scheduling. Native safety auto-disable
-requires operator recovery.
+#### Issue-only profile example
 
-Native UI edits are drift. Explicit Install restores owned settings using native
-revision checks. Missing jobs, missing ownership, ambiguous recovery, or concurrent
-changes stop reconciliation with bounded diagnostics and partial results. A name
-match never permits adoption or recreation. Doctor distinguishes execution and
-delivery failures without replaying a payload; absent native telemetry is not
-proof of delivery.
+This declaration prepares the agreed self-assignment policy; Install activates it.
+Keep `review-request` absent or disabled until its execution adapter is available.
+Issue feedback is optional; see [Codex issue feedback](./CODEX.md#issue-feedback).
 
-#### Schedules
+```yaml
+schema-version: 1
+agent:
+  id: pirog
+github:
+  host: github.com
+  username: pirog
+  notifications:
+    schema-version: 2
+    runtimes: [codex]
+    interval-minutes: 5
+    max-concurrent-items: 3
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDODNGy1g
+      - login: pirog
+        node-id: MDQ6VXNlcjcxMzQyNA==
+      - login: lando
+        node-id: MDEyOk9yZ2FuaXphdGlvbjMxNjA1NTg0
+    issue-assignment:
+      mode: plan
+      allowed:
+        - login: pirog
+          node-id: MDQ6VXNlcjcxMzQyNA==
+          operator-owner: false
+```
 
-| Form               | Example                                                           | Meaning                                |
-| ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
-| Recurring interval | `every 1 hour` or `{ every: 60 minutes }`                         | Elapsed-time recurrence.               |
-| Relative one-shot  | `in 1 hour` or `{ in: 60 minutes }`                               | Delay from initial activation.         |
-| Absolute one-shot  | `'2026-10-01T09:00:00-04:00'` or `{ at: '2026-10-01T13:00:00Z' }` | RFC 3339 timestamp, normalized to UTC. |
-| Cron               | `'0 9 * * 1-5'` or `{ cron: '0 9 * * 1-5' }`                      | Numeric five-field calendar schedule.  |
+#### Activation
 
-Durations use positive integers with matching singular/plural seconds, minutes,
-hours, or days (86,400 seconds). Timestamps require seconds and an explicit offset,
-with at most millisecond precision and no leap seconds.
+Policy declares desired monitoring; binding and passive discovery do not activate
+it. Install reconciles the selected runtime. Empty authority lists admit no work;
+disabling a trigger or removing policy stops admission and requires reconciliation
+to pause the owned job.
+See [Codex intake](./CODEX.md#github-notification-policy) for activation and inspection.
+Independent review remains outside the current Codex support. Auto uses the same
+configured assessment and implementation stages, subject to its recorded decision
+and freshly reconciled authority.
 
-Cron fields are minute 0–59, hour 0–23, day 1–31, month 1–12, and weekday 0–6.
-Use `*`, numbers, ascending ranges, lists, and positive steps on `*` or ranges.
-Day-of-month and day-of-week use OR when both are restricted.
+### `memory`
 
-Schedule objects accept exactly one trigger key, plus:
+`memory` is optional. Omitting it leaves the bound agent's existing OpenClaw
+memory search configuration untouched. When present, `search.provider` is
+required:
 
-| Field        | Type                  | Required | Default  | Description               |
-| ------------ | --------------------- | -------- | -------- | ------------------------- |
-| `missed-run` | `native`              | no       | `native` | Native catch-up behavior. |
-| `timezone`   | IANA zone or `native` | no       | `native` | Cron only.                |
+| Field      | Type                      | Required | Default | Behavior                                                                  |
+| ---------- | ------------------------- | -------- | ------- | ------------------------------------------------------------------------- |
+| `api-key`  | environment name          | no       | none    | Reads one declared Agent System environment binding; valid with `openai`. |
+| `model`    | string                    | no       | none    | Overrides OpenClaw's embedding model; valid only with `openai`.           |
+| `provider` | `none`, `local`, `openai` | yes      | none    | Selects keyword-only, local embedding, or OpenAI embedding search.        |
 
-#### Effective content and trigger identity
+`install` sets the bound agent's provider and fallback, plus the optional model
+and API-key reference, while preserving other memory settings and agents. The
+`none` provider retains keyword search. Configure `local` through OpenClaw before
+expecting semantic search:
 
-Formatting-only edits do not cause drift; prompt/script content and argv order do.
-Only the selected runtime's overrides apply. Executable dependencies are not
-recursively hashed. Payload, timeout, and enabled-state edits preserve one-shot
-trigger identity; activation and completion state belong to reconciliation.
+```sh
+openclaw models --agent tanaabot auth login --provider llama-cpp --method local
+```
+
+An OpenAI `api-key` becomes an agent-and-binding-scoped `SecretRef`. Use a
+declared dotenv file or stored 1Password credential so it survives restarts.
+Agent System resolves only that reference when OpenClaw loads its secret snapshot.
+
+An operator who can rewrite `openclaw.json` can copy the reference. For linked
+checkouts, follow the [source-install rebuild and restart steps](./DEVELOPMENT.md#install-from-source)
+after changing the provider form or binding.
+
+Doctor preserves the memory database and checks readiness by provider:
+
+- `none`: keyword index.
+- `local`: local provider availability.
+- `openai`: the configured credential and one bounded embedding probe; an unrelated fallback credential cannot establish readiness.
+
+Authentication, permission, billing/quota, and transport failures omit upstream
+error bodies. Index identity and synchronization drift are separate findings.
+
+Use OpenClaw's explicit memory commands when you intend to mutate the index:
+
+```sh
+# inspect the bound agent without rebuilding its index.
+openclaw memory status --agent tanaabot --deep --json
+
+# rebuild only when doctor reports index drift and you intend the write.
+openclaw memory status --index --agent tanaabot
+```
+
+### `models`
+
+`models` is optional. Omitting it leaves the agent's existing model configuration
+untouched. When present, `default` is required; `low`, `medium`, and `high` are an
+additive work-tier group and must be declared together or omitted together.
+
+Each profile requires both fields:
+
+| Field    | Type                         | Required | Default | Behavior                                                      |
+| -------- | ---------------------------- | -------- | ------- | ------------------------------------------------------------- |
+| `effort` | `medium`, `high`, or `xhigh` | yes      | none    | Explicit profile effort, intersected with runtime support.    |
+| `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
+
+The [routing helper](./tools/model-routing/README.md) validates assessments and
+explicit selections against these profiles; it has no built-in model or effort
+defaults. Configuration generators can read `profiles.default` from `inspect`.
+
+Model refs cannot select an authentication profile. Credential configuration
+remains outside the manifest.
+
+OpenClaw's `agents.entries.<id>.models` map stores per-model metadata such as
+`agentRuntime`; it does not authorize selection. Selection is governed by the
+agent's effective `modelPolicy.allow`, which may come from the agent entry or
+`agents.defaults`.
+
+`install` applies declared models to the bound agent:
+
+- Sets the primary model and thinking effort from `default`.
+- Binds declared models to `agent.runtime` when present, otherwise to the agent's established runtime route, without resolving credentials.
+- Extends a restrictive per-agent `modelPolicy.allow` only as needed, preserving inherited permissions. Unrestricted or matching wildcard policies need no repair.
+- Preserves global defaults, fallbacks, other agents, unrelated model settings, and existing sessions.
+
+> [!NOTE]
+> An incompatible or ambiguous runtime binding blocks installation. Removing
+> profiles later does not undo defaults or policy entries.
+
+`doctor` checks configuration, selection policy, model presence, and effort
+support without authentication or inference. OpenClaw owns runtime health.
+Explicit unavailability produces a warning; unknown availability is not failure.
+Inspection errors remain distinct from known unsupported models or efforts.
+
+Complete work tiers enable [GitHub issue model routing](./tools/model-routing/README.md)
+for new issue conversations. A default-only manifest keeps ordinary model behavior.
+
+For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-routing).
+
+### `schema-version`
+
+| Type    | Required | Default |
+| ------- | -------- | ------- |
+| integer | yes      | `1`     |
+
+Identifies the manifest schema. Version `1` is the only accepted value.
 
 ### Setup
 
@@ -516,8 +956,8 @@ setup-agent:
 
 Strings, block scalars, and the short mapping normalize to one step named
 `default`. Named steps require a unique lowercase kebab-case `id` and an `apply`;
-`check` is optional. `steps` must be nonempty and cannot mix with short-mapping
-fields. Bare arrays and command objects are not setup shorthand: place them
+`check` is optional. `steps: []` clears the phase; `steps` cannot mix with
+short-mapping fields. Bare arrays and command objects are not setup shorthand: place them
 under `check` or `apply`.
 
 #### Shells, executables, and limits
@@ -583,7 +1023,7 @@ setup-agent:
   apply: mkdir -p repos
 ```
 
-Lists must be nonempty and contain unique supported values. The invoking
+Lists contain unique supported values; `[]` selects no runtimes. The invoking
 integration selects the runtime from trusted context. OpenClaw always selects
 `openclaw`, including for OpenClaw-hosted Codex; the
 [standalone Codex adapter](./CODEX.md#skills) selects
@@ -631,24 +1071,13 @@ To clone as the agent, first declare its [Git identity and SSH
 keys](./tools/git/README.md#configuration-reference) and [GitHub username, token,
 and public keys](./tools/github/README.md#configuration-reference). Supply host
 executables directly or install them in `setup-host`; credential sources and
-key files must be available before agent-bound setup. Then add:
-
-```yaml
-setup-agent:
-  steps:
-    - id: clone-project
-      runtimes: [openclaw]
-      check: test -d repos/project/.git
-      apply: |
-        gh api user --jq .login
-        mkdir -p repos
-        git clone git@github.com:your-org/project.git repos/project
-```
-
-Replace `your-org/project` with the target repository. Within agent scope,
-managed `gh` and `git` use the declared agent identities without operator-identity
-fallback. The process still runs as the installing OS user. This example requires
-OpenClaw's managed tools.
+key files must be available before agent-bound setup. The
+[tools example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-tools/README.md)
+exercises agent-bound setup commands; the
+[worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
+exercises declared SSH checkout with OpenClaw's managed tools. They use the declared
+agent identities without operator-identity fallback; the process still runs as
+the installing OS user.
 
 ## Environment Resolution
 

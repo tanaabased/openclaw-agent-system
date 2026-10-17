@@ -1,5 +1,41 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### Compatibility
+
+- Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.9.8`. [#218](https://github.com/tanaabased/openclaw-agent-system/issues/218)
+- Removed V1 GitHub notification configuration, polling, and workflow tools; retained historical state without automatic migration. [#323](https://github.com/tanaabased/openclaw-agent-system/issues/323)
+- Updated supported Node.js versions to `>=24.16.0 <25 || >=26.1.0`. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214)
+
+### New Features
+
+- Added Codex issue-assignment intake with one persistent chat, historical baseline exclusion, and explicit recurring consent. [#246](https://github.com/tanaabased/openclaw-agent-system/issues/246)
+- Added `agent.yaml` automations with native OpenClaw scheduling and app-assisted Codex prompt scheduling. [#194](https://github.com/tanaabased/openclaw-agent-system/issues/194) [#195](https://github.com/tanaabased/openclaw-agent-system/issues/195) [#196](https://github.com/tanaabased/openclaw-agent-system/issues/196)
+- Added `github.notifications` V2 policy and native OpenClaw issue assignment, admission, and retained planning. [#245](https://github.com/tanaabased/openclaw-agent-system/issues/245) [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328)
+- Added named, persistent automation conversations in OpenClaw and Codex. [#229](https://github.com/tanaabased/openclaw-agent-system/issues/229)
+- Added `openclaw agent-system automations` commands to inspect, sync, run, and read native job history. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
+- Added `openclaw agent-system backup prune` to retain the latest local backups. [#198](https://github.com/tanaabased/openclaw-agent-system/issues/198)
+
+### Improvements
+
+- Aligned CLI notice, warning, and error presentation while keeping diagnostics on stderr and JSON results intact. [#230](https://github.com/tanaabased/openclaw-agent-system/pull/230)
+- Enabled managed-agent collaboration by default, adding required session access while retaining operator grants. [#220](https://github.com/tanaabased/openclaw-agent-system/issues/220) [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231)
+- Improved install failure reports with completed work, blocked components, and recovery guidance. [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231)
+- Limited shared `@openclaw/codex` installation and readiness requirements to agents using the Codex runtime. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214) [#217](https://github.com/tanaabased/openclaw-agent-system/issues/217)
+- Rewired `notifications status`, `refresh`, and `wait` to native V2 state and automation runs. [#326](https://github.com/tanaabased/openclaw-agent-system/issues/326)
+- Supported stable GoG versions `>=0.42.0 <1.0.0` while retaining the reviewed command and flag surface. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
+
+### Bug Fixes
+
+- Fixed Codex session hooks failing when the plugin path contains spaces.
+- Fixed compromised private-state locks crashing the Gateway. [#234](https://github.com/tanaabased/openclaw-agent-system/pull/234)
+- Fixed implicit model fallback inheritance while preserving configured fallback lists. [#222](https://github.com/tanaabased/openclaw-agent-system/issues/222)
+- Rejected unsupported native OpenClaw notification retirement waits before polling or requesting refreshes. [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328)
+- Rejected notification timeouts above `2147483` seconds before they overflow the native timer.
+
+### Developer Notes
+
+- Added recorded CLI responses and provenance checks for deterministic mock-model fixtures. [#199](https://github.com/tanaabased/openclaw-agent-system/issues/199)
+
 ## v0.8.0 - [September 29, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.8.0)
 
 ### New Features

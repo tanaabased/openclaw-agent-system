@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
+import { maximumManifestBytes, readManifestBytes } from './read-document.ts';
 import type { ManifestDiagnostic } from './types.ts';
 
-export const maximumManifestBytes = 1024 * 1024;
+export { maximumManifestBytes } from './read-document.ts';
 
 interface MissingManifestCandidate {
   status: 'missing';
@@ -31,6 +33,7 @@ export interface ManifestDiscovery {
   workspaceDir: string;
   fingerprint: string;
   selected?: ManifestCandidate;
+  overlay?: ManifestCandidate;
   ignoredPath?: string;
   diagnostics: ManifestDiagnostic[];
 }
@@ -49,7 +52,7 @@ function failure(
   };
 }
 
-async function inspectCandidate(path: string): Promise<ManifestCandidate> {
+async function inspectCandidate(path: string, includeContents = false): Promise<ManifestCandidate> {
   try {
     const stats = await lstat(path);
     const fingerprint = [
@@ -79,7 +82,19 @@ async function inspectCandidate(path: string): Promise<ManifestCandidate> {
       );
     }
 
-    return { status: 'readable', path, fingerprint: `file:${fingerprint}` };
+    let contentFingerprint = '';
+    if (includeContents) {
+      const file = await readManifestBytes(path);
+      if (file.status === 'invalid')
+        return {
+          status: 'invalid',
+          path,
+          fingerprint: `unreadable:${fingerprint}`,
+          diagnostics: file.diagnostics,
+        };
+      contentFingerprint = `:${createHash('sha256').update(file.contents).digest('hex')}`;
+    }
+    return { status: 'readable', path, fingerprint: `file:${fingerprint}${contentFingerprint}` };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return { status: 'missing', path, fingerprint: 'missing' };
@@ -129,7 +144,7 @@ async function inspectPreferredCandidate(path: string): Promise<ManifestCandidat
   }
 }
 
-/** Discover exactly one workspace manifest without following symlinks or merging files. */
+/** discover exactly one workspace manifest and its optional sibling overlay without following symlinks. */
 export default async function discoverManifest(workspaceDir: string): Promise<ManifestDiscovery> {
   const normalizedWorkspaceDir = resolve(workspaceDir);
   const preferredPath = join(normalizedWorkspaceDir, '.agent-system', 'agent.yaml');
@@ -141,6 +156,10 @@ export default async function discoverManifest(workspaceDir: string): Promise<Ma
   const preferredExists = preferred.status !== 'missing';
   const shorthandExists = shorthand.status !== 'missing';
   const selected = preferredExists ? preferred : shorthandExists ? shorthand : undefined;
+  const overlay =
+    selected?.status === 'readable'
+      ? await inspectCandidate(join(dirname(selected.path), 'agent.local.yaml'), true)
+      : undefined;
   const ignoredPath = preferredExists && shorthandExists ? shorthand.path : undefined;
   const diagnostics: ManifestDiagnostic[] = [];
 
@@ -153,11 +172,16 @@ export default async function discoverManifest(workspaceDir: string): Promise<Ma
   }
 
   if (selected?.status === 'invalid') diagnostics.push(...selected.diagnostics);
+  if (overlay?.status === 'invalid')
+    diagnostics.push(
+      ...overlay.diagnostics.map((diagnostic) => ({ ...diagnostic, sourcePath: overlay.path })),
+    );
 
   return {
     workspaceDir: normalizedWorkspaceDir,
-    fingerprint: `${preferred.fingerprint}|${shorthand.fingerprint}`,
+    fingerprint: `${preferred.fingerprint}|${shorthand.fingerprint}|${overlay?.fingerprint ?? 'no-base'}`,
     selected,
+    overlay,
     ignoredPath,
     diagnostics,
   };

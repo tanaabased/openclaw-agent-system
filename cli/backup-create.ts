@@ -1,3 +1,4 @@
+import presentCliCommand from './presentation.ts';
 import type WorkspaceBackupService from '../agent/backup-service.ts';
 import { BackupError } from '../agent/backup-types.ts';
 import type { BackupConfiguration } from '../manifest/backup-schema.ts';
@@ -12,10 +13,11 @@ import {
   writeBackupDiagnostics,
   writeBackupFailure,
 } from './backup-output.ts';
-import { writeCliJson, writeCliSummary } from './output.ts';
+import { writeCliJson } from './output.ts';
+import writeBackupSelection from './backup-selection-output.ts';
 
 /** create or preview one archive using the existing CLI output and trusted command binding. */
-export default async function backupCreate(
+async function backupCreate(
   options: BackupCommandContext &
     BackupCliOutput & {
       service: WorkspaceBackupService;
@@ -43,26 +45,15 @@ export default async function backupCreate(
       const result = { agentId, workspaceDir, settings, coverage, files, diagnostics };
       if (options.json) writeCliJson(options.output, { status: 'preview', ...result });
       else
-        writeCliSummary(
-          options.output,
-          [
-            { label: 'backup', style: 'action', value: 'preview' },
-            { label: 'agent', style: 'target', value: plan.agentId },
-            { label: 'output', style: 'target', value: plan.settings.output },
-            { label: 'entries', style: 'field', value: String(plan.files.length) },
-            {
-              label: 'coverage',
-              style: coverage.openclawState === 'off' ? 'warning' : 'field',
-              value: `workspace and agent state: ${coverage.openclawState}`,
-            },
-            ...plan.files.map((path) => ({
-              label: 'selected',
-              style: 'field' as const,
-              value: path,
-            })),
-          ],
-          options.styles,
-        );
+        writeBackupSelection(options, {
+          status: 'preview',
+          agentId,
+          workspaceDir,
+          settings,
+          coverage,
+          files,
+          selection: plan.selection,
+        });
       writeBackupDiagnostics(options, plan.diagnostics);
       return;
     }
@@ -74,23 +65,20 @@ export default async function backupCreate(
         ...result.manifest,
       });
     else
-      writeCliSummary(
-        options.output,
-        [
-          { label: 'backup', style: 'status', value: 'created and verified' },
-          { label: 'agent', style: 'target', value: result.manifest.agentId },
-          { label: 'archive', style: 'target', value: result.archive },
-          { label: 'entries', style: 'field', value: String(result.manifest.inventory.length) },
-          {
-            label: 'coverage',
-            style: result.manifest.coverage.openclawState === 'captured' ? 'status' : 'warning',
-            value: `workspace and agent state: ${result.manifest.coverage.openclawState}`,
-          },
-        ],
-        options.styles,
-      );
+      writeBackupSelection(options, {
+        status: 'created and verified',
+        agentId: result.manifest.agentId,
+        workspaceDir: plan.workspaceDir,
+        archive: result.archive,
+        settings: result.manifest.settings,
+        coverage: result.manifest.coverage,
+        files: result.manifest.inventory.map(({ path }) => path),
+        selection: result.selection,
+      });
     writeBackupDiagnostics(options, result.manifest.diagnostics);
   } catch (error) {
     writeBackupFailure(options, error);
   }
 }
+
+export default presentCliCommand(backupCreate);

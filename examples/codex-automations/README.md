@@ -1,0 +1,104 @@
+# Codex Automations Example
+
+Verify packaged automation planning, pending-action recovery, and durable per-automation conversations in isolated Codex state on a disposable GitHub Actions runner. These direct checks use the native app server without model generation or provider credentials. Run only in GitHub Actions.
+
+## Automation Checks
+
+Automation lookup inputs below are explicit fixtures. The installed runtime's
+`list` and `sync` routes inspect inventory and plan authorized native app actions;
+they do not write scheduler files. The `run` and `runs` checks assert the explicit
+`automation-run-now-unsupported` and `automation-history-unavailable` results.
+
+The trusted `automationRuntime` exposes `threads-sync` under explicit installation
+authorization and a fresh plan digest. It creates per-automation conversations
+through `codex app-server` in the ambient profile, adds an attributed setup
+history item without model generation, and verifies resume through a fresh
+process, including native `auto_review`, `on-request`, and `workspace-write`
+permission readback. Repeated sync reuses those conversations.
+
+The prepare/cancel check retains a pending journal until saved-state verification
+and permits cancellation only while the failed write's target remains unchanged.
+Pending creates also require no new native IDs: an unmarked job could be a partial
+create. Lost-response recovery may acknowledge the exact saved pending definition
+without another create; further writes require a fresh plan. Older journals retain
+the whole-scheduler cancellation check.
+
+Native request/response and saved-state captures live in `fixtures/` with separate
+provenance. Ordinary tests consume reviewed captures without contacting the app;
+constructed failure cases are identified in the tests. This packed/headless
+scenario does not replace separate installed desktop-tool verification.
+
+## Setup
+
+```bash
+# should install and enable the exact prepared codex plugin in isolated state
+root="$TMPDIR/agent-system-codex-automations"
+mkdir -p "$root/package"
+tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
+codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
+codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
+```
+
+## Testing
+
+```bash
+# should plan automation sync through the packed runtime without native scheduler writes
+root="$TMPDIR/agent-system-codex-automations"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-automations/automation" && pwd -P)
+node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "$workspace" --confirm
+jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
+node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
+  | tee "$root/automation-plan.json" \
+  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
+node "$runtime" setup install --plugin-data "$root/automation-data" \
+  | jq -e '.status == "requires-native-app-sync"'
+test ! -d "$CODEX_HOME/automations"
+
+# should expose list sync and explicit occurrence gaps through the installed runtime
+root="$TMPDIR/agent-system-codex-automations"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" automations --help | grep -F 'run-now'
+node "$runtime" automations list --plugin-data "$root/automation-data" < "$root/automation-input.json" | jq -e '.jobs[0].id == "review" and .jobs[0].nativeId == null'
+node "$runtime" automations sync --plugin-data "$root/automation-data" < "$root/automation-input.json" | jq -e '.status == "requires-native-app-sync"'
+if printf '%s\n' '{"id":"review"}' | node "$runtime" automations run --plugin-data "$root/automation-data" > "$root/run-gap.json"; then exit 1; fi
+jq -e '.code == "automation-run-now-unsupported" and .manualTask.schedulerOccurrence == false and .manualTask.history == "separate-task"' "$root/run-gap.json"
+if printf '%s\n' '{"id":"review"}' | node "$runtime" automations runs --plugin-data "$root/automation-data" > "$root/history-gap.json"; then exit 1; fi
+jq -e '.code == "automation-history-unavailable" and .telemetry.execution == "unavailable"' "$root/history-gap.json"
+test ! -d "$CODEX_HOME/automations"
+
+# should retain a pending native action and cancel only an unchanged failed write
+root="$TMPDIR/agent-system-codex-automations"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+digest=$(jq -r .digest "$root/automation-plan.json")
+jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" \
+  | node "$runtime" automations prepare --plugin-data "$root/automation-data" \
+  | jq -e '.status == "prepared" and .request.mode == "create"'
+node "$runtime" automations inspect --plugin-data "$root/automation-data" < "$root/automation-input.json" \
+  | jq -e '.status == "blocked" and ([.findings[].code] | index("automation-pending-readback-required") != null)'
+jq -n --arg digest "$digest" '{digest:$digest}' \
+  | node "$runtime" automations cancel --plugin-data "$root/automation-data" \
+  | jq -e '.status == "cancelled"'
+test ! -d "$CODEX_HOME/automations"
+
+# should create durable conversations with selected models and verified auto review
+root="$TMPDIR/agent-system-codex-automations"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$GITHUB_WORKSPACE/examples/codex-automations/threads" --confirm
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" > "$root/threads-plan.json"
+jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
+
+# should retain conversation identities and model settings after the creating process exits
+root="$TMPDIR/agent-system-codex-automations"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" > "$root/threads-reused.json"
+jq -S '.threads | map_values(.id)' "$root/threads-created.json" > "$root/threads-ids.json"
+jq -S '.threads | map_values(.id)' "$root/threads-reused.json" | diff - "$root/threads-ids.json"
+test ! -d "$CODEX_HOME/automations"
+```

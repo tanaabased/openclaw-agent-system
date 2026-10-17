@@ -1,3 +1,4 @@
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
@@ -6,21 +7,18 @@ import {
   writeCliLines,
 } from '../../../cli/output.ts';
 import type { CommandLike } from '../../../cli/register.ts';
-import { formatErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
-import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import refreshNotificationsAgentSystem from './refresh.ts';
 import statusNotificationsAgentSystem from './status.ts';
 import waitNotificationsAgentSystem from './wait.ts';
 
 export interface RegisterGitHubNotificationsCliOptions {
+  nativeService?: Pick<OpenClawNotifications, 'inspect' | 'refresh' | 'wait'>;
   completeOneShot(code: number): Promise<void>;
   cwd(): string;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   output: CliOutput;
   setExitCode(code: number): void;
-  statusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
   styles?: CliStyles;
 }
 
@@ -33,8 +31,8 @@ async function runOneShot(
   run: (setExitCode: (code: number) => void) => Promise<void>,
   options: Pick<
     RegisterGitHubNotificationsCliOptions,
-    'completeOneShot' | 'output' | 'setExitCode'
-  >,
+    'completeOneShot' | 'output' | 'setExitCode' | 'styles'
+  > & { json?: boolean },
   failureCode: string,
 ): Promise<void> {
   let exitCode = 0;
@@ -47,7 +45,8 @@ async function runOneShot(
   } catch (error) {
     writeCliError(
       options.output,
-      formatErrorDiagnostic('github-notifications', error, failureCode),
+      formatRedactedErrorDiagnostic('github-notifications', error, failureCode),
+      options,
     );
     setExitCode(1);
   } finally {
@@ -62,17 +61,17 @@ export default function registerGitHubNotificationsCli(
 ): void {
   const notifications = agentSystem
     .command('notifications')
-    .description('Manage GitHub notification intake.')
+    .description('manage github notification intake.')
     .action(() => writeHelp(notifications, options.output));
   const refresh = notifications
     .command('refresh')
-    .description('Run one GitHub notification intake cycle now.')
-    .option('--agent <id>', 'Refresh notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--timeout <seconds>', 'Set the bounded refresh timeout in seconds.')
-    .option('--json', 'Write structured JSON output.')
+    .description('run one github notification intake cycle now.')
+    .option('--agent <id>', 'refresh notifications for an openclaw agent.')
+    .option('--repository <owner/name>', 'select one github repository.')
+    .option('--kind <issue|pull-request>', 'select one github item kind.')
+    .option('--number <number>', 'select one github item number.')
+    .option('--timeout <seconds>', 'set the bounded refresh timeout in seconds.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = refresh.opts();
       const agentId = commandOptions.agent;
@@ -84,7 +83,7 @@ export default function registerGitHubNotificationsCli(
             itemNumber: commandOptions.number,
             json: commandOptions.json === true,
             manifestService: options.manifestService,
-            monitorService: options.monitorService,
+            nativeService: options.nativeService,
             output: options.output,
             repository: commandOptions.repository,
             setExitCode,
@@ -92,18 +91,18 @@ export default function registerGitHubNotificationsCli(
             timeoutSeconds: commandOptions.timeout,
             workspaceDir: options.cwd(),
           }),
-        options,
+        { ...options, json: commandOptions.json === true },
         'github-notification-refresh-failed',
       );
     });
   const status = notifications
     .command('status')
-    .description('Inspect redacted GitHub notification lifecycle state.')
-    .option('--agent <id>', 'Inspect notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--json', 'Write structured JSON output.')
+    .description('inspect redacted github notification lifecycle state.')
+    .option('--agent <id>', 'inspect notifications for an openclaw agent.')
+    .option('--repository <owner/name>', 'select one github repository.')
+    .option('--kind <issue|pull-request>', 'select one github item kind.')
+    .option('--number <number>', 'select one github item number.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = status.opts();
       const agentId = commandOptions.agent;
@@ -113,25 +112,25 @@ export default function registerGitHubNotificationsCli(
         itemNumber: commandOptions.number,
         json: commandOptions.json === true,
         manifestService: options.manifestService,
+        nativeService: options.nativeService,
         output: options.output,
         repository: commandOptions.repository,
         setExitCode: options.setExitCode,
-        statusService: options.statusService,
         styles: options.styles,
         workspaceDir: options.cwd(),
       });
     });
   const wait = notifications
     .command('wait')
-    .description('Wait for a durable GitHub notification lifecycle checkpoint.')
-    .option('--agent <id>', 'Wait on notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--for <target>', 'Select the semantic lifecycle checkpoint.')
-    .option('--refresh', 'Run intake refresh cycles while waiting.')
-    .option('--timeout <seconds>', 'Set the bounded wait timeout in seconds.')
-    .option('--json', 'Write structured JSON output.')
+    .description('wait for a durable github notification lifecycle checkpoint.')
+    .option('--agent <id>', 'wait on notifications for an openclaw agent.')
+    .option('--repository <owner/name>', 'select one github repository.')
+    .option('--kind <issue|pull-request>', 'select one github item kind.')
+    .option('--number <number>', 'select one github item number.')
+    .option('--for <target>', 'select the semantic lifecycle checkpoint.')
+    .option('--refresh', 'run intake refresh cycles while waiting.')
+    .option('--timeout <seconds>', 'set the bounded wait timeout in seconds.')
+    .option('--json', 'write structured json output.')
     .action(async () => {
       const commandOptions = wait.opts();
       const agentId = commandOptions.agent;
@@ -143,17 +142,17 @@ export default function registerGitHubNotificationsCli(
             itemNumber: commandOptions.number,
             json: commandOptions.json === true,
             manifestService: options.manifestService,
+            nativeService: options.nativeService,
             output: options.output,
             refresh: commandOptions.refresh === true,
             repository: commandOptions.repository,
             setExitCode,
-            statusService: options.statusService,
             styles: options.styles,
             target: commandOptions.for,
             timeoutSeconds: commandOptions.timeout,
             workspaceDir: options.cwd(),
           }),
-        options,
+        { ...options, json: commandOptions.json === true },
         'github-notification-wait-failed',
       );
     });

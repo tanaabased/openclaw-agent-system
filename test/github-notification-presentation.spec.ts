@@ -2,9 +2,18 @@ import assert from 'node:assert/strict';
 
 import githubNotificationMessage, {
   githubNotificationMarkdownText,
-} from '../channels/github/conversation/presentation/card.ts';
+  githubNotificationQuote,
+} from '../channels/github/presentation/card.ts';
 
-describe('channels/github/conversation/presentation', () => {
+describe('channels/github/presentation', () => {
+  it('should preserve nested markdown and whitespace inside one complete quote', () => {
+    assert.equal(
+      githubNotificationQuote(
+        '## Title\r\n\r\n- One\n  - Two\n\n```ts\n  code();  \n```\n\n> Author quote',
+      ),
+      '> ## Title\n>\n> - One\n>   - Two\n>\n> ```ts\n>   code();  \n> ```\n>\n> > Author quote',
+    );
+  });
   it('should render one compact card with labeled facts', () => {
     assert.equal(
       githubNotificationMessage({
@@ -16,10 +25,10 @@ describe('channels/github/conversation/presentation', () => {
         title: 'Comment received',
       }),
       [
-        '## 📣 Comment received',
-        '',
-        '- **Source:** Approved comment',
-        '- **Delivery:** Private response path',
+        '> ## 📣 Comment received',
+        '>',
+        '> - **Source:** Approved comment',
+        '> - **Delivery:** Private response path',
       ].join('\n'),
     );
   });
@@ -33,11 +42,11 @@ describe('channels/github/conversation/presentation', () => {
         title: 'Work complete',
       }),
       [
-        '## ✅ Work complete',
-        '',
-        'The requested change is ready.',
-        '',
-        '**Validation:** All checks passed.',
+        '> ## ✅ Work complete',
+        '>',
+        '> The requested change is ready.',
+        '>',
+        '> **Validation:** All checks passed.',
       ].join('\n'),
     );
   });

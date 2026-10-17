@@ -315,6 +315,10 @@ export default class OpEnvironmentService {
       workspaceDir: options.workspaceDir,
       token,
       fingerprint: opDigest([options.source, token, declaration]),
+      diagnosticRedactions: [
+        ...declaration.environmentIds,
+        ...declaration.secrets.map((entry) => entry.reference),
+      ],
       generation: options.generation,
       requestOrder: options.requestOrder,
       retain,
@@ -340,7 +344,15 @@ export default class OpEnvironmentService {
         }
         setValues.set(secret.name, secrets.get(secret.reference)!);
       } catch (error) {
-        const evidence = this.#cache.failure(token, opDiagnostic(error, 'secret-resolve'));
+        const evidence = this.#cache.failure(
+          token,
+          opDiagnostic(error, 'secret-resolve', [
+            token,
+            ...requirements.secrets.map((entry) => entry.reference),
+            ...requirements.environmentIds,
+            ...secrets.values(),
+          ]),
+        );
         return invalid(
           'op-secret-unavailable',
           'A declared OP secret could not be resolved.',
@@ -360,7 +372,18 @@ export default class OpEnvironmentService {
         }
         response = environments.get(environmentId)!;
       } catch (error) {
-        const evidence = this.#cache.failure(token, opDiagnostic(error, 'environment-read'));
+        const evidence = this.#cache.failure(
+          token,
+          opDiagnostic(error, 'environment-read', [
+            token,
+            ...requirements.secrets.map((entry) => entry.reference),
+            ...requirements.environmentIds,
+            ...secrets.values(),
+            ...[...environments.values()].flatMap((entry) =>
+              entry.variables.map((variable) => variable.value),
+            ),
+          ]),
+        );
         return invalid(
           'op-environment-unavailable',
           'A declared OP Environment could not be resolved.',

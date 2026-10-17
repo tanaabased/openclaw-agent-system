@@ -1,4 +1,6 @@
-/** Public provider evidence contains no upstream prose or resource identifiers. */
+import providerErrorMessage from './provider-error-message.ts';
+
+/** Public provider evidence is bounded and redacted before retention or formatting. */
 export interface ProviderDiagnostic {
   provider: '1password' | 'github';
   operation:
@@ -12,6 +14,8 @@ export interface ProviderDiagnostic {
     'missing-credential' | 'authentication' | 'permission' | 'rate-limit' | 'transport' | 'unknown';
   explanation: string;
   httpStatus: number | null;
+  httpStatusSource?: 'structured' | 'message';
+  providerMessage?: string;
   providerCode: 'RateLimitExceededError' | 'AuthExpiredError' | 'DesktopSessionExpiredError' | null;
   retryAfterMs: number | null;
   resetAt: number | null;
@@ -44,6 +48,15 @@ export function providerDiagnostic(
   evidence: Partial<ProviderDiagnostic> = {},
 ): ProviderDiagnostic {
   const kind = Object.hasOwn(explanations, classification) ? classification : 'unknown';
+  const message =
+    provider === '1password' ? providerErrorMessage(evidence.providerMessage) : undefined;
+  const httpStatus =
+    typeof evidence.httpStatus === 'number' &&
+    Number.isInteger(evidence.httpStatus) &&
+    evidence.httpStatus >= 100 &&
+    evidence.httpStatus <= 599
+      ? evidence.httpStatus
+      : null;
   return {
     provider: provider === 'github' ? 'github' : '1password',
     operation: [
@@ -57,14 +70,17 @@ export function providerDiagnostic(
       ? operation
       : 'api-request',
     classification: kind,
-    explanation: explanations[kind],
-    httpStatus:
-      typeof evidence.httpStatus === 'number' &&
-      Number.isInteger(evidence.httpStatus) &&
-      evidence.httpStatus >= 100 &&
-      evidence.httpStatus <= 599
-        ? evidence.httpStatus
-        : null,
+    explanation:
+      message && kind === 'unknown'
+        ? 'The provider failure supplied no supported classification; see the redacted provider message.'
+        : explanations[kind],
+    ...(message ? { providerMessage: message } : {}),
+    ...(provider === '1password' &&
+    httpStatus !== null &&
+    (evidence.httpStatusSource === 'structured' || evidence.httpStatusSource === 'message')
+      ? { httpStatusSource: evidence.httpStatusSource }
+      : {}),
+    httpStatus,
     providerCode: [
       'RateLimitExceededError',
       'AuthExpiredError',

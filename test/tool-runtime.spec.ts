@@ -86,6 +86,55 @@ function createRuntime(options: {
 }
 
 describe('api/runtime', () => {
+  it('should log bounded admission failures before credentials without logging input or upstream prose', async () => {
+    for (const stage of [
+      'configuration',
+      'validation',
+      'authorization',
+      'classification',
+    ] as const) {
+      const logs: string[] = [];
+      const environmentCalls: string[] = [];
+      const auditEvents: AgentSystemAuditEvent[] = [];
+      const runtime = createRuntime({ logs, environmentCalls, auditEvents });
+      const definition = createToolTestDefinition({
+        configured: stage !== 'configuration',
+        validate:
+          stage === 'validation'
+            ? () => {
+                throw new Error('private-token');
+              }
+            : undefined,
+        authorize: () => ({ status: 'denied', reason: 'private upstream prose' }),
+      });
+      if (stage === 'classification')
+        definition.tool.classify = () => {
+          throw new Error('private-token');
+        };
+      await assert.rejects(
+        runtime.executeCli(
+          definition,
+          { argument: 'private inspected command' },
+          { agentId: 'data', source: 'command' },
+        ),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && !error.message.includes('private-token'),
+      );
+      assert.deepEqual(environmentCalls, []);
+      assert.deepEqual(auditEvents, []);
+      assert.equal(logs.length, 1);
+      assert.match(logs[0]!, /tool_admission_failed/u);
+      assert.ok(logs[0]!.includes(`stage="${stage}"`));
+      assert.ok(
+        logs[0]!.includes(
+          `code="${{ configuration: 'capability_not_configured', validation: 'invalid_arguments', authorization: 'approval_denied', classification: 'execution_failed' }[stage]}"`,
+        ),
+      );
+      assert.match(logs[0]!, /agentId="data"/u);
+      assert.doesNotMatch(logs.join(''), /private|AGENT_TOKEN/u);
+    }
+  });
+
   it('should check declared executables after authorization and before credentials or resources', async () => {
     const events: string[] = [];
     const runtime = createRuntime({
@@ -257,7 +306,12 @@ describe('api/runtime', () => {
           'Task PR handoff failed at publication (invalid-response).',
           false,
           undefined,
-          { stage: 'publication', category: 'invalid-response' },
+          {
+            stage: 'publication',
+            category: 'invalid-response',
+            reasonCode: 'github-notification-pull-request-handoff-session-ineligible',
+            publication: { status: 'published', number: 45 },
+          },
         );
       },
     });
@@ -272,6 +326,14 @@ describe('api/runtime', () => {
         error.failureDiagnostic?.category === 'invalid-response',
     );
     assert.ok(logs.some((log) => log.includes('stage="publication" category="invalid-response"')));
+    assert.ok(
+      logs.some(
+        (log) =>
+          log.includes(
+            'reasonCode="github-notification-pull-request-handoff-session-ineligible"',
+          ) && log.includes('publication=published pr=45'),
+      ),
+    );
     assert.ok(logs.every((log) => !log.includes('raw private')));
   });
 

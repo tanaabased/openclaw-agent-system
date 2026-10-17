@@ -3,10 +3,15 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
+import { createAutomationGateway } from '../agent/automation-gateway.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
-import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
+import type { GitHubNotificationWaitInput } from '../channels/github/cli/contracts.ts';
 import { createCliStyles } from '../cli/output.ts';
+import { backupPreviewPlan } from './backup-presentation-fixtures.ts';
+import { pruneFixture } from './backup-prune-presentation-fixtures.ts';
+import { restoreFixtureManifest } from './cli-backup-restore-fixtures.ts';
 import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
 import registerAgentSystemCli, { type RegisterAgentSystemCliOptions } from '../cli/register.ts';
 import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
@@ -53,10 +58,13 @@ function createProgram(
     notificationWaitError?: Error;
     cacheGatewayRequest?: OpCacheGatewayRequest;
     terminalColumns?: number;
+    toolExitCode?: number;
+    toolStderr?: string;
     doctorFindings?: typeof doctorFindings;
     installOutcomes?: typeof installOutcomes;
   } = {},
 ) {
+  const events: Array<{ stream: string; text: string }> = [];
   const diagnostics: string[] = [];
   const exitCodes: number[] = [];
   const output: string[] = [];
@@ -90,7 +98,7 @@ function createProgram(
       agentId: string;
       selector?: { itemType: string; number: number; repository: string };
     }>,
-    notificationWait: [] as GitHubNotificationWaitInput[],
+    notificationWait: [] as Array<GitHubNotificationWaitInput & { agentId: string }>,
     oneShotCompletion: [] as number[],
     tool: [] as Array<{
       argv: string[];
@@ -201,36 +209,27 @@ function createProgram(
         return dependencies.manifestResult ?? validResult;
       },
     },
-    notificationMonitorService: {
-      async runOnce(options = {}) {
-        const refreshOptions = 'aborted' in options ? {} : options;
-        const { signal, ...recorded } = refreshOptions;
+    nativeNotifications: {
+      async refresh(manifest, _workspace, input) {
         calls.notificationRefresh.push({
-          ...recorded,
-          signalPresent: signal instanceof AbortSignal,
+          agentId: manifest.agent.id,
+          ...(input.selector ? { selector: input.selector } : {}),
+          signalPresent: input.signal instanceof AbortSignal,
         });
-        return [
-          {
-            agentId: refreshOptions.agentId ?? 'tanaabot',
-            approved: 1,
-            baseline: 0,
-            baselineAt: 1_000,
-            baselineEstablished: true,
-            code: 'github-notification-poll-complete',
-            duplicates: 0,
-            rejected: 0,
-            retired: 0,
-            status: 'completed' as const,
-          },
-        ];
+        return {
+          agentId: manifest.agent.id,
+          baselineAt: 1000,
+          code: 'github-notification-refresh-queued',
+          runId: 'native-run',
+          status: 'queued' as const,
+        };
       },
-    },
-    notificationStatusService: {
-      async inspect(agentId, selector) {
+      async inspect(manifest, _workspace, selector) {
+        const agentId = manifest.agent.id;
         calls.notificationStatus.push({ agentId, ...(selector ? { selector } : {}) });
         return {
           agentId,
-          baseline: { observedAt: 1_000, status: 'ready' as const },
+          baseline: { observedAt: 1000, status: 'ready' as const },
           capacity: { active: 0, limit: 2, queued: 0 },
           code: 'github-notification-status-ready',
           items: [],
@@ -238,15 +237,15 @@ function createProgram(
           status: 'ready' as const,
         };
       },
-      async wait(input) {
-        calls.notificationWait.push(input);
+      async wait(manifest, _workspace, input) {
+        calls.notificationWait.push({ agentId: manifest.agent.id, ...input });
         if (dependencies.notificationWaitError) throw dependencies.notificationWaitError;
         return {
-          agentId: input.agentId,
+          agentId: manifest.agent.id,
           code: `github-notification-${input.target}`,
           observation: {
-            agentId: input.agentId,
-            baseline: { observedAt: 1_000, status: 'ready' as const },
+            agentId: manifest.agent.id,
+            baseline: { status: 'ready' as const },
             capacity: { active: 0, limit: 2, queued: 0 },
             code: 'github-notification-status-ready',
             items: [],
@@ -261,8 +260,14 @@ function createProgram(
     },
     setExitCode: (code) => exitCodes.push(code),
     output: {
-      writeStderr: (message) => diagnostics.push(message),
-      writeStdout: (message) => output.push(message),
+      writeStderr: (message) => {
+        diagnostics.push(message);
+        events.push({ stream: 'stderr', text: message });
+      },
+      writeStdout: (message) => {
+        output.push(message);
+        events.push({ stream: 'stdout', text: message });
+      },
     },
     toolRegistry: {
       hostFallback: () => undefined,
@@ -277,8 +282,8 @@ function createProgram(
           auditId: 'audit-id',
           kind: 'cli' as const,
           commandResult: {
-            exitCode: 0,
-            stderr: '',
+            exitCode: dependencies.toolExitCode ?? 0,
+            stderr: dependencies.toolStderr ?? '',
             stdout: 'tanaabot\n',
             timedOut: false,
             truncated: false,
@@ -296,8 +301,223 @@ function createProgram(
     styles: createCliStyles({ NO_COLOR: '1' }),
     terminalColumns: dependencies.terminalColumns,
   });
-  return { calls, diagnostics, output, program, exitCodes };
+  return { calls, diagnostics, output, program, exitCodes, events };
 }
+
+describe('cli/command-family-fixtures', () => {
+  const leaves = [
+    ['validate'],
+    ['env'],
+    ['doctor'],
+    ['install'],
+    ['credentials', 'set', 'op', '--from-env'],
+    ['credentials', 'validate', 'op'],
+    ['credentials', 'unset', 'op'],
+    ['credentials', 'cache', 'status'],
+    ['credentials', 'cache', 'flush'],
+    ['backup', 'cleanup'],
+    ['backup', 'create', '--dry-run'],
+    ['backup', 'prune', '--keep', '1', '--dry-run'],
+    ['backup', 'verify', '/fixture.tar.gz'],
+    ['backup', 'restore', '/fixture.tar.gz', '--target', '/recovery'],
+    ['automations', 'list'],
+    ['automations', 'sync'],
+    ['automations', 'run', 'review'],
+    ['automations', 'runs', 'review'],
+    ['notifications', 'refresh'],
+    ['notifications', 'status'],
+    ['notifications', 'wait', '--for', 'baseline-ready'],
+    ['tool', 'gh', '--', 'api', 'user'],
+  ];
+  class BackupFixture extends WorkspaceBackupService {
+    override async cleanup() {
+      return {
+        agentId: 'tanaabot',
+        workspaceDir: '/workspace',
+        output: '/workspace/backups',
+        wouldDelete: [],
+        deleted: [],
+        preserved: [],
+      };
+    }
+    override async plan() {
+      return backupPreviewPlan;
+    }
+    override async prune() {
+      return pruneFixture;
+    }
+    override async verify() {
+      return restoreFixtureManifest('captured');
+    }
+    override async restore() {
+      return { target: '/recovery', manifest: restoreFixtureManifest('captured') };
+    }
+  }
+  const automations = {
+    list: async () => ({
+      status: 'aligned',
+      jobs: [{ id: 'review', findings: [{ code: 'automation-healthy' }] }],
+    }),
+    reconcile: async () => ({ outcomes: [], warnings: [] }),
+    run: async () => ({
+      status: 'queued',
+      runId: 'occurrence',
+      execution: 'unavailable',
+      delivery: 'unavailable',
+    }),
+    runs: async () => ({
+      status: 'ok',
+      entries: [
+        {
+          runId: 'occurrence',
+          ts: 1_791_720_000_000,
+          execution: 'ok',
+          delivery: 'delivered',
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+      hasMore: false,
+      nextOffset: null,
+    }),
+  } as never;
+
+  it('should cover every current public leaf without treating aliases or hidden callbacks as leaves', () => {
+    const { program } = createProgram(undefined, { automations, automationRunner: true });
+    const names = (command: Command, prefix = ''): string[] =>
+      command.commands.flatMap((child) => {
+        const name = `${prefix}${child.name()}`;
+        if (child.name() === 'automation-execute') return [];
+        return child.commands.length ? names(child, `${name} `) : [name];
+      });
+    assert.equal(leaves.length, 22);
+    assert.deepEqual(
+      new Set(names(program.commands[0]!)),
+      new Set(
+        leaves.map((argv) =>
+          argv
+            .slice(
+              0,
+              argv[0] === 'credentials' && argv[1] === 'cache'
+                ? 3
+                : ['backup', 'automations', 'notifications', 'credentials'].includes(argv[0]!)
+                  ? 2
+                  : 1,
+            )
+            .join(' '),
+        ),
+      ),
+    );
+  });
+
+  const humanSignals = [
+    'valid',
+    'environment',
+    'workspace',
+    'workspace',
+    'stored',
+    'valid',
+    'removed',
+    'gateway',
+    'scope',
+    'preview',
+    'preview',
+    'prune',
+    'verified',
+    'staged',
+    'aligned',
+    'synchronized',
+    'queued',
+    'ok',
+    'queued',
+    'ready',
+    'checkpoint reached',
+    'tanaabot',
+  ];
+  for (const [index, argv] of leaves.entries()) {
+    it(`should preserve ordered human and machine output for ${argv.slice(0, 3).join(' ')}`, async () => {
+      for (const debug of [false, true]) {
+        for (const json of [false, true]) {
+          const machine =
+            json && (!['tool', 'credentials'].includes(argv[0]!) || argv[1] === 'cache');
+          const f = createProgram(undefined, {
+            automations,
+            backupService: new BackupFixture(),
+            cacheGatewayRequest: async (action) => ({
+              ...new OpCache().status(),
+              runtime: 'gateway',
+              ...(action === 'flush'
+                ? { invalidated: { entries: 0, clients: 0, pending: 0, values: 0 } }
+                : {}),
+            }),
+            environment: debug ? { OPENCLAW_DEBUG: '1', OPENCLAW_LOG_LEVEL: 'debug' } : {},
+            manifestResult: {
+              ...validResult,
+              diagnostics: [
+                { severity: 'warning', code: 'fixture-warning', message: 'fixture warning' },
+              ],
+            },
+          });
+          await f.program.parseAsync([
+            'node',
+            'openclaw',
+            'as',
+            ...argv,
+            ...(machine ? ['--json'] : []),
+          ]);
+          const stdout = f.output.join('');
+          const stderr = f.diagnostics.join('');
+          assert.ok(stdout.length > 0);
+          if (!machine) assert.ok(stdout.includes(humanSignals[index]!), stdout);
+          assert.doesNotMatch(stdout + stderr, /private-token|AGENT_COLOR.*green/u);
+          assert.deepEqual(f.exitCodes, []);
+          const firstDiagnostic = f.events.findIndex(({ stream }) => stream === 'stderr');
+          if (firstDiagnostic !== -1) {
+            assert.ok(f.events.slice(firstDiagnostic).every(({ stream }) => stream === 'stderr'));
+            if (machine) {
+              assert.doesNotMatch(stderr, /messages/u);
+              assert.ok(!stderr.includes('\u001b'));
+            } else assert.equal(stderr.match(/messages/gu)?.length, 1);
+          }
+          if (machine) {
+            assert.ok(!stdout.includes('\u001b'));
+            assert.ok(JSON.parse(stdout));
+          }
+        }
+      }
+    });
+  }
+
+  it('should preserve delegated child bytes and nonzero exit codes without adding a message section', async () => {
+    const f = createProgram(undefined, { toolExitCode: 17, toolStderr: 'Child MixedCase error\n' });
+    await f.program.parseAsync(['node', 'openclaw', 'as', 'tool', 'gh', '--', 'api', 'user']);
+    assert.deepEqual(f.events, [
+      { stream: 'stdout', text: 'tanaabot\n' },
+      { stream: 'stderr', text: 'Child MixedCase error\n' },
+    ]);
+    assert.deepEqual(f.exitCodes, [17]);
+  });
+
+  it('should reject malformed hidden execution with plain stderr and unchanged completion status', async () => {
+    const f = createProgram(undefined, { automationRunner: true });
+    await f.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'automation-execute',
+      '--id',
+      'review',
+      '--hash',
+      'bad',
+    ]);
+    assert.deepEqual(f.output, []);
+    assert.match(f.diagnostics.join(''), /code=automation-execution-options-invalid/u);
+    assert.doesNotMatch(f.diagnostics.join(''), /messages/u);
+    assert.ok(!f.diagnostics.join('').includes('\u001b'));
+    assert.deepEqual(f.calls.oneShotCompletion, [1]);
+  });
+});
 
 describe('cli/automation-commands', () => {
   it('should expose scheduler-wide inventory blockers in text without duplicating job findings', async () => {
@@ -356,7 +576,22 @@ describe('cli/automation-commands', () => {
       },
       runs: async (...args: unknown[]) => {
         calls.push(['runs', ...args]);
-        return { status: 'ok', entries: [], hasMore: false };
+        return {
+          status: 'ok',
+          entries: [
+            {
+              runId: 'occurrence',
+              ts: 1_791_720_000_000,
+              execution: 'ok',
+              delivery: 'delivered',
+            },
+          ],
+          total: 3,
+          offset: 2,
+          limit: 7,
+          hasMore: false,
+          nextOffset: null,
+        };
       },
     } as never;
     for (const alias of ['agent-system', 'as']) {
@@ -411,10 +646,68 @@ describe('cli/automation-commands', () => {
       assert.deepEqual(result.exitCodes, [1]);
     }
   });
+  it('should report safe gateway diagnostics in json and text through lifecycle wrappers', async () => {
+    const request = createAutomationGateway(async () => {
+      throw Object.assign(new Error('secret token and payload'), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+        details: { token: 'secret' },
+      });
+    });
+    for (const json of [true, false]) {
+      for (const wrapped of [true, false]) {
+        const result = createProgram(undefined, {
+          automations: {
+            reconcile: async () => {
+              try {
+                return await request('sessions.create', { token: 'secret' });
+              } catch (error) {
+                if (!wrapped) throw error;
+                throw new AgentSystemLifecycleError(
+                  'automations',
+                  'automation-gateway-unavailable',
+                  'stopped',
+                  { cause: error },
+                );
+              }
+            },
+          } as never,
+        });
+        await result.program.parseAsync([
+          'node',
+          'openclaw',
+          'as',
+          'automations',
+          'sync',
+          ...(json ? ['--json'] : []),
+        ]);
+        if (json) {
+          const output = JSON.parse(result.output.join(''));
+          assert.equal(output.status, 'failed');
+          assert.equal(output.diagnostic.method, 'sessions.create');
+          assert.equal(output.diagnostic.category, 'rejected');
+          assert.equal(output.diagnostic.gatewayCode, 'INVALID_REQUEST');
+        } else {
+          assert.match(result.output.join(''), /sync +failed/u);
+          assert.match(result.output.join(''), /automations +blocked/u);
+          assert.ok(result.output.join('').includes('workspace  /workspace'));
+        }
+        assert.match(result.diagnostics.join(''), /sessions\.create/u);
+        assert.match(result.diagnostics.join(''), /INVALID_REQUEST/u);
+        assert.ok(![...result.output, ...result.diagnostics].join('').includes('secret'));
+        assert.deepEqual(result.exitCodes, [1]);
+      }
+    }
+  });
+
   it('should print queued text and expose bounded partial failures on stdout and stderr', async () => {
     const result = createProgram(undefined, {
       automations: {
         run: async () => ({
+          runtime: 'openclaw',
+          id: 'review',
+          nativeId: 'Native-Review',
           status: 'queued',
           runId: 'occurrence',
           execution: 'unavailable',
@@ -423,7 +716,10 @@ describe('cli/automation-commands', () => {
       } as never,
     });
     await result.program.parseAsync(['node', 'openclaw', 'as', 'automations', 'run', 'review']);
-    assert.match(result.output.join(''), /queued.*run=occurrence/su);
+    assert.match(
+      result.output.join(''),
+      /review +queued[\s\S]*native-id=Native-Review[\s\S]*run=occurrence/u,
+    );
     const failed = createProgram(undefined, {
       automations: {
         reconcile: async () => {
@@ -439,6 +735,25 @@ describe('cli/automation-commands', () => {
 });
 
 describe('cli/register', () => {
+  it('should lowercase owned help descriptions while preserving host headings and env identifiers', () => {
+    const { program } = createProgram();
+    const root = program.commands.find((command) => command.name() === 'agent-system')!;
+    const install = root.commands.find((command) => command.name() === 'install')!;
+    const doctor = root.commands.find((command) => command.name() === 'doctor')!;
+    const credentials = root.commands.find((command) => command.name() === 'credentials')!;
+    const set = credentials.commands.find((command) => command.name() === 'set')!;
+    assert.match(install.helpInformation(), /^Usage:/u);
+    assert.match(install.helpInformation(), /including required session dispatch\s+enrollment/u);
+    assert.match(doctor.helpInformation(), /inspect agent system agent/u);
+    assert.match(
+      set.helpInformation(),
+      /read OP_SERVICE_ACCOUNT_TOKEN from the process environment/u,
+    );
+    for (const command of [root, install, doctor, credentials, set]) {
+      assert.equal(command.description(), command.description().toLowerCase());
+    }
+  });
+
   it('should report loaded manifest warnings consistently without corrupting command output', async () => {
     const commands = [
       ['doctor', '--json'],
@@ -486,10 +801,7 @@ describe('cli/register', () => {
         assert.deepEqual(diagnostics, []);
         assert.equal(output.length, 1);
         assert.match(output[0]!, /gateway.*pid/);
-        assert.match(
-          output[0]!,
-          action === 'flush' ? /flushed.*all agents/ : /entries.*0 retained/,
-        );
+        assert.match(output[0]!, action === 'flush' ? /scope.*all agents/ : /entries.*0 retained/);
         assert.throws(() => JSON.parse(output[0]!));
       }
     }
@@ -545,6 +857,28 @@ describe('cli/register', () => {
         ?.commands.map((subcommand) => subcommand.name()),
       ['refresh', 'status', 'wait'],
     );
+  });
+
+  it('should hide the scheduler callback from public help while retaining explicit invocation', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      const root = createProgram(undefined, { automationRunner: true });
+      root.program.commands[0]!.configureOutput({ writeOut: (value) => root.output.push(value) });
+      await assert.rejects(root.program.parseAsync(['node', 'openclaw', alias, '--help']), {
+        code: 'commander.helpDisplayed',
+      });
+      assert.match(root.output.join(''), /automations/u);
+      assert.doesNotMatch(root.output.join(''), /automation-execute/u);
+
+      const callback = createProgram(undefined, { automationRunner: true });
+      callback.program.commands[0]!.commands.find(
+        (command) => command.name() === 'automation-execute',
+      )!.configureOutput({ writeOut: (value) => callback.output.push(value) });
+      await assert.rejects(
+        callback.program.parseAsync(['node', 'openclaw', alias, 'automation-execute', '--help']),
+        { code: 'commander.helpDisplayed' },
+      );
+      assert.match(callback.output.join(''), /--hash/u);
+    }
   });
 
   it('should hide launcher options from help and typo suggestions through both aliases', async () => {
@@ -707,6 +1041,18 @@ describe('cli/register', () => {
     assert.equal(output.join('').includes('status'), true);
   });
 
+  it('should reject removed collaboration-only flags', async () => {
+    for (const operation of ['install', 'doctor']) {
+      const test = createProgram();
+      await assert.rejects(
+        test.program.parseAsync(['node', 'openclaw', 'as', operation, '--collaboration', '--json']),
+        /unknown option/u,
+      );
+      assert.deepEqual(test.calls.install, []);
+      assert.deepEqual(test.calls.doctor, []);
+    }
+  });
+
   it('should delegate doctor inspection for an explicit agent', async () => {
     const { calls, program } = createProgram();
 
@@ -783,13 +1129,10 @@ describe('cli/register', () => {
     assert.deepEqual(calls.notificationRefresh, [
       {
         agentId: 'tanaabot',
-        bypassInterval: true,
-        executionSurface: 'cli-one-shot',
         signalPresent: true,
-        waitForLeaseMs: 120_000,
       },
     ]);
-    assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
+    assert.equal(JSON.parse(output.join('')).code, 'github-notification-refresh-queued');
     assert.deepEqual(calls.oneShotCompletion, [0]);
   });
 
@@ -798,10 +1141,7 @@ describe('cli/register', () => {
 
     await program.parseAsync(['node', 'openclaw', 'agent-system', 'notifications', 'refresh']);
 
-    assert.match(
-      output.join(''),
-      /baseline\s+established at 1970-01-01T00:00:01.000Z with 0 existing assignments/,
-    );
+    assert.match(output.join(''), /baseline\s+ready since 1970-01-01T00:00:01.000Z/);
   });
 
   it('should target one notification item during refresh', async () => {
@@ -829,7 +1169,6 @@ describe('cli/register', () => {
       number: 12,
       repository: 'tanaabased/example',
     });
-    assert.equal(calls.notificationRefresh[0]?.waitForLeaseMs, 45_000);
   });
 
   it('should inspect one notification item through the status command', async () => {
@@ -888,7 +1227,6 @@ describe('cli/register', () => {
     assert.deepEqual(calls.notificationWait, [
       {
         agentId: 'tanaabot',
-        executionSurface: 'cli-one-shot',
         refresh: true,
         selector: {
           itemType: 'pull-request',
@@ -1114,7 +1452,7 @@ describe('cli/register', () => {
         installOutcomes,
       });
       await program.parseAsync(['node', 'openclaw', 'agent-system', command]);
-      const rows = output.join('').split('\n');
+      const rows = output.join('').trim().split('\n');
       assert.match(rows[0]!, /^agent\s+(healthy|unchanged)$/);
       assert.ok(rows[1]!.startsWith('  '));
       assert.ok(rows.slice(0, -3).every((row) => row.length <= 32));
@@ -1349,6 +1687,46 @@ describe('backup cli registration', () => {
     assert.equal(JSON.parse(result.output.join('')).diagnostics[0].code, 'backup-target-required');
   });
 
+  it('should register cleanup preview and explicit apply for both command spellings', async () => {
+    for (const name of ['agent-system', 'as']) {
+      for (const apply of [false, true]) {
+        const calls: unknown[] = [];
+        class Service extends WorkspaceBackupService {
+          override async cleanup(options: Parameters<WorkspaceBackupService['cleanup']>[0]) {
+            calls.push(options);
+            return {
+              agentId: 'tanaabot',
+              workspaceDir: '/workspace',
+              output: '/workspace/backups',
+              wouldDelete: [],
+              deleted: [],
+              preserved: [],
+            };
+          }
+        }
+        const result = createProgram(undefined, { backupService: new Service() });
+        await result.program.parseAsync([
+          'node',
+          'openclaw',
+          name,
+          'backup',
+          'cleanup',
+          '--json',
+          ...(apply ? ['--apply'] : []),
+        ]);
+        assert.equal(JSON.parse(result.output.join('')).status, apply ? 'applied' : 'preview');
+        assert.deepEqual(calls, [
+          {
+            manifest: validResult.manifest,
+            workspaceDir: '/workspace',
+            apply,
+            expectedOutput: '/workspace/.agent-system/backups',
+          },
+        ]);
+      }
+    }
+  });
+
   it('should parse repeated multi-value lists and explicit false without overriding omitted settings', async () => {
     let overrides: unknown;
     class Service extends WorkspaceBackupService {
@@ -1406,7 +1784,7 @@ describe('backup cli registration', () => {
     const output = result.output.join('');
     assert.ok(output.includes('backup'));
     assert.ok(output.includes('preview'));
-    assert.ok(output.includes('agent state: off'));
+    assert.ok(output.includes('agent database off (not included)'));
     assert.ok(!output.includes('\u001b'));
   });
 

@@ -107,8 +107,11 @@ const environment = {
 };
 
 try {
-  await check('build the plugin runtime', () => run('bun', ['run', 'build']));
-  await check('validate plugin metadata', () => run('bun', ['run', 'plugin:check']));
+  // supplied archives must match the checkout already built and validated by the caller.
+  if (!suppliedArchivePath) {
+    await check('build the plugin runtime', () => run('bun', ['run', 'build']));
+    await check('validate plugin metadata', () => run('bun', ['run', 'plugin:check']));
+  }
 
   const { archivePath, packageResult } = await check(
     suppliedArchivePath
@@ -190,6 +193,7 @@ try {
     'dist/codex/codex-runtime.js.map',
     'hooks/hooks.json',
     'index.ts',
+    'agent/assessment-result.ts',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
     'bin/agent-system-ssh-signing-key',
@@ -202,7 +206,6 @@ try {
     'bin/gog',
     'bin/agent-system-gog',
     'channels/github/ADVANCED.md',
-    'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',
     'skills/git-cli/agents/openai.yaml',
@@ -217,6 +220,10 @@ try {
     'skills/github-update/agents/openai.yaml',
     'tools/install/README.md',
     'tools/doctor/README.md',
+    'skills/issue-implementation/SKILL.md',
+    'skills/issue-implementation/agents/openai.yaml',
+    'skills/issue-implementation/assets/icon-small.svg',
+    'skills/issue-implementation/assets/icon-large.svg',
     'skills/doctor/SKILL.md',
     'skills/doctor/agents/openai.yaml',
     'skills/install/SKILL.md',
@@ -244,23 +251,9 @@ try {
     for (const path of [
       'AGENTS.md',
       '.github/OPTIMIZATION.md',
-      'examples/install/README.md',
-      'scenarios/issue-guided-assignment/expected-evidence.json',
-      'scenarios/issue-guided-assignment/model-fixture.ts',
-      'scenarios/issue-work-assignment/expected-evidence.json',
-      'scenarios/issue-work-assignment/model-fixture.ts',
-      'scenarios/issue-work-comment/expected-evidence.json',
-      'scenarios/issue-work-comment/model-fixture.ts',
-      'scenarios/issue-work-implementation/expected-evidence.json',
-      'scenarios/issue-work-implementation/model-fixture.ts',
-      'scenarios/issue-work-pr-lifecycle/expected-evidence.json',
-      'scenarios/issue-work-pr-lifecycle/model-fixture.ts',
-      'scenarios/issue-work-retirement/expected-evidence.json',
-      'scenarios/issue-work-retirement/model-fixture.ts',
-      'scripts/github-notification-model-issue-work-scenario.ts',
+      'examples/os-install/README.md',
       'scripts/openclaw-aimock',
       'scripts/aimock-server.ts',
-      'scripts/openclaw-notification-setup',
       'test/encode.spec.ts',
     ]) {
       assert.equal(packedPaths.has(path), false, `packed plugin must exclude ${path}`);
@@ -268,7 +261,7 @@ try {
   });
 
   const packageRoot = await check('extract the npm package archive', async () => {
-    const unpackedRoot = join(temporaryRoot, 'unpacked');
+    const unpackedRoot = join(temporaryRoot, 'plugin with spaces');
     await mkdir(unpackedRoot);
     await run('tar', ['-xzf', archivePath, '-C', unpackedRoot]);
     return join(unpackedRoot, 'package');
@@ -287,7 +280,7 @@ try {
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
     assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
-    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.7');
+    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.8');
     assert.equal(packageMetadata.dependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.optionalDependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.version, manifest.version);
@@ -369,18 +362,19 @@ try {
   });
 
   await check('ship an executable Codex session hook', async () => {
-    const result = await run(
-      process.execPath,
-      [join(packageRoot, 'dist', 'codex', 'codex-runtime.js'), 'session-start'],
-      {
-        env: {
-          ...environment,
-          PLUGIN_DATA: join(temporaryRoot, 'codex-plugin-data'),
-          PLUGIN_ROOT: packageRoot,
-        },
-        input: `${JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup' })}\n`,
+    const hooks = JSON.parse(await readFile(join(packageRoot, 'hooks', 'hooks.json'), 'utf8')) as {
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    const command = hooks.hooks.SessionStart[0]?.hooks[0]?.command;
+    assert.ok(command, 'the packaged session hook must declare its command');
+    const result = await run('/bin/sh', ['-c', command], {
+      env: {
+        ...environment,
+        PLUGIN_DATA: join(temporaryRoot, 'codex-plugin-data'),
+        PLUGIN_ROOT: packageRoot,
       },
-    );
+      input: `${JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup' })}\n`,
+    });
     const response = JSON.parse(result.output) as {
       hookSpecificOutput?: { additionalContext?: string; hookEventName?: string };
     };
@@ -429,7 +423,7 @@ try {
       assert.equal(result.status, 'unresolved');
       assert.deepEqual(result.candidate, inspected.profiles.default);
       assert.equal(result.application, 'not-requested');
-      assert.match(inspected.reportGuidance, /\*\*Model routing\*\*/);
+      assert.match(inspected.reportGuidance, /## 🧠 Model routing/);
       const overridden = await resolveRouting({
         ...input,
         overrides: { model: 'manual', effort: 'low' },
@@ -649,6 +643,8 @@ try {
       'package',
       'validate',
       packageRoot,
+      '--openclaw',
+      resolve('node_modules/openclaw'),
       '--out',
       clawHubReports,
     ]);

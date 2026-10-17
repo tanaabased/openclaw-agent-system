@@ -1,0 +1,14 @@
+schema-version: 1
+
+agent:
+  id: backup-tanaabot
+  name: Backup Tanaabot
+
+backup:
+  git-ignore: true
+  openclaw-state: required
+  include:
+    - MEMORY.md
+    - memory/**
+    - memory-link
+    - run.sh

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import ansis from 'ansis';
+
 import installAgentSystem from '../cli/install.ts';
 import { AgentInstallError, type AgentInstallResult } from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -30,6 +32,7 @@ function createHarness(
   } = {},
 ) {
   const diagnostics: string[] = [];
+  const events: string[] = [];
   const output: string[] = [];
   const calls = {
     install: [] as Array<{
@@ -44,6 +47,7 @@ function createHarness(
   return {
     calls,
     diagnostics,
+    events,
     exitCodes,
     output,
     run: () =>
@@ -83,8 +87,14 @@ function createHarness(
           },
         },
         output: {
-          writeStderr: (message) => diagnostics.push(message),
-          writeStdout: (message) => output.push(message),
+          writeStderr: (message) => {
+            diagnostics.push(message);
+            events.push(message);
+          },
+          writeStdout: (message) => {
+            output.push(message);
+            events.push(message);
+          },
         },
         setExitCode: (code) => exitCodes.push(code),
         ...(options.rebuildCodexPath ? { rebuildCodexPath: true } : {}),
@@ -98,6 +108,166 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should preview fixture-backed success and partial failure across widths and color modes', async () => {
+    const literal = 'AgentX /Work/AgentX/File.JSON OP_TOKEN 2026-10-07T23:00:00Z';
+    const outcomes = installOutcomes.map((item) => ({
+      ...item,
+      message: `${item.message} ${literal}`,
+    }));
+    const warnings = [
+      {
+        component: 'collaboration',
+        code: 'collaboration-session-access',
+        message: `info A ${literal}`,
+      },
+      { component: 'git', code: 'warning-a', message: `warning A ${literal}` },
+      { component: 'path', code: 'warning-b', message: `warning B ${literal}` },
+    ];
+    for (const failed of [false, true]) {
+      const install = failed
+        ? new AgentSystemLifecycleError(
+            'github',
+            'external-error',
+            `HTTP 403: InvalidToken ${literal}`,
+            undefined,
+            undefined,
+            undefined,
+            { outcomes, warnings, unattempted: [{ component: 'models', stepId: 'ProfileX' }] },
+          )
+        : { agentId: 'AgentX', workspaceDir: '/Work/AgentX', outcomes, warnings };
+      for (const terminalColumns of [32, 120]) {
+        const previews: string[] = [];
+        for (const environment of [{ FORCE_COLOR: '3' }, { NO_COLOR: '', FORCE_COLOR: '3' }]) {
+          const harness = createHarness({
+            install,
+            terminalColumns,
+            styles: createCliStyles(environment),
+          });
+          await harness.run();
+          const text = ansis.strip(harness.events.join(''));
+          previews.push(text);
+          assert.equal(text.match(/^messages$/gmu)?.length, 1);
+          assert.ok(text.indexOf('workspace  ') < text.indexOf('messages'));
+          const unwrapped = text.replace(/\s/gu, '');
+          assert.ok(unwrapped.includes(literal.replace(/\s/gu, '')));
+          assert.ok(unwrapped.indexOf('warningA') < unwrapped.indexOf('warningB'));
+          assert.ok(unwrapped.indexOf('warningB') < unwrapped.indexOf('infoA'));
+          if (failed)
+            assert.ok(unwrapped.indexOf('HTTP403:InvalidToken') < unwrapped.indexOf('warningA'));
+          assert.deepEqual(harness.exitCodes, failed ? [1] : []);
+          assert.deepEqual(
+            harness.calls.install.map(({ manifest }) => manifest),
+            [validResult.manifest],
+          );
+          const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
+          assert.deepEqual(
+            rows.map((row) => row.trim().split(/\s/).filter(Boolean).slice(0, 2)),
+            outcomes.map(({ component, status }) => [component, status]),
+          );
+        }
+        assert.equal(previews[0], previews[1]);
+      }
+      const json = createHarness({
+        install,
+        json: true,
+        styles: createCliStyles({ FORCE_COLOR: '3' }),
+      });
+      await json.run();
+      const result = JSON.parse(json.output.join(''));
+      assert.deepEqual(result.outcomes, outcomes);
+      assert.deepEqual(result.warnings, warnings);
+      if (failed) assert.equal(result.blocked.message, `HTTP 403: InvalidToken ${literal}`);
+      assert.ok(!json.events.join('').includes('\u001b'));
+      assert.ok(!json.diagnostics.join('').includes('messages'));
+      assert.deepEqual(json.exitCodes, failed ? [1] : []);
+    }
+  });
+
+  it('should expose deferred automation sync in both output modes without failing install', async () => {
+    const deferred = {
+      component: 'automations',
+      code: 'automation-sync-deferred',
+      message:
+        'Automation synchronization is deferred; scheduler state was not verified or changed.',
+    };
+    for (const json of [false, true]) {
+      const harness = createHarness({
+        json,
+        install: {
+          agentId: 'tanaabot',
+          workspaceDir: '/workspace',
+          outcomes: [{ ...deferred, status: 'skipped' }],
+          warnings: [deferred],
+        },
+      });
+      await harness.run();
+      assert.deepEqual(harness.exitCodes, []);
+      assert.match(harness.diagnostics.join(''), /deferred/u);
+      if (json) {
+        const result = JSON.parse(harness.output.join(''));
+        assert.equal(result.outcomes[0].status, 'skipped');
+        assert.equal(result.warnings[0].code, 'automation-sync-deferred');
+        assert.equal(result.blocked, undefined);
+      } else {
+        assert.match(harness.output.join(''), /skipped/u);
+        assert.ok(
+          harness.events.join('').indexOf('workspace  /workspace') <
+            harness.events.join('').indexOf('messages'),
+        );
+      }
+      assert.ok(!harness.output.join('').includes('automation-synchronized'));
+    }
+  });
+
+  it('should combine manifest warnings with operation messages after the workspace footer', async () => {
+    for (const failed of [false, true]) {
+      const outcomes = [
+        {
+          code: 'agent-ready',
+          component: 'agent',
+          message: 'Agent ready.',
+          status: 'unchanged' as const,
+        },
+      ];
+      const warnings = [
+        { code: 'operation-warning', component: 'git', message: 'Operation warning.' },
+      ];
+      const install = failed
+        ? new AgentSystemLifecycleError(
+            'github',
+            'operation-stopped',
+            'Operation stopped.',
+            undefined,
+            undefined,
+            undefined,
+            {
+              outcomes,
+              warnings,
+              unattempted: [{ component: 'models' }],
+            },
+          )
+        : { agentId: 'tanaabot', workspaceDir: '/workspace', outcomes, warnings };
+      const harness = createHarness({
+        install,
+        manifest: {
+          ...validResult,
+          diagnostics: [
+            { code: 'manifest-warning', message: 'Manifest warning.', severity: 'warning' },
+          ],
+        },
+      });
+      await harness.run();
+      const text = harness.events.join('');
+      assert.equal(text.match(/messages/gu)?.length, 1);
+      assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('messages'));
+      assert.ok(text.indexOf('messages') < text.indexOf('Manifest warning.'));
+      assert.match(text, /Operation warning/u);
+      if (failed) {
+        assert.match(text, /Operation stopped/u);
+        assert.deepEqual(harness.exitCodes, [1]);
+      } else assert.deepEqual(harness.exitCodes, []);
+    }
+  });
   it('should forward an explicit Codex PATH rebuild', async () => {
     const { calls, run } = createHarness({ rebuildCodexPath: true });
 
@@ -172,9 +342,12 @@ describe('cli/install', () => {
     assert.deepEqual(calls.install, [
       { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
     ]);
-    const rows = output.join('').trimEnd().split('\n');
+    const rows = output.join('').trim().split('\n');
     assert.deepEqual(
-      rows.slice(0, 7).map((row) => row.split(/\s+/).slice(0, 2)),
+      rows
+        .filter(Boolean)
+        .slice(0, 7)
+        .map((row) => row.trim().split(/\s+/).slice(0, 2)),
       [
         ['agent', 'created'],
         ['agent', 'updated'],
@@ -188,7 +361,7 @@ describe('cli/install', () => {
     assert.deepEqual(rows.slice(-2), ['', 'workspace  /workspace']);
   });
 
-  it('should render completed warnings beneath the results table', async () => {
+  it('should keep completed warnings on stderr and primary results on stdout', async () => {
     const { diagnostics, output, run } = createHarness({
       install: {
         outcomes: [
@@ -213,11 +386,9 @@ describe('cli/install', () => {
 
     await run();
 
-    assert.deepEqual(diagnostics, []);
-    assert.match(
-      output.join(''),
-      /workspace {2}\/workspace\n\nNotices\n\n⚠ Warning\n {2}The existing/u,
-    );
+    assert.match(output.join(''), /workspace {2}\/workspace/u);
+    assert.doesNotMatch(output.join(''), /warning/u);
+    assert.match(diagnostics.join(''), /⚠ warning\n {2}The existing/u);
   });
 
   it('should report explicit unchanged outcomes for every component', async () => {
@@ -251,9 +422,12 @@ describe('cli/install', () => {
 
     await run();
 
-    const rows = output.join('').trimEnd().split('\n');
+    const rows = output.join('').trim().split('\n');
     assert.deepEqual(
-      rows.slice(0, 3).map((row) => row.split(/\s+/).slice(0, 2)),
+      rows
+        .filter(Boolean)
+        .slice(0, 3)
+        .map((row) => row.trim().split(/\s+/).slice(0, 2)),
       [
         ['agent', 'unchanged'],
         ['path', 'unchanged'],
@@ -284,26 +458,30 @@ describe('cli/install', () => {
         { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
       ]);
       assert.deepEqual(harness.exitCodes, []);
-      assert.deepEqual(
-        harness.diagnostics,
-        json ? ['path: Manual follow-up. code=manual-follow-up\n'] : [],
-      );
+      if (json)
+        assert.deepEqual(harness.diagnostics, ['path: Manual follow-up. code=manual-follow-up\n']);
       const text = harness.output.join('');
       assert.equal(text.includes('manual-follow-up'), json);
       if (json) {
         assert.equal(harness.output.length, 1);
         assert.equal(text, `${JSON.stringify(original, undefined, 2)}\n`);
       } else {
-        const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
+        const rows = text
+          .split('\n')
+          .map((row) => row.trim())
+          .filter((row) => /^(agent|path|git|github)\s/.test(row));
         assert.deepEqual(
-          rows.map((row) => row.split(/\s+/).slice(0, 2)),
+          rows.map((row) => row.trim().split(/\s+/).slice(0, 2)),
           installed.outcomes.map(({ component, status }) => [component, status]),
         );
         assert.ok(text.split('\n').some((row) => row.startsWith('  ')));
         for (const { message } of installed.outcomes) {
           assert.ok(text.replace(/\s+/g, ' ').includes(message));
         }
-        assert.match(text, /Notices\n\n⚠ Warning\n {2}Manual follow-up\./u);
+        assert.match(
+          harness.diagnostics.join(''),
+          /messages\n\n⚠ warning\n {2}Manual follow-up\./u,
+        );
       }
       assert.deepEqual(installed, original);
     }
@@ -336,12 +514,11 @@ describe('cli/install', () => {
 
     await run();
 
-    const text = output.join('');
-    assert.deepEqual(diagnostics, []);
-    assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('Notices'));
+    const text = diagnostics.join('');
+    assert.doesNotMatch(output.join(''), /messages/u);
     const normalized = text.replace(/\s+/g, ' ');
-    assert.match(normalized, /ℹ Notice Operator recognition is channel-wide OpenClaw/u);
-    assert.match(normalized, /⚠ Warning Running Gateway access for pirog is unverified\./u);
+    assert.match(normalized, /ℹ info operator recognition is channel-wide openclaw/u);
+    assert.match(normalized, /⚠ warning Running Gateway access for pirog is unverified\./u);
     assert.match(normalized, /Reload the Gateway, then verify a fresh/u);
     assert.equal(text.includes('github-operator-loaded-access-unverified'), false);
   });
@@ -371,6 +548,44 @@ describe('cli/install', () => {
     assert.equal(result.outcomes[0].status, 'unchanged');
   });
 
+  it('should order errors before retained warnings after completed work', async () => {
+    const failure = new AgentSystemLifecycleError(
+      'collaboration',
+      'collaboration-failed',
+      'Cannot reconcile team.',
+      undefined,
+      undefined,
+      undefined,
+      {
+        outcomes: [
+          {
+            component: 'agent',
+            code: 'agent-created',
+            status: 'created',
+            message: 'agent registered',
+          },
+        ],
+        warnings: [{ component: 'path', code: 'manual-follow-up', message: 'Keep this warning.' }],
+        unattempted: [{ component: 'models' }],
+      },
+    );
+    const { output, diagnostics, events, exitCodes, run } = createHarness({ install: failure });
+    await run();
+    assert.match(output.join(''), /agent registered/u);
+    assert.ok(
+      events.join('').indexOf('agent registered') < events.join('').indexOf('Keep this warning'),
+    );
+    assert.match(diagnostics.join(''), /code=manual-follow-up/u);
+    const text = diagnostics.join('');
+    assert.match(text, /Keep this warning/u);
+    assert.match(text, /✖ error/u);
+    assert.ok(text.indexOf('✖ error') < text.indexOf('Keep this warning'));
+    assert.ok(text.indexOf('Keep this warning') < text.indexOf('unattempted work'));
+    assert.ok(text.indexOf('unattempted work') < text.indexOf('earlier completed'));
+    assert.match(text, /code=collaboration-failed/u);
+    assert.deepEqual(exitCodes, [1]);
+  });
+
   it('should report installation failures and set a failing exit code', async () => {
     const { diagnostics, exitCodes, output, run } = createHarness({
       install: new Error('agent workspace conflict'),
@@ -381,7 +596,7 @@ describe('cli/install', () => {
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
     assert.match(diagnostics.join(''), /install: agent workspace conflict/u);
-    assert.match(diagnostics.join(''), /Unattempted work: lifecycle/u);
+    assert.match(diagnostics.join(''), /unattempted work: lifecycle/u);
   });
 
   it('should attribute lifecycle reconciliation failures to their component', async () => {
@@ -398,10 +613,10 @@ describe('cli/install', () => {
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(output, []);
     assert.match(
-      diagnostics.join(''),
+      diagnostics.join('').replace(/\s+/gu, ' '),
       /github: GitHub config reconciliation failed. code=github-config-reconcile-failed/u,
     );
-    assert.match(diagnostics.join(''), /Unattempted work: lifecycle/u);
+    assert.match(diagnostics.join(''), /unattempted work: lifecycle/u);
   });
 
   it('should report completed, blocked, and unattempted work in one json failure', async () => {
@@ -421,19 +636,22 @@ describe('cli/install', () => {
             message: 'agent registered',
           },
         ],
-        warnings: [],
+        warnings: [{ component: 'path', code: 'retained-warning', message: 'Retain in JSON.' }],
         unattempted: [{ component: 'setup', stepId: 'agent-step' }],
       },
     );
     const { diagnostics, exitCodes, output, run } = createHarness({
       install: error,
       json: true,
+      styles: createCliStyles({ FORCE_COLOR: '3' }),
       skipSetupHost: true,
     });
     await run();
     assert.deepEqual(exitCodes, [1]);
     const result = JSON.parse(output.join(''));
     assert.equal(result.status, 'failed');
+    assert.equal(result.warnings[0].code, 'retained-warning');
+    assert.equal([...output, ...diagnostics].join('').includes('\u001b'), false);
     assert.deepEqual(
       result.outcomes.map(({ component }: { component: string }) => component),
       ['agent'],
@@ -458,6 +676,26 @@ describe('cli/install', () => {
     assert.equal(result.blocked.code, 'op-credential-not-stored');
     assert.deepEqual(result.outcomes, []);
     assert.deepEqual(result.unattempted, [{ component: 'lifecycle' }]);
+  });
+
+  it('should preserve warning severity alongside a manifest failure', async () => {
+    const harness = createHarness({
+      manifest: {
+        status: 'invalid',
+        scope: { workspaceDir: '/workspace' },
+        path: '/workspace/agent.yaml',
+        diagnostics: [
+          { severity: 'warning', code: 'manifest-warning', message: 'Retain this warning.' },
+        ],
+      },
+    });
+    await harness.run();
+    assert.match(harness.diagnostics.join(''), /error/u);
+    assert.match(harness.diagnostics.join(''), /warning/u);
+    assert.match(harness.diagnostics.join(''), /manifest-warning/u);
+    assert.deepEqual(harness.output, []);
+    assert.deepEqual(harness.calls.install, []);
+    assert.deepEqual(harness.exitCodes, [1]);
   });
 
   it('should not install an invalid workspace manifest', async () => {

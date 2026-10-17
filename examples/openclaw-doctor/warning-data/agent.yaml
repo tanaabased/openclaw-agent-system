@@ -1,0 +1,10 @@
+schema-version: 1
+
+agent:
+  id: warning-doctor-data
+  name: Warning Doctor Data
+
+# retained legacy input exercises a manifest warning before lifecycle output.
+setup:
+  check: 'true'
+  apply: 'true'

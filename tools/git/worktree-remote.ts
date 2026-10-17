@@ -35,6 +35,26 @@ export default function normalizeGitWorktreeRemote(input: string): string {
   return remote.href;
 }
 
+/** compare transport-independent network identity, never a local marker or basename. */
+export function gitRemoteIdentity(input: string): string {
+  const normalized = normalizeGitWorktreeRemote(input);
+  const scp = scpRemotePattern.exec(normalized);
+  const url = scp ? new URL(`ssh://${scp[1]}@${scp[2]}/${scp[3]}`) : new URL(normalized);
+  const path = url.pathname
+    .replace(/^\//u, '')
+    .replace(/\/$/u, '')
+    .replace(/\.git$/iu, '');
+  const segments = path.split('/');
+  if (
+    segments.length < 2 ||
+    segments.some((part) => !/^[A-Za-z0-9._-]+$/u.test(part) || part === '.' || part === '..')
+  )
+    throw new Error('The Git repository identity is invalid.');
+  const host = url.hostname.toLowerCase();
+  if (url.port) throw new Error('The Git repository identity uses an unsupported port.');
+  return host + '/' + (host === 'github.com' ? path.toLowerCase() : path);
+}
+
 /** Convert a provider-validated canonical GitHub HTTPS remote to its SSH equivalent. */
 export function githubSshWorktreeRemote(input: string): string {
   let normalized: string;
@@ -71,4 +91,14 @@ export function preferGitHubSshWorktreeRemote(input: string): string {
   } catch {
     return normalized;
   }
+}
+
+/** retain the provider's repository spelling for the configured checkout destination. */
+export function gitRemoteRepositoryName(input: string): string {
+  gitRemoteIdentity(input);
+  return normalizeGitWorktreeRemote(input)
+    .replace(/\/$/u, '')
+    .split('/')
+    .at(-1)!
+    .replace(/\.git$/iu, '');
 }

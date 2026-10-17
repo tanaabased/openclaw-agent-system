@@ -18,6 +18,7 @@ import {
 } from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
+import { validateGitHubNotificationPolicy } from '../channels/github/notification-policy.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import { decodeBackup, externalBackupSchema } from './backup-schema.ts';
@@ -27,6 +28,7 @@ import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './va
 const externalAgentManifestSchema = Type.Object(
   {
     'schema-version': Type.Literal(1),
+    debug: Type.Optional(Type.Boolean()),
     automations: Type.Optional(externalAutomationsSchema),
     agent: externalAgentSectionSchema,
     environment: Type.Optional(
@@ -40,7 +42,7 @@ const externalAgentManifestSchema = Type.Object(
                   minLength: 1,
                   pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
                 }),
-                { minItems: 1, uniqueItems: true },
+                { uniqueItems: true },
               ),
             ]),
           ),
@@ -52,7 +54,7 @@ const externalAgentManifestSchema = Type.Object(
                   minLength: 1,
                   pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
                 }),
-                { minItems: 1, uniqueItems: true },
+                { uniqueItems: true },
               ),
             ]),
           ),
@@ -67,13 +69,12 @@ const externalAgentManifestSchema = Type.Object(
                   minLength: 1,
                   pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
                 }),
-                { minItems: 1, uniqueItems: true },
+                { uniqueItems: true },
               ),
             ]),
           ),
           required: Type.Optional(
             Type.Array(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }), {
-              minItems: 1,
               uniqueItems: true,
             }),
           ),
@@ -171,11 +172,31 @@ function modelTierGroupDiagnostics(value: unknown): ManifestDiagnostic[] {
   ];
 }
 
+function globalFeedbackDiagnostics(value: unknown): ManifestDiagnostic[] {
+  const github = isRecord(value) && value.github;
+  const notifications = isRecord(github) && github.notifications;
+  if (
+    !isRecord(notifications) ||
+    notifications['schema-version'] !== 2 ||
+    !Object.hasOwn(notifications, 'feedback')
+  )
+    return [];
+  return [
+    {
+      code: 'github-notification-global-feedback-removed',
+      fieldPath: '/github/notifications/feedback',
+      message:
+        'Global feedback is no longer supported. Remove it and explicitly choose feedback under issue-assignment and/or review-request: false, true to inherit allowed identities, or {inherit, allowed}. No permissions are migrated automatically.',
+      severity: 'error',
+    },
+  ];
+}
+
 function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): ManifestDiagnostic[] {
   if (error.keyword === 'additionalProperties') {
     return error.params.additionalProperties.map((property) => ({
       code: 'manifest-unknown-key',
-      fieldPath: `${error.instancePath}/${String(property)}`,
+      fieldPath: `${error.instancePath}/${pointerSegment(String(property))}`,
       message: `Unknown manifest key: ${String(property)}.`,
       severity: 'error',
     }));
@@ -203,6 +224,7 @@ function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): Manif
 function decodeManifest(value: ExternalAgentManifest): AgentManifest {
   return {
     schemaVersion: value['schema-version'],
+    ...(value.debug === undefined ? {} : { debug: value.debug }),
     agent: decodeAgentSection(value.agent),
     ...(value.environment === undefined
       ? {}
@@ -335,7 +357,11 @@ export function parseManifestYaml(
 export default function parseAgentManifest(source: string): ParsedAgentManifest {
   const yaml = parseManifestYaml(source);
   if (yaml.status === 'invalid') return yaml;
-  const { value } = yaml;
+  return normalizeAgentManifest(yaml.value);
+}
+
+/** validate and normalize an effective document before any external values are resolved. */
+export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const agentKey = isRecord(value) && Object.hasOwn(value, 'setup-agent') ? 'setup-agent' : 'setup';
   const declarations = (['setup-host', agentKey] as const).flatMap((key) => {
     if (!isRecord(value) || !Object.hasOwn(value, key)) return [];
@@ -380,8 +406,24 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,
     ]),
+    ...(isRecord(value) &&
+    isRecord(value.github) &&
+    isRecord(value.github.notifications) &&
+    (value.github.notifications['schema-version'] === undefined ||
+      value.github.notifications['schema-version'] === 1)
+      ? [
+          {
+            code: 'github-notification-v1-retired',
+            fieldPath: '/github/notifications',
+            message:
+              'V1 GitHub notifications have been retired. Declare schema-version: 2 and explicit runtime, owner and trigger policies; old state is retained and is not migrated automatically.',
+            severity: 'error' as const,
+          },
+        ]
+      : []),
     ...legacyPolicyDiagnostics(value),
     ...modelTierGroupDiagnostics(value),
+    ...globalFeedbackDiagnostics(value),
   ];
   if (declarationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
     const declarationPaths = new Set(
@@ -409,11 +451,16 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
 
   const host = declarations.find(({ key }) => key === 'setup-host');
   const agent = declarations.find(({ key }) => key === agentKey);
+  const manifest = decodeManifest(value);
+  const notificationDiagnostics = validateGitHubNotificationPolicy(manifest.github);
+  if (notificationDiagnostics.length > 0) {
+    return { status: 'invalid', diagnostics: notificationDiagnostics };
+  }
 
   return {
     status: 'valid',
     manifest: {
-      ...decodeManifest(value),
+      ...manifest,
       ...(host?.setup?.status === 'valid' ? { setupHost: host.setup.setup } : {}),
       ...(agent?.setup?.status === 'valid' ? { setup: agent.setup.setup } : {}),
     },

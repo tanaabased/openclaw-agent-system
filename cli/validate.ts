@@ -1,12 +1,12 @@
+import presentCliCommand from './presentation.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
-  writeCliDiagnostics,
+  writeCliDiagnosticNotices,
   writeCliJson,
   writeCliSummary,
 } from './output.ts';
-import lifecyclePresentationLines from '../core/lifecycle-presentation.ts';
 import { formatManifestDiagnostics, formatManifestFailure } from '../core/logger.ts';
 
 export interface ValidateAgentSystemOptions {
@@ -16,21 +16,20 @@ export interface ValidateAgentSystemOptions {
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
 /** Discover and validate one workspace manifest without mutating OpenClaw state. */
-export default async function validateAgentSystem(
-  options: ValidateAgentSystemOptions,
-): Promise<void> {
+async function validateAgentSystem(options: ValidateAgentSystemOptions): Promise<void> {
   const result = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
 
   if (result.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      formatManifestFailure(result).map(({ message }) => message),
+    writeCliDiagnosticNotices(
+      options,
+      formatManifestFailure(result).map(({ level, message }) => ({ severity: level, message })),
     );
     options.setExitCode(1);
     return;
@@ -40,7 +39,7 @@ export default async function validateAgentSystem(
     {
       code: 'manifest-valid',
       component: 'manifest',
-      message: `Agent System manifest for ${result.manifest.agent.id}`,
+      message: 'Agent System manifest',
       status: 'valid' as const,
     },
     ...result.validationChecks,
@@ -58,18 +57,33 @@ export default async function validateAgentSystem(
     writeCliSummary(
       options.output,
       [
-        ...lifecyclePresentationLines(checks),
+        ...checks.map(({ component, message, status }) => ({
+          component,
+          label: status,
+          quiet: status === 'valid',
+          style: 'status' as const,
+          value: component === 'manifest' ? 'agent system manifest' : message,
+        })),
+        {
+          label: 'agent',
+          style: 'field',
+          value: result.manifest.agent.id,
+        },
         {
           label: 'manifest',
-          style: 'target',
+          style: 'field',
           value: result.path,
         },
+        { label: 'workspace', style: 'field', value: result.scope.workspaceDir },
       ],
       options.styles,
+      { rowPadding: 1, terminalColumns: options.terminalColumns ?? process.stdout.columns },
     );
   }
-  writeCliDiagnostics(
-    options.output,
-    formatManifestDiagnostics(result).map(({ message }) => message),
+  writeCliDiagnosticNotices(
+    options,
+    formatManifestDiagnostics(result).map(({ level, message }) => ({ severity: level, message })),
   );
 }
+
+export default presentCliCommand(validateAgentSystem);

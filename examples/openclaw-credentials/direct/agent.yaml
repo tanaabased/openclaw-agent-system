@@ -1,0 +1,14 @@
+schema-version: 1
+agent:
+  id: credential-direct
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
+environment:
+  set:
+    OP_SSH_KEY:
+      from-op: 'op://omfsw2uztmi2xqpid5g3kiv6ba/id_test/private key?ssh-format=openssh'
+  required: [OP_SSH_KEY]
+git:
+  signing:
+    key: OP_SSH_KEY
+    allowed-signers-file: allowed_signers

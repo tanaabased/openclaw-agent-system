@@ -13,6 +13,21 @@ credential, isolated configuration, and policy. Enable it through the workspace'
 > System adds only the narrow release control documented under
 > [`github.policy`](#githubpolicy).
 
+- [Configuration Reference](#configuration-reference)
+  - [`github.config`](#githubconfig)
+  - [`github.host`](#githubhost)
+  - [`github.policy`](#githubpolicy)
+  - [`github.ssh-keys`](#githubssh-keys)
+  - [`github.ssh-signing-keys`](#githubssh-signing-keys)
+  - [`github.token`](#githubtoken)
+  - [`github.username`](#githubusername)
+- [Native Tool](#native-tool)
+  - [`agent_system_github`](#agent_system_github)
+- [CLI](#cli)
+  - [`openclaw agent-system tool gh`](#openclaw-agent-system-tool-gh)
+- [Shim](#shim)
+- [Launcher Bindings](#launcher-bindings)
+
 ## Overview
 
 | Interface                       | Purpose                                                      |
@@ -69,6 +84,21 @@ github:
     telemetry: disabled
 ```
 
+### `github.config`
+
+| Field               | Values                | Required | Default    |
+| ------------------- | --------------------- | -------- | ---------- |
+| `accessible-colors` | `enabled`, `disabled` | no       | `disabled` |
+| `color-labels`      | `enabled`, `disabled` | no       | `enabled`  |
+| `git-protocol`      | `ssh`, `https`        | no       | `ssh`      |
+| `spinner`           | `enabled`, `disabled` | no       | `enabled`  |
+| `telemetry`         | `enabled`, `disabled` | no       | `disabled` |
+
+Agent System writes a token-free `config.yml` beneath a private per-agent state
+directory and supplies it through `GH_CONFIG_DIR`. It never reads or modifies the
+operator's normal `~/.config/gh` configuration. The child environment also
+disables prompts and editor launches and uses `cat` as its pager.
+
 ### `github.host`
 
 | Type   | Required | Default      |
@@ -76,37 +106,6 @@ github:
 | string | no       | `github.com` |
 
 Only `github.com` is currently supported.
-
-### `github.username`
-
-| Type                               | Required     | Default |
-| ---------------------------------- | ------------ | ------- |
-| string or `from-environment` value | for SSH keys | none    |
-
-When configured, Agent System verifies `gh api user --jq .login` in the same
-child environment before each requested operation and rejects a different login.
-
-### `github.token`
-
-| Type                      | Required     | Default                         |
-| ------------------------- | ------------ | ------------------------------- |
-| environment-variable name | for SSH keys | `GH_TOKEN`, then `GITHUB_TOKEN` |
-
-The value names a variable in the completed Agent System environment; it can
-never contain a literal token. A declared binding takes precedence over the
-defaults. SSH authentication or signing keys require an explicit token and
-username because installation may mutate the configured GitHub account.
-
-When both `github.username` and `github.token` are declared, `install` also
-projects that identity into OpenClaw for the same agent. Agent System remains
-the source of truth, and `doctor` treats a system-level OpenClaw identity as
-missing rather than adopting it.
-
-The token is duplicated only into OpenClaw's owner-readable PAT profile store,
-never `openclaw.json`. Each agent receives a separately verified profile and
-binding; conflicts or unsupported layouts fail closed. Agents that share an OS
-account still share process-level access, so this provides identity separation,
-not hostile-process secret isolation.
 
 ### `github.policy`
 
@@ -146,21 +145,6 @@ denial.
 A release denial identifies `github.policy.releases`. Enforcement occurs before
 Agent System resolves the environment or token.
 
-### `github.config`
-
-| Field               | Values                | Required | Default    |
-| ------------------- | --------------------- | -------- | ---------- |
-| `accessible-colors` | `enabled`, `disabled` | no       | `disabled` |
-| `color-labels`      | `enabled`, `disabled` | no       | `enabled`  |
-| `git-protocol`      | `ssh`, `https`        | no       | `ssh`      |
-| `spinner`           | `enabled`, `disabled` | no       | `enabled`  |
-| `telemetry`         | `enabled`, `disabled` | no       | `disabled` |
-
-Agent System writes a token-free `config.yml` beneath a private per-agent state
-directory and supplies it through `GH_CONFIG_DIR`. It never reads or modifies the
-operator's normal `~/.config/gh` configuration. The child environment also
-disables prompts and editor launches and uses `cat` as its pager.
-
 ### `github.ssh-keys`
 
 | Type                   | Required | Default |
@@ -188,6 +172,65 @@ commands validate declarations, reconcile the private GitHub CLI configuration,
 agent-scoped OpenClaw identity, and missing account keys, and report drift. See the
 [GitHub notifications channel](../../channels/github/README.md) for its separate
 configuration, routing, lifecycle, and security contract.
+
+### `github.token`
+
+| Type                      | Required     | Default                         |
+| ------------------------- | ------------ | ------------------------------- |
+| environment-variable name | for SSH keys | `GH_TOKEN`, then `GITHUB_TOKEN` |
+
+The value names a variable in the completed Agent System environment; it can
+never contain a literal token. A declared binding takes precedence over the
+defaults. SSH authentication or signing keys require an explicit token and
+username because installation may mutate the configured GitHub account.
+
+When both `github.username` and `github.token` are declared, `install` also
+projects that identity into OpenClaw for the same agent. Agent System remains
+the source of truth, and `doctor` treats a system-level OpenClaw identity as
+missing rather than adopting it.
+
+The token is duplicated only into OpenClaw's owner-readable PAT profile store,
+never `openclaw.json`. Each agent receives a separately verified profile and
+binding; conflicts or unsupported layouts fail closed. Agents that share an OS
+account still share process-level access, so this provides identity separation,
+not hostile-process secret isolation.
+
+### `github.username`
+
+| Type                               | Required     | Default |
+| ---------------------------------- | ------------ | ------- |
+| string or `from-environment` value | for SSH keys | none    |
+
+When configured, Agent System verifies `gh api user --jq .login` in the same
+child environment before each requested operation and rejects a different login.
+
+## Native Tool
+
+### `agent_system_github`
+
+Run ordinary GitHub CLI commands with the trusted active agent. The same
+[configuration](#configuration-reference) and [policy](#githubpolicy) apply to
+native and operator calls.
+
+#### Parameters
+
+| Parameter | Type         | Required | Default | Description                                                                         |
+| --------- | ------------ | -------- | ------- | ----------------------------------------------------------------------------------- |
+| `argv`    | string array | yes      | none    | 1–128 GitHub CLI arguments, without `gh`; each argument is at most 8192 characters. |
+| `stdin`   | string       | no       | none    | Ordinary command input, at most 64 KiB; never tokens.                               |
+
+Callers cannot select an agent, workspace, or credential. Unknown parameters are
+rejected.
+
+#### Usage
+
+Inspect the configured GitHub identity:
+
+```json
+{ "argv": ["api", "user", "--jq", ".login"] }
+```
+
+Results include `exitCode`, `stdout`, `stderr`, and `truncated`.
 
 ## CLI
 
@@ -249,11 +292,9 @@ path to the strict managed launcher:
 "$AGENT_SYSTEM_GH" repo view owner/repo
 ```
 
-The binding exists only in Agent System-owned child environments, not login
-shells, repository config, or manifest environment output. It is an executable
-path, not a token or authority capability. It retains classification, policy,
-credential, containment, and audit checks and fails without valid active-agent
-authority. The [shim](#shim) retains its contextual host fallback.
+This launcher requires active-agent authority under the shared
+[execution boundary](../../CLI.md#trust-boundary). The [shim](#shim) retains
+its contextual host fallback.
 
 ## Further Reading
 

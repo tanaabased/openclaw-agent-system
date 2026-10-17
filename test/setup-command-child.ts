@@ -21,8 +21,6 @@ registerAgentSystemCli(program, {
   installService: { install: unavailable },
   input: process.stdin,
   manifestService: { loadForAgentId: unavailable, loadForCommandDirectory: unavailable },
-  notificationMonitorService: { runOnce: unavailable },
-  notificationStatusService: { inspect: unavailable, wait: unavailable },
   output: {
     writeStderr: (value) => process.stderr.write(value),
     writeStdout: (value) => process.stdout.write(value),

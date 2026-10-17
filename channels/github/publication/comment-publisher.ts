@@ -2,7 +2,6 @@ import type {
   GitHubIssueCommentReceipt,
   GitHubNotificationPublicationClient,
 } from '../provider/work-event-client.ts';
-import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
   githubNotificationAttributedReplyText,
   githubNotificationPublicationComment,
@@ -10,12 +9,10 @@ import {
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
   type GitHubNotificationPublicationSource,
-} from './publication.ts';
+  type GitHubNotificationPublicationItem,
+} from './publication-contract.ts';
 
-type PublicationItem = Pick<
-  GitHubNotificationItemState,
-  'lifecycleId' | 'number' | 'repositoryName' | 'repositoryNodeId' | 'repositoryOwner'
->;
+type PublicationItem = GitHubNotificationPublicationItem;
 
 export type GitHubNotificationCommentPublicationInput = {
   conversationId?: string;
@@ -43,6 +40,7 @@ export interface GitHubNotificationCommentPublicationConnection {
 }
 
 export interface GitHubNotificationCommentPublisherDependencies {
+  redactText(text: string): string;
   authorize(
     input:
       | {
@@ -110,7 +108,11 @@ export default class GitHubNotificationCommentPublisher {
     input: GitHubNotificationCommentPublicationInput,
     create: boolean,
   ): Promise<GitHubNotificationCommentPublicationResult | undefined> {
-    const text = githubNotificationPublicationText(input.intent, [{ text: input.text }]);
+    const text = githubNotificationPublicationText(
+      input.intent,
+      [{ text: input.text }],
+      this.#dependencies.redactText,
+    );
     const conversation = input.conversationId
       ? ({ conversationId: input.conversationId } as const)
       : ({ item: input.item } as const);
@@ -149,6 +151,7 @@ export default class GitHubNotificationCommentPublisher {
           ? githubNotificationAttributedReplyText(
               text,
               connection.commenterLogin ?? missingCommenterLogin(),
+              this.#dependencies.redactText,
             )
           : text;
       const expectedBody = githubNotificationPublicationComment(publicText, marker);

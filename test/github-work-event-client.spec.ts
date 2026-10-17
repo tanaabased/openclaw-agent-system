@@ -68,6 +68,21 @@ describe('channels/github/provider/work-event-client', () => {
     );
   });
 
+  it('should skip provider discovery when assignment types are explicitly cleared', async () => {
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute() {
+        throw new Error('provider must not be called');
+      },
+    });
+    assert.deepEqual(await client.discoverAssigned('2026-08-11T11:55:00.000Z', []), {
+      candidates: [],
+      incomplete: false,
+      totalCount: 0,
+      truncated: false,
+    });
+  });
+
   it('should paginate assigned-item discovery through fixed bounded api calls', async () => {
     const requests: string[][] = [];
     const pages = [

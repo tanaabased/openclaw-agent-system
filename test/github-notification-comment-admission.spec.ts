@@ -4,14 +4,11 @@ import {
   admitGitHubComment,
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/conversation/comment-admission.ts';
-import { notificationAccount, notificationActor } from './github-notification-fixtures.ts';
+} from '../channels/github/provider/comment-admission.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
 
 const configuration = {
-  assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
-  approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
-  intervalMinutes: 5,
-  maxConcurrentIssues: 2,
+  approvedFeedbackAuthors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
 };
 
 function comment(
@@ -30,7 +27,65 @@ function comment(
   };
 }
 
-describe('channels/github/conversation/comment-admission', () => {
+describe('channels/github/provider/comment-admission', () => {
+  it('should require explicit feedback grants and ignore assignment-only authority', () => {
+    for (const [settings, approved] of [
+      [{ approvedFeedbackAuthors: [notificationActor] }, true],
+      [{}, false],
+      [{ approvedFeedbackAuthors: [] }, false],
+      [{ approvedIssueAssigners: [notificationActor] }, false],
+    ] as const) {
+      const result = admitGitHubComment({
+        account: notificationAccount,
+        comment: comment('@tanaabot continue'),
+        configuration: {
+          ...settings,
+          approvedFeedbackAuthors:
+            'approvedFeedbackAuthors' in settings ? [...settings.approvedFeedbackAuthors] : [],
+        },
+      });
+      assert.equal(result.disposition, approved ? 'approved' : 'rejected');
+    }
+  });
+
+  it('should retain exact-mention, human-author, self-rejection, and immutable-pin checks for explicit authors', () => {
+    for (const entry of [
+      {
+        body: '@tanaabot-extra continue',
+        author: notificationActor,
+        code: 'comment-mention-missing',
+      },
+      {
+        body: '> @tanaabot continue',
+        author: notificationActor,
+        code: 'comment-mention-quote-only',
+      },
+      { body: '@tanaabot continue', author: notificationAccount, code: 'comment-actor-self' },
+      {
+        body: '@tanaabot continue',
+        author: { ...notificationActor, type: 'Bot' },
+        code: 'comment-actor-unsupported',
+      },
+      {
+        body: '@tanaabot continue',
+        author: { ...notificationActor, nodeId: 'U_recycled_login' },
+        code: 'comment-actor-unapproved',
+      },
+    ]) {
+      assert.equal(
+        admitGitHubComment({
+          account: notificationAccount,
+          comment: comment(entry.body, { author: entry.author }),
+          configuration: {
+            ...configuration,
+            approvedFeedbackAuthors: [notificationActor, notificationAccount],
+          },
+        }).code,
+        entry.code,
+      );
+    }
+  });
+
   it('should admit an approved human exact standalone account mention', () => {
     const body = 'Could you check this, @Tanaabot?';
     const start = body.indexOf('@Tanaabot');

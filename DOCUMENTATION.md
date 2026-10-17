@@ -16,8 +16,8 @@ boundaries, not a checklist of files to update; leave aligned documents unchange
 | [CHANGELOG.md](./CHANGELOG.md)                                       | Implemented changes.                                                                                                                                                                                        |
 | `channels/<provider>/README.md`                                      | Each channel's common setup, configuration example, verification, and essential limitations. Use a sibling `ADVANCED.md` as the first expansion for complete references and less-common operational detail. |
 | [channels/github/ADVANCED.md](./channels/github/ADVANCED.md)         | Shipped notification configuration and commands, model routing, processing, security, and upgrades.                                                                                                         |
-| [channels/github/DESIGN.md](./channels/github/DESIGN.md)             | Target notification message flow, lifecycle types, stable machine identifiers, modes, states, context boundaries, and publication behavior.                                                                 |
 | [channels/github/PRESENTATION.md](./channels/github/PRESENTATION.md) | Reusable human-visible notification components and styling; no lifecycle or feature behavior.                                                                                                               |
+| [cli/PRESENTATION.md](./cli/PRESENTATION.md)                         | Shared CLI palette, spacing, diagnostic placement, and authoring verification.                                                                                                                              |
 | [CLI.md](./CLI.md)                                                   | Common commands and execution boundaries.                                                                                                                                                                   |
 | [CODEX.md](./CODEX.md)                                               | Standalone Codex installation, binding, context, setup, model routing, and development. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.                                               |
 | [CONFIG.md](./CONFIG.md)                                             | Operator-owned OpenClaw plugin settings.                                                                                                                                                                    |
@@ -154,23 +154,23 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 ### Object Example
 
 Name the owning configuration path before listing fields, as in
-[`githubNotifications`](./CONFIG.md#githubnotifications):
+[`opCache`](./CONFIG.md#opcache):
 
 ````markdown
-## `githubNotifications`
+## `opCache`
 
 Set under `plugins.entries.agent-system.config` in OpenClaw configuration.
 
-| Field                  | Type    | Required | Default | Description                                       |
-| ---------------------- | ------- | -------- | ------- | ------------------------------------------------- |
-| `maxCommentCharacters` | integer | no       | `8000`  | Incoming comment limit, from `1` through `64000`. |
+| Field        | Type    | Required | Default | Description                                      |
+| ------------ | ------- | -------- | ------- | ------------------------------------------------ |
+| `maxEntries` | integer | no       | `128`   | Maximum cached entries, from `1` through `1024`. |
 
 ```sh
-# reject incoming comments longer than twelve thousand characters.
-openclaw config set plugins.entries.agent-system.config.githubNotifications.maxCommentCharacters 12000 --strict-json
+# set the maximum cached entry count.
+openclaw config set plugins.entries.agent-system.config.opCache.maxEntries 64 --strict-json
 ```
 
-Overlong comments are rejected without executing truncated prose.
+The limit bounds entries retained by the configured cache mode.
 ````
 
 ## Before Committing

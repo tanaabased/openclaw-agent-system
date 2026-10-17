@@ -15,8 +15,12 @@ function positiveInteger(value: unknown, label: string): number {
   return parsed;
 }
 
-export function notificationPositiveInteger(value: unknown, label: string): number {
-  return positiveInteger(value, label);
+export function notificationTimeoutSeconds(value: unknown): number {
+  const seconds = positiveInteger(value, 'timeout');
+  if (seconds > 2_147_483) {
+    throw new NotificationCliOptionError('timeout must not exceed 2147483 seconds.');
+  }
+  return seconds;
 }
 
 export function notificationItemSelector(options: {

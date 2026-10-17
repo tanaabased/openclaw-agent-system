@@ -1,0 +1,9 @@
+schema-version: 1
+
+agent:
+  id: memory-tanaabot
+  name: Memory Tanaabot
+
+memory:
+  search:
+    provider: none

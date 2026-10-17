@@ -21,12 +21,14 @@ const sourceRoots = [
 const supportedPluginSdkSubpaths = new Set([
   'agent-scope-runtime',
   'approval-runtime',
+  'channel-config-schema',
   'channel-core',
   'channel-inbound',
   'channel-outbound',
   'cli-argv',
   'command-auth',
   'config-contracts',
+  'device-bootstrap',
   'error-runtime',
   'gateway-runtime',
   'logging-core',
@@ -40,6 +42,9 @@ const supportedPluginSdkSubpaths = new Set([
   'runtime-config-snapshot',
   'secret-ref-runtime',
   'session-store-runtime',
+  'session-visibility',
+  'setup-runtime',
+  'skill-commands-runtime',
   'status-helpers',
 ]);
 const deprecatedPluginSdkSubpaths = new Set([
@@ -133,6 +138,7 @@ function openClawImportFailures(source: string, file: string): OpenClawImportFai
 describe('openclaw api policy', () => {
   it('should detect deprecated, private, unknown, dynamic, and re-exported imports', () => {
     const source = [
+      "import { issueDeviceBootstrapToken, listDevicePairing, revokeDeviceBootstrapToken } from 'openclaw/plugin-sdk/device-bootstrap';",
       "import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';",
       "export { acquireFileLock } from 'openclaw/plugin-sdk/file-lock';",
       "export * from 'openclaw/plugin-sdk/config-types';",
@@ -153,12 +159,16 @@ describe('openclaw api policy', () => {
 
   it('should accept reviewed focused public imports', () => {
     const source = [
+      "import { issueDeviceBootstrapToken, listDevicePairing, revokeDeviceBootstrapToken } from 'openclaw/plugin-sdk/device-bootstrap';",
       "import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';",
       "import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';",
       "import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';",
       "import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-outbound';",
       "import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';",
+      "import { createAgentToAgentPolicy, resolveSessionToolsVisibility } from 'openclaw/plugin-sdk/session-visibility';",
+      "import { createClackPrompter } from 'openclaw/plugin-sdk/setup-runtime';",
       "import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';",
+      "import { listSkillCommandsForWorkspace } from 'openclaw/plugin-sdk/skill-commands-runtime';",
     ].join('\n');
 
     assert.deepEqual(openClawImportFailures(source, 'fixture.ts'), []);

@@ -14,6 +14,8 @@ export type AgentSystemToolErrorCode =
   | 'tool_unavailable';
 
 export interface AgentSystemToolFailureDiagnostic {
+  reasonCode?: string;
+  publication?: { status: 'published'; number: number };
   stage: 'authorization' | 'publication' | 'checkpoint';
   category:
     | 'authority-revoked'

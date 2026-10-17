@@ -1,0 +1,100 @@
+illustrative fixture data; no host operations
+
+## wide preview
+[stdout]
+
+[stdout]
+backup     preview
+agent      Agent-Mixed
+output     /Archives/Backup
+entries    2
+coverage   workspace selected; agent database pending capture (not yet included)
+scope      non-atomic; external sources and memory backends not included
+gitignore  on; includes override ignores
+include    MEMORY.md, Memory/**, Missing-*.md
+exclude    Scratch/**
+selected   MEMORY.md
+selected   Memory/Day.md
+excluded   exclude: 1 observed filter decisions; 1 directories pruned
+pruned     exclude: Scratch
+excluded   protected: 1 observed filter decisions; 1 directories pruned
+[stdout]
+
+workspace  /Workspace/Mixed
+
+[stderr]
+
+messages
+
+⚠ warning
+  backup-include-unmatched: include pattern matched no observed workspace entries (Missing-*.md)
+
+## narrow preview
+[stdout]
+
+[stdout]
+backup     preview
+agent      Agent-Mixed
+output     /Archives/Backup
+entries    2
+coverage   workspace selected; agent
+           database pending capture (not
+           yet included)
+scope      non-atomic; external sources
+           and memory backends not
+           included
+gitignore  on; includes override ignores
+include    MEMORY.md, Memory/**,
+           Missing-*.md
+exclude    Scratch/**
+selected   MEMORY.md
+selected   Memory/Day.md
+excluded   exclude: 1 observed filter
+           decisions; 1 directories
+           pruned
+pruned     exclude: Scratch
+excluded   protected: 1 observed filter
+           decisions; 1 directories
+           pruned
+[stdout]
+
+workspace  /Workspace/Mixed
+
+[stderr]
+
+messages
+
+⚠ warning
+  backup-include-unmatched: include
+  pattern matched no observed workspace
+  entries (Missing-*.md)
+
+## created
+[stdout]
+
+[stdout]
+backup     created and verified
+agent      Agent-Mixed
+output     /Archives/Backup
+archive    /Archives/Backup/Agent-Mixed.tar.gz
+entries    3
+coverage   workspace selected; agent database absent at capture
+scope      non-atomic; external sources and memory backends not included
+gitignore  on; includes override ignores
+include    MEMORY.md, Memory/**, Missing-*.md
+exclude    Scratch/**
+selected   MEMORY.md
+selected   Memory/Day.md
+selected   Later.md
+excluded   exclude: 1 observed filter decisions; 1 directories pruned
+pruned     exclude: Refreshed
+[stdout]
+
+workspace  /Workspace/Mixed
+
+[stderr]
+
+messages
+
+⚠ warning
+  backup-include-unmatched: include pattern matched no observed workspace entries (Missing-*.md)

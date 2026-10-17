@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Issue Assessment'
+  short_description: 'Assess an issue and retain a plan or focused questions'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-issue-assessment to assess this admitted issue in its verified worktree and retain the result.'

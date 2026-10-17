@@ -1,12 +1,11 @@
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { formatManifestDiagnostics, formatManifestFailure } from '../core/logger.ts';
-import { type CliOutput, writeCliDiagnostics } from './output.ts';
+import { type CliDiagnosticOptions, writeCliDiagnosticNotices } from './output.ts';
 
-interface LoadCommandManifestOptions {
+interface LoadCommandManifestOptions extends CliDiagnosticOptions {
   agentId?: string;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  output: CliOutput;
   setExitCode(code: number): void;
   workspaceDir: string;
 }
@@ -20,9 +19,9 @@ export default async function loadCommandManifest(
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   const diagnostics =
     result.status === 'loaded' ? formatManifestDiagnostics(result) : formatManifestFailure(result);
-  writeCliDiagnostics(
-    options.output,
-    diagnostics.map(({ message }) => message),
+  writeCliDiagnosticNotices(
+    options,
+    diagnostics.map(({ level, message }) => ({ severity: level, message })),
   );
   if (result.status !== 'loaded') {
     options.setExitCode(1);

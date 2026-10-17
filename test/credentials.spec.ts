@@ -79,7 +79,132 @@ describe('cli/credentials', () => {
     assert.deepEqual(calls, ['read:environment', 'set:data:private-token:automatic']);
     assert.deepEqual(test.records.manifestDirectories, ['/workspace']);
     assert.deepEqual(test.exitCodes, []);
-    assert.deepEqual(test.records.output, ['stored  op credential for data\nstore   file\n']);
+    assert.deepEqual(test.records.output, [
+      'credential     op for data stored\nstore          file\ninput source   environment\ngateway cache  invalidation not required\n',
+    ]);
+  });
+
+  it('should warn about pending invalidation after successful credential writes', async () => {
+    for (const operation of ['set', 'unset']) {
+      const test = harness();
+      if (operation === 'set')
+        await setCredentialsAgentSystem({
+          ...test,
+          credential: 'op',
+          fromEnvironment: true,
+          fromStdin: false,
+          workspaceDir: '/workspace',
+          credentialInput: {
+            read: async () => ({ status: 'read', source: 'environment', token: 'private-token' }),
+          },
+          credentialManager: {
+            set: async () => ({
+              status: 'stored',
+              agentId: 'data',
+              storeId: 'file',
+              gatewayInvalidation: 'pending',
+            }),
+          },
+        });
+      else
+        await unsetCredentialsAgentSystem({
+          ...test,
+          credential: 'op',
+          workspaceDir: '/workspace',
+          credentialManager: {
+            unset: async () => ({
+              status: 'removed',
+              agentId: 'data',
+              storeIds: ['file'],
+              unavailableStoreIds: ['keychain'],
+              gatewayInvalidation: 'pending',
+            }),
+          },
+        });
+      assert.deepEqual(test.exitCodes, []);
+      assert.match(test.records.diagnostics.join(''), /warning/u);
+      assert.ok(test.records.diagnostics.join('').indexOf('messages') > -1);
+      assert.doesNotMatch(test.records.diagnostics.join(''), /error|private-token/u);
+      assert.match(test.records.output.join(''), /stored|removed/u);
+      assert.doesNotMatch(test.records.output.join(''), /warning/u);
+      assert.match(test.records.output.join(''), /gateway cache\s+invalidation pending/u);
+      assert.doesNotMatch(test.records.output.join(''), /invalidation not required/u);
+    }
+  });
+
+  it('should show confirmed cache invalidation with the stored result', async () => {
+    const test = harness();
+    await setCredentialsAgentSystem({
+      ...test,
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: true,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'read', source: 'stdin', token: 'private-token' }),
+      },
+      credentialManager: {
+        set: async () => ({
+          status: 'unchanged',
+          agentId: 'data',
+          storeId: 'keychain',
+          gatewayInvalidation: 'confirmed',
+        }),
+      },
+    });
+    assert.deepEqual(test.records.output, [
+      'credential     op for data unchanged\nstore          keychain\ninput source   stdin\ngateway cache  invalidation confirmed\n',
+    ]);
+    assert.doesNotMatch(test.records.output.join(''), /private-token/u);
+  });
+
+  it('should keep input and validation failures as sorted trailing diagnostics', async () => {
+    const inputFailure = harness();
+    await setCredentialsAgentSystem({
+      ...inputFailure,
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: false,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'invalid', code: 'z-input', message: 'input failed' }),
+      },
+      credentialManager: {
+        set: async () => {
+          throw new Error('not expected');
+        },
+      },
+    });
+    assert.deepEqual(inputFailure.records.output, []);
+    assert.match(inputFailure.records.diagnostics.join(''), /input failed/u);
+    assert.deepEqual(inputFailure.exitCodes, [1]);
+
+    const validationFailure = harness();
+    await setCredentialsAgentSystem({
+      ...validationFailure,
+      credential: 'op',
+      fromEnvironment: false,
+      fromStdin: true,
+      workspaceDir: '/workspace',
+      credentialInput: {
+        read: async () => ({ status: 'read', source: 'stdin', token: 'private-token' }),
+      },
+      credentialManager: {
+        set: async () => ({
+          status: 'invalid',
+          code: 'z-validation',
+          message: 'validation failed',
+          gatewayInvalidation: 'pending',
+        }),
+      },
+    });
+    const diagnostics = validationFailure.records.diagnostics.join('');
+    assert.ok(diagnostics.indexOf('error') < diagnostics.indexOf('warning'));
+    assert.match(diagnostics, /validation failed/u);
+    assert.match(diagnostics, /invalidation is pending/u);
+    assert.doesNotMatch(diagnostics, /private-token/u);
+    assert.deepEqual(validationFailure.records.output, []);
+    assert.deepEqual(validationFailure.exitCodes, [1]);
   });
 
   it('should reject conflicting set input sources before loading the manifest', async () => {
@@ -139,7 +264,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, []);
     assert.deepEqual(test.records.output, [
-      'valid         op credential for data\nsource        store:file\nenvironments  1\nsecrets       2\n',
+      'status                valid\nagent                 data\nstore                 file\nenvironments checked  1\nsecrets checked       2\n',
     ]);
   });
 
@@ -169,7 +294,8 @@ describe('cli/credentials', () => {
     });
 
     assert.deepEqual(test.exitCodes, []);
-    assert.equal(test.records.output.join('').includes('process-environment'), true);
+    assert.match(test.records.output.join(''), /source\s+process-environment/u);
+    assert.doesNotMatch(test.records.output.join(''), /store/u);
   });
 
   it('should reject conflicting validation selectors before loading the manifest', async () => {
@@ -219,9 +345,9 @@ describe('cli/credentials', () => {
       workspaceDir: '/workspace',
     });
 
-    assert.deepEqual(test.records.output, [
-      'unchanged  op credential for data is not stored\nstore      file\n',
-    ]);
+    assert.match(test.records.output.join(''), /scope +one store \(file\)/u);
+    assert.match(test.records.output.join(''), /unchanged +file +op credential is not stored/u);
+    assert.deepEqual(test.exitCodes, []);
   });
 
   it('should reject unsupported credential targets', async () => {
@@ -244,6 +370,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, [1]);
     assert.deepEqual(test.records.output, []);
-    assert.deepEqual(test.records.diagnostics, ['credentials: unsupported credential other\n']);
+    assert.match(test.records.diagnostics.join(''), /error/u);
+    assert.match(test.records.diagnostics.join(''), /unsupported credential other/u);
   });
 });

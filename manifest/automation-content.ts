@@ -54,7 +54,10 @@ export default function automationContent(
           context: {
             model: override?.model ?? defaults.model ?? 'native',
             effort: override?.effort ?? defaults.effort ?? 'native',
-            target: override?.target ?? defaults.target ?? 'independent',
+            target:
+              override?.target ??
+              defaults.target ??
+              (job.thread ? { managed: job.thread } : 'independent'),
           },
         }
       : {}),

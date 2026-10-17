@@ -9,6 +9,7 @@ export interface AutomationProjectionContext {
   command: string[];
   environment: Record<string, string>;
   timezone: string;
+  threads?: Map<string, { id: string; outcome: string; name?: string }>;
 }
 export type NativeAutomationSpec = Record<string, unknown> & {
   enabled: boolean;
@@ -18,10 +19,6 @@ export type NativeAutomationSpec = Record<string, unknown> & {
 
 export function effectiveAutomation(job: ResolvedAutomation, context: AutomationProjectionContext) {
   const override = job.overrides.openclaw;
-  if (job.payload.kind === 'prompt' && override?.target && override.target !== 'independent') {
-    // named targets require an existing-session ownership contract; never create or infer one.
-    throw new AutomationError('automation-target-unsupported');
-  }
   if (
     override?.effort &&
     !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive'].includes(override.effort)
@@ -29,7 +26,22 @@ export function effectiveAutomation(job: ResolvedAutomation, context: Automation
     throw new AutomationError('automation-effort-unsupported');
   }
   const normalized = automationContent(job, 'openclaw');
-  return { ...normalized, hash: automationHash({ content: normalized.content, context }) };
+  const stableContext = {
+    agentId: context.agentId,
+    workspaceDir: context.workspaceDir,
+    timezone: context.timezone,
+    ...(job.payload.kind === 'command'
+      ? { command: context.command, environment: context.environment }
+      : {}),
+  };
+  return {
+    ...normalized,
+    hash: automationHash({
+      content: normalized.content,
+      context: stableContext,
+      ...(job.internalOpenClaw ? { internal: job.internalOpenClaw } : {}),
+    }),
+  };
 }
 
 export function projectAutomation(
@@ -75,10 +87,13 @@ export function projectAutomation(
     enabled: job.enabled,
     deleteAfterRun: false,
     schedule: nativeSchedule,
-    sessionTarget: 'isolated',
+    sessionTarget: context.threads?.has(job.id)
+      ? `session:${context.threads.get(job.id)!.id}`
+      : 'isolated',
     wakeMode: 'now',
     delivery: { mode: 'none', bestEffort: false },
     failureAlert: false,
+    ...(job.internalOpenClaw ? { trigger: job.internalOpenClaw.trigger } : {}),
     payload:
       job.payload.kind === 'command'
         ? {
@@ -105,7 +120,7 @@ export function projectAutomation(
             timeoutSeconds,
             lightContext: false,
             allowUnsafeExternalContent: false,
-            toolsAllow: ['*'],
+            toolsAllow: job.internalOpenClaw?.toolsAllow ?? ['*'],
             ...(override?.model ? { model: override.model.trim() } : {}),
             ...(override?.effort ? { thinking: override.effort.trim() } : {}),
           },
@@ -180,6 +195,6 @@ export function automationPatch(
     };
   }
   for (const key of ['sessionKey', 'trigger', 'pacing'])
-    if (current[key] !== undefined) patch[key] = null;
+    if (current[key] !== undefined && desired[key] === undefined) patch[key] = null;
   return patch;
 }

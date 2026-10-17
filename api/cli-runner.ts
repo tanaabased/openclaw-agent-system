@@ -3,6 +3,10 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
+import {
+  assertPrivateStateLocksHeld,
+  privateStateLockSignal,
+} from '../core/private-state-lock-context.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import type { AgentSystemCliRunner } from './types.ts';
 
@@ -70,6 +74,7 @@ export default function createToolCliRunner(
       request.environment.PATH ?? '',
       request.excludedExecutableDirectories,
     );
+    const signal = privateStateLockSignal(request.signal);
     const result = await runCommandWithTimeout([executable, ...request.argv], {
       baseEnv: {},
       cwd: request.cwd,
@@ -80,9 +85,10 @@ export default function createToolCliRunner(
       maxCombinedOutputBytes: request.maxOutputBytes,
       maxOutputBytes: request.maxOutputBytes,
       outputCapture: 'head',
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(signal === undefined ? {} : { signal }),
       timeoutMs: request.timeoutMs,
     });
+    assertPrivateStateLocksHeld();
     const timedOut = result.termination === 'timeout' || result.termination === 'no-output-timeout';
     return {
       exitCode: timedOut ? null : result.code,

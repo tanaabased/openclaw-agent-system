@@ -9,8 +9,8 @@ import {
   reviewFeedbackPresentation,
   reviewFeedbackRevision,
   reviewReplyFeedback,
-} from '../channels/github/conversation/review-feedback.ts';
-import { notificationAccount, notificationActor } from './github-notification-fixtures.ts';
+} from '../channels/github/provider/review-feedback.ts';
+import { notificationAccount, notificationActor } from './github-provider-fixtures.ts';
 import {
   reviewFixture,
   reviewCommentFixture,
@@ -18,15 +18,106 @@ import {
 } from './github-review-fixtures.ts';
 
 const configuration = {
-  assignmentTypes: ['issue' as const],
-  approvedActors: [notificationActor],
-  intervalMinutes: 5,
-  maxConcurrentIssues: 2,
+  approvedFeedbackAuthors: [notificationActor],
 };
 const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
-describe('channels/github/conversation/review-feedback', () => {
+describe('channels/github/provider/review-feedback', () => {
+  it('should quote complete review and inline cards with exact source links and historical locations', () => {
+    const review = reviewFixture({ body: 'Review summary.\n\n> Quoted context.' });
+    const finding = reviewCommentFixture({
+      body: 'First paragraph.\r\n\r\n- One\r\n- Two\r\n\r\n```ts\r\nrun();\r\n```',
+      line: null,
+      originalLine: 7,
+    });
+    for (const comment of [
+      reviewFeedback(review, [finding]),
+      reviewReplyFeedback(review, { ...finding, replyToId: 70 }),
+    ]) {
+      const card = reviewFeedbackPresentation(comment);
+      assert.ok(card.startsWith(`> ## 💬 From [@${comment.author!.login}]`));
+      assert.ok(card.split('\n').every((line) => line.startsWith('>')));
+      assert.ok(card.includes('> - One\n> - Two'));
+      assert.ok(card.includes('> ```ts\n> run();\n> ```'));
+      assert.ok(card.includes('Current line: unavailable or outdated; original line: 7'));
+      assert.ok(card.includes(finding.url));
+      assert.ok(card.includes(finding.originalCommitId.slice(0, 7)));
+      assert.ok(card.includes('> ```diff\n> @@ -1 +1 @@\n> +return values[0]\n> ```'));
+      const source = comment.feedback.receipt.kind === 'review' ? review.url : finding.url;
+      assert.ok(card.endsWith(`↗](${source})`));
+    }
+  });
+  it('should bound reviewed diff previews and preserve literal code fences', () => {
+    const finding = reviewCommentFixture({
+      diffHunk: [
+        '@@ -1,30 +1,30 @@',
+        ...Array.from({ length: 30 }, (_, i) => `+line ${i + 1}`),
+        '+```',
+        '+' + 'x'.repeat(500),
+      ].join('\r\n'),
+    });
+    const card = reviewFeedbackPresentation(reviewFeedback(reviewFixture(), [finding]));
+    assert.ok(card.includes('Reviewed diff excerpt'));
+    assert.ok(!card.includes('> +line 12\n'));
+    assert.ok(card.includes('> +line 13\n'));
+    assert.ok(card.includes('> ````diff\n'));
+    assert.ok(card.includes('> +```\n'));
+    assert.ok(!card.includes('x'.repeat(400)));
+    assert.ok(card.includes('…'));
+    assert.ok(card.includes('Preview shortened'));
+    assert.ok(card.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(card.includes(finding.url));
+  });
+  it('should label provider-truncated and unavailable reviewed diffs honestly', () => {
+    const render = (diffHunk: string, diffTruncated = false) =>
+      reviewFeedbackPresentation(
+        reviewFeedback(reviewFixture(), [reviewCommentFixture({ diffHunk, diffTruncated })]),
+      );
+    assert.ok(render('+partial', true).includes('Reviewed diff excerpt'));
+    assert.ok(render('+trailing spaces  \n').includes('> +trailing spaces  \n'));
+    assert.ok(render(' \n').includes('Reviewed diff unavailable'));
+    assert.ok(!render(' \n').includes('```diff'));
+  });
+  it('should authorize submitted reviews and replies only through the feedback grant', () => {
+    const review = reviewFixture();
+    const finding = reviewCommentFixture();
+    const feedbacks = [
+      reviewFeedback(review, [finding]),
+      reviewReplyFeedback(
+        review,
+        reviewCommentFixture({ replyToId: 70, body: '@tanaabot continue' }),
+        finding,
+      ),
+    ];
+    const assignmentOnly = {
+      ...configuration,
+      approvedFeedbackAuthors: [],
+      approvedIssueAssigners: [notificationActor],
+    };
+    for (const comment of feedbacks) {
+      assert.equal(
+        admitReviewFeedback({
+          account: notificationAccount,
+          comment,
+          configuration: {
+            ...configuration,
+            approvedFeedbackAuthors: [notificationActor],
+          },
+        }).disposition,
+        'approved',
+      );
+      assert.equal(
+        admitReviewFeedback({
+          account: notificationAccount,
+          comment,
+          configuration: assignmentOnly,
+        }).code,
+        'comment-actor-unapproved',
+      );
+    }
+  });
+
   it('should admit a complete same-author review from a summary or finding mention', () => {
     const summary = reviewFixture();
     const finding = reviewCommentFixture();
@@ -40,12 +131,23 @@ describe('channels/github/conversation/review-feedback', () => {
     }
   });
 
-  it('should group replies authored as part of the same submitted review', () => {
+  it('should keep explicit thread replies separate even when submitted with their own review', () => {
     const review = reviewFixture();
     const reply = reviewCommentFixture({ replyToId: 70 });
     const feedback = reviewFeedback(review, [reply]);
-    assert.deepEqual(feedback.feedback.receipt.selected, [reply.nodeId]);
+    assert.deepEqual(feedback.feedback.receipt.selected, []);
     assert.equal(admit(feedback).disposition, 'approved');
+  });
+
+  it('should preserve previously grouped replies without changing their retained revision', () => {
+    const review = reviewFixture();
+    const reply = reviewCommentFixture();
+    const previous = reviewFeedback(review, [reply]);
+    reply.replyToId = 70;
+    const retained = reviewFeedback(review, [reply], previous.feedback.receipt);
+    assert.deepEqual(retained.feedback.receipt.selected, []);
+    assert.deepEqual(Object.keys(retained.feedback.receipt.members), [reply.nodeId]);
+    assert.deepEqual(reviewFeedbackRevision(retained), reviewFeedbackRevision(previous));
   });
 
   it('should reject pending, unauthorized, self, bot, mixed-author, and oversized feedback', () => {
@@ -161,48 +263,5 @@ describe('channels/github/conversation/review-feedback', () => {
     assert.equal(context.findings[0]?.originalLine, 1);
     assert.equal(context.findings[0]?.originalCommitId, 'a'.repeat(40));
     assert.match(context.locationNotice, /historical/u);
-  });
-
-  it('should present grouped review prose with source links and honest compact locations', () => {
-    const review = reviewFixture({ body: '## Summary\n\nKeep **Markdown** intact.' });
-    const outdated = reviewCommentFixture({ body: 'Check `empty` values.\n\n- Keep the list.' });
-    const current = reviewCommentFixture({
-      body: 'Also handle missing input.',
-      databaseId: 84,
-      line: 10,
-      nodeId: 'PRRC_other',
-      url: 'https://github.com/tanaabased/example/pull/45#discussion_r84',
-    });
-    const card = reviewFeedbackPresentation(reviewFeedback(review, [outdated, current]));
-    assert.match(card, /^## 💬 Review feedback\n/u);
-    assert.ok(
-      card.includes(
-        '[the pull request](https://github.com/tanaabased/example/pull/45#pullrequestreview-81)',
-      ),
-    );
-    assert.ok(card.includes('## Summary\n\nKeep **Markdown** intact.'));
-    assert.ok(card.includes('Check `empty` values.\n\n- Keep the list.'));
-    assert.ok(
-      card.includes(
-        `[Finding](${outdated.url}) · api/example.ts · original line 1 (historical; review line unavailable or outdated)`,
-      ),
-    );
-    assert.ok(card.includes(`[Finding](${current.url}) · api/example.ts · review line 10`));
-    assert.doesNotMatch(card, /current line|diffHunk|@@ -1|reviewed commit/u);
-  });
-
-  it('should link a later inline reply without presenting parent context as new feedback', () => {
-    const parent = reviewCommentFixture({ body: 'Older parent finding.' });
-    const reply = reviewCommentFixture({
-      body: '@tanaabot Please continue.\n\n**New** detail.',
-      databaseId: 83,
-      nodeId: 'PRRC_reply',
-      replyToId: 82,
-    });
-    const card = reviewFeedbackPresentation(reviewReplyFeedback(reviewFixture(), reply, parent));
-    assert.match(card, /^## 💬 Review reply\n/u);
-    assert.ok(card.includes(`[this discussion](${reply.url})`));
-    assert.ok(card.includes(reply.body));
-    assert.doesNotMatch(card, /Older parent finding|Review summary|diffHunk/u);
   });
 });

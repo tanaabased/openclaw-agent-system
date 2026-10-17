@@ -102,3 +102,32 @@ export function githubRepositoryPath(value: string): { name: string; owner: stri
   }
   return { name, owner };
 }
+
+/** pinned identity comparisons require both the immutable id and case-insensitive login. */
+export function githubIdentityMatches(
+  left: Pick<GitHubIdentity, 'login' | 'nodeId'>,
+  right: Pick<GitHubIdentity, 'login' | 'nodeId'>,
+): boolean {
+  return left.nodeId === right.nodeId && left.login.toLowerCase() === right.login.toLowerCase();
+}
+
+/** merge matching pins while rejecting conflicting immutable identities. */
+export function githubIdentitySet<T extends Pick<GitHubIdentity, 'login' | 'nodeId'>>(
+  identities: readonly T[],
+  merge: (left: T, right: T) => T = (left) => left,
+): T[] {
+  const nodes = new Map<string, T>();
+  const logins = new Map<string, string>();
+  for (const identity of identities) {
+    const normalized = identity.login.toLowerCase();
+    const previous = nodes.get(identity.nodeId);
+    if (
+      (previous && !githubIdentityMatches(previous, identity)) ||
+      (logins.has(normalized) && logins.get(normalized) !== identity.nodeId)
+    )
+      throw new Error('github-identity-conflict');
+    nodes.set(identity.nodeId, previous ? merge(previous, identity) : identity);
+    logins.set(normalized, identity.nodeId);
+  }
+  return [...nodes.values()];
+}

@@ -8,11 +8,11 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 
 **Core commands**
 
-- [`openclaw agent-system automation-execute`](#openclaw-agent-system-automation-execute)
 - [`openclaw agent-system automations list`](#openclaw-agent-system-automations-list)
 - [`openclaw agent-system automations run`](#openclaw-agent-system-automations-run)
 - [`openclaw agent-system automations runs`](#openclaw-agent-system-automations-runs)
 - [`openclaw agent-system automations sync`](#openclaw-agent-system-automations-sync)
+- [`openclaw agent-system backup cleanup`](#openclaw-agent-system-backup-cleanup)
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
 - [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune)
 - [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
@@ -31,35 +31,19 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 **Component commands**
 
 - [`openclaw agent-system notifications`](#openclaw-agent-system-notifications) — GitHub notifications.
-- [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Git commands and managed worktrees.
 - [`openclaw agent-system tool gh`](./tools/github/README.md#cli) — GitHub CLI commands.
-- [`openclaw agent-system tool gog`](./tools/google/README.md#agent_system_google) — Google commands.
+- [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Git commands and managed worktrees.
+- [`openclaw agent-system tool gog`](./tools/google/README.md#openclaw-agent-system-tool-gog) — Google commands.
 
-## `openclaw agent-system validate`
+**Execution reference**
 
-Discover and validate a manifest without resolving credentials, inspecting installed or remote state, or applying changes.
-
-### Options
-
-| Option or argument | Required | Default             | Description                                                         |
-| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
-| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                  |
-
-### Usage
-
-```text
-openclaw agent-system validate [--agent <id>] [--json]
-```
-
-```sh
-# validate the current workspace manifest without changing state.
-openclaw agent-system validate --json
-```
+- [Credential storage](#credential-storage)
+- [Trust boundary](#trust-boundary)
+- [Scheduler callback](#scheduler-callback)
 
 ## `openclaw agent-system automations list`
 
-Inspect declared/native state, retained disabled jobs, and actionable drift without writes. The `openclaw as` alias supports the same options.
+Inspect declared/native state, retained disabled jobs, and actionable drift without writes.
 
 ### Options
 
@@ -75,7 +59,6 @@ openclaw agent-system automations list [--agent <id>] [--json]
 ```
 
 ```sh
-# inspect declared/native state, retained disabled jobs, and actionable drift without writes.
 openclaw agent-system automations list --json
 ```
 
@@ -83,7 +66,7 @@ An aligned inventory exits zero. Drift, blocked support, or execution/delivery w
 
 ## `openclaw agent-system automations run`
 
-Queue one enabled, synchronized owned job by manifest ID through the native scheduler. The `openclaw as` alias supports the same options.
+Queue one enabled, synchronized owned job by manifest ID through the native scheduler.
 
 ### Options
 
@@ -100,7 +83,6 @@ openclaw agent-system automations run <id> [--agent <id>] [--json]
 ```
 
 ```sh
-# queue one enabled, synchronized owned job by manifest id through the native scheduler.
 openclaw agent-system automations run review --json
 ```
 
@@ -108,7 +90,7 @@ openclaw agent-system automations run review --json
 
 ## `openclaw agent-system automations runs`
 
-Read native occurrence history for an owned manifest ID, including retained removed jobs. The `openclaw as` alias supports the same options.
+Read native occurrence history for an owned manifest ID, including retained removed jobs.
 
 ### Options
 
@@ -116,10 +98,10 @@ Read native occurrence history for an owned manifest ID, including retained remo
 | ------------------ | -------- | ------------------- | ---------------------------------------------------- |
 | `--agent <id>`     | no       | workspace discovery | Select an installed agent; operators only.           |
 | `--json`           | no       | off                 | Write one structured result to stdout.               |
-| `<id>`             | yes      | none                | Manifest automation ID, never a native scheduler ID. |
 | `--limit <count>`  | no       | `50`                | Maximum entries, from 1 to 200.                      |
 | `--offset <count>` | no       | `0`                 | Nonnegative history offset.                          |
 | `--run-id <id>`    | no       | none                | Filter the exact native occurrence.                  |
+| `<id>`             | yes      | none                | Manifest automation ID, never a native scheduler ID. |
 
 ### Usage
 
@@ -128,7 +110,6 @@ openclaw agent-system automations runs <id> [--agent <id>] [--json] [--limit <co
 ```
 
 ```sh
-# read native occurrence history for an owned manifest id, including retained removed jobs.
 openclaw agent-system automations runs review --limit 20 --json
 ```
 
@@ -136,7 +117,7 @@ Each entry reports execution and delivery independently. Missing telemetry is `u
 
 ## `openclaw agent-system automations sync`
 
-Reconcile only owned automations through the same owner used by operator install. The `openclaw as` alias supports the same options.
+Reconcile only owned automations through the same owner used by operator install.
 
 ### Options
 
@@ -152,7 +133,6 @@ openclaw agent-system automations sync [--agent <id>] [--json]
 ```
 
 ```sh
-# reconcile only owned automations through the same owner used by operator install.
 openclaw agent-system automations sync --json
 ```
 
@@ -176,35 +156,53 @@ automations:
   - id: backup
     runtimes: [openclaw]
     schedule: every 24 hours
-    run: [sh, ./backup.sh, tanaabased/big-test-bucket, backups]
+    run: [openclaw, agent-system, backup, create, --json]
 ```
 
-The example `backup.sh` requires `jq`, a pre-existing release tag, and managed
-GitHub permissions for its upload. Configure [backup selection](./MANIFEST.md#backup)
-and [GitHub policy](./tools/github/README.md) in the owning manifest. Every failed
-step stops the sequence before local pruning:
+Configure [backup selection](./MANIFEST.md#backup), then use the
+[backup commands](#openclaw-agent-system-backup-create) for verification and
+retention. For Codex automation support, see the [supported fields](./CODEX.md#repository-automations).
+
+## `openclaw agent-system backup cleanup`
+
+Preview abandoned temporary backup artifacts. Only an explicit operator apply removes
+attributable, inactive, demonstrably incomplete artifacts.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                 |
+| ------------------ | -------- | ------------------- | ------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Select an installed agent (operators only). |
+| `--apply`          | no       | off                 | Apply eligible cleanup; operator-only.      |
+| `--json`           | no       | off                 | Write one structured result to stdout.      |
+
+### Usage
+
+```text
+openclaw agent-system backup cleanup [--agent <id>] [--apply] [--json]
+```
 
 ```sh
-#!/bin/sh
-set -eu
-repository=$1
-tag=$2
-archive=$(openclaw agent-system backup create --json | jq -er .archive)
-openclaw agent-system backup verify "$archive" --json
-gh release upload "$tag" "$archive" --repo "$repository"
-download=$(mktemp -d)
-trap 'rm -rf "$download"' EXIT HUP INT TERM
-name=$(basename "$archive")
-gh release download "$tag" --repo "$repository" --pattern "$name" --dir "$download"
-cmp "$archive" "$download/$name"
-openclaw agent-system backup verify "$download/$name" --json
-openclaw agent-system backup prune --keep 10 --json
+# inspect one agent without changing files or acquiring a lock.
+openclaw agent-system backup cleanup --agent emori --json
+
+# explicitly remove only that agent's eligible incomplete artifacts.
+openclaw agent-system backup cleanup --agent emori --apply --json
 ```
 
-Upload acceptance alone is insufficient: download, byte comparison, and archive
-verification must succeed before pruning. This example does not create a release
-or promise remote retention. Codex can run an explicitly authored prompt invoking
-a script, but that remains model-backed and follows its documented limitations.
+Results identify `wouldDelete`, `deleted`, and `preserved` paths with refusal reasons.
+Partial failures retain exact completed and remaining actions. Apply shares capture's
+exclusive lease and checks ownership and filesystem identity again before deletion.
+
+Completed or plausibly complete archives, unknown contents, active or uncertain writers,
+and legacy artifacts without ownership records are preserved. Snapshot-command failures
+may leave writer activity uncertain even after the parent exits; age alone never permits
+cleanup. Bound agent commands may preview only their own workspace, without `--agent`.
+
+Cleanup does not resume backups, reset wrapper locks or journals, inspect providers, or
+prune published archives. It is separate from running a backup and does not establish
+backup success. For failed automation execution, inspect its owned history with
+`openclaw agent-system automations runs <id> --agent <id> --json`.
 
 ## `openclaw agent-system backup create`
 
@@ -256,7 +254,7 @@ Selection skips `**/node_modules/**`, `**/.npm/_cacache/**`, and
 `**/.eslintcache` unless explicitly included. Optional Git-ignore filtering runs before includes; excludes
 run last. Git-ignore requires a repository and retains tracked files. Includes
 can recover ignored files but cannot override mandatory exclusions. Use safe
-workspace-relative patterns with `/`: exact paths must exist, unmatched globs
+workspace-relative patterns with `/`: exact paths must exist, provably unmatched globs
 produce diagnostics, and selected special files fail.
 
 Default and selected destinations and `.agent-system/backup-staging` are always
@@ -322,41 +320,6 @@ return nonzero and include any deletions already completed. Bound callers keep
 the same destination and agent restrictions as creation. Setup checks allow only
 `--dry-run`.
 
-## `openclaw agent-system backup verify`
-
-Read and verify a workspace archive without extracting it or changing a live
-workspace. Operators can verify an archive without an installed workspace.
-
-### Options
-
-| Option or argument | Required | Default | Description                                                   |
-| ------------------ | -------- | ------- | ------------------------------------------------------------- |
-| `--agent <id>`     | no       | none    | Require this recorded agent identity; operators only.         |
-| `--json`           | no       | off     | Write one structured verification result, including failures. |
-| `<archive>`        | yes      | none    | Local `.tar.gz` path, relative to the current directory.      |
-
-### Usage
-
-```text
-openclaw agent-system backup verify <archive> [--agent <id>] [--json]
-```
-
-```sh
-# verify a private per-agent artifact without restoring it.
-openclaw as backup verify /private/backups/agent-backup.tar.gz --json
-```
-
-Verification checks versions, manifests, paths, links, entry types, inventory,
-permissions, and checksums. Selection supports 100,000 entries; the root manifest
-is limited to 16 MiB. Bound callers may verify only their agent's archives within
-their workspace or configured destination. Success returns `status: verified`;
-failure returns `status: failed` and nonzero exit.
-When an archive contains `openclaw-state/`, verification checks its strict
-layout, checksums, and OpenClaw's database integrity and owner contract from a
-private temporary copy. Older workspace-only archives remain verifiable.
-Checksums verify internal integrity, not authenticity or completeness of omitted
-state. Inspect the root manifest's coverage before relying on the artifact.
-
 ## `openclaw agent-system backup restore`
 
 Verify and recover one agent archive into a fresh private directory for operator
@@ -400,185 +363,91 @@ Activation is a separate offline operator action. Stop the relevant runtime
 before moving recovered data into place, and review restored authentication and
 session state before starting it again.
 
-## `openclaw agent-system env`
+## `openclaw agent-system backup verify`
 
-Inspect the resolved Agent System environment without printing values or predicting another tool’s environment.
+Read and verify a workspace archive without extracting it or changing a live
+workspace. Operators can verify an archive without an installed workspace.
 
 ### Options
 
-| Option or argument | Required | Default             | Description                                                         |
-| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
-| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                  |
+| Option or argument | Required | Default | Description                                                   |
+| ------------------ | -------- | ------- | ------------------------------------------------------------- |
+| `--agent <id>`     | no       | none    | Require this recorded agent identity; operators only.         |
+| `--json`           | no       | off     | Write one structured verification result, including failures. |
+| `<archive>`        | yes      | none    | Local `.tar.gz` path, relative to the current directory.      |
 
 ### Usage
 
 ```text
-openclaw agent-system env [--agent <id>] [--json]
+openclaw agent-system backup verify <archive> [--agent <id>] [--json]
 ```
 
 ```sh
-# inspect variable names and sources for one installed agent.
-openclaw agent-system env --agent tanaabot --json
+# verify a private per-agent artifact without restoring it.
+openclaw as backup verify /private/backups/agent-backup.tar.gz --json
 ```
 
-Output lists variable names, sources, required state, and override counts; values stay private.
+Verification checks versions, manifests, paths, links, entry types, inventory,
+permissions, and checksums. Selection supports 100,000 selected workspace entries,
+including structural parent directories; the root manifest
+is limited to 16 MiB. Bound callers may verify only their agent's archives within
+their workspace or configured destination. Success returns `status: verified`;
+failure returns `status: failed` and nonzero exit.
+When an archive contains `openclaw-state/`, verification checks its strict
+layout, checksums, and OpenClaw's database integrity and owner contract from a
+private temporary copy. Older workspace-only archives remain verifiable.
+Checksums verify internal integrity, not authenticity or completeness of omitted
+state. Inspect the root manifest's coverage before relying on the artifact.
 
-## `openclaw agent-system automation-execute`
+## `openclaw agent-system credentials cache flush`
 
-Execute one synchronized command automation. This is the scheduler's operator-only
-entrypoint; use [Install](#openclaw-agent-system-install) to reconcile declarations.
+Invalidate retained 1Password state in the running Gateway.
 
 ### Options
 
-| Option or argument | Required | Default | Description                                                           |
-| ------------------ | -------- | ------- | --------------------------------------------------------------------- |
-| `--hash <hash>`    | yes      | none    | Require the synchronized effective SHA-256 hash.                      |
-| `--id <id>`        | yes      | none    | Select the manifest automation ID in the current installed workspace. |
+| Option or argument | Required | Default    | Description                                        |
+| ------------------ | -------- | ---------- | -------------------------------------------------- |
+| `--agent <id>`     | no       | all agents | Limit invalidation to one agent.                   |
+| `--json`           | no       | off        | Write one undecorated structured result to stdout. |
 
 ### Usage
 
 ```text
-openclaw agent-system automation-execute --id <id> --hash <hash>
+openclaw agent-system credentials cache flush [--agent <id>] [--json]
 ```
 
-The native scheduler supplies the exact arguments, fixed executable, profile, and
-workspace. This entrypoint accepts no agent selector. Agent descendants and invalid
-inherited authority are rejected before execution. Stale, disabled, removed, or
-native-drifted jobs fail before temporary authority or tool credentials are issued.
-It returns one bounded JSON status and a nonzero exit status on failure. Direct
-operator invocation is a manual command execution and does not create a native
-scheduled occurrence or update its history.
+```sh
+# invalidate one agent’s cached values.
+openclaw agent-system credentials cache flush --agent tanaabot --json
+```
 
-## `openclaw agent-system install`
+Requires `operator.admin`. An unreachable or unauthorized Gateway fails; a
+local clear is not Gateway success. Flush does not reset provider backoff or
+quota. See [cache configuration](./CONFIG.md#opcache).
 
-Repository [automations](./MANIFEST.md#automations) reconcile only through this
-operator path and require a running Gateway. Completed one-shots and native safety
-disable remain protected; failed synchronization reports partial results.
+## `openclaw agent-system credentials cache status`
 
-Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
+Inspect the running Gateway’s 1Password cache without reading 1Password.
 
 ### Options
 
-| Option or argument     | Required | Default | Description                                                                                          |
-| ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `--json`               | no       | off     | Write one undecorated structured result to stdout.                                                   |
-| `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
-| `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
-| `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
-| `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
-| `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
-| `--yes`                | no       | off     | Consent to setup without prompting.                                                                  |
+| Option or argument | Required | Default | Description                                        |
+| ------------------ | -------- | ------- | -------------------------------------------------- |
+| `--json`           | no       | off     | Write one undecorated structured result to stdout. |
 
 ### Usage
 
 ```text
-openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
+openclaw agent-system credentials cache status [--json]
 ```
 
 ```sh
-# review and apply the current workspace configuration.
-openclaw agent-system install
-
-# explicitly consent to setup for an unattended installation.
-openclaw agent-system install --yes --json
+# inspect cache policy, occupancy, expiry, backoff, and counters.
+openclaw agent-system credentials cache status --json
 ```
 
-Before setup or agent reconciliation, install checks the actual OpenClaw host and
-the shared Codex prerequisite pinned in Agent System's
-`package.json#openclaw.agentSystem.codexPlugin`. It provisions a missing plugin,
-enables a matching disabled installation, and reuses a converged installation
-across agents in the same profile. Codex remains a separate OpenClaw-managed
-package and owns its app-server dependency. Setup-skip flags do not skip this
-prerequisite. Standalone Codex installation does not provision it.
-
-Conflicting shared versions or sources block installation with expected and actual
-versions. Review `openclaw plugins inspect codex --json`, then explicitly reconcile
-the shared plugin through OpenClaw before retrying; installing another agent never
-silently upgrades, downgrades, or replaces it. Installation failures retain bounded,
-sanitized exit and failure-category details, without raw upstream output.
-
-After reviewing the shared installation, an operator can explicitly select the
-declared release through OpenClaw:
-
-```sh
-openclaw plugins inspect codex --json
-openclaw plugins install npm:@openclaw/codex@2026.9.7 --force --pin --accept-capabilities
-```
-
-`--skip-setup` skips both phases regardless of consent; combining the two phase
-flags has the same effect. Other components still reconcile and enforce their
-executable, credential, and identity checks.
-
-Interactive installation previews applicable commands, shells, and timeouts on
-stderr. Declining or cancelling stops before mutation. No applicable setup
-means no prompt.
-
-Unattended consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
-or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent;
-prompts and warning diagnostics stay on stderr. Consent is not persisted.
-
-If reconciliation fails, install exits nonzero and reports completed outcomes,
-the blocking component, and unattempted work. Earlier changes remain applied;
-rerun install after fixing the blocker. With `--json`, stdout contains one
-failure object with `status: "failed"`, `outcomes`, `blocked`, and `unattempted`.
-
-> [!NOTE]
-> Environment flags accept trimmed, case-insensitive `1`, `true`, `yes`, or `on`.
-> Other values do not enable consent or cancel another enabling source.
-> Unattended runs trust the current declarations, including changes since the last run.
-
-Installation:
-
-- Validates declarations and requires persistent credentials for declared 1Password resources before mutation.
-- Verifies owned state, reporting already reconciled components as unchanged. Setup follows its [check and retry rules](./MANIFEST.md#checks-installation-and-retries).
-- Rejects an agent id already bound to another workspace.
-- Reconciles manifest-selected Git, worktree, GitHub, and Google tool grants while preserving unrelated grants.
-- Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
-- Grants and verifies [conversation-hook access](./channels/github/ADVANCED.md#required-conversation-hook) when notifications are configured.
-
-Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
-
-## `openclaw agent-system doctor`
-
-Automation findings report owned native drift, disabled or completed jobs,
-unsupported targets, and execution/delivery failures without changing or running
-jobs. Scheduler inspection requires the operator's native read permission.
-
-Inspect registration, identity, models, memory, paths, and configured capabilities for drift without repairs. `openclaw agent-system status` is an alias.
-
-The `codex-plugin` component reports the shared prerequisite as ready, missing,
-disabled, incompatible, or conflicting. It uses metadata-only OpenClaw inspection
-without installing, enabling, or loading the Codex runtime.
-
-### Options
-
-| Option or argument | Required | Default             | Description                                                         |
-| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
-| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                  |
-
-### Usage
-
-```text
-openclaw agent-system doctor [--agent <id>] [--json]
-```
-
-```sh
-# inspect an installed agent and its declared setup checks.
-openclaw agent-system doctor --agent tanaabot --json
-```
-
-Doctor reports all findings and returns nonzero for failing drift. It recommends
-`install` for owned-state repairs; manual state remains the operator's responsibility.
-Tool-specific checks live in the respective guides.
-
-For [setup](./MANIFEST.md#setup), Doctor runs applicable checks without consent or repairs,
-marks unchecked steps as manual, and skips other runtimes.
-
-> [!NOTE]
-> OpenAI memory inspection makes one bounded embedding request, which may incur
-> a small provider charge. Other providers are inspected without a live probe.
+Requires `operator.read`. Status always covers the Gateway; it has no agent
+selector and returns no secrets. An unreachable or unauthorized Gateway fails.
 
 ## `openclaw agent-system credentials set op`
 
@@ -609,32 +478,6 @@ guidance in a noninteractive session. Tokens are never accepted as command
 arguments. Every set path verifies access to all declared 1Password resources
 before storage.
 
-## `openclaw agent-system credentials validate op`
-
-Check the agent’s credential against every 1Password resource declared in its manifest.
-
-### Options
-
-| Option or argument | Required | Default             | Description                                                                         |
-| ------------------ | -------- | ------------------- | ----------------------------------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent.                 |
-| `--from-env`       | no       | off                 | Validate only `OP_SERVICE_ACCOUNT_TOKEN` from the process environment.              |
-| `--store <id>`     | no       | automatic           | Select `keychain`, `secret-service`, or `file`; see [storage](#credential-storage). |
-
-### Usage
-
-```text
-openclaw agent-system credentials validate op [--agent <id>] [--from-env | --store <id>]
-```
-
-```sh
-# check the stored credential without replacing it.
-openclaw agent-system credentials validate op
-```
-
-Validation checks the persistent stores in [storage order](#credential-storage),
-then the process fallback. An exact `--store` or `--from-env` disables fallback.
-
 ## `openclaw agent-system credentials unset op`
 
 Remove the agent’s persisted 1Password bootstrap credential.
@@ -661,55 +504,221 @@ Removal is idempotent and requests Gateway cache invalidation. It does not
 change the process-environment fallback. See [cache configuration](./CONFIG.md#opcache)
 for pending invalidation and flush behavior.
 
-## `openclaw agent-system credentials cache status`
+## `openclaw agent-system credentials validate op`
 
-Inspect the running Gateway’s 1Password cache without reading 1Password.
+Check the agent’s credential against every 1Password resource declared in its manifest.
 
 ### Options
 
-| Option or argument | Required | Default | Description                                        |
-| ------------------ | -------- | ------- | -------------------------------------------------- |
-| `--json`           | no       | off     | Write one undecorated structured result to stdout. |
+| Option or argument | Required | Default             | Description                                                                         |
+| ------------------ | -------- | ------------------- | ----------------------------------------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent.                 |
+| `--from-env`       | no       | off                 | Validate only `OP_SERVICE_ACCOUNT_TOKEN` from the process environment.              |
+| `--store <id>`     | no       | automatic           | Select `keychain`, `secret-service`, or `file`; see [storage](#credential-storage). |
 
 ### Usage
 
 ```text
-openclaw agent-system credentials cache status [--json]
+openclaw agent-system credentials validate op [--agent <id>] [--from-env | --store <id>]
 ```
 
 ```sh
-# inspect cache policy, occupancy, expiry, backoff, and counters.
-openclaw agent-system credentials cache status --json
+# check the stored credential without replacing it.
+openclaw agent-system credentials validate op
 ```
 
-Requires `operator.read`. Status always covers the Gateway; it has no agent
-selector and returns no secrets. An unreachable or unauthorized Gateway fails.
+Validation checks the persistent stores in [storage order](#credential-storage),
+then the process fallback. An exact `--store` or `--from-env` disables fallback.
 
-## `openclaw agent-system credentials cache flush`
+## `openclaw agent-system doctor`
 
-Invalidate retained 1Password state in the running Gateway.
+Automation findings report owned native drift, disabled or completed jobs,
+unsupported targets, and execution/delivery failures without changing or running
+jobs. Scheduler inspection requires the operator's native read permission.
+
+Inspect registration, identity, models, memory, paths, and configured capabilities for drift without repairs. `openclaw agent-system status` is an alias.
+
+When Codex is required, the `codex-plugin` component reports the shared
+prerequisite as ready, missing, disabled, incompatible, or conflicting. It uses
+metadata-only OpenClaw inspection without installing, enabling, or loading the
+Codex runtime. Otherwise Doctor omits the component and leaves an unrelated
+shared installation untouched.
 
 ### Options
 
-| Option or argument | Required | Default    | Description                                        |
-| ------------------ | -------- | ---------- | -------------------------------------------------- |
-| `--agent <id>`     | no       | all agents | Limit invalidation to one agent.                   |
-| `--json`           | no       | off        | Write one undecorated structured result to stdout. |
+| Option or argument | Required | Default             | Description                                                         |
+| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
+| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                  |
 
 ### Usage
 
 ```text
-openclaw agent-system credentials cache flush [--agent <id>] [--json]
+openclaw agent-system doctor [--agent <id>] [--json]
 ```
 
 ```sh
-# invalidate one agent’s cached values.
-openclaw agent-system credentials cache flush --agent tanaabot --json
+# inspect an installed agent and its declared setup checks.
+openclaw agent-system doctor --agent tanaabot --json
 ```
 
-Requires `operator.admin`. An unreachable or unauthorized Gateway fails; a
-local clear is not Gateway success. Flush does not reset provider backoff or
-quota. See [cache configuration](./CONFIG.md#opcache).
+Ordinary Doctor also inspects collaboration membership, effective entries, and
+configuration drift without repairing state.
+
+Doctor reports all findings and returns nonzero for failing drift. It recommends
+`install` for owned-state repairs; manual state remains the operator's responsibility.
+Tool-specific checks live in the respective guides.
+
+For [setup](./MANIFEST.md#setup), Doctor runs applicable checks without consent or repairs,
+marks unchecked steps as manual, and skips other runtimes.
+
+> [!NOTE]
+> OpenAI memory inspection makes one bounded embedding request, which may incur
+> a small provider charge. Other providers are inspected without a live probe.
+
+## `openclaw agent-system env`
+
+Inspect the resolved Agent System environment without printing values or predicting another tool’s environment.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                                         |
+| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
+| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                  |
+
+### Usage
+
+```text
+openclaw agent-system env [--agent <id>] [--json]
+```
+
+```sh
+# inspect variable names and sources for one installed agent.
+openclaw agent-system env --agent tanaabot --json
+```
+
+Output lists variable names, sources, required state, and override counts; values stay private.
+
+## `openclaw agent-system install`
+
+Install reconciles repository [automations](./MANIFEST.md#automations) alongside
+the rest of the workspace. Use [`automations sync`](#openclaw-agent-system-automations-sync)
+to reconcile automation jobs alone. Automation reconciliation requires a running
+Gateway. If initial scheduler discovery cannot reach it, Install continues with
+an `automation-sync-deferred` warning and skipped outcome; scheduler state remains
+unverified and unchanged. Retry authorized Install or `automations sync` when the
+Gateway is available. Explicit sync, invalid declarations, authorization and
+ownership failures, and failed read-back remain errors. Completed one-shots and
+native safety disable remain protected; failed synchronization reports partial results.
+
+Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
+
+### Options
+
+| Option or argument     | Required | Default | Description                                                                                          |
+| ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `--json`               | no       | off     | Write one undecorated structured result to stdout.                                                   |
+| `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
+| `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
+| `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
+| `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
+| `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
+| `--yes`                | no       | off     | Accept installation, including required session dispatch enrollment, without prompting.              |
+
+### Usage
+
+```text
+openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
+```
+
+```sh
+# review and apply the current workspace configuration.
+openclaw agent-system install
+
+# explicitly consent to installation and required enrollment without prompts.
+openclaw agent-system install --yes --json
+```
+
+Ordinary installs reconcile [collaboration](./CONFIG.md#collaboration), preserving
+operator grants while enabling selected participants as needed. Re-run install
+from a managed workspace after selection or registration changes. See the
+configuration reference for cleanup before deleting the final managed agent.
+
+Before setup or agent reconciliation, install checks the actual OpenClaw host and
+the shared Codex prerequisite only when the workspace declares
+[`agent.runtime: codex`](./MANIFEST.md#agent) or this agent has an effective
+Codex runtime binding. The plugin version is pinned in Agent System's
+`package.json#openclaw.agentSystem.codexPlugin`. It provisions a missing plugin,
+enables a matching disabled installation, and reuses a converged installation
+across agents in the same profile. Codex remains a separate OpenClaw-managed
+package and owns its app-server dependency. Setup-skip flags do not skip this
+prerequisite. Standalone Codex installation does not provision it.
+
+Conflicting shared versions or sources block installation with expected and actual
+versions. Review `openclaw plugins inspect codex --json`, then explicitly reconcile
+the shared plugin through OpenClaw before retrying; installing another agent never
+silently upgrades, downgrades, or replaces it. Installation failures retain bounded,
+sanitized exit and failure-category details, without raw upstream output.
+
+After reviewing the shared installation, an operator can explicitly select the
+declared release through OpenClaw:
+
+```sh
+openclaw plugins inspect codex --json
+openclaw plugins install npm:@openclaw/codex@2026.9.8 --force --pin --accept-capabilities
+```
+
+`--skip-setup` skips both phases regardless of consent; combining the two phase
+flags has the same effect. Other components still reconcile and enforce their
+executable, credential, and identity checks.
+
+Interactive installation previews applicable commands, shells, and timeouts on
+stderr. Declining or cancelling stops before mutation. No applicable setup
+means no setup prompt; required session dispatch enrollment has its own consent preview.
+
+Unattended setup consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
+or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent;
+prompts and warning diagnostics stay on stderr. Consent is not persisted.
+
+When enabled OpenClaw issue-assignment or review-request policies require session
+dispatch, Install lists those consumers and discloses `operator.read` and
+`operator.write` before enrollment. These grants are broader than sessions-only
+access. Explicit `--yes` accepts enrollment; `--non-interactive`, CI, or missing
+stdin alone do not. The UI uses the existing Install Allow once approval and
+requires a verified owner. A missing or unusable credential blocks enrollment-
+dependent installation; unsupported review execution remains a separate finding.
+
+One Gateway-wide device identity is retained in macOS Keychain or Linux Secret
+Service; there is no file-store fallback. Enrollment currently supports a local
+non-TLS Gateway. Manual pairing policy still requires approval of the exact
+request in Devices or `openclaw devices approve <requestId>`, then another Install
+to resume. Repeated Install reuses the credential; disabling a consumer retains
+it for other agents. Doctor reports enrollment state without issuing credentials.
+For revoked credentials, remove the retained device and any pending request in
+Devices, then rerun Install with enrollment consent to replace the retained
+identity. There is no separate session-dispatch reset command. Credential
+readiness alone does not establish end-to-end issue or review dispatch.
+
+If reconciliation fails, install exits nonzero and reports completed outcomes,
+the blocking component, and unattempted work. Earlier changes remain applied;
+rerun install after fixing the blocker. With `--json`, stdout contains one
+failure object with `status: "failed"`, `outcomes`, `blocked`, and `unattempted`.
+
+> [!NOTE]
+> Environment flags accept trimmed, case-insensitive `1`, `true`, `yes`, or `on`.
+> Other values do not enable consent or cancel another enabling source.
+> Unattended runs trust the current declarations, including changes since the last run.
+
+Installation:
+
+- Validates declarations and requires persistent credentials for declared 1Password resources before mutation.
+- Verifies owned state, reporting already reconciled components as unchanged. Setup follows its [check and retry rules](./MANIFEST.md#checks-installation-and-retries).
+- Rejects an agent id already bound to another workspace.
+- Reconciles manifest-selected Git, worktree, GitHub, and Google tool grants while preserving unrelated grants.
+- Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
+
+Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
 
 ## `openclaw agent-system tool`
 
@@ -741,6 +750,28 @@ openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 | `agent_system_git_worktree` | `worktree` | [Usage](./tools/git/README.md#cli)                    | none                                                               |
 | `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli)                 | [Packaged shim](./tools/github/README.md#shim)                     |
 | `agent_system_google`       | `gog`      | [Usage](./tools/google/README.md#agent_system_google) | [Packaged shim](./tools/google/README.md#gog-and-agent_system_gog) |
+
+## `openclaw agent-system validate`
+
+Discover and validate a manifest without resolving credentials, inspecting installed or remote state, or applying changes.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                                         |
+| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
+| `--json`           | no       | off                 | Write one undecorated structured result to stdout.                  |
+
+### Usage
+
+```text
+openclaw agent-system validate [--agent <id>] [--json]
+```
+
+```sh
+# validate the current workspace manifest without changing state.
+openclaw agent-system validate --json
+```
 
 ## `openclaw agent-system notifications`
 
@@ -797,8 +828,12 @@ launchers and Agent System's `worktree` route never fall back. Direct `tool` and
 `credentials` commands remain trusted operator interfaces and may select an
 installed agent explicitly.
 
-Strict launcher bindings belong to the [Git tool](./tools/git/README.md#launcher-bindings)
-and [GitHub tool](./tools/github/README.md#launcher-bindings) guides.
+Strict launcher bindings exist only in Agent System-owned child environments,
+not login shells, repository config, or manifest environment output. They are
+executable paths, not credentials or authority capabilities, and require valid
+active-agent authority. Classification, policy, credential, containment, and audit
+checks still apply. See the [Git](./tools/git/README.md#launcher-bindings) and
+[GitHub](./tools/github/README.md#launcher-bindings) guides for variables and usage.
 
 These are practical same-user guardrails, not process isolation. Absolute
 binaries, replaced `PATH` values, direct HTTP, SDKs, and unrelated host
@@ -826,6 +861,35 @@ approval route execute nothing. Nested lifecycle consumers cannot reload a
 different manifest under the approved operation.
 
 The native OpenClaw harness and OpenClaw-hosted Codex use this route; standalone
-Codex uses its [setup-only adapter](./CODEX.md#skills).
+Codex uses its [standalone adapter](./CODEX.md#skills).
 Control UI chat is the tested approval surface; other chat channels depend on
 their OpenClaw plugin approval support. See [approval validation](./DEVELOPMENT.md#lifecycle-approval).
+
+## Scheduler Callback
+
+### `openclaw agent-system automation-execute`
+
+Execute one synchronized command automation. This is the scheduler's operator-only
+entrypoint, hidden from ordinary help. Use [automations run](#openclaw-agent-system-automations-run)
+to request a tracked occurrence; Install reconciles declarations.
+
+#### Options
+
+| Option or argument | Required | Default | Description                                                           |
+| ------------------ | -------- | ------- | --------------------------------------------------------------------- |
+| `--hash <hash>`    | yes      | none    | Require the synchronized effective SHA-256 hash.                      |
+| `--id <id>`        | yes      | none    | Select the manifest automation ID in the current installed workspace. |
+
+#### Usage
+
+```text
+openclaw agent-system automation-execute --id <id> --hash <hash>
+```
+
+The native scheduler supplies the exact arguments, fixed executable, profile, and
+workspace. This entrypoint accepts no agent selector. Agent descendants and invalid
+inherited authority are rejected before execution. Stale, disabled, removed, or
+native-drifted jobs fail before temporary authority or tool credentials are issued.
+It returns one bounded JSON status and a nonzero exit status on failure. Direct
+operator invocation is a manual command execution and does not create a native
+scheduled occurrence or update its history.

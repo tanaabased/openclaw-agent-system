@@ -1,0 +1,12 @@
+schema-version: 1
+agent:
+  id: memory-embeddings
+  name: Memory Embeddings
+environment:
+  set:
+    EMBEDDINGS_API_KEY: synthetic-memory-credential
+memory:
+  search:
+    provider: openai
+    model: text-embedding-3-small
+    api-key: EMBEDDINGS_API_KEY

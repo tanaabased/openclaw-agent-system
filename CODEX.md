@@ -55,86 +55,438 @@ Git and GitHub use native host commands and authorization.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guide native host Git operations.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guide native host GitHub operations.
 - [Install](./skills/install/SKILL.md) — Apply Codex setup and synchronize declared automations through the native app.
+- [Issue assessment](./skills/issue-assessment/SKILL.md) — Assess an admitted issue in its native worktree and retain a plan, questions, or a setup blocker.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 
 ## Model Routing
 
-Configure models and efforts in [`agent.yaml`](./MANIFEST.md#models), then use the
-[model routing skill](./skills/model-routing/SKILL.md) for new work. See the
-[helper contract](./tools/model-routing/README.md) for runtime mappings, overrides,
-and unresolved results.
+Declare model profiles in `agent.yaml`, then use
+[the model routing skill](./skills/model-routing/SKILL.md) when starting new work:
+
+```yaml
+models:
+  default: { model: openai/gpt-6-astra, effort: high }
+  low: { model: openai/gpt-5.6-terra, effort: medium }
+  medium: { model: openai/gpt-5.6-sol, effort: high }
+  high: { model: openai/gpt-6-astra, effort: xhigh }
+```
+
+See [profile configuration](./MANIFEST.md#models) for field rules and
+[model routing](./tools/model-routing/README.md) for selection and overrides.
+Standalone Codex reads these profiles without changing OpenClaw configuration.
+A mapped selection still needs native Codex support and application; it is not
+proof that the model is available or that a task is using it.
+
+## GitHub Notification Policy
+
+Version 2 [notification policy](./MANIFEST.md#githubnotifications) supports issue-assignment
+intake through one managed `github-issue-assignment` schedule and one retained chat,
+`ISSUE ASSIGNMENTS`, displayed under `AGENT SYSTEM`. The automation is named
+`📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
+`interval-minutes`; the automation ID is reserved. Intake records eligible
+assignments durably. After explicit reconciliation of the assessment-enabled
+schedule, `plan` and `work` assignments can prepare repositories and create native issue chats
+and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery.
+Issue feedback can resume its owning chat for explanation and a bounded public reply.
+Review requests and Auto-mode execution remain unavailable through this Codex path.
+Unavailable reviews warn without blocking independent setup or issue-assignment scheduling.
+
+Use `$agent-system-install` to authorize and reconcile the chat and schedule in one
+workflow. Install verifies a new chat's saved native approval settings and the saved
+schedule; no global scanner allow rule or restart acknowledgment is required. Commands that need
+approval still pass through native review, which can deny them.
+Doctor verifies saved automation definitions; current chat permissions are not
+exposed by the read-only native interface. Verify unattended execution separately
+with a real scheduled poll. Intake uses
+native host GitHub access; the authenticated account must match `github.username`
+and applicable identity pins. Repository read access is sufficient. The first
+successful activation establishes a historical baseline; reinstall and restart
+retain it and deduplicate assignments by event identity.
+
+To stop issue assignments on this machine, set `enabled: false` under
+`github.notifications.issue-assignment`, then authorize Install to pause and verify
+the owned schedule. Stale scheduled runs cannot admit or dispatch new work. Existing
+chats, assessment results, and checkpoints remain; an already-issued chat creation
+can finish and be reconciled. Re-enable through Install to revalidate access and
+resume the same schedule and chat. The retained baseline permits eligible assignments
+to catch up without repeating recorded events. You choose which machine runs each
+workflow; two active machines do not coordinate or deduplicate work between them.
+
+Use `$agent-system-doctor` to inspect admitted issues, assigning actors, event IDs,
+baseline, checkpoint, and blockers without contacting GitHub. Scheduled scans use
+the trusted `intakeRuntime` from Agent System context. The assessment-enabled
+schedule also revisits retained dispatch work through `dispatchRuntime`, even when
+intake is unchanged. Unchanged combined results stay quiet. Records require fresh
+authorization before execution; previous intake-only consent does not enable dispatch.
+
+### Issue Assessment
+
+Dispatch verifies the repository's full GitHub identity before selecting a saved
+local project. An explicit
+`git.worktrees.repositories.local.github-<repository-database-id>` mapping wins;
+otherwise, optional `git.worktrees.repositories.working-directory` selects
+`<directory>/<repository-name>`. A matching normal checkout is reused without
+resetting user work; a missing checkout is cloned with native host Git authorization.
+See [Git repository locations](./tools/git/README.md#gitworktrees) for path rules.
+
+Without either location, dispatch first reuses a matching saved project. If none
+exists, it prepares the managed bare repository and one stable detached base
+checkout beneath the configured worktree root. That base is the project folder;
+native Codex still creates the separate issue worktree. A configured path or clone
+failure blocks preparation rather than choosing a different storage location.
+
+The native interface currently has no supported saved-project registration action.
+When registration is needed, dispatch reports the exact prepared checkout to add as
+the primary folder of one saved local Codex project. The next scheduled occurrence
+verifies it and resumes the retained assignment. Until that manual step, new-repository
+dispatch is not unattended. Ambiguous projects, identity conflicts, and interrupted
+clones retain actionable blockers rather than creating replacements.
+
+Use Install to authorize and reconcile the repository-preparation schedule before
+using this behavior; an older assessment schedule is insufficient. Changing repository
+locations requires reconciliation again. Repository and checkout records survive
+retries and restarts. New assignments use the reconciled location without moving
+or deleting earlier checkouts. An assignment already preparing a repository remains
+pinned to its retained path: restore its explicit local mapping or previous directory
+and roots, then reconcile through Install. Interrupted clones also require recovery
+at their original location before selecting another destination. Once the saved project is verified, dispatch refreshes the
+default branch and pins the exact starting commit for the native issue worktree.
+
+Bounded issue evidence and structured metadata inform the shared model router.
+The saved model and effort are passed explicitly to native creation and retained
+on continuation. Requested settings and verified effective settings remain distinct.
+The issue chat performs read-only assessment and records one of three outcomes:
+`plan-ready`, `clarification-needed`, or `operator-setup-blocker`, with evidence and
+completed/remaining investigation. A user follow-up may revise the assessment in
+the same chat. A result never authorizes implementation or publication.
+
+Use [assessment selection](./MANIFEST.md#assessment-selection) under
+`github.notifications.issue-assignment` to select an active skill and optional inline
+or file guidance. Dispatch resolves the ID through native skill discovery and retains
+the selected name, source path, instruction digest, and guidance snapshot. The child
+verifies that same skill in its actual worktree before beginning. A missing or changed
+skill blocks assessment; restore it and resume the retained chat rather than launching
+another. The dispatch `context` response exposes the retained selection and guidance.
+The default skill's structured result and direct submission remain recommended.
+Replacement skills may follow that approach or return an ordinary assessment in
+their own format, without Agent System commands, result fields, or required headings.
+The surrounding workflow supplies verified context and retains ordinary output
+unchanged, deriving its summary, outcome, evidence, and progress for the same result
+contract. It checks those fields against the complete assessment before submission;
+this is model judgment, not deterministic proof of fidelity. Unusable output receives
+an actionable limitation rather than a ready label. Already recorded integrated
+results are not adapted or submitted again.
+
+The complete assessment is shown inline and returned on same-chat revisions; it
+remains the source of truth rather than its summaries. Guidance cannot widen the
+assessment's authority.
+[Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
+use the same trusted selection contract. Work uses the bundled
+[issue implementation skill](./skills/issue-implementation/SKILL.md) by default;
+review execution remains unavailable.
+[Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
+assignment and review requests; the removed global setting requires an explicit choice.
+
+### Issue Feedback
+
+Set `issue-assignment.feedback: true` to inherit approved assigners, or use
+`{ inherit: true, allowed: [...] }` to add pinned contributors. Reconcile Install
+after changing permissions; an older saved schedule cannot authorize feedback.
+Approved comments must address the configured GitHub account outside quoted text.
+The initial read establishes a baseline without replaying historical comments.
+Subsequent issue comments, submitted PR reviews and inline replies route to the
+original issue chat with their exact source and review context retained.
+Public replies to inline feedback stay in the original review thread. Replies to
+submitted reviews and ordinary PR comments appear in the PR conversation.
+
+Assignments and feedback share `max-concurrent-items`, which defaults to **3**.
+A busy owner queues feedback without taking another slot. An idle owner needs a
+free slot; the oldest eligible work proceeds, and each completed response puts
+that owner's remaining backlog behind work already waiting. Questions, blockers
+and completed turns release capacity. Uncertain native sends retain their slot
+until reconciled and are never blindly repeated.
+
+The intake card reports feedback delivered to chats, queued items across issues, and
+occupied slots. Answers and publication outcomes stay in the owning chat;
+unchanged checks remain quiet. Feedback authorizes read-only investigation,
+private explanation and an optional concise public reply. It does not start
+implementation or a review. Publication rechecks the exact source, assignment
+and permissions, and reconciles uncertain writes before another action.
+The chat displays the complete retained private response. The configured
+`feedback.skill` (default `agent-system:agent-system-feedback-reply`) then composes
+a separate public candidate, applying optional `feedback.guidance` and applicable
+voice skills. It summarizes for the audience rather than truncating the private
+answer. Runtime `result` saves the private response, `compose` returns the verified
+skill and context, and `candidate` records its output against the composition
+digest. Missing or changed skills withhold the reply and preserve the private answer.
+The final chat response includes the private explanation, the exact public quote,
+and the verified publication link or an explicit obstacle.
+
+Routine public replies use a two-step publication: `publish` without a digest
+returns the exact destination and attributed draft without a GitHub write;
+`publish` with that digest rechecks authority and executes through native approval.
+Operator activation covers the configured routine reply scope, but never overrides
+a native approval denial.
+Feedback authored by the publishing GitHub account receives a private response
+only. Confirmed runtime replies are excluded from intake, preventing reply loops.
+An unfinished publication stops instead of automatically resuming another model
+turn. After explicit human approval, an operator chat may preview
+`feedbackRuntime` with `{"action":"publish-approved","id":"...","eventId":"..."}`
+and apply its returned `digest`. This retries only the exact retained reply,
+rechecks its source and permissions, and reconciles any uncertain provider write.
+Later follow-ups do not invalidate the retained reply; recovery verifies its original
+completed feedback turn and waits if the owning chat is active.
+Independent reviewer feedback still requires the reviewer intake adapter. Discovery
+and retained queues are bounded: incomplete provider reads or a full journal stop
+new feedback admission with a diagnostic; they do not silently discard comments.
+
+### Auto Mode
+
+Set `github.notifications.issue-assignment.mode: auto`, then authorize Install to
+reconcile the saved workflow. Auto uses your existing assessment skill and guidance
+to recommend `proceed` or `wait`, with reasons shown in the issue chat. Clear, bounded
+work can continue through the configured implementation and managed PR delivery;
+incomplete requirements, broad scope, or consequential uncertainty should wait.
+A ready plan alone does not authorize implementation.
+
+A wait retains the complete plan and releases its implementation slot. Polling and
+feedback cannot promote it; explicitly direct further work in the same chat through
+the [manual handoff](#issue-assessment). Missing or invalid decisions, changed issue
+evidence before implementation, changed skills/guidance, lost authority, and native
+denials stop continuation. Fix the stated obstacle and give explicit direction;
+never recreate the issue chat to bypass its retained stop. Existing Plan/Work schedules
+do not grant Auto authority without reconciliation. Native OpenClaw Auto is not supported.
+
+### Work Mode
+
+Set `github.notifications.issue-assignment.mode: work`, optionally override its
+implementation skill or guidance, then authorize Install to reconcile the saved schedule. Activating Work
+mode authorizes assessment, implementation, and PR publication without routine
+stage approvals. Existing Plan-mode schedules remain assessment-only until that
+explicit update. An actionable assessment continues in its original issue chat
+with the complete plan, retained guidance, and selected model and effort.
+
+The runtime automatically checks that the activation and assignment still apply;
+these checks do not ask for renewed approval. Missing requirements, changed or
+unavailable skills/guidance, cancellation, and actual native approval or provider
+denials stop work. Implementation and delivery count against workflow capacity;
+intake reports stay limited to admission and capacity.
+
+Automatic PR publication requires an explicit public description of the change,
+verified checks, and limitations. Private reports are not copied into GitHub.
+
+Native continuation intent is retained before sending. An uncertain send is
+reconciled, never repeated blindly. A recorded implementation can resume delivery
+without reimplementing or creating another PR. A stopped implementation remains
+in the same chat with its files and evidence: inspect the blocker and explicitly
+continue through the existing manual handoff if human intervention is needed.
+Use `continuationRuntime` action `cancel` in the issue chat to stop further automatic
+work; it does not undo files or an already-started external operation. Disable the
+workflow through Install to revoke future automatic stage and publication authority.
+
+For `continuation-turn-ended` before an implementation result or delivery attempt,
+an operator may request `continuationRuntime` action `retry` with the retained `id`,
+then repeat it with the returned `digest`. This verifies the old turn has ended,
+retains its evidence, and queues one handoff in the same chat on the next scheduled
+turn. It cannot retry native denials, substantive results, or cancelled work.
+
+An altered continuation prompt stops with `continuation-send-mismatch`. The same
+operator retry can recover a verified, completed malformed send only before any
+recorded implementation or delivery, with the original assessment checkout unchanged.
+The preview binds the native send evidence and latest diagnostic turn; recovery
+retains both before queuing one new handoff. Unknown or duplicate sends, changed
+native settings, and approval denials remain blocked. Never edit tracking files or
+manually resend the old request.
+
+For an explicitly reapproved native send rejection before implementation, use
+`continuationRuntime` action `retry-denied` from the operator chat with the retained
+`id`. Inspect its rejection evidence, then apply its `digest` and the exact
+`approvedCallId`. Recovery requires the original idle chat and unchanged assessment
+checkout, retains the rejected attempt and reason, and queues one fresh handoff for
+scheduled intake. Native approval still applies. Unknown send failures, later chat
+turns, and denials during implementation or publication remain blocked.
+
+Deterministic fixtures and packaged checks alone do not establish unattended native
+execution or visible card delivery.
+
+### Pull Request Delivery
+
+After implementation handoff, explicitly authorize publication in the retained
+issue chat. The trusted `deliveryRuntime` accepts JSON actions with the retained
+dispatch `id`: `prepare` previews the current branch, head, identity, and recipient
+policy; `publish` requires that preview's `digest` and the same optional `title`
+and `body`. Preparation grants no publication authority. Codex uses native host
+Git and GitHub authorization, preserves authored commits and PR metadata, and
+adds the original issue's closing reference. The PR must be open, authored by the
+active account, and target the same repository's default branch.
+
+Publication retains the PR before recipient reconciliation. If a later step
+fails, prepare and resume that operation. An uncertain creation is reconciled
+against the managed branch; it is never blindly repeated. Attach the returned
+URL with native `attach_artifact`, read `list_artifacts`, then call `reconcile`
+and `present`, then reproduce its complete presentation in the final reply. The runtime
+generates the cards; successful generation alone does not prove they were displayed.
+Attachment verification is nonblocking: the verified PR card remains
+available with an attachment warning. Delivery notices use the shared info, warning,
+and error cards; publication errors retain the existing PR for retry. Attachment and
+presentation failures do not create another PR.
+See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
+Work-mode publication uses the same delivery operation through the trusted
+continuation runtime. Configured issue feedback also covers its verified delivery PR.
+
+Native creation receipts, chat identity, worktree, and results survive interrupted
+polls. An uncertain creation is reconciled against native creation history; it is
+never blindly repeated. Preserve the retained evidence when repairing access,
+project setup, or host failures. Unresolved creations continue to consume capacity
+until reconciled, preventing a succession of potentially live duplicate chats.
+After verifying creation provenance, worktree,
+and model settings, the runtime corrects a changed native title and verifies the rename
+before assessment; the display title does not establish chat identity.
+
+When you explicitly ask the issue chat to continue with implementation, its agent
+records a `handoff` before changing the checkout. This records the transition out of assessment;
+it does not mark the issue complete or grant permission to publish. The existing
+chat, worktree, and recorded outcome are retained. If an unsaved assessment still
+occupies a slot after you approved further work, recover from the issue or operator
+chat with `dispatchRuntime` input `{"action":"handoff","id":"<assessment-receipt>"}`,
+then repeat with the returned `digest`. The runtime verifies the existing native
+chat and repository and a later user turn; the agent must establish the human's
+explicit authorization from the conversation. Keep the existing work rather than
+resetting and reassigning it.
+
+Each scheduled check produces one intake report: newly started **Issue** links,
+**Managing** and **Pending** counts, occupied **Slots**, and intake warnings or errors.
+Managing means retained issue destinations, not currently running work. Pending means
+accepted assignments waiting to start. Slots currently limit unfinished assessments;
+saving a plan, question, or setup outcome releases the reservation. Later work does
+not consume that assessment slot. An interrupted assessment without an outcome can
+retain its reservation until resolved.
+
+After verified creation, intake does not inspect or announce assessment progress.
+Plans, questions, assessment failures, and implementation updates stay in the issue.
+Unchanged healthy reports use the existing quiet-message rotation without notifying;
+new starts and changed intake health can notify. Reports record attempts, not proven
+message delivery: wording or link differences never block admission or create retries.
+Existing creation receipts still prevent duplicate work after interruption. Legacy
+notification backlogs are discarded without removing issue records or saved results.
+A quiet report requires a current scan and a completed dispatch check.
+
+An `EPERM` or `EACCES` failure can mean the sandbox cannot write private tracking
+files under the plugin data directory. The agent retries the same command once
+through native host approval. If access is denied, it reports the reason and keeps
+the work intact; it does not delete locks or loosen directory permissions. Native
+approval requests retain their native UI.
+
+To repeat assessment through assignment intake, use `dispatchRuntime` with
+`{"action":"reset","id":"<assessment-receipt>"}` from an operator chat, then repeat
+with the returned `digest`. Reset requires a completed assessment and native confirmation
+that its recorded result turn completed, with no later turn. It freezes the previous
+result while preserving its chat and worktree; only a
+new assignment event after reset permits a fresh dispatch. Reassignment alone does
+not create another chat, and reset never authorizes implementation.
+
+To remove a closed test issue from the queue, pause its schedule and send
+`{"action":"retire","id":"<assessment-receipt>"}` from an operator chat. Repeat
+with the returned `digest` to confirm. This preserves the launch and assessment
+evidence, including failed launches. Archive the native chat and clean up its
+worktree separately; retirement does neither. A fresh assessment requires a new
+assignment event after retirement.
+
+After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
+with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.
+The preview requires the exact native rejected call and no child or pending receipt.
+Repeat with its returned `digest` to retain the denied attempt and permit fresh
+preparation after resuming the schedule. Timeouts and unknown outcomes cannot use
+this recovery path.
+An automatic-review rejection additionally requires renewed operator approval for
+the exact failed call. Supply its `approvedCallId` in both preview and apply, and
+communicate that authorization to the intake chat before resuming. This field
+records an approval already given; it does not grant one.
+Packed/headless checks do not prove native desktop rendering or scheduled delivery;
+those require a separately authorized installed-plugin occurrence.
+
+Removing or revoking policy stops admission. Run authorized Install to pause the
+owned job, including when the manifest is missing or invalid. Ownership and intake
+evidence are retained for recovery; do not delete them to clear a blocker.
+See [automation recovery](#ownership-and-recovery) for native write failures.
 
 ## Repository Automations
 
-Declare jobs in [`agent.yaml`](./MANIFEST.md#automations), then use
-`$agent-system-install` in the desktop app. Install computes a deterministic plan,
-applies authorized native automation actions one at a time, and verifies each saved
-definition. Doctor compares desired and saved settings without changing or running
-jobs. Headless Install returns `requires-native-app-sync` when app work remains;
-it cannot complete native writes by itself.
+Installer-created automation chats use native `auto_review` with the
+`workspace-write` sandbox and `on-request` approvals. Setup verifies the returned
+permissions and their persistence through a fresh native process before marking
+the chat ready. Native policy remains authoritative; auto-review may deny an
+action. Existing ready chats retain their selected permissions. Neither setup nor
+the plugin writes global approval rules to enable auto-review.
 
-Independent prompt jobs run in the one local saved project whose canonical path
-matches the bound workspace. Missing or ambiguous projects block planning; a
-worktree binding does not silently schedule in its parent checkout. An explicit
-`overrides.codex.target: { thread: existing-id }` selects an existing local Codex
-chat in that same workspace. Supply a fresh native exact-thread read; this adapter
-accepts active, idle, running, or completed status and rejects other statuses.
-It neither creates a replacement chat nor binds to the installer's conversation.
+Declare recurring work in `agent.yaml`:
 
-| Setting              | Supported behavior                                                                                                                                                                                                                                                                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Payload              | Recurring prompts, including prompts explicitly asking a model to run a script. Zero-model command declarations are rejected.                                                                                                                                                                                                                           |
-| Interval             | Whole minutes or hours with an interval from 1 to 999. Native timing and DST behavior apply.                                                                                                                                                                                                                                                            |
-| Cron                 | One minute at every hour, or one daily time with daily, weekday, or month-day selection across all months. Expressions requiring multiple jobs or unsupported day-field combinations are rejected.                                                                                                                                                      |
-| Timezone             | `native` only; explicit zones are unsupported. The adapter does not promise a timezone override.                                                                                                                                                                                                                                                        |
-| One-shots            | Unsupported until native anchor and completion persistence are proven.                                                                                                                                                                                                                                                                                  |
-| Model and effort     | Independent jobs copy omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit manifest overrides. Supported effort values are checked; the native app remains authoritative for model availability and valid model/effort combinations. Later default changes appear as drift. |
-| Thread overrides     | Existing chats retain their model and effort; specifying either override on a heartbeat is rejected.                                                                                                                                                                                                                                                    |
-| Limits and telemetry | Native concurrency, retry, catch-up, and timeout semantics; explicit `timeout-seconds` is rejected. Execution and delivery telemetry are reported as unavailable.                                                                                                                                                                                       |
+```yaml
+automations:
+  - id: daily-review
+    schedule: every 24 hours
+    prompt: Review the repository for actionable maintenance work and report the highest-priority finding.
+```
 
-The adapter uses ambient host credentials and permissions. It never resolves
-OpenClaw credentials or changes Codex permission settings. An unavailable model,
-account, app operation, or unattended permission blocks completion; fix the native
-profile condition and inspect again. A saved definition proves persistence, not
-that the app will be running or that a scheduled prompt can execute successfully.
+Use `$agent-system-install` in the desktop app to apply authorized native actions
+and verify each saved definition. Doctor compares desired and saved settings
+without changing or running jobs. Headless Install returns
+`requires-native-app-sync` when native app work remains.
 
-An Agent System marker plus a private non-secret ledger owns each job. Native UI
-edits to managed fields are drift. Notification preferences remain native-owned.
-Unchanged jobs receive no native writes. Removed declarations pause their jobs and
-retain mappings and history; reintroduced IDs reuse the same native job. Personal
-and Me jobs are never adopted by name. Unknown saved schemas stop inspection.
+The shared [`thread` declaration](./MANIFEST.md#persistent-conversations) creates
+stable **per-automation** conversations, even when jobs declare the same ID;
+these chats do not share context. A compatible `codex` executable must be on
+`PATH`; unsupported protocol methods fail closed. The desktop app owns every
+schedule.
 
-The install skill owns the internal plan/prepare/acknowledge sequence through the
-trusted `automationRuntime` context. Prepared writes retain a pending journal until
-saved-state verification succeeds. If a native response is lost, acknowledgment
-can recover the exact pending marker and definition without another create, even
-after unrelated jobs or the valid manifest change. Recovery records the prepared
-effect; further writes require a fresh plan. A failed write can be cancelled only
-while its target matches the pre-write snapshot. A pending create also requires
-no new native IDs, because an unmarked new job could be a partially saved create.
-Older pending journals retain their whole-scheduler cancellation check.
-Divergence or missing owned jobs requires operator investigation. There
-is no rollback of earlier verified actions and no atomic compare-and-swap guarantee
-against concurrent native UI edits. A process crash during a journal transition
-may leave `automation-journal-busy`; first confirm no reconciliation is running,
-then remove only that stale Agent System `.lock` directory. Never repair native
-scheduler files or delete the ownership ledger to force a sync.
+The [manifest reference](./MANIFEST.md#automations) owns shared syntax and
+schedules. Codex supports this subset:
 
-The trusted `automationRuntime` also accepts `list` and `sync` with the same
-project/thread JSON inputs as `plan`. Both inspect desired/native inventory; `sync`
-returns the plan for Install's authorized native write sequence. It does not apply
-headless scheduler writes. `automations --help` documents the internal routes.
-`run` and `runs` accept `{ "id": "manifest-id" }` and exit 1 with respectively
-`automation-run-now-unsupported` and `automation-history-unavailable`. Neither
-creates a task, changes a job, or claims a scheduler occurrence. An explicitly
-requested manual task has separate task history and does not consume a saved
-one-shot or prove native scheduling.
+| Manifest field                                    | Codex behavior                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `overrides.codex.effort`, `overrides.codex.model` | Independent jobs inherit omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit overrides. Later default changes appear as drift; native Codex decides model/effort availability.                                                 |
+| `overrides.codex.target`                          | Defaults to an independent job in the one saved local project matching the bound workspace. `{ thread: existing-id }` selects an existing local chat there; model and effort overrides are rejected for these explicit chat targets.                                                                        |
+| `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                                                        |
+| `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                                                     |
+| `schedule`                                        | Whole-minute intervals from 1 to 1440 or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
+| `schedule.timezone`                               | `native` only. Native timing and DST behavior apply.                                                                                                                                                                                                                                                        |
+| `thread`                                          | Creates a persistent conversation per automation. Explicit model and effort overrides set initial native chat settings; later drift requires the native chat controls.                                                                                                                                      |
+| `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                                                  |
 
-Native request/response and saved-state captures live in `fixtures/` with separate
-provenance. Capture, comparison, and acceptance are explicit development work;
-ordinary tests consume reviewed captures without contacting the app. Constructed
-failure cases are identified in the tests. Installed desktop-tool verification is
-separate from the GitHub Actions-only packed/headless Codex example.
+Missing or ambiguous projects block planning; worktree bindings do not select the
+parent checkout. Chat targets require a fresh native exact-chat read with active,
+idle, running, or completed status. Explicit chat targets are not replaced or
+rebound to the installer's conversation.
+
+Codex uses ambient host credentials and permissions; it does not resolve OpenClaw
+credentials or change Codex permission settings. Unavailable models, accounts,
+app operations, or unattended permissions block completion. Saved definitions
+prove persistence, not successful execution. Run-now, native occurrence history,
+and execution/delivery telemetry are unavailable; a separately requested manual
+task has its own history and does not prove native scheduling.
+
+### Ownership and Recovery
+
+Agent System owns jobs through markers and a private non-secret ledger. Native
+edits to managed fields are drift; notification preferences remain native-owned.
+Unchanged jobs receive no writes. Removed declarations pause jobs and retain
+history; reintroduced IDs reuse them. Personal and Me jobs are not adopted by name.
+Unknown saved schemas stop inspection.
+
+For `automation-thread-model-drift`, use the existing chat’s native controls to
+apply the requested model and effort, then rerun Install. Settings-only app-server
+updates do not persist across connections; Agent System does not claim success
+from a transient update or replace the chat.
+
+Interrupted writes require saved-state readback before retry; the install skill
+guides recovery. Missing owned jobs or divergent state require investigation.
+Earlier verified actions are not rolled back, and concurrent native UI edits are
+not protected by atomic compare-and-swap. For `automation-journal-busy`, confirm
+no reconciliation is running before removing only the stale Agent System `.lock`
+directory. Never repair native scheduler files or delete the ownership ledger.
+
+See the [Codex automations example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex-automations/README.md#automation-checks)
+for conversation setup, headless planning, and recovery checks.
 
 ## Development
 
@@ -156,6 +508,10 @@ installed cache directly:
 bun run codex:sync
 bun run codex:check
 ```
+
+If a development build writes a changed persistent format, verify that any runtime
+restored during cleanup can read the retained state. Cache equality alone does not
+verify dispatch recovery.
 
 Start a fresh task to verify skill discovery. `package.json#codexTools.managedPaths`
 selects the paths owned by cache synchronization and checks; it does not control
