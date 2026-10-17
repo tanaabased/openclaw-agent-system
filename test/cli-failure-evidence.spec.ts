@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 
+import { AutomationError } from '../agent/automation-gateway.ts';
+import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import presentCliCommand from '../cli/presentation.ts';
 import credentialsCache from '../cli/credentials-cache.ts';
-import automationOperation from '../cli/automation-output.ts';
+import automationOperation, { type AutomationCommandOptions } from '../cli/automation-output.ts';
 import automationList from '../cli/automation-list.ts';
 import automationRun from '../cli/automation-run.ts';
 import automationRuns from '../cli/automation-runs.ts';
@@ -76,12 +79,72 @@ describe('cli/failure-evidence', () => {
             });
             assert.doesNotMatch(stderr, /messages/u);
             assert.ok(!stderr.includes('\u001b'));
-          } else assert.equal(stderr.match(/messages/gu)?.length, 1);
+          } else {
+            assert.equal(stderr.match(/messages/gu)?.length, 1);
+            assert.equal(stderr.match(/✖ error/gu)?.length, 1);
+            if (command === 'run') assert.match(stderr, /resource=review/u);
+          }
         }
       }
     }
   });
 
+  it('should keep gateway run evidence and recovery in its scoped failure block', async () => {
+    const diagnostic = automationGatewayDiagnostic(
+      'cron.run',
+      Object.assign(new Error('private-token ws://private-host'), {
+        name: 'GatewayTransportError',
+        kind: 'closed',
+        code: 1006,
+        requestDispatched: true,
+        connectionDetails: { token: 'private-token' },
+      }),
+    );
+    for (const json of [false, true]) {
+      const f = fixture(json);
+      const fail = async (): Promise<never> => {
+        throw new AutomationError('automation-gateway-unavailable', diagnostic);
+      };
+      await automationRun(
+        { ...f, automations: { list: fail, run: fail, runs: fail, reconcile: fail } },
+        'review',
+      );
+      const stderr = f.events.at(-1)!.text;
+      assert.equal(stderr.match(/gateway diagnostic/gu)?.length, 1);
+      assert.equal(stderr.match(/code=automation-gateway-unavailable/gu)?.length, 1);
+      assert.match(stderr, /resource=review/u);
+      assert.match(stderr.replace(/\s/gu, ''), /requestDispatched.*true/u);
+      assert.match(stderr, /check automation configuration/u);
+      assert.doesNotMatch(stderr, /private-/u);
+      assert.deepEqual(f.codes, [1]);
+      if (json)
+        assert.deepEqual(JSON.parse(f.events[0]!.text), {
+          status: 'failed',
+          code: 'automation-gateway-unavailable',
+          diagnostic,
+        });
+      else {
+        assert.equal(stderr.match(/✖ error/gu)?.length, 1);
+        assert.ok(stderr.indexOf('check automation configuration') < stderr.indexOf('⚠ warning'));
+      }
+    }
+  });
+
+  it('should retain separate uncorrelated operation attempts on the same resource', async () => {
+    const f = fixture(false);
+    const fail = async (): Promise<never> => {
+      throw new AutomationError('automation-gateway-unavailable');
+    };
+    const command = presentCliCommand(async (options: AutomationCommandOptions) => {
+      await automationRun(options, 'review');
+      await automationRun(options, 'review');
+    });
+    await command({ ...f, automations: { list: fail, run: fail, runs: fail, reconcile: fail } });
+    const stderr = f.events.at(-1)!.text;
+    assert.equal(stderr.match(/✖ error/gu)?.length, 2);
+    assert.equal(stderr.match(/resource=review/gu)?.length, 2);
+    assert.deepEqual(f.codes, [1, 1]);
+  });
   it('should preserve cache protocol causes without leaking upstream connection details', async () => {
     for (const json of [false, true]) {
       const f = fixture(json);

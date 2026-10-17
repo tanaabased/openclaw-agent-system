@@ -2,12 +2,20 @@ import refreshNotificationsAgentSystem from '../channels/github/cli/refresh.ts';
 import type { GitHubNotificationRefreshResult } from '../channels/github/cli/contracts.ts';
 import type OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import { createCliStyles } from '../cli/output.ts';
+import type { ManifestDiagnostic } from '../manifest/types.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 export const refreshFixtureAgent = 'Agent-MixedCase';
 export const refreshFixtureRepository =
   'MixedCaseOwner/Long-Notification-Repository-With-MixedCase';
-export const refreshFixtureNames = ['queued', 'already-running', 'disabled', 'failed'] as const;
+export const refreshFixtureNames = [
+  'queued',
+  'already-running',
+  'disabled',
+  'failed',
+  'unavailable',
+  'generic-failure',
+] as const;
 type RefreshFixtureName = (typeof refreshFixtureNames)[number];
 
 export function refreshFixtureResult(name: RefreshFixtureName): GitHubNotificationRefreshResult {
@@ -21,8 +29,13 @@ export function refreshFixtureResult(name: RefreshFixtureName): GitHubNotificati
           ? 'github-notification-refresh-already-running'
           : name === 'disabled'
             ? 'github-notification-disabled'
-            : 'github-notification-refresh-outcome-uncertain',
+            : name === 'unavailable'
+              ? 'github-notification-runtime-unsupported'
+              : name === 'generic-failure'
+                ? 'github-notification-refresh-failed'
+                : 'github-notification-refresh-outcome-uncertain',
     status: name === 'queued' ? 'queued' : name === 'already-running' ? 'skipped' : 'failed',
+    ...(name === 'generic-failure' ? { diagnosticCode: 'ECONNREFUSED' } : {}),
     ...(name === 'queued' ? { runId: 'NativeRun-MixedCase' } : {}),
   };
 }
@@ -34,6 +47,7 @@ export async function captureRefreshFixture(
     columns = 120,
     color = false,
     warnings = false,
+    diagnostics,
     itemKind = undefined,
     repository = undefined,
     itemNumber = undefined,
@@ -43,6 +57,7 @@ export async function captureRefreshFixture(
     columns?: number;
     color?: boolean;
     warnings?: boolean;
+    diagnostics?: ManifestDiagnostic[];
     itemKind?: string;
     repository?: string;
     itemNumber?: string;
@@ -60,15 +75,17 @@ export async function captureRefreshFixture(
     path: '/Fixture/Workspace/agent.yaml',
     digest: 'fixture',
     manifest: { schemaVersion: 1, agent: { id: refreshFixtureAgent } },
-    diagnostics: warnings
-      ? [
-          {
-            code: 'manifest-shadowed',
-            severity: 'warning',
-            message: 'External Warning: MixedCase.yaml is shadowed.',
-          },
-        ]
-      : [],
+    diagnostics:
+      diagnostics ??
+      (warnings
+        ? [
+            {
+              code: 'manifest-shadowed',
+              severity: 'warning',
+              message: 'External Warning: MixedCase.yaml is shadowed.',
+            },
+          ]
+        : []),
     validationChecks: [],
   };
   await refreshNotificationsAgentSystem({

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import ansis from 'ansis';
 
 import installAgentSystem from '../cli/install.ts';
@@ -268,6 +269,99 @@ describe('cli/install', () => {
       } else assert.deepEqual(harness.exitCodes, []);
     }
   });
+
+  it('should correlate manifest and completed warnings even before a partial failure', async () => {
+    const context = {
+      condition: {
+        key: 'review-capability',
+        component: 'github-intake',
+        fieldPath: '/github/notifications/review-request',
+      },
+      remediation: ['disable unavailable reviews'],
+    };
+    const warning = {
+      [cliDiagnosticContext]: context,
+      component: 'github-intake',
+      code: 'github-notification-runtime-unsupported',
+      message: 'Review requests unavailable.',
+    };
+    const warnings = [
+      warning,
+      { component: 'setup', stepId: 'first', code: 'same-code', message: 'Step warning.' },
+      { component: 'setup', stepId: 'second', code: 'same-code', message: 'Step warning.' },
+    ];
+    for (const json of [false, true])
+      for (const failed of [false, true]) {
+        const installed = {
+          agentId: 'tanaabot',
+          workspaceDir: '/workspace',
+          outcomes: [],
+          warnings,
+        };
+        const harness = createHarness({
+          json,
+          manifest: {
+            ...validResult,
+            diagnostics: [
+              { ...warning, severity: 'warning', fieldPath: context.condition.fieldPath },
+            ],
+          },
+          install: failed
+            ? new AgentSystemLifecycleError(
+                'github',
+                'fixture-blocked',
+                'Blocked.',
+                undefined,
+                undefined,
+                undefined,
+                { ...installed, unattempted: [{ component: 'models' }] },
+              )
+            : installed,
+        });
+        await harness.run();
+        const stderr = harness.diagnostics.join('');
+        assert.equal(stderr.match(/code=github-notification-runtime-unsupported/gu)?.length, 1);
+        assert.equal(stderr.match(/disable unavailable reviews/gu)?.length, 1);
+        assert.equal(stderr.match(/Step warning/gu)?.length, 2);
+        assert.match(stderr, /step=first/u);
+        assert.match(stderr, /step=second/u);
+        assert.deepEqual(harness.exitCodes, failed ? [1] : []);
+        if (json)
+          assert.equal(
+            JSON.stringify(JSON.parse(harness.output.join('')).warnings),
+            JSON.stringify(warnings),
+          );
+        if (failed && !json) assert.equal(stderr.match(/✖ error/gu)?.length, 1);
+      }
+  });
+
+  it('should omit only matching setup skip dispositions and retain same-code warnings elsewhere', async () => {
+    for (const json of [false, true]) {
+      const warnings = [
+        { component: 'setup', code: 'setup-host-skipped', message: 'Selected host skip.' },
+        { component: 'other', code: 'setup-host-skipped', message: 'Different component.' },
+        {
+          component: 'setup',
+          stepId: 'individual',
+          code: 'setup-host-skipped',
+          message: 'Different step.',
+        },
+        { component: 'setup', code: 'setup-agent-skipped', message: 'Unselected phase.' },
+      ];
+      const harness = createHarness({
+        json,
+        skipSetupHost: true,
+        install: { agentId: 'tanaabot', workspaceDir: '/workspace', outcomes: [], warnings },
+      });
+      await harness.run();
+      const stderr = harness.diagnostics.join('');
+      assert.doesNotMatch(stderr, /Selected host skip/u);
+      assert.match(stderr, /Different component/u);
+      assert.match(stderr, /Different step/u);
+      assert.match(stderr, /Unselected phase/u);
+      if (json) assert.deepEqual(JSON.parse(harness.output.join('')).warnings, warnings);
+    }
+  });
   it('should forward an explicit Codex PATH rebuild', async () => {
     const { calls, run } = createHarness({ rebuildCodexPath: true });
 
@@ -388,7 +482,7 @@ describe('cli/install', () => {
 
     assert.match(output.join(''), /workspace {2}\/workspace/u);
     assert.doesNotMatch(output.join(''), /warning/u);
-    assert.match(diagnostics.join(''), /⚠ warning\n {2}The existing/u);
+    assert.match(diagnostics.join(''), /⚠ warning\n {2}path: The existing/u);
   });
 
   it('should report explicit unchanged outcomes for every component', async () => {
@@ -480,7 +574,7 @@ describe('cli/install', () => {
         }
         assert.match(
           harness.diagnostics.join(''),
-          /messages\n\n⚠ warning\n {2}Manual follow-up\./u,
+          /messages\n\n⚠ warning\n {2}path: Manual follow-up\./u,
         );
       }
       assert.deepEqual(installed, original);
@@ -518,9 +612,9 @@ describe('cli/install', () => {
     assert.doesNotMatch(output.join(''), /messages/u);
     const normalized = text.replace(/\s+/g, ' ');
     assert.match(normalized, /ℹ info operator recognition is channel-wide openclaw/u);
-    assert.match(normalized, /⚠ warning Running Gateway access for pirog is unverified\./u);
+    assert.match(normalized, /⚠ warning github: Running Gateway access for pirog is unverified\./u);
     assert.match(normalized, /Reload the Gateway, then verify a fresh/u);
-    assert.equal(text.includes('github-operator-loaded-access-unverified'), false);
+    assert.ok(text.replace(/\s/gu, '').includes('github-operator-loaded-access-unverified'));
   });
 
   it('should write structured json from the same install result', async () => {
@@ -580,7 +674,9 @@ describe('cli/install', () => {
     assert.match(text, /Keep this warning/u);
     assert.match(text, /✖ error/u);
     assert.ok(text.indexOf('✖ error') < text.indexOf('Keep this warning'));
-    assert.ok(text.indexOf('Keep this warning') < text.indexOf('unattempted work'));
+    assert.ok(text.indexOf('unattempted work') < text.indexOf('Keep this warning'));
+    assert.equal(text.match(/✖ error/gu)?.length, 1);
+    assert.equal(text.includes('ℹ info'), false);
     assert.ok(text.indexOf('unattempted work') < text.indexOf('earlier completed'));
     assert.match(text, /code=collaboration-failed/u);
     assert.deepEqual(exitCodes, [1]);

@@ -3,6 +3,8 @@ import stringWidth from 'fast-string-width';
 import { wrapAnsi } from 'fast-wrap-ansi';
 import type { OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
 
+import type { CliCondition } from '../core/cli-diagnostic-context.ts';
+
 export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
   writeStderr(value: string): void;
   collectNotices?(notices: readonly CliNotice[]): void;
@@ -258,6 +260,37 @@ export function writeCliLifecycleTable(
 export interface CliNotice {
   message: string;
   severity: 'notice' | 'warning' | 'error';
+  condition?: CliCondition;
+  code?: string;
+  component?: string;
+  fieldPath?: string;
+  stepId?: string;
+  resource?: string;
+  occurrence?: string;
+  details?: readonly string[];
+  remediation?: readonly string[];
+}
+
+/** format safe evidence only; callers remain responsible for redaction. */
+export function cliNoticeBody(notice: Omit<CliNotice, 'severity'>): string {
+  const scope = notice.condition;
+  const component = notice.component ?? scope?.component;
+  const fieldPath = notice.fieldPath ?? scope?.fieldPath;
+  const stepId = notice.stepId ?? scope?.stepId;
+  const resource = notice.resource ?? scope?.resource;
+  const occurrence = notice.occurrence ?? scope?.occurrence;
+  const context = [
+    notice.code ? `code=${notice.code}` : undefined,
+    fieldPath ? `field=${fieldPath}` : undefined,
+    stepId ? `step=${stepId}` : undefined,
+    resource ? `resource=${resource}` : undefined,
+    occurrence ? `occurrence=${occurrence}` : undefined,
+  ].filter(Boolean);
+  return [
+    `${component ? `${component}: ` : ''}${notice.message}${context.length ? ` ${context.join(' ')}` : ''}`,
+    ...(notice.details ?? []),
+    ...(notice.remediation ?? []),
+  ].join('\n');
 }
 
 /** render shared diagnostic blocks without dimming recovery guidance. */
@@ -275,7 +308,9 @@ export function renderCliNotices(
   const ordered = [...notices].sort(
     (left, right) => priority[left.severity] - priority[right.severity],
   );
-  const blocks = ordered.flatMap(({ message, severity }, index) => {
+  const blocks = ordered.flatMap((notice, index) => {
+    const { severity } = notice;
+    const message = cliNoticeBody(notice);
     const label = { notice: 'ℹ info', warning: '⚠ warning', error: '✖ error' }[severity];
     const styledLabel = styles[severity](label);
     return [
@@ -313,7 +348,7 @@ export function writeCliDiagnosticNotices(
   writeCliDiagnostics(
     options.output,
     options.json
-      ? notices.map(({ message }) => message)
+      ? notices.map(cliNoticeBody)
       : renderCliNotices(
           notices,
           options.styles,

@@ -3,7 +3,7 @@ import presentCliCommand from './presentation.ts';
 import type AutomationService from '../agent/automation-service.ts';
 import { AutomationError } from '../agent/automation-gateway.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
-import { formatRedactedErrorDiagnostic } from '../core/logger.ts';
+import automationFailureNotice from './automation-diagnostic.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -35,6 +35,7 @@ async function automationOperation(
   options: AutomationCommandOptions,
   operation: (manifest: AgentManifest, workspace: string) => Promise<Record<string, unknown>>,
   history?: { id: string; runId?: string },
+  resource?: string,
 ) {
   const loaded = await loadCommandManifest(options);
   if (!loaded) return;
@@ -111,10 +112,18 @@ async function automationOperation(
             severity:
               result.reason === 'invalid-spec'
                 ? 'error'
-                : result.reason === 'stopped'
+                : result.reason === 'stopped' || result.reason === 'disabled'
                   ? 'warning'
                   : 'notice',
+            component: 'automations',
+            resource,
             message: `automation run was ${result.reason}; no run was queued.`,
+            remediation:
+              result.reason === 'invalid-spec'
+                ? ['review the automation specification, then retry the run.']
+                : result.reason === 'disabled'
+                  ? ['enable the automation before requesting another run.']
+                  : undefined,
           },
         ]);
       if (result.status === 'queued')
@@ -123,20 +132,6 @@ async function automationOperation(
             severity: 'notice',
             message:
               'automation run was accepted and queued; execution and delivery are unavailable until separately confirmed.',
-          },
-        ]);
-      if (result.reason === 'disabled')
-        writeCliDiagnosticNotices(options, [
-          {
-            severity: 'warning',
-            message: 'enable the automation before requesting another run.',
-          },
-        ]);
-      if (result.reason === 'invalid-spec')
-        writeCliDiagnosticNotices(options, [
-          {
-            severity: 'error',
-            message: 'review the automation specification, then retry the run.',
           },
         ]);
     }
@@ -157,36 +152,7 @@ async function automationOperation(
         : {}),
     };
     if (options.json) writeCliJson(options.output, result);
-    writeCliDiagnosticNotices(options, [
-      {
-        severity: 'error',
-        message:
-          failure instanceof AutomationError || failure === undefined
-            ? `automation operation stopped (${code}).`
-            : formatRedactedErrorDiagnostic('automations', failure, code),
-      },
-      {
-        severity: 'warning',
-        message:
-          'check automation configuration and runtime availability before retrying the operation.',
-      },
-      ...(error instanceof AgentSystemLifecycleError && error.progress
-        ? [
-            {
-              severity: 'warning' as const,
-              message: `partial progress: completed=${error.progress.outcomes.length} warnings=${error.progress.warnings.length} unattempted=${error.progress.unattempted.length}; ${error.progress.outcomes.length > 0 ? 'completed changes remain applied' : 'no completed changes reported'}; the stopped operation may have partial effects.`,
-            },
-          ]
-        : []),
-      ...(diagnostic
-        ? [
-            {
-              severity: 'error' as const,
-              message: `gateway diagnostic: ${JSON.stringify(diagnostic)}`,
-            },
-          ]
-        : []),
-    ]);
+    writeCliDiagnosticNotices(options, [automationFailureNotice(error, code, { resource })]);
     options.setExitCode(1);
   }
 }

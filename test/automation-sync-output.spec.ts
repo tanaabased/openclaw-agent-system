@@ -90,7 +90,8 @@ describe('cli/automation-sync presentation', () => {
     assert.ok(!primary.includes('automation-gateway-unavailable'));
     assert.equal(messages.match(/\nmessages\n/gu)?.length, 1);
     assert.ok(messages.indexOf('error') < messages.indexOf('warning'));
-    assert.ok(messages.indexOf('warning') < messages.indexOf('info'));
+    assert.equal(messages.includes('ℹ info'), false);
+    assert.equal(messages.match(/✖ error/gu)?.length, 1);
     for (const outcome of result.progress!.outcomes) assert.ok(!messages.includes(outcome.message));
     assert.ok(messages.includes('completed changes remain applied'));
     assert.ok(messages.includes('automation-gateway-unavailable'));
@@ -183,12 +184,15 @@ describe('cli/automation-sync presentation', () => {
           messages,
           manifestWarning +
             (result instanceof AgentSystemLifecycleError
-              ? `automation operation stopped (${code}).\n`
+              ? `automations: automation operation stopped. code=${code}\n`
               : `automations: operation failed; upstream details withheld. cause=unknown code=${code}\n`) +
             (progress
               ? `partial progress: completed=${progress.outcomes.length} warnings=${progress.warnings.length} unattempted=${progress.unattempted.length}; ${progress.outcomes.length > 0 ? 'completed changes remain applied' : 'no completed changes reported'}; the stopped operation may have partial effects.\n`
               : '') +
-            (diagnostic ? `gateway diagnostic: ${JSON.stringify(diagnostic)}\n` : ''),
+            (diagnostic ? `gateway diagnostic: ${JSON.stringify(diagnostic)}\n` : '') +
+            (code === 'automation-gateway-unavailable'
+              ? 'restore gateway connectivity before rerunning openclaw agent-system automations sync.\n'
+              : 'resolve the reported cause before rerunning openclaw agent-system automations sync.\n'),
         );
       }
       assert.equal(exitCode, result instanceof Error ? 1 : 0);

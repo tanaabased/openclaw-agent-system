@@ -4,6 +4,7 @@ import ansis from 'ansis';
 import stringWidth from 'fast-string-width';
 
 import {
+  type CliNotice,
   createCliStyles,
   defaultCliOutput,
   renderCliNotices,
@@ -33,6 +34,46 @@ describe('cli/output', () => {
     assert.deepEqual(chunks, ['path.ts\0', 'unterminated', 'complete\n', '']);
   });
 
+  it('should render structured context evidence and recovery in one block at narrow widths', () => {
+    const notices: CliNotice[] = [
+      {
+        condition: {
+          key: 'configuration',
+          component: 'setup',
+          fieldPath: '/AgentX/Field',
+          stepId: 'StepX',
+          resource: 'ResourceX',
+          occurrence: 'AttemptX',
+        },
+        code: 'configuration-invalid',
+        severity: 'error',
+        message: 'Configuration unavailable.',
+        details: ['safe evidence: OP_NAME /Work/AgentX'],
+        remediation: ['run the documented recovery command'],
+      },
+    ];
+    for (const columns of [12, 80]) {
+      const plain = renderCliNotices(notices, plainStyles, columns).join('\n');
+      const color = renderCliNotices(notices, createCliStyles({ FORCE_COLOR: '3' }), columns).join(
+        '\n',
+      );
+      assert.equal(ansis.strip(color), plain);
+      assert.equal(plain.match(/✖ error/gu)?.length, 1);
+      assert.ok(plain.split('\n').every((line) => stringWidth(line) <= columns));
+      const compact = plain.replace(/\s/gu, '');
+      for (const value of [
+        'setup:',
+        'code=configuration-invalid',
+        'field=/AgentX/Field',
+        'step=StepX',
+        'resource=ResourceX',
+        'occurrence=AttemptX',
+        'safe evidence: OP_NAME /Work/AgentX',
+        'run the documented recovery command',
+      ])
+        assert.ok(compact.includes(value.replace(/\s/gu, '')));
+    }
+  });
   it('should retain severity on stderr without decorating machine output', () => {
     for (const json of [false, true]) {
       const stdout: string[] = [];

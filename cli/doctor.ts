@@ -5,7 +5,13 @@ import type AgentManifestService from '../manifest/service.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
-import { type CliOutput, type CliStyles, writeCliJson, writeCliLifecycleTable } from './output.ts';
+import {
+  cliNoticeBody,
+  type CliOutput,
+  type CliStyles,
+  writeCliJson,
+  writeCliLifecycleTable,
+} from './output.ts';
 import { lifecycleTableLines, orderDoctorFindings } from '../core/lifecycle-presentation.ts';
 
 function maskedId(value: string): string {
@@ -61,7 +67,7 @@ function humanFinding(
   if (remediation) remediation = maskRequest(maskDevice(remediation));
   return {
     component,
-    message: `${message}${remediation ? ` ${remediation}` : ''}`,
+    message: cliNoticeBody({ message, remediation: remediation ? [remediation] : [] }),
     status: finding.status,
   };
 }
