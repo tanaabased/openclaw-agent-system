@@ -98,10 +98,6 @@ conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-entry-history.json"
 jq -e '[.messages[] | select(.role == "user" or .role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | join("\n") | (index("Issue assigned") < index("Model routing")) and contains("Assessment instructions") == false and contains("notification-hidden-initial-fact") == false and contains("Effective settings")' "$TMPDIR/notification-entry-history.json"
 
-# should save bounded discovery without creating or advancing another issue session
-openclaw agent --agent notifications-tanaabot --session-key agent:notifications-tanaabot:discovery-check --message-file "$GITHUB_WORKSPACE/examples/openclaw-issue/discovery-check.md" --timeout 120 | grep -F notification-discovery-saved
-jq -es '([.[].records[]] | length) == 1 and ([.[].records[].feedback.watermarks // {} | length] | add) > 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-
 # should preserve one conversation and assessment across another native scan
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"

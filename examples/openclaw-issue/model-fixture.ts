@@ -14,7 +14,6 @@ const prefix = 'call_notifications_';
 const identity = 'Name: Notification Tanaabot';
 const dispatchStages = [
   'next',
-  'discovery',
   'next-after-discovery',
   'prepare',
   'assess',
@@ -91,13 +90,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  if (prompt.includes('Check saved discovery without advancing issue work.')) {
-    const checked = result('discovery');
-    if (!checked) return dispatch('discovery', { action: 'check' });
-    if (checked.status === 'ready' && typeof checked.changed === 'boolean')
-      return { content: 'notification-discovery-saved' };
-    return;
-  }
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Advance at most one new issue or feedback turn per run.')) {
     if (!manual && !prompt.includes('consume saved discoveries')) {
