@@ -1,7 +1,8 @@
 import { AutomationError } from '../agent/automation-gateway.ts';
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
-import { formatRedactedErrorDiagnostic } from '../core/logger.ts';
+import automationFailureNotice from './automation-diagnostic.ts';
+import { lifecycleWarningNotice } from './diagnostic-notices.ts';
 import type { AutomationCommandOptions } from './automation-output.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import {
@@ -80,13 +81,7 @@ async function automationSync(options: AutomationCommandOptions) {
             ],
       ),
     );
-    writeCliDiagnosticNotices(
-      options,
-      result.warnings.map(({ code, message }) => ({
-        severity: 'warning',
-        message: `${message} code=${code}`,
-      })),
-    );
+    writeCliDiagnosticNotices(options, result.warnings.map(lifecycleWarningNotice));
   } catch (error) {
     const code =
       error instanceof AutomationError || error instanceof AgentSystemLifecycleError
@@ -134,46 +129,8 @@ async function automationSync(options: AutomationCommandOptions) {
       ]);
     }
     writeCliDiagnosticNotices(options, [
-      {
-        severity: 'error',
-        message:
-          failure instanceof AutomationError || failure === undefined
-            ? `automation operation stopped (${code}).`
-            : formatRedactedErrorDiagnostic('automations', failure, code),
-      },
-      ...(progress
-        ? [
-            {
-              severity: 'warning' as const,
-              message: options.json
-                ? `partial progress: completed=${progress.outcomes.length} warnings=${progress.warnings.length} unattempted=${progress.unattempted.length}; ${progress.outcomes.length > 0 ? 'completed changes remain applied' : 'no completed changes reported'}; the stopped operation may have partial effects.`
-                : `${progress.outcomes.length > 0 ? 'completed changes remain applied; ' : ''}the stopped operation may have partial effects.`,
-            },
-          ]
-        : []),
-      ...(diagnostic
-        ? [
-            {
-              severity: 'error' as const,
-              message: `gateway diagnostic: ${JSON.stringify(diagnostic)}`,
-            },
-          ]
-        : []),
-      ...(!options.json
-        ? [
-            ...(progress?.warnings ?? []).map(({ code, message }) => ({
-              severity: 'warning' as const,
-              message: `${message} code=${code}`,
-            })),
-            {
-              severity: 'notice' as const,
-              message:
-                code === 'automation-gateway-unavailable'
-                  ? 'restore gateway connectivity before rerunning openclaw agent-system automations sync.'
-                  : 'resolve the reported cause before rerunning openclaw agent-system automations sync.',
-            },
-          ]
-        : []),
+      automationFailureNotice(error, code, { sync: true }),
+      ...(!options.json ? (progress?.warnings ?? []).map(lifecycleWarningNotice) : []),
     ]);
     options.setExitCode(1);
   }

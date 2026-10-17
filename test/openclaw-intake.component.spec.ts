@@ -1,12 +1,16 @@
-import OpenClawNotifications from '../agent/openclaw-notifications.ts';
-import notificationStatus from '../channels/github/cli/status.ts';
-import notificationWait from '../channels/github/cli/wait.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
+
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
+import installAgentSystem from '../cli/install.ts';
+import { getCliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
+import { createCliStyles } from '../cli/output.ts';
+import OpenClawNotifications from '../agent/openclaw-notifications.ts';
+import notificationStatus from '../channels/github/cli/status.ts';
+import notificationWait from '../channels/github/cli/wait.ts';
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
 import { codexIntakePolicy } from '../agent/codex-intake-policy.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
@@ -150,6 +154,82 @@ describe('openclaw v2 intake slice', () => {
     await assert.rejects(f.service.run(f.value, root, 'activate'), {
       code: 'github-notification-runtime-unsupported',
     });
+    assert.equal(f.connects(), 0);
+  });
+
+  it('should carry notification presentation context through the registry without changing serialized records', async () => {
+    const f = fixture();
+    f.value.github.notifications.issueAssignment!.mode = 'work';
+    f.value.github.notifications.issueAssignment!.assessment = { skill: 'replacement-skill' };
+    f.value.github.notifications.issueAssignment!.feedback = { inherit: true, allowed: [] };
+    f.value.github.notifications.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
+    const registry = new AgentSystemLifecycleRegistry([f.service.contribution()]);
+    const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
+    const validated = registry.validate(context);
+    const reconciled = await registry.reconcile(context);
+    assert.equal(validated.diagnostics.length, 4);
+    assert.equal(reconciled.warnings.length, 4);
+    assert.deepEqual(
+      reconciled.warnings.map(getCliDiagnosticContext),
+      validated.diagnostics.map(getCliDiagnosticContext),
+    );
+    assert.ok(
+      reconciled.warnings.every((warning) => getCliDiagnosticContext(warning)?.remediation?.length),
+    );
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(reconciled.warnings)),
+      reconciled.warnings.map(({ code, component, message }) => ({ code, component, message })),
+    );
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(validated.diagnostics)),
+      validated.diagnostics.map(({ code, component, message, fieldPath, severity }) => ({
+        code,
+        component,
+        message,
+        fieldPath,
+        severity,
+      })),
+    );
+    const installed = { agentId: f.value.agent.id, workspaceDir: root, ...reconciled };
+    for (const json of [false, true]) {
+      const events: { stream: string; text: string }[] = [];
+      await installAgentSystem({
+        installService: { install: async () => installed },
+        manifestService: {
+          loadForCommandDirectory: async () => ({
+            ...f.loaded,
+            diagnostics: validated.diagnostics,
+          }),
+        },
+        json,
+        workspaceDir: root,
+        styles: createCliStyles({ NO_COLOR: '1' }),
+        terminalColumns: 240,
+        output: {
+          writeStdout: (text) => events.push({ stream: 'stdout', text }),
+          writeStderr: (text) => events.push({ stream: 'stderr', text }),
+        },
+        setExitCode: () => assert.fail('warnings must not fail install'),
+      });
+      const stderr = events
+        .filter(({ stream }) => stream === 'stderr')
+        .map(({ text }) => text)
+        .join('');
+      assert.equal(events.at(-1)?.stream, 'stderr');
+      assert.equal(stderr.match(/code=github-notification-runtime-unsupported/gu)?.length, 4);
+      for (const diagnostic of validated.diagnostics) {
+        assert.equal(stderr.split(`field=${diagnostic.fieldPath}`).length - 1, 1);
+        assert.equal(
+          stderr.split(getCliDiagnosticContext(diagnostic)!.remediation![0]!).length - 1,
+          1,
+        );
+      }
+      if (json) assert.equal(events[0]!.text, `${JSON.stringify(installed, undefined, 2)}\n`);
+      else assert.equal(stderr.match(/⚠ warning/gu)?.length, 4);
+    }
     assert.equal(f.connects(), 0);
   });
 

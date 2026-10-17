@@ -146,18 +146,26 @@ async function refreshNotificationsAgentSystem(
       { rowPadding: 0, terminalColumns: options.terminalColumns ?? process.stdout.columns },
     );
     writeCliLines(options.output, ['', ...summary, '']);
-    if (result.status === 'failed' && !nativeNotificationDiagnostic(result.code))
-      writeCliDiagnosticNotices(options, [
-        {
-          severity: 'error',
-          message:
-            'inspect the reported code and resolve the cause before requesting another refresh',
-        },
-      ]);
   }
   const remediation = nativeNotificationDiagnostic(result.code);
-  if (remediation)
-    writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
+  if (result.status === 'failed' || remediation)
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'error',
+        component: 'github-notifications',
+        resource: parsed.selector
+          ? `${parsed.selector.itemType}:${parsed.selector.repository}#${parsed.selector.number}`
+          : manifest.manifest.agent.id,
+        occurrence: result.runId,
+        code: result.code,
+        message: `notification refresh ${result.status}.`,
+        details: result.diagnosticCode ? [`diagnostic=${result.diagnosticCode}`] : [],
+        remediation: [
+          remediation ??
+            'inspect the reported code and resolve the cause before requesting another refresh',
+        ],
+      },
+    ]);
   if (result.status !== 'queued' && result.code !== 'github-notification-refresh-already-running')
     options.setExitCode(1);
 }

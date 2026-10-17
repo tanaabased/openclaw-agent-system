@@ -15,6 +15,16 @@ openclaw-aimock prepare --scenario openclaw-automations
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 openclaw agent-system install --yes --json
 
+# should group an unavailable gateway failure with evidence and recovery before startup
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+sync_status=0
+NO_COLOR=1 openclaw agent-system automations sync >"$TMPDIR/offline-sync.stdout" 2>"$TMPDIR/offline-sync.stderr" || sync_status=$?
+test "$sync_status" -eq 1
+test "$(grep -Fc '✖ error' "$TMPDIR/offline-sync.stderr")" -eq 1
+grep -F 'code=automation-gateway-unavailable' "$TMPDIR/offline-sync.stderr"
+grep -F 'gateway diagnostic:' "$TMPDIR/offline-sync.stderr"
+grep -F 'restore gateway connectivity' "$TMPDIR/offline-sync.stderr"
+
 # should start the gateway with the installed agent
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ```
