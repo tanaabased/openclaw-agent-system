@@ -106,18 +106,10 @@ export default class AutomationService {
     return { context, store };
   }
 
-  private threads(
-    context: AutomationProjectionContext,
-    store: AutomationStore,
-    agentVisibilityTimeoutMs = 0,
-  ) {
+  private threads(context: AutomationProjectionContext, store: AutomationStore) {
     return new AutomationThreads(
       { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
-      automationThreadGateway(
-        this.dependencies.request!,
-        { ...context, scope: store.scope },
-        agentVisibilityTimeoutMs,
-      ),
+      automationThreadGateway(this.dependencies.request!, { ...context, scope: store.scope }),
     );
   }
 
@@ -551,7 +543,7 @@ export default class AutomationService {
             throw new AutomationError('automation-manifest-changed');
         };
         await assertCurrent();
-        context.threads = await this.threads(context, store, 30_000).resolve(declarations, true);
+        context.threads = await this.threads(context, store).resolve(declarations, true);
         await assertCurrent();
         for (const job of declarations) {
           const effective = effectiveAutomation(job, context);
