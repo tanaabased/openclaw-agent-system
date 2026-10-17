@@ -6,7 +6,7 @@ export default function nativeNotificationDiagnostic(code: string): string | und
     'github-notification-workflow-unsupported':
       'this command supports the native issue planning workflow; the selected workflow is unsupported',
     'github-notification-refresh-selector-unsupported':
-      'native refresh runs the owning agent workflow; omit item selectors and use status or wait to observe one issue',
+      'native refresh supports issue selectors; select the owning issue for linked pull-request feedback',
     'github-notification-selector-unsupported':
       'native notification observation supports issue selectors; pull-request observation is unavailable',
     'github-notification-wait-target-unsupported':

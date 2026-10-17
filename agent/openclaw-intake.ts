@@ -16,6 +16,7 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type AgentManifestService from '../manifest/service.ts';
+import type { GitHubNotificationItemSelector } from '../channels/github/provider/work-item.ts';
 
 export interface OpenClawIntakeDependencies {
   root: string;
@@ -86,6 +87,7 @@ export default class OpenClawIntake {
     action: 'check' | 'scan' | 'activate',
     expectedDigest?: string,
     signal?: AbortSignal,
+    selector?: GitHubNotificationItemSelector,
   ) {
     signal?.throwIfAborted();
     const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
@@ -137,6 +139,7 @@ export default class OpenClawIntake {
       policyDigest: selected.digest,
       now: (this.dependencies.now ?? Date.now)(),
       activate: action === 'activate',
+      selector,
       assertCurrent,
       connect: async (lockSignal) => {
         await assertCurrent();

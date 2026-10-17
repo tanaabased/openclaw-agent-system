@@ -34,6 +34,14 @@ describe('agent/openclaw-turn-context', () => {
     assert.match(output.appendContext, /"runId":"assessment"/);
     assert.doesNotMatch(output.appendContext, /inputId/);
   });
+  it('should leave admitted feedback to its own explicit context contract', () => {
+    const feedback = {
+      ...structuredClone(record),
+      result: { outcome: 'plan-ready', plan: 'RETAINED-PLAN' },
+      feedback: { baseline: {}, events: [{ turn: { runId: 'feedback-run' } }] },
+    } as OpenClawDispatchRecord;
+    assert.equal(openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' }), undefined);
+  });
   it('should refuse wrong agent, session, incarnation, missing run and premature later turns', () => {
     for (const change of [
       { agentId: 'other' },

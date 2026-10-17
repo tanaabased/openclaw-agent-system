@@ -1,26 +1,11 @@
 import { Type, type Static } from 'typebox';
 
 import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
+import { issueTurnSchema } from './openclaw-turn-state.ts';
+import { openclawFeedbackSchema } from './openclaw-feedback-state.ts';
 import { openclawWorkStateSchema } from './openclaw-work-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
-const issueTurnSchema = Type.Object(
-  {
-    runId: text,
-    message: Type.String({ minLength: 1, maxLength: 128000 }),
-    status: Type.Union([
-      Type.Literal('attempted'),
-      Type.Literal('accepted'),
-      Type.Literal('consumed'),
-      Type.Literal('completed'),
-    ]),
-    consumedByEventId: Type.Optional(text),
-    replyEventId: Type.Optional(text),
-    executionModel: Type.Optional(text),
-  },
-  { additionalProperties: false },
-);
-
 // retained only to read existing receipts and prevent duplicate issue sessions.
 const legacyCreationSchema = Type.Object(
   {
@@ -63,6 +48,7 @@ export const openclawDispatchRecordSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    feedback: Type.Optional(openclawFeedbackSchema),
     request: Type.Optional(Type.Union([legacyCreationSchema, sessionCreationRequestSchema])),
     sessionCreation: Type.Optional(
       Type.Object(
@@ -176,6 +162,13 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
       validRecord: (record) => {
         if (record.request && 'key' in record.request) {
           return Boolean(
+            (!record.feedback ||
+              record.feedback.events.length === 0 ||
+              (record.sessionCreation?.verified &&
+                record.feedback.events.every(
+                  (event) =>
+                    !event.turn || validIssueTurn(event.turn, `${record.id}:feedback:${event.id}`),
+                ))) &&
             (!record.work ||
               (record.handoff &&
                 record.result?.outcome === 'plan-ready' &&
@@ -216,6 +209,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
           );
         }
         return (
+          (!record.feedback || (!record.request && record.feedback.events.length === 0)) &&
           !record.work &&
           !record.sessionCreation &&
           !record.firstTurn &&

@@ -14,6 +14,7 @@ export default function openclawTurnContext(
 ) {
   if (
     !binding.runId ||
+    record.feedback?.events.some((event) => event.turn?.runId === binding.runId) ||
     !record.request ||
     !('key' in record.request) ||
     record.request.agentId !== binding.agentId ||

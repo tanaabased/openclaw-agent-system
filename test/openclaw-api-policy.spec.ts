@@ -201,7 +201,8 @@ describe('openclaw api policy', () => {
     for (const file of await markdownFiles('examples')) {
       const source = await readFile(file, 'utf8');
       assert.equal(
-        source.includes('agents.list'),
+        // The read-only Gateway RPC keeps this name; the retired config key does not.
+        source.replaceAll(/\bopenclaw gateway call agents\.list\b/gu, '').includes('agents.list'),
         false,
         `${file} must use the OpenClaw 2026.9.2 agents.entries configuration`,
       );

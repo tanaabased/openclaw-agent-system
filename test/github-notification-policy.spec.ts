@@ -54,8 +54,6 @@ describe('channels/github/notification-policy', () => {
     for (const [extra, capability] of [
       [{ mode: 'work' }, 'work issue assignment'],
       [{ mode: 'auto' }, 'auto issue assignment'],
-      [{ feedback: true }, 'issue feedback'],
-      [{ feedback: { allowed: [{ ...actor }] } }, 'issue feedback'],
       [{ assessment: { skill: 'custom:assess' } }, 'replacement assessment skills'],
     ] as const) {
       const declaration = parsed({
@@ -67,10 +65,7 @@ describe('channels/github/notification-policy', () => {
           message.includes(capability),
         ),
       );
-      assert.equal(
-        githubNotificationRuntimeBlocker(declaration, 'openclaw') === undefined,
-        capability === 'issue feedback',
-      );
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw') === undefined, false);
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
       declaration.issueAssignment!.enabled = false;
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
@@ -115,10 +110,7 @@ describe('channels/github/notification-policy', () => {
       new Set(
         diagnostics.filter(({ status }) => status === 'warning').map(({ fieldPath }) => fieldPath),
       ),
-      new Set([
-        '/github/notifications/review-request',
-        '/github/notifications/issue-assignment/feedback',
-      ]),
+      new Set(['/github/notifications/review-request']),
     );
     assert.deepEqual(
       new Set(

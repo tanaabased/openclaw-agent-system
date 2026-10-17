@@ -1,5 +1,5 @@
 import { automationHash } from './automation-hash.ts';
-import dispatchCapacity from './dispatch-capacity.ts';
+import dispatchCapacity from './openclaw-capacity.ts';
 import pendingAssignments from './dispatch-pending.ts';
 import type { OpenClawDispatchState, OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { intakeRemediation, type IntakeState } from '../channels/github/intake/record-store.ts';

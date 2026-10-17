@@ -1,6 +1,7 @@
 import { Type, type TProperties } from 'typebox';
 import { assessmentResultSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
+import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -66,6 +67,23 @@ export const dispatchParameters = Type.Union([
     id,
     result: assessmentResultSchema,
     previousResultDigest: Type.Optional(id),
+  }),
+  object({
+    action: Type.Literal('feedback'),
+    id,
+    eventId: id,
+    operation: Type.Union([
+      Type.Literal('context'),
+      Type.Literal('result'),
+      Type.Literal('compose'),
+      Type.Literal('candidate'),
+      Type.Literal('publish'),
+      Type.Literal('reconcile'),
+    ]),
+    digest: Type.Optional(id),
+    privateText: Type.Optional(feedbackResultSchema.properties.privateText),
+    publicText: Type.Optional(feedbackResultSchema.properties.publicText),
+    reply: Type.Optional(Type.Boolean()),
   }),
   object({ action: Type.Literal('retry'), id }),
 ]);

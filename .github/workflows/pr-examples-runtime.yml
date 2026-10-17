@@ -32,7 +32,8 @@ jobs:
           - openclaw-google
           - openclaw-tools
           - openclaw-worktree
-          - openclaw-notifications
+          - openclaw-issue
+          - openclaw-pr
           - openclaw-collaboration
           - openclaw-memory
           - openclaw-backup

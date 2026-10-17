@@ -267,6 +267,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
+    async feedbackConnect(input, signal) {
+      const connected = await githubCapability.accountClient.connect(input, 'service', signal);
+      return new GitHubWorkEventClient(connected);
+    },
     async delivery({ manifest, workspaceDir, worktree, caller, signal }) {
       const account = await githubCapability.accountClient.connect(
         { manifest, workspaceDir },
@@ -704,6 +708,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           'agent-system-dispatch-v2',
         ),
         intake: intakeV2,
+        scanSelected: async (manifest, workspace, selector, signal) => {
+          const { selected } = await intakeV2.select(manifest, workspace);
+          return intakeV2.run(manifest, workspace, 'scan', selected?.digest, signal, selector);
+        },
         inspectRun: async (manifest, workspace, runId, signal) => {
           signal.throwIfAborted();
           const history = await automations.runs(manifest, workspace, openclawIntakeAutomationId, {

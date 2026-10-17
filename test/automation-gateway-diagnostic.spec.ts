@@ -1,8 +1,41 @@
 import assert from 'node:assert/strict';
 
 import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import { AutomationError } from '../agent/automation-gateway.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
+  it('should distinguish known resolver rejections without retaining identifiers or changing retry policy', () => {
+    for (const [message, reason] of [
+      ['Unknown agent id "secret-agent"', 'agent-unknown'],
+      [
+        'agent "secret-agent" does not match session key agent "secret-other"',
+        'agent-session-mismatch',
+      ],
+      ['malformed session key "secret-key"', 'session-key-malformed'],
+      ['session key belongs to retired agent "secret-agent"', 'agent-retired'],
+      ['invalid sessions.resolve params: secret-value', 'parameters-invalid'],
+    ]) {
+      const error = Object.assign(new Error(message), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+      });
+      const diagnostic = automationGatewayDiagnostic('sessions.resolve', error);
+      assert.equal(diagnostic.reason, reason);
+      const retained = new AutomationError('automation-gateway-rejected', diagnostic);
+      assert.ok(retained.message.includes(`sessions.resolve: ${reason}`));
+      assert.ok(!JSON.stringify(diagnostic).includes('secret'));
+      assert.ok(!retained.message.includes('secret'));
+      assert.equal(automationGatewayDiagnostic('sessions.create', error).reason, undefined);
+      error.gatewayCode = 'UNAVAILABLE';
+      assert.equal(automationGatewayDiagnostic('sessions.resolve', error).reason, undefined);
+      assert.equal(
+        automationGatewayDiagnostic('sessions.resolve', new Error(message)).reason,
+        undefined,
+      );
+    }
+  });
+
   it('should retain rejected request codes without upstream prose or payloads', () => {
     const error = Object.assign(new Error('secret request payload'), {
       name: 'GatewayClientRequestError',
