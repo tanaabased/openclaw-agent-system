@@ -1,4 +1,5 @@
 import { realpath } from 'node:fs/promises';
+import { setTimeout } from 'node:timers/promises';
 
 import { AutomationError, nativeObject, type AutomationGateway } from './automation-gateway.ts';
 import type { AutomationThreadAdapter } from './automation-threads.ts';
@@ -7,9 +8,28 @@ import type { AutomationThreadAdapter } from './automation-threads.ts';
 export default function automationThreadGateway(
   request: AutomationGateway,
   context: { agentId: string; workspaceDir: string; scope: string },
+  agentVisibilityTimeoutMs = 0,
 ): AutomationThreadAdapter {
+  const agentVisibilityDeadline = performance.now() + agentVisibilityTimeoutMs;
+  async function resolve(params: Record<string, unknown>) {
+    while (true) {
+      try {
+        return await request('sessions.resolve', params);
+      } catch (error) {
+        const remaining = agentVisibilityDeadline - performance.now();
+        if (
+          !(error instanceof AutomationError) ||
+          error.code !== 'automation-gateway-rejected' ||
+          error.diagnostic?.reason !== 'agent-unknown' ||
+          remaining <= 0
+        )
+          throw error;
+        await setTimeout(Math.min(1000, remaining));
+      }
+    }
+  }
   async function lookup(id: string) {
-    let resolved = await request('sessions.resolve', {
+    let resolved = await resolve({
       key: id,
       agentId: context.agentId,
       allowMissing: true,
@@ -19,7 +39,7 @@ export default function automationThreadGateway(
       (resolved.candidates === undefined ||
         (Array.isArray(resolved.candidates) && resolved.candidates.length === 0))
     )
-      resolved = await request('sessions.resolve', {
+      resolved = await resolve({
         sessionId: id,
         agentId: context.agentId,
         allowMissing: true,
