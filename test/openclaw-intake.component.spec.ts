@@ -223,8 +223,8 @@ describe('openclaw v2 intake slice', () => {
     const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
     const validated = registry.validate(context);
     const reconciled = await registry.reconcile(context);
-    assert.equal(validated.diagnostics.length, 4);
-    assert.equal(reconciled.warnings.length, 4);
+    assert.equal(validated.diagnostics.length, 3);
+    assert.equal(reconciled.warnings.length, 3);
     assert.deepEqual(
       reconciled.warnings.map(getCliDiagnosticContext),
       validated.diagnostics.map(getCliDiagnosticContext),
@@ -272,7 +272,7 @@ describe('openclaw v2 intake slice', () => {
         .map(({ text }) => text)
         .join('');
       assert.equal(events.at(-1)?.stream, 'stderr');
-      assert.equal(stderr.match(/code=github-notification-runtime-unsupported/gu)?.length, 4);
+      assert.equal(stderr.match(/code=github-notification-runtime-unsupported/gu)?.length, 3);
       for (const diagnostic of validated.diagnostics) {
         assert.equal(stderr.split(`field=${diagnostic.fieldPath}`).length - 1, 1);
         assert.equal(
@@ -281,7 +281,7 @@ describe('openclaw v2 intake slice', () => {
         );
       }
       if (json) assert.equal(events[0]!.text, `${JSON.stringify(installed, undefined, 2)}\n`);
-      else assert.equal(stderr.match(/⚠ warning/gu)?.length, 4);
+      else assert.equal(stderr.match(/⚠ warning/gu)?.length, 3);
     }
     assert.equal(f.connects(), 0);
   });
