@@ -251,15 +251,9 @@ export default class OpenClawDispatch {
 
   private async observe(manifest: AgentManifest, workspace: string): Promise<IntakeObservation> {
     try {
-      const current = await this.dependencies.intake.select(manifest, workspace);
-      if (!current.selected)
-        return { status: 'blocked', changed: false, code: 'intake-policy-disabled' };
-      return await this.dependencies.intake.run(
-        manifest,
-        workspace,
-        'check',
-        current.selected.digest,
-      );
+      const retained = await this.dependencies.intake.inspect(manifest, workspace);
+      const code = retained.code ?? (await this.dependencies.intake.readiness(manifest, workspace));
+      return { status: code ? 'blocked' : 'ready', changed: false, ...(code ? { code } : {}) };
     } catch (error) {
       return { status: 'blocked', changed: false, code: openClawDispatchFailureCode(error) };
     }

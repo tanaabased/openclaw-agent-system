@@ -634,6 +634,17 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       ...automationDependencies,
       request: requestAutomationGateway,
     });
+    const operatorIntake = new OpenClawIntake({
+      ...intakeV2.dependencies,
+      readiness: (manifest, workspace) =>
+        notificationAutomationReadiness(
+          automations,
+          manifest,
+          workspace,
+          undefined,
+          requestAutomationGateway,
+        ),
+    });
     const operatorRegistry = new AgentSystemLifecycleRegistry(
       [
         ...lifecycleContributions.filter(({ id }) => id !== 'automations'),
@@ -709,10 +720,17 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           privateStateRoot ?? api.runtime.state.resolveStateDir(),
           'agent-system-dispatch-v2',
         ),
-        intake: intakeV2,
+        intake: operatorIntake,
         scanSelected: async (manifest, workspace, selector, signal) => {
-          const { selected } = await intakeV2.select(manifest, workspace);
-          return intakeV2.run(manifest, workspace, 'scan', selected?.digest, signal, selector);
+          const { selected } = await operatorIntake.select(manifest, workspace);
+          return operatorIntake.run(
+            manifest,
+            workspace,
+            'scan',
+            selected?.digest,
+            signal,
+            selector,
+          );
         },
         inspectRun: async (manifest, workspace, runId, signal) => {
           signal.throwIfAborted();

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import type { AutomationGateway } from '../agent/automation-gateway.ts';
 import notificationAutomationReadiness, {
   type NotificationScheduler,
 } from '../agent/automation-readiness.ts';
@@ -78,6 +79,8 @@ function fixture() {
     scheduler,
     read: (reader: NotificationScheduler | undefined = scheduler) =>
       notificationAutomationReadiness(service, manifest, '/workspace', reader),
+    readOperator: (request: AutomationGateway) =>
+      notificationAutomationReadiness(service, manifest, '/workspace', undefined, request),
     unavailable: () => notificationAutomationReadiness(service, manifest, '/workspace'),
   };
 }
@@ -95,9 +98,24 @@ describe('notification automation readiness', () => {
 
   it('should compare desired, saved and native projections without requiring session access', async () => {
     const f = fixture();
+    const methods: string[] = [];
+    const request: AutomationGateway = async (method) => {
+      methods.push(method);
+      if (method === 'cron.status') return { enabled: true };
+      assert.equal(method, 'cron.list');
+      return { jobs: [{ ...f.native, configRevision: '1' }], hasMore: false };
+    };
     assert.equal(await f.read(), undefined);
+    assert.equal(await f.readOperator(request), undefined);
+    assert.deepEqual(methods, ['cron.status', 'cron.list']);
+    assert.equal(
+      await f.readOperator(async () => ({ enabled: false })),
+      'automation-scheduler-disabled',
+    );
+    assert.equal(await f.readOperator(async () => ({})), 'automation-observation-unavailable');
     f.manifest.models!.default!.effort = 'high';
     assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.readOperator(request), 'automation-sync-required');
   });
 
   it('should report missing, changed, disabled and uncertain projections', async () => {

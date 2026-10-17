@@ -301,6 +301,13 @@ describe('agent/openclaw issue dispatch', () => {
     const routed = await next();
     fixture.item.assignees = [];
     await prepare(routed);
+    const intake = service.dependencies.intake;
+    const run = intake.run;
+    let scans = 0;
+    intake.run = async (...args) => {
+      scans++;
+      return run.apply(intake, args);
+    };
     const first = await service.run(manifest, root, coordinator, { action: 'report' });
     assert.equal(first.status, 'reported');
     assert.ok(
@@ -318,6 +325,8 @@ describe('agent/openclaw issue dispatch', () => {
       ...first,
       instructions: 'Reproduce response unchanged. An empty response means no card.',
     });
+    assert.equal(scans, 0, 'reporting must not discover or admit more assignments');
+    intake.run = run;
     assert.equal((await service.check(manifest, root)).changed, false);
     assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 0);
   });

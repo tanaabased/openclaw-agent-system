@@ -154,9 +154,8 @@ if openclaw cron run "$native" --wait --wait-timeout 5m --json > "$TMPDIR/notifi
 jq -e '.status == "skipped"' "$TMPDIR/notification-drift-repeat.json"
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount | diff - "$TMPDIR/notification-drift-model-count"
 
-# should reconcile explicitly show recovery once and then keep healthy checks model free
+# should reconcile explicitly and show recovery in the native intake chat
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
-native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component == "automations" and .status == "updated")'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
@@ -164,10 +163,6 @@ jq -es 'any(.[]; .intakeReport.response | contains("Intake resumed"))' "$XDG_CON
 coordinator=$(jq -er .sourceThreadId "$TMPDIR/notification-dispatch-after.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$coordinator" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-intake-history.json"
 jq -e '[.messages[] | select(.role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | join("\n") | contains("automation-sync-required") and contains("Intake resumed") and contains("/chat?session=")' "$TMPDIR/notification-intake-history.json"
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount > "$TMPDIR/notification-healthy-model-count"
-if openclaw cron run "$native" --wait --wait-timeout 5m --json > "$TMPDIR/notification-quiet-repeat.json"; then exit 1; fi
-jq -e '.status == "skipped"' "$TMPDIR/notification-quiet-repeat.json"
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount | diff - "$TMPDIR/notification-healthy-model-count"
 
 # should recover the same issue after restart with fresh private facts and debug instructions
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"

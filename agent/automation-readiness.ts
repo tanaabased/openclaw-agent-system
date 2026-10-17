@@ -1,6 +1,7 @@
 import type { OpenClawPluginServiceContext } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type AutomationService from './automation-service.ts';
+import { listNativeAutomations, type AutomationGateway } from './automation-gateway.ts';
 import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
 import openclawIntakeJobs, { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -16,6 +17,7 @@ export default async function notificationAutomationReadiness(
   manifest: AgentManifest,
   workspace: string,
   scheduler?: NotificationScheduler,
+  request?: AutomationGateway,
 ): Promise<string | undefined> {
   const { context, store } = await service.scope(manifest, workspace);
   const declared = openclawIntakeJobs(manifest).find(({ id }) => id === openclawIntakeAutomationId);
@@ -25,13 +27,17 @@ export default async function notificationAutomationReadiness(
     return 'automation-sync-required';
   if (record.hash !== effectiveAutomation(declared, context).hash)
     return 'automation-sync-required';
-  if (!scheduler) return 'automation-observation-unavailable';
-  const enabled = await scheduler.isEnabled?.();
+  if (!scheduler && !request) return 'automation-observation-unavailable';
+  const enabled = scheduler
+    ? await scheduler.isEnabled?.()
+    : (await request!('cron.status', {})).enabled;
   if (enabled !== true)
     return enabled === false
       ? 'automation-scheduler-disabled'
       : 'automation-observation-unavailable';
-  const jobs = await scheduler.list({ includeDisabled: true });
+  const jobs = scheduler
+    ? await scheduler.list({ includeDisabled: true })
+    : await listNativeAutomations(request!);
   if (!Array.isArray(jobs) || jobs.some((job) => !job || typeof job.id !== 'string'))
     return 'automation-observation-unavailable';
   const matches = jobs.filter(
