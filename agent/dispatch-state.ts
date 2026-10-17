@@ -102,6 +102,18 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
           { additionalProperties: false },
         ),
       ),
+      discoveryCycleAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      discoveryCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      discoveryProgress: Type.Optional(
+        Type.Object(
+          {
+            pending: Type.Boolean(),
+            reported: Type.Optional(Type.Boolean()),
+            sources: Type.Integer({ minimum: 0 }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
       intakeHealth: Type.Optional(Type.String({ maxLength: 128 })),
       checked: Type.Optional(
         Type.Object(

@@ -75,6 +75,19 @@ const stateSchema = Type.Object(
     policyDigest: text,
     baselineAt: time,
     checkpoint: Type.Optional(time),
+    discovery: Type.Optional(
+      Type.Object(
+        {
+          page: Type.Integer({ minimum: 1 }),
+          pending: Type.Array(Type.String({ maxLength: 16000 })),
+          observations: Type.Optional(
+            Type.Record(Type.String(), Type.String({ maxLength: 512000 })),
+          ),
+          nextPage: Type.Integer({ minimum: 1 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     lastAttemptAt: Type.Optional(time),
     blocker: Type.Optional(
       Type.Object({ code: text, since: time, retryAfter: time }, { additionalProperties: false }),

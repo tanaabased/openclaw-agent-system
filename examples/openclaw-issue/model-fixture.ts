@@ -46,9 +46,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return text === undefined ? undefined : JSON.parse(text);
   };
   const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
+  if (prompt.includes('Check saved discovery without advancing issue work.')) {
+    const checked = result('discovery');
+    if (!checked) return dispatch('discovery', { action: 'check' });
+    if (checked.status === 'ready' && typeof checked.changed === 'boolean')
+      return { content: 'notification-discovery-saved' };
+    return;
+  }
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Advance at most one new issue or feedback turn per run.')) {
-    if (!manual) {
+    if (!manual && !prompt.includes('consume saved discoveries')) {
       const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       if (!digest) return;
       const scan = result('scan');
@@ -56,7 +63,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
       if (scan.status !== 'ready') return;
     }
-    const next = result('next');
+    let next = result('next');
+    if (next?.status === 'discovery-progress') {
+      const resumed = result('next-after-discovery');
+      if (!resumed) return dispatch('next-after-discovery', { action: 'next' });
+      next = resumed;
+    }
     if (!next) return dispatch('next', { action: 'next' });
     if (isBusy(next)) return { content: 'notification-intake-busy' };
     if (['feedback-pending', 'feedback-completed', 'feedback-queued'].includes(String(next.status)))
@@ -237,6 +249,8 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
     { id: prefix + 'feedback-skill', name: 'read' },
     ...[
       'next',
+      'discovery',
+      'next-after-discovery',
       'prepare',
       'assess',
       'reconcile',

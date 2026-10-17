@@ -1,3 +1,6 @@
+import discoveryCheckpoint from './discovery-checkpoint.ts';
+import discoveryNotice from './discovery-notice.ts';
+import DiscoveryBudget from './discovery-budget.ts';
 import { randomUUID } from 'node:crypto';
 
 import type { Static } from 'typebox';
@@ -165,6 +168,8 @@ export default class OpenClawDispatch {
     record: OpenClawDispatchRecord,
     work = false,
     feedback = false,
+    connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
+    signal?: AbortSignal,
   ) {
     const current = await this.scope(manifest, workspace);
     const fresh = await this.dependencies.intake.dependencies.manifestService.loadForAgentId(
@@ -184,10 +189,12 @@ export default class OpenClawDispatch {
       throw new Error('dispatch-policy-changed');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
     if (!intake) throw new Error('dispatch-admission-missing');
-    const client = await this.dependencies.connect(
-      { manifest, workspaceDir: current.workspace },
-      AbortSignal.timeout(25000),
-    );
+    const client =
+      connection ??
+      (await this.dependencies.connect(
+        { manifest, workspaceDir: current.workspace },
+        signal ?? AbortSignal.timeout(25000),
+      ));
     const repo = await revalidateAssignment(current.policy, intake, client);
     const worktreeInput = {
       agentId: manifest.agent.id,
@@ -306,51 +313,71 @@ export default class OpenClawDispatch {
     }
   }
 
-  /** Read-only pending predicate, combined with the admission check by the quiet trigger. */
-  async check(manifest: AgentManifest, workspace: string) {
+  /** bounded private discovery; only saved actionable work or a progress notice wakes the model. */
+  async check(manifest: AgentManifest, workspace: string, signal?: AbortSignal) {
     if (
       manifest.github?.notifications?.schemaVersion !== 2 ||
       manifest.github.notifications.issueAssignment?.mode !== 'plan'
     )
       return { status: 'ready' as const, changed: false };
-    const current = await this.scope(manifest, workspace);
+    const budget = new DiscoveryBudget(20000, signal);
+    let current = await this.scope(manifest, workspace);
+    const intake = await this.dependencies.intake.run(
+      manifest,
+      workspace,
+      'check',
+      current.policy.digest,
+      signal,
+      undefined,
+      new DiscoveryBudget(7000, budget.signal),
+    );
+    current = await this.scope(manifest, workspace);
     const state = await current.journal.read();
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
+    const cycleAt = state.discoveryCycleAt ?? (this.dependencies.now ?? Date.now)();
+    const previousCodes = new Map(
+      state.records.map((record) => [record.id, record.feedback?.code]),
+    );
     const scans = await scanOpenClawFeedback({
       service: this,
       state,
       manifest,
       workspace: current.workspace,
       sourceThreadId,
-      authority: {},
+      authority: { signal: budget.signal },
+      budget,
       now: (this.dependencies.now ?? Date.now)(),
+      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
     });
-    const feedbackChanged = scans.some((scan) => {
-      const previous = state.records.find((record) => record.id === scan.id)?.feedback;
-      return (
-        !previous ||
-        automationHash([
-          previous.baseline,
-          previous.events,
-          previous.code,
-          previous.activity?.busy,
-        ]) !==
-          automationHash([
-            scan.feedback.baseline,
-            scan.feedback.events,
-            scan.feedback.code,
-            scan.feedback.activity?.busy,
-          ])
-      );
-    });
-    // a bounded read-only check must still advance the scan cursor for larger owner sets.
-    const feedbackRotation =
-      openClawFeedbackEnabled(manifest) &&
-      state.records.filter(
-        (record) =>
-          !record.retired && !record.reset && record.sessionCreation?.verified && record.threadId,
-      ).length > 12;
     applyOpenClawFeedbackScans(state.records, scans);
+    const owners = state.records.filter(
+      (r) => !r.retired && !r.reset && r.sessionCreation?.verified && r.threadId,
+    );
+    const more = Boolean(
+      intake.more ||
+      (openClawFeedbackEnabled(manifest) &&
+        owners.some(
+          (r) =>
+            (r.feedback?.scannedTime ?? 0) < cycleAt ||
+            r.feedback?.discoveryPending ||
+            Object.keys(r.feedback?.discovery ?? {}).length > 0,
+        )),
+    );
+    await current.journal.exclusive(async (fresh, save) => {
+      fresh.discoveryCheckedAt = Date.now();
+      if (more) fresh.discoveryCycleAt = cycleAt;
+      else delete fresh.discoveryCycleAt;
+      if (more || fresh.discoveryProgress)
+        fresh.discoveryProgress = {
+          pending: more,
+          sources: owners.length,
+          ...(fresh.discoveryProgress?.pending === more
+            ? { reported: fresh.discoveryProgress.reported }
+            : {}),
+        };
+      state.discoveryProgress = fresh.discoveryProgress;
+      await save();
+    });
     const capacity = dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems);
     const feedbackPending = state.records.some((record) =>
       record.feedback?.events.some(
@@ -363,14 +390,26 @@ export default class OpenClawDispatch {
     );
     const recoverable = state.records.some((record) => continuationStatus(record));
     const pending = pendingAssignments(state, current.admitted).some(pendingAssignment);
+    const actionable = feedbackPending || recoverable || (capacity.available > 0 && pending);
+    const code =
+      (intake.status === 'blocked' ? intake.code : undefined) ??
+      state.records.find((record) => !record.retired && !record.reset && record.feedback?.code)
+        ?.feedback?.code;
     return {
       status: 'ready' as const,
+      more,
+      outcome: code ? 'failed' : actionable ? 'actionable' : more ? 'paused' : 'unchanged',
+      ...(code ? { code } : {}),
       changed:
-        feedbackChanged ||
-        feedbackRotation ||
-        feedbackPending ||
-        recoverable ||
-        (capacity.available > 0 && pending),
+        (intake.status === 'blocked' && intake.changed) ||
+        scans.some(
+          (scan) => scan.feedback.code && scan.feedback.code !== previousCodes.get(scan.id),
+        ) ||
+        Boolean(
+          state.discoveryProgress &&
+          state.discoveryProgress.reported !== state.discoveryProgress.pending,
+        ) ||
+        actionable,
     };
   }
 
@@ -382,7 +421,7 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
-    if (input.action === 'check') return this.check(manifest, workspace);
+    if (input.action === 'check') return this.check(manifest, workspace, authority.signal);
     const workAction =
       input.action === 'handoff' ||
       input.action === 'implementation-context' ||
@@ -405,21 +444,40 @@ export default class OpenClawDispatch {
       !(operator && ['inspect', 'retry'].includes(input.action))
     )
       throw new Error('dispatch-intake-caller-required');
+    const snapshot = await current.journal.read();
     const scans =
-      input.action === 'next'
+      input.action === 'next' &&
+      (!snapshot.discoveryCheckedAt || Date.now() - snapshot.discoveryCheckedAt > 120000)
         ? await scanOpenClawFeedback({
             service: this,
-            state: await current.journal.read(),
+            state: snapshot,
             manifest,
             workspace: current.workspace,
             sourceThreadId,
             authority,
             now: (this.dependencies.now ?? Date.now)(),
+            checkpoint: (scan) =>
+              discoveryCheckpoint(current.journal, scan, authority.assertCurrent),
           })
         : [];
     return current.journal
       .exclusive(async (state, save, lockSignal) => {
         enteredJournal = true;
+        if (input.action === 'next') {
+          delete state.discoveryCheckedAt;
+          const presentation = discoveryNotice(state.discoveryProgress);
+          if (presentation) {
+            state.discoveryProgress!.reported = state.discoveryProgress!.pending;
+            state.discoveryCheckedAt = Date.now();
+            await save();
+            return {
+              status: 'discovery-progress',
+              presentation,
+              instruction:
+                'Present this status card, then call next again to process available work.',
+            };
+          }
+        }
         if (scans.length) {
           await authority.assertCurrent?.();
           if (

@@ -164,7 +164,7 @@ export default function createDispatchTool(input: {
           const binding = await loaded(context);
           let result;
           if (params.action === 'check')
-            result = await service.check(binding.manifest, binding.scope.workspaceDir);
+            result = await service.check(binding.manifest, binding.scope.workspaceDir, signal);
           else {
             const who = invocations.get(id);
             invocations.delete(id);

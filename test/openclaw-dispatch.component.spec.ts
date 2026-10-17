@@ -1982,10 +1982,44 @@ describe('agent/openclaw issue dispatch', () => {
     });
     return { id, who, comments };
   }
+  it('should validate each feedback owner once during discovery and consume the saved result', async () => {
+    await feedbackOwner();
+    const validate = service.validate.bind(service);
+    let validations = 0;
+    service.validate = async (...args) => {
+      validations++;
+      return validate(...args);
+    };
+    const check = await service.check(manifest, root);
+    assert.equal(check.changed, true);
+    assert.equal(validations, 1);
+    assert.equal((await record()).feedback!.events.length, 1);
+    const discovery = (await record()).feedback!.watermarks;
+    assert.ok(discovery && Object.keys(discovery).length === 1);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events.length, 1);
+  });
+  it('should retain pending discovery when interrupted before reading comments', async () => {
+    await feedbackOwner();
+    const controller = new AbortController();
+    const validate = service.validate.bind(service);
+    service.validate = async (...args) => {
+      const result = await validate(...args);
+      controller.abort();
+      return result;
+    };
+    const check = await service.check(manifest, root, controller.signal);
+    assert.ok('more' in check && check.more);
+    assert.ok('outcome' in check && check.outcome === 'paused');
+    assert.equal((await record()).feedback!.discoveryPending, true);
+    service.validate = validate;
+    await service.check(manifest, root);
+    assert.equal((await record()).feedback!.discoveryPending, false);
+  });
   it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
     const { id } = await feedbackOwner();
     assert.equal((await service.check(manifest, root)).changed, true);
-    assert.equal((await record()).feedback!.events.length, 0);
+    assert.equal((await record()).feedback!.events.length, 1);
     await service.run(manifest, root, coordinator, { action: 'next' });
     const event = (await record()).feedback!.events[0]!;
     assert.ok(event.turn);
