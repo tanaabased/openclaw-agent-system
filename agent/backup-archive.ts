@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { constants, createReadStream, createWriteStream } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
 import { chmod, mkdir, mkdtemp, open, readFile, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
@@ -246,6 +246,7 @@ export async function writeWorkspaceArchive(
   manifest: WorkspaceBackupManifest,
   signal?: AbortSignal,
   snapshotDirectory?: string,
+  onCreate?: (path: string) => Promise<void>,
 ): Promise<void> {
   validateInventory(manifest);
   if (manifest.version === 2 && manifest.snapshot && !snapshotDirectory)
@@ -256,13 +257,19 @@ export async function writeWorkspaceArchive(
       'backup-manifest-too-large',
       'The archive inventory exceeds the supported manifest size.',
     );
-  const stream = pack();
-  const writing = pipeline(
-    stream,
-    createGzip(),
-    createWriteStream(archive, { flags: 'wx', mode: 0o600 }),
-    { signal },
+  const target = await open(
+    archive,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+    0o600,
   );
+  try {
+    await onCreate?.(archive);
+  } catch (error) {
+    await target.close();
+    throw error;
+  }
+  const stream = pack();
+  const writing = pipeline(stream, createGzip(), target.createWriteStream(), { signal });
   // attach rejection immediately; producers may still be adding entries when disk I/O fails.
   void writing.catch(() => undefined);
   const add = (header: Partial<Header> & Pick<Header, 'name'>, content: Buffer) =>

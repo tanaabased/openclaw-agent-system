@@ -12,6 +12,7 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 - [`openclaw agent-system automations run`](#openclaw-agent-system-automations-run)
 - [`openclaw agent-system automations runs`](#openclaw-agent-system-automations-runs)
 - [`openclaw agent-system automations sync`](#openclaw-agent-system-automations-sync)
+- [`openclaw agent-system backup cleanup`](#openclaw-agent-system-backup-cleanup)
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
 - [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune)
 - [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
@@ -161,6 +162,47 @@ automations:
 Configure [backup selection](./MANIFEST.md#backup), then use the
 [backup commands](#openclaw-agent-system-backup-create) for verification and
 retention. For Codex automation support, see the [supported fields](./CODEX.md#repository-automations).
+
+## `openclaw agent-system backup cleanup`
+
+Preview abandoned temporary backup artifacts. Only an explicit operator apply removes
+attributable, inactive, demonstrably incomplete artifacts.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                 |
+| ------------------ | -------- | ------------------- | ------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Select an installed agent (operators only). |
+| `--apply`          | no       | off                 | Apply eligible cleanup; operator-only.      |
+| `--json`           | no       | off                 | Write one structured result to stdout.      |
+
+### Usage
+
+```text
+openclaw agent-system backup cleanup [--agent <id>] [--apply] [--json]
+```
+
+```sh
+# inspect one agent without changing files or acquiring a lock.
+openclaw agent-system backup cleanup --agent emori --json
+
+# explicitly remove only that agent's eligible incomplete artifacts.
+openclaw agent-system backup cleanup --agent emori --apply --json
+```
+
+Results identify `wouldDelete`, `deleted`, and `preserved` paths with refusal reasons.
+Partial failures retain exact completed and remaining actions. Apply shares capture's
+exclusive lease and checks ownership and filesystem identity again before deletion.
+
+Completed or plausibly complete archives, unknown contents, active or uncertain writers,
+and legacy artifacts without ownership records are preserved. Snapshot-command failures
+may leave writer activity uncertain even after the parent exits; age alone never permits
+cleanup. Bound agent commands may preview only their own workspace, without `--agent`.
+
+Cleanup does not resume backups, reset wrapper locks or journals, inspect providers, or
+prune published archives. It is separate from running a backup and does not establish
+backup success. For failed automation execution, inspect its owned history with
+`openclaw agent-system automations runs <id> --agent <id> --json`.
 
 ## `openclaw agent-system backup create`
 

@@ -887,6 +887,8 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     native[0]!.state = {
       lastRunStatus: 'error',
+      lastRunAtMs: now,
+      lastError: 'secret execution error',
       nextRunAtMs: now + 1000,
       lastDeliveryError: 'secret',
     };
@@ -894,6 +896,36 @@ describe('agent/automation-service', () => {
     assert.ok(findings.some(({ code }) => code === 'automation-execution-failed'));
     assert.ok(findings.some(({ code }) => code === 'automation-delivery-failed'));
     assert.ok(!JSON.stringify(findings).includes('secret'));
+    const execution = findings.find(({ code }) => code === 'automation-execution-failed')!;
+    assert.ok(execution.message.includes(new Date(now).toISOString()));
+    assert.ok(execution.message.includes('failure reason: unavailable'));
+    assert.ok(
+      execution.remediation?.includes(
+        `automations runs ${manifest.automations![0]!.id} --agent ${manifest.agent.id} --json`,
+      ),
+    );
+    assert.ok(!execution.remediation?.includes('install'));
+    assert.ok(findings.some(({ code }) => code === 'automation-healthy'));
+    native[0]!.state.lastErrorReason = 'timeout';
+    assert.ok(
+      (await service.inspect(manifest, root))
+        .find(({ code }) => code === 'automation-execution-failed')!
+        .message.includes('failure reason: timeout'),
+    );
+    native[0]!.state.lastErrorReason = 'secret reason';
+    assert.ok(!JSON.stringify(await service.inspect(manifest, root)).includes('secret'));
+    native[0]!.state.lastRunAtMs = 'invalid';
+    assert.ok(
+      (await service.inspect(manifest, root))
+        .find(({ code }) => code === 'automation-execution-failed')!
+        .message.includes('last run: unavailable'),
+    );
+    native[0]!.state.lastRunStatus = 'ok';
+    assert.ok(
+      !(await service.inspect(manifest, root)).some(
+        ({ code }) => code === 'automation-execution-failed',
+      ),
+    );
   });
   it('should reuse installed prompt jobs from a different gateway launcher context', async () => {
     manifest.automations = jobs([
