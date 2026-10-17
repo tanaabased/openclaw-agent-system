@@ -14,6 +14,7 @@ CI supplies the existing EMORI and Tanaabot tokens. EMORI creates and assigns th
 # should prepare the packed plugin and strict notification fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-notifications
+openclaw config set skills.workshop.autonomous.mode off
 
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot/keys" "$HOME/.ssh"
@@ -123,6 +124,7 @@ branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.jso
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")" 'length == 1 and .[0].number == $pr'
 jq -es --arg id "$receipt" --arg pr "$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" '[.[].records[] | select(.id == $id)] | length == 1 and .[0].work.delivery.pullRequest.pullRequestNodeId == $pr and .[0].work.delivery.reconciled == true' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
+
 # should admit issue pr conversation review and inline feedback through the same installed schedule
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
@@ -140,7 +142,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
 for step in 1 2 3 4; do
   run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts")
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
-  feedback_run=$(jq -es '[.[].records[].feedback.events[] | select(.turn != null and .turn.status != "completed")] | if length == 1 then .[0].turn.runId else error("one feedback turn required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+  feedback_run=$(jq -ers '[.[].records[].feedback.events[] | select(.turn != null and .turn.status != "completed")] | if length == 1 then .[0].turn.runId else error("one feedback turn required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
   node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 300000
   conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-feedback-history-$step.json"
