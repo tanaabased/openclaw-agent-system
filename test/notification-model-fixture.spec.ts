@@ -13,10 +13,10 @@ import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
 for (const scenario of [issueExampleScenario, prExampleScenario]) {
   const issueOnly = scenario.id === 'openclaw-issue';
-  const owner = issueOnly ? 'emori' : 'tanaabot';
-  const ownerLogin = issueOnly ? 'emoriwan' : 'tanaabot';
-  const actorFolder = issueOnly ? 'tanaabot' : 'emori';
-  const actorLogin = issueOnly ? 'tanaabot' : 'emoriwan';
+  const owner = 'tanaabot';
+  const ownerLogin = 'tanaabot';
+  const actorFolder = 'emori';
+  const actorLogin = 'emoriwan';
   const id = 'a'.repeat(64);
   const digest = 'b'.repeat(64);
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
@@ -25,7 +25,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
     return {
       model: 'gpt-5.5',
       messages: [
-        { role: 'system', content: `Name: Notification ${issueOnly ? 'EMORI' : 'Tanaabot'}` },
+        { role: 'system', content: 'Name: Notification Tanaabot' },
         { role: 'user', content: prompt },
       ],
       tools: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read'].map(
@@ -83,10 +83,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       assert.equal(parsed.manifest?.github?.notifications?.reviewRequest?.enabled, true);
       assert.equal(parsed.manifest?.models?.default.model, 'aimock/gpt-5.5');
       assert.equal(parsed.manifest?.github?.username, ownerLogin);
-      assert.equal(
-        parsed.manifest?.github?.token,
-        issueOnly ? 'GH_TOKEN_EMORI' : 'GH_TOKEN_TANAABOT',
-      );
+      assert.equal(parsed.manifest?.github?.token, 'GH_TOKEN_TANAABOT');
       assert.deepEqual(
         parsed.manifest?.github?.notifications?.issueAssignment?.allowed?.map(
           ({ login, nodeId }) => ({ login, nodeId }),
@@ -98,11 +95,36 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       );
       assert.equal(actor.status, 'valid');
       assert.equal(actor.manifest?.github?.username, actorLogin);
-      assert.equal(
-        actor.manifest?.github?.token,
-        issueOnly ? 'GH_TOKEN_TANAABOT' : 'GH_TOKEN_EMORI',
-      );
+      assert.equal(actor.manifest?.github?.token, 'GH_TOKEN_EMORI');
       assert.equal(actor.manifest?.github?.notifications, undefined);
+      assert.deepEqual(
+        parsed.manifest?.github?.notifications?.issueAssignment?.pullRequest?.recipients ?? [],
+        issueOnly
+          ? []
+          : [{ login: 'tanaabot', nodeId: '__ASSIGNEE_NODE_ID__', roles: ['assignee'] }],
+      );
+    });
+
+    it('should target every fixture refresh and retain the long recurring interval', async () => {
+      const readme = await readFile(`examples/${scenario.id}/README.md`, 'utf8');
+      const refreshes = readme
+        .split('\n')
+        .filter((line) => line.includes('scripts/refresh-notifications.ts'));
+      assert.equal(refreshes.length, 4);
+      for (const line of refreshes) {
+        assert.ok(line.includes('--repository tanaabased/big-test-bucket --kind issue --number'));
+        assert.ok(line.includes('notification-issue.json'));
+      }
+      const parsed = parseAgentManifest(
+        await readFile(`examples/${scenario.id}/tanaabot/agent.yaml`, 'utf8'),
+      );
+      assert.ok(parsed.status === 'valid');
+      assert.equal(parsed.manifest?.github?.notifications?.intervalMinutes, 1440);
+    });
+
+    it('should advance manually admitted work without requesting another intake scan', async () => {
+      const input = request('Advance previously admitted issue or feedback work.');
+      assert.deepEqual(await action(input, 'next'), { action: 'next' });
     });
 
     it('should carry native scan and routing receipts through preparation and assessment', async () => {

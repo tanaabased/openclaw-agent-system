@@ -11,7 +11,7 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const prefix = 'call_notifications_';
-const identity = 'Name: Notification EMORI';
+const identity = 'Name: Notification Tanaabot';
 
 function currentTurn(request: ChatCompletionRequest) {
   return request.messages.slice(
@@ -46,12 +46,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return text === undefined ? undefined : JSON.parse(text);
   };
   const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
-  if (prompt.includes('Advance at most one new issue or feedback turn per run.')) {
-    const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
-    if (!digest) return;
-    const scan = result('scan');
-    if (!scan) return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
-    if (scan.status !== 'ready') return;
+  const manual = prompt.includes('Advance previously admitted issue or feedback work.');
+  if (manual || prompt.includes('Advance at most one new issue or feedback turn per run.')) {
+    if (!manual) {
+      const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
+      if (!digest) return;
+      const scan = result('scan');
+      if (!scan)
+        return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
+      if (scan.status !== 'ready') return;
+    }
     const next = result('next');
     if (!next) return dispatch('next', { action: 'next' });
     if (isBusy(next)) return { content: 'notification-intake-busy' };

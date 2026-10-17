@@ -48,9 +48,13 @@ already installed native OpenClaw issue-planning automation. A successful reques
 reports `queued` and its native run ID; it does not claim the scan or assessment
 has completed. Installation and workflow activation remain explicit. Disabled,
 stale, or unreconciled workflows fail without enabling jobs.
-Native refresh is agent-wide: item selectors return an unsupported diagnostic;
-use scoped `status` or `wait` to observe one issue. An uncertain admission returns
-a diagnostic rather than automatically submitting another run.
+With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one
+immediate intake scan of that issue and reports `completed` when admission checking
+finishes. It does not run or alter the recurring automation, dispatch work, or retain
+the selector. It preserves the account-wide checkpoint and previously admitted work.
+Pull-request selectors are unsupported; feedback remains owned by retained issue
+conversations. Without selectors, refresh requests the installed native automation
+as described above. An uncertain native enqueue is reported rather than retried.
 
 ### `openclaw agent-system notifications status`
 
@@ -134,10 +138,11 @@ verified conversation binding and worktree; `plan-ready` requires the retained
 assessment result. Native OpenClaw notifications do not retain rejected assignments
 or support assignment retirement. `assignment-rejected` and `retired` return
 `github-notification-wait-target-unsupported` immediately without requesting a refresh.
-With `--refresh`, V2 requests the owning agent-wide workflow and observes its exact
-native run receipt. It requests another cycle only after that run completes;
-pending or uncertain execution never causes a blind resubmission. A scoped wait
-still observes only the selected issue.
+With `--refresh` and an issue selector, each intake refresh is limited to that
+issue. These one-off scans do not run dispatch; waits observe progress made by the
+native coordinator. Without a selector, refresh requests the ordinary automation
+and waits for its exact native run before requesting another cycle. Without
+`--refresh`, selectors restrict observation only.
 
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.

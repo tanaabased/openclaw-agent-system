@@ -113,7 +113,8 @@ export interface GitHubNotificationRefreshResult {
   code: string;
   diagnosticCode?: string;
   runId?: string;
-  status: 'failed' | 'queued' | 'skipped';
+  admitted?: number;
+  status: 'completed' | 'failed' | 'queued' | 'skipped';
 }
 
 export interface GitHubNotificationWaitResult {

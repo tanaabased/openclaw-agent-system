@@ -2,7 +2,9 @@
 
 Assign one disposable issue, retain a plan in its native chat and managed worktree, then answer one approved issue comment in that same chat. Repeat scans preserve the original assessment and suppress duplicate conversations and replies. Implementation and PR delivery belong to `openclaw-pr`.
 
-Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. Tanaabot creates and assigns the issue to EMORI. The reversed account roles keep its assignment inbox separate from `openclaw-pr`. Both workspaces and the enrolled SSH key are disposable CI fixtures. Review-request warnings remain independent of supported planning and feedback.
+Each manual refresh admits only this example’s issue, then asks the existing native coordinator to advance retained work. The 24-hour recurring interval keeps scheduled discovery outside the bounded CI run; the examples still run in parallel.
+
+Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. EMORI creates and assigns the issue to Tanaabot. Only Tanaabot receives test assignments; EMORI has a production OpenClaw instance. Both workspaces and the enrolled SSH key are disposable CI fixtures. Review-request warnings remain independent of supported planning and feedback.
 
 ## Setup
 
@@ -13,17 +15,17 @@ openclaw-aimock prepare --scenario openclaw-issue
 openclaw config set skills.workshop.autonomous.mode off
 
 # should prepare the agent with provider-verified identity pins
-mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue/emori/keys" "$HOME/.ssh"
-GH_TOKEN="$GH_TOKEN_EMORI" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
-GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id' > "$TMPDIR/notification-actor-node"
+mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/keys" "$HOME/.ssh"
+GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
+GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id' > "$TMPDIR/notification-actor-node"
 owner_node=$(cat "$TMPDIR/notification-owner-node")
 actor_node=$(cat "$TMPDIR/notification-actor-node")
 test -n "$owner_node"
 test -n "$actor_node"
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue/emori/agent.yaml" > "$TMPDIR/notification-agent.yaml"
-mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue/emori/agent.yaml"
-cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-issue/emori/keys/id_ed25519"
-cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-issue/emori/keys/id_ed25519.pub"
+sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/agent.yaml"
+cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/keys/id_ed25519"
+cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
@@ -34,9 +36,9 @@ openclaw-gateway start
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
 # should activate native intake with explicit dispatch enrollment
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
-openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 openclaw agent-system install --yes --json | tee "$TMPDIR/notification-install.json" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and ([.warnings[] | select(.code == "github-notification-runtime-unsupported")] | length) == 1'
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
@@ -46,24 +48,24 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 ```bash
 # should expose the install-managed account through the native channel status interface
-openclaw gateway call channels.status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "notifications-emori" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))'
-openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["notifications-emori"].enabled == true'
+openclaw gateway call channels.status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "notifications-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))'
+openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["notifications-tanaabot"].enabled == true'
 
-# should assign one disposable issue from tanaabot to emori after the safe intake baseline
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
-openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System issue flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-issue/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "tanaabot" and (.assignees | length) == 0'
-number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=emoriwan' | jq -e 'any(.assignees[]; .login == "emoriwan")'
-
-# should retain a plan through the installed owning automation
+# should assign one disposable issue from emori to tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
-run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts")
-node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
+openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System issue flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-issue/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+
+# should retain a plan through the installed owning coordinator
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1 and .observation.items[0].workflow.phase == "plan-ready"'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:notifications-emori:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:notifications-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
@@ -71,9 +73,9 @@ jq -e --arg conversation "$conversation" --arg issue "$(jq -er .node_id "$TMPDIR
 openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e --arg path "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")" 'length == 1 and .[0].path == $path'
 
 # should preserve one conversation and assessment across another native scan
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
-run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts")
-node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 if output=$(openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$number" --json); then exit 1; fi
 printf '%s\n' "$output" | tee "$TMPDIR/notification-status-after.json" | jq -e --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" '.status == "degraded" and (has("diagnosticCode") | not) and (.warnings | length) == 1 and (.items | length) == 1 and .items[0].workflow.phase == "plan-ready" and .items[0].workflow.conversation == $conversation'
@@ -84,16 +86,16 @@ jq -S 'sort_by(.path)' "$TMPDIR/notification-worktrees-before.json" | diff - "$T
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-after.json")
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-after.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" --arg session "$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-dispatch-after.json")" '.sessionId == $session and .sessionInfo.hasActiveRun == false and ([.messages[] | select(.role == "user" and .idempotencyKey == ($run + ":user"))] | length) == 1 and ([.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop")] | length) == 1'
-openclaw gateway call sessions.list --params '{"agentId":"notifications-emori","limit":100}' --json | jq -e --arg key "$conversation" --arg session "$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-dispatch-after.json")" '.hasMore == false and ([.sessions[] | select(.key | startswith("agent:notifications-emori:dashboard:agent-system-issue-"))] | length) == 1 and any(.sessions[]; .key == $key and .sessionId == $session)'
+openclaw gateway call sessions.list --params '{"agentId":"notifications-tanaabot","limit":100}' --json | jq -e --arg key "$conversation" --arg session "$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-dispatch-after.json")" '.hasMore == false and ([.sessions[] | select(.key | startswith("agent:notifications-tanaabot:dashboard:agent-system-issue-"))] | length) == 1 and any(.sessions[]; .key == $key and .sessionId == $session)'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0 and any(.tools[]; .name == "agent_system_git" and .callResponseCount == 1)'
 
 # should answer one approved issue comment in the owning issue chat
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
-number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@emoriwan explain the retained plan.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
-run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts")
-node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot explain the retained plan.' > "$TMPDIR/notification-feedback-source.json"
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 feedback_run=$(jq -ers '[.[].records[].feedback.events[] | select(.turn != null and .turn.status != "completed")] | if length == 1 then .[0].turn.runId else error("one feedback turn required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 300000
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-after.json")
@@ -102,14 +104,14 @@ jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner r
 jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .phase == "published" and .itemType == "issue" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-dispatch-after.json" "$TMPDIR/notification-feedback.json"
 
 # should verify the exact response and suppress another reply on a repeat scan
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 number=$(jq -er .feedback.events[0].number "$TMPDIR/notification-feedback.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-feedback-replies.json"
-node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,1); const event=record.feedback.events[0]; assert.equal(event.itemType,"issue"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const found=replies.filter(c=>c.node_id===event.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"emoriwan"); assert.ok(found[0].body.includes(event.result.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(event.result.privateText)); assert.ok(text.includes(event.result.publicText)); assert.ok(text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="emoriwan").length,1);'
-run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts")
-node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,1); const event=record.feedback.events[0]; assert.equal(event.itemType,"issue"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const found=replies.filter(c=>c.node_id===event.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(event.result.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(event.result.privateText)); assert.ok(text.includes(event.result.publicText)); assert.ok(text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot").length,1);'
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]] | length == 1 and (.[0].feedback.events | length) == 1 and all(.[0].feedback.events[]; .turn.status == "completed" and .phase == "published")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "emoriwan") | .node_id] == [$before[0][] | select(.user.login == "emoriwan") | .node_id]'
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
 ```
@@ -125,7 +127,7 @@ touch "$TMPDIR/notification-gateway-stopped"
 
 # should close only the disposable issue created by this run
 test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
 if test -s "$TMPDIR/notification-issue.json"; then
   number=$(jq -er .number "$TMPDIR/notification-issue.json")
   openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
@@ -133,7 +135,7 @@ fi
 
 # should remove only this run's ssh authentication key
 test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 key_material=$(awk '{print $2}' keys/id_ed25519.pub)
 key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
 if test -n "$key_id"; then

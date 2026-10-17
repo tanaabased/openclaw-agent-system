@@ -47,12 +47,12 @@ for (const [scenario, itemType] of [
         await write('feedback-replies', [
           {
             node_id: 'source',
-            user: { login: scenario === 'openclaw-issue' ? 'tanaabot' : 'emoriwan' },
+            user: { login: 'emoriwan' },
             body: 'Question',
           },
           {
             node_id: 'reply',
-            user: { login: scenario === 'openclaw-issue' ? 'emoriwan' : 'tanaabot' },
+            user: { login: 'tanaabot' },
             body: 'Public answer.',
           },
         ]);

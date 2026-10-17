@@ -40,8 +40,9 @@ github:
       feedback: true
       pull-request:
         recipients:
-          - source: assignment-actor
-            roles: [assignee, reviewer]
+          - login: tanaabot
+            node-id: __ASSIGNEE_NODE_ID__
+            roles: [assignee]
       allowed:
         - login: emoriwan
           node-id: __ACTOR_NODE_ID__

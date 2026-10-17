@@ -13,6 +13,8 @@
 
 ## OpenClaw Runtime
 
+- Follow the repository’s Tanaabot-only test assignment rule. Each GitHub-backed notification example must refresh only its own fixture by repository, kind, and number; observing one issue with `notifications wait --number` alone does not restrict discovery.
+
 - Prefer `openclaw agent-system` subcommands for supported managed operations and observations, including installation, validation, Doctor, environment, credentials, automation list/sync/run/history, backup, and tool execution. This exercises the public Agent System boundary together with its underlying integration. Keep native OpenClaw commands when no equivalent exists, when creating deliberately unmanaged state or drift, or when independently observing native state or exercising the real agent/tool loop is the contract. Do not replace a managed-launcher or native-execution test with a different entrypoint.
 - For managed tool coverage, exercise both the public `openclaw agent-system tool` route and packaged shims. Where setup or automation scripts use those shims, verify that their descendants retain the owning agent identity and credential boundary.
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.

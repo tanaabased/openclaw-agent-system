@@ -40,6 +40,12 @@ interface Dependencies {
     runId?: string;
     reason?: string;
   }>;
+  scanSelected(
+    manifest: AgentManifest,
+    workspace: string,
+    selector: GitHubNotificationItemSelector,
+    signal: AbortSignal,
+  ): Promise<{ status: 'ready' | 'blocked'; code?: string; admitted?: number }>;
   inspectRun(
     manifest: AgentManifest,
     workspace: string,
@@ -251,11 +257,25 @@ export default class OpenClawNotifications {
       diagnosticCode: code,
       status: 'failed',
     });
-    if (options.selector) return fail('github-notification-refresh-selector-unsupported');
+    if (options.selector?.itemType === 'pull-request')
+      return fail('github-notification-refresh-selector-unsupported');
     const observation = await this.inspect(manifest, workspace);
     if (observation.diagnosticCode) return fail(observation.diagnosticCode);
     if (options.signal.aborted) return fail('github-notification-refresh-cancelled');
     try {
+      if (options.selector) {
+        const scan = await boundedRequest(options.signal, () =>
+          this.dependencies.scanSelected(manifest, workspace, options.selector!, options.signal),
+        );
+        if (scan.status !== 'ready') return fail(scan.code ?? 'github-notification-intake-failed');
+        return {
+          agentId: manifest.agent.id,
+          status: 'completed',
+          code: 'github-notification-intake-completed',
+          admitted: scan.admitted,
+          baselineAt: observation.baseline.observedAt,
+        };
+      }
       const result = await boundedRequest(options.signal, () =>
         this.dependencies.requestRun(manifest, workspace, options.signal),
       );
@@ -338,14 +358,21 @@ export default class OpenClawNotifications {
           }
         }
         if (input.refresh && !requested) {
-          const refreshed = await this.refresh(manifest, workspace, { signal: controller.signal });
+          const refreshed = await this.refresh(manifest, workspace, {
+            signal: controller.signal,
+            selector: input.selector,
+          });
           if (
             refreshed.status !== 'queued' &&
+            refreshed.status !== 'completed' &&
             refreshed.code !== 'github-notification-refresh-already-running'
           )
             return result('failed', refreshed.code);
           runId = refreshed.runId;
-          requested = refreshed.status === 'queued';
+          requested =
+            refreshed.status === 'queued' ||
+            (refreshed.status === 'completed' &&
+              ((refreshed.admitted ?? 0) > 0 || observation.items.length > 0));
         }
         try {
           await (this.dependencies.sleep ?? abortableDelay)(
