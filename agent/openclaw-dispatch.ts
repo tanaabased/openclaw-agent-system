@@ -951,6 +951,7 @@ export default class OpenClawDispatch {
             source,
             base: repo.defaultBranch,
             recipients: current.policy.policy.issueAssignment?.pullRequest?.recipients,
+            feedbackEnabled: openClawFeedbackEnabled(manifest),
             signal,
             assertCurrent,
             // presentation changes only this snapshot until the journal comparison succeeds.

@@ -1674,6 +1674,17 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
+  it('should report enabled feedback when recovering a published pr card', async () => {
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    const { present } = await publishedFollowup();
+    const shown = await present();
+    assert.ok('presentation' in shown && typeof shown.presentation === 'string');
+    assert.match(shown.presentation, /Approved feedback/);
+    assert.doesNotMatch(shown.presentation, /feedback delivery is not available/);
+    assert.equal((await record()).work!.delivery!.presentation, shown.presentation);
+  });
+
   for (const stage of ['snapshot', 'commit'] as const) {
     it(`should report retryable ${stage} contention without changing the publication receipt`, async () => {
       const held = Promise.withResolvers<void>();
