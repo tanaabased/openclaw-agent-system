@@ -1,4 +1,9 @@
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import mergeStateSnapshot, {
+  refreshStateSnapshot,
+  stateSnapshotConflictCode,
+} from '../core/merge-state-snapshot.ts';
 
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
@@ -226,6 +231,67 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     serializeState(state);
     return state;
   }
+  /** external work runs unlocked; each save commits only checked changes to fresh state. */
+  async transaction<T>(
+    run: (state: DispatchState<R>, save: () => Promise<void>, signal: AbortSignal) => Promise<T>,
+    options: {
+      signal?: AbortSignal;
+      reconcile?: (
+        before: DispatchState<R>,
+        proposed: DispatchState<R>,
+        current: DispatchState<R>,
+      ) => void;
+      validate?: (before: DispatchState<R>, after: DispatchState<R>) => void;
+    } = {},
+  ): Promise<T> {
+    const signal = options.signal ?? new AbortController().signal;
+    signal.throwIfAborted();
+    const state = await this.read();
+    let before = structuredClone(state);
+    return run(
+      state,
+      async () => {
+        signal.throwIfAborted();
+        await this.exclusive(async (current, save) => {
+          signal.throwIfAborted();
+          for (const record of state.records) {
+            const previous = before.records.find((entry) => entry.id === record.id);
+            const fresh = current.records.find((entry) => entry.id === record.id);
+            if (!previous || isDeepStrictEqual(previous, record)) continue;
+            if (
+              !fresh ||
+              [
+                'reset',
+                'retired',
+                'handoff',
+                'manifestDigest',
+                'request',
+                'assessment',
+                'threadId',
+                'worktree',
+                'effective',
+              ].some((key) => !isDeepStrictEqual(previous[key as keyof R], fresh[key as keyof R]))
+            )
+              throw Object.assign(new Error(stateSnapshotConflictCode), {
+                code: stateSnapshotConflictCode,
+              });
+          }
+          options.reconcile?.(before, state, current);
+          const merged = mergeStateSnapshot(before, state, current) as DispatchState<R>;
+          options.validate?.(current, merged);
+          this.validate(merged);
+          if (!isDeepStrictEqual(current, merged)) {
+            refreshStateSnapshot(current, merged);
+            await save();
+          }
+          refreshStateSnapshot(state, merged);
+          before = structuredClone(merged);
+        }, true);
+      },
+      signal,
+    );
+  }
+
   async exclusive<T>(
     run: (state: DispatchState<R>, save: () => Promise<void>, signal: AbortSignal) => Promise<T>,
     waitForLock = false,

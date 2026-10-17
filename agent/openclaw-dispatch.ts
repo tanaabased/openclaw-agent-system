@@ -1,3 +1,4 @@
+import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -35,7 +36,10 @@ import pendingAssignments, { issueKey } from './dispatch-pending.ts';
 import revalidateAssignment from './dispatch-assignment.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
-import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import OpenClawDispatchStore, {
+  preserveOpenClawProgress,
+  type OpenClawDispatchRecord,
+} from './openclaw-dispatch-state.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
@@ -99,7 +103,11 @@ function pendingAssignment({
 }
 export function openClawDispatchFailureCode(error: unknown): string {
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
-  if (code === privateStateFileLockBusyErrorCode || code === privateStateFileLockLostErrorCode)
+  if (
+    code === privateStateFileLockBusyErrorCode ||
+    code === privateStateFileLockLostErrorCode ||
+    code === stateSnapshotConflictCode
+  )
     return code;
   if (error instanceof GitCommandError) return error.diagnosticCode;
   if (error instanceof AgentSystemToolError) {
@@ -436,7 +444,7 @@ export default class OpenClawDispatch {
       return this.present(manifest, workspace, caller, input, operator, authority, current);
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
     let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
-    let enteredJournal = false;
+    let enteredTransaction = false;
     if (input.action === 'retry' && !operator) throw new Error('dispatch-operator-required');
     if (
       !childAction &&
@@ -460,9 +468,31 @@ export default class OpenClawDispatch {
               discoveryCheckpoint(current.journal, scan, authority.assertCurrent),
           })
         : [];
+    const transactionOptions: Parameters<typeof current.journal.transaction>[1] = {
+      signal: authority.signal,
+      reconcile: preserveOpenClawProgress,
+      validate: (before, after) => {
+        const newlyReserved = after.records.some(
+          (record) =>
+            record.request &&
+            !before.records.find((previous) => previous.id === record.id)?.request,
+        );
+        if (
+          newlyReserved &&
+          dispatchCapacity(after.records, current.policy.policy.maxConcurrentItems).occupied >
+            current.policy.policy.maxConcurrentItems
+        )
+          throw new Error('dispatch-at-capacity');
+        const activeKeys = after.records
+          .filter((record) => !record.retired && !record.reset)
+          .map((record) => record.issueKey);
+        if (new Set(activeKeys).size !== activeKeys.length)
+          throw new Error(stateSnapshotConflictCode);
+      },
+    };
     return current.journal
-      .exclusive(async (state, save, lockSignal) => {
-        enteredJournal = true;
+      .transaction(async (state, save, transactionSignal) => {
+        enteredTransaction = true;
         if (input.action === 'next') {
           delete state.discoveryCheckedAt;
           const presentation = discoveryNotice(state.discoveryProgress);
@@ -525,8 +555,8 @@ export default class OpenClawDispatch {
         if (input.action === 'next') {
           const continuing = state.records.find((record) => continuationStatus(record));
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const unfinished = state.records.flatMap((record) =>
             (record.feedback?.events ?? [])
               .filter(
@@ -649,6 +679,7 @@ export default class OpenClawDispatch {
               ),
             };
           } catch (error) {
+            if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode) throw error;
             record.phase = 'blocked';
             record.blocker = openClawDispatchFailureCode(error);
             await save();
@@ -671,7 +702,9 @@ export default class OpenClawDispatch {
             throw new Error('feedback-owner-caller-required');
           return this.feedback(manifest, current.workspace, record, event, caller, input, save, {
             ...authority,
-            signal: authority.signal ? AbortSignal.any([authority.signal, lockSignal]) : lockSignal,
+            signal: authority.signal
+              ? AbortSignal.any([authority.signal, transactionSignal])
+              : transactionSignal,
           });
         }
         if (record.feedback?.events.some((event) => event.turn?.runId === caller.runId))
@@ -711,8 +744,8 @@ export default class OpenClawDispatch {
           input.action === 'delivery'
         ) {
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const assertCurrent = async () => {
             signal.throwIfAborted();
             await authority.assertCurrent?.();
@@ -775,8 +808,8 @@ export default class OpenClawDispatch {
         }
         if (input.action === 'context' || input.action === 'result') {
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const childAuthority = {
             signal,
             assertCurrent: async () => {
@@ -889,8 +922,8 @@ export default class OpenClawDispatch {
               ? 'first-turn'
               : 'session-create';
           const signal = authority.signal
-            ? AbortSignal.any([authority.signal, lockSignal])
-            : lockSignal;
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal;
           const turnAuthority = {
             signal,
             assertCurrent: async () => {
@@ -929,10 +962,10 @@ export default class OpenClawDispatch {
           });
         }
         throw new Error('dispatch-action-invalid');
-      }, childAction)
+      }, transactionOptions)
       .catch(async (error: unknown) => {
         if (
-          !enteredJournal &&
+          !enteredTransaction &&
           !childAction &&
           openClawDispatchFailureCode(error) === privateStateFileLockBusyErrorCode
         ) {
@@ -943,7 +976,9 @@ export default class OpenClawDispatch {
             ...('id' in input ? { id: input.id } : {}),
           };
         }
-        if (!enteredJournal) throw error;
+        if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode)
+          return { status: 'busy' as const, code: stateSnapshotConflictCode };
+        if (!enteredTransaction) throw error;
         if (
           input.action === 'prepare' ||
           input.action === 'reconcile' ||

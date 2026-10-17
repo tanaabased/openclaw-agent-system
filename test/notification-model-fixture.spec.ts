@@ -170,7 +170,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       }
     });
 
-    it('should stop on journal contention and let a later coordinator turn scan again', async () => {
+    it('should retry known coordinator contention three times before reporting the blocker', async () => {
       const routing = {
         status: 'routing-required',
         id,
@@ -197,7 +197,20 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         assert.ok('toolCalls' in pending && pending.toolCalls?.length === 1);
         const stage = JSON.parse(pending.toolCalls[0]!.arguments).action;
         append(input, stage, { status: 'busy', code: 'private-state-file-lock-busy', id });
-        assert.deepEqual(await response(input), { content: 'notification-intake-busy' });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const retry = await response(input);
+          assert.ok('toolCalls' in retry && retry.toolCalls?.length === 1);
+          assert.equal(retry.toolCalls[0]!.arguments, pending.toolCalls[0]!.arguments);
+          assert.equal(retry.toolCalls[0]!.id, `call_notifications_${stage}_retry_${attempt}`);
+          append(input, `${stage}_retry_${attempt}`, {
+            status: 'busy',
+            code: 'private-state-file-lock-busy',
+            id,
+          });
+        }
+        assert.deepEqual(await response(input), {
+          content: 'notification-retry-exhausted: private-state-file-lock-busy',
+        });
         input.messages.push({
           role: 'user',
           content: `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
@@ -210,6 +223,35 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(invalid, 'scan', { status: 'ready' });
       append(invalid, 'next', { status: 'busy', code: 'unexpected-failure' });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+    });
+
+    it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
+      const prompt = `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`;
+      for (const code of ['private-state-file-lock-busy', 'private-state-snapshot-conflict']) {
+        const input = request(prompt);
+        const original = await action(input, 'context');
+        append(input, 'context', { status: 'blocked', code });
+        assert.deepEqual(await action(input, 'context'), original);
+        append(input, 'context_retry_1', {
+          status: 'verified',
+          runtime: 'openclaw',
+          id,
+          project: { path: '/fixture' },
+          assessment: {},
+          resultContract: 'assessment-result/v1',
+        });
+        const next = await response(input);
+        assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_git');
+      }
+      for (const code of [
+        'dispatch-turn-send-unverified',
+        'feedback-authority-changed',
+        'permission-denied',
+      ]) {
+        const input = request(prompt);
+        append(input, 'context', { status: 'blocked', code });
+        assert.equal(matchFixture([...scenario.fixtures], input), null);
+      }
     });
 
     it('should retain a plan only after native context and git verify its worktree', async () => {
