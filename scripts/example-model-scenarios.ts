@@ -6,7 +6,8 @@ import { githubExampleScenario } from '../examples/openclaw-github/model-fixture
 import { osExecutionExampleScenario } from '../examples/os-execution/model-fixture.ts';
 import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fixture.ts';
 import { memoryExampleScenario } from '../examples/openclaw-memory/model-fixture.ts';
-import { notificationExampleScenario } from '../examples/openclaw-notifications/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
+import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
 import { worktreeExampleScenario } from '../examples/openclaw-worktree/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
@@ -20,7 +21,8 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [runtimeBoundaryScenario.id, runtimeBoundaryScenario],
   [memoryExampleScenario.id, memoryExampleScenario],
   [worktreeExampleScenario.id, worktreeExampleScenario],
-  [notificationExampleScenario.id, notificationExampleScenario],
+  [prExampleScenario.id, prExampleScenario],
+  [issueExampleScenario.id, issueExampleScenario],
 ]);
 
 export const exampleModelScenarioIds = Object.freeze([...scenarios.keys()]);

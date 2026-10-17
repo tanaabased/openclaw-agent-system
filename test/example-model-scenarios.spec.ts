@@ -68,7 +68,8 @@ describe('scripts/example-model-scenarios', () => {
       'openclaw-runtimes',
       'openclaw-memory',
       'openclaw-worktree',
-      'openclaw-notifications',
+      'openclaw-pr',
+      'openclaw-issue',
     ]);
     assert.equal(resolveExampleModelScenario('openclaw-agent').id, 'openclaw-agent');
     assert.equal(resolveExampleModelScenario('openclaw-credentials').id, 'openclaw-credentials');

@@ -1,0 +1,15 @@
+schema-version: 1
+
+agent:
+  id: notifications-tanaabot
+  name: Notification Tanaabot
+  email: tanaabot@tanaab.dev
+
+environment:
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required: [GH_TOKEN_TANAABOT]
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT

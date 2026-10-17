@@ -11,7 +11,7 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const prefix = 'call_notifications_';
-const identity = 'Name: Notification Tanaabot';
+const identity = 'Name: Notification EMORI';
 
 function currentTurn(request: ChatCompletionRequest) {
   return request.messages.slice(
@@ -113,7 +113,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         ...args,
         operation: 'result',
         privateText:
-          'The retained plan was implemented as a one-line cleanup note. The linked PR contains that committed change. This feedback turn only explains the existing result; no additional repository changes were made.',
+          'The retained plan proposes documenting disposable issue cleanup after evidence is captured. This feedback turn explains the plan; implementation remains unstarted and no pull request has been created.',
       });
     if (saved.status !== 'recorded') return;
     const composition = result('feedback-compose');
@@ -134,7 +134,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         operation: 'candidate',
         digest: composition.digest,
         publicText:
-          'The linked PR adds the cleanup note from the retained plan. No further code changes were made in response to this comment.',
+          'The plan is to document closing disposable test issues after capturing their evidence. Implementation has not started.',
       });
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('feedback-preview');
@@ -149,113 +149,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
-  }
-  const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
-  if (operatorId) {
-    const retry = prompt.includes('Reconcile the existing PR and show its card again.');
-    const title = 'Document disposable notification fixture cleanup';
-    const body = 'Document closing disposable test issues after their evidence is captured.';
-    if (!retry) {
-      const preview = result('handoff-preview');
-      if (!preview)
-        return dispatch('handoff-preview', {
-          action: 'handoff',
-          id: operatorId,
-          permission: 'implementation-and-publication',
-        });
-      if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
-      const handed = result('handoff');
-      if (!handed)
-        return dispatch('handoff', {
-          action: 'handoff',
-          id: operatorId,
-          permission: 'implementation-and-publication',
-          digest: preview.digest,
-        });
-      if (handed.status !== 'handed-off') return;
-      const context = result('work-context');
-      if (!context)
-        return dispatch('work-context', { action: 'implementation-context', id: operatorId });
-      const path = (context.project as { path?: string } | undefined)?.path;
-      if (
-        context.status !== 'verified' ||
-        context.runtime !== 'openclaw' ||
-        !path ||
-        context.publicationAuthorized !== true
-      )
-        return;
-      const file = `notification-fixture-${operatorId}.md`;
-      const patch = `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`;
-      const steps = [
-        { stage: 'apply', argv: ['apply', '-'], stdin: patch },
-        { stage: 'add', argv: ['add', '--', file] },
-        {
-          stage: 'commit',
-          argv: ['commit', '-m', 'document disposable issue cleanup', '--', file],
-        },
-      ];
-      for (const step of steps) {
-        const executed = result(step.stage);
-        if (!executed)
-          return call(step.stage, 'agent_system_git', {
-            argv: step.argv,
-            cwd: path,
-            ...('stdin' in step ? { stdin: step.stdin } : {}),
-          });
-        if (executed.exitCode !== 0 || executed.truncated !== false) return;
-      }
-      const saved = result('work-result');
-      if (!saved)
-        return dispatch('work-result', {
-          action: 'implementation-result',
-          id: operatorId,
-          implementationResult: {
-            outcome: 'done',
-            summary: 'Committed the disposable cleanup note.',
-            fullResult:
-              'Added and committed the one-line cleanup note through managed Git in the verified issue worktree.',
-          },
-        });
-      if (saved.status !== 'recorded') return;
-    }
-    const prepared = result('delivery-prepare');
-    if (!prepared)
-      return dispatch('delivery-prepare', {
-        action: 'delivery',
-        operation: 'prepare',
-        id: operatorId,
-        title,
-        body,
-      });
-    if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-    const published = result('delivery-publish');
-    if (!published)
-      return dispatch('delivery-publish', {
-        action: 'delivery',
-        operation: 'publish',
-        id: operatorId,
-        digest: prepared.digest,
-        title,
-        body,
-      });
-    if (published.status !== 'published') return;
-    const reconciled = result('delivery-reconcile');
-    if (!reconciled)
-      return dispatch('delivery-reconcile', {
-        action: 'delivery',
-        operation: 'reconcile',
-        id: operatorId,
-      });
-    if (reconciled.status !== 'ready') return;
-    const presented = result('delivery-present');
-    if (!presented)
-      return dispatch('delivery-present', {
-        action: 'delivery',
-        operation: 'present',
-        id: operatorId,
-      });
-    if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
-    return { content: presented.presentation };
   }
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
@@ -329,8 +222,8 @@ const final: Fixture = {
   },
 };
 
-export const notificationExampleScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-notifications',
+export const issueExampleScenario: OpenClawAIMockScenario = {
+  id: 'openclaw-issue',
   model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [identity],
   finalResponses: [],
@@ -345,14 +238,6 @@ export const notificationExampleScenario: OpenClawAIMockScenario = {
       'reconcile',
       'context',
       'result',
-      'handoff-preview',
-      'handoff',
-      'work-context',
-      'work-result',
-      'delivery-prepare',
-      'delivery-publish',
-      'delivery-reconcile',
-      'delivery-present',
       'feedback-context',
       'feedback-result',
       'feedback-compose',
@@ -363,7 +248,7 @@ export const notificationExampleScenario: OpenClawAIMockScenario = {
       id: prefix + stage,
       name: 'agent_system_dispatch',
     })),
-    ...['git', 'apply', 'add', 'commit'].map((stage) => ({
+    ...['git'].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_git',
     })),

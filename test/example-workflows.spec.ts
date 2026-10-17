@@ -53,8 +53,10 @@ describe('example workflows', () => {
       ['examples/openclaw-tools/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-github/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-github/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-notifications/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-notifications/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/openclaw-issue/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      ['examples/openclaw-issue/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/openclaw-pr/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      ['examples/openclaw-pr/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
     ] as const) {
       const parsed = parseAgentManifest(await readFile(path, 'utf8'));
       assert.equal(parsed.status, 'valid', path);
@@ -137,7 +139,8 @@ describe('example workflows', () => {
       'openclaw-google',
       'openclaw-tools',
       'openclaw-worktree',
-      'openclaw-notifications',
+      'openclaw-issue',
+      'openclaw-pr',
       'openclaw-collaboration',
       'openclaw-memory',
       'openclaw-backup',
@@ -182,7 +185,7 @@ describe('example workflows', () => {
         scenario,
       );
       const commands = [...(suites[0]?.tests.setup ?? []), ...(suites[0]?.tests.test ?? [])];
-      if (scenario === 'openclaw-notifications') {
+      if (['openclaw-issue', 'openclaw-pr'].includes(scenario)) {
         const setup = commands.find(({ command }) => /^openclaw-setup\s/m.test(command));
         assert.ok(setup?.command.includes('--needs-secret-service'));
       }
