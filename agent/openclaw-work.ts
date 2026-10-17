@@ -3,12 +3,8 @@ import type { Static } from 'typebox';
 
 import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import { issueInputEventId } from './openclaw-session-input.ts';
-import {
-  describeIssueSession,
-  sessionObject,
-  type DispatchCaller,
-} from './openclaw-session-create.ts';
+import { operatorInputEvent } from './openclaw-session-input.ts';
+import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 
@@ -29,6 +25,7 @@ export async function verifyOpenClawOperator(input: {
 }) {
   const { record, caller } = input;
   if (
+    record.feedback?.events.some((event) => event.turn?.runId === caller.runId) ||
     !input.operator ||
     caller.sessionKey !== record.threadId ||
     caller.sessionId !== record.sessionCreation?.sessionId ||
@@ -40,22 +37,18 @@ export async function verifyOpenClawOperator(input: {
   )
     throw new Error('dispatch-operator-followup-required');
   await describeIssueSession(input.request, record, input.config);
-  const history = sessionObject(
-    await input.request('chat.history', {
-      sessionKey: record.threadId,
-      inputRunIds: [caller.runId],
-      limit: 200,
-      maxChars: 100000,
-    }),
-  );
-  if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
-    throw new Error('dispatch-operator-input-unverified');
-  const users = history.messages
-    .map(sessionObject)
-    .filter((entry) => issueInputEventId(entry, caller.runId));
-  if (users.length !== 1 || sessionObject(users[0]!.__openclaw).senderIsOwner !== true)
-    throw new Error('dispatch-operator-input-unverified');
-  return { runId: caller.runId, inputEventId: issueInputEventId(users[0]!, caller.runId)! };
+  return operatorInputEvent({
+    request: input.request,
+    sessionKey: caller.sessionKey,
+    sessionId: caller.sessionId,
+    runId: caller.runId,
+    retained: [
+      record.work?.operatorInput,
+      record.work?.caller,
+      record.work?.implementation,
+      record.work?.publication,
+    ],
+  });
 }
 
 export default async function openClawWorkAction(input: {

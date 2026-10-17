@@ -26,6 +26,7 @@ export default async function openClawDelivery(input: {
   source: { runId: string; inputEventId: string };
   base: string;
   recipients?: GitHubPullRequestRecipient[];
+  feedbackEnabled: boolean;
   connect(): Promise<OpenClawDeliveryConnection>;
   assertCurrent(): Promise<void>;
   save(): Promise<void>;
@@ -189,7 +190,7 @@ export default async function openClawDelivery(input: {
       pullRequestNumber: receipt.pullRequestNumber,
       repositoryOwner: intake.repository.owner.login,
       repositoryName: intake.repository.name,
-      commentFlow: 'omit',
+      commentFlow: input.feedbackEnabled ? 'openclaw' : 'unavailable',
     });
     await save();
     return {

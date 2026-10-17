@@ -7,7 +7,6 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import waitForAssessmentRelease from './assessment-barrier.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -50,16 +49,24 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return value;
   };
   const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
-  if (prompt.includes('Fill initially available intake slots in one bounded pass.')) {
-    const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
-    if (!digest) return;
-    const scan = result('scan');
-    if (!scan) return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
-    if (scan.status === 'blocked') return { content: 'notification-intake-blocked' };
-    if (scan.status !== 'ready') return;
+  const manual = prompt.includes('Advance previously admitted issue or feedback work.');
+  if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
+    if (!manual) {
+      const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
+      if (!digest) return;
+      const scan = result('scan');
+      if (!scan)
+        return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
+      if (scan.status === 'blocked') return { content: 'notification-intake-blocked' };
+      if (scan.status !== 'ready') return;
+    }
     const terminal = (value: Record<string, unknown>) => {
       if (isBusy(value)) return { content: 'notification-intake-busy' };
-      if (['idle', 'at-capacity', 'pass-completed', 'blocked'].includes(String(value.status)))
+      if (
+        ['idle', 'at-capacity', 'pass-completed', 'blocked', 'uncertain'].includes(
+          String(value.status),
+        )
+      )
         return { content: `notification-intake-${value.status}` };
     };
     // indexed calls bind each repeated stage to its own native result.
@@ -69,6 +76,10 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (!next) return dispatch(stage('next'), { action: 'next' });
       const stopped = terminal(next);
       if (stopped) return stopped;
+      if (
+        ['feedback-pending', 'feedback-completed', 'feedback-queued'].includes(String(next.status))
+      )
+        continue;
       if (typeof next.id !== 'string' || !/^[a-f0-9]{64}$/u.test(next.id)) return;
       let advanced = next;
       if (next.status === 'routing-required') {
@@ -118,6 +129,61 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return;
     }
     return;
+  }
+  const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
+  if (feedback) {
+    const [, id, eventId] = feedback;
+    const args = { action: 'feedback', id, eventId };
+    const context = result('feedback-context');
+    if (!context) return dispatch('feedback-context', { ...args, operation: 'context' });
+    if (
+      context.status !== 'verified' ||
+      context.runtime !== 'openclaw' ||
+      context.publication !== 'allowed'
+    )
+      return;
+    const saved = result('feedback-result');
+    if (!saved)
+      return dispatch('feedback-result', {
+        ...args,
+        operation: 'result',
+        privateText:
+          'The retained plan was implemented as a one-line cleanup note. The linked PR contains that committed change. This feedback turn only explains the existing result; no additional repository changes were made.',
+      });
+    if (saved.status !== 'recorded') return;
+    const composition = result('feedback-compose');
+    if (!composition) return dispatch('feedback-compose', { ...args, operation: 'compose' });
+    const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
+    if (
+      composition.status !== 'composition-ready' ||
+      typeof composition.digest !== 'string' ||
+      !skill?.path
+    )
+      return;
+    if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
+      return call('feedback-skill', 'read', { path: skill.path });
+    const candidate = result('feedback-candidate');
+    if (!candidate)
+      return dispatch('feedback-candidate', {
+        ...args,
+        operation: 'candidate',
+        digest: composition.digest,
+        publicText:
+          'The linked PR adds the cleanup note from the retained plan. No further code changes were made in response to this comment.',
+      });
+    if (candidate.status !== 'candidate-recorded') return;
+    const preview = result('feedback-preview');
+    if (!preview) return dispatch('feedback-preview', { ...args, operation: 'publish' });
+    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
+    const published = result('feedback-publish');
+    if (!published)
+      return dispatch('feedback-publish', {
+        ...args,
+        operation: 'publish',
+        digest: preview.digest,
+      });
+    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
+    return { content: published.presentation };
   }
   const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
@@ -187,35 +253,32 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         });
       if (saved.status !== 'recorded') return;
     }
-    const prepared = result('delivery-prepare');
-    if (!prepared)
-      return dispatch('delivery-prepare', {
-        action: 'delivery',
-        operation: 'prepare',
-        id: operatorId,
-        title,
-        body,
-      });
-    if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-    const published = result('delivery-publish');
-    if (!published)
-      return dispatch('delivery-publish', {
-        action: 'delivery',
-        operation: 'publish',
-        id: operatorId,
-        digest: prepared.digest,
-        title,
-        body,
-      });
-    if (published.status !== 'published') return;
-    const reconciled = result('delivery-reconcile');
-    if (!reconciled)
-      return dispatch('delivery-reconcile', {
-        action: 'delivery',
-        operation: 'reconcile',
-        id: operatorId,
-      });
-    if (reconciled.status !== 'ready') return;
+    if (!retry) {
+      const prepared = result('delivery-prepare');
+      if (!prepared)
+        return dispatch('delivery-prepare', {
+          action: 'delivery',
+          operation: 'prepare',
+          id: operatorId,
+          title,
+          body,
+        });
+      if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+      const published = result('delivery-publish');
+      if (!published)
+        return dispatch('delivery-publish', {
+          action: 'delivery',
+          operation: 'publish',
+          id: operatorId,
+          digest: prepared.digest,
+          title,
+          body,
+        });
+      if (published.status !== 'published') return;
+      return {
+        content: 'Publication retained. Presentation intentionally deferred for recovery coverage.',
+      };
+    }
     const presented = result('delivery-present');
     if (!presented)
       return dispatch('delivery-present', {
@@ -298,14 +361,15 @@ const final: Fixture = {
   },
 };
 
-export const notificationExampleScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-notifications',
+export const prExampleScenario: OpenClawAIMockScenario = {
+  id: 'openclaw-pr',
   model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [identity],
   finalResponses: [],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
+    { id: prefix + 'feedback-skill', name: 'read' },
     ...[
       ...Array.from({ length: 8 }, (_, index) =>
         ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
@@ -318,8 +382,13 @@ export const notificationExampleScenario: OpenClawAIMockScenario = {
       'work-result',
       'delivery-prepare',
       'delivery-publish',
-      'delivery-reconcile',
       'delivery-present',
+      'feedback-context',
+      'feedback-result',
+      'feedback-compose',
+      'feedback-candidate',
+      'feedback-preview',
+      'feedback-publish',
     ].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_dispatch',
@@ -336,11 +405,9 @@ export const notificationExampleScenario: OpenClawAIMockScenario = {
         systemMessage: [identity],
         predicate: (request) => 'toolCalls' in (response(request) ?? {}),
       },
-      response: async (request) => {
+      response: (request) => {
         const value = response(request);
         assert.ok(value && 'toolCalls' in value);
-        const context = value.toolCalls?.find((tool) => tool.id === prefix + 'context');
-        if (context) await waitForAssessmentRelease(JSON.parse(context.arguments).id);
         return value;
       },
     },

@@ -36,7 +36,7 @@ describe('agent/openclaw-intake-policy', () => {
     }
   });
 
-  it('should retain the assignment schedule when feedback and reviews are unavailable', () => {
+  it('should retain the assignment schedule with feedback enabled and reviews unavailable', () => {
     const value = manifest();
     value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
     value.github!.notifications!.issueAssignment!.feedback = true;

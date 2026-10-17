@@ -205,7 +205,7 @@ describe('github readiness channel', () => {
     assert.equal(degraded.statusState, 'degraded');
     assert.equal(degraded.lifecycle, 'ready');
     assert.equal(degraded.running, true);
-    assert.match(degraded.lastError!, /feedback/);
+    assert.doesNotMatch(degraded.lastError!, /feedback/);
     assert.match(degraded.lastError!, /review requests/);
     checkpoint = null;
     assert.equal((await snapshot()).stateReason, 'github-notification-capabilities-degraded');

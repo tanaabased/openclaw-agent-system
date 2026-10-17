@@ -114,16 +114,6 @@ export function githubNotificationRuntimeDiagnostics(
       status: 'blocked',
       workflow: 'issue-assignment',
     });
-  if (feedbackIdentities(issue.allowed, issue.feedback).length)
-    diagnostics.push({
-      code: 'github-notification-runtime-unsupported',
-      fieldPath: '/github/notifications/issue-assignment/feedback',
-      message:
-        'OpenClaw V2 does not support issue feedback. Assignment intake and planning can continue without processing comments.',
-      remediation: 'Disable feedback to clear this warning or wait for its execution adapter.',
-      status: 'warning',
-      workflow: 'issue-assignment',
-    });
   if (
     issue.assessment?.skill &&
     ![defaultAssessmentSkill, defaultAssessmentSkill.split(':').at(-1)!].includes(

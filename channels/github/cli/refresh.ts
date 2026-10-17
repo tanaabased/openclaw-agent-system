@@ -158,7 +158,11 @@ async function refreshNotificationsAgentSystem(
   const remediation = nativeNotificationDiagnostic(result.code);
   if (remediation)
     writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
-  if (result.status !== 'queued' && result.code !== 'github-notification-refresh-already-running')
+  if (
+    result.status !== 'queued' &&
+    result.status !== 'completed' &&
+    result.code !== 'github-notification-refresh-already-running'
+  )
     options.setExitCode(1);
 }
 

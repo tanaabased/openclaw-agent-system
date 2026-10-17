@@ -2,8 +2,8 @@
 
 Agent System turns approved GitHub issue assignments into runtime-owned work.
 Native OpenClaw supports issue planning and explicitly requested implementation and
-PR delivery in the same issue chat. Standalone Codex additionally supports its
-declared automatic implementation and feedback workflows.
+PR delivery in the same issue chat, plus authorized feedback on the issue and its
+linked PR. Standalone Codex additionally supports declared automatic implementation.
 
 ## Configuration
 
@@ -13,9 +13,9 @@ choose Plan mode and the default assessment skill. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for a complete example,
 fields, defaults, and runtime limitations.
 
-Native OpenClaw Work/Auto, feedback, review requests, and replacement assessment
-skills remain unsupported. Unavailable feedback and reviews produce warnings without
-stopping supported assignment intake. Unsupported assignment modes or assessment skills
+Native OpenClaw Work/Auto, independent review requests, and replacement assessment
+skills remain unsupported. Unavailable review requests warn without stopping
+supported assignment intake. Unsupported assignment modes or assessment skills
 block assignment execution; they are never silently replaced.
 
 After reading a retained plan, ask the agent in that issue chat to implement it and
@@ -23,6 +23,16 @@ open a PR, together or separately. The authenticated operator request authorizes
 only the requested work. The agent keeps the same worktree and returns a quoted
 card linking the issue and PR. If publication is interrupted, continue in that chat
 so it can reconcile the existing attempt without creating another PR.
+
+Set `issue-assignment.feedback` and run Install to activate comment intake. Approved
+mentions in issue comments, PR conversation comments, submitted reviews, and inline
+replies return to the original issue chat. The agent retains its complete private
+answer and composes a separate public reply with the configured feedback skill.
+Inline replies return to their original review thread; other replies return to the
+source issue or PR. Feedback grants explanation and replies, never implementation.
+Busy chats queue comments in the shared oldest-eligible capacity pool. Edited or
+removed sources and changed authority stop pending replies; uncertain sends or
+publications are reconciled without repeating them.
 
 ## Install and Verify
 

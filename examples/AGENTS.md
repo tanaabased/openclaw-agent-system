@@ -13,6 +13,8 @@
 
 ## OpenClaw Runtime
 
+- Follow the repository’s Tanaabot-only test assignment rule. Each GitHub-backed notification example must refresh only its own fixture by repository, kind, and number; observing one issue with `notifications wait --number` alone does not restrict discovery.
+
 - Prefer `openclaw agent-system` subcommands for supported managed operations and observations, including installation, validation, Doctor, environment, credentials, automation list/sync/run/history, backup, and tool execution. This exercises the public Agent System boundary together with its underlying integration. Keep native OpenClaw commands when no equivalent exists, when creating deliberately unmanaged state or drift, or when independently observing native state or exercising the real agent/tool loop is the contract. Do not replace a managed-launcher or native-execution test with a different entrypoint.
 - For managed tool coverage, exercise both the public `openclaw agent-system tool` route and packaged shims. Where setup or automation scripts use those shims, verify that their descendants retain the owning agent identity and credential boundary.
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.
@@ -24,7 +26,7 @@
 - When an unattended OpenClaw CI scenario invokes tools, pass `--yolo` to `openclaw-setup`; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
 - Make live 1Password requests only when the test verifies 1Password behavior. Use host environment variables with explicit manifest imports for ordinary test authentication.
 - Keep workflow-provided model credentials optional for scenarios that do not invoke a live agent.
-- Use strict AIMock for `os-execution`, `openclaw-agent`, `openclaw-automations`, `openclaw-credentials`, `openclaw-collaboration`, `openclaw-github`, `openclaw-worktree`, `openclaw-notifications`, and native OpenClaw turns in `openclaw-runtimes`. Memory's embedding fixture uses strict AIMock with synthetic authentication and fixed vectors rather than a model turn. Only hosted Codex turns in `openclaw-runtimes` use a live model. Other examples use direct assertions; shared live-model credentials never select a scenario's driver.
+- Use strict AIMock for `os-execution`, `openclaw-agent`, `openclaw-automations`, `openclaw-credentials`, `openclaw-collaboration`, `openclaw-github`, `openclaw-worktree`, `openclaw-issue`, `openclaw-pr`, and native OpenClaw turns in `openclaw-runtimes`. Memory's embedding fixture uses strict AIMock with synthetic authentication and fixed vectors rather than a model turn. Only hosted Codex turns in `openclaw-runtimes` use a live model. Other examples use direct assertions; shared live-model credentials never select a scenario's driver.
 - Keep shared command success output stable, route diagnostics to standard error, and use `OPENCLAW_DEBUG`, `OPENCLAW_LOG_LEVEL=debug`, `DEBUG`, or runner debug mode for opt-in diagnostics.
 
 ## Assertions

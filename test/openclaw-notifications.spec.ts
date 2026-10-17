@@ -86,6 +86,11 @@ function fixture() {
     async inspectRun() {
       return 'pending' as const;
     },
+    async scanSelected(_manifest, _workspace, selected, signal) {
+      signal.throwIfAborted();
+      assert.deepEqual(selected, selector);
+      return { status: 'ready', admitted: 1 };
+    },
     async requestRun(_manifest, _workspace, signal) {
       signal.throwIfAborted();
       requests++;
@@ -110,6 +115,13 @@ function fixture() {
       return requests;
     },
   };
+}
+function scheduledFixture() {
+  const f = fixture();
+  const refresh = f.service.refresh.bind(f.service);
+  // exercise native receipt polling independently of the selected intake adapter.
+  f.service.refresh = (manifest, workspace, { signal }) => refresh(manifest, workspace, { signal });
+  return f;
 }
 function record(): OpenClawDispatchRecord {
   return {
@@ -147,7 +159,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(observed.status, 'degraded');
     assert.equal(observed.code, 'github-notification-capabilities-degraded');
     assert.equal(observed.diagnosticCode, undefined);
-    assert.equal(observed.warnings?.length, 2);
+    assert.equal(observed.warnings?.length, 1);
     assert.equal(observed.baseline.status, 'ready');
     assert.equal(observed.items.length, 1);
     assert.equal(
@@ -198,7 +210,7 @@ describe('agent/openclaw-notifications', () => {
     };
     const blocked = await f.service.inspect(f.manifest, '/workspace');
     assert.equal(blocked.diagnosticCode, 'intake-provider-unavailable');
-    assert.equal(blocked.warnings?.length, 2);
+    assert.equal(blocked.warnings?.length, 1);
     assert.equal(
       (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
         .status,
@@ -208,7 +220,10 @@ describe('agent/openclaw-notifications', () => {
 
   it('should print capability warnings after status output and preserve structured degraded results', async () => {
     const f = fixture();
-    f.manifest.github!.notifications!.issueAssignment!.feedback = true;
+    f.manifest.github!.notifications!.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
     const loaded = {
       status: 'loaded' as const,
@@ -241,15 +256,12 @@ describe('agent/openclaw-notifications', () => {
         events.map(({ stream }) => stream),
         ['stdout', 'stderr'],
       );
-      assert.match(events[1]!.text, /feedback/);
+      assert.match(events[1]!.text, /review requests/);
       assert.deepEqual(exits, [1]);
       if (json) {
         const result = JSON.parse(events[0]!.text);
         assert.equal(result.status, 'degraded');
-        assert.equal(
-          result.warnings[0].fieldPath,
-          '/github/notifications/issue-assignment/feedback',
-        );
+        assert.equal(result.warnings[0].fieldPath, '/github/notifications/review-request');
         assert.equal(result.diagnosticCode, undefined);
       } else {
         assert.equal((events[1]!.text.match(/messages/g) ?? []).length, 1);
@@ -360,8 +372,34 @@ describe('agent/openclaw-notifications', () => {
     );
   });
 
-  it('should queue the owned workflow and distinguish its receipt from completed scanning', async () => {
+  it('should perform selected intake directly and keep every wait refresh scoped without queueing automation', async () => {
     const f = fixture();
+    let scans = 0;
+    f.service.dependencies.scanSelected = async (_manifest, _workspace, selected) => {
+      assert.deepEqual(selected, selector);
+      scans++;
+      return { status: 'ready', admitted: 0 };
+    };
+    const result = await f.service.refresh(f.manifest, '/workspace', {
+      selector,
+      signal: new AbortController().signal,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(result.runId, undefined);
+    await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 2500,
+      refresh: true,
+    });
+    assert.ok(scans > 1);
+    assert.equal(f.requests, 0);
+    await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal });
+    assert.equal(f.requests, 1, 'a later unscoped refresh keeps the ordinary workflow');
+  });
+
+  it('should queue the owned workflow and distinguish its receipt from completed scanning', async () => {
+    const f = scheduledFixture();
     const result = await f.service.refresh(f.manifest, '/workspace', {
       signal: new AbortController().signal,
     });
@@ -380,7 +418,7 @@ describe('agent/openclaw-notifications', () => {
   });
 
   it('should advance refresh cycles only after the owning native run completes', async () => {
-    const f = fixture();
+    const f = scheduledFixture();
     let sleeps = 0;
     let reads = 0;
     f.service.dependencies.now = () => baseline;
@@ -415,7 +453,7 @@ describe('agent/openclaw-notifications', () => {
   });
 
   it('should retry scheduler contention then observe the exact queued run through completion', async () => {
-    const f = fixture();
+    const f = scheduledFixture();
     let requests = 0;
     let inspections = 0;
     f.service.dependencies.requestRun = async () =>
@@ -454,7 +492,7 @@ describe('agent/openclaw-notifications', () => {
   });
 
   it('should bound persistent scheduler contention without inventing a run to inspect', async () => {
-    const f = fixture();
+    const f = scheduledFixture();
     let requests = 0;
     f.service.dependencies.requestRun = async () => {
       requests++;
@@ -475,7 +513,7 @@ describe('agent/openclaw-notifications', () => {
   });
 
   it('should stop refreshing on a skip other than scheduler contention', async () => {
-    const f = fixture();
+    const f = scheduledFixture();
     let requests = 0;
     f.service.dependencies.requestRun = async () => {
       requests++;
@@ -527,8 +565,8 @@ describe('agent/openclaw-notifications', () => {
     assert.match(errors.join(''), /github-notification-status-failed/u);
   });
 
-  it('should reject disabled inactive stale unsupported and scoped refreshes without starting work', async () => {
-    for (const change of ['disabled', 'inactive', 'stale', 'runtime', 'mode', 'scope']) {
+  it('should reject disabled inactive stale and unsupported refreshes without starting work', async () => {
+    for (const change of ['disabled', 'inactive', 'stale', 'runtime', 'mode']) {
       const f = fixture();
       const policy = f.manifest.github!.notifications!;
       assert.ok(policy.schemaVersion === 2);
@@ -539,7 +577,7 @@ describe('agent/openclaw-notifications', () => {
       if (change === 'mode') policy.issueAssignment!.mode = 'work';
       const result = await f.service.refresh(f.manifest, '/workspace', {
         signal: new AbortController().signal,
-        ...(change === 'scope' ? { selector } : {}),
+        selector,
       });
       assert.equal(result.status, 'failed', change);
       assert.equal(f.requests, 0, change);
@@ -649,11 +687,18 @@ describe('agent/openclaw-notifications', () => {
     assert.match(human, /run\s+native-run/u);
     assert.equal(human.includes(String.fromCharCode(27)), false);
     await refresh({ ...options, repository: 'owner/repo', itemKind: 'issue', itemNumber: '3' });
+    assert.equal(JSON.parse(stdout.pop()!).status, 'completed');
+    assert.equal(exit, 0);
+    await refresh({
+      ...options,
+      repository: 'owner/repo',
+      itemKind: 'pull-request',
+      itemNumber: '3',
+    });
     assert.equal(
       JSON.parse(stdout.pop()!).code,
       'github-notification-refresh-selector-unsupported',
     );
     assert.equal(exit, 1);
-    assert.match(stderr.join(''), /omit item selectors/u);
   });
 });
