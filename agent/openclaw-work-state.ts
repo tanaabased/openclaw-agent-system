@@ -11,6 +11,7 @@ export const openclawWorkStateSchema = Type.Object(
     implementation: Type.Optional(input),
     publication: Type.Optional(input),
     caller: Type.Optional(input),
+    operatorInput: Type.Optional(input),
     result: Type.Optional(implementationResultSchema),
     delivery: Type.Optional(
       Type.Object(

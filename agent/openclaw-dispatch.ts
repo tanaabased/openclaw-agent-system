@@ -393,6 +393,8 @@ export default class OpenClawDispatch {
       input.action === 'context' || input.action === 'result' || workAction || feedbackChild;
     if (workAction && !operator) throw new Error('dispatch-operator-required');
     const current = await this.scope(manifest, workspace);
+    if (input.action === 'delivery' && input.operation === 'present')
+      return this.present(manifest, workspace, caller, input, operator, authority, current);
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
     let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
     let enteredJournal = false;
@@ -893,6 +895,120 @@ export default class OpenClawDispatch {
           return this.block(current.journal, input.id, error, preparationStage);
         throw error;
       });
+  }
+
+  private async present(
+    manifest: AgentManifest,
+    workspace: string,
+    caller: DispatchCaller,
+    action: Extract<Static<typeof dispatchParameters>, { action: 'delivery' }>,
+    operator: boolean,
+    authority: DispatchAuthority,
+    current: Awaited<ReturnType<OpenClawDispatch['scope']>>,
+  ) {
+    let stage: 'snapshot' | 'verification' | 'commit' = 'snapshot';
+    let enteredJournal = false;
+    const signal = authority.signal ?? new AbortController().signal;
+    try {
+      signal.throwIfAborted();
+      const record = await current.journal.exclusive(async (state) => {
+        enteredJournal = true;
+        signal.throwIfAborted();
+        const retained = state.records.find((entry) => entry.id === action.id);
+        if (!retained) throw new Error('dispatch-receipt-missing');
+        if (
+          caller.sessionKey !== retained.threadId ||
+          caller.sessionId !== retained.sessionCreation?.sessionId ||
+          !retained.assessmentTurn
+        )
+          throw new Error('dispatch-assessment-caller-mismatch');
+        return structuredClone(retained);
+      });
+      const snapshot = automationHash(record);
+      stage = 'verification';
+      const assertCurrent = async () => {
+        signal.throwIfAborted();
+        await authority.assertCurrent?.();
+        await this.validate(manifest, workspace, record, true);
+        signal.throwIfAborted();
+      };
+      await assertCurrent();
+      const { intake, repo } = await this.validate(manifest, workspace, record, true);
+      const verified = await this.dependencies.credential.use(
+        { signal, assertCurrent },
+        async (request) => {
+          const source = await verifyOpenClawOperator({
+            record,
+            caller,
+            operator,
+            request,
+            config: this.dependencies.config(),
+          });
+          const result = await openClawDelivery({
+            record,
+            intake,
+            action,
+            source,
+            base: repo.defaultBranch,
+            recipients: current.policy.policy.issueAssignment?.pullRequest?.recipients,
+            signal,
+            assertCurrent,
+            // presentation changes only this snapshot until the journal comparison succeeds.
+            save: assertCurrent,
+            connect: async () => {
+              if (!this.dependencies.delivery) throw new Error('delivery-runtime-unavailable');
+              return this.dependencies.delivery({
+                manifest,
+                workspaceDir: current.workspace,
+                worktree: record.worktree!,
+                caller,
+                signal,
+              });
+            },
+          });
+          return { result, source };
+        },
+      );
+      await assertCurrent();
+      stage = 'commit';
+      enteredJournal = false;
+      return await current.journal.exclusive(async (state, save, lockSignal) => {
+        enteredJournal = true;
+        signal.throwIfAborted();
+        lockSignal.throwIfAborted();
+        await authority.assertCurrent?.();
+        const retained = state.records.find((entry) => entry.id === action.id);
+        if (!retained || automationHash(retained) !== snapshot)
+          throw new Error('delivery-presentation-state-changed');
+        retained.work!.delivery!.presentation = record.work!.delivery!.presentation;
+        // lookup custody is not implementation-context or publication permission.
+        retained.work!.operatorInput = verified.source;
+        signal.throwIfAborted();
+        await save();
+        return verified.result;
+      });
+    } catch (error) {
+      signal.throwIfAborted();
+      const code = openClawDispatchFailureCode(error);
+      if (stage !== 'verification' && !enteredJournal && code === privateStateFileLockBusyErrorCode)
+        return {
+          status: 'busy' as const,
+          id: action.id,
+          code,
+          operation: 'present' as const,
+          retryable: true,
+          stage,
+          instructions:
+            'Retry delivery present in this issue chat to show the existing PR. Publication state is unchanged. Do not publish or create a replacement PR.',
+        };
+      return {
+        status: 'blocked' as const,
+        id: action.id,
+        code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
+        instructions:
+          'Preserve the existing PR and receipt. Stop on denial or lost authority. After an interrupted presentation, retry delivery present in this issue chat; never create a replacement PR.',
+      };
+    }
   }
 }
 

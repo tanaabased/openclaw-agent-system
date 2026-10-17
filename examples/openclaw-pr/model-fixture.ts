@@ -222,35 +222,32 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         });
       if (saved.status !== 'recorded') return;
     }
-    const prepared = result('delivery-prepare');
-    if (!prepared)
-      return dispatch('delivery-prepare', {
-        action: 'delivery',
-        operation: 'prepare',
-        id: operatorId,
-        title,
-        body,
-      });
-    if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-    const published = result('delivery-publish');
-    if (!published)
-      return dispatch('delivery-publish', {
-        action: 'delivery',
-        operation: 'publish',
-        id: operatorId,
-        digest: prepared.digest,
-        title,
-        body,
-      });
-    if (published.status !== 'published') return;
-    const reconciled = result('delivery-reconcile');
-    if (!reconciled)
-      return dispatch('delivery-reconcile', {
-        action: 'delivery',
-        operation: 'reconcile',
-        id: operatorId,
-      });
-    if (reconciled.status !== 'ready') return;
+    if (!retry) {
+      const prepared = result('delivery-prepare');
+      if (!prepared)
+        return dispatch('delivery-prepare', {
+          action: 'delivery',
+          operation: 'prepare',
+          id: operatorId,
+          title,
+          body,
+        });
+      if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+      const published = result('delivery-publish');
+      if (!published)
+        return dispatch('delivery-publish', {
+          action: 'delivery',
+          operation: 'publish',
+          id: operatorId,
+          digest: prepared.digest,
+          title,
+          body,
+        });
+      if (published.status !== 'published') return;
+      return {
+        content: 'Publication retained. Presentation intentionally deferred for recovery coverage.',
+      };
+    }
     const presented = result('delivery-present');
     if (!presented)
       return dispatch('delivery-present', {
@@ -355,7 +352,6 @@ export const prExampleScenario: OpenClawAIMockScenario = {
       'work-result',
       'delivery-prepare',
       'delivery-publish',
-      'delivery-reconcile',
       'delivery-present',
       'feedback-context',
       'feedback-result',

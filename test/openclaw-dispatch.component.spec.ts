@@ -36,6 +36,7 @@ describe('agent/openclaw issue dispatch', () => {
   let onCreate: (() => void) | undefined;
   let onSend: (() => void) | undefined;
   let messages: Array<Record<string, unknown>>;
+  let anchoredMessages: Array<Record<string, unknown>>;
   let inputReceipts: Array<Record<string, unknown>>;
   let waitResult: Record<string, unknown>;
   let loseSend: boolean;
@@ -119,6 +120,7 @@ describe('agent/openclaw issue dispatch', () => {
     onCreate = undefined;
     onSend = undefined;
     messages = [];
+    anchoredMessages = [];
     inputReceipts = [];
     waitResult = { status: 'timeout' };
     loseSend = false;
@@ -240,7 +242,14 @@ describe('agent/openclaw issue dispatch', () => {
                 throw new Error('sessionId requires messageId');
               return {
                 sessionId: historySessionId ?? session?.sessionId,
-                messages: params.limit === 1 ? messages.slice(-1) : messages,
+                messages: params.messageId
+                  ? [...messages, ...anchoredMessages].filter(
+                      (entry) =>
+                        (entry.__openclaw as Record<string, unknown>)?.id === params.messageId,
+                    )
+                  : params.limit === 1
+                    ? messages.slice(-1)
+                    : messages,
                 inputReceipts,
                 pendingInputs: {
                   total: inputReceipts.filter((entry) => entry.state === 'pending').length,
@@ -1525,6 +1534,261 @@ describe('agent/openclaw issue dispatch', () => {
     return { id: input.id, who: assessor(input.id, 'operator') };
   }
 
+  async function publishedFollowup(onInspect: () => Promise<void> = async () => {}) {
+    const { id, who } = await operatorFollowup();
+    const request = { action: 'handoff' as const, id, permission: 'publication' as const };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    const { journal, admitted } = await service.scope(manifest, root);
+    const retained = await record();
+    const intake = admitted.records.find((entry) => entry.id === retained.intakeId)!;
+    const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
+    const head = 'a'.repeat(40);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.work!.delivery = {
+        id: 'd'.repeat(64),
+        title: 'Fix the result',
+        body: 'Closes #3',
+        creationAttempted: true,
+        reconciled: true,
+        pushedHead: head,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          sessionId: who.sessionId,
+          threadId: who.sessionKey,
+          worktree: retained.worktree!,
+          branch: 'issue-3',
+          base: 'main',
+          head,
+          authorId: 'U_agent',
+          policyDigest: retained.manifestDigest,
+        },
+      };
+      await save();
+    });
+    const effects: string[][] = [];
+    service.dependencies.delivery = async () => ({
+      async git(argv) {
+        effects.push(argv);
+        if (argv[0] === 'branch') return 'issue-3';
+        if (argv.includes('--show-toplevel')) return retained.worktree!;
+        if (argv[0] === 'rev-parse') return head;
+        if (argv[0] === 'status' || argv[0] === 'check-ref-format') return '';
+        if (argv[0] === 'rev-list') return '1';
+        if (argv[0] === 'remote') return `git@github.com:${repository}.git`;
+        assert.fail(`unexpected git operation: ${argv[0]}`);
+      },
+      account: {
+        identity: { login: 'agent', nodeId: 'U_agent' },
+        async execute(argv) {
+          effects.push(argv);
+          let value: unknown;
+          if (argv.includes(`repos/${repository}/pulls`)) {
+            assert.ok(argv.includes('GET'));
+            await onInspect();
+            value = [
+              {
+                itemNodeId: 'PR_7',
+                number: 7,
+                state: 'open',
+                baseRef: 'main',
+                headRef: 'issue-3',
+                headRepository: repository,
+                title: 'Fix the result',
+                body: 'Closes #3',
+              },
+            ];
+          } else {
+            assert.ok(argv.includes(`repos/${repository}/pulls/7`));
+            value = {
+              nodeId: 'PR_7',
+              number: 7,
+              state: 'open',
+              baseRef: 'main',
+              headRef: 'issue-3',
+              repositoryId: intake.repository.nodeId,
+              headRepositoryId: intake.repository.nodeId,
+              headSha: head,
+              authorId: 'U_agent',
+            };
+          }
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify(value),
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      },
+    });
+    const present = (authority = {}) =>
+      service.run(
+        manifest,
+        root,
+        who,
+        { action: 'delivery', operation: 'present', id },
+        true,
+        authority,
+      );
+    return { id, who, journal, present, effects };
+  }
+
+  it('should release the presentation lock during provider reads and recover the same complete card', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const { journal, present, effects } = await publishedFollowup(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const before = (await record()).work!.delivery!;
+    const pending = present();
+    await entered.promise;
+    try {
+      await journal.exclusive(async (state) => {
+        assert.deepEqual(state.records[0]!.work!.delivery, before);
+      });
+    } finally {
+      release.resolve();
+    }
+    const shown = await pending;
+    assert.ok('presentation' in shown && typeof shown.presentation === 'string');
+    assert.match(shown.presentation, /^> ## 🔀 Pull request opened/m);
+    assert.match(shown.presentation, /issues\/3/);
+    assert.match(shown.presentation, /pull\/7/);
+    service = new OpenClawDispatch(service.dependencies);
+    const retried = await present();
+    assert.ok('presentation' in retried);
+    assert.equal(retried.presentation, shown.presentation);
+    assert.deepEqual(
+      { ...(await record()).work!.delivery, presentation: undefined },
+      { ...before, presentation: undefined },
+    );
+    assert.ok(
+      effects.every(
+        (argv) => !argv.includes('push') && !argv.includes('POST') && !argv.includes('PATCH'),
+      ),
+    );
+  });
+
+  for (const stage of ['snapshot', 'commit'] as const) {
+    it(`should report retryable ${stage} contention without changing the publication receipt`, async () => {
+      const held = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let locking: Promise<void> | undefined;
+      const setup = await publishedFollowup(async () => {
+        if (stage === 'commit' && !locking) {
+          locking = setup.journal.exclusive(async () => {
+            held.resolve();
+            await release.promise;
+          });
+          await held.promise;
+        }
+      });
+      if (stage === 'snapshot') {
+        locking = setup.journal.exclusive(async () => {
+          held.resolve();
+          await release.promise;
+        });
+        await held.promise;
+      }
+      const before = await record();
+      try {
+        const result = await setup.present();
+        assert.equal(result.status, 'busy');
+        assert.ok(
+          'retryable' in result && result.retryable && 'stage' in result && result.stage === stage,
+        );
+        assert.deepEqual(await record(), before);
+      } finally {
+        release.resolve();
+        await locking;
+      }
+      assert.equal((await setup.present()).status, 'presented');
+    });
+  }
+
+  it('should reject a changed record instead of saving a stale presentation snapshot', async () => {
+    const setup = await publishedFollowup(async () => {
+      await setup.journal.exclusive(async (state, save) => {
+        state.records[0]!.work!.delivery!.reconciled = false;
+        await save();
+      });
+    });
+    const result = await setup.present();
+    assert.ok('code' in result && result.code === 'delivery-presentation-state-changed');
+    assert.equal((await record()).work!.delivery!.reconciled, false);
+    assert.equal((await record()).work!.delivery!.presentation, undefined);
+  });
+
+  it('should preserve the published receipt across cancellation and later owner recovery', async () => {
+    const controller = new AbortController();
+    let cancel = true;
+    const setup = await publishedFollowup(async () => {
+      if (cancel) controller.abort(new Error('dispatch-test-cancelled'));
+    });
+    const before = await record();
+    await assert.rejects(setup.present({ signal: controller.signal }), /dispatch-test-cancelled/);
+    assert.deepEqual(await record(), before);
+    cancel = false;
+    setup.who.runId = 'later-owner';
+    anchoredMessages = [
+      {
+        role: 'user',
+        content: 'Show the existing PR.',
+        __openclaw: {
+          id: 'later-event',
+          runId: 'later-owner',
+          idempotencyKey: 'later-owner:user',
+          senderIsOwner: true,
+        },
+      },
+    ];
+    inputReceipts = [{ runId: 'later-owner', state: 'consumed', consumedByEventId: 'later-event' }];
+    assert.equal((await setup.present()).status, 'presented');
+    inputReceipts = [];
+    service = new OpenClawDispatch(service.dependencies);
+    assert.equal((await setup.present()).status, 'presented');
+    const retained = await record();
+    assert.deepEqual(retained.work!.operatorInput, {
+      runId: 'later-owner',
+      inputEventId: 'later-event',
+    });
+    assert.deepEqual(retained.work!.publication, before.work!.publication);
+    assert.equal(retained.work!.caller, undefined);
+  });
+
+  for (const code of [
+    'private-state-file-lock-busy',
+    'private-state-file-lock-lost',
+    'dispatch-policy-changed',
+  ]) {
+    it(`should not classify verification failure ${code} as presentation acquisition contention`, async () => {
+      const setup = await publishedFollowup(async () => {
+        throw Object.assign(new Error(code), { code });
+      });
+      const before = await record();
+      const result = await setup.present();
+      assert.equal(result.status, 'blocked');
+      assert.ok('code' in result && result.code === code);
+      assert.equal('retryable' in result, false);
+      assert.deepEqual(await record(), before);
+    });
+  }
+
+  it('should reject revoked assignment authority during presentation and preserve the receipt', async () => {
+    const setup = await publishedFollowup(async () => {
+      fixture.item.assignees = [];
+    });
+    const before = await record();
+    const result = await setup.present();
+    assert.ok('code' in result && result.code === 'dispatch-assignment-authority-revoked');
+    assert.deepEqual(await record(), before);
+  });
+
   it('should retain explicit implementation and publication permission without replacing the assessment', async () => {
     const { id, who } = await operatorFollowup();
     const request = {
@@ -1567,6 +1831,31 @@ describe('agent/openclaw issue dispatch', () => {
     await assert.rejects(
       service.run(manifest, root, who, { ...request, digest: preview.digest }, true),
       /dispatch-handoff-stale/,
+    );
+  });
+
+  it('should verify the retained owner input after it leaves the recent history page', async () => {
+    const { id, who } = await operatorFollowup();
+    const request = { action: 'handoff' as const, id, permission: 'implementation' as const };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    anchoredMessages = [messages.pop()!];
+    const verified = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation-context', id },
+      true,
+    );
+    assert.equal(verified.status, 'verified');
+    assert.ok(
+      calls.some(
+        ({ method, params }) =>
+          method === 'chat.history' &&
+          params.messageId === 'operator-event' &&
+          params.sessionId === who.sessionId,
+      ),
     );
   });
 

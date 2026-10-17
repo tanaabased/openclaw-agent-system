@@ -197,6 +197,25 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
   });
+  it('should rebuild the complete card after interrupted presentation without republishing', async () => {
+    await publish();
+    const persisted = structuredClone(record);
+    const save = input.save;
+    input.save = async () => {
+      throw new Error('presentation-interrupted');
+    };
+    await assert.rejects(request('present'), /presentation-interrupted/);
+    input.record = record = structuredClone(persisted);
+    input.save = save;
+    const result = await request('present');
+    assert.ok('presentation' in result && typeof result.presentation === 'string');
+    assert.match(result.presentation, /^> ## 🔀 Pull request opened/m);
+    assert.match(result.presentation, /issues\/3/);
+    assert.match(result.presentation, /pull\/7/);
+    assert.deepEqual(record.work!.delivery!.pullRequest, persisted.work!.delivery!.pullRequest);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
+  });
   it('should refuse a second create when the attempted creation remains uncertain', async () => {
     missing = true;
     await assert.rejects(publish());
