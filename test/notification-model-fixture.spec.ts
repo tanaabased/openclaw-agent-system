@@ -21,10 +21,12 @@ function request(prompt: string): ChatCompletionRequest {
       { role: 'system', content: 'Name: Notification Tanaabot' },
       { role: 'user', content: prompt },
     ],
-    tools: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_git'].map((name) => ({
-      type: 'function',
-      function: { name },
-    })),
+    tools: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read'].map(
+      (name) => ({
+        type: 'function',
+        function: { name },
+      }),
+    ),
   };
 }
 
@@ -57,7 +59,7 @@ async function action<A extends Action['action']>(input: ChatCompletionRequest, 
 }
 
 describe('examples/openclaw-notifications model fixture', () => {
-  it('should declare native planning with unavailable feedback and reviews for capability isolation', async () => {
+  it('should declare native planning with feedback and unavailable reviews for capability isolation', async () => {
     const parsed = parseAgentManifest(
       await readFile('examples/openclaw-notifications/tanaabot/agent.yaml', 'utf8'),
     );
@@ -86,7 +88,9 @@ describe('examples/openclaw-notifications model fixture', () => {
   });
 
   it('should carry native scan and routing receipts through preparation and assessment', async () => {
-    const input = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    const input = request(
+      `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+    );
     assert.deepEqual(await action(input, 'scan'), { action: 'scan', policyDigest: digest });
     append(input, 'scan', { status: 'ready', admitted: 1 });
     await action(input, 'next');
@@ -105,14 +109,16 @@ describe('examples/openclaw-notifications model fixture', () => {
     assert.deepEqual(await response(input), { content: 'notification-intake-advanced' });
     input.messages.push({
       role: 'user',
-      content: `Advance at most one issue per run. Policy digest: ${digest}`,
+      content: `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
     });
     await action(input, 'scan');
   });
 
   it('should reconcile pending assessments and stop on native idle without fabricating work', async () => {
     for (const status of ['idle', 'reconcile-required']) {
-      const input = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+      const input = request(
+        `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+      );
       append(input, 'scan', { status: 'ready', admitted: 0 });
       append(input, 'next', { status, id });
       if (status === 'reconcile-required') {
@@ -142,7 +148,9 @@ describe('examples/openclaw-notifications model fixture', () => {
       ],
     ];
     for (const path of paths) {
-      const input = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+      const input = request(
+        `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+      );
       append(input, 'scan', { status: 'ready' });
       for (const [stage, result] of path) append(input, stage, result);
       const pending = await response(input);
@@ -152,11 +160,13 @@ describe('examples/openclaw-notifications model fixture', () => {
       assert.deepEqual(await response(input), { content: 'notification-intake-busy' });
       input.messages.push({
         role: 'user',
-        content: `Advance at most one issue per run. Policy digest: ${digest}`,
+        content: `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
       });
       await action(input, 'scan');
     }
-    const invalid = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    const invalid = request(
+      `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+    );
     append(invalid, 'scan', { status: 'ready' });
     append(invalid, 'next', { status: 'busy', code: 'unexpected-failure' });
     assert.equal(matchFixture([...scenario.fixtures], invalid), null);
@@ -205,10 +215,14 @@ describe('examples/openclaw-notifications model fixture', () => {
   });
 
   it('should reject failed scans unrelated issues and an execution outside the verified worktree', async () => {
-    const scan = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    const scan = request(
+      `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+    );
     append(scan, 'scan', { status: 'blocked' });
     assert.equal(matchFixture([...scenario.fixtures], scan), null);
-    const unrelated = request(`Advance at most one issue per run. Policy digest: ${digest}`);
+    const unrelated = request(
+      `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+    );
     append(unrelated, 'scan', { status: 'ready' });
     append(unrelated, 'next', {
       status: 'routing-required',
@@ -279,5 +293,41 @@ describe('examples/openclaw-notifications model fixture', () => {
     );
     append(input, 'handoff-preview', { status: 'blocked', code: 'dispatch-operator-required' });
     assert.equal(matchFixture([...scenario.fixtures], input), null);
+  });
+  it('should keep feedback private retention skill selection candidate and publication as distinct stages', async () => {
+    const eventId = 'e'.repeat(64);
+    const input = request(
+      `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${eventId}`,
+    );
+    assert.equal((await action(input, 'feedback')).operation, 'context');
+    append(input, 'feedback-context', {
+      status: 'verified',
+      runtime: 'openclaw',
+      publication: 'allowed',
+    });
+    assert.equal((await action(input, 'feedback')).operation, 'result');
+    append(input, 'feedback-result', { status: 'recorded', presentation: 'Full private response' });
+    assert.equal((await action(input, 'feedback')).operation, 'compose');
+    append(input, 'feedback-compose', {
+      status: 'composition-ready',
+      digest,
+      selection: { skill: { path: '/tmp/SKILL.md' } },
+    });
+    const read = await response(input);
+    assert.ok('toolCalls' in read);
+    assert.equal(read.toolCalls?.[0]?.name, 'read');
+    append(input, 'feedback-skill', { text: 'Selected reply method' });
+    assert.equal((await action(input, 'feedback')).operation, 'candidate');
+    append(input, 'feedback-candidate', { status: 'candidate-recorded' });
+    assert.equal((await action(input, 'feedback')).digest, undefined);
+    append(input, 'feedback-preview', { status: 'publication-ready', digest });
+    assert.equal((await action(input, 'feedback')).digest, digest);
+    append(input, 'feedback-publish', {
+      status: 'published',
+      presentation: 'Complete private and public presentation',
+    });
+    assert.deepEqual(await response(input), {
+      content: 'Complete private and public presentation',
+    });
   });
 });

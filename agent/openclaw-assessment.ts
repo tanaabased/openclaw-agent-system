@@ -1,10 +1,8 @@
-import { basename, isAbsolute } from 'node:path';
-
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import assessmentGuidance from './assessment-guidance.ts';
 import { assessmentResultSchema } from './assessment-result.ts';
-import assessmentSkillSource from './assessment-skill-source.ts';
+import openClawSkill from './openclaw-skill.ts';
 import { automationHash } from './automation-hash.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
@@ -46,33 +44,7 @@ export async function selectOpenClawAssessment(input: {
   const name = defaultAssessmentSkill.split(':').at(-1)!;
   if (configuration?.skill && ![name, defaultAssessmentSkill].includes(configuration.skill))
     throw new Error('dispatch-assessment-replacement-unsupported');
-  const report = sessionObject(
-    await request('skills.status', { agentId: expected.agentId, sessionKey: expected.key }),
-  );
-  if (!Array.isArray(report.skills)) throw new Error('dispatch-assessment-skill-discovery-invalid');
-  const matches = report.skills
-    .map(sessionObject)
-    .filter(
-      (entry) =>
-        entry.name === name &&
-        entry.eligible === true &&
-        entry.modelVisible === true &&
-        entry.disabled !== true,
-    );
-  if (matches.length !== 1) throw new Error('dispatch-assessment-skill-unavailable');
-  const selected = matches[0]!;
-  if (
-    typeof selected.filePath !== 'string' ||
-    !isAbsolute(selected.filePath) ||
-    basename(selected.filePath) !== 'SKILL.md' ||
-    typeof selected.source !== 'string'
-  )
-    throw new Error('dispatch-assessment-skill-source-unsupported');
-  const skill = await assessmentSkillSource({
-    name,
-    path: selected.filePath,
-    scope: selected.source,
-  });
+  const skill = await openClawSkill(request, expected, defaultAssessmentSkill);
   const guidance = await assessmentGuidance(input.workspace, configuration?.guidance);
   if (
     record.assessment &&
@@ -107,6 +79,7 @@ export async function issueAssessmentAction(input: {
 }) {
   const { request, record, caller, intake, workspace } = input;
   if (
+    record.feedback?.events.some((event) => event.turn?.runId === caller.runId) ||
     !record.assessmentTurn ||
     !record.assessment ||
     !record.sessionCreation?.verified ||

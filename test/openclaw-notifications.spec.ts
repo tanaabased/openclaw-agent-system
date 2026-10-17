@@ -147,7 +147,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(observed.status, 'degraded');
     assert.equal(observed.code, 'github-notification-capabilities-degraded');
     assert.equal(observed.diagnosticCode, undefined);
-    assert.equal(observed.warnings?.length, 2);
+    assert.equal(observed.warnings?.length, 1);
     assert.equal(observed.baseline.status, 'ready');
     assert.equal(observed.items.length, 1);
     assert.equal(
@@ -198,7 +198,7 @@ describe('agent/openclaw-notifications', () => {
     };
     const blocked = await f.service.inspect(f.manifest, '/workspace');
     assert.equal(blocked.diagnosticCode, 'intake-provider-unavailable');
-    assert.equal(blocked.warnings?.length, 2);
+    assert.equal(blocked.warnings?.length, 1);
     assert.equal(
       (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
         .status,
@@ -208,7 +208,10 @@ describe('agent/openclaw-notifications', () => {
 
   it('should print capability warnings after status output and preserve structured degraded results', async () => {
     const f = fixture();
-    f.manifest.github!.notifications!.issueAssignment!.feedback = true;
+    f.manifest.github!.notifications!.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
     const loaded = {
       status: 'loaded' as const,
@@ -241,15 +244,12 @@ describe('agent/openclaw-notifications', () => {
         events.map(({ stream }) => stream),
         ['stdout', 'stderr'],
       );
-      assert.match(events[1]!.text, /feedback/);
+      assert.match(events[1]!.text, /review requests/);
       assert.deepEqual(exits, [1]);
       if (json) {
         const result = JSON.parse(events[0]!.text);
         assert.equal(result.status, 'degraded');
-        assert.equal(
-          result.warnings[0].fieldPath,
-          '/github/notifications/issue-assignment/feedback',
-        );
+        assert.equal(result.warnings[0].fieldPath, '/github/notifications/review-request');
         assert.equal(result.diagnosticCode, undefined);
       } else {
         assert.equal((events[1]!.text.match(/messages/g) ?? []).length, 1);

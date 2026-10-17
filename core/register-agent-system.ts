@@ -264,6 +264,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
+    async feedbackConnect(input, signal) {
+      const connected = await githubCapability.accountClient.connect(input, 'service', signal);
+      return new GitHubWorkEventClient(connected);
+    },
     async delivery({ manifest, workspaceDir, worktree, caller, signal }) {
       const account = await githubCapability.accountClient.connect(
         { manifest, workspaceDir },

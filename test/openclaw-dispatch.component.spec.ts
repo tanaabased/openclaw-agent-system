@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { automationHash } from '../agent/automation-hash.ts';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import type { AssessmentResult } from '../agent/assessment-result.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
@@ -192,9 +194,14 @@ describe('agent/openclaw issue dispatch', () => {
                 };
               if (method === 'sessions.describe') return { session };
               if (method === 'chat.send') {
-                const turn = String(params.idempotencyKey).endsWith(':assessment')
-                  ? (await record()).assessmentTurn
-                  : (await record()).firstTurn;
+                const feedbackTurn = (await record()).feedback?.events.find(
+                  (event) => event.turn?.runId === params.idempotencyKey,
+                )?.turn;
+                const turn =
+                  feedbackTurn ??
+                  (String(params.idempotencyKey).endsWith(':assessment')
+                    ? (await record()).assessmentTurn
+                    : (await record()).firstTurn);
                 assert.equal(turn?.status, 'attempted');
                 assert.equal(turn?.message, params.message);
                 onSend?.();
@@ -1620,5 +1627,205 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal((await record()).work, undefined);
     assert.deepEqual((await record()).result, plan);
+  });
+  async function feedbackOwner() {
+    const { id, who } = await operatorFollowup();
+    const handoff = {
+      action: 'handoff' as const,
+      id,
+      permission: 'implementation-and-publication' as const,
+    };
+    const preview = await service.run(manifest, root, who, handoff, true);
+    assert.ok('digest' in preview);
+    await service.run(manifest, root, who, { ...handoff, digest: preview.digest }, true);
+    const oldDigest = (await record()).manifestDigest;
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    const comments: Array<GitHubCanonicalIssueComment> = [];
+    service.dependencies.feedbackConnect = async () => ({
+      ...fixture.client,
+      getItemContext: async () => ({
+        title: 'issue',
+        body: '',
+        comments: [],
+        labels: [],
+        truncated: false,
+      }),
+      listIssueComments: async () => ({ comments, truncated: false }),
+      getIssueComment: async (_o, _n, _i, id) => {
+        const comment = comments.find((c) => c.databaseId === id);
+        if (!comment) throw new Error('comment-deleted');
+        return comment;
+      },
+      createIssueComment: async () => {
+        throw new Error('unexpected publication');
+      },
+      findOwnIssueComment: async () => undefined,
+      replies: {
+        create: async () => {
+          throw new Error('unexpected reply');
+        },
+        find: async () => undefined,
+      },
+    });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).manifestDigest, oldDigest);
+    comments.push({
+      nodeId: 'C_feedback',
+      databaseId: 99,
+      author: fixture.client.identity,
+      body: '@receiver explain this',
+      bodyTruncated: false,
+      createdAt: '2026-10-07T10:03:00Z',
+      updatedAt: '2026-10-07T10:03:00Z',
+    });
+    return { id, who, comments };
+  }
+  it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
+    const { id } = await feedbackOwner();
+    assert.equal((await service.check(manifest, root)).changed, true);
+    assert.equal((await record()).feedback!.events.length, 0);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.ok(event.turn);
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).result?.fullAssessment, plan.fullAssessment);
+    const who = assessor(id, event.turn.runId);
+    const context = await service.run(manifest, root, who, {
+      action: 'feedback',
+      operation: 'context',
+      id,
+      eventId: event.id,
+    });
+    assert.equal(context.status, 'verified');
+    for (const action of ['context', 'implementation-context'] as const)
+      await assert.rejects(
+        service.run(manifest, root, who, { action, id }, true),
+        /feedback-work-authority-denied/,
+      );
+    const result = await service.run(manifest, root, who, {
+      action: 'feedback',
+      operation: 'result',
+      id,
+      eventId: event.id,
+      privateText: 'Complete private answer.',
+    });
+    assert.equal(result.status, 'recorded');
+    assert.equal((await record()).feedback!.events[0]!.phase, 'published');
+    assert.equal(creates().length, 1);
+  });
+  it('should queue feedback during operator work and revoke an edited or removed source before sending', async () => {
+    const { comments } = await feedbackOwner();
+    active = true;
+    const before = sends().length;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.phase, 'queued');
+    assert.equal(sends().length, before);
+    comments[0]!.body = 'mention removed';
+    active = false;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.phase, 'blocked');
+    assert.equal(sends().length, before);
+  });
+  it('should reconcile an uncertain feedback send after restart without sending twice', async () => {
+    await feedbackOwner();
+    loseSend = true;
+    const before = sends().length;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.turn?.status, 'attempted');
+    loseSend = false;
+    service = new OpenClawDispatch(service.dependencies);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.turn?.status, 'accepted');
+    assert.equal(sends().length, before + 1);
+  });
+  for (const olderAssignment of [true, false]) {
+    it(`should select the oldest eligible ${olderAssignment ? 'assignment' : 'feedback'} in one capacity pool`, async () => {
+      await feedbackOwner();
+      const { store } = await service.dependencies.intake.select(manifest, root);
+      const createdAt = olderAssignment ? '2026-10-07T10:01:30Z' : '2026-10-07T10:04:00Z';
+      const other = { ...fixture.item, nodeId: 'I_other', databaseId: 21, number: 4 };
+      const assignment = { ...fixture.events[0]!, nodeId: 'E_other', databaseId: 31, createdAt };
+      const getItem = fixture.client.getItem;
+      fixture.client.getItem = async (owner, name, number) =>
+        number === 4 ? other : getItem(owner, name, number);
+      fixture.client.listAssignmentEvents = async (_owner, _name, number) => ({
+        events: number === 4 ? [assignment] : fixture.events,
+        truncated: false,
+      });
+      await store.exclusive(async (state, save) => {
+        state!.records.push({
+          ...state!.records[0]!,
+          id: automationHash([
+            state!.scope,
+            state!.records[0]!.repository.nodeId,
+            other.nodeId,
+            assignment.nodeId,
+          ]),
+          issue: { nodeId: other.nodeId, databaseId: other.databaseId, number: other.number },
+          assignment: { ...assignment, event: 'assigned' },
+        });
+        await save(state!);
+      });
+      const selected = await service.run(manifest, root, coordinator, { action: 'next' });
+      assert.equal(selected.status, olderAssignment ? 'routing-required' : 'feedback-pending');
+      assert.equal(Boolean((await record()).feedback!.events[0]!.turn), !olderAssignment);
+    });
+  }
+  it('should discard a stale provider snapshot without holding the journal during discovery', async () => {
+    await feedbackOwner();
+    active = true;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const connect = service.dependencies.feedbackConnect!;
+    const started = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    service.dependencies.feedbackConnect = async (...args) => {
+      const provider = await connect(...args);
+      const list = provider.listIssueComments;
+      provider.listIssueComments = async (...parameters) => {
+        started.resolve();
+        await released.promise;
+        return list(...parameters);
+      };
+      return provider;
+    };
+    const scan = service.run(manifest, root, coordinator, { action: 'next' });
+    await started.promise;
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      const event = state.records[0]!.feedback!.events[0]!;
+      event.phase = 'blocked';
+      event.code = 'test-concurrent-revocation';
+      await save();
+    });
+    released.resolve();
+    await scan;
+    assert.equal((await record()).feedback!.events[0]!.code, 'test-concurrent-revocation');
+  });
+  it('should refuse reconciliation as a way to send a queued event past capacity', async () => {
+    const { id } = await feedbackOwner();
+    active = true;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    await assert.rejects(
+      service.run(manifest, root, coordinator, {
+        action: 'feedback',
+        operation: 'reconcile',
+        id,
+        eventId: event.id,
+      }),
+      /feedback-send-unverified/,
+    );
+    assert.equal(event.turn, undefined);
+  });
+  it('should preserve the feedback baseline through initial routing and native creation', async () => {
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    const input = await next();
+    const baseline = (await record()).feedback?.startedAt;
+    assert.equal(typeof baseline, 'number');
+    assert.equal((await prepare(input)).status, 'session-created');
+    assert.equal((await record()).feedback?.startedAt, baseline);
+    assert.deepEqual((await record()).feedback?.events, []);
   });
 });

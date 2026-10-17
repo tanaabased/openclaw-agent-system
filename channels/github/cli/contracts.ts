@@ -29,6 +29,7 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 
 export interface GitHubNotificationStatusItem {
   workflow?: { phase: string; conversation?: string };
+  feedback?: { queued: number; active: number; blocked: number };
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
   itemType: 'issue' | 'pull-request';

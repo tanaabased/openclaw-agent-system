@@ -5,8 +5,9 @@
 GitHub notifications require `github.notifications.schema-version: 2`. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
 authority, runtime selection, and current support. OpenClaw currently supports
-Plan-mode issue assignment with the default assessment skill. Unavailable feedback
-and reviews warn without blocking that workflow.
+Plan-mode issue assignment with the default assessment skill and configured feedback
+on retained issues and their linked delivery PRs. Independent review requests warn
+without blocking those workflows.
 Standalone Codex uses its [native workflow controls](../../CODEX.md#github-notification-policy).
 
 ## CLI
@@ -160,7 +161,7 @@ changed session/worktree stops the operation without discarding the work.
 Unversioned notification declarations are rejected with
 `github-notification-v1-retired`. The polling channel, its Work/guided engine,
 reply-staging tool, and task-PR tool have been removed. Native OpenClaw Work/Auto,
-feedback, review requests, and custom assessment skills remain unavailable.
+independent review requests and custom assessment skills remain unavailable.
 Retirement does not imply feature parity.
 
 The channel id `agent-system-github` remains registered as a read-only readiness

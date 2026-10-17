@@ -3,7 +3,7 @@ import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
 } from '../channels/github/notification-policy.ts';
-import dispatchCapacity from './dispatch-capacity.ts';
+import dispatchCapacity from './openclaw-capacity.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import {
@@ -141,6 +141,10 @@ export default class OpenClawNotifications {
               record.effective?.status === 'verified' &&
               record.setupComplete)),
         );
+        const feedback = record?.feedback;
+        const latestFeedback = feedback?.events.at(-1);
+        const feedbackFailure =
+          feedback?.code ?? (latestFeedback?.phase === 'blocked' ? latestFeedback.code : undefined);
         const phase = record?.retired
           ? 'retired'
           : (record?.result?.outcome ??
@@ -152,6 +156,7 @@ export default class OpenClawNotifications {
           number: item.issue.number,
           disposition: record?.retired ? 'retired' : 'approved',
           reasonCode:
+            feedbackFailure ??
             record?.blocker ??
             (record?.result?.outcome === 'operator-setup-blocker'
               ? record.result.code
@@ -171,6 +176,19 @@ export default class OpenClawNotifications {
             ? { waitingReason: 'clarification-needed' }
             : {}),
           worktree: record?.worktree ? 'ready' : 'pending',
+          ...(feedbackFailure ? { failureCode: feedbackFailure } : {}),
+          ...(feedback
+            ? {
+                feedback: {
+                  queued: feedback.events.filter((event) => event.phase === 'queued').length,
+                  active: feedback.events.filter(
+                    (event) =>
+                      event.phase !== 'blocked' && event.turn && event.turn.status !== 'completed',
+                  ).length,
+                  blocked: feedback.events.filter((event) => event.phase === 'blocked').length,
+                },
+              }
+            : {}),
           ...(record?.blocker
             ? { failureCode: record.blocker }
             : record?.result?.outcome === 'operator-setup-blocker'
@@ -186,7 +204,14 @@ export default class OpenClawNotifications {
         scan: { completedAt: state.checkpoint, attemptedAt: state.lastAttemptAt },
         capacity: {
           active: capacity.occupied,
-          queued: pending.filter(({ record }) => !record?.request).length,
+          queued:
+            pending.filter(({ record }) => !record?.request).length +
+            journal.records.reduce(
+              (count, record) =>
+                count +
+                (record.feedback?.events.filter((event) => event.phase === 'queued').length ?? 0),
+              0,
+            ),
           limit: selected.policy.maxConcurrentItems,
         },
         items: items.filter(
