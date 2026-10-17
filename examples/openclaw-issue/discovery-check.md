@@ -1,1 +1,0 @@
-Check saved discovery without advancing issue work. Call agent_system_dispatch with action check. Report notification-discovery-saved only when status is ready and changed is a boolean. Do not create sessions, assess, implement, or publish.
