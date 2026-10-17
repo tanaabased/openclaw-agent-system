@@ -13,6 +13,7 @@ import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 
 import { automationHash } from './automation-hash.ts';
+import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import dispatchCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
 import openClawFeedback, {
   advanceFeedbackTurn,
@@ -465,7 +466,6 @@ export default class OpenClawDispatch {
           };
         const now = (this.dependencies.now ?? Date.now)();
         if (input.action === 'next') {
-          const continuing = state.records.find((record) => continuationStatus(record));
           const signal = authority.signal
             ? AbortSignal.any([authority.signal, lockSignal])
             : lockSignal;
@@ -504,13 +504,18 @@ export default class OpenClawDispatch {
               }
           }
           await save();
-          const pending = pendingAssignments(state, current.admitted)
+          const capacity = dispatchCapacity(
+            state.records,
+            current.policy.policy.maxConcurrentItems,
+          );
+          const assignments = pendingAssignments(state, current.admitted)
             .filter(pendingAssignment)
             .sort(
               (a, b) =>
                 Date.parse(a.intake.assignment.createdAt) -
-                Date.parse(b.intake.assignment.createdAt),
-            )[0];
+                  Date.parse(b.intake.assignment.createdAt) ||
+                issueKey(a.intake).localeCompare(issueKey(b.intake)),
+            );
           const queued = state.records
             .filter(
               (record) =>
@@ -522,32 +527,96 @@ export default class OpenClawDispatch {
             .flatMap((record) =>
               (record.feedback?.events ?? [])
                 .filter((event) => event.phase === 'queued')
+                .sort((a, b) => a.createdAt - b.createdAt)
+                .slice(0, 1)
                 .map((event) => ({
                   record,
                   event,
                   at: Math.max(event.createdAt, record.feedback?.lastServedAt ?? 0),
                 })),
             )
-            .sort((a, b) => a.at - b.at)[0];
-          if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
-            return continuing
-              ? { status: continuationStatus(continuing)!, id: continuing.id }
-              : { status: 'at-capacity' };
-          if (queued && (!pending || queued.at <= Date.parse(pending.intake.assignment.createdAt)))
+            .sort((a, b) => a.at - b.at || a.event.id.localeCompare(b.event.id));
+          let pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
+          if (!pass) {
+            pass = {
+              sessionKey: caller.sessionKey,
+              sessionId: caller.sessionId,
+              runId: caller.runId,
+              limit: current.policy.policy.maxConcurrentItems,
+              allowance: capacity.available,
+              candidates: [
+                ...assignments.map(({ intake }) => ({
+                  id: intake.id,
+                  at: Date.parse(intake.assignment.createdAt),
+                })),
+                ...queued.map(({ event, at }) => ({ id: event.id, at })),
+              ]
+                .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+                .slice(0, capacity.available)
+                .map(({ id }) => id),
+              recovery: state.records
+                .filter((record) => continuationStatus(record))
+                .slice(0, current.policy.policy.maxConcurrentItems)
+                .map((record) => record.id),
+              selected: [],
+            };
+            (state.openclawPasses ??= []).push(pass);
+            await save();
+          }
+          const continuing = state.records.find(
+            (record) =>
+              pass.recovery.includes(record.id) &&
+              !pass.selected.includes(record.id) &&
+              continuationStatus(record),
+          );
+          if (continuing) {
+            pass.selected.push(continuing.id);
+            await save();
+            return { status: continuationStatus(continuing)!, id: continuing.id };
+          }
+          const pending = pendingAssignments(state, current.admitted)
+            .filter(pendingAssignment)
+            .filter(
+              ({ intake, record }) =>
+                pass.candidates.includes(intake.id) &&
+                (!record || !pass.selected.includes(record.id)),
+            )
+            .sort(
+              (a, b) => pass.candidates.indexOf(a.intake.id) - pass.candidates.indexOf(b.intake.id),
+            )[0];
+          const feedback = queued.find(
+            ({ record, event }) =>
+              pass.candidates.includes(event.id) && !pass.selected.includes(record.id),
+          );
+          if (!capacity.available && (pending || feedback || !pass.selected.length))
+            return { status: 'at-capacity' };
+          if (
+            feedback &&
+            (!pending ||
+              pass.candidates.indexOf(feedback.event.id) <
+                pass.candidates.indexOf(pending.intake.id))
+          ) {
+            pass.selected.push(feedback.record.id);
+            await save();
             return this.feedback(
               manifest,
               current.workspace,
-              queued.record,
-              queued.event,
+              feedback.record,
+              feedback.event,
               caller,
               undefined,
               save,
               { ...authority, signal },
             );
+          }
           if (!pending)
-            return continuing
-              ? { status: continuationStatus(continuing)!, id: continuing.id }
-              : { status: 'idle' };
+            return {
+              status:
+                pass.selected.length ||
+                pendingAssignments(state, current.admitted).some(pendingAssignment)
+                  ? 'pass-completed'
+                  : 'idle',
+            };
           const record: OpenClawDispatchRecord = pending.record ?? {
             id: automationHash([current.journal.scope, randomUUID()]),
             intakeId: pending.intake.id,
@@ -561,6 +630,7 @@ export default class OpenClawDispatch {
               : {}),
           };
           if (!pending.record) state.records.push(record);
+          pass.selected.push(record.id);
           record.intakeId = pending.intake.id;
           record.manifestDigest = current.manifestDigest;
           record.phase = 'routing';
@@ -753,6 +823,9 @@ export default class OpenClawDispatch {
           });
         }
         if (input.action === 'prepare') {
+          const pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
+          if (!pass?.selected.includes(record.id))
+            throw new Error('dispatch-pass-selection-required');
           if (record.request) return { status: 'reconcile-required', id: record.id };
           if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
             return { status: 'at-capacity', id: record.id };

@@ -8,7 +8,12 @@ import {
   type AutomationGateway,
   type NativeAutomation,
 } from '../agent/automation-gateway.ts';
-import { automationPatch, nativeAutomationHash } from '../agent/automation-projection.ts';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import {
+  automationPatch,
+  nativeAutomationHash,
+  effectiveAutomation,
+} from '../agent/automation-projection.ts';
 import AutomationService from '../agent/automation-service.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import AgentSystemLifecycleRegistry, {
@@ -424,6 +429,22 @@ describe('agent/automation-service', () => {
     assert.ok(native[0]!.trigger);
     assert.equal([...sessions.values()][0]!.category, 'Agent System');
     const identity = native[0]!.id;
+    const coordinator = native[0]!.sessionTarget;
+    const { store, context } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const oldJob = structuredClone(openclawIntakeJobs(manifest)[0]!);
+    oldJob.payload = { kind: 'prompt', prompt: 'Advance at most one issue per run.' };
+    native[0]!.payload.message = oldJob.payload.prompt;
+    ledger.records[0]!.hash = effectiveAutomation(oldJob, context).hash;
+    ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(ledger);
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.id, identity);
+    assert.equal(native[0]!.sessionTarget, coordinator);
+    assert.equal(sessions.size, 1);
+    assert.match(String(native[0]!.payload.message), /Fill initially available intake slots/);
+    assert.equal(calls.filter((call) => call.method === 'cron.update').length, 1);
     calls = [];
     await service.reconcile(manifest, root);
     assert.equal(
