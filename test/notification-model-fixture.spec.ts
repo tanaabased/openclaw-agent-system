@@ -262,15 +262,13 @@ describe('examples/openclaw-notifications model fixture', () => {
     append(input, 'delivery-prepare', { status: 'prepared', digest });
     assert.equal((await action(input, 'delivery')).digest, digest);
     append(input, 'delivery-publish', { status: 'published' });
-    assert.equal((await action(input, 'delivery')).operation, 'reconcile');
-    append(input, 'delivery-reconcile', { status: 'ready' });
-    assert.equal((await action(input, 'delivery')).operation, 'present');
-    append(input, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-    assert.deepEqual(await response(input), { content: '> PR card' });
+    assert.ok('content' in (await response(input)));
     const retry = request(
       `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
     );
-    assert.equal((await action(retry, 'delivery')).operation, 'prepare');
+    assert.equal((await action(retry, 'delivery')).operation, 'present');
+    append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
+    assert.deepEqual(await response(retry), { content: '> PR card' });
   });
 
   it('should stop when native authority rejects the operator handoff', async () => {

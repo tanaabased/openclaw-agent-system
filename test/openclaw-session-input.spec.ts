@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-import issueInputEvent, { issueInputEventId } from '../agent/openclaw-session-input.ts';
+import issueInputEvent, {
+  issueInputEventId,
+  operatorInputEvent,
+} from '../agent/openclaw-session-input.ts';
 
 const turn = { runId: 'owned-run', message: 'exact admitted input' };
 const entry = {
@@ -45,5 +48,88 @@ describe('agent/openclaw-session-input', () => {
       'input-event',
     );
     assert.equal(issueInputEventId(entry, 'unrelated-run'), undefined);
+  });
+
+  const owner = {
+    ...entry,
+    __openclaw: { ...entry.__openclaw, runId: turn.runId, senderIsOwner: true },
+  };
+  const consumed = { runId: turn.runId, state: 'consumed', consumedByEventId: 'input-event' };
+  function verify(
+    options: {
+      recent?: unknown[];
+      exact?: unknown[];
+      receipts?: unknown[];
+      retained?: Array<{ runId: string; inputEventId: string }>;
+      sessionId?: string;
+    } = {},
+  ) {
+    return operatorInputEvent({
+      sessionKey: 'issue-chat',
+      sessionId: 'original-session',
+      runId: turn.runId,
+      retained: options.retained ?? [],
+      request: async (method, params) => {
+        assert.equal(method, 'chat.history');
+        if (params.messageId) {
+          assert.equal(params.messageId, 'input-event');
+          assert.equal(params.sessionId, 'original-session');
+          return {
+            sessionId: options.sessionId ?? 'original-session',
+            messages: options.exact ?? [owner],
+          };
+        }
+        return {
+          sessionId: 'original-session',
+          messages: options.recent ?? [],
+          inputReceipts: options.receipts ?? [consumed],
+        };
+      },
+    });
+  }
+  it('should resolve an out-of-page owner input from a native consumption receipt', async () => {
+    assert.deepEqual(await verify(), { runId: turn.runId, inputEventId: 'input-event' });
+    assert.deepEqual(
+      await verify({
+        exact: [
+          { role: 'assistant', __openclaw: { runId: turn.runId, id: 'reply' } },
+          owner,
+          { role: 'user', __openclaw: { runId: 'other', id: 'other-input' } },
+        ],
+      }),
+      await verify(),
+    );
+    assert.deepEqual(await verify({ receipts: [], recent: [owner] }), await verify());
+    assert.deepEqual(
+      await verify({
+        receipts: [],
+        retained: [{ runId: turn.runId, inputEventId: 'input-event' }],
+      }),
+      await verify(),
+    );
+  });
+  it('should reject missing conflicting cancelled and replaced owner evidence', async () => {
+    for (const options of [
+      { receipts: [] },
+      { receipts: [consumed, consumed] },
+      { receipts: [{ ...consumed, cancelled: true }] },
+      { receipts: [{ ...consumed, state: 'pending' }] },
+      { receipts: [{ ...consumed, consumedByEventId: '' }] },
+      { retained: [{ runId: turn.runId, inputEventId: 'other' }] },
+      { recent: [owner, owner] },
+      { recent: [{ ...owner, idempotencyKey: 'other:user' }] },
+      { sessionId: 'replacement-session' },
+      { exact: [] },
+      { exact: [owner, owner] },
+      ...[
+        { senderIsOwner: false },
+        { truncated: true },
+        { id: 'other' },
+        { runId: 'other' },
+        { idempotencyKey: 'other:user' },
+      ].map((meta) => ({ exact: [{ ...owner, __openclaw: { ...owner.__openclaw, ...meta } }] })),
+      { exact: [{ ...owner, role: 'assistant' }] },
+    ])
+      await assert.rejects(verify(options), /dispatch-operator-input-unverified/);
   });
 });

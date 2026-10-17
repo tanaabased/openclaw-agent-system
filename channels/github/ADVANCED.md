@@ -155,6 +155,10 @@ chat to reconcile the existing PR. A retained attempt with no verifiable PR rema
 blocked rather than risking a second creation. Native denial, reassignment, or a
 changed session/worktree stops the operation without discarding the work.
 
+If showing an already-created PR is interrupted or temporarily busy, ask the same
+issue chat to show its card again. Presentation reuses the saved PR; it does not
+push or create another one.
+
 ## V1 Retirement
 
 Unversioned notification declarations are rejected with

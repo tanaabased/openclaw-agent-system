@@ -161,29 +161,31 @@ describe('scripts/aimock-tool-search', () => {
       );
     }
     await step('work-result', 'agent_system_dispatch', { status: 'recorded' });
-    for (const retry of [false, true]) {
-      if (retry) {
-        input.messages.push(
-          { role: 'assistant', content: '> PR card' },
-          {
-            role: 'user',
-            content: `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
-          },
-        );
-        await discover();
-      }
-      await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
-      assert.equal(
-        (await step('delivery-publish', 'agent_system_dispatch', { status: 'published' })).digest,
-        digest,
-      );
-      await step('delivery-reconcile', 'agent_system_dispatch', { status: 'ready' });
-      await step('delivery-present', 'agent_system_dispatch', {
-        status: 'presented',
-        presentation: '> PR card',
-      });
-      assert.deepEqual((await reply(scenario, input)).response, { content: '> PR card' });
-    }
+    await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
+    assert.equal(
+      (await step('delivery-publish', 'agent_system_dispatch', { status: 'published' })).digest,
+      digest,
+    );
+    const paused = (await reply(scenario, input)).response;
+    assert.ok('content' in paused && typeof paused.content === 'string');
+    input.messages.push(
+      { role: 'assistant', content: paused.content },
+      {
+        role: 'user',
+        content: `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
+      },
+    );
+    await discover();
+    assert.equal(
+      (
+        await step('delivery-present', 'agent_system_dispatch', {
+          status: 'presented',
+          presentation: '> PR card',
+        })
+      ).operation,
+      'present',
+    );
+    assert.deepEqual((await reply(scenario, input)).response, { content: '> PR card' });
   });
 
   it('should identify a rejected notification tool envelope without exposing call arguments', async () => {
