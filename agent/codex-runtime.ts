@@ -408,7 +408,12 @@ runCodexRuntime().catch((error: unknown) => {
   const details = codexHostAccess(error)
     ? { code: 'codex-host-access-required' }
     : error instanceof CodexDeliveryFailure
-      ? { code: error.code }
+      ? {
+          code: error.code,
+          ...(error.pullRequest
+            ? { workflowStatus: 'partially-delivered', pullRequest: error.pullRequest }
+            : {}),
+        }
       : error instanceof AgentSystemLifecycleError
         ? {
             component: error.component,

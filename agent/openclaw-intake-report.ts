@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import pendingAssignments from './dispatch-pending.ts';
@@ -84,8 +85,10 @@ export default function openclawIntakeReport(input: {
   if (started.length) lines.push('');
   for (const failure of failures.slice(0, 12)) {
     const automation = failure.code.startsWith('automation-');
-    const retry = active.find((record) => record.id === failure.id && record.retry)?.retryAfter;
+    const record = active.find((record) => record.id === failure.id);
+    const retry = record?.retry ? record.retryAfter : undefined;
     lines.push(
+      ...(record ? [`- **Status:** ${workflowStatus(record)}`] : []),
       `- **Diagnostic:** \`${text(failure.code)}\``,
       '  **Action:** ' +
         (retry

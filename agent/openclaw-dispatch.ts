@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import assessmentSummary from './assessment-summary.ts';
@@ -725,6 +726,7 @@ export default class OpenClawDispatch {
               id: record.id,
               intakeId: record.intakeId,
               phase: record.phase,
+              workflowStatus: workflowStatus(record),
               threadId: record.threadId,
               effective: record.effective,
               sessionCreation: record.sessionCreation,
@@ -1039,6 +1041,7 @@ export default class OpenClawDispatch {
               status: record.phase,
               id: record.id,
               code: record.blocker,
+              workflowStatus: workflowStatus(record),
               nextAction: 'next',
             };
           }
@@ -1176,8 +1179,12 @@ export default class OpenClawDispatch {
               signal.throwIfAborted();
               const code = openClawDispatchFailureCode(error);
               return {
-                status: 'blocked' as const,
+                status: dispatchFailurePhase({}, code, error),
+                workflowStatus: record.work?.delivery?.pullRequest
+                  ? 'partially-delivered'
+                  : dispatchFailurePhase({}, code, error),
                 id: record.id,
+                ...workflowFailure(error, code),
                 code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
                 pullRequest: record.work?.delivery?.pullRequest,
                 instructions:

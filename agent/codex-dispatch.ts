@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
@@ -182,6 +183,7 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
   return {
     id: record.id,
     status: record.handoff ? 'handed-off' : record.phase,
+    workflowStatus: workflowStatus(record),
     changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
     threadId: record.threadId,
     ...(failure
@@ -370,7 +372,14 @@ export async function runCodexDispatch(
   const current = await selectCodexIntake(pluginData, deps);
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
-    return store.read();
+    const state = await store.read();
+    return {
+      ...state,
+      records: state.records.map((record) => ({
+        ...record,
+        workflowStatus: workflowStatus(record),
+      })),
+    };
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');

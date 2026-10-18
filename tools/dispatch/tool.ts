@@ -1,3 +1,5 @@
+import workflowFailure from '../../agent/workflow-failure.ts';
+import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
 
@@ -218,9 +220,13 @@ export default function createDispatchTool(input: {
                 },
               )
               .catch((error: unknown) => {
-                return {
-                  status: 'blocked',
+                const failure = {
+                  ...workflowFailure(error, openClawDispatchFailureCode(error)),
                   code: openClawDispatchFailureCode(error),
+                };
+                return {
+                  status: dispatchFailurePhase({}, failure.code, error),
+                  ...failure,
                 };
               });
           }

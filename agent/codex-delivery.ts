@@ -78,6 +78,7 @@ export class CodexDeliveryFailure extends Error {
     error: unknown,
     readonly code: string,
     readonly notices: Array<ReturnType<typeof codexIssueNotice>>,
+    readonly pullRequest?: CodexDeliveryState['pullRequest'],
   ) {
     super(error instanceof Error ? error.message : code, { cause: error });
   }
@@ -508,7 +509,12 @@ export default async function runCodexDelivery(
                 }
               : {}),
           });
-          throw new CodexDeliveryFailure(error, code, [notice, ...notices(true)]);
+          throw new CodexDeliveryFailure(
+            error,
+            code,
+            [notice, ...notices(true)],
+            delivery.pullRequest,
+          );
         }
       }
       if (!previous?.pullRequest || automationHash(previous.binding) !== automationHash(binding))

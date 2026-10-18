@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import discoveryNotice from './discovery-notice.ts';
 import codexCapacity from './codex-capacity.ts';
 import { automationHash } from './automation-hash.ts';
@@ -120,6 +121,7 @@ export default function prepareDispatchReport(input: {
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
       `  **Action:** ${record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
+      ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
       `  **Diagnostic:** \`${notice.code}\``,
     );
     if (
