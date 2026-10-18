@@ -374,7 +374,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
     }),
     createAgentLifecycleContribution({
-      waitForGatewayAgent,
+      logger: lifecycleLogger,
+      waitForGatewayAgent: (agentId) => waitForGatewayAgent(agentId, lifecycleLogger),
       environmentService: lifecycleEnvironmentService,
       readConfig,
       resolveAgentWorkspaceDir(config, agentId) {

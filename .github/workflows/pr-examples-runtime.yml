@@ -89,8 +89,6 @@ jobs:
           GOG_HOME: ${{ runner.temp }}/gog-home
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
-          OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS

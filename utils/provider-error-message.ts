@@ -20,6 +20,7 @@ export default function providerErrorMessage(value: unknown, secrets: readonly s
       '[redacted]',
     )
     .replace(/\b(?:ops_|opsa_)[^\s"',;]+/gu, '[redacted]')
+    .replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/gu, '[redacted]')
     .replace(/\b(?:request|response)?[ _-]?(?:body|headers)\s*["']?\s*[:=][\s\S]*/giu, '[redacted]')
     .replace(/\bBearer\s+[^\s"',;}]+/giu, '[redacted]')
     .replace(/(?:op|https?):\/\/[^\s<>"']+/giu, '[redacted]')
