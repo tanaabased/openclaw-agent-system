@@ -1,4 +1,4 @@
-import githubDiagnostic from '../../../credentials/github-diagnostic.ts';
+import githubDiagnostic, { githubCliDiagnostic } from '../../../credentials/github-diagnostic.ts';
 import {
   withProviderDiagnostic,
   type ProviderDiagnostic,
@@ -118,6 +118,7 @@ export default class GitHubWorkEventApiClient {
           status: response.status,
           timedOut: result.timedOut,
           ...response.rateLimit,
+          providerMessage: githubCliDiagnostic(result).providerMessage,
         }),
       );
     }

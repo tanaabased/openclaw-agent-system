@@ -48,8 +48,7 @@ export function providerDiagnostic(
   evidence: Partial<ProviderDiagnostic> = {},
 ): ProviderDiagnostic {
   const kind = Object.hasOwn(explanations, classification) ? classification : 'unknown';
-  const message =
-    provider === '1password' ? providerErrorMessage(evidence.providerMessage) : undefined;
+  const message = providerErrorMessage(evidence.providerMessage);
   const httpStatus =
     typeof evidence.httpStatus === 'number' &&
     Number.isInteger(evidence.httpStatus) &&
@@ -75,8 +74,7 @@ export function providerDiagnostic(
         ? 'The provider failure supplied no supported classification; see the redacted provider message.'
         : explanations[kind],
     ...(message ? { providerMessage: message } : {}),
-    ...(provider === '1password' &&
-    httpStatus !== null &&
+    ...(httpStatus !== null &&
     (evidence.httpStatusSource === 'structured' || evidence.httpStatusSource === 'message')
       ? { httpStatusSource: evidence.httpStatusSource }
       : {}),

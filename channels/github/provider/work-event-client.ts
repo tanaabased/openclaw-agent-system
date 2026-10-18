@@ -64,6 +64,10 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     this.#items = new GitHubWorkItemClient(this.#api);
   }
 
+  listIssueCommentPage(owner: string, name: string, number: number, page: number, since: string) {
+    return this.#comments.listIssueCommentPage(owner, name, number, page, since);
+  }
+
   get identity(): GitHubIdentity {
     return this.#api.identity;
   }
@@ -75,8 +79,9 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   discoverAssigned(
     updatedSince: string,
     assignmentTypes: readonly ('issue' | 'pull-request')[],
+    page?: number,
   ): Promise<GitHubAssignedItemDiscovery> {
-    return this.#items.discoverAssigned(updatedSince, assignmentTypes);
+    return this.#items.discoverAssigned(updatedSince, assignmentTypes, page);
   }
 
   getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity> {

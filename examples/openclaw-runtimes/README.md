@@ -4,24 +4,28 @@ Verify the installed Agent System boundary through native OpenClaw and OpenClaw-
 
 Native exec uses an issued command capability; hosted Codex uses its per-agent home and native thread context. The probe checks the appropriate context before exercising the same managed operations. The evidence assertion prints bounded scenario-owned tool results and preserves HTTP error bodies so Leia retains the diagnostics when that assertion fails. System/user prompts and transport credentials are excluded.
 
-One Ubuntu job installs the prepared package and one agent per runtime. Strict AIMock selects all three native OpenClaw turns while the real Gateway executes their tools and approval decisions. Only the three hosted Codex turns use a live model, because its native shell and dynamic tool discovery are under test. The workflow scopes the existing CI model credential to this example. The checked-in workspaces receive the runtime model selection and probe receipts on the disposable runner. The shared probe is installed into each workspace's declared command directory; this tests the resulting PATH projection. A conflicting host executable makes incorrect PATH precedence fail immediately. All six turns run once with no retries. A denied tool can end its chat before another model request; the approval driver verifies the exact denial and absent effects independently. Other chat channels and the ordinary worktree/session lifecycle remain outside this example.
+One Ubuntu job installs the prepared package and one agent per runtime. Strict AIMock supplies all six model turns with synthetic credentials and no live-model fallback. The real Gateway and hosted Codex app-server execute the tools and native approval flow. Hosted Codex uses direct tool loading; this scenario verifies tool execution and approvals, not model judgment or deferred discovery.
+
+The shared probe is installed into each workspace's declared command directory; a conflicting host executable makes incorrect PATH precedence fail immediately. All turns run once with no retries. A running Codex command is polled through its returned session ID at most three times within the existing turn timeout; completion requires exit code zero and the probe receipt. Memory search is disabled because this scenario does not test embeddings. A denied tool can end its chat before another model request; the approval driver verifies the exact denial and absent effects independently.
 
 ## Setup
 
 ```bash
-# should prepare the packed plugin with the live codex and strict native models
+# should prepare the packed plugin with strict mock models for both harnesses
+export OPENAI_API_KEY=agent-system-aimock-test
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL" \
+  --model openai/gpt-5.4-nano \
   --yolo
 openclaw-aimock prepare --scenario openclaw-runtimes
 openclaw config set models.mode merge
+openclaw config set memory.search.enabled false --strict-json
+openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 
 # should install one owned workspace per runtime without applying setup
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/tools/bin" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/tools/bin"
-sed "s/__OPENAI_MODEL__/$OPENAI_MODEL/g" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/agent.yaml" > "$TMPDIR/runtime-codex-agent.yaml"
-mv "$TMPDIR/runtime-codex-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/agent.yaml"
 cp "$GITHUB_WORKSPACE/examples/openclaw-runtimes/probe.sh" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/tools/bin/agent-system-runtime-probe"
 cp "$GITHUB_WORKSPACE/examples/openclaw-runtimes/probe.sh" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/tools/bin/agent-system-runtime-probe"
 cd "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex"
@@ -63,13 +67,13 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" run
 # should approve native openclaw doctor checks without applying setup
 node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" runtime-openclaw doctor
 
-# should discover and approve the hosted codex doctor tool without applying setup
+# should resolve and approve the hosted codex doctor tool without applying setup
 node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" runtime-codex doctor
 
-# should complete only the three authored native turns through strict aimock
+# should complete all authored turns through strict aimock
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/runtime-boundaries-evidence.json"
-jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResponseCount >= 2 and .finalResponseCount <= 3 and any(.tools[]; .name == "exec" and .callResponseCount == 1 and .resultRequestCount == 1) and any(.tools[]; .name == "agent_system_doctor" and .callResponseCount == 1 and .resultRequestCount == 1) and any(.tools[]; .name == "agent_system_install" and .resultRequestCount <= 1)' "$TMPDIR/runtime-boundaries-evidence.json"
+jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResponseCount >= 5 and .finalResponseCount <= 6 and any(.tools[]; .name == "exec_command" and .callResponseCount == 1 and .resultRequestCount >= 1 and .resultRequestCount <= 4) and any(.tools[]; .name == "exec" and .callResponseCount == 1 and .resultRequestCount == 1) and any(.tools[]; .name == "agent_system_doctor" and .callResponseCount == 2 and .resultRequestCount == 2) and any(.tools[]; .name == "agent_system_install" and .callResponseCount >= 1 and .callResponseCount <= 2 and .resultRequestCount >= 1 and .resultRequestCount <= 2)' "$TMPDIR/runtime-boundaries-evidence.json"
 ```
 
 ## Cleanup

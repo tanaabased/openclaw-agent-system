@@ -85,10 +85,10 @@ intake through one managed `github-issue-assignment` schedule and one retained c
 `📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
 `interval-minutes`; the automation ID is reserved. Intake records eligible
 assignments durably. After explicit reconciliation of the assessment-enabled
-schedule, `plan` and `work` assignments can prepare repositories and create native issue chats
-and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery.
+schedule, `plan`, `work`, and `auto` assignments can prepare repositories and create native issue chats
+and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery; Auto requires a retained `proceed` decision.
 Issue feedback can resume its owning chat for explanation and a bounded public reply.
-Review requests and Auto-mode execution remain unavailable through this Codex path.
+Independent review requests remain unavailable through this Codex path.
 Unavailable reviews warn without blocking independent setup or issue-assignment scheduling.
 
 Use `$agent-system-install` to authorize and reconcile the chat and schedule in one

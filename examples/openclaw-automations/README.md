@@ -30,6 +30,11 @@ jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-b
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 
+# should present each job under a stable category with unquoted names on install and doctor
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+NO_COLOR=1 openclaw agent-system install --yes | grep -E '^automation[[:space:]]+unchanged[[:space:]]' | grep -F 'name:'
+NO_COLOR=1 openclaw agent-system doctor | grep -E '^automation[[:space:]]+healthy[[:space:]]' | grep -F 'name:'
+
 # should complete one command under the owning managed git identity
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')

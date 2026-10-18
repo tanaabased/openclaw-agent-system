@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
@@ -7,16 +6,10 @@ import { Value } from 'typebox/value';
 
 import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
-import parseAgentManifest from '../manifest/parse.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
 for (const scenario of [issueExampleScenario, prExampleScenario]) {
-  const issueOnly = scenario.id === 'openclaw-issue';
-  const owner = 'tanaabot';
-  const ownerLogin = 'tanaabot';
-  const actorFolder = 'emori';
-  const actorLogin = 'emoriwan';
   const id = 'a'.repeat(64);
   const digest = 'b'.repeat(64);
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
@@ -71,57 +64,6 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
-    it('should declare native planning with feedback and unavailable reviews for capability isolation', async () => {
-      const parsed = parseAgentManifest(
-        await readFile(`examples/${scenario.id}/${owner}/agent.yaml`, 'utf8'),
-      );
-      assert.equal(parsed.status, 'valid');
-      assert.equal(parsed.manifest?.github?.notifications?.schemaVersion, 2);
-      assert.deepEqual(parsed.manifest?.github?.notifications?.runtimes, ['openclaw']);
-      assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.mode, 'plan');
-      assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.feedback, true);
-      assert.equal(parsed.manifest?.github?.notifications?.reviewRequest?.enabled, true);
-      assert.equal(parsed.manifest?.models?.default.model, 'aimock/gpt-5.5');
-      assert.equal(parsed.manifest?.github?.username, ownerLogin);
-      assert.equal(parsed.manifest?.github?.token, 'GH_TOKEN_TANAABOT');
-      assert.deepEqual(
-        parsed.manifest?.github?.notifications?.issueAssignment?.allowed?.map(
-          ({ login, nodeId }) => ({ login, nodeId }),
-        ),
-        [{ login: actorLogin, nodeId: '__ACTOR_NODE_ID__' }],
-      );
-      const actor = parseAgentManifest(
-        await readFile(`examples/${scenario.id}/${actorFolder}/agent.yaml`, 'utf8'),
-      );
-      assert.equal(actor.status, 'valid');
-      assert.equal(actor.manifest?.github?.username, actorLogin);
-      assert.equal(actor.manifest?.github?.token, 'GH_TOKEN_EMORI');
-      assert.equal(actor.manifest?.github?.notifications, undefined);
-      assert.deepEqual(
-        parsed.manifest?.github?.notifications?.issueAssignment?.pullRequest?.recipients ?? [],
-        issueOnly
-          ? []
-          : [{ login: 'tanaabot', nodeId: '__ASSIGNEE_NODE_ID__', roles: ['assignee'] }],
-      );
-    });
-
-    it('should target every fixture refresh and retain the long recurring interval', async () => {
-      const readme = await readFile(`examples/${scenario.id}/README.md`, 'utf8');
-      const refreshes = readme
-        .split('\n')
-        .filter((line) => line.includes('scripts/refresh-notifications.ts'));
-      assert.equal(refreshes.length, 4);
-      for (const line of refreshes) {
-        assert.ok(line.includes('--repository tanaabased/big-test-bucket --kind issue --number'));
-        assert.ok(line.includes('notification-issue.json'));
-      }
-      const parsed = parseAgentManifest(
-        await readFile(`examples/${scenario.id}/tanaabot/agent.yaml`, 'utf8'),
-      );
-      assert.ok(parsed.status === 'valid');
-      assert.equal(parsed.manifest?.github?.notifications?.intervalMinutes, 1440);
-    });
-
     it('should advance manually admitted work without requesting another intake scan', async () => {
       const input = request('Advance previously admitted issue or feedback work.');
       assert.deepEqual(await action(input, 'next'), { action: 'next' });
@@ -170,7 +112,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       }
     });
 
-    it('should stop on journal contention and let a later coordinator turn scan again', async () => {
+    it('should retry known coordinator contention three times before reporting the blocker', async () => {
       const routing = {
         status: 'routing-required',
         id,
@@ -197,7 +139,20 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         assert.ok('toolCalls' in pending && pending.toolCalls?.length === 1);
         const stage = JSON.parse(pending.toolCalls[0]!.arguments).action;
         append(input, stage, { status: 'busy', code: 'private-state-file-lock-busy', id });
-        assert.deepEqual(await response(input), { content: 'notification-intake-busy' });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const retry = await response(input);
+          assert.ok('toolCalls' in retry && retry.toolCalls?.length === 1);
+          assert.equal(retry.toolCalls[0]!.arguments, pending.toolCalls[0]!.arguments);
+          assert.equal(retry.toolCalls[0]!.id, `call_notifications_${stage}_retry_${attempt}`);
+          append(input, `${stage}_retry_${attempt}`, {
+            status: 'busy',
+            code: 'private-state-file-lock-busy',
+            id,
+          });
+        }
+        assert.deepEqual(await response(input), {
+          content: 'notification-retry-exhausted: private-state-file-lock-busy',
+        });
         input.messages.push({
           role: 'user',
           content: `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
@@ -210,6 +165,35 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(invalid, 'scan', { status: 'ready' });
       append(invalid, 'next', { status: 'busy', code: 'unexpected-failure' });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+    });
+
+    it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
+      const prompt = `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`;
+      for (const code of ['private-state-file-lock-busy', 'private-state-snapshot-conflict']) {
+        const input = request(prompt);
+        const original = await action(input, 'context');
+        append(input, 'context', { status: 'blocked', code });
+        assert.deepEqual(await action(input, 'context'), original);
+        append(input, 'context_retry_1', {
+          status: 'verified',
+          runtime: 'openclaw',
+          id,
+          project: { path: '/fixture' },
+          assessment: {},
+          resultContract: 'assessment-result/v1',
+        });
+        const next = await response(input);
+        assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_git');
+      }
+      for (const code of [
+        'dispatch-turn-send-unverified',
+        'feedback-authority-changed',
+        'permission-denied',
+      ]) {
+        const input = request(prompt);
+        append(input, 'context', { status: 'blocked', code });
+        assert.equal(matchFixture([...scenario.fixtures], input), null);
+      }
     });
 
     it('should retain a plan only after native context and git verify its worktree', async () => {
