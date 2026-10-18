@@ -399,6 +399,46 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(preparedWorktrees, 1);
   });
 
+  it('should reuse one connection and keep gateway reads free of repeated provider authorization', async () => {
+    const input = await next();
+    const connect = service.dependencies.connect;
+    let connections = 0,
+      repositories = 0;
+    service.dependencies.connect = async (...args) => {
+      connections++;
+      const client = await connect(...args);
+      return {
+        ...client,
+        async getRepository(...coordinates) {
+          repositories++;
+          return client.getRepository(...coordinates);
+        },
+      };
+    };
+    assert.equal((await prepare(input)).status, 'session-created');
+    assert.equal(connections, 1);
+    // Action admission and the actual create boundary, regardless of native guard count.
+    assert.equal(repositories, 2);
+    repositories = connections = 0;
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id });
+    assert.equal(connections, 1);
+    assert.equal(repositories, 1);
+  });
+
+  it('should catch assignment revocation during preparation before creating a session', async () => {
+    const input = await next();
+    const prepareWorktree = service.dependencies.worktrees.prepareGitHub;
+    service.dependencies.worktrees.prepareGitHub = async (...args) => {
+      const result = await prepareWorktree(...args);
+      fixture.item.assignees = [];
+      return result;
+    };
+    const result = await prepare(input);
+    assert.equal(result.status, 'blocked');
+    assert.ok('code' in result && result.code === 'dispatch-assignment-authority-revoked');
+    assert.equal(creates().length, 0);
+  });
+
   it('should reject unbound callers before any worktree or credential operation', async () => {
     for (const operator of [false, true])
       await assert.rejects(

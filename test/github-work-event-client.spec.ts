@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 
 import type { AgentSystemCliResult } from '../api/types.ts';
-import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import GitHubWorkEventClient, {
+  GitHubWorkEventClientError,
+} from '../channels/github/provider/work-event-client.ts';
 import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
 
 const publicationMarker =
@@ -24,6 +26,28 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
 }
 
 describe('channels/github/provider/work-event-client', () => {
+  it('should preserve secondary throttling instead of reporting a permission denial', async () => {
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute() {
+        return {
+          ...response({}),
+          exitCode: 1,
+          stdout:
+            'HTTP/2 403 Forbidden\nx-ratelimit-remaining: 4500\nx-ratelimit-resource: core\n\n{}',
+          stderr: 'gh: You have exceeded a secondary rate limit. (HTTP 403)',
+        };
+      },
+    });
+    await assert.rejects(client.getRepository('owner', 'repo'), (error: unknown) => {
+      assert.ok(error instanceof GitHubWorkEventClientError);
+      assert.equal(error.providerDiagnostic?.classification, 'rate-limit');
+      assert.equal(error.providerDiagnostic?.quotaScope, 'core');
+      assert.equal(error.rateLimit.remaining, 4500);
+      return true;
+    });
+  });
+
   it('should read bounded native routing metadata only for opted-in issue assessments', async () => {
     const requests: string[][] = [];
     let unavailable = false;

@@ -1,3 +1,4 @@
+import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../../../agent/discovery-budget.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 
@@ -279,7 +280,9 @@ export default async function scanAssignments(
       if (state) previous = state;
       if (isFilesystemAccessError(error)) throw error;
       const diagnostic =
-        error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
+        error instanceof GitHubWorkEventClientError || error instanceof GitHubAccountClientError
+          ? error.providerDiagnostic
+          : undefined;
       const code =
         error instanceof IntakeError
           ? error.code

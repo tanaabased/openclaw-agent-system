@@ -304,16 +304,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
-    async feedbackConnect(input, signal) {
+    async feedbackConnect(input, signal, connection) {
+      if (connection instanceof GitHubWorkEventClient) return connection;
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkEventClient(connected);
     },
-    async delivery({ manifest, workspaceDir, worktree, caller, signal }) {
-      const account = await githubCapability.accountClient.connect(
-        { manifest, workspaceDir },
-        'service',
-        signal,
-      );
+    async delivery({ manifest, workspaceDir, worktree, caller, signal, connection }) {
+      const account =
+        connection instanceof GitHubWorkEventClient
+          ? connection.account
+          : await githubCapability.accountClient.connect(
+              { manifest, workspaceDir },
+              'service',
+              signal,
+            );
       return {
         account,
         async git(argv) {

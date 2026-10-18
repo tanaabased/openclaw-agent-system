@@ -1,3 +1,5 @@
+import { GitHubAccountClientError } from '../core/github-account-client.ts';
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import { discoverFeedback } from './feedback-source.ts';
@@ -115,6 +117,7 @@ export async function scanOpenClawFeedback(input: {
         provider ??= await service.dependencies.feedbackConnect?.(
           { manifest, workspaceDir: input.workspace },
           budget.signal,
+          connection,
         );
         if (!provider) throw new Error('feedback-provider-unavailable');
         const common = {
@@ -188,6 +191,16 @@ export async function scanOpenClawFeedback(input: {
       }
       if (error instanceof Error && /discovery-checkpoint|private-state-file/.test(error.message))
         throw error;
+      if (
+        (error instanceof GitHubAccountClientError ||
+          error instanceof GitHubWorkEventClientError) &&
+        error.providerDiagnostic?.classification === 'rate-limit'
+      ) {
+        feedback.code = 'feedback-github-rate-limit';
+        await save();
+        scans.push({ id: record.id, before, feedback });
+        break;
+      }
       feedback.code = openClawDispatchFailureCode(error);
       if (/revoked|policy-changed|owner-changed/.test(feedback.code)) {
         for (const event of feedback.events)

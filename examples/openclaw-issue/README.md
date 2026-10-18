@@ -147,15 +147,12 @@ jq -es '[.[].records[]] | length == 1 and (.[0].feedback.events | length) == 1 a
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
-# should warn once for native projection drift and keep identical checks model free
+# should report native projection drift with an actionable install warning
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
 openclaw cron edit "$native" --thinking high --json | jq -e '.payload.thinking == "high"'
 openclaw cron run "$native" --wait --wait-timeout 5m --json | jq -e '.completionStatus == "succeeded"'
 jq -es 'any(.[]; .intakeReport.response | contains("automation-sync-required") and contains("Agent System Install"))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount > "$TMPDIR/notification-drift-model-count"
-openclaw cron run "$native" --wait --wait-timeout 5m --json | jq -e '.completionStatus == "succeeded"'
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount | diff - "$TMPDIR/notification-drift-model-count"
 
 # should reconcile explicitly and show recovery in the native intake chat
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"

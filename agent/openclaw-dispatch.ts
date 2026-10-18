@@ -1,3 +1,4 @@
+import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
@@ -82,6 +83,7 @@ export interface OpenClawDispatchDependencies {
   feedbackConnect?(
     input: { manifest: AgentManifest; workspaceDir: string },
     signal: AbortSignal,
+    connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
   ): Promise<OpenClawFeedbackProvider>;
   delivery?(input: {
     manifest: AgentManifest;
@@ -89,6 +91,7 @@ export interface OpenClawDispatchDependencies {
     worktree: string;
     caller: DispatchCaller;
     signal: AbortSignal;
+    connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
   }): Promise<OpenClawDeliveryConnection>;
 }
 
@@ -122,6 +125,7 @@ export function openClawDispatchFailureCode(error: unknown): string {
     return `dispatch-tool-${error.code.replaceAll('_', '-')}`;
   }
   if (
+    error instanceof GitHubAccountClientError ||
     error instanceof GitHubWorkEventClientError ||
     error instanceof GitHubNotificationCommentPublisherError ||
     error instanceof GitHubNotificationPublicationError
@@ -177,14 +181,13 @@ export default class OpenClawDispatch {
     };
   }
 
-  async validate(
+  /** Local custody checks stay cheap enough to run before every native operation. */
+  private async validateLocal(
     manifest: AgentManifest,
     workspace: string,
     record: OpenClawDispatchRecord,
     work = false,
     feedback = false,
-    connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
-    signal?: AbortSignal,
   ) {
     const current = await this.scope(manifest, workspace);
     const fresh = await this.dependencies.intake.dependencies.manifestService.loadForAgentId(
@@ -204,6 +207,40 @@ export default class OpenClawDispatch {
       throw new Error('dispatch-policy-changed');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
     if (!intake) throw new Error('dispatch-admission-missing');
+    return { current, intake };
+  }
+
+  /** Refresh provider authority at action entry and immediately before native dispatch. */
+  private guardedCredential(
+    revalidate: () => Promise<unknown>,
+  ): Pick<SessionDispatchCredential, 'use'> {
+    return {
+      use: (authority, operation) =>
+        this.dependencies.credential.use(authority, (request) =>
+          operation(async (method, params) => {
+            if (method === 'sessions.create' || method === 'chat.send') await revalidate();
+            return request(method, params);
+          }),
+        ),
+    };
+  }
+
+  async validate(
+    manifest: AgentManifest,
+    workspace: string,
+    record: OpenClawDispatchRecord,
+    work = false,
+    feedback = false,
+    connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
+    signal?: AbortSignal,
+  ) {
+    const { current, intake } = await this.validateLocal(
+      manifest,
+      workspace,
+      record,
+      work,
+      feedback,
+    );
     const client =
       connection ??
       (await this.dependencies.connect(
@@ -277,55 +314,66 @@ export default class OpenClawDispatch {
         if (!openClawFeedbackEnabled(manifest)) throw new Error('feedback-authority-revoked');
         if ((await this.dependencies.coordinator(manifest, workspace)) !== record.sourceThreadId)
           throw new Error('feedback-schedule-owner-changed');
-        await this.validate(manifest, workspace, record, false, true);
+        await this.validateLocal(manifest, workspace, record, false, true);
       };
       await assertCurrent();
-      const { intake } = await this.validate(manifest, workspace, record, false, true);
+      const { intake, client } = await this.validate(
+        manifest,
+        workspace,
+        record,
+        false,
+        true,
+        undefined,
+        authority.signal,
+      );
       const provider = await this.dependencies.feedbackConnect?.(
         { manifest, workspaceDir: workspace },
         authority.signal ?? AbortSignal.timeout(60000),
+        client,
       );
       if (!provider) throw new Error('feedback-provider-unavailable');
-      return await this.dependencies.credential.use(
-        { ...authority, assertCurrent },
-        async (request) => {
-          const common = {
-            record,
-            event,
-            caller,
-            request,
-            config: this.dependencies.config(),
-            provider,
-            policy: manifest.github!.notifications!,
-            intake,
-            workspace,
-            now,
-            debug: manifest.debug,
-            assertCurrent,
-            save,
-          };
-          await authorizeFeedback(common);
-          if (!action || action.operation === 'reconcile') {
-            const result = await advanceFeedbackTurn(common);
-            if (event.turn?.status === 'completed') {
-              record.feedback!.lastServedAt = now;
-              if (record.feedback!.activity) record.feedback!.activity.busy = false;
-              await save();
-            }
-            if (!event.publicationAttempted || event.receipt) return result;
-            return openClawFeedback({
-              ...common,
-              action: {
-                action: 'feedback',
-                operation: 'reconcile',
-                id: record.id,
-                eventId: event.id,
-              },
-            });
+      return await this.guardedCredential(() =>
+        this.validate(manifest, workspace, record, false, true, client, authority.signal),
+      ).use({ ...authority, assertCurrent }, async (request) => {
+        const common = {
+          record,
+          event,
+          caller,
+          request,
+          config: this.dependencies.config(),
+          provider,
+          policy: manifest.github!.notifications!,
+          intake,
+          workspace,
+          now,
+          debug: manifest.debug,
+          assertCurrent,
+          reauthorize: async () => {
+            await this.validate(manifest, workspace, record, false, true, client, authority.signal);
+          },
+          save,
+        };
+        await authorizeFeedback(common);
+        if (!action || action.operation === 'reconcile') {
+          const result = await advanceFeedbackTurn(common);
+          if (event.turn?.status === 'completed') {
+            record.feedback!.lastServedAt = now;
+            if (record.feedback!.activity) record.feedback!.activity.busy = false;
+            await save();
           }
-          return openClawFeedback({ ...common, action });
-        },
-      );
+          if (!event.publicationAttempted || event.receipt) return result;
+          return openClawFeedback({
+            ...common,
+            action: {
+              action: 'feedback',
+              operation: 'reconcile',
+              id: record.id,
+              eventId: event.id,
+            },
+          });
+        }
+        return openClawFeedback({ ...common, action });
+      });
     } catch (error) {
       const code = openClawDispatchFailureCode(error);
       if (event.phase !== 'published') event.code = code;
@@ -850,6 +898,11 @@ export default class OpenClawDispatch {
           workspace,
           record,
           workAction,
+          false,
+          undefined,
+          authority.signal
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal,
         );
         if (
           input.action === 'handoff' ||
@@ -863,7 +916,7 @@ export default class OpenClawDispatch {
           const assertCurrent = async () => {
             signal.throwIfAborted();
             await authority.assertCurrent?.();
-            await this.validate(manifest, workspace, record, true);
+            await this.validateLocal(manifest, workspace, record, true);
             signal.throwIfAborted();
           };
           return this.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
@@ -895,6 +948,9 @@ export default class OpenClawDispatch {
               feedbackEnabled: openClawFeedbackEnabled(manifest),
               signal,
               assertCurrent,
+              reauthorize: async () => {
+                await this.validate(manifest, workspace, record, true, false, client, signal);
+              },
               save,
               connect: async () => {
                 if (!this.dependencies.delivery) throw new Error('delivery-runtime-unavailable');
@@ -904,6 +960,7 @@ export default class OpenClawDispatch {
                   worktree: record.worktree!,
                   caller,
                   signal,
+                  connection: client,
                 });
               },
             }).catch((error: unknown) => {
@@ -929,7 +986,7 @@ export default class OpenClawDispatch {
             assertCurrent: async () => {
               signal.throwIfAborted();
               await authority.assertCurrent?.();
-              await this.validate(manifest, workspace, record);
+              await this.validateLocal(manifest, workspace, record);
               signal.throwIfAborted();
             },
           };
@@ -1026,7 +1083,7 @@ export default class OpenClawDispatch {
           };
           record.phase = 'creating';
           preparationStage = 'verification';
-          await this.validate(manifest, workspace, record);
+          await this.validateLocal(manifest, workspace, record);
           await save();
         }
         if (
@@ -1066,7 +1123,7 @@ export default class OpenClawDispatch {
                 sourceThreadId
               )
                 throw new Error('dispatch-coordinator-binding-changed');
-              await this.validate(manifest, workspace, record);
+              await this.validateLocal(manifest, workspace, record);
               signal.throwIfAborted();
             },
           };
@@ -1086,7 +1143,9 @@ export default class OpenClawDispatch {
           }
           return (working ? advanceIssueTurn : createIssueSession)({
             config: this.dependencies.config(),
-            credential: this.dependencies.credential,
+            credential: this.guardedCredential(() =>
+              this.validate(manifest, workspace, record, false, false, client, signal),
+            ),
             record,
             save,
             authority: turnAuthority,
@@ -1155,11 +1214,19 @@ export default class OpenClawDispatch {
       const assertCurrent = async () => {
         signal.throwIfAborted();
         await authority.assertCurrent?.();
-        await this.validate(manifest, workspace, record, true);
+        await this.validateLocal(manifest, workspace, record, true);
         signal.throwIfAborted();
       };
       await assertCurrent();
-      const { intake, repo } = await this.validate(manifest, workspace, record, true);
+      const { intake, repo, client } = await this.validate(
+        manifest,
+        workspace,
+        record,
+        true,
+        false,
+        undefined,
+        signal,
+      );
       const verified = await this.dependencies.credential.use(
         { signal, assertCurrent },
         async (request) => {
@@ -1180,6 +1247,9 @@ export default class OpenClawDispatch {
             feedbackEnabled: openClawFeedbackEnabled(manifest),
             signal,
             assertCurrent,
+            reauthorize: async () => {
+              await this.validate(manifest, workspace, record, true, false, client, signal);
+            },
             // presentation changes only this snapshot until the journal comparison succeeds.
             save: assertCurrent,
             connect: async () => {
@@ -1190,6 +1260,7 @@ export default class OpenClawDispatch {
                 worktree: record.worktree!,
                 caller,
                 signal,
+                connection: client,
               });
             },
           });
@@ -1197,6 +1268,7 @@ export default class OpenClawDispatch {
         },
       );
       await assertCurrent();
+      await this.validate(manifest, workspace, record, true, false, client, signal);
       stage = 'commit';
       enteredJournal = false;
       return await current.journal.exclusive(async (state, save, lockSignal) => {
