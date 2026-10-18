@@ -1643,6 +1643,36 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(record.request, prepared.request);
     assert.equal(record.unsubmittedCreations, undefined);
   });
+  it('should reconcile a superseded unsubmitted request before preparing its successor', async () => {
+    const prepared = await prepare();
+    await reassign();
+    deps.native!.unsubmittedCreation = async () => ({ turnId: 'completed-original-turn' });
+    const successor = await prepare();
+    assert.equal(successor.id, prepared.id);
+    assert.notDeepEqual(successor.request, prepared.request);
+    const retained = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    assert.equal((retained.unsubmittedCreations as unknown[]).length, 1);
+    assert.equal(retained.phase, 'creating');
+  });
+  it('should preserve a superseded request when its native outcome is unknown', async () => {
+    const prepared = await prepare();
+    await reassign();
+    assert.equal((await next()).code, 'dispatch-assignment-superseded');
+    const retained = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    assert.deepEqual(retained.request, prepared.request);
+    assert.equal(retained.unsubmittedCreations, undefined);
+  });
+  it('should recover a superseded native creation without issuing another request', async () => {
+    const prepared = await prepare();
+    created();
+    await reassign();
+    assert.equal((await next()).status, 'blocked');
+    const retained = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    assert.deepEqual(retained.request, prepared.request);
+    assert.equal(retained.threadId, 'issue-thread');
+    assert.equal((retained.result as { code: string }).code, 'dispatch-assignment-superseded');
+    assert.equal(retained.unsubmittedCreations, undefined);
+  });
 
   it('should never rearm pending native worktree receipts', async () => {
     const prepared = await prepare();

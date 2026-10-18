@@ -18,6 +18,7 @@ import openclawIntakeReport, { type IntakeObservation } from './openclaw-intake-
 import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-assessment.ts';
 import createIssueSession, {
   IssueSessionMismatchError,
+  verifyEmptyIssueSession,
   type DispatchCaller,
 } from './openclaw-session-create.ts';
 import advanceIssueTurn from './openclaw-session-turn.ts';
@@ -728,6 +729,45 @@ export default class OpenClawDispatch {
           const signal = authority.signal
             ? AbortSignal.any([authority.signal, transactionSignal])
             : transactionSignal;
+          for (const { record, intake } of pendingAssignments(state, current.admitted)) {
+            if (
+              !record?.request ||
+              !record.sessionCreation?.attempted ||
+              record.intakeId === intake.id ||
+              record.firstTurn ||
+              record.assessmentTurn
+            )
+              continue;
+            try {
+              await this.validate(manifest, workspace, record);
+            } catch (error) {
+              if (openClawDispatchFailureCode(error) !== 'dispatch-assignment-superseded')
+                throw error;
+              // supersession permits observation of the old intent, never another creation.
+              record.blocker = 'dispatch-assignment-superseded';
+              record.phase = 'blocked';
+              try {
+                const sessionId = await this.dependencies.credential.use(
+                  { ...authority, signal },
+                  (request) =>
+                    verifyEmptyIssueSession(request, record, this.dependencies.config(), true),
+                );
+                record.sessionCreation.sessionId = sessionId;
+                record.sessionCreation.verified = true;
+                if ('key' in record.request) {
+                  record.threadId = record.request.key;
+                  record.effective = {
+                    status: 'verified',
+                    model: record.request.model,
+                    effort: record.request.thinkingLevel,
+                  };
+                }
+              } catch (recoveryError) {
+                record.blocker = openClawDispatchFailureCode(recoveryError);
+              }
+              await save();
+            }
+          }
           const unfinished = state.records.flatMap((record) =>
             (record.feedback?.events ?? [])
               .filter(

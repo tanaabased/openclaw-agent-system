@@ -42,14 +42,15 @@ export default async function revalidateAssignment(
     item.state !== 'open' ||
     !item.assignees.some((identity) => githubIdentityMatches(identity, client.identity)) ||
     !latest ||
-    latest.nodeId !== record.assignment.nodeId ||
     latest.event !== 'assigned' ||
     latest.actor.type !== 'User' ||
-    !githubIdentityMatches(latest.actor, record.assignment.actor) ||
     !policy.policy.issueAssignment?.allowed.some((identity) =>
       githubIdentityMatches(identity, latest.actor),
     )
   )
+    throw new Error('dispatch-assignment-authority-revoked');
+  if (latest.nodeId !== record.assignment.nodeId) throw new Error('dispatch-assignment-superseded');
+  if (!githubIdentityMatches(latest.actor, record.assignment.actor))
     throw new Error('dispatch-assignment-authority-revoked');
   return repo;
 }

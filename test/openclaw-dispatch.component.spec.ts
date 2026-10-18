@@ -838,6 +838,45 @@ describe('agent/openclaw issue dispatch', () => {
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);
   });
+  for (const missing of [false, true])
+    it(`should reconcile a superseded ${missing ? 'unknown' : 'created'} session without creating again`, async () => {
+      const input = await next();
+      lost = true;
+      absent = missing;
+      await prepare(input);
+      const current = await service.scope(manifest, root);
+      const event = {
+        ...fixture.events[0]!,
+        nodeId: 'E_successor',
+        databaseId: fixture.events[0]!.databaseId + 1,
+        createdAt: new Date(baseline + 90000).toISOString(),
+      };
+      fixture.events.push(event);
+      await current.store.exclusive(async (state, save) => {
+        const original = state!.records[0]!;
+        state!.records.push({
+          ...original,
+          id: automationHash([
+            state!.scope,
+            original.repository.nodeId,
+            original.issue.nodeId,
+            event.nodeId,
+          ]),
+          assignment: { ...event, event: 'assigned' },
+        });
+        await save(state!);
+      });
+      coordinator.runId = 'successor-intake';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const retained = await record();
+      assert.equal(retained.sessionCreation?.verified, missing ? undefined : true);
+      assert.equal(
+        retained.blocker,
+        missing ? 'dispatch-session-reconcile-required' : 'dispatch-assignment-superseded',
+      );
+      assert.equal(creates().length, 1);
+      assert.equal(retained.intakeId, current.admitted.records[0]!.id);
+    });
 
   it('should reject a session replaced between description and current history readback', async () => {
     const input = await next();

@@ -292,6 +292,7 @@ async function recover(
   deps: CodexDispatchDependencies,
   save: () => Promise<void>,
   threadId = record.threadId ?? record.receiptThreadId,
+  readOnly = false,
 ) {
   if (!record.request || !record.project) throw new Error('dispatch-creation-not-prepared');
   const found = await withNative(current, deps, (native) =>
@@ -314,7 +315,7 @@ async function recover(
   )
     throw new Error('dispatch-native-model-diverged');
   // titles are presentation, not identity; normalize only after native authority checks.
-  if (found.name !== record.request.title)
+  if (!readOnly && found.name !== record.request.title)
     await withNative(current, deps, (native) => native.rename(found.id, record.request!.title));
   if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
   record.effective = {
@@ -596,8 +597,18 @@ export async function runCodexDispatch(
             await save();
             if (result.changed || result.status !== 'assessing') return result;
           } catch (error) {
+            if (code(error) === 'dispatch-assignment-superseded') {
+              try {
+                await recover(current, pending, intake, deps, save, undefined, true);
+              } catch (recoveryError) {
+                if (code(recoveryError) !== 'dispatch-creation-unresolved')
+                  return fail(pending, recoveryError);
+              }
+            }
             if (
-              code(error) === 'dispatch-creation-unresolved' &&
+              ['dispatch-creation-unresolved', 'dispatch-assignment-superseded'].includes(
+                code(error),
+              ) &&
               !pending.threadId &&
               !pending.receiptThreadId &&
               !pending.clientThreadId &&
