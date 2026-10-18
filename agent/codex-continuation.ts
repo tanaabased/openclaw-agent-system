@@ -1,3 +1,4 @@
+import { matchesNotificationAuthority } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { realpath } from 'node:fs/promises';
@@ -158,7 +159,11 @@ export default async function runCodexContinuation(
             throw new Error('continuation-issue-caller-required');
           if (
             record.sourceThreadId !== activation.sourceThreadId ||
-            work.policyDigest !== schedule.current.policyDigest ||
+            !current.manifest.github?.notifications ||
+            !matchesNotificationAuthority(
+              work.policyDigest,
+              current.manifest.github.notifications,
+            ) ||
             current.manifest.github?.notifications?.schemaVersion !== 2 ||
             !['work', 'auto'].includes(
               current.manifest.github.notifications.issueAssignment?.mode ?? '',
@@ -199,7 +204,10 @@ export default async function runCodexContinuation(
                 automationHash({ routing: record.routing, effective: record.effective }) ||
               record.stageReceipt.binding.evidenceDigest !==
                 automationHash(JSON.parse(record.context!)) ||
-              record.stageReceipt.binding.policyDigest !== work.policyDigest ||
+              !matchesNotificationAuthority(
+                record.stageReceipt.binding.policyDigest,
+                current.manifest.github.notifications,
+              ) ||
               record.stageReceipt.binding.turnId !== record.resultTurnId ||
               record.stageReceipt.binding.threadId !== record.threadId ||
               record.stageReceipt.binding.worktree !== record.worktree

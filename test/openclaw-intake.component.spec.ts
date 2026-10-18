@@ -92,6 +92,20 @@ describe('openclaw v2 intake slice', () => {
       },
     };
   }
+  it('should keep activated intake after cadence, capacity and grace changes', async () => {
+    const f = fixture();
+    const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
+    await f.service.run(f.value, root, 'activate');
+    f.value.github.notifications.intervalMinutes = 15;
+    f.value.github.notifications.maxConcurrentItems = 8;
+    f.value.github.notifications.cleanup = { enabled: true, graceMinutes: 30 };
+    f.provider.events.push(...intakeFixture().events);
+    f.setNow(baseline + 120000);
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).status, 'ready');
+    assert.equal((await f.service.inspect(f.value, root)).records.length, 1);
+    f.value.github.notifications.issueAssignment!.allowed = [];
+    await assert.rejects(f.service.run(f.value, root, 'scan', digest), /intake-policy-disabled/);
+  });
   it('should restrict both native check and scan to each isolated fixtures selected issue', async () => {
     const f = fixture();
     const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
@@ -185,6 +199,8 @@ describe('openclaw v2 intake slice', () => {
     await inspect('healthy', 'intake-ready');
     const notifications = f.value.github.notifications;
     notifications.intervalMinutes++;
+    await inspect('healthy', 'intake-ready');
+    notifications.issueAssignment!.feedback = true;
     await inspect('drift', 'intake-policy-reconciliation-required');
   });
 
@@ -386,7 +402,7 @@ describe('openclaw v2 intake slice', () => {
       'unchanged',
     );
     assert.equal((await store.read())!.baselineAt, baseline);
-    f.value.github!.notifications!.intervalMinutes = 10;
+    f.value.github!.notifications!.issueAssignment!.feedback = true;
     await assert.rejects(f.service.run(f.value, root, 'scan', digest), {
       code: 'intake-policy-changed',
     });

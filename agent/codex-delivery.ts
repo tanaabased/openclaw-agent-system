@@ -1,3 +1,7 @@
+import {
+  notificationAuthorityDigest,
+  matchesNotificationAuthority,
+} from './notification-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -209,8 +213,15 @@ export default async function runCodexDelivery(
         true,
         false,
       );
-      const policyDigest = automationHash(current.manifest.github?.notifications ?? null);
-      if (deps.schedule && deps.schedule.current.policyDigest !== policyDigest)
+      const policyDigest = notificationAuthorityDigest(current.manifest.github?.notifications);
+      if (
+        deps.schedule &&
+        (!current.manifest.github?.notifications ||
+          !matchesNotificationAuthority(
+            deps.schedule.current.policyDigest,
+            current.manifest.github.notifications,
+          ))
+      )
         throw new Error('delivery-schedule-stale');
       const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
       await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
@@ -570,7 +581,14 @@ export default async function runCodexDelivery(
               activation.schedule.current,
               'feedback',
             );
-            if (activation.schedule.current.policyDigest === policyDigest) commentFlow = 'codex';
+            if (
+              current.manifest.github?.notifications &&
+              matchesNotificationAuthority(
+                activation.schedule.current.policyDigest,
+                current.manifest.github.notifications,
+              )
+            )
+              commentFlow = 'codex';
           }
         } catch (error) {
           if (codexHostAccess(error)) throw error;

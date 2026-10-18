@@ -65,6 +65,38 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
+  it('should preserve the activated baseline across operational policy changes', async () => {
+    const provider = intakeFixture();
+    provider.events.length = 0;
+    let now = baseline;
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => now,
+      connect: async () => provider.client,
+    };
+    await runCodexIntake(pluginData, true, deps);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: {
+          ...manifest.github,
+          notifications: {
+            ...manifest.github.notifications,
+            'interval-minutes': 15,
+            'max-concurrent-items': 8,
+            cleanup: { enabled: true, 'grace-minutes': 30 },
+          },
+        },
+      }),
+    );
+    provider.events.push(...intakeFixture().events);
+    now += 120000;
+    assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
+    const { store } = await selectCodexIntake(pluginData, deps);
+    assert.equal((await store.read())!.records.length, 1);
+  });
   it('should reactivate despite obsolete full notification queues', async () => {
     const { client } = intakeFixture();
     let now = baseline;

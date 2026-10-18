@@ -2747,6 +2747,22 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
+  for (const mode of ['work', 'auto'] as const) {
+    it(`should continue ${mode} after timing and capacity edits without replacing its assessment`, async () => {
+      const work = mode === 'auto' ? await autoIssue() : await workIssue();
+      const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+      Object.assign(configured.github.notifications, {
+        'interval-minutes': 17,
+        'max-concurrent-items': 8,
+        cleanup: { enabled: true, 'grace-minutes': 30 },
+      });
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+      assert.equal((await work.run('next')).status, 'prepared');
+      work.receive();
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+    });
+  }
+
   it('should adopt auto proceed once and retain its complete source, selection, and routing across restart', async () => {
     const work = await autoIssue();
     const assessment = await request('context', { id: work.id }, { threadId: native!.id });

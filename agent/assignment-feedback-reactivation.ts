@@ -1,3 +1,7 @@
+import {
+  notificationAuthorityDigest,
+  matchesNotificationAuthority,
+} from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
@@ -5,7 +9,6 @@ import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
 import { reconcileAnnouncement } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import redactFeedback from './feedback-redaction.ts';
-import { automationHash } from './automation-hash.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import revalidateAssignment, { inspectAssignment } from './dispatch-assignment.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -30,7 +33,7 @@ export async function revalidateFeedbackAssignment(
   const { repo, latest } = await inspectAssignment(policy, intake, client);
   if (
     latest?.nodeId !== record.feedbackReactivation.assignmentEventId ||
-    automationHash(policy.policy) !== record.feedbackReactivation.policyDigest
+    !matchesNotificationAuthority(record.feedbackReactivation.policyDigest, policy.policy)
   )
     throw new Error('feedback-reactivation-superseded');
   return repo;
@@ -64,10 +67,10 @@ export default async function reactivateAssignmentFeedback(input: {
   }
   const { latest } = await inspectAssignment(policy, intake, client);
   if (!latest) throw new Error('dispatch-assignment-event-missing');
-  const digest = automationHash(policy.policy);
+  const digest = notificationAuthorityDigest(policy.policy);
   if (
     record.feedbackReactivation?.assignmentEventId === latest.nodeId &&
-    record.feedbackReactivation.policyDigest === digest
+    matchesNotificationAuthority(record.feedbackReactivation.policyDigest, policy.policy)
   )
     return true;
   delete record.feedbackReactivation;
@@ -139,7 +142,7 @@ export default async function reactivateAssignmentFeedback(input: {
         event.nodeId === target.nodeId &&
         event.phase === 'queued' &&
         event.createdAt >= since &&
-        event.policyDigest === digest &&
+        matchesNotificationAuthority(event.policyDigest, policy.policy) &&
         revisions.get(event.sourceId) === event.revision,
     );
     if (event) {

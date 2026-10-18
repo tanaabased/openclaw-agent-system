@@ -1,3 +1,4 @@
+import { matchesNotificationAuthority } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -300,7 +301,7 @@ export default async function runCodexFeedback(
             );
             if (
               automationHash(fresh.schedule) !== automationHash(schedule) ||
-              event.policyDigest !== automationHash(policy)
+              !matchesNotificationAuthority(event.policyDigest, policy)
             )
               throw new Error('feedback-authority-changed');
             await revalidateFeedbackAssignment(current.policy!, admitted, provider.client, record);

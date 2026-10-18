@@ -119,6 +119,16 @@ describe('assignment feedback reactivation', () => {
     assert.equal(await h.run(), false);
     assert.equal(h.record.feedback!.events.length, 0);
   });
+  it('should retain comment reactivation after operational policy changes', async () => {
+    const h = fixture();
+    assert.equal(await h.run(), true);
+    h.provider.policy.intervalMinutes += 1;
+    h.provider.policy.maxConcurrentItems += 1;
+    h.provider.policy.cleanup = { enabled: true, graceMinutes: 30 };
+    await revalidateFeedbackAssignment(h.input.policy, h.input.intake, h.provider.client, h.record);
+    assert.equal(await h.run(), true);
+    assert.equal(h.record.feedback!.events.length, 1);
+  });
   for (const kind of [
     'old',
     'unapproved',

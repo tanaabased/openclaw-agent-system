@@ -1,3 +1,4 @@
+import { notificationAuthorityDigest } from './notification-authority.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -461,7 +462,7 @@ export async function inspectCodexDispatchActivation(
     workflow: 'issue-assignment' as const,
     automationId: record.nativeId,
     sourceThreadId: record.definition.targetThreadId,
-    policyDigest: automationHash(selected.loaded.manifest.github.notifications),
+    policyDigest: notificationAuthorityDigest(selected.loaded.manifest.github.notifications),
     definitionDigest: automationHash(record.definition),
   };
   return {

@@ -1,3 +1,4 @@
+import { notificationAuthorityDigest } from './notification-authority.ts';
 import type codexRetirementNative from './codex-retirement-native.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
@@ -1010,7 +1011,7 @@ export async function runCodexDispatch(
             });
             record.continuation = {
               phase: 'waiting',
-              policyDigest: automationHash(current.manifest.github?.notifications),
+              policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
               selection: implementation.selection,
             };
           }

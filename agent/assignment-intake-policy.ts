@@ -1,3 +1,4 @@
+import { notificationAuthority } from './notification-authority.ts';
 import { automationHash } from './automation-hash.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -24,15 +25,7 @@ export default function assignmentIntakePolicy(
     digest: automationHash({
       username,
       host: manifest.github?.host,
-      policy: {
-        schemaVersion: policy.schemaVersion,
-        runtimes: policy.runtimes,
-        intervalMinutes: policy.intervalMinutes,
-        maxConcurrentItems: policy.maxConcurrentItems,
-        cleanup: policy.cleanup ?? { enabled: true, graceMinutes: 60 },
-        allowedRepositoryOwners: policy.allowedRepositoryOwners,
-        issueAssignment: policy.issueAssignment,
-      },
+      policy: notificationAuthority({ ...policy, reviewRequest: undefined }),
     }),
   };
 }

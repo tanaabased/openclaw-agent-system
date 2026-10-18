@@ -3025,6 +3025,14 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.events[0]!.phase, 'running');
     const before = sends().length;
     manifest.github!.notifications!.intervalMinutes += 1;
+    manifest.github!.notifications!.maxConcurrentItems += 1;
+    manifest.github!.notifications!.cleanup = { enabled: true, graceMinutes: 30 };
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events[0]!.phase, 'running');
+    manifest.github!.notifications!.issueAssignment!.allowed = [
+      ...manifest.github!.notifications!.issueAssignment!.allowed,
+      { login: 'another', nodeId: 'U_another' },
+    ];
     await service.dependencies.intake.run(manifest, root, 'activate');
     await service.run(manifest, root, coordinator, { action: 'next' });
     const saved = await record();

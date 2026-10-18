@@ -1,3 +1,4 @@
+import { notificationAuthorityDigest } from './notification-authority.ts';
 import feedbackDiscovery from './feedback-discovery.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
@@ -187,7 +188,7 @@ export async function discoverFeedback(input: {
         !changedReviewBodies.has(source.nodeId) && Number.isFinite(Date.parse(source.updatedAt))
           ? Math.max(0, Math.min(input.now, Date.parse(source.updatedAt)))
           : input.now,
-      policyDigest: automationHash(input.policy),
+      policyDigest: notificationAuthorityDigest(input.policy),
       phase: 'queued',
     });
   }

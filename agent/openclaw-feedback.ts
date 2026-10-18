@@ -1,3 +1,4 @@
+import { matchesNotificationAuthority } from './notification-authority.ts';
 import { Type, type Static } from 'typebox';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
@@ -156,7 +157,8 @@ export async function authorizeFeedback(input: {
 }) {
   const { record, event, policy, provider, intake } = input;
   await input.assertCurrent();
-  if (event.policyDigest !== automationHash(policy)) throw new Error('feedback-authority-changed');
+  if (!matchesNotificationAuthority(event.policyDigest, policy))
+    throw new Error('feedback-authority-changed');
   const owner = intake.repository.owner.login,
     name = intake.repository.name;
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;

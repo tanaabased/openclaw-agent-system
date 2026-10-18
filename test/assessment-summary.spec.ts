@@ -68,7 +68,7 @@ function fixture() {
       threadId: 'issue',
       turnId: 'turn',
       worktree: '/worktree',
-      policy: {},
+      policy: github.policy,
       result: value,
       previousResultDigest: record.result && automationHash(record.result),
     });

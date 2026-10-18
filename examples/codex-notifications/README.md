@@ -169,4 +169,17 @@ printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e --arg node "$node_executable" --arg runtime "$runtime" --arg data "$plugin_data" '.actions[0].expected.prompt | contains([$node,$runtime,"continuation","--plugin-data",$data] | tojson)'
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$CODEX_HOME/rules"
+
+# should update planned cadence without replacing the activated workflow authority
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/before-timing.json"
+sed 's/    schema-version: 2/    schema-version: 2\n    interval-minutes: 17\n    max-concurrent-items: 8\n    cleanup: {enabled: true, grace-minutes: 30}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/timing-agent.yaml"
+mv "$root/timing-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/after-timing.json"
+jq -es '.[0].actions[0].expected.prompt as $before | .[1].actions[0].expected | (.prompt != null and .prompt == $before) and (.rrule | contains("INTERVAL=17"))' "$root/before-timing.json" "$root/after-timing.json"
+test ! -d "$CODEX_HOME/automations"
+
 ```

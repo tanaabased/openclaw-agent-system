@@ -16,6 +16,13 @@ OpenClaw keeps discovery inside one condition budget and wakes the coordinator f
 saved actionable work or a one-time progress/recovery card. After upgrading, run
 Install to reconcile the changed condition before relying on scheduled intake.
 
+Polling cadence, concurrent-item limits, and cleanup grace periods control execution;
+they do not revoke intake or feedback authority. Schedule changes still need Install
+to update the native timer. Runtime enablement, identities, repository scope, allowed
+actors, workflow mode, and cleanup enablement remain permission-bearing settings.
+Older receipts retain their full-policy check until replaced; changed older policies
+can still require reconciliation.
+
 ## Assignment lifecycle
 
 The existing intake run checks retained assignments in both runtimes. Verified issue
