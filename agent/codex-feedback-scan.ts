@@ -10,7 +10,7 @@ import type connectCodexFeedback from './codex-feedback-client.ts';
 import { discoverCodexFeedback } from './codex-feedback-source.ts';
 import type { CodexFeedback } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
-import revalidateAssignment from './dispatch-assignment.ts';
+import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import type { selectCodexIntake } from './codex-intake.ts';
 
 export interface FeedbackScan {
@@ -72,7 +72,7 @@ export async function scanCodexFeedback(input: {
     try {
       if (record.sourceThreadId !== input.sourceThreadId)
         throw new Error('feedback-schedule-owner-changed');
-      await revalidateAssignment(current.policy, admitted, provider.client);
+      await revalidateFeedbackAssignment(current.policy, admitted, provider.client, record);
       const announcement = record.delivery?.announcement;
       const ownCommentIds: string[] = [];
       if (announcement?.receipt) ownCommentIds.push(announcement.receipt.nodeId);

@@ -1,3 +1,5 @@
+import DiscoveryBudget from './discovery-budget.ts';
+import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
 import { lstat } from 'node:fs/promises';
 
 import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
@@ -55,6 +57,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   const { service, manifest, workspace, authority } = input;
   const current = await service.scope(manifest, workspace);
   const owner = await service.dependencies.coordinator(manifest, workspace);
+  const feedbackBudget = new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
   const snapshot = await current.journal.read();
   if (
@@ -94,6 +97,31 @@ export default async function reconcileOpenClawLifecycle(input: {
         service.dependencies.credential.use(authority, (request) =>
           observeRetiringSession(request, record),
         ),
+      reactivate: async (record, intake) => {
+        const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
+        return reactivateAssignmentFeedback({
+          record,
+          intake,
+          policy: current.policy,
+          client,
+          now,
+          save,
+          budget: feedbackBudget,
+          comments: async () => {
+            const provider = await service.dependencies.feedbackConnect?.(
+              { manifest, workspaceDir: workspace },
+              authority.signal ?? AbortSignal.timeout(20_000),
+              client,
+            );
+            if (!provider) throw new Error('feedback-provider-unavailable');
+            return provider;
+          },
+          announcement: record.work?.delivery?.announcement,
+          pullRequest: pr
+            ? { number: pr.pullRequestNumber, nodeId: pr.pullRequestNodeId }
+            : undefined,
+        });
+      },
       cleanup: async (record, intake, recheck) => {
         if (!record.request) return { archived: true, worktreeRemoved: true };
         const cleanup = service.dependencies.worktrees.cleanupGitHub;

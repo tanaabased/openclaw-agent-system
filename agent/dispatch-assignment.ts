@@ -4,7 +4,7 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 
 /** Recheck provider authority before either runtime acts on retained admission evidence. */
-export default async function revalidateAssignment(
+export async function inspectAssignment(
   policy: NonNullable<ReturnType<typeof assignmentIntakePolicy>>,
   record: IntakeRecord,
   client: GitHubNotificationIntakeClient,
@@ -47,6 +47,15 @@ export default async function revalidateAssignment(
     throw new Error('dispatch-issue-identity-changed');
   if (item.itemType !== 'issue') throw new Error('dispatch-issue-type-changed');
   if (item.state !== 'open') throw new Error('dispatch-issue-closed');
+  return { repo, item, latest };
+}
+
+export default async function revalidateAssignment(
+  policy: NonNullable<ReturnType<typeof assignmentIntakePolicy>>,
+  record: IntakeRecord,
+  client: GitHubNotificationIntakeClient,
+) {
+  const { repo, item, latest } = await inspectAssignment(policy, record, client);
   if (!item.assignees.some((identity) => githubIdentityMatches(identity, client.identity)))
     throw new Error('dispatch-assignment-removed');
   if (!latest) throw new Error('dispatch-assignment-event-missing');

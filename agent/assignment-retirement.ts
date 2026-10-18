@@ -13,9 +13,13 @@ export const retirementSchema = Type.Object(
     at: time,
     intakeId: text,
     checkedAt: time,
+    reactivationAfter: Type.Optional(time),
     eligibleAt: time,
     activityId: Type.Optional(text),
     archivedAt: Type.Optional(time),
+    archiveAttempt: Type.Optional(
+      Type.Object({ at: time, turnId: text }, { additionalProperties: false }),
+    ),
     worktreeRemovedAt: Type.Optional(time),
     worktreeRemovalAttemptedAt: Type.Optional(time),
     code: Type.Optional(text),
@@ -46,6 +50,9 @@ export default function assignmentRetirement(input: {
     at: previous?.at ?? input.now,
     intakeId: previous?.intakeId ?? input.intakeId,
     checkedAt: input.now,
+    ...(input.reason === 'issue-closed' && previous?.reason !== 'issue-closed'
+      ? { reactivationAfter: input.now }
+      : {}),
     eligibleAt:
       !previous || activity ? input.now + input.graceMinutes * 60_000 : previous.eligibleAt,
     ...(input.activityId ? { activityId: input.activityId } : {}),

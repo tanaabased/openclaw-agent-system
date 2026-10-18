@@ -396,10 +396,11 @@ not create another chat, and reset never authorizes implementation.
 
 Closed issues, unassigned work, and manually archived chats leave Active on the next
 intake check. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
-for grace periods, reassignment, and current cleanup support. Codex desktop resource
-cleanup remains separate because its app-server does not expose the required native
-worktree and pin operations. The explicit `retire` action remains available for
-operator recovery; its preview and digest preserve launch and assessment evidence.
+for grace periods, reactivation, and cleanup protections. Intake prepares eligible
+Codex chats for native archival; the desktop owns worktree snapshots and reclamation.
+Retirement completes after archival and checkout removal are observed. The explicit
+`retire` action remains available for operator recovery; its preview and digest
+preserve launch and assessment evidence.
 
 After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
 with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.

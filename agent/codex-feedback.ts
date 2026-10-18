@@ -27,7 +27,7 @@ import { feedbackResultSchema } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import revalidateAssignment from './dispatch-assignment.ts';
+import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
@@ -303,7 +303,7 @@ export default async function runCodexFeedback(
               event.policyDigest !== automationHash(policy)
             )
               throw new Error('feedback-authority-changed');
-            await revalidateAssignment(current.policy!, admitted, provider.client);
+            await revalidateFeedbackAssignment(current.policy!, admitted, provider.client, record);
             const item = await provider.client.getItem(owner, name, event.number);
             if (
               item.nodeId !== event.nodeId ||

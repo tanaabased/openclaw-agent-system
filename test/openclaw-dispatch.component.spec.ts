@@ -2853,6 +2853,31 @@ describe('agent/openclaw issue dispatch', () => {
     coordinator.runId = 'feedback-run';
     return { id, who, comments };
   }
+  it('should reactivate unassigned openclaw feedback through ordinary intake without replacing the session', async () => {
+    const { comments } = await feedbackOwner();
+    fixture.item.assignees = [];
+    fixture.events.push({
+      ...fixture.events[0]!,
+      nodeId: 'removed',
+      databaseId: 31,
+      event: 'unassigned',
+      createdAt: '2026-10-07T10:02:00Z',
+    });
+    service.dependencies.now = () => baseline + 240_000;
+    const before = await record();
+    await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'reactivation' },
+      { action: 'next' },
+    );
+    const after = await record();
+    assert.equal(after.retirement, undefined);
+    assert.equal(after.feedbackReactivation?.assignmentEventId, 'removed');
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.feedback?.events[0]?.sourceId, comments[0]!.nodeId);
+    assert.equal(creates().length, 1);
+  });
   it('should reconcile an uncertain delivery announcement before discovering same-account feedback', async () => {
     const { comments } = await feedbackOwner();
     const announcement = attemptedAnnouncement(fixture.client.identity.nodeId);

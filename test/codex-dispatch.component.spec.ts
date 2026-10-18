@@ -2104,7 +2104,58 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
-  it('should remove obsolete codex work from intake without inventing desktop cleanup support', async () => {
+  it('should prepare native archival during intake and retire only after observed reclamation', async () => {
+    worktree = join(codexHome, 'worktrees', 'retiring', 'repo');
+    await mkdir(worktree, { recursive: true });
+    const prepared = await prepare();
+    created();
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    fixture.item.state = 'closed';
+    now += 60_000;
+    await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    now = (await store.read()).records[0]!.retirement!.eligibleAt;
+    const git = deps.git!;
+    deps.git = async (path, args) =>
+      args[0] === 'for-each-ref' ? 'refs/heads/preserved' : git(path, args);
+    deps.retirementNative = {
+      worktreeUsers: async () => ['issue-thread'],
+      archiveOutcome: async () => 'unverified',
+    };
+    const archived = await request('next', {
+      projects,
+      threads: {
+        schemaVersion: 4,
+        pinnedThreads: [],
+        unavailableHosts: [],
+        unavailableSources: [],
+      },
+    });
+    assert.equal(archived.status, 'retirement-prepared');
+    assert.deepEqual(archived.request, {
+      threadId: 'issue-thread',
+      hostId: 'local',
+      archived: true,
+    });
+    assert.equal((await store.read()).records[0]!.retired, undefined);
+    native!.archived = true;
+    await next();
+    assert.equal(
+      (await store.read()).records[0]!.retirement?.code,
+      'retirement-native-reclamation-pending',
+    );
+    assert.equal((await store.read()).records[0]!.retired, undefined);
+    await rm(worktree, { recursive: true });
+    await next();
+    const retired = (await store.read()).records[0]!;
+    assert.equal(retired.retired?.at, now);
+    assert.equal(retired.result?.summary, result.summary);
+  });
+
+  it('should request native inventory for obsolete codex work without deleting resources', async () => {
     const prepared = await prepare();
     created();
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
@@ -2121,7 +2172,7 @@ describe('agent/codex-dispatch', () => {
     now = pending.retirement!.eligibleAt;
     await next();
     const saved = (await store.read()).records[0]!;
-    assert.equal(saved.retirement?.code, 'retirement-native-cleanup-unavailable');
+    assert.equal(saved.retirement?.code, 'retirement-native-inventory-required');
     assert.equal(saved.retired, undefined);
     assert.deepEqual(saved.result, pending.result);
     assert.equal(saved.threadId, pending.threadId);

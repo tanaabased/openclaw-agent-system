@@ -29,7 +29,10 @@ Automatic cleanup defaults to enabled, with a 60-minute grace period under
 change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
 verified reassignment before archival reactivates the existing conversation. A fresh
 assignment after archival or retirement can start another attempt without erasing
-prior receipts. Reopening alone and ordinary comments do not reactivate pending work.
+prior receipts. An admitted new comment from a configured feedback author can also
+reactivate an unarchived conversation before cleanup starts. This resumes feedback,
+not implementation or a mode change. Reopening alone, incidental comments, and the
+agent's own published replies do not reactivate work.
 
 OpenClaw archives the exact idle session and removes its managed worktree after
 verifying a clean checkout and retained branch or tag. It protects pinned sessions,
@@ -37,11 +40,19 @@ automation owners, shared worktrees, unresolved activity, and unpreserved change
 Each successful cleanup step is retained so interrupted cleanup can reconcile on a
 later poll. Branches, issue content, and assessment history are preserved.
 
-Codex reconciles membership and capacity automatically, but its app-server lacks
-supported desktop worktree reclamation and pin inspection. Resource cleanup remains
-pending with `retirement-native-cleanup-unavailable`; it does not block unrelated
-intake. Disabling cleanup preserves resources and marks inactive work retired.
+Codex prepares archival through the desktop's native tools after checking pins,
+automation ownership, shared use, and preserved work. The desktop owns worktree
+snapshotting and reclamation; intake marks work retired only after observing both
+archival and removal. If desktop settings retain the checkout, cleanup stays pending
+without blocking other intake. Disabling cleanup preserves resources and marks
+inactive work retired.
 Run Install after upgrading to reconcile the changed notification policy.
+
+`retirement-native-archive-denied` means the exact native archive call was rejected;
+inspect the intake chat's native approval result before taking operator action.
+`retirement-native-archive-unverified` means submission or outcome is uncertain;
+intake keeps reconciling native evidence. Neither result repeats the archive. A
+fresh preparation is automatic only when native history proves no call was submitted.
 
 ## CLI
 

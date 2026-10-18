@@ -1,3 +1,4 @@
+import type codexRetirementNative from './codex-retirement-native.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -92,6 +93,7 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   feedbackConnect?: typeof connectCodexFeedback;
   summaryAuthority?: (threadId: string, turnId: string) => Promise<void>;
   prepareRepository?: typeof prepareDispatchRepository;
+  retirementNative?: ReturnType<typeof codexRetirementNative>;
   threadId?: string;
 }
 
@@ -373,7 +375,8 @@ export async function runCodexDispatch(
 ) {
   validateDispatchRequest(action, input);
   if (action === 'next') {
-    await reconcileCodexLifecycle(pluginData, deps);
+    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
+    if (retirement) return retirement;
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
   }

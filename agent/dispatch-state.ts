@@ -74,6 +74,17 @@ export const dispatchRecordProperties = {
   ),
   lifecycleCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
   retirement: Type.Optional(retirementSchema),
+  feedbackReactivation: Type.Optional(
+    Type.Object(
+      {
+        eventId: hash,
+        assignmentEventId: text,
+        policyDigest: hash,
+        at: Type.Integer({ minimum: 0 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   retired: Type.Optional(
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
@@ -317,6 +328,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                 'reset',
                 'retired',
                 'retirement',
+                'feedbackReactivation',
                 'intakeId',
                 'handoff',
                 'manifestDigest',

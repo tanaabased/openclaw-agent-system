@@ -1,3 +1,5 @@
+import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
+import type { CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -242,6 +244,48 @@ describe('agent/codex-feedback', () => {
     assert.ok('eventId' in result && result.eventId);
     return { id, eventId: result.eventId };
   }
+  it('should reactivate unassigned codex feedback in the original chat and retire again on closure', async () => {
+    const provider = await deps.feedbackConnect!('', new AbortController().signal);
+    const item = await provider.client.getItem('owner', 'repo', 3);
+    item.assignees = [];
+    const history = await provider.client.listAssignmentEvents('owner', 'repo', 3);
+    history.events.push({
+      ...history.events[0]!,
+      nodeId: 'removed',
+      databaseId: 31,
+      event: 'unassigned',
+      createdAt: new Date(baseline + 65_000).toISOString(),
+    });
+    comments.push({
+      nodeId: 'comment',
+      databaseId: 42,
+      author: commenter,
+      body: '@receiver explain this',
+      bodyTruncated: false,
+      createdAt: new Date(baseline + 68_000).toISOString(),
+      updatedAt: new Date(baseline + 68_000).toISOString(),
+    });
+    const lifecycle = () =>
+      reconcileCodexLifecycle(pluginData, {
+        ...deps,
+        threadId: 'intake',
+        connect: async () => provider.client,
+      } as CodexDispatchDependencies);
+    await lifecycle();
+    const active = (await store.read()).records[0]!;
+    assert.equal(active.retirement, undefined);
+    assert.equal(active.feedbackReactivation?.assignmentEventId, 'removed');
+    assert.equal((await call('next')).status, 'feedback-prepared');
+    assert.equal((await store.read()).records[0]!.threadId, 'child');
+    occurrence += 60_000;
+    await lifecycle();
+    assert.equal((await store.read()).records[0]!.retirement, undefined);
+    item.state = 'closed';
+    occurrence += 60_000;
+    await lifecycle();
+    assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
+    assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
+  });
   async function recordReply(
     ref: { id: string; eventId: string },
     privateText: string,

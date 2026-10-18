@@ -219,17 +219,34 @@ describe('assignment retirement', () => {
       { intake: successor, record: undefined },
     ]);
   });
-  it('should preserve a worktree reused by a newer active assignment', async () => {
-    const h = setup();
-    h.record.worktree = '/managed/issue';
-    h.fixture.item.state = 'closed';
-    await h.run();
-    h.records.push({ ...h.record, id: 'newer', createdAt: baseline + 1, retirement: undefined });
-    h.advance(60);
-    await h.run();
-    assert.equal(h.record.retirement?.code, 'retirement-worktree-shared');
-    assert.equal(h.cleanups(), 0);
-  });
+  for (const age of ['older', 'same-age', 'newer'] as const) {
+    it(`should preserve a worktree shared with ${age} active work`, async () => {
+      const h = setup();
+      h.record.worktree = '/managed/issue';
+      h.fixture.item.state = 'closed';
+      await h.run();
+      const other: SharedDispatchRecord = {
+        ...h.record,
+        id: 'other',
+        sourceThreadId: 'other-intake',
+        createdAt: baseline + (age === 'older' ? -1 : age === 'newer' ? 1 : 0),
+        retirement: undefined,
+        nativeInactive: false,
+      };
+      h.records.push(other);
+      h.advance(60);
+      await h.run();
+      assert.equal(h.record.retirement?.code, 'retirement-worktree-shared');
+      assert.equal(h.cleanups(), 0);
+      assert.equal(h.record.retired, undefined);
+      other.retired = { at: baseline + 3_600_000, by: 'other-intake' };
+      other.nativeInactive = true;
+      h.advance(1);
+      await h.run();
+      assert.equal(h.cleanups(), 1);
+      assert.ok(h.record.retired);
+    });
+  }
   it('should retain observation of busy work even when automatic cleanup is disabled', async () => {
     const h = setup();
     h.fixture.policy.cleanup = { enabled: false, graceMinutes: 60 };

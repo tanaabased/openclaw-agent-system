@@ -33,6 +33,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
     intake: IntakeRecord,
     fresh: () => Promise<void>,
   ): Promise<RetirementCleanupResult>;
+  reactivate?(record: R, intake: IntakeRecord): Promise<boolean>;
   fresh(): Promise<void>;
   save(): Promise<void>;
 }) {
@@ -41,7 +42,12 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
   const selected = input.records
     .filter((record) => !record.reset && !record.retired && record.sourceThreadId === input.owner)
-    .filter((record) => (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now)
+    .filter(
+      (record) =>
+        (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now ||
+        record.retirement?.code === 'retirement-native-inventory-required' ||
+        record.retirement?.archiveAttempt,
+    )
     .sort((a, b) => (a.lifecycleCheckedAt ?? 0) - (b.lifecycleCheckedAt ?? 0))
     .slice(0, 12);
   for (const record of selected) {
@@ -97,23 +103,50 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       if (record.retirement && record.nativeInactive === false && native?.idle)
         record.retirement.eligibleAt = now + configuration.graceMinutes * 60_000;
       if (native && (record.retirement || native.archived)) record.nativeInactive = native.idle;
+      if (reason === 'issue-closed' || native?.archived) delete record.feedbackReactivation;
       const successor = latest.get(record.issueKey);
       if (
         !reason &&
-        record.retirement &&
-        !native?.archived &&
-        !record.retirement.archivedAt &&
-        record.retirement.reason !== 'chat-archived' &&
+        (record.retirement || record.feedbackReactivation) &&
+        native &&
+        !native.archived &&
+        !record.retirement?.archivedAt &&
+        !record.retirement?.archiveAttempt &&
+        record.retirement?.reason !== 'chat-archived' &&
         successor &&
-        successor.id !== record.retirement.intakeId
+        successor.id !== (record.retirement?.intakeId ?? record.intakeId)
       ) {
         await revalidateAssignment(policy, successor, client);
         await input.fresh();
         record.intakeId = successor.id;
         delete record.retirement;
+        delete record.feedbackReactivation;
         await input.save();
         continue;
       }
+      const reactivate = async () => {
+        if (
+          native &&
+          !native.archived &&
+          reason !== 'issue-closed' &&
+          record.retirement?.reason !== 'chat-archived' &&
+          !record.retirement?.archivedAt &&
+          !record.retirement?.archiveAttempt &&
+          !record.retirement?.worktreeRemovalAttemptedAt &&
+          (record.retirement || record.feedbackReactivation) &&
+          input.reactivate &&
+          (await input.reactivate(record, admitted))
+        ) {
+          await input.fresh();
+          const verifiedNative = await input.observe(record);
+          if (!verifiedNative || verifiedNative.archived || (await provider()) === 'issue-closed')
+            throw new Error('retirement-observation-changed');
+          delete record.retirement;
+          return true;
+        }
+        return false;
+      };
+      if (await reactivate()) continue;
       record.retirement = assignmentRetirement({
         previous: record.retirement,
         reason: native?.archived ? 'chat-archived' : reason,
@@ -149,9 +182,9 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       if (reclaimed?.retirement?.worktreeRemovedAt)
         record.retirement.worktreeRemovedAt = reclaimed.retirement.worktreeRemovedAt;
       const fresh = async () => {
-        if (shared.some((other) => !other.retired && other.createdAt >= record.createdAt))
-          throw new Error('retirement-worktree-shared');
+        if (shared.some((other) => !other.retired)) throw new Error('retirement-worktree-shared');
         await input.fresh();
+        if (await reactivate()) throw new Error('retirement-reactivated');
         const currentReason = await provider();
         const currentNative = await input.observe(record);
         if (

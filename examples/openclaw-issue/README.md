@@ -164,10 +164,11 @@ for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-all-after.json"
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '([.messages[] | select(.role == "user" and .idempotencyKey == ($run + ":user"))] | length) == 1'
 done
 
-# should answer one approved issue comment in the owning issue chat
+# should reactivate an unassigned issue from approved feedback in its original chat
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'all(.assignees[]; .login != "tanaabot")'
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot explain the retained plan.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
@@ -177,7 +178,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_r
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-after.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
-jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .phase == "published" and .itemType == "issue" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-dispatch-after.json" "$TMPDIR/notification-feedback.json"
+jq -e --slurp '.[1].retirement == null and .[1].feedbackReactivation.eventId != null and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .phase == "published" and .itemType == "issue" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-dispatch-after.json" "$TMPDIR/notification-feedback.json"
 
 # should verify the exact response and suppress another reply on a repeat scan
 test -f "$TMPDIR/notification-activation-ready"
@@ -207,6 +208,16 @@ jq -es 'any(.[]; .intakeReport.response | contains("Intake resumed"))' "$XDG_CON
 coordinator=$(jq -er .sourceThreadId "$TMPDIR/notification-dispatch-after.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$coordinator" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-intake-history.json"
 jq -e '[.messages[] | select(.role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | join("\n") | contains("automation-sync-required") and contains("Intake resumed") and contains("/chat?session=")' "$TMPDIR/notification-intake-history.json"
+
+# should reuse the reactivated conversation on a fresh assignment
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+sleep 61
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-after.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].retirement == null and .[0].feedbackReactivation == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should recover the same issue after restart with fresh private facts and debug instructions
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"

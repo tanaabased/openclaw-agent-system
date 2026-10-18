@@ -1,3 +1,10 @@
+import DiscoveryBudget from './discovery-budget.ts';
+import codexRetirementNative from './codex-retirement-native.ts';
+import codexRetirementCleanup, {
+  type RetirementArchiveRequest,
+} from './codex-retirement-cleanup.ts';
+import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch.ts';
@@ -10,10 +17,12 @@ import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
 export default async function reconcileCodexLifecycle(
   pluginData: string,
   deps: CodexDispatchDependencies,
+  inventory?: unknown,
 ) {
   const current = await selectCodexIntake(pluginData, deps);
   if (!current.policy) return;
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const feedbackBudget = new DiscoveryBudget();
   const now = (deps.now ?? Date.now)();
   const snapshot = await store.read();
   if (
@@ -21,7 +30,9 @@ export default async function reconcileCodexLifecycle(
       (record) =>
         !record.retired &&
         !record.reset &&
-        (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now,
+        ((record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now ||
+          record.retirement?.archiveAttempt ||
+          record.retirement?.code === 'retirement-native-inventory-required'),
     )
   )
     return;
@@ -38,11 +49,13 @@ export default async function reconcileCodexLifecycle(
     : await connectCodexThreads(current.workspace, current.codexHome);
   const native = deps.native ?? codexDispatchNative(connection!.request);
   try {
-    await native.occurrence(caller);
+    const occurrence = await native.occurrence(caller);
     const admitted = await current.store.read();
     if (!admitted || admitted.policyDigest !== current.policy.digest)
       throw new Error('dispatch-policy-reconciliation-required');
-    await store.exclusive(async (state, save, signal) => {
+    return await store.exclusive(async (state, save, signal) => {
+      let prepared: { id: string; request: RetirementArchiveRequest } | undefined;
+      let needsInventory = false;
       const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
       await reconcileAssignmentLifecycle({
         records: state.records,
@@ -75,23 +88,95 @@ export default async function reconcileCodexLifecycle(
             observationOnly: true,
           });
           if (!found) throw new Error('retirement-native-observation-unavailable');
+          if (record.worktree && found.cwd !== record.worktree)
+            throw new Error('retirement-worktree-identity-changed');
+          if (record.retirement?.archiveAttempt && !found.archived) {
+            const reader =
+              deps.retirementNative ??
+              (connection ? codexRetirementNative(connection.request) : undefined);
+            if (
+              reader &&
+              (await reader.archiveOutcome(
+                caller,
+                threadId,
+                record.retirement.archiveAttempt,
+                occurrence.id,
+              )) === 'unsubmitted'
+            ) {
+              delete record.retirement.archiveAttempt;
+              await save();
+            }
+          }
           return {
             archived: found.archived === true,
             idle: Boolean(found.turnEnded && ['idle', 'notLoaded'].includes(found.status)),
             activityId: found.turnId,
           };
         },
-        cleanup: async (record) => {
+        reactivate: async (record, intake) => {
+          const pr = record.delivery?.pullRequest;
+          return reactivateAssignmentFeedback({
+            record,
+            intake,
+            policy: current.policy!,
+            client,
+            now,
+            save,
+            budget: feedbackBudget,
+            comments: async () =>
+              (await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal))
+                .comments,
+            announcement: record.delivery?.announcement,
+            pullRequest: pr
+              ? { number: pr.pullRequestNumber, nodeId: pr.pullRequestNodeId }
+              : undefined,
+          });
+        },
+        cleanup: async (record, intake, fresh) => {
           if (!record.request && !record.worktree) return { archived: true, worktreeRemoved: true };
-          // the app-server does not expose desktop pin protection or managed worktree reclamation.
-          // leave ownership with the desktop instead of deleting its checkout behind its back.
-          return {
+          if (prepared) return { archived: false, worktreeRemoved: false };
+          if (state.run?.id === occurrence.id && state.run.actions >= 12)
+            return {
+              archived: false,
+              worktreeRemoved: false,
+              code: 'retirement-occurrence-budget-exhausted',
+            };
+          const result = await codexRetirementCleanup({
+            record,
+            codexHome: current.codexHome,
+            repository: intake.repository.owner.login + '/' + intake.repository.name,
             archived: record.retirement?.reason === 'chat-archived',
-            worktreeRemoved: false,
-            code: 'retirement-native-cleanup-unavailable',
-          };
+            inventory,
+            now,
+            turnId: occurrence.id,
+            native:
+              deps.retirementNative ??
+              codexRetirementNative(async (method, params) => {
+                if (!connection) throw new Error('retirement-native-observation-unavailable');
+                return connection.request(method, params);
+              }),
+            git: deps.git,
+            fresh,
+            save,
+          });
+          if ('request' in result && result.request) {
+            if (state.run?.id !== occurrence.id) state.run = { ...occurrence, actions: 0 };
+            state.run.actions++;
+            prepared = { id: record.id, request: result.request };
+            await save();
+          }
+          if ('code' in result && result.code === 'retirement-native-inventory-required')
+            needsInventory = true;
+          return result;
         },
       });
+      if (prepared) return { status: 'retirement-prepared', ...prepared };
+      if (needsInventory)
+        return {
+          status: 'retirement-inventory-required',
+          instructions:
+            'Call native list_threads and pass its complete parsed JSON object as threads to dispatch next. Do not archive a chat without a retirement-prepared request.',
+        };
     });
   } finally {
     await connection?.close();

@@ -48,6 +48,7 @@ import feedbackResponse from '../channels/github/presentation/feedback-response.
 import dispatchContext from './dispatch-context.ts';
 import pendingAssignments, { issueKey } from './dispatch-pending.ts';
 import revalidateAssignment from './dispatch-assignment.ts';
+import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
 import OpenClawDispatchStore, {
@@ -264,7 +265,9 @@ export default class OpenClawDispatch {
         { manifest, workspaceDir: current.workspace },
         signal ?? AbortSignal.timeout(25000),
       ));
-    const repo = await revalidateAssignment(current.policy, intake, client);
+    const repo = feedback
+      ? await revalidateFeedbackAssignment(current.policy, intake, client, record)
+      : await revalidateAssignment(current.policy, intake, client);
     const worktreeInput = {
       agentId: manifest.agent.id,
       cloneUrl: repo.cloneUrl,
@@ -1622,6 +1625,7 @@ function continuationStatus(record: OpenClawDispatchRecord) {
     !record.sessionCreation ||
     record.retired ||
     record.retirement ||
+    record.feedbackReactivation ||
     record.handoff ||
     record.reset
   )
