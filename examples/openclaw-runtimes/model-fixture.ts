@@ -53,10 +53,6 @@ const fixtures: Fixture[] = [
     response: { content: 'runtime-install-ready', id: 'runtime-install-ready-final' },
   },
   {
-    match: { model, userMessage: 'runtime-codex-mock-transport:', hasToolResult: false },
-    response: { content: 'runtime-codex-mock-ready', id: 'runtime-codex-transport-final' },
-  },
-  {
     match: {
       model,
       hasToolResult: false,
@@ -207,9 +203,7 @@ export const runtimeBoundaryScenario: OpenClawAIMockScenario = {
   id: 'openclaw-runtimes',
   model: { match: model, reference: 'aimock/gpt-5.5' },
   fixtures,
-  skipToolSearch: (request) => userIncludes(request, 'runtime-codex-mock-transport:'),
   finalResponses: [
-    'runtime-codex-mock-ready',
     'runtime-codex-exec-ready',
     'runtime-install-ready',
     'runtime-exec-ready',
