@@ -22,7 +22,7 @@ import defineCliTool from '../api/define-cli-tool.ts';
 import runAgentSystemTool from '../cli/tool.ts';
 import envAgentSystem from '../cli/env.ts';
 import { formatManifestDiagnostics, formatErrorDiagnostic } from '../core/logger.ts';
-import githubDiagnostic from '../credentials/github-diagnostic.ts';
+import githubDiagnostic, { githubCliDiagnostic } from '../credentials/github-diagnostic.ts';
 import opDiagnostic from '../environment/op-diagnostic.ts';
 import { providerDiagnostic, formatProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import GitHubWorkEventApiClient, {
@@ -362,11 +362,7 @@ describe('safe provider diagnostics', () => {
       providerMessage: hostile,
     });
     redacted(boundary);
-    assert.equal(
-      providerDiagnostic('github', 'api-request', 'unknown', { providerMessage: hostile })
-        .providerMessage,
-      undefined,
-    );
+    redacted(providerDiagnostic('github', 'api-request', 'unknown', { providerMessage: hostile }));
   });
 
   it('should preserve sdk evidence through environment failures and retained backoff', async () => {
@@ -395,6 +391,47 @@ describe('safe provider diagnostics', () => {
     }
   });
 
+  it('should retain github cli status and redacted errors without copying unrelated output', () => {
+    for (const [message, status, classification] of [
+      ['API rate limit exceeded for user ID 123.', 403, 'rate-limit'],
+      ['You have exceeded a secondary rate limit.', 403, 'rate-limit'],
+      ['Resource not accessible by personal access token', 403, 'permission'],
+      ['Bad credentials', 401, 'authentication'],
+      ['Too Many Requests', 429, 'rate-limit'],
+      ['Service Unavailable', 503, 'transport'],
+    ] as const) {
+      const diagnostic = githubCliDiagnostic(
+        {
+          exitCode: 1,
+          stdout: hostile,
+          stderr: `gh: ${message} ghp_PRIVATE github_pat_PRIVATE https://example.test/private (HTTP ${status})\n${hostile}`,
+          timedOut: false,
+          truncated: false,
+        },
+        'identity-check',
+      );
+      assert.equal(diagnostic.httpStatus, status);
+      assert.equal(diagnostic.httpStatusSource, 'message');
+      assert.equal(diagnostic.classification, classification);
+      assert.ok(diagnostic.providerMessage?.includes(message));
+      const rendered = formatProviderDiagnostic(diagnostic);
+      assert.ok(rendered.includes('providerMessage='));
+      assert.ok(!rendered.includes('PRIVATE'));
+      assert.ok(!rendered.includes('example.test'));
+      redacted(rendered);
+    }
+    const unknown = githubCliDiagnostic({
+      exitCode: 1,
+      stdout: 'HTTP/2 403',
+      stderr: 'connection failed',
+      timedOut: false,
+      truncated: false,
+    });
+    assert.equal(unknown.httpStatus, null);
+    assert.equal(unknown.classification, 'unknown');
+    assert.equal(unknown.providerMessage, undefined);
+  });
+
   it('should allowlist supplied github status and retry metadata without interpreting provider prose', async () => {
     for (const [status, classification] of [
       [401, 'authentication'],
@@ -408,7 +445,7 @@ describe('safe provider diagnostics', () => {
         execute: async () => ({
           exitCode: 1,
           stdout: `HTTP/2 ${status}\nx-ratelimit-reset: 1800000000\nretry-after: 10\nX-Untrusted: ${hostile.trim()}\n\n${hostile}`,
-          stderr: hostile,
+          stderr: `gh: Request rejected (HTTP ${status})\n${hostile}`,
           timedOut: false,
           truncated: false,
         }),
@@ -422,6 +459,7 @@ describe('safe provider diagnostics', () => {
         assert.equal(error.providerDiagnostic?.httpStatus, status);
         assert.equal(error.providerDiagnostic?.resetAt, 1_800_000_000_000);
         assert.equal(error.providerDiagnostic?.retryAfterMs, 10_000);
+        assert.ok(error.providerDiagnostic?.providerMessage?.includes('Request rejected'));
         redacted(error.message);
         redacted(error.providerDiagnostic);
         return true;

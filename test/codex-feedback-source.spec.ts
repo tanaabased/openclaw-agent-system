@@ -1,3 +1,4 @@
+import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
 import assert from 'node:assert/strict';
 
 import { admitCodexFeedback, discoverCodexFeedback } from '../agent/codex-feedback-source.ts';
@@ -186,5 +187,169 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(source.feedback.receipt.kind, 'review-comment');
     assert.equal(source.feedback.comments[0].replyToId, parent.databaseId);
     assert.equal(source.feedback.parent.nodeId, parent.nodeId);
+  });
+  it('should resume checkpointed pages without moving the cutoff or admitting old history', async () => {
+    const start = Date.parse('2026-10-12T00:00:00Z');
+    let state: CodexFeedback = { startedAt: start, baseline: {}, events: [] };
+    let saved = structuredClone(state);
+    let clock = 0;
+    const calls: number[] = [];
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = true;
+    let interrupt = true;
+    const client = {
+      identity: account,
+      getIssueComment: async () => comment('new'),
+      listIssueComments: async () => {
+        throw new Error('unbounded read');
+      },
+      listIssueCommentPage: async (
+        _o: string,
+        _n: string,
+        _i: number,
+        page: number,
+        since: string,
+      ) => {
+        assert.equal(since, new Date((state.watermarks?.I ?? start) - 2000).toISOString());
+        calls.push(page);
+        if (interrupt) clock = 20000;
+        return {
+          comments:
+            page === 1
+              ? [comment('new')]
+              : [{ ...comment('edited'), createdAt: '2026-10-01T00:00:00Z' }],
+          truncated: page === 1,
+        };
+      },
+    };
+    const run = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        client,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: start + 1000,
+        discovery: {
+          budget: new DiscoveryBudget(20000, undefined, () => clock),
+          save: async () => {
+            saved = structuredClone(state);
+          },
+        },
+      });
+    await assert.rejects(run(), DiscoveryPaused);
+    assert.equal(saved.baseline.I, undefined);
+    assert.equal(saved.startedAt, start);
+    state = JSON.parse(JSON.stringify(saved));
+    interrupt = false;
+    clock = 0;
+    await run();
+    assert.deepEqual(calls, [1, 1, 2]);
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['new', 'edited'],
+    );
+    assert.equal(state.watermarks!.I, start + 1000);
+    assert.equal(state.discovery!.I, undefined);
+    await run();
+    assert.equal(state.events.length, 2);
+  });
+
+  it('should detect an edited historical review without expanding unchanged review members', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = true;
+    const state: CodexFeedback = {
+      startedAt: Date.parse('2026-10-12T00:00:00Z'),
+      baseline: {},
+      events: [],
+    };
+    const review = reviewFixture({ author: account, body: '@receiver old question' });
+    const reviews = reviewClientFixture(review, []);
+    let expansions = 0;
+    reviews.getReviewComments = async () => {
+      expansions++;
+      return [];
+    };
+    const run = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'PR',
+        itemType: 'pull-request',
+        now: state.startedAt! + 1000,
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments: [], truncated: false }),
+          getIssueComment: async () => comment('C'),
+          reviews,
+        },
+        discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+      });
+    await run();
+    await run();
+    assert.equal(expansions, 0);
+    assert.equal(state.events.length, 0);
+    review.body = '@receiver edited question';
+    await run();
+    await run();
+    assert.equal(expansions, 1);
+    assert.equal(state.events.length, 1);
+    assert.equal(state.events[0]!.sourceId, review.nodeId);
+  });
+  it('should restart a shifted page boundary without treating unseen comments as deleted', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = true;
+    const state: CodexFeedback = { startedAt: 1, baseline: {}, events: [] };
+    let clock = 0;
+    let shifted = false;
+    let pause = true;
+    const client = {
+      identity: account,
+      getIssueComment: async () => comment('a'),
+      listIssueComments: async () => {
+        throw new Error('unbounded read');
+      },
+      listIssueCommentPage: async (_o: string, _n: string, _i: number, page: number) => {
+        if (pause) clock = 20000;
+        return {
+          comments: [comment(page === 1 ? (shifted ? 'b' : 'a') : 'c')],
+          truncated: page === 1,
+        };
+      },
+    };
+    const run = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        client,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: 2,
+        discovery: {
+          budget: new DiscoveryBudget(20000, undefined, () => clock),
+          save: async () => {},
+        },
+      });
+    await assert.rejects(run(), DiscoveryPaused);
+    pause = false;
+    shifted = true;
+    clock = 0;
+    await assert.rejects(run(), DiscoveryPaused);
+    assert.equal(state.baseline.I, undefined);
+    assert.deepEqual(state.discovery!.I!.reads, {});
+    await run();
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['b', 'c'],
+    );
   });
 });

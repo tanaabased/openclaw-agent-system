@@ -1,3 +1,4 @@
+import DiscoveryBudget from '../agent/discovery-budget.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -114,6 +115,42 @@ describe('channels/github/intake/records', () => {
       assert.deepEqual(await store.read(), before);
     }
   });
+  it('should resume completed assignment observations after its budget expires', async () => {
+    const { input, store, client, events } = setup('openclaw');
+    const assignments = events.splice(0);
+    await scanAssignments({ ...input, activate: true });
+    events.push(...assignments);
+    let clock = 0;
+    let reads = 0;
+    const read = client.getRepository;
+    client.getRepository = async (...args) => {
+      reads++;
+      clock = 20000;
+      return read(...args);
+    };
+    const partial = await scanAssignments({
+      ...input,
+      now: baseline + 120000,
+      budget: new DiscoveryBudget(20000, undefined, () => clock),
+    });
+    assert.equal(partial.more, true);
+    assert.equal(partial.status, 'ready');
+    const saved = (await store.read())!;
+    assert.equal(saved.baselineAt, baseline);
+    assert.equal(saved.records.length, 0);
+    assert.ok(saved.discovery?.observations?.repository);
+    clock = 0;
+    const complete = await scanAssignments({
+      ...input,
+      store: new IntakeRecordStore(store.location),
+      now: baseline + 240000,
+      budget: new DiscoveryBudget(20000, undefined, () => clock),
+    });
+    assert.equal(complete.admitted, 1);
+    assert.equal(reads, 1);
+    assert.equal((await store.read())!.records.length, 1);
+  });
+
   it('should propagate local save failures without inventing a provider outage', async () => {
     const { input, store } = setup();
     await scanAssignments({ ...input, activate: true });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,7 +12,7 @@ openclaw() {
     'agent-system install --yes --json')
       printf '%s\\n' '{"status":"fixture-install-result"}'
       return "$INSTALL_STATUS" ;;
-    'agents list --json'|'gateway call agents.list --timeout 10000 --json')
+    'config get gateway --json')
       printf '%s\\n' '{}'
       return "$DIAGNOSTIC_STATUS" ;;
     'agent-system automations list --json')
@@ -21,6 +21,8 @@ openclaw() {
     *) printf '%s\\n' '{}' ;;
   esac
 }
+openclaw-gateway() { printf '%s\\n' "$TMPDIR/gateway.log"; }
+node() { cat; return "$DIAGNOSTIC_STATUS"; }
 jq() { cat; }
 `;
 
@@ -42,6 +44,7 @@ for (const scenario of ['openclaw-issue', 'openclaw-pr']) {
         try {
           for (const agent of ['emori', 'tanaabot'])
             await mkdir(join(root, 'examples', scenario, agent), { recursive: true });
+          await writeFile(join(root, 'gateway.log'), 'fixture-gateway-log\n');
           const result = spawnSync('bash', ['-e', '-c', commands + activation], {
             env: {
               ...process.env,
@@ -60,13 +63,9 @@ for (const scenario of ['openclaw-issue', 'openclaw-pr']) {
           assert.ok(!calls.some((call) => /sync|restart/u.test(call)));
           const ready = await stat(join(root, 'notification-activation-ready')).catch(() => null);
           assert.equal(Boolean(ready), expected === 0);
-          assert.equal(calls.includes('agents list --json'), expected !== 0);
-          assert.equal(
-            calls.includes('gateway call agents.list --timeout 10000 --json'),
-            expected !== 0,
-          );
           if (expected !== 0) {
             assert.ok(result.stdout.includes('fixture-install-result'));
+            assert.ok(result.stdout.includes('fixture-gateway-log'));
             assert.ok(!calls.some((call) => call.includes('notifications wait')));
           }
         } finally {

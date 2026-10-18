@@ -43,6 +43,7 @@ export interface GitHubPullRequestReviewClient {
     name: string,
     number: number,
     page: number,
+    since?: string,
   ): Promise<GitHubReviewPage<GitHubPullRequestReviewComment>>;
   getReview(
     owner: string,
@@ -56,6 +57,13 @@ export interface GitHubPullRequestReviewClient {
     number: number,
     id: number,
   ): Promise<GitHubPullRequestReviewComment>;
+  getReviewCommentPage?(
+    owner: string,
+    name: string,
+    number: number,
+    id: number,
+    page: number,
+  ): Promise<GitHubReviewPage<GitHubPullRequestReviewComment>>;
   getReviewComments(
     owner: string,
     name: string,

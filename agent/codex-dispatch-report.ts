@@ -1,3 +1,4 @@
+import discoveryNotice from './discovery-notice.ts';
 import codexCapacity from './codex-capacity.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
@@ -19,6 +20,7 @@ export default function prepareDispatchReport(input: {
   currentTimeIso: string;
 }) {
   const { state, intake } = input;
+  const discovery = discoveryNotice(state.discoveryProgress);
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.effective && record.threadId);
   const occupied = codexCapacity(active, input.slots).occupied;
@@ -149,8 +151,9 @@ export default function prepareDispatchReport(input: {
   return {
     response: codexHeartbeatEnvelope(
       input.automationId,
-      githubNotificationQuote(lines.join('\n')),
-      started.length > 0 ||
+      [githubNotificationQuote(lines.join('\n')), discovery].filter(Boolean).join('\n\n'),
+      Boolean(discovery) ||
+        started.length > 0 ||
         sent.length > 0 ||
         recovered ||
         (Boolean(health) && health !== state.intakeHealth),

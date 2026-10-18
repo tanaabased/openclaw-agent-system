@@ -261,6 +261,15 @@ describe('agent/codex-feedback', () => {
     assert.equal(candidate.status, 'candidate-recorded');
     return composition;
   }
+  it('should finish a quiet discovery cycle when the clock advances during the scan', async () => {
+    let time = baseline + 70000;
+    deps.now = () => ++time;
+    await call('next');
+    const state = await store.read();
+    assert.equal(state.discoveryCycleAt, undefined);
+    assert.equal(state.records[0]!.feedback!.discoveryPending, false);
+    assert.ok(Object.keys(state.records[0]!.feedback!.watermarks!).length);
+  });
   it('should keep same-account feedback private even when a public candidate is supplied', async () => {
     const ref = await prepare(account);
     sent = true;
@@ -628,7 +637,7 @@ describe('agent/codex-feedback', () => {
   for (const stale of [false, true]) {
     it(`should select the oldest queued revision and block only that source when stale is ${stale}`, async () => {
       await call('next');
-      for (const [index, updated] of [60000, 30000].entries())
+      for (const [index, updated] of [90000, 80000].entries())
         comments.push({
           nodeId: `comment-${index}`,
           databaseId: 42 + index,
@@ -653,6 +662,7 @@ describe('agent/codex-feedback', () => {
         };
       }
       occurrence++;
+      deps.now = () => baseline + 100000;
       const result = await call('next');
       assert.equal(result.status, 'feedback-prepared');
       const events = (await store.read()).records[0]!.feedback!.events;

@@ -55,8 +55,9 @@ route; this workflow does not start implementation or advance the task lifecycle
   `agent_system_github`; standalone Codex uses native host GitHub access. Follow
   [GitHub CLI](../github-cli/SKILL.md) for the applicable route. A missing tool or
   denial never authorizes switching routes.
-- OpenClaw V2 feedback is unavailable. Do not infer feedback admission or automatic
-  publication from an old V1 session or from the final response's wording.
+- OpenClaw feedback requires verified native context and the host's source-bound
+  publication authority. Do not infer admission or publication authority from an
+  old session or from the final response's wording.
 - If the owning issue cannot be resolved from trusted session context, ask the
   operator for it instead of guessing or publishing.
 

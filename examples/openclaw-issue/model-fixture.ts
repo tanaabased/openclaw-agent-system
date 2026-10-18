@@ -12,6 +12,21 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const prefix = 'call_notifications_';
 const identity = 'Name: Notification Tanaabot';
+const dispatchStages = [
+  'next',
+  'next-after-discovery',
+  'prepare',
+  'assess',
+  'reconcile',
+  'context',
+  'result',
+  'feedback-context',
+  'feedback-result',
+  'feedback-compose',
+  'feedback-candidate',
+  'feedback-preview',
+  'feedback-publish',
+];
 
 function currentTurn(request: ChatCompletionRequest) {
   return request.messages.slice(
@@ -26,9 +41,17 @@ function currentTurn(request: ChatCompletionRequest) {
   );
 }
 
-function isBusy(result: Record<string, unknown> | undefined) {
-  return result?.status === 'busy' && result.code === 'private-state-file-lock-busy';
+function isContention(result: Record<string, unknown> | undefined) {
+  return (
+    ['busy', 'blocked'].includes(String(result?.status)) &&
+    ['private-state-file-lock-busy', 'private-state-snapshot-conflict'].includes(
+      String(result?.code),
+    )
+  );
 }
+
+const retryStage = (stage: string, attempt: number) =>
+  attempt ? `${stage}_retry_${attempt}` : stage;
 
 function call(stage: string, name: string, args: unknown): FixtureResponse {
   return { toolCalls: [{ id: prefix + stage, name, arguments: JSON.stringify(args) }] };
@@ -41,14 +64,26 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')
     .join('\n');
+  // repeat only known contention, preserving the operation and its retained arguments.
+  const attempts = new Map<string, number>();
   const result = (stage: string): Record<string, unknown> | undefined => {
-    const text = openClawAIMockToolResultText(messages, prefix + stage);
-    return text === undefined ? undefined : JSON.parse(text);
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      const text = openClawAIMockToolResultText(messages, prefix + retryStage(stage, attempt));
+      if (text === undefined) {
+        attempts.set(stage, attempt);
+        return undefined;
+      }
+      const value = JSON.parse(text);
+      if (!dispatchStages.includes(stage) || !isContention(value)) return value;
+      if (attempt === 3) throw new Error(`notification-retry-exhausted: ${value.code}`);
+    }
+    return undefined;
   };
-  const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
+  const dispatch = (stage: string, args: unknown) =>
+    call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Advance at most one new issue or feedback turn per run.')) {
-    if (!manual) {
+    if (!manual && !prompt.includes('consume saved discoveries')) {
       const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       if (!digest) return;
       const scan = result('scan');
@@ -56,9 +91,13 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
       if (scan.status !== 'ready') return;
     }
-    const next = result('next');
+    let next = result('next');
+    if (next?.status === 'discovery-progress') {
+      const resumed = result('next-after-discovery');
+      if (!resumed) return dispatch('next-after-discovery', { action: 'next' });
+      next = resumed;
+    }
     if (!next) return dispatch('next', { action: 'next' });
-    if (isBusy(next)) return { content: 'notification-intake-busy' };
     if (['feedback-pending', 'feedback-completed', 'feedback-queued'].includes(String(next.status)))
       return { content: 'notification-feedback-advanced' };
     if (next.status === 'idle') return { content: 'notification-intake-idle' };
@@ -83,17 +122,14 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           fallback: 'default',
           title: 'Document disposable test issue cleanup',
         });
-      if (isBusy(prepared)) return { content: 'notification-intake-busy' };
       if (prepared.status !== 'session-created') return;
     } else if (!['assessment-required', 'reconcile-required'].includes(String(next.status))) return;
     const stage = next.status === 'reconcile-required' ? 'reconcile' : 'assess';
     const advanced = result(stage);
     if (!advanced) return dispatch(stage, { action: stage, id: next.id });
-    if (isBusy(advanced)) return { content: 'notification-intake-busy' };
     if (advanced.status === 'session-created' || advanced.status === 'working-turn-completed') {
       const assessed = result('assess');
       if (!assessed) return dispatch('assess', { action: 'assess', id: next.id });
-      if (isBusy(assessed)) return { content: 'notification-intake-busy' };
       if (!['assessment-pending', 'assessment-completed'].includes(String(assessed.status))) return;
     } else if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status)))
       return;
@@ -208,7 +244,14 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
 function response(request: ChatCompletionRequest) {
   try {
     return respond(request);
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /^notification-retry-exhausted: private-state-(?:file-lock-busy|snapshot-conflict)$/u.test(
+        error.message,
+      )
+    )
+      return { content: error.message };
     return undefined;
   }
 }
@@ -235,23 +278,12 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'feedback-skill', name: 'read' },
-    ...[
-      'next',
-      'prepare',
-      'assess',
-      'reconcile',
-      'context',
-      'result',
-      'feedback-context',
-      'feedback-result',
-      'feedback-compose',
-      'feedback-candidate',
-      'feedback-preview',
-      'feedback-publish',
-    ].map((stage) => ({
-      id: prefix + stage,
-      name: 'agent_system_dispatch',
-    })),
+    ...dispatchStages.flatMap((stage) =>
+      [0, 1, 2, 3].map((attempt) => ({
+        id: prefix + retryStage(stage, attempt),
+        name: 'agent_system_dispatch',
+      })),
+    ),
     ...['git'].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_git',
