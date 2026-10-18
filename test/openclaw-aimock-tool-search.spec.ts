@@ -86,7 +86,7 @@ describe('scripts/aimock-tool-search', () => {
       append(
         input,
         (await reply(scenario, input)).response,
-        searchResult(['agent_system_intake', 'agent_system_dispatch', 'agent_system_git']),
+        searchResult(['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read']),
       );
     };
     const step = async (stage: string, name: string, result: unknown) => {
@@ -171,16 +171,28 @@ describe('scripts/aimock-tool-search', () => {
       (await step('delivery-publish', 'agent_system_dispatch', { status: 'published' })).digest,
       digest,
     );
+    await step('delivery-compose', 'agent_system_dispatch', {
+      status: 'composition-ready',
+      digest,
+      selection: { skill: { path: '/skills/reply/SKILL.md' } },
+    });
+    await step('delivery-skill', 'read', { content: 'Reply skill instructions.' });
+    await step('delivery-candidate', 'agent_system_dispatch', {
+      status: 'announcement-prepared',
+      digest,
+    });
+    await step('delivery-announce', 'agent_system_dispatch', { status: 'announced' });
     const paused = (await reply(scenario, input)).response;
     assert.ok('content' in paused && typeof paused.content === 'string');
     input.messages.push(
       { role: 'assistant', content: paused.content },
       {
         role: 'user',
-        content: `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
+        content: `Operator request for managed issue ${id}: Reconcile the existing PR announcement and show its card again.`,
       },
     );
     await discover();
+    await step('delivery-repeat', 'agent_system_dispatch', { status: 'announced' });
     assert.equal(
       (
         await step('delivery-present', 'agent_system_dispatch', {

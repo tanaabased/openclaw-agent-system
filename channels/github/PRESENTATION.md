@@ -367,6 +367,11 @@ blank lines, lists, and code fences. Use the same card for the publication previ
 and final response. Address the verified source commenter where it reads
 naturally rather than imposing a fixed mention position.
 
+For a PR delivery event with no source commenter, use **📤 To GitHub issue**
+as the heading, linked to the originating issue. Quote the exact public announcement,
+then show its verified comment link or a separate warning that the announcement remains pending. Keep the complete
+private PR card above these components.
+
 ## Private and Public Composition
 
 Codex feedback and lifecycle turns with distinct private and public parts use

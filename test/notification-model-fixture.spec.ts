@@ -457,10 +457,25 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).digest, digest);
         append(input, 'delivery-publish', { status: 'published' });
+        assert.equal((await action(input, 'delivery')).operation, 'compose');
+        append(input, 'delivery-compose', {
+          status: 'composition-ready',
+          digest,
+          selection: { skill: { path: '/skills/reply/SKILL.md' } },
+        });
+        const skill = await response(input);
+        assert.ok('toolCalls' in skill && skill.toolCalls?.[0]?.name === 'read');
+        append(input, 'delivery-skill', { content: 'Reply skill instructions.' });
+        assert.equal((await action(input, 'delivery')).operation, 'candidate');
+        append(input, 'delivery-candidate', { status: 'announcement-prepared', digest });
+        assert.equal((await action(input, 'delivery')).operation, 'announce');
+        append(input, 'delivery-announce', { status: 'announced' });
         assert.ok('content' in (await response(input)));
         const retry = request(
-          `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
+          `Operator request for managed issue ${id}: Reconcile the existing PR announcement and show its card again.`,
         );
+        assert.equal((await action(retry, 'delivery')).operation, 'announce');
+        append(retry, 'delivery-repeat', { status: 'announced' });
         assert.equal((await action(retry, 'delivery')).operation, 'present');
         append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
         assert.deepEqual(await response(retry), { content: '> PR card' });

@@ -66,6 +66,7 @@ export async function discoverFeedback(input: {
   nodeId: string;
   itemType: 'issue' | 'pull-request';
   now: number;
+  ownCommentIds?: readonly string[];
   discovery?: { budget: DiscoveryBudget; save(): Promise<void> };
 }) {
   const { state, owner, name, number } = input;
@@ -160,7 +161,11 @@ export async function discoverFeedback(input: {
     )
       continue;
     // provider receipts, not copied markers or account identity, identify our own replies.
-    if (state.events.some((event) => event.receipt?.nodeId === source.nodeId)) continue;
+    if (
+      input.ownCommentIds?.includes(source.nodeId) ||
+      state.events.some((event) => event.receipt?.nodeId === source.nodeId)
+    )
+      continue;
     const id = automationHash([input.nodeId, source.nodeId, revision]);
     if (
       state.events.some((event) => event.id === id) ||

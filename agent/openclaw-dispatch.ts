@@ -1,3 +1,5 @@
+import selectFeedbackStage from './feedback-stage.ts';
+import openClawSkill from './openclaw-skill.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
@@ -742,11 +744,14 @@ export default class OpenClawDispatch {
               { ...authority, signal },
             );
           for (const owner of state.records) {
-            const receipts = new Set(
-              owner.feedback?.events.flatMap((event) =>
+            const receipts = new Set([
+              ...(owner.feedback?.events.flatMap((event) =>
                 event.receipt ? [event.receipt.nodeId] : [],
-              ),
-            );
+              ) ?? []),
+              ...(owner.work?.delivery?.announcement?.receipt
+                ? [owner.work.delivery.announcement.receipt.nodeId]
+                : []),
+            ]);
             for (const event of owner.feedback?.events ?? [])
               if (event.phase === 'queued' && receipts.has(event.sourceId)) {
                 event.phase = 'blocked';
@@ -1018,6 +1023,20 @@ export default class OpenClawDispatch {
               base: repo.defaultBranch,
               recipients: current.policy.policy.issueAssignment?.pullRequest?.recipients,
               feedbackEnabled: openClawFeedbackEnabled(manifest),
+              selectAnnouncement: async (retained) =>
+                (
+                  await selectFeedbackStage({
+                    policy: current.policy.policy,
+                    workflow: 'issue-assignment',
+                    workspace: current.workspace,
+                    observedAt: retained?.composition.observedAt ?? now,
+                    resolveSkill: (id) => {
+                      if (!record.request || !('key' in record.request))
+                        throw new Error('delivery-announcement-owner-required');
+                      return openClawSkill(request, record.request, id);
+                    },
+                  })
+                ).selection,
               signal,
               assertCurrent,
               reauthorize: async () => {
