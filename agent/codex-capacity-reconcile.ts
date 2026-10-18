@@ -52,7 +52,11 @@ export default async function reconcileCodexCapacity(
     ) {
       const proof = await native.unsubmittedCreation(
         record.sourceThreadId,
-        { createdAt: record.createdAt, turnId: record.preparationTurnId },
+        {
+          createdAt: record.createdAt,
+          turnId: record.preparationTurnId,
+          prompt: record.request.prompt,
+        },
         currentTurnId,
       );
       if (proof) {

@@ -27,7 +27,12 @@ describe('agent/codex-dispatch-unsubmitted', () => {
     };
   }
   const prove = (request = fixture(), turnId: string | undefined = 'prepared') =>
-    unsubmittedCreation(request, 'intake', { createdAt: 105500, turnId }, 'current');
+    unsubmittedCreation(
+      request,
+      'intake',
+      { createdAt: 105500, turnId, prompt: 'retained request' },
+      'current',
+    );
 
   it('should prove a completed preparation without trusting assistant prose', async () => {
     assert.deepEqual(await prove(), { turnId: 'prepared' });
@@ -40,17 +45,51 @@ describe('agent/codex-dispatch-unsubmitted', () => {
     );
   });
 
-  it('should refuse calls, denials, compaction, and unrecognized history items', async () => {
+  it('should refuse matching calls, denials, and unrecognized history items', async () => {
     for (const item of [
       { type: 'mcpToolCall', server: 'codex_app', tool: 'create_thread', status: 'completed' },
       { type: 'mcpToolCall', server: 'codex_app', tool: 'create_thread', status: 'failed' },
       { type: 'functionCall', name: 'create_thread' },
-      { type: 'contextCompaction' },
       { type: 'unknown' },
       { type: 'mcpToolCall', server: 'codex_app', tool: 'list_projects', status: 'inProgress' },
       { type: 'commandExecution', status: 'inProgress' },
     ])
       assert.equal(await prove(fixture([message, { id: 'uncertain', ...item }])), undefined);
+  });
+
+  it('should distinguish unrelated terminal failures and native markers from creation evidence', async () => {
+    const items = [
+      { id: 'failed-command', type: 'commandExecution', status: 'failed', exitCode: 1 },
+      { id: 'declined-command', type: 'commandExecution', status: 'declined' },
+      { id: 'compaction', type: 'contextCompaction' },
+      { id: 'sleep', type: 'sleep' },
+      { id: 'search', type: 'webSearch' },
+      {
+        id: 'unrelated-tool',
+        type: 'mcpToolCall',
+        server: 'codex_app',
+        tool: 'list_projects',
+        status: 'failed',
+      },
+    ];
+    assert.deepEqual(await prove(fixture(items)), { turnId: 'prepared' });
+    for (const status of ['completed', 'failed']) {
+      const call = {
+        id: 'creation',
+        type: 'mcpToolCall',
+        server: 'codex_app',
+        tool: 'create_thread',
+        status,
+      };
+      assert.deepEqual(
+        await prove(
+          fixture([...items, { ...call, arguments: { prompt: 'another retained request' } }]),
+        ),
+        { turnId: 'prepared' },
+      );
+      for (const args of [undefined, {}, { prompt: '' }, { prompt: 'retained request' }])
+        assert.equal(await prove(fixture([...items, { ...call, arguments: args }])), undefined);
+    }
   });
 
   it('should reject unfinished, missing, mismatched, and ambiguous preparation turns', async () => {

@@ -76,17 +76,22 @@ starts alongside failures. Provider errors keep their bounded structured evidenc
 unclassified failures do not establish a credential problem.
 
 Codex preserves the earlier retirement contract for historical records created before
-reservation tracking: unresolved retired creations appear separately from active slots,
+reservation tracking: unresolved retired creations remain in inspectable history,
 while any verified active native chat still occupies a slot. Their evidence remains
 intact, and another creation for the same issue stays fenced until native inactivity
-or non-submission is proved. New retirement never releases an uncertain reservation.
+or non-submission is proved. New retirement never releases an uncertain reservation. Retired history appears in
+routine reports only when it consumes capacity or prevents a newer assignment from
+starting. Closed, retired fixtures do not need repeated operator cleanup.
 The owning intake observes at most twelve recovery candidates per check and can use
 `dispatch` action `reconcile` with a retired record's `id` to retry observation and
 search native creation history when its receipt is missing. Ordinary polling avoids
 repeating that broad search for retired records without a child ID. Native
 terminal history remains readable for this purpose even when the chat is archived or
 its worktree is gone. Missing resources alone prove nothing; inspection retains the
-specific missing evidence in `capacityObservation`. Closed historical feedback with
+specific missing evidence in `capacityObservation`. Denial recovery reads native history from the retained preparation turn forward and
+validates the latest admitted assignment. An automatic approval denial still needs
+explicit operator recovery for its exact call; reassignment does not erase it.
+Closed historical feedback with
 no outstanding work stays quiet. Uncertain sends and publications remain visible.
 
 With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one

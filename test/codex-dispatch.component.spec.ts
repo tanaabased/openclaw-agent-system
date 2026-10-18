@@ -1407,6 +1407,54 @@ describe('agent/codex-dispatch', () => {
     });
   });
 
+  it('should recover an explicitly approved denied request after reassignment without retaining its waiting continuation', async () => {
+    const first = await prepare();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.continuation = {
+        phase: 'waiting',
+        policyDigest: 'a'.repeat(64),
+        selection: record.assessment!,
+      };
+      await save();
+    });
+    await reassign();
+    deps.native!.deniedCreation = async (_source, expected, prepared, approvedCallId) => {
+      assert.deepEqual(expected, first.request);
+      assert.ok(prepared.turnId);
+      if (approvedCallId !== 'denied-call') throw new Error('dispatch-denial-approval-required');
+      return { turnId: 'denied-turn', callId: 'denied-call' };
+    };
+    const operator = { threadId: 'operator' };
+    await assert.rejects(
+      request('retry-denied', { id: first.id }, operator),
+      /dispatch-denial-approval-required/,
+    );
+    const input = { id: first.id, approvedCallId: 'denied-call' };
+    const preview = await request('retry-denied', input, operator);
+    fixture.item.state = 'closed';
+    await assert.rejects(
+      request('retry-denied', { ...input, digest: preview.digest }, operator),
+      /dispatch-issue-closed/,
+    );
+    fixture.item.state = 'open';
+    assert.equal(
+      (await request('retry-denied', { ...input, digest: preview.digest }, operator)).status,
+      'retry-ready',
+    );
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.continuation, undefined);
+    assert.equal(retained.preparationTurnId, undefined);
+    assert.deepEqual(retained.deniedCreations?.[0]?.request, first.request);
+    assert.equal(retained.deniedCreations?.[0]?.approvedBy, 'operator');
+    assert.equal(retained.deniedCreations?.[0]?.continuation?.phase, 'waiting');
+    const successor = await prepare();
+    assert.equal(successor.id, first.id);
+    assert.notDeepEqual(successor.request, first.request);
+  });
+
   it('should preserve uncertain or already created requests during operator recovery', async () => {
     const first = await prepare();
     const operator = { threadId: 'operator' };
@@ -1657,7 +1705,11 @@ describe('agent/codex-dispatch', () => {
     now += 300001;
     deps.native!.unsubmittedCreation = async (threadId, pending, turnId) => {
       assert.equal(threadId, 'intake-thread');
-      assert.deepEqual(pending, { createdAt: preparedAt, turnId: 'run-' + preparedAt });
+      assert.deepEqual(pending, {
+        createdAt: preparedAt,
+        turnId: 'run-' + preparedAt,
+        prompt: (prepared.request as { prompt: string }).prompt,
+      });
       assert.equal(turnId, 'run-' + now);
       return { turnId: 'run-' + preparedAt };
     };

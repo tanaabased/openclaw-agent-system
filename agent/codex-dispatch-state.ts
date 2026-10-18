@@ -103,6 +103,7 @@ export const dispatchRecordSchema = Type.Object(
             recoveredAt: Type.Integer({ minimum: 0 }),
             turnId: text,
             callId: text,
+            continuation: Type.Optional(codexContinuationStateSchema),
             approvedBy: Type.Optional(text),
           },
           { additionalProperties: false },

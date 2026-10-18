@@ -690,7 +690,11 @@ export async function runCodexDispatch(
                 const proof = await withNative(current, deps, (native) =>
                   native.unsubmittedCreation(
                     pending.sourceThreadId,
-                    { createdAt: pending.createdAt, turnId: pending.preparationTurnId },
+                    {
+                      createdAt: pending.createdAt,
+                      turnId: pending.preparationTurnId,
+                      prompt: pending.request!.prompt,
+                    },
                     state.run!.id,
                   ),
                 );
@@ -913,7 +917,16 @@ export async function runCodexDispatch(
           now,
           save,
           fresh,
-          revalidate: () => revalidateDispatchAssignment(current, intake, deps, signal),
+          revalidate: () =>
+            revalidateDispatchAssignment(
+              current,
+              action === 'retry-denied'
+                ? (admitted.records.findLast((entry) => issueKey(entry) === record.issueKey) ??
+                    intake)
+                : intake,
+              deps,
+              signal,
+            ),
           connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
           withNative: (operation) => withNative(current, deps, operation),
         });

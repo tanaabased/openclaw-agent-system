@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
 import dispatchHistory from './codex-dispatch-history.ts';
+import creationHistory from './codex-dispatch-creation-history.ts';
 import unsubmittedCreation from './codex-dispatch-unsubmitted.ts';
 
 import { nativeObject } from './automation-gateway.ts';
@@ -125,7 +126,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
   return {
     unsubmittedCreation: (
       threadId: string,
-      prepared: { createdAt: number; turnId?: string },
+      prepared: { createdAt: number; turnId?: string; prompt?: string },
       currentTurnId: string,
     ) => unsubmittedCreation(request, threadId, prepared, currentTurnId),
     async occurrence(threadId: string) {
@@ -167,17 +168,19 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     async deniedCreation(
       sourceThreadId: string,
       expected: Record<string, unknown>,
+      prepared: { createdAt: number; turnId?: string },
       approvedCallId?: string,
     ) {
-      const source = await read(sourceThreadId, 'all');
+      const source = await read(sourceThreadId, 'none');
+      const history = await creationHistory(request, sourceThreadId, prepared);
       if (
         !source ||
         !nativeObject(source.status) ||
         !['idle', 'notLoaded'].includes(String(source.status.type)) ||
-        !Array.isArray(source.turns)
+        !history
       )
         throw new Error('dispatch-denial-unverified');
-      const matches = source.turns.flatMap((turn) =>
+      const matches = history.turns.flatMap((turn) =>
         nativeObject(turn) && Array.isArray(turn.items)
           ? turn.items.flatMap((item) =>
               nativeObject(item) &&

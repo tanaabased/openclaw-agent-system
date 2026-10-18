@@ -3,13 +3,14 @@ import workflowStatus from './workflow-status.ts';
 import discoveryNotice from './discovery-notice.ts';
 import codexCapacity, {
   legacyRetiredReservation,
+  codexItemOccupied,
   codexUnresolvedRetirement,
 } from './codex-capacity.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
-import pendingDispatchAssignments from './dispatch-pending.ts';
+import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import {
@@ -30,7 +31,15 @@ export default function prepareDispatchReport(input: {
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.effective && record.threadId);
   const historical = state.records.filter(
-    (record) => !record.reservationVersion && codexUnresolvedRetirement(record),
+    (record) =>
+      codexUnresolvedRetirement(record) &&
+      (codexItemOccupied(record) ||
+        intake.records.some(
+          (item) =>
+            issueKey(item) === record.issueKey &&
+            item.id !== record.intakeId &&
+            Date.parse(item.assignment.createdAt) > record.retired!.at,
+        )),
   );
   const occupied = codexCapacity(state.records, input.slots).occupied;
   const pending = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).length;

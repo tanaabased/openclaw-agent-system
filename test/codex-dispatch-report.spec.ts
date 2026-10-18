@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
 import type { DispatchState, DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import { issueKey } from '../agent/dispatch-pending.ts';
+import type { IntakeState, IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const state: DispatchState = { version: 1, scope: 'scope', records: [] };
 const intake: IntakeState = {
@@ -181,7 +182,7 @@ describe('agent/codex-dispatch-report', () => {
     record.feedback!.events = [{ phase: 'queued' } as never];
     assert.match(report().response, /dispatch-issue-closed/);
   });
-  it('should report historical reservations separately from active slots after restart', () => {
+  it('should keep obsolete reservations quiet unless they obstruct new work or occupy capacity', () => {
     const record = {
       id: 'legacy',
       intakeId: 'old',
@@ -190,8 +191,26 @@ describe('agent/codex-dispatch-report', () => {
       retired: { at: 1 },
       capacityObservation: { at: 2, code: 'dispatch-capacity-creation-unresolved' },
     } as DispatchRecord;
+    const successor = {
+      id: 'new',
+      scope: 'scope',
+      receiving: { nodeId: 'user' },
+      repository: { nodeId: 'repo', owner: { login: 'owner' }, name: 'repo' },
+      issue: { nodeId: 'issue', number: 1 },
+      assignment: { createdAt: new Date(3).toISOString() },
+    } as IntakeRecord;
+    record.issueKey = issueKey(successor);
+    const currentIntake = { ...intake, records: [] as IntakeRecord[] };
     const report = () =>
-      prepareDispatchReport({ ...input, state: { ...state, records: [structuredClone(record)] } });
+      prepareDispatchReport({
+        ...input,
+        intake: currentIntake,
+        state: { ...state, records: [structuredClone(record)] },
+      });
+    assert.match(report().response, /DONT_NOTIFY/);
+    assert.doesNotMatch(report().response, /Historical reservations/);
+    assert.ok(record.request);
+    currentIntake.records = [successor];
     const first = report();
     assert.match(first.response, /Slots:\*\* 0\/2/);
     assert.match(first.response, /Historical reservations:\*\* 1 unresolved/);
@@ -199,9 +218,15 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(
       prepareDispatchReport({
         ...input,
+        intake: currentIntake,
         state: { ...state, intakeHealth: first.health, records: [record] },
       }).response,
       /DONT_NOTIFY/,
     );
+    currentIntake.records = [];
+    record.reservationVersion = 1;
+    record.capacityObservation = { at: 3, code: 'dispatch-capacity-native-active' };
+    assert.match(report().response, /dispatch-capacity-native-active/);
+    assert.match(report().response, /Slots:\*\* 1\/2/);
   });
 });

@@ -146,6 +146,8 @@ export default async function recoverDispatch(
       record.receiptThreadId ||
       record.threadId ||
       record.worktree ||
+      record.continuation?.attempt ||
+      record.continuation?.publicationAttempt ||
       (record.deniedCreations?.length ?? 0) >= 8
     )
       throw new Error('dispatch-denial-unverified');
@@ -154,6 +156,7 @@ export default async function recoverDispatch(
       const evidence = await native.deniedCreation(
         record.sourceThreadId,
         record.request!,
+        { createdAt: record.createdAt, turnId: record.preparationTurnId },
         input.approvedCallId as string | undefined,
       );
       const found = await native.find({
@@ -180,10 +183,13 @@ export default async function recoverDispatch(
         request: record.request,
         createdAt: record.createdAt,
         recoveredAt: now,
+        ...(record.continuation ? { continuation: record.continuation } : {}),
         ...denial,
         ...(input.approvedCallId ? { approvedBy: caller } : {}),
       },
     ];
+    delete record.continuation;
+    delete record.preparationTurnId;
     delete record.request;
     delete record.result;
     delete record.stageReceipt;

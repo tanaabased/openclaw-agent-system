@@ -100,6 +100,7 @@ describe('agent/codex-dispatch-native', () => {
 
   it('should require one exact terminal native rejection rather than reported denial or uncertainty', async () => {
     const expected = { prompt: 'assess issue', title: 'issue', model: 'selected' };
+    const prepared = { createdAt: 105000, turnId: 'turn' };
     const denied = {
       type: 'mcpToolCall',
       server: 'codex_app',
@@ -115,10 +116,10 @@ describe('agent/codex-dispatch-native', () => {
         thread: {
           id: 'intake',
           status: { type: status },
-          turns: [{ id: 'turn', status: turnStatus, items }],
+          turns: [{ id: 'turn', startedAt: 100, completedAt: 110, status: turnStatus, items }],
         },
       }));
-    assert.deepEqual(await make([denied]).deniedCreation('intake', expected), {
+    assert.deepEqual(await make([denied]).deniedCreation('intake', expected, prepared), {
       turnId: 'turn',
       callId: 'call',
     });
@@ -133,15 +134,15 @@ describe('agent/codex-dispatch-native', () => {
       [{ ...denied, server: 'other' }],
     ])
       await assert.rejects(
-        make(items).deniedCreation('intake', expected),
+        make(items).deniedCreation('intake', expected, prepared),
         /dispatch-denial-unverified/,
       );
     await assert.rejects(
-      make([denied], 'active').deniedCreation('intake', expected),
+      make([denied], 'active').deniedCreation('intake', expected, prepared),
       /dispatch-denial-unverified/,
     );
     await assert.rejects(
-      make([denied], 'idle', 'inProgress').deniedCreation('intake', expected),
+      make([denied], 'idle', 'inProgress').deniedCreation('intake', expected, prepared),
       /dispatch-denial-unverified/,
     );
     const automatic = make([
@@ -154,18 +155,75 @@ describe('agent/codex-dispatch-native', () => {
       },
     ]);
     await assert.rejects(
-      automatic.deniedCreation('intake', expected),
+      automatic.deniedCreation('intake', expected, prepared),
       /dispatch-denial-approval-required/,
     );
     await assert.rejects(
-      automatic.deniedCreation('intake', expected, 'another-call'),
+      automatic.deniedCreation('intake', expected, prepared, 'another-call'),
       /dispatch-denial-approval-required/,
     );
-    assert.deepEqual(await automatic.deniedCreation('intake', expected, 'call'), {
+    assert.deepEqual(await automatic.deniedCreation('intake', expected, prepared, 'call'), {
       turnId: 'turn',
       callId: 'call',
     });
   });
+
+  it('should verify denial from preparation forward without requiring unrelated older history', async () => {
+    const expected = { prompt: 'retained request' };
+    const denied = {
+      id: 'denied',
+      type: 'mcpToolCall',
+      server: 'codex_app',
+      tool: 'create_thread',
+      arguments: expected,
+      status: 'failed',
+      result: null,
+      error: { message: 'user rejected MCP tool call' },
+    };
+    let duplicate = false;
+    let changed = false;
+    const current = { id: 'current', startedAt: 120, completedAt: 130, status: 'completed' };
+    const original = { id: 'original', startedAt: 100, completedAt: 110, status: 'completed' };
+    const native = codexDispatchNative(async (method, params) => {
+      if (method === 'thread/read') return { thread: { id: 'intake', status: { type: 'idle' } } };
+      if (method === 'thread/turns/list') {
+        if (params.limit === 1) return { data: [changed ? { ...current, id: 'newer' } : current] };
+        assert.equal(params.cursor, undefined);
+        return { data: [current, original], nextCursor: 'unrelated-older-history' };
+      }
+      assert.equal(method, 'thread/items/list');
+      assert.ok(['current', 'original'].includes(String(params.turnId)));
+      return {
+        data: [
+          {
+            turnId: params.turnId,
+            item:
+              params.turnId === 'original' || duplicate
+                ? denied
+                : { id: 'message', type: 'agentMessage' },
+          },
+        ],
+        nextCursor: null,
+      };
+    });
+    const prepared = { createdAt: 105000, turnId: 'original' };
+    assert.deepEqual(await native.deniedCreation('intake', expected, prepared), {
+      turnId: 'original',
+      callId: 'denied',
+    });
+    duplicate = true;
+    await assert.rejects(
+      native.deniedCreation('intake', expected, prepared),
+      /dispatch-denial-unverified/,
+    );
+    duplicate = false;
+    changed = true;
+    await assert.rejects(
+      native.deniedCreation('intake', expected, prepared),
+      /dispatch-denial-unverified/,
+    );
+  });
+
   it('should recognize only the exact native creation source and prompt', () => {
     const thread = { turns: [{ items: [creation] }] };
     assert.equal(matchesDispatchCreation(thread, 'intake', input.prompt), true);
