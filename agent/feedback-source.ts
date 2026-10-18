@@ -58,6 +58,7 @@ export function admitFeedback(
 /** commit a complete provider read atomically; incomplete pages never advance the baseline. */
 export async function discoverFeedback(input: {
   state: FeedbackSourceState;
+  ownPublications?: readonly string[] | (() => Promise<readonly string[]>);
   client: GitHubNotificationCommentClient;
   policy: GitHubNotificationPolicy;
   owner: string;
@@ -139,6 +140,10 @@ export async function discoverFeedback(input: {
       sources.push(reviewReplyFeedback(review, reply, parent));
     }
   }
+  const ownPublications =
+    typeof input.ownPublications === 'function'
+      ? await input.ownPublications()
+      : input.ownPublications;
   const revisions = new Map<string, string>();
   const next = { ...baseline };
   const pending: FeedbackSourceEvent[] = [];
@@ -160,7 +165,11 @@ export async function discoverFeedback(input: {
     )
       continue;
     // provider receipts, not copied markers or account identity, identify our own replies.
-    if (state.events.some((event) => event.receipt?.nodeId === source.nodeId)) continue;
+    if (
+      ownPublications?.includes(source.nodeId) ||
+      state.events.some((event) => event.receipt?.nodeId === source.nodeId)
+    )
+      continue;
     const id = automationHash([input.nodeId, source.nodeId, revision]);
     if (
       state.events.some((event) => event.id === id) ||

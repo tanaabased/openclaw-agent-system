@@ -10,12 +10,17 @@ const markerPrefix = 'agent-system-github-publication';
 export const githubNotificationCommenterToken = '{{commenter}}';
 
 export type GitHubNotificationPublicationIntent =
-  'assignment-response' | 'github-reply' | 'initial-acknowledgment' | 'pull-request-handoff';
+  | 'assessment-summary'
+  | 'assignment-response'
+  | 'github-reply'
+  | 'initial-acknowledgment'
+  | 'pull-request-handoff';
 
 export type GitHubNotificationPublicationSafetyCategory =
   'credential-prefix' | 'environment-assignment' | 'redaction';
 
 const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
+  'assessment-summary',
   'assignment-response',
   'github-reply',
   'initial-acknowledgment',
@@ -166,7 +171,11 @@ type GitHubNotificationPublicationTargetInput = GitHubNotificationPublicationCon
         source: GitHubNotificationPublicationSource;
       }
     | {
-        intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+        intent:
+          | 'assessment-summary'
+          | 'assignment-response'
+          | 'initial-acknowledgment'
+          | 'pull-request-handoff';
         publicationId: string;
       }
   );
@@ -233,7 +242,7 @@ export function githubNotificationPublicationMarker(target: string): string {
 export function githubNotificationPublicationComment(text: string, marker: string): string {
   if (
     !new RegExp(
-      `^<!-- ${markerPrefix}:(?:assignment-response|github-reply|initial-acknowledgment|pull-request-handoff):[a-f0-9]{32} -->$`,
+      `^<!-- ${markerPrefix}:(?:assessment-summary|assignment-response|github-reply|initial-acknowledgment|pull-request-handoff):[a-f0-9]{32} -->$`,
       'u',
     ).test(marker)
   ) {

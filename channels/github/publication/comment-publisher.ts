@@ -24,7 +24,11 @@ export type GitHubNotificationCommentPublicationInput = {
       source: GitHubNotificationPublicationSource;
     }
   | {
-      intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+      intent:
+        | 'assessment-summary'
+        | 'assignment-response'
+        | 'initial-acknowledgment'
+        | 'pull-request-handoff';
       publicationId: string;
     }
 );
@@ -50,7 +54,11 @@ export interface GitHubNotificationCommentPublisherDependencies {
           target: string;
         }
       | {
-          intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+          intent:
+            | 'assessment-summary'
+            | 'assignment-response'
+            | 'initial-acknowledgment'
+            | 'pull-request-handoff';
           item: PublicationItem;
           publicationId: string;
           target: string;

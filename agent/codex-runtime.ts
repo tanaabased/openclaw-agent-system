@@ -278,6 +278,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         'reconcile',
         'context',
         'result',
+        'summary',
         'handoff',
         'report',
         'retry-denied',

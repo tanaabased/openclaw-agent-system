@@ -1,3 +1,5 @@
+import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
+import redactFeedback from './feedback-redaction.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
@@ -71,6 +73,13 @@ export async function scanCodexFeedback(input: {
       await revalidateAssignment(current.policy, admitted, provider.client);
       const source = {
         state: feedback,
+        ownPublications: () =>
+          assessmentSummaryOwnPublications(
+            record,
+            admitted,
+            { client: provider.comments },
+            redactFeedback,
+          ),
         client: provider.comments,
         policy,
         now,

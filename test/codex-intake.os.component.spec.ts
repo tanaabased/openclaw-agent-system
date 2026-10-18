@@ -438,6 +438,11 @@ describe('agent/codex-intake', () => {
     assert.deepEqual(await inspectCodexDispatchActivation(pluginData, deps), {
       sourceThreadId: 'intake-thread',
     });
+    assert.deepEqual(
+      (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'assessment-summary'))
+        .schedule?.saved.capabilities,
+      ['assessment-summary'],
+    );
     for (const capability of ['implementation', 'review', 'publication'] as const)
       await assert.rejects(
         inspectCodexDispatchActivation(pluginData, deps, false, false, capability),

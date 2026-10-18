@@ -46,6 +46,7 @@ describe('agent/codex-feedback-source', () => {
     let truncated = false;
     const input = {
       state,
+      ownPublications: ['summary'],
       policy,
       owner: 'owner',
       name: 'repo',
@@ -74,8 +75,11 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(state.events[0]!.source, frozen);
     state.events[0]!.receipt = { nodeId: 'own', databaseId: 99 };
     comments.push(comment('own'));
+    comments.push(comment('summary'));
+    comments.push(comment('copied-summary-marker', '@receiver a human copied a summary marker'));
     await discoverCodexFeedback(input);
-    assert.equal(state.events.length, 2);
+    assert.equal(state.events.length, 3);
+    assert.equal(state.events.at(-1)?.sourceId, 'copied-summary-marker');
     const before = structuredClone(state);
     truncated = true;
     await assert.rejects(discoverCodexFeedback(input), /feedback-source-incomplete/);

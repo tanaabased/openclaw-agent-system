@@ -318,7 +318,10 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       assert.equal(revised.previousResultDigest, digest);
       assert.ok(!JSON.stringify(revised.result).includes('notification-hidden-later-fact'));
       append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
-      assert.deepEqual(await response(later), { content: '> ## 🧭 Plan ready' });
+      const nextResponse = await response(later);
+      assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
+      if (scenario.id === 'openclaw-issue')
+        assert.equal((await action(later, 'summary')).operation, 'compose');
     });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
@@ -378,7 +381,13 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         status: 'recorded',
         presentation: 'The complete retained presentation.',
       });
-      assert.deepEqual(await response(input), { content: 'The complete retained presentation.' });
+      const nextResponse = await response(input);
+      assert.equal(
+        'content' in nextResponse && nextResponse.content,
+        'The complete retained presentation.',
+      );
+      if (scenario.id === 'openclaw-issue')
+        assert.equal((await action(input, 'summary')).operation, 'compose');
       for (const value of [
         { ...context, runtime: 'codex' },
         { ...context, id: 'c'.repeat(64) },

@@ -1,3 +1,5 @@
+import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
+import redactFeedback from './feedback-redaction.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
@@ -122,6 +124,8 @@ export async function scanOpenClawFeedback(input: {
         if (!provider) throw new Error('feedback-provider-unavailable');
         const common = {
           state: feedback,
+          ownPublications: () =>
+            assessmentSummaryOwnPublications(record, intake, { client: provider! }, redactFeedback),
           client: provider,
           policy: manifest.github!.notifications!,
           now,
