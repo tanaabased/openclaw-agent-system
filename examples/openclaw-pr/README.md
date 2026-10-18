@@ -8,7 +8,7 @@ Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, m
 
 The first implementation follow-up stops after publication. A second operator follow-up recovers the complete PR card from its retained receipt without publishing again, before the PR comment test runs.
 
-A failed activation preserves its original exit status and reports the install result, configured and Gateway-visible agent registration, and automation state before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
+A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
 ## Setup
 
@@ -17,6 +17,8 @@ A failed activation preserves its original exit status and reports the install r
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-pr
 openclaw config set skills.workshop.autonomous.mode off
+# keep unrelated nightly memory turns out of the strict notification fixture
+openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot/keys" "$HOME/.ssh"
@@ -39,7 +41,7 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # should boot with retained legacy channel configuration
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
 openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
-openclaw-gateway start
+OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
 # should activate native intake with explicit dispatch enrollment
@@ -47,9 +49,11 @@ set -o pipefail
 activation_diagnostics() {
   activation_status=$?
   if test "$activation_status" -ne 0; then
+    gateway_log=$(openclaw-gateway log-path) || true
+    gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+    openclaw config get gateway --json | jq -c '{reloadMode: (.reload.mode // "hybrid")}' || true
+    tail -n 300 "$gateway_log" | node "$gateway_redactor" || true
     cat "$TMPDIR/notification-install.json" || true
-    openclaw agents list --json | jq -c '{configured: any(.[]; .id == "notifications-tanaabot")}' || true
-    openclaw gateway call agents.list --timeout 10000 --json | jq -c '{gateway: any(.agents[]; .id == "notifications-tanaabot")}' || true
     openclaw agent-system automations list --json || true
   fi
   exit "$activation_status"

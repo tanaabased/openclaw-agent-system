@@ -1,4 +1,4 @@
-import githubDiagnostic from '../../../credentials/github-diagnostic.ts';
+import githubDiagnostic, { githubCliDiagnostic } from '../../../credentials/github-diagnostic.ts';
 import {
   withProviderDiagnostic,
   type ProviderDiagnostic,
@@ -90,7 +90,7 @@ export default class GitHubWorkEventApiClient {
         `GitHub returned an invalid ${label} response.`,
         {},
         { cause: error },
-        githubDiagnostic({ timedOut: result.timedOut }),
+        githubCliDiagnostic(result),
       );
     }
     if (result.timedOut || result.truncated) {
@@ -118,6 +118,8 @@ export default class GitHubWorkEventApiClient {
           status: response.status,
           timedOut: result.timedOut,
           ...response.rateLimit,
+          providerMessage: githubCliDiagnostic(result).providerMessage,
+          rateLimited: githubCliDiagnostic(result).classification === 'rate-limit',
         }),
       );
     }

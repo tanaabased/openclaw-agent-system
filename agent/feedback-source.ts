@@ -1,3 +1,5 @@
+import feedbackDiscovery from './feedback-discovery.ts';
+import type DiscoveryBudget from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import type { FeedbackSourceState, FeedbackSourceEvent } from './feedback-state.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
@@ -64,23 +66,30 @@ export async function discoverFeedback(input: {
   nodeId: string;
   itemType: 'issue' | 'pull-request';
   now: number;
+  discovery?: { budget: DiscoveryBudget; save(): Promise<void> };
 }) {
-  const { state, client, owner, name, number } = input;
+  const { state, owner, name, number } = input;
+  const discovery = input.discovery
+    ? await feedbackDiscovery({ ...input, ...input.discovery })
+    : undefined;
+  const client = discovery?.client ?? input.client;
   const baseline = state.baseline[input.nodeId];
   const comments = await client.listIssueComments(owner, name, number);
   if (comments.truncated) throw new Error('feedback-source-incomplete');
   const sources: GitHubCanonicalFeedback[] = [...comments.comments];
+  const changedReviewBodies = new Set<string>();
+  const reviewMarkers = { ...state.reviewMarkers };
   if (input.itemType === 'pull-request') {
     if (!client.reviews) throw new Error('feedback-review-client-missing');
     const pages = async <T>(read: (page: number) => Promise<{ values: T[]; nextPage: number }>) => {
       const values: T[] = [];
-      for (let page = 1; page <= 10; page++) {
+      for (let page = 1; ; page++) {
         const result = await read(page);
         values.push(...result.values);
+        if (values.length > 1000) throw new Error('feedback-queue-full');
         if (result.nextPage === 1) return values;
         if (result.nextPage !== page + 1) throw new Error('feedback-source-incomplete');
       }
-      throw new Error('feedback-source-incomplete');
     };
     const reviews = await pages((page) => client.reviews!.listReviews(owner, name, number, page));
     const reviewComments = await pages((page) =>
@@ -90,6 +99,28 @@ export async function discoverFeedback(input: {
       if (!review.submittedAt || review.state === 'PENDING') continue;
       const previous = baseline?.[review.nodeId];
       const group = previous ? (JSON.parse(previous) as GitHubCanonicalFeedback) : undefined;
+      // reviews lack an edit timestamp: retain the small body marker, expanding members only for changes.
+      if (discovery) {
+        const marker = JSON.stringify(review);
+        const changed =
+          reviewMarkers[review.nodeId] !== undefined && reviewMarkers[review.nodeId] !== marker;
+        if (changed) changedReviewBodies.add(review.nodeId);
+        const changedMember = reviewComments.some(
+          (comment) =>
+            comment.reviewId === review.databaseId &&
+            Date.parse(comment.updatedAt) >
+              (state.watermarks?.[input.nodeId] ?? state.startedAt ?? 0),
+        );
+        if (
+          !changed &&
+          !changedMember &&
+          Date.parse(review.updatedAt) <= (state.watermarks?.[input.nodeId] ?? state.startedAt ?? 0)
+        ) {
+          reviewMarkers[review.nodeId] = marker;
+          continue;
+        }
+        reviewMarkers[review.nodeId] = marker;
+      }
       sources.push(
         reviewFeedback(
           review,
@@ -119,7 +150,9 @@ export async function discoverFeedback(input: {
     revisions.set(source.nodeId, revision);
     next[source.nodeId] = JSON.stringify(source);
     if (
-      (!baseline &&
+      ((!baseline || discovery) &&
+        !previous &&
+        !changedReviewBodies.has(source.nodeId) &&
         (state.startedAt === undefined ||
           Date.parse(source.updatedAt) <= state.startedAt ||
           !Number.isFinite(Date.parse(source.updatedAt)))) ||
@@ -143,16 +176,19 @@ export async function discoverFeedback(input: {
       itemType: input.itemType,
       source: JSON.stringify(source),
       revision,
-      createdAt: Number.isFinite(Date.parse(source.updatedAt))
-        ? Math.max(0, Math.min(input.now, Date.parse(source.updatedAt)))
-        : input.now,
+      createdAt:
+        !changedReviewBodies.has(source.nodeId) && Number.isFinite(Date.parse(source.updatedAt))
+          ? Math.max(0, Math.min(input.now, Date.parse(source.updatedAt)))
+          : input.now,
       policyDigest: automationHash(input.policy),
       phase: 'queued',
     });
   }
   if (state.events.length + pending.length > 400 || Object.keys(next).length > 1000)
     throw new Error('feedback-queue-full');
+  if (discovery) state.reviewMarkers = reviewMarkers;
   state.baseline[input.nodeId] = next;
   state.events.push(...pending);
+  await discovery?.complete();
   return revisions;
 }

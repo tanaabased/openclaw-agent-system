@@ -1,3 +1,4 @@
+import modelRoutingCard from './model-routing.ts';
 import type { AssessmentResult } from '../../../agent/assessment-result.ts';
 import redactCodexFeedback from '../../../agent/codex-feedback-redaction.ts';
 import type { RoutingDecision } from '../../../agent/model-routing.ts';
@@ -37,29 +38,7 @@ export default function renderAssessmentResult(
   };
   const { routing, effective, assessment } = context;
   const text = githubNotificationMarkdownText;
-  const routingCard = githubNotificationCard({
-    emoji: '🧠',
-    title: 'Model routing',
-    facts: [
-      { label: 'Selected', value: text(routing.model + ' / ' + routing.effort) },
-      { label: 'Basis', value: text(routing.complexity + ' complexity. ' + routing.reason) },
-      {
-        label: 'Source',
-        value: text(
-          (routing.profile ? routing.profile + ' profile' : 'Explicit selection') +
-            '; ' +
-            routing.source,
-        ),
-      },
-      {
-        label: 'Effective settings',
-        value:
-          effective?.status === 'verified' && effective.model && effective.effort
-            ? 'Verified: ' + text(effective.model + ' / ' + effective.effort)
-            : 'Not independently verified.',
-      },
-    ],
-  });
+  const routingCard = modelRoutingCard({ routing, effective });
   const instructionsCard = workflowInstructions(
     'Assessment',
     assessment,

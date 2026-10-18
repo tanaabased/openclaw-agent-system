@@ -1,3 +1,5 @@
+import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
+import DiscoveryBudget, { DiscoveryPaused } from '../../../agent/discovery-budget.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
@@ -8,6 +10,7 @@ import {
   githubRepositoryPath,
   githubIdentityMatches as identityMatches,
   type GitHubIdentity,
+  type GitHubAssignedItemCandidate,
   type GitHubNotificationItemSelector,
 } from '../provider/work-item.ts';
 import {
@@ -25,6 +28,7 @@ export interface AssignmentScanInput {
   policyDigest: string;
   now: number;
   activate?: boolean;
+  budget?: DiscoveryBudget;
   selector?: GitHubNotificationItemSelector;
   connect(signal: AbortSignal): Promise<GitHubNotificationIntakeClient>;
   assertCurrent(): Promise<void>;
@@ -38,6 +42,7 @@ interface AssignmentScanResult {
   admitted?: number;
   baselineAt?: number;
   checkpoint?: number;
+  more?: boolean;
 }
 
 /** admission evidence only: no workspaces, chats, model decisions, or publication. */
@@ -48,7 +53,16 @@ export default async function scanAssignments(
     throw new IntakeError('intake-policy-disabled');
   if (input.selector?.itemType === 'pull-request')
     throw new IntakeError('intake-selector-unsupported');
-  return input.store.exclusive(async (previous, save, signal) => {
+  return input.store.exclusive(async (previous, persist, signal) => {
+    let persistenceError: unknown;
+    const save = async (state: IntakeState) => {
+      try {
+        await persist(state);
+      } catch (error) {
+        persistenceError = error;
+        throw error;
+      }
+    };
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
     if (!input.activate && previous?.policyDigest !== input.policyDigest)
       throw new IntakeError('intake-policy-reconciliation-required');
@@ -56,14 +70,18 @@ export default async function scanAssignments(
       const result = { status: 'blocked' as const, changed: false, code: previous.blocker.code };
       return result;
     }
+    const budget = input.budget ?? new DiscoveryBudget(20000);
+    let state: IntakeState | undefined;
+    let admitted = 0;
     let next: IntakeState;
     let result: AssignmentScanResult;
     try {
-      const client = await input.connect(signal);
+      budget.check();
+      const client = await input.connect(AbortSignal.any([signal, budget.signal]));
       const account: GitHubIdentity = client.identity;
       if (previous && !identityMatches(previous.account, account))
         throw new IntakeError('intake-account-changed');
-      const state: IntakeState = previous
+      state = previous
         ? structuredClone(previous)
         : {
             version: 1 as const,
@@ -90,121 +108,181 @@ export default async function scanAssignments(
             incomplete: false,
             truncated: false,
           }
-        : await client.discoverAssigned(new Date(state.baselineAt).toISOString(), ['issue']);
+        : state.discovery?.pending.length
+          ? {
+              candidates: state.discovery.pending.map(
+                (value) => JSON.parse(value) as GitHubAssignedItemCandidate,
+              ),
+              incomplete: false,
+              truncated: false,
+              nextPage: state.discovery.nextPage,
+            }
+          : await client.discoverAssigned(
+              new Date(state.baselineAt).toISOString(),
+              ['issue'],
+              state.discovery?.page ?? 1,
+            );
       if (discovery.truncated || discovery.incomplete)
         throw new IntakeError('intake-search-incomplete');
+      const progress = {
+        observations: input.selector ? {} : (state.discovery?.observations ?? {}),
+        page: state.discovery?.page ?? 1,
+        pending: discovery.candidates.map((value) => JSON.stringify(value)),
+        nextPage: 'nextPage' in discovery ? (discovery.nextPage ?? 1) : 1,
+      };
+      if (!input.selector) state.discovery = progress;
+      await save(state);
       const records: IntakeRecord[] = [];
       const seen = new Set(state.records.map((r) => r.id));
-      for (const candidate of discovery.candidates) {
-        if (candidate.itemType !== 'issue') continue;
-        const coordinates = githubRepositoryPath(candidate.repositoryPath);
-        if (
-          !input.policy.allowedRepositoryOwners.some(
-            (owner) => owner.login.toLowerCase() === coordinates.owner.toLowerCase(),
-          )
-        )
-          continue;
-        const repository = await client.getRepository(coordinates.owner, coordinates.name);
-        if (
-          repository.archived ||
-          repository.disabled ||
-          !input.policy.allowedRepositoryOwners.some((owner) =>
-            identityMatches(owner, repository.owner),
-          )
-        )
-          continue;
-        const item = await client.getItem(coordinates.owner, coordinates.name, candidate.number);
-        if (
-          (candidate.nodeId !== undefined && item.nodeId !== candidate.nodeId) ||
-          (candidate.databaseId !== undefined && item.databaseId !== candidate.databaseId) ||
-          item.number !== candidate.number
-        )
-          throw new IntakeError('intake-resource-changed');
-        if (
-          item.itemType !== 'issue' ||
-          item.state !== 'open' ||
-          !item.assignees.some((identity) => identityMatches(identity, account))
-        )
-          continue;
-        const history = await client.listAssignmentEvents(
-          coordinates.owner,
-          coordinates.name,
-          item.number,
-        );
-        if (history.truncated) throw new IntakeError('intake-assignment-history-incomplete');
-        const event = history.events
-          .filter((event) => identityMatches(event.assignee, account))
-          .sort(
-            (a, b) =>
-              Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
-          )[0];
-        if (
-          !event ||
-          event.event !== 'assigned' ||
-          Date.parse(event.createdAt) <= state.baselineAt ||
-          event.actor.type !== 'User' ||
-          !input.policy.issueAssignment?.allowed.some((actor) =>
-            identityMatches(actor, event.actor),
-          )
-        )
-          continue;
-        const id = automationHash([state.scope, repository.nodeId, item.nodeId, event.nodeId]);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        records.push({
-          version: 1,
-          id,
-          scope: state.scope,
-          receiving: state.account,
-          workspaceDir: state.workspaceDir,
-          agentId: state.agentId,
-          host: 'github.com',
-          repository: {
-            nodeId: repository.nodeId,
-            databaseId: repository.databaseId,
-            owner: { login: repository.owner.login, nodeId: repository.owner.nodeId },
-            name: repository.name,
-          },
-          issue: { nodeId: item.nodeId, databaseId: item.databaseId, number: item.number },
-          assignment: { ...event, event: 'assigned' },
-          evidence: {
-            policyDigest: input.policyDigest,
-            mode: input.policy.issueAssignment.mode,
-            open: true,
-            assigned: true,
-            repositoryReadable: true,
-            ownerPinned: true,
-            actorPinned: true,
-          },
-          observedAt: input.now,
-          admittedAt: input.now,
-          status: 'admitted',
-          requiresRevalidation: true,
-        });
+      async function observeRead<T>(key: string, read: () => Promise<T>): Promise<T> {
+        budget.check();
+        if (progress.observations[key] !== undefined)
+          return JSON.parse(progress.observations[key]!) as T;
+        const value = await read();
+        progress.observations[key] = JSON.stringify(value);
+        await input.assertCurrent();
+        await save(state!);
+        return value;
       }
-      const verified = await input.connect(signal);
-      if (!identityMatches(verified.identity, account))
-        throw new IntakeError('intake-account-changed');
+      for (const candidate of discovery.candidates) {
+        budget.check();
+        await input.assertCurrent();
+        const observe = async () => {
+          if (candidate.itemType !== 'issue') return;
+          const coordinates = githubRepositoryPath(candidate.repositoryPath);
+          if (
+            !input.policy.allowedRepositoryOwners.some(
+              (owner) => owner.login.toLowerCase() === coordinates.owner.toLowerCase(),
+            )
+          )
+            return;
+          const repository = await observeRead('repository', () =>
+            client.getRepository(coordinates.owner, coordinates.name),
+          );
+          if (
+            repository.archived ||
+            repository.disabled ||
+            !input.policy.allowedRepositoryOwners.some((owner) =>
+              identityMatches(owner, repository.owner),
+            )
+          )
+            return;
+          const item = await observeRead('issue', () =>
+            client.getItem(coordinates.owner, coordinates.name, candidate.number),
+          );
+          if (
+            (candidate.nodeId !== undefined && item.nodeId !== candidate.nodeId) ||
+            (candidate.databaseId !== undefined && item.databaseId !== candidate.databaseId) ||
+            item.number !== candidate.number
+          )
+            throw new IntakeError('intake-resource-changed');
+          if (
+            item.itemType !== 'issue' ||
+            item.state !== 'open' ||
+            !item.assignees.some((identity) => identityMatches(identity, account))
+          )
+            return;
+          const history = await observeRead('history', () =>
+            client.listAssignmentEvents(coordinates.owner, coordinates.name, item.number),
+          );
+          if (history.truncated) {
+            delete progress.observations.history;
+            throw new IntakeError('intake-assignment-history-incomplete');
+          }
+          const event = history.events
+            .filter((event) => identityMatches(event.assignee, account))
+            .sort(
+              (a, b) =>
+                Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
+            )[0];
+          if (
+            !event ||
+            event.event !== 'assigned' ||
+            Date.parse(event.createdAt) <= state!.baselineAt ||
+            event.actor.type !== 'User' ||
+            !input.policy.issueAssignment?.allowed.some((actor) =>
+              identityMatches(actor, event.actor),
+            )
+          )
+            return;
+          const id = automationHash([state!.scope, repository.nodeId, item.nodeId, event.nodeId]);
+          if (seen.has(id)) return;
+          seen.add(id);
+          records.push({
+            version: 1,
+            id,
+            scope: state!.scope,
+            receiving: state!.account,
+            workspaceDir: state!.workspaceDir,
+            agentId: state!.agentId,
+            host: 'github.com',
+            repository: {
+              nodeId: repository.nodeId,
+              databaseId: repository.databaseId,
+              owner: { login: repository.owner.login, nodeId: repository.owner.nodeId },
+              name: repository.name,
+            },
+            issue: { nodeId: item.nodeId, databaseId: item.databaseId, number: item.number },
+            assignment: { ...event, event: 'assigned' },
+            evidence: {
+              policyDigest: input.policyDigest,
+              mode: input.policy.issueAssignment.mode,
+              open: true,
+              assigned: true,
+              repositoryReadable: true,
+              ownerPinned: true,
+              actorPinned: true,
+            },
+            observedAt: input.now,
+            admittedAt: input.now,
+            status: 'admitted',
+            requiresRevalidation: true,
+          });
+        };
+        await observe();
+        state.records.push(...records.splice(0));
+        admitted = state.records.length - (previous?.records.length ?? 0);
+        progress.pending.shift();
+        progress.observations = {};
+        await input.assertCurrent();
+        await save(state);
+      }
       await input.assertCurrent();
       state.policyDigest = input.policyDigest;
-      if (!input.selector) state.checkpoint = input.now;
+      const more = !input.selector && progress.nextPage !== 1;
+      if (more) state.discovery = { page: progress.nextPage, pending: [], nextPage: 1 };
+      else if (!input.selector) {
+        delete state.discovery;
+        state.checkpoint = input.now;
+      }
       state.lastAttemptAt = input.now;
       state.records.push(...records);
       const recovered = Boolean(state.blocker);
       delete state.blocker;
       result = {
         status: 'ready' as const,
-        changed: records.length > 0 || recovered,
-        admitted: records.length,
+        changed: admitted > 0 || recovered,
+        admitted,
+        more,
         ...(recovered ? { recovered: true } : {}),
         baselineAt: state.baselineAt,
         checkpoint: state.checkpoint,
       };
       next = state;
     } catch (error) {
+      if (error === persistenceError) throw error;
+      if (error instanceof DiscoveryPaused || budget.exhausted) {
+        if (!state) throw error;
+        state.lastAttemptAt = input.now;
+        await save(state);
+        return { status: 'ready', changed: admitted > 0, admitted, more: true };
+      }
+      if (state) previous = state;
       if (isFilesystemAccessError(error)) throw error;
       const diagnostic =
-        error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
+        error instanceof GitHubWorkEventClientError || error instanceof GitHubAccountClientError
+          ? error.providerDiagnostic
+          : undefined;
       const code =
         error instanceof IntakeError
           ? error.code

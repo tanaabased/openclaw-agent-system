@@ -6,7 +6,9 @@ Scoped refreshes admit only this example’s issues, then the fixture asks the e
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. EMORI creates and assigns the issues to Tanaabot. Only Tanaabot receives test assignments; EMORI has a production OpenClaw instance. Both workspaces and the enrolled SSH key are disposable CI fixtures. Review-request warnings remain independent of supported planning and feedback.
 
-A failed activation preserves its original exit status and reports the install result, configured and Gateway-visible agent registration, and automation state before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
+A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
+
+Native history checks cover entry cards with debug off and retained instruction cards with debug on after restart. Strict AIMock requires hidden initial context and fresh explicit context on the later turn; visible messages must omit those facts.
 
 ## Setup
 
@@ -16,6 +18,8 @@ openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
 touch "$TMPDIR/notification-assessments-held"
 openclaw-aimock prepare --scenario openclaw-issue
 openclaw config set skills.workshop.autonomous.mode off
+# keep unrelated nightly memory turns out of the strict notification fixture
+openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/keys" "$HOME/.ssh"
@@ -35,7 +39,7 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # should boot with retained legacy channel configuration
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
 openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
-openclaw-gateway start
+OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
 # should activate native intake with explicit dispatch enrollment
@@ -43,9 +47,11 @@ set -o pipefail
 activation_diagnostics() {
   activation_status=$?
   if test "$activation_status" -ne 0; then
+    gateway_log=$(openclaw-gateway log-path) || true
+    gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+    openclaw config get gateway --json | jq -c '{reloadMode: (.reload.mode // "hybrid")}' || true
+    tail -n 300 "$gateway_log" | node "$gateway_redactor" || true
     cat "$TMPDIR/notification-install.json" || true
-    openclaw agents list --json | jq -c '{configured: any(.[]; .id == "notifications-tanaabot")}' || true
-    openclaw gateway call agents.list --timeout 10000 --json | jq -c '{gateway: any(.agents[]; .id == "notifications-tanaabot")}' || true
     openclaw agent-system automations list --json || true
   fi
   exit "$activation_status"
@@ -120,6 +126,11 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 30
 jq -e --arg conversation "$conversation" --arg issue "$(jq -er .node_id "$TMPDIR/notification-issue.json")" --arg repository "$(jq -er .node_id "$TMPDIR/notification-repository.json")" '.result.outcome == "plan-ready" and (.result.fullAssessment | length > 0) and (.result.plan | length > 0) and .stageReceipt.binding.threadId == $conversation and .stageReceipt.binding.subjectId == $issue and .stageReceipt.binding.repositoryId == $repository and .stageReceipt.binding.worktree == .worktree and .stageReceipt.binding.turnId == .assessmentTurn.runId and .resultTurnId == .assessmentTurn.runId and .sessionCreation.verified == true' "$TMPDIR/notification-dispatch-before.json"
 openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e --arg path "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")" 'length == 3 and any(.[]; .path == $path)'
 
+# should show ordered native entry cards without debug instructions or private facts
+conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-entry-history.json"
+jq -e '[.messages[] | select(.role == "user" or .role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | join("\n") | (index("Issue assigned") < index("Model routing")) and contains("Assessment instructions") == false and contains("notification-hidden-initial-fact") == false and contains("Effective settings")' "$TMPDIR/notification-entry-history.json"
+
 # should preserve one conversation and assessment across another native scan
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
@@ -172,6 +183,42 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 30
 jq -es --arg id "$(jq -er .id "$TMPDIR/notification-feedback.json")" '[.[].records[]] | length == 3 and ([.[] | select(.id == $id)] | length == 1 and (.[0].feedback.events | length) == 1 and all(.[0].feedback.events[]; .turn.status == "completed" and .phase == "published"))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
+
+# should report native projection drift with an actionable install warning
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
+openclaw cron edit "$native" --thinking high --json | jq -e '.payload.thinking == "high"'
+openclaw cron run "$native" --wait --wait-timeout 5m --json | jq -e '.completionStatus == "succeeded"'
+jq -es 'any(.[]; .intakeReport.response | contains("automation-sync-required") and contains("Agent System Install"))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should reconcile explicitly and show recovery in the native intake chat
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component == "automations" and .status == "updated")'
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es 'any(.[]; .intakeReport.response | contains("Intake resumed"))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+coordinator=$(jq -er .sourceThreadId "$TMPDIR/notification-dispatch-after.json")
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$coordinator" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-intake-history.json"
+jq -e '[.messages[] | select(.role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | join("\n") | contains("automation-sync-required") and contains("Intake resumed") and contains("/chat?session=")' "$TMPDIR/notification-intake-history.json"
+
+# should recover the same issue after restart with fresh private facts and debug instructions
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+sed -i '1a debug: true' agent.yaml
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+cp "$GITHUB_WORKSPACE/examples/openclaw-issue/issue.md" "$TMPDIR/notification-later-issue.md"
+printf '\nModel-only verification fact: notification-hidden-later-fact.\n' >> "$TMPDIR/notification-later-issue.md"
+openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -F "body=@$TMPDIR/notification-later-issue.md" | jq -e '.state == "open"'
+openclaw-gateway stop --timeout 340
+openclaw-gateway start
+conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-after.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-dispatch-after.json")
+receipt=$(jq -er .id "$TMPDIR/notification-dispatch-after.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:("Refresh retained assessment for managed issue " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-refresh-context"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-refresh-context"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-refresh-context" 300000
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,inputRunIds:["notification-refresh-context"]}')" --json | jq -e '[.messages[] | select(.role == "user" or .role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | join("\n") | contains("Fresh issue context verified after restart") and contains("Assessment instructions") and contains("notification-hidden-initial-fact") == false and contains("notification-hidden-later-fact") == false'
+jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-after.json"
 
 ```
 

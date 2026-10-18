@@ -1,3 +1,9 @@
+import { githubCliDiagnostic } from '../../../credentials/github-diagnostic.ts';
+import { parseGitHubApiResponse } from '../provider/api-response.ts';
+import {
+  withProviderDiagnostic,
+  type ProviderDiagnostic,
+} from '../../../utils/provider-diagnostic.ts';
 import type { GitHubIdentityPin, GitHubPullRequestRecipient } from '../config-schema.ts';
 import { githubIdentitySet } from '../provider/work-item.ts';
 import resolvePullRequestRecipients from '../pull-request-recipients.ts';
@@ -18,8 +24,9 @@ export class GitHubIssueDeliveryError extends Error {
   constructor(
     readonly category: GitHubIssueDeliveryFailureCategory,
     message: string,
+    readonly providerDiagnostic?: ProviderDiagnostic,
   ) {
-    super(message);
+    super(withProviderDiagnostic(message, providerDiagnostic));
   }
 }
 
@@ -643,12 +650,20 @@ export default class IssueDeliveryProvider {
     signal: AbortSignal | undefined,
     operation: string,
   ): Promise<void> {
-    const result = await client.execute(argv, undefined, {
-      ...(signal === undefined ? {} : { signal }),
-      timeoutMs: 60_000,
-    });
+    const result = await client.execute(
+      argv.includes('--paginate') ? argv : [argv[0]!, '--include', ...argv.slice(1)],
+      undefined,
+      {
+        ...(signal === undefined ? {} : { signal }),
+        timeoutMs: 60_000,
+      },
+    );
     if (result.exitCode !== 0 || result.timedOut || result.truncated)
-      throw new GitHubIssueDeliveryError('github-request', `GitHub rejected ${operation}.`);
+      throw new GitHubIssueDeliveryError(
+        'github-request',
+        `GitHub rejected ${operation}.`,
+        githubCliDiagnostic(result),
+      );
   }
 
   async #github(
@@ -657,18 +672,27 @@ export default class IssueDeliveryProvider {
     signal?: AbortSignal,
     stdin?: string,
   ): Promise<unknown> {
-    const result = await client.execute(argv, stdin, {
-      ...(signal === undefined ? {} : { signal }),
-      timeoutMs: 60_000,
-    });
+    const result = await client.execute(
+      argv.includes('--paginate') ? argv : [argv[0]!, '--include', ...argv.slice(1)],
+      stdin,
+      {
+        ...(signal === undefined ? {} : { signal }),
+        timeoutMs: 60_000,
+      },
+    );
     if (result.exitCode !== 0 || result.timedOut || result.truncated) {
       throw new GitHubIssueDeliveryError(
         'github-request',
         `GitHub rejected issue delivery reconciliation at ${argv.find((argument) => argument.startsWith('repos/') || argument.startsWith('users/')) ?? 'unknown endpoint'}.`,
+        githubCliDiagnostic(result),
       );
     }
     try {
-      return JSON.parse(result.stdout);
+      return JSON.parse(
+        result.stdout.startsWith('HTTP/')
+          ? parseGitHubApiResponse(result.stdout).body
+          : result.stdout,
+      );
     } catch {
       throw new GitHubIssueDeliveryError(
         'invalid-response',

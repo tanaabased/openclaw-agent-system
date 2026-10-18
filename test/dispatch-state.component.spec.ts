@@ -187,4 +187,72 @@ describe('agent/shared dispatch state', () => {
     });
     assert.equal((await store.read()).records.length, 1);
   });
+
+  it('should merge independent writers without holding the journal during external work', async () => {
+    const store = new OpenClawDispatchStore(root, scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push(pending());
+      await save();
+    });
+    await store.transaction(async (state, save) => {
+      const retained = state.records[0]!;
+      retained.context = 'outer observation';
+      await new OpenClawDispatchStore(root, scope).transaction(async (other, commit) => {
+        other.records[0]!.routingNote = 'inner observation';
+        other.records.push(pending('c'.repeat(64)));
+        await commit();
+      });
+      await save();
+      assert.equal(state.records[0], retained);
+      assert.equal(retained.routingNote, 'inner observation');
+      assert.equal(state.records.length, 2);
+    });
+    assert.equal((await store.read()).records[0]!.context, 'outer observation');
+  });
+
+  it('should reject an identical concurrent reservation before either caller can duplicate its side effect', async () => {
+    const store = new OpenClawDispatchStore(root, scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push(pending());
+      await save();
+    });
+    let effects = 0;
+    await assert.rejects(
+      store.transaction(async (state, save) => {
+        Object.assign(state.records[0]!, prepared());
+        await new OpenClawDispatchStore(root, scope).transaction(async (other, commit) => {
+          Object.assign(other.records[0]!, prepared());
+          await commit();
+          effects++;
+        });
+        await save();
+        effects++;
+      }),
+      /private-state-snapshot-conflict/,
+    );
+    assert.equal(effects, 1);
+    assert.deepEqual((await store.read()).records[0], prepared());
+  });
+
+  it('should preserve changed authority and conflicting results instead of saving a stale snapshot', async () => {
+    const store = new OpenClawDispatchStore(root, scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push(pending());
+      await save();
+    });
+    for (const change of [{ manifestDigest: 'revised' }, { context: 'new evidence' }]) {
+      await assert.rejects(
+        store.transaction(async (state, save) => {
+          state.records[0]!.context = 'stale evidence';
+          await store.exclusive(async (fresh, commit) => {
+            Object.assign(fresh.records[0]!, change);
+            await commit();
+          });
+          await save();
+        }),
+        /private-state-snapshot-conflict/,
+      );
+      assert.notEqual((await store.read()).records[0]!.context, 'stale evidence');
+    }
+  });
 });

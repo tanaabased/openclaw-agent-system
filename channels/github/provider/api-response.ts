@@ -1,5 +1,8 @@
 export interface GitHubRateLimit {
   remaining?: number;
+  limit?: number;
+  used?: number;
+  resource?: string;
   resetAt?: number;
   retryAfterMs?: number;
 }
@@ -47,6 +50,15 @@ export function parseGitHubApiResponse(value: string): GitHubApiResponse {
     body: response.slice(separator.index + separator[0].length),
     hasNextPage: /(?:^|,)\s*<[^>]+>\s*;\s*rel="next"(?:,|$)/u.test(headers.get('link') ?? ''),
     rateLimit: {
+      ...Object.fromEntries(
+        ['limit', 'used'].flatMap((name) => {
+          const value = finiteInteger(headers.get(`x-ratelimit-${name}`));
+          return value === undefined ? [] : [[name, value]];
+        }),
+      ),
+      ...(/^[a-z_]{1,64}$/.test(headers.get('x-ratelimit-resource') ?? '')
+        ? { resource: headers.get('x-ratelimit-resource')! }
+        : {}),
       ...(remaining === undefined ? {} : { remaining }),
       ...(resetSeconds === undefined ? {} : { resetAt: resetSeconds * 1000 }),
       ...(retryAfterSeconds === undefined ? {} : { retryAfterMs: retryAfterSeconds * 1000 }),

@@ -53,15 +53,19 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   readonly maximumCommentCharacters: number;
 
   constructor(
-    client: ConnectedGitHubAccountClient,
+    readonly account: ConnectedGitHubAccountClient,
     maximumCommentCharacters = defaultMaximumCommentCharacters,
   ) {
     this.maximumCommentCharacters = validateMaximumCommentCharacters(maximumCommentCharacters);
-    this.#api = new GitHubWorkEventApiClient(client);
+    this.#api = new GitHubWorkEventApiClient(account);
     this.reviews = new GitHubReviewClient(this.#api, this.maximumCommentCharacters);
     this.replies = new GitHubReviewReplyClient(this.#api, this.reviews);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
     this.#items = new GitHubWorkItemClient(this.#api);
+  }
+
+  listIssueCommentPage(owner: string, name: string, number: number, page: number, since: string) {
+    return this.#comments.listIssueCommentPage(owner, name, number, page, since);
   }
 
   get identity(): GitHubIdentity {
@@ -75,8 +79,9 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   discoverAssigned(
     updatedSince: string,
     assignmentTypes: readonly ('issue' | 'pull-request')[],
+    page?: number,
   ): Promise<GitHubAssignedItemDiscovery> {
-    return this.#items.discoverAssigned(updatedSince, assignmentTypes);
+    return this.#items.discoverAssigned(updatedSince, assignmentTypes, page);
   }
 
   getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity> {

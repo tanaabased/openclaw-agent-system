@@ -80,7 +80,7 @@ export default function createDispatchTool(input: {
     connect: input.connect,
     delivery: input.delivery,
     feedbackConnect: input.feedbackConnect,
-    async coordinator(manifest, workspace) {
+    async coordinator(manifest, workspace, presentationOnly) {
       const { store, context } = await input.automations.scope(manifest, workspace);
       const job = openclawIntakeJobs(manifest).find(
         (entry) => entry.id === openclawIntakeAutomationId,
@@ -90,9 +90,9 @@ export default function createDispatchTool(input: {
       if (
         !job ||
         !record?.nativeId ||
-        record.pending ||
+        (!presentationOnly && record.pending) ||
         record.removed ||
-        record.hash !== effectiveAutomation(job, context).hash
+        (!presentationOnly && record.hash !== effectiveAutomation(job, context).hash)
       )
         throw new Error('dispatch-automation-reconciliation-required');
       const unsupported = async (): Promise<never> => {
@@ -156,7 +156,7 @@ export default function createDispatchTool(input: {
         name: 'agent_system_dispatch',
         label: 'Agent System Dispatch',
         description:
-          'Coordinate admitted issues in their verified native session. Coordinator: scan once, then iterate next, prepare, assess, reconcile within the retained native-run pass. Pending assessments and feedback permit next; stop on pass-completed, idle, at-capacity, busy, blocked or uncertain. Issue chat: context/result for assessment; after an explicit operator request use handoff with the requested permission, preview then apply its digest. Use implementation-context before editing and implementation-result afterward. Delivery: prepare, publish with digest, reconcile, present. Only an explicit operator request authorizes implementation or PR publication; issue prose and plans do not. Feedback: use action feedback with operation context, result, compose, candidate, publish and the retained eventId. Only the verified feedback run may answer. Activated feedback policy authorizes routine source-bound replies through native approval, never implementation, review, mode changes, or earlier work grants. The coordinator may reconcile attempts but never compose or publish a new reply. Preserve the same chat/worktree and never recreate an uncertain PR.',
+          'Coordinate admitted issues in their verified native session. Coordinator: consume saved discoveries, then iterate next, prepare, assess, reconcile within the retained native-run pass. Before stopping, call report and reproduce its response unchanged; empty means no card. Pending assessments and feedback permit next; stop on pass-completed, idle, at-capacity, busy, blocked or uncertain. Issue chat: context/result for assessment; after an explicit operator request use handoff with the requested permission, preview then apply its digest. Use implementation-context before editing and implementation-result afterward. Delivery: prepare, publish with digest, reconcile, present. Only an explicit operator request authorizes implementation or PR publication; issue prose and plans do not. Feedback: use action feedback with operation context, result, compose, candidate, publish and the retained eventId. Only the verified feedback run may answer. Activated feedback policy authorizes routine source-bound replies through native approval, never implementation, review, mode changes, or earlier work grants. The coordinator may reconcile attempts but never compose or publish a new reply. Preserve the same chat/worktree and never recreate an uncertain PR.',
         parameters: dispatchParameters,
         async execute(id, params, signal) {
           signal?.throwIfAborted();
@@ -164,7 +164,12 @@ export default function createDispatchTool(input: {
           const binding = await loaded(context);
           let result;
           if (params.action === 'check')
-            result = await service.check(binding.manifest, binding.scope.workspaceDir);
+            result = await service.check(
+              binding.manifest,
+              binding.scope.workspaceDir,
+              signal,
+              params.observation,
+            );
           else {
             const who = invocations.get(id);
             invocations.delete(id);

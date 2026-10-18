@@ -8,7 +8,17 @@ const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 export const dispatchParameters = Type.Union([
-  object({ action: Type.Literal('check') }),
+  object({
+    action: Type.Literal('check'),
+    observation: Type.Optional(
+      object({
+        status: Type.Union([Type.Literal('ready'), Type.Literal('blocked')]),
+        changed: Type.Boolean(),
+        code: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9-]{0,127}$' })),
+      }),
+    ),
+  }),
+  object({ action: Type.Literal('report') }),
   object({ action: Type.Literal('inspect') }),
   object({ action: Type.Literal('next') }),
   object({

@@ -52,7 +52,24 @@ export const feedbackSourceStateSchema = Type.Object(
     startedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     scannedAt: Type.Optional(Type.String()),
     scannedTime: Type.Optional(Type.Integer({ minimum: 0 })),
+    discoveryPending: Type.Optional(Type.Boolean()),
+    lastSource: Type.Optional(text),
     lastServedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    discovery: Type.Optional(
+      Type.Record(
+        Type.String(),
+        Type.Object(
+          {
+            since: Type.Integer({ minimum: 0 }),
+            startedAt: Type.Integer({ minimum: 0 }),
+            reads: Type.Record(Type.String(), Type.String({ maxLength: 512000 })),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    reviewMarkers: Type.Optional(Type.Record(Type.String(), Type.String({ maxLength: 128000 }))),
+    watermarks: Type.Optional(Type.Record(Type.String(), Type.Integer({ minimum: 0 }))),
     baseline: Type.Record(
       Type.String(),
       Type.Record(Type.String(), Type.String({ maxLength: 128000 })),

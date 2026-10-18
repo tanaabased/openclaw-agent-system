@@ -13,6 +13,22 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const prefix = 'call_notifications_';
 const identity = 'Name: Notification Tanaabot';
+const dispatchStages = [
+  ...Array.from({ length: 8 }, (_, index) =>
+    ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
+  ).flat(),
+  'context',
+  'result',
+  'report',
+  'refresh-context',
+  'refresh-result',
+  'feedback-context',
+  'feedback-result',
+  'feedback-compose',
+  'feedback-candidate',
+  'feedback-preview',
+  'feedback-publish',
+];
 
 function currentTurn(request: ChatCompletionRequest) {
   return request.messages.slice(
@@ -27,9 +43,17 @@ function currentTurn(request: ChatCompletionRequest) {
   );
 }
 
-function isBusy(result: Record<string, unknown> | undefined) {
-  return result?.status === 'busy' && result.code === 'private-state-file-lock-busy';
+function isContention(result: Record<string, unknown> | undefined) {
+  return (
+    ['busy', 'blocked'].includes(String(result?.status)) &&
+    ['private-state-file-lock-busy', 'private-state-snapshot-conflict'].includes(
+      String(result?.code),
+    )
+  );
 }
+
+const retryStage = (stage: string, attempt: number) =>
+  attempt ? `${stage}_retry_${attempt}` : stage;
 
 function call(stage: string, name: string, args: unknown): FixtureResponse {
   return { toolCalls: [{ id: prefix + stage, name, arguments: JSON.stringify(args) }] };
@@ -42,39 +66,55 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')
     .join('\n');
+  // repeat only known contention, preserving the operation and its retained arguments.
+  const attempts = new Map<string, number>();
   const result = (stage: string): Record<string, unknown> | undefined => {
-    const text = openClawAIMockToolResultText(messages, prefix + stage);
-    if (text === undefined) return;
-    let value = JSON.parse(text);
-    while (typeof value === 'string') value = JSON.parse(value);
-    return value;
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      const text = openClawAIMockToolResultText(messages, prefix + retryStage(stage, attempt));
+      if (text === undefined) {
+        attempts.set(stage, attempt);
+        return undefined;
+      }
+      let value = JSON.parse(text);
+      while (typeof value === 'string') value = JSON.parse(value);
+      if (!dispatchStages.includes(stage) || !isContention(value)) return value;
+      if (attempt === 3) throw new Error(`notification-retry-exhausted: ${value.code}`);
+    }
+    return undefined;
   };
-  const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
+  const dispatch = (stage: string, args: unknown) =>
+    call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
+  const report = (): FixtureResponse | undefined => {
+    const retained = result('report');
+    if (!retained) return dispatch('report', { action: 'report' });
+    if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
+    return { content: retained.response || 'notification-intake-unchanged' };
+  };
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
-    if (!manual) {
+    if (!manual && !prompt.includes('Consume saved discoveries')) {
       const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       if (!digest) return;
       const scan = result('scan');
       if (!scan)
         return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
-      if (scan.status === 'blocked') return { content: 'notification-intake-blocked' };
+      if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
     }
     const terminal = (value: Record<string, unknown>) => {
-      if (isBusy(value)) return { content: 'notification-intake-busy' };
       if (
         ['idle', 'at-capacity', 'pass-completed', 'blocked', 'uncertain'].includes(
           String(value.status),
         )
       )
-        return { content: `notification-intake-${value.status}` };
+        return report();
     };
     // indexed calls bind each repeated stage to its own native result.
     for (let index = 0; index <= messages.length; index++) {
       const stage = (name: string) => `${name}-${index}`;
       const next = result(stage('next'));
       if (!next) return dispatch(stage('next'), { action: 'next' });
+      if (next.status === 'discovery-progress') continue;
       const stopped = terminal(next);
       if (stopped) return stopped;
       if (
@@ -130,6 +170,44 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return;
     }
     return;
+  }
+  const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
+    prompt,
+  )?.[1];
+  if (refreshId) {
+    const privateContext = request.messages
+      .map(({ content }) => getTextContent(content) ?? '')
+      .join('\n');
+    if (
+      !privateContext.includes('Agent System model-only current-turn facts') ||
+      !privateContext.includes('previousResultDigest')
+    )
+      return;
+    const fresh = result('refresh-context');
+    if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
+    const evidence = fresh.evidence as { body?: string } | undefined;
+    if (
+      fresh.status !== 'verified' ||
+      !fresh.previousResult ||
+      typeof fresh.previousResultDigest !== 'string' ||
+      !evidence?.body?.includes('notification-hidden-later-fact')
+    )
+      return;
+    const saved = result('refresh-result');
+    if (!saved)
+      return dispatch('refresh-result', {
+        action: 'result',
+        id: refreshId,
+        previousResultDigest: fresh.previousResultDigest,
+        result: {
+          ...(fresh.previousResult as Record<string, unknown>),
+          fullAssessment:
+            String((fresh.previousResult as Record<string, unknown>).fullAssessment) +
+            '\n\nFresh issue context verified after restart.',
+        },
+      });
+    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    return { content: saved.presentation };
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
@@ -191,7 +269,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   )?.[1];
   if (!id || !prompt.includes('Stop before implementation.')) return;
   const context = result('context');
-  if (!context) return dispatch('context', { action: 'context', id });
+  if (!context) {
+    const privateContext = request.messages
+      .map(({ content }) => getTextContent(content) ?? '')
+      .join('\n');
+    if (
+      !privateContext.includes('Agent System model-only current-turn facts') ||
+      !privateContext.includes('notification-hidden-initial-fact')
+    )
+      return;
+    return dispatch('context', { action: 'context', id });
+  }
   const project = context.project as { path?: unknown } | undefined;
   if (
     context.status !== 'verified' ||
@@ -240,7 +328,14 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
 function response(request: ChatCompletionRequest) {
   try {
     return respond(request);
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /^notification-retry-exhausted: private-state-(?:file-lock-busy|snapshot-conflict)$/u.test(
+        error.message,
+      )
+    )
+      return { content: error.message };
     return undefined;
   }
 }
@@ -267,22 +362,12 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'feedback-skill', name: 'read' },
-    ...[
-      ...Array.from({ length: 8 }, (_, index) =>
-        ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
-      ).flat(),
-      'context',
-      'result',
-      'feedback-context',
-      'feedback-result',
-      'feedback-compose',
-      'feedback-candidate',
-      'feedback-preview',
-      'feedback-publish',
-    ].map((stage) => ({
-      id: prefix + stage,
-      name: 'agent_system_dispatch',
-    })),
+    ...dispatchStages.flatMap((stage) =>
+      [0, 1, 2, 3].map((attempt) => ({
+        id: prefix + retryStage(stage, attempt),
+        name: 'agent_system_dispatch',
+      })),
+    ),
     ...['git'].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_git',

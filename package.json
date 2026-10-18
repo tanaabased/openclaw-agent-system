@@ -117,10 +117,11 @@
     "test:component": "bun run build && node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.os.component.spec.ts\" \"test/**/*.component.spec.ts\"",
     "test:os": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.os.component.spec.ts\"",
     "test:release": "node --import tsx scripts/release-test-task.ts",
+    "test:static": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.static.spec.ts\"",
     "test:stress": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.stress.spec.ts\"",
-    "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.component.spec.ts\" --exclude \"test/**/*.stress.spec.ts\" \"test/**/*.spec.ts\"",
+    "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.component.spec.ts\" --exclude \"test/**/*.stress.spec.ts\" --exclude \"test/**/*.static.spec.ts\" \"test/**/*.spec.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json",
-    "validate": "bun run lint && bun run typecheck && bun run test:all && bun run build && bun run plugin:check"
+    "validate": "bun run lint && bun run typecheck && bun run test:all && bun run plugin:check"
   },
   "codexTools": {
     "managedPaths": [

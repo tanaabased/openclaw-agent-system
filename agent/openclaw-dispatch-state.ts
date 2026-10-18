@@ -1,7 +1,9 @@
 import { Type, type Static } from 'typebox';
+import { isDeepStrictEqual } from 'node:util';
+import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 
 import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
-import { issueTurnSchema } from './openclaw-turn-state.ts';
+import { issueTurnSchema, type OpenClawTurn } from './openclaw-turn-state.ts';
 import { openclawFeedbackSchema } from './openclaw-feedback-state.ts';
 import { openclawWorkStateSchema } from './openclaw-work-state.ts';
 
@@ -38,6 +40,16 @@ export const openclawDispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
     work: Type.Optional(openclawWorkStateSchema),
+    turnEvidence: Type.Optional(
+      Type.Object(
+        {
+          runId: text,
+          inputEventId: text,
+          evidence: Type.String({ maxLength: 96000 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     feedback: Type.Optional(openclawFeedbackSchema),
     request: Type.Optional(Type.Union([legacyCreationSchema, sessionCreationRequestSchema])),
     sessionCreation: Type.Optional(
@@ -234,5 +246,54 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
         );
       },
     });
+  }
+}
+
+/** late transport acknowledgements must preserve progress already observed by the child. */
+export function preserveOpenClawProgress(
+  before: DispatchState<OpenClawDispatchRecord>,
+  proposed: DispatchState<OpenClawDispatchRecord>,
+  current: DispatchState<OpenClawDispatchRecord>,
+): void {
+  const statuses = ['attempted', 'accepted', 'consumed', 'completed'];
+  const preserve = (previous?: OpenClawTurn, desired?: OpenClawTurn, fresh?: OpenClawTurn) => {
+    if (
+      previous &&
+      desired &&
+      fresh &&
+      previous.runId === desired.runId &&
+      desired.runId === fresh.runId &&
+      statuses.indexOf(desired.status) > statuses.indexOf(previous.status) &&
+      statuses.indexOf(fresh.status) > statuses.indexOf(desired.status)
+    )
+      desired.status = fresh.status;
+  };
+  for (const record of proposed.records) {
+    const previous = before.records.find((entry) => entry.id === record.id);
+    const fresh = current.records.find((entry) => entry.id === record.id);
+    if (!previous || !fresh) continue;
+    if (
+      !isDeepStrictEqual(previous, record) &&
+      (!isDeepStrictEqual(previous.work, fresh.work) ||
+        (previous.result && !isDeepStrictEqual(previous.result, fresh.result)))
+    )
+      throw new Error(stateSnapshotConflictCode);
+    if (fresh.result && record.phase === 'assessing') record.phase = 'complete';
+    preserve(previous.firstTurn, record.firstTurn, fresh.firstTurn);
+    preserve(previous.assessmentTurn, record.assessmentTurn, fresh.assessmentTurn);
+    for (const event of record.feedback?.events ?? []) {
+      const retained = fresh.feedback?.events.find((entry) => entry.id === event.id);
+      if (
+        event.phase === 'running' &&
+        retained &&
+        ['responded', 'published'].includes(retained.phase)
+      )
+        event.phase = retained.phase;
+      preserve(
+        previous.feedback?.events.find((entry) => entry.id === event.id)?.turn,
+        event.turn,
+        fresh.feedback?.events.find((entry) => entry.id === event.id)?.turn,
+      );
+    }
   }
 }

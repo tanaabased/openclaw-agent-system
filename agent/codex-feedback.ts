@@ -1,3 +1,5 @@
+import DiscoveryBudget from './discovery-budget.ts';
+import discoveryCheckpoint from './discovery-checkpoint.ts';
 import { realpath } from 'node:fs/promises';
 
 import { Type } from 'typebox';
@@ -145,17 +147,21 @@ export default async function runCodexFeedback(
     const snapshot = input.action === 'next' ? await store.read() : undefined;
     if (snapshot?.run?.id === occurrence?.id && (snapshot?.run?.actions ?? 0) >= 12)
       return { status: 'budget-exhausted' };
+    const budget = new DiscoveryBudget();
+    const scanTime = (deps.now ?? Date.now)();
     const scans =
       snapshot && occurrence
         ? await scanCodexFeedback({
             state: snapshot,
+            budget,
+            checkpoint: (scan) => discoveryCheckpoint(store, scan),
             current,
             occurrence: occurrence.id,
             sourceThreadId: activation.sourceThreadId,
-            now: (deps.now ?? Date.now)(),
+            now: scanTime,
             provider: await (deps.feedbackConnect ?? connectCodexFeedback)(
               current.workspace,
-              AbortSignal.timeout(60000),
+              budget.signal,
             ),
           })
         : [];
@@ -181,6 +187,23 @@ export default async function runCodexFeedback(
         await save();
       }
       if (applyFeedbackScans(state.records, scans)) await save();
+      if (snapshot && occurrence) {
+        const cycleAt = state.discoveryCycleAt ?? scanTime;
+        const owners = state.records.filter(
+          (r) => !r.retired && !r.reset && r.effective && r.threadId,
+        );
+        if (
+          owners.some(
+            (r) =>
+              (r.feedback?.scannedTime ?? 0) < cycleAt ||
+              r.feedback?.discoveryPending ||
+              Object.keys(r.feedback?.discovery ?? {}).length,
+          )
+        )
+          state.discoveryCycleAt = cycleAt;
+        else delete state.discoveryCycleAt;
+        await save();
+      }
       const intake = await current.store.read();
       if (!intake || !current.policy) throw new Error('feedback-intake-missing');
       const now = (deps.now ?? Date.now)();
