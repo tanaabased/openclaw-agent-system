@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 
 import { implementationResultSchema } from './implementation-result.ts';
+import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -46,6 +47,7 @@ export const openclawWorkStateSchema = Type.Object(
             ),
           ),
           reconciled: Type.Boolean(),
+          announcement: Type.Optional(deliveryAnnouncementStateSchema),
           presentation: Type.Optional(Type.String({ maxLength: 32000 })),
         },
         { additionalProperties: false },

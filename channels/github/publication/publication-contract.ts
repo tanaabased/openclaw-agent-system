@@ -238,15 +238,16 @@ export function githubNotificationPublicationMarker(target: string): string {
   return `<!-- ${markerPrefix}:${parsed.intent}:${parsed.digest} -->`;
 }
 
-/** Add one validated hidden idempotency marker to a public GitHub comment. */
-export function githubNotificationPublicationComment(text: string, marker: string): string {
-  if (
-    !new RegExp(
-      `^<!-- ${markerPrefix}:(?:assessment-summary|assignment-response|github-reply|initial-acknowledgment|pull-request-handoff):[a-f0-9]{32} -->$`,
-      'u',
-    ).test(marker)
-  ) {
+/** Use the same intent contract for comment creation and provider reconciliation. */
+export function validateGitHubNotificationPublicationMarker(marker: string): void {
+  const match = new RegExp(`^<!-- ${markerPrefix}:([a-z-]+):[a-f0-9]{32} -->$`, 'u').exec(marker);
+  if (!match || !publicationIntents.has(match[1] as GitHubNotificationPublicationIntent)) {
     throw new Error('GitHub notification publication markers are invalid.');
   }
+}
+
+/** Add one validated hidden idempotency marker to a public GitHub comment. */
+export function githubNotificationPublicationComment(text: string, marker: string): string {
+  validateGitHubNotificationPublicationMarker(marker);
   return `${text}\n\n${marker}`;
 }

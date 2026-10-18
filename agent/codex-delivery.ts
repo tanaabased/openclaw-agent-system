@@ -1,3 +1,7 @@
+import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
+import selectFeedbackStage from './feedback-stage.ts';
+import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import { realpath } from 'node:fs/promises';
 
 import { preferGitHubSshWorktreeRemote } from '../tools/git/worktree-remote.ts';
@@ -37,10 +41,13 @@ import resolvePullRequestRecipients from '../channels/github/pull-request-recipi
 const requestSchema = Type.Object(
   {
     action: Type.Union(
-      ['prepare', 'publish', 'reconcile', 'present'].map((value) => Type.Literal(value)),
+      ['prepare', 'publish', 'reconcile', 'present', 'compose', 'candidate', 'announce'].map(
+        (value) => Type.Literal(value),
+      ),
     ),
     id: Type.String({ pattern: '^[a-f0-9]{64}$' }),
     digest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+    publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ maxLength: 65536 })),
   },
@@ -52,7 +59,8 @@ export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies,
   connect?: typeof connectCodexGitHubAccount;
   git?: DispatchGit;
   delay?: typeof abortableDelay;
-  native?: Pick<ReturnType<typeof codexDispatchNative>, 'find'>;
+  native?: Pick<ReturnType<typeof codexDispatchNative>, 'find'> &
+    Partial<Pick<ReturnType<typeof codexDispatchNative>, 'assessmentSkill'>>;
   attachment?: (threadId: string, turnId: string, url: string) => Promise<boolean>;
   threadId?: string;
   // only the owning continuation runtime may supply verified schedule state, never request json.
@@ -205,7 +213,10 @@ export default async function runCodexDelivery(
       if (!branch || branch === checked.repo.defaultBranch)
         throw new Error('delivery-branch-required');
       await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
-      if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
+      if (
+        ['prepare', 'publish'].includes(input.action) &&
+        (await git(found.cwd, ['status', '--porcelain=v1'], signal))
+      )
         throw new Error('delivery-uncommitted-work');
       const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
       if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
@@ -261,6 +272,7 @@ export default async function runCodexDelivery(
         reconciled: false,
         attached: previous?.attached ?? false,
         cardAttempts: previous?.cardAttempts ?? 0,
+        ...(previous?.announcement ? { announcement: previous.announcement } : {}),
         notices: previous?.notices ?? [],
       };
       const digest = automationHash({ delivery, turnId: found.turnId, previous });
@@ -274,6 +286,70 @@ export default async function runCodexDelivery(
           .filter((code) => code !== 'delivery-ssh-transport')
           .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
+      if (
+        input.action === 'compose' ||
+        input.action === 'candidate' ||
+        input.action === 'announce'
+      ) {
+        if (!previous?.pullRequest || !previous.reconciled)
+          throw new Error('delivery-reconciliation-required');
+        const policy = current.manifest.github?.notifications;
+        if (policy?.schemaVersion !== 2) throw new Error('delivery-policy-required');
+        const publication: IssueDeliveryInput = {
+          item: {
+            number: intake.issue.number,
+            itemDatabaseId: intake.issue.databaseId,
+            itemNodeId: intake.issue.nodeId,
+            repositoryOwner: intake.repository.owner.login,
+            repositoryName: intake.repository.name,
+            repositoryDefaultBranch: checked.repo.defaultBranch,
+          },
+          branch,
+          headSha: head,
+          repositoryNodeId: intake.repository.nodeId,
+          expectedPullRequest: previous.pullRequest,
+          signal,
+        };
+        const announce = await deliveryAnnouncement({
+          operation: input.action,
+          digest: input.digest,
+          publicText: input.publicText,
+          delivery: previous,
+          publication,
+          provider: new IssueDeliveryProvider(connected.account, deps.delay),
+          client: new GitHubIssueCommentClient(
+            new GitHubWorkEventApiClient(connected.account),
+            8000,
+          ),
+          authorId: connected.account.identity.nodeId,
+          select: async (retained) => {
+            if (!native.assessmentSkill) throw new Error('delivery-announcement-skill-unavailable');
+            return (
+              await selectFeedbackStage({
+                policy,
+                workflow: 'issue-assignment',
+                workspace: current.workspace,
+                observedAt: retained?.composition.observedAt ?? Date.now(),
+                resolveSkill: (id) => native.assessmentSkill!(found.cwd, id),
+              })
+            ).selection;
+          },
+          authorize: async () => {
+            signal.throwIfAborted();
+            await deps.authorizeSchedule?.();
+            await revalidateDispatchAssignment(
+              current,
+              intake,
+              { connect: async () => connected.client },
+              signal,
+              true,
+              false,
+            );
+          },
+          save,
+        });
+        return { ...announce, id: input.id, url: url(previous.pullRequest.pullRequestNumber) };
+      }
       if (input.action === 'prepare')
         return {
           status: 'prepared',
@@ -386,7 +462,7 @@ export default async function runCodexDelivery(
               (deps.schedule
                 ? 'continuationRuntime action:delivery with nested delivery reconcile and present'
                 : 'delivery reconcile and present') +
-              '. Attachment warnings do not block presentation. Never recreate the PR for an attachment or card failure.',
+              '. Also call delivery compose, invoke the selected reply skill, submit candidate, and execute announce with its preview digest before final presentation. Keep these actions in the owning continuationRuntime for automatic workflows. Announcement failure never discards the PR or blocks its private card. Never recreate the PR for an attachment, announcement or card failure.',
           };
         } catch (error) {
           signal.throwIfAborted();
@@ -501,6 +577,10 @@ export default async function runCodexDelivery(
             commentFlow,
           }),
           ...(implementationInstructions ? [implementationInstructions] : []),
+          announcementPresentation(
+            previous.announcement,
+            `https://github.com/${repository}/issues/${intake.issue.number}`,
+          ),
           ...presentationNotices.map((notice) => notice.message),
         ].join('\n\n'),
       };

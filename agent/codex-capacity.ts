@@ -11,7 +11,9 @@ export function codexItemOccupied(record: DispatchRecord): boolean {
     Boolean(
       !record.handoff &&
       record.continuation &&
-      ['waiting', 'prepared', 'running', 'delivery'].includes(record.continuation.phase),
+      (['waiting', 'prepared', 'running'].includes(record.continuation.phase) ||
+        (record.continuation.phase === 'delivery' &&
+          !(record.delivery?.reconciled && record.delivery.pullRequest))),
     ) ||
     Boolean(
       record.feedback?.events.some((event) =>

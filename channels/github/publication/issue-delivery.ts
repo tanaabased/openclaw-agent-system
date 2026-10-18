@@ -186,6 +186,58 @@ export default class IssueDeliveryProvider {
     return { pullRequestNodeId: pullRequest.itemNodeId, pullRequestNumber: pullRequest.number };
   }
 
+  /** read the provider state and closing association before an issue announcement. */
+  async announcement(input: IssueDeliveryInput) {
+    if (!input.expectedPullRequest || !input.headSha || !input.repositoryNodeId)
+      throw new Error('delivery-announcement-binding-required');
+    const pullRequest = await this.#find(input);
+    if (!pullRequest) throw new Error('delivery-announcement-pr-missing');
+    await this.#verify(input, pullRequest, false);
+    parseIssue(
+      await this.#github(
+        this.client,
+        [
+          'api',
+          `repos/${input.item.repositoryOwner}/${input.item.repositoryName}/issues/${input.item.number}`,
+          '--jq',
+          '{databaseId:.id,nodeId:.node_id,number,title}',
+        ],
+        input.signal,
+      ),
+      input.item,
+    );
+    if (!(await this.#linkedIssue(input, pullRequest)))
+      throw new Error('github-delivery-linkage-unverified');
+    const observed = record(
+      await this.#github(
+        this.client,
+        [
+          'api',
+          `repos/${input.item.repositoryOwner}/${input.item.repositoryName}/pulls/${pullRequest.number}`,
+          '--jq',
+          '{nodeId:.node_id,draft,state,head:.head.sha,title,body}',
+        ],
+        input.signal,
+      ),
+      'announcement pull request',
+    );
+    if (
+      observed.nodeId !== pullRequest.itemNodeId ||
+      observed.state !== 'open' ||
+      observed.head !== input.headSha ||
+      typeof observed.draft !== 'boolean'
+    )
+      throw new Error('delivery-announcement-state-unverified');
+    return {
+      pullRequestNodeId: pullRequest.itemNodeId,
+      pullRequestNumber: pullRequest.number,
+      draft: observed.draft,
+      head: input.headSha,
+      title: requiredString(observed.title, 'pull request title', 512),
+      body: boundedString(observed.body ?? '', 'pull request body', 65536),
+    };
+  }
+
   async #find(input: IssueDeliveryInput): Promise<PullRequestIdentity | undefined> {
     const github = this.client;
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;

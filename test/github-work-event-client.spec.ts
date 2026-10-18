@@ -4,10 +4,11 @@ import type { AgentSystemCliResult } from '../api/types.ts';
 import GitHubWorkEventClient, {
   GitHubWorkEventClientError,
 } from '../channels/github/provider/work-event-client.ts';
+import {
+  githubNotificationPublicationMarker,
+  githubNotificationPublicationTarget,
+} from '../channels/github/publication/publication-contract.ts';
 import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
-
-const publicationMarker =
-  '<!-- agent-system-github-publication:pull-request-handoff:0123456789abcdef0123456789abcdef -->';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
@@ -436,41 +437,64 @@ describe('channels/github/provider/work-event-client', () => {
     assert.ok(requests[1]?.some((value) => value.includes('[0:12001]')));
   });
 
-  it('should reconcile and publish pull request handoffs without putting bodies in argv', async () => {
-    const body = `On it.\n\n${publicationMarker}`;
-    const requests: Array<{ argv: string[]; stdin?: string }> = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv, stdin) {
-        requests.push({ argv, ...(stdin === undefined ? {} : { stdin }) });
-        if (argv.includes('POST')) {
-          return response({
-            body,
-            databaseId: 91,
-            nodeId: 'IC_published',
-            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
-          });
-        }
-        return response([
-          {
-            body,
-            databaseId: 90,
-            nodeId: 'IC_existing',
-            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+  for (const intent of ['pull-request-handoff', 'assessment-summary'] as const) {
+    it(`should reconcile and publish ${intent} without putting bodies in argv`, async () => {
+      const publicationMarker = githubNotificationPublicationMarker(
+        githubNotificationPublicationTarget({
+          intent,
+          publicationId: 'retained-publication',
+          item: {
+            lifecycleId: 'issue',
+            number: 7,
+            repositoryNodeId: 'R_example',
           },
-        ]);
-      },
-    });
+        }),
+      );
+      const body = `On it.\n\n${publicationMarker}`;
+      const requests: Array<{ argv: string[]; stdin?: string }> = [];
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute(argv, stdin) {
+          requests.push({ argv, ...(stdin === undefined ? {} : { stdin }) });
+          if (argv.includes('POST')) {
+            return response({
+              body,
+              databaseId: 91,
+              nodeId: 'IC_published',
+              user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+            });
+          }
+          return response([
+            {
+              body,
+              databaseId: 90,
+              nodeId: 'IC_existing',
+              user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+            },
+          ]);
+        },
+      });
 
-    assert.deepEqual(
-      await client.findOwnIssueComment('tanaabased', 'example', 7, publicationMarker),
-      { body, databaseId: 90, nodeId: 'IC_existing' },
-    );
-    assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
-      databaseId: 91,
-      nodeId: 'IC_published',
+      assert.deepEqual(
+        await client.findOwnIssueComment('tanaabased', 'example', 7, publicationMarker),
+        { body, databaseId: 90, nodeId: 'IC_existing' },
+      );
+      assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
+        databaseId: 91,
+        nodeId: 'IC_published',
+      });
+      assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
+      assert.equal(requests[1]?.argv.includes(body), false);
+      for (const marker of [
+        publicationMarker.replace(intent, 'unknown-intent'),
+        publicationMarker.replace(/:[a-f0-9]{32}/u, ':bad-digest'),
+      ]) {
+        await assert.rejects(
+          client.findOwnIssueComment('tanaabased', 'example', 7, marker),
+          /publication markers are invalid/u,
+        );
+      }
+      assert.equal(requests.length, 2);
     });
-    assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
-    assert.equal(requests[1]?.argv.includes(body), false);
-  });
+  }
 });

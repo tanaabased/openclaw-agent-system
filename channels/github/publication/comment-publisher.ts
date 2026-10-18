@@ -44,6 +44,7 @@ export interface GitHubNotificationCommentPublicationConnection {
 }
 
 export interface GitHubNotificationCommentPublisherDependencies {
+  beforeCreate?(): Promise<void>;
   redactText(text: string): string;
   authorize(
     input:
@@ -178,6 +179,7 @@ export default class GitHubNotificationCommentPublisher {
         return { receipt: existing, status: 'reconciled', target };
       }
       if (!create) return undefined;
+      await this.#dependencies.beforeCreate?.();
       const receipt = await connection.client.createIssueComment(
         input.item.repositoryOwner,
         input.item.repositoryName,

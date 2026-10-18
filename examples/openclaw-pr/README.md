@@ -6,7 +6,7 @@ Each manual refresh admits only this example’s issue, then asks the existing n
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. Operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device keeps `operator.read` and `operator.write`. EMORI creates the issue and posts the feedback comment. Only Tanaabot receives issue and PR assignments; EMORI has a production OpenClaw instance. CI owns the disposable workspaces, issue, PR, branch, and SSH key and cleans up only those resources.
 
-The first implementation follow-up stops after publication. A second operator follow-up recovers the complete PR card from its retained receipt without publishing again, before the PR comment test runs.
+The first implementation follow-up stops after PR publication and its issue announcement. A second operator follow-up recovers the complete PR card from its retained receipt despite later uncommitted edits, without publishing again, before the PR comment test runs.
 
 A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
@@ -141,13 +141,21 @@ openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" 
 jq -e '.work.delivery.presentation == null' "$TMPDIR/notification-delivery.json"
 jq -e 'any(.messages[]; .role == "user" and .__openclaw.senderIsOwner == true and .idempotencyKey == "notification-publish:user")' "$TMPDIR/notification-published-history.json"
 
-# should recover the complete card for the same pull request after another explicit operator request
+# should publish one issue announcement with a retained receipt and verified ready state
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-announcements.json"
+jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].work.delivery.announcement.receipt.nodeId and (.[0].body | contains($delivery[0].work.delivery.announcement.publicText)) and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
+
+# should recover the complete card for the same pull request despite later uncommitted edits
 test -f "$TMPDIR/notification-activation-ready"
+worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
+printf '%s\n' 'Uncommitted follow-up work.' >> "$worktree/README.md"
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
 receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
 leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
-params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Reconcile the existing PR and show its card again."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-retry"}')"
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Reconcile the existing PR announcement and show its card again."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-retry"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-retry"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-retry" 300000
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
@@ -158,6 +166,8 @@ jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0]' "$XDG_C
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,inputRunIds:["notification-retry"]}')" --json > "$TMPDIR/notification-recovered-history.json"
 jq -e --arg card "$(jq -er .work.delivery.presentation "$TMPDIR/notification-recovered.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == "notification-retry" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($card))) and ($card | startswith("> ## 🔀")) and ($card | contains("originating item or review thread"))' "$TMPDIR/notification-recovered-history.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --arg session "$session_id" --arg cwd "$(jq -er .worktree "$TMPDIR/notification-delivery.json")" '.session.sessionId == $session and .session.spawnedCwd == $cwd'
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-announcements.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
 # should answer one approved pr comment in the owning issue chat

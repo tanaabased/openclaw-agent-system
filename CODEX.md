@@ -324,12 +324,21 @@ Publication retains the PR before recipient reconciliation. If a later step
 fails, prepare and resume that operation. An uncertain creation is reconciled
 against the managed branch; it is never blindly repeated. Attach the returned
 URL with native `attach_artifact`, read `list_artifacts`, then call `reconcile`
-and `present`, then reproduce its complete presentation in the final reply. The runtime
+and `compose` to load the configured reply skill for the verified delivery event.
+Submit its short description with `candidate`, inspect the returned preview, and
+execute `announce` with that preview's digest. Managed publication authority covers
+this one announcement on the originating issue, including when feedback intake is
+disabled; native denial still stops it. The host adds the verified PR URL and its
+current draft/ready status. Call `present` and reproduce its complete private PR card,
+public quote, and announcement outcome in the final reply. The runtime
 generates the cards; successful generation alone does not prove they were displayed.
 Attachment verification is nonblocking: the verified PR card remains
 available with an attachment warning. Delivery notices use the shared info, warning,
 and error cards; publication errors retain the existing PR for retry. Attachment and
-presentation failures do not create another PR.
+presentation failures do not create another PR. Announcement failure also preserves
+the PR. Retry an uncertain announcement with `announce` to reconcile the saved text
+and provider receipt; it never blindly repeats a comment POST. `present` only shows
+the saved card and outcome and makes no public write.
 See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
 Work-mode publication uses the same delivery operation through the trusted
 continuation runtime. Configured issue feedback also covers its verified delivery PR.

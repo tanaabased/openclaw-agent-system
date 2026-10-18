@@ -1,4 +1,5 @@
 import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
+import { validateGitHubNotificationPublicationMarker } from '../publication/publication-contract.ts';
 import {
   GitHubWorkEventClientError,
   githubRepositoryEndpoint,
@@ -171,13 +172,7 @@ export default class GitHubIssueCommentClient
     number: number,
     marker: string,
   ): Promise<GitHubIssueCommentReconciliationReceipt | undefined> {
-    if (
-      !/^<!-- agent-system-github-publication:(?:assignment-response|github-reply|initial-acknowledgment|pull-request-handoff):[a-f0-9]{32} -->$/u.test(
-        marker,
-      )
-    ) {
-      throw new Error('GitHub notification publication markers are invalid.');
-    }
+    validateGitHubNotificationPublicationMarker(marker);
     let hasNextPage = false;
     const pageSize = maximumPageSize;
     for (let page = 1; page <= maximumCommentPages; page += 1) {

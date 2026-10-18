@@ -1,0 +1,251 @@
+import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
+
+import { automationHash } from './automation-hash.ts';
+import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
+import redactFeedback from './feedback-redaction.ts';
+import GitHubNotificationCommentPublisher, {
+  type GitHubNotificationCommentPublicationInput,
+} from '../channels/github/publication/comment-publisher.ts';
+import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
+import type IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
+import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
+import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
+import { githubNotificationQuote } from '../channels/github/presentation/card.ts';
+
+type CommentClient = Pick<
+  GitHubNotificationPublicationClient,
+  'findOwnIssueComment' | 'createIssueComment'
+>;
+type Delivery = { announcement?: DeliveryAnnouncementState };
+
+export function announcementPublication(
+  state: DeliveryAnnouncementState,
+  item: GitHubNotificationCommentPublicationInput['item'],
+): GitHubNotificationCommentPublicationInput {
+  if (!state.publicText) throw new Error('delivery-announcement-candidate-required');
+  return {
+    intent: 'pull-request-handoff',
+    item,
+    publicationId: state.publicationId,
+    text: state.publicText,
+  };
+}
+
+/** reconciliation is read-only; absence after an attempted write never permits another post. */
+export async function reconcileAnnouncement(input: {
+  state: DeliveryAnnouncementState;
+  item: GitHubNotificationCommentPublicationInput['item'];
+  client: CommentClient;
+  authorId: string;
+}) {
+  if (input.state.authorId !== input.authorId)
+    throw new Error('delivery-announcement-author-changed');
+  const publisher = new GitHubNotificationCommentPublisher({
+    redactText: redactFeedback,
+    authorize: () => ({ authorized: true }),
+    connect: () => ({ client: input.client }),
+    exclusive: async (_key, run) => run(),
+  });
+  const found = await publisher.reconcile(announcementPublication(input.state, input.item));
+  if (!found || (input.state.receipt && found.receipt.nodeId !== input.state.receipt.nodeId))
+    throw new Error('delivery-announcement-unconfirmed');
+  return { nodeId: found.receipt.nodeId, databaseId: found.receipt.databaseId };
+}
+
+export function announcementPresentation(
+  state: DeliveryAnnouncementState | undefined,
+  issueUrl: string,
+) {
+  const quote = state?.publicText
+    ? githubNotificationQuote(`## 📤 To [GitHub issue](${issueUrl})\n\n${state.publicText}`)
+    : '';
+  const outcome =
+    state?.receipt && !state.code
+      ? `## ℹ️ PR announcement published\n\n[Published announcement ↗](${issueUrl}#issuecomment-${state.receipt.databaseId})`
+      : `## ⚠️ PR announcement pending\n\nThe PR is retained. Recover the announcement in this chat; do not recreate the PR.${state?.code ? `\n\nDiagnostic: \`${state.code}\`.` : ''}`;
+  return [quote, githubNotificationQuote(outcome)].filter(Boolean).join('\n\n');
+}
+
+/** the native delivery owner supplies authority and serializes state with the PR receipt. */
+export default async function deliveryAnnouncement(input: {
+  operation: 'compose' | 'candidate' | 'announce';
+  digest?: string;
+  publicText?: string;
+  delivery: Delivery;
+  publication: IssueDeliveryInput;
+  provider: Pick<IssueDeliveryProvider, 'announcement'>;
+  client: CommentClient;
+  authorId: string;
+  select(state?: DeliveryAnnouncementState): Promise<DeliveryAnnouncementState['composition']>;
+  authorize(): Promise<void>;
+  save(): Promise<void>;
+}) {
+  const { delivery, publication } = input;
+  const repository = `${publication.item.repositoryOwner}/${publication.item.repositoryName}`;
+  const issueUrl = `https://github.com/${repository}/issues/${publication.item.number}`;
+  const item = {
+    lifecycleId: 'issue' as const,
+    number: publication.item.number,
+    repositoryOwner: publication.item.repositoryOwner,
+    repositoryName: publication.item.repositoryName,
+    repositoryNodeId: publication.repositoryNodeId!,
+  };
+  let posting = false;
+  try {
+    await input.authorize();
+    if (delivery.announcement?.attempted || delivery.announcement?.receipt) {
+      const state = delivery.announcement;
+      state.receipt = await reconcileAnnouncement({
+        state,
+        item,
+        client: input.client,
+        authorId: input.authorId,
+      });
+      delete state.code;
+      await input.save();
+      return {
+        status: 'announced',
+        receipt: state.receipt,
+        presentation: announcementPresentation(state, issueUrl),
+      };
+    }
+    const snapshot = await input.provider.announcement(publication);
+    const composition = await input.select(delivery.announcement);
+    const publicationId = automationHash([
+      publication.repositoryNodeId,
+      publication.item.itemNodeId,
+      snapshot.pullRequestNodeId,
+    ]);
+    const current: DeliveryAnnouncementState = {
+      publicationId,
+      authorId: input.authorId,
+      snapshot,
+      composition,
+      attempted: false,
+    };
+    const digest = automationHash(current);
+    if (input.operation === 'compose') {
+      // a fresh provider snapshot replaces only an unattempted candidate.
+      delivery.announcement = current;
+      await input.save();
+      return {
+        status: 'composition-ready',
+        digest,
+        selection: composition,
+        event: {
+          kind: 'pull-request-delivery',
+          title: snapshot.title,
+          body: snapshot.body,
+          draft: snapshot.draft,
+          url: `https://github.com/${repository}/pull/${snapshot.pullRequestNumber}`,
+        },
+        maximumPublicCharacters: 500,
+        instruction:
+          'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing or changed skills stop composition. Keep the full private PR card even if announcing fails.',
+      };
+    }
+    const state = delivery.announcement;
+    if (!state || automationHash({ ...state, publicText: undefined, code: undefined }) !== digest)
+      throw new Error('delivery-announcement-stale');
+    if (input.operation === 'candidate') {
+      if (input.digest !== digest) throw new Error('delivery-announcement-stale');
+      if (!input.publicText?.trim() || input.publicText.length > 500)
+        throw new Error('delivery-announcement-description-required');
+      state.publicText = githubNotificationPublicationText(
+        'pull-request-handoff',
+        [
+          {
+            text: `${input.publicText.trim()}\n\n[PR #${snapshot.pullRequestNumber}](https://github.com/${repository}/pull/${snapshot.pullRequestNumber}) — ${snapshot.draft ? 'Draft' : 'Ready for review'}.`,
+          },
+        ],
+        redactFeedback,
+      );
+      delete state.code;
+      await input.save();
+    }
+    const prepared = announcementPublication(state, item);
+    const previewDigest = automationHash({ ...current, publicText: state.publicText });
+    if (input.operation === 'candidate' || input.digest === undefined)
+      return {
+        status: 'announcement-prepared',
+        digest: previewDigest,
+        destination: issueUrl,
+        publicText: state.publicText,
+        presentation: githubNotificationQuote(
+          `## 📤 To [GitHub issue](${issueUrl})\n\n${state.publicText}`,
+        ),
+        instruction:
+          'Publish this exact announcement using delivery announce with this digest through native approval. Existing managed-delivery authority covers only this issue/PR announcement; stop on denial. Afterwards present the full private PR card and announcement outcome.',
+      };
+    if (input.digest !== previewDigest) throw new Error('delivery-announcement-stale');
+    const publisher = new GitHubNotificationCommentPublisher({
+      redactText: redactFeedback,
+      authorize: async () => {
+        await input.authorize();
+        return { authorized: true };
+      },
+      connect: () => ({ client: input.client }),
+      exclusive: async (_key, run) => run(),
+      beforeCreate: async () => {
+        await input.authorize();
+        if (
+          automationHash(await input.provider.announcement(publication)) !==
+          automationHash(snapshot)
+        )
+          throw new Error('delivery-announcement-stale');
+        await input.authorize();
+        state.attempted = true;
+        await input.save();
+        posting = true;
+      },
+    });
+    const result = await publisher.publish(prepared);
+    state.receipt = { nodeId: result.receipt.nodeId, databaseId: result.receipt.databaseId };
+    delete state.code;
+    await input.save();
+    return {
+      status: 'announced',
+      receipt: state.receipt,
+      presentation: announcementPresentation(state, issueUrl),
+    };
+  } catch (error) {
+    if (isFilesystemAccessError(error) || (error instanceof Error && error.name === 'AbortError'))
+      throw error;
+    const state = delivery.announcement;
+    const message =
+      error instanceof Error && 'code' in error && typeof error.code === 'string'
+        ? error.code
+        : error instanceof Error
+          ? error.message
+          : '';
+    const code = /^(?:delivery|dispatch|continuation|github)-[a-z-]+$/.test(message)
+      ? message
+      : 'delivery-announcement-failed';
+    if (state) {
+      const status =
+        error instanceof GitHubWorkEventClientError
+          ? error.providerDiagnostic?.httpStatus
+          : undefined;
+      // an explicit rejection proves no comment was accepted; timeouts and ambiguous failures do not.
+      if (
+        posting &&
+        typeof status === 'number' &&
+        status >= 400 &&
+        status < 500 &&
+        status !== 408 &&
+        !state.receipt
+      )
+        state.attempted = false;
+      state.code = code;
+      await input.save();
+    }
+    return {
+      status: 'announcement-blocked',
+      code,
+      presentation: announcementPresentation(state, issueUrl),
+      instruction:
+        'The delivered PR is retained. Present its full private card and this announcement obstacle. Stop on denial or lost authority. On an authorized retry, compose again for a pre-write failure or announce to reconcile an uncertain write; never recreate the PR.',
+    };
+  }
+}
