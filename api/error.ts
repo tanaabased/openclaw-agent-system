@@ -40,3 +40,10 @@ export default class AgentSystemToolError extends Error {
     super(withProviderDiagnostic(message, providerDiagnostic));
   }
 }
+
+/** preserve only explicitly authored validation messages, never arbitrary exception details. */
+export function validationErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof AgentSystemToolError && error.code === 'invalid_arguments'
+    ? error.message
+    : fallback;
+}

@@ -86,6 +86,61 @@ function createRuntime(options: {
 }
 
 describe('api/runtime', () => {
+  it('should preserve only typed validation messages without forwarding metadata or resolving credentials', async () => {
+    const safeReason = 'Use the managed tool instead.';
+    const genericReason = 'The agent_system_test_tool request is invalid.';
+    for (const [failure, reason] of [
+      [new AgentSystemToolError('invalid_arguments', safeReason, true), safeReason],
+      [new Error('private-sentinel', { cause: 'private-cause' }), genericReason],
+      [
+        { name: 'AgentSystemToolError', code: 'invalid_arguments', message: 'private-sentinel' },
+        genericReason,
+      ],
+      [new AgentSystemToolError('execution_failed', 'private-sentinel'), genericReason],
+    ] as const) {
+      const logs: string[] = [];
+      const environmentCalls: string[] = [];
+      const auditEvents: AgentSystemAuditEvent[] = [];
+      const runtime = createRuntime({
+        logs,
+        environmentCalls,
+        auditEvents,
+        resolveExecutable: async () => assert.fail('must not resolve an executable'),
+        runCli: async () => assert.fail('must not execute'),
+      });
+      await assert.rejects(
+        runtime.executeCli(
+          createToolTestDefinition({
+            validate() {
+              throw failure;
+            },
+            authorize() {
+              assert.fail('must not authorize');
+            },
+          }),
+          { argument: 'private-argument', stdin: 'private-stdin' },
+          { agentId: 'data', source: 'command' },
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof AgentSystemToolError);
+          assert.notEqual(error, failure);
+          assert.equal(error.code, 'invalid_arguments');
+          assert.equal(error.message, reason);
+          assert.equal(error.credentialRejected, false);
+          assert.equal(error.providerDiagnostic, undefined);
+          assert.equal(error.failureDiagnostic, undefined);
+          assert.equal(error.cause, undefined);
+          return true;
+        },
+      );
+      assert.deepEqual(environmentCalls, []);
+      assert.deepEqual(auditEvents, []);
+      assert.equal(logs.length, 1);
+      assert.match(logs[0]!, /stage="validation".*code="invalid_arguments"/u);
+      assert.doesNotMatch(logs.join(''), /private|Use the managed|AGENT_TOKEN/u);
+    }
+  });
+
   it('should log bounded admission failures before credentials without logging input or upstream prose', async () => {
     for (const stage of [
       'configuration',

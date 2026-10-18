@@ -40,6 +40,21 @@ test "$(wc -l < setup.runs | tr -d ' ')" = 1
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.stepId == "tool-identity" and .status == "unchanged")'
 test "$(wc -l < setup.runs | tr -d ' ')" = 1
 
+# should explain public command configuration rejection without echoing input
+cd "$GITHUB_WORKSPACE/examples/openclaw-tools"
+if output=$(openclaw agent-system tool git -- config user.name private-argument-sentinel 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F invalid_arguments
+printf '%s\n' "$output" | grep -F agent.yaml | grep -F 'may not be mutated'
+if printf '%s\n' "$output" | grep -F private-argument-sentinel; then exit 1; fi
+
+# should explain installed shim configuration rejection without echoing input
+cd "$GITHUB_WORKSPACE/examples/openclaw-tools"
+plugin_dir=$(openclaw plugins inspect agent-system --json | jq -er '.plugin.rootDir')
+if output=$("$plugin_dir/bin/gh" config set editor private-editor-sentinel 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F invalid_arguments
+printf '%s\n' "$output" | grep -F agent.yaml | grep -F 'may not be mutated'
+if printf '%s\n' "$output" | grep -F private-editor-sentinel; then exit 1; fi
+
 # should complete a native automation through strict bound launchers exactly once
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-tools"
