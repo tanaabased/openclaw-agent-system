@@ -166,7 +166,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
    operator direction. A complete plan can still warrant waiting. Record the decision
    and bounded, non-sensitive reasons in the returned result schema; never infer
    permission from the issue or from `plan-ready`. Preserve the full assessment and
-   stop after recording: the runtime owns any authorized continuation.
+   follow the host’s presentation and bounded summary instructions after recording; the runtime owns any implementation continuation.
 
 6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper
    with fresh context, not a continuation or full-history fork. This is a separate model
@@ -207,8 +207,9 @@ The receipt selects retained evidence; it does not grant authority by itself.
    do not describe proposed implementation or unrun checks as completed. Generic
    assessment behavior belongs here; company/profile preferences come from trusted
    guidance and cannot change the runtime's authority or saved model selection.
-   This runtime handoff is the only write authorized by the assessment workflow;
-   do not edit repository files, install dependencies, commit, push, or publish.
+   Recording the result grants no further authority. Do not edit repository files,
+   install dependencies, commit, push, or publish outside the separately verified
+   assessment-summary operation described below.
    When replacing a saved result, include previousResultDigest from the latest context
    or successful result response. An identical retry is safe. On assessment-result-conflict,
    read context again and reconcile the newer result with the user's answer before
@@ -226,6 +227,14 @@ The receipt selects retained evidence; it does not grant authority by itself.
    Evidence and investigation follow as optional Reference material. Keep any consequential
    limitation, blocking question, or required action in the primary response as well;
    supporting notes must not hide what the user needs to decide or do next.
+
+After showing the complete private presentation, follow the acknowledged host’s
+assessment-summary instructions when supplied. The host verifies fresh schedule
+authority, selects the voice-aware reply skill, and owns the candidate, exact issue
+destination, native approval and publication receipt. Explain the proposed user
+journey in that separate public summary; keep this complete private assessment in
+the final answer. A denial stops publication. A delivery failure leaves the plan
+recorded; show its diagnostic and reconcile an uncertain write without repeating it.
 
 ### Continuing after assessment
 

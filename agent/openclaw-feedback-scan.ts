@@ -1,3 +1,5 @@
+import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
+import redactFeedback from './feedback-redaction.ts';
 import { reconcileAnnouncement } from './delivery-announcement.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -140,8 +142,16 @@ export async function scanOpenClawFeedback(input: {
           ownCommentIds.push(receipt.nodeId);
         }
         const common = {
-          ownCommentIds,
           state: feedback,
+          ownCommentIds: async () => [
+            ...ownCommentIds,
+            ...(await assessmentSummaryOwnPublications(
+              record,
+              intake,
+              { client: provider! },
+              redactFeedback,
+            )),
+          ],
           client: provider,
           policy: manifest.github!.notifications!,
           now,

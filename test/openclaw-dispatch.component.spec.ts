@@ -221,6 +221,13 @@ describe('agent/openclaw issue dispatch', () => {
                 return {
                   skills: [
                     {
+                      name: 'agent-system-feedback-reply',
+                      source: 'openclaw-plugins',
+                      filePath: join(root, 'SKILL.md'),
+                      eligible: true,
+                      modelVisible: true,
+                    },
+                    {
                       name: 'agent-system-issue-assessment',
                       source: 'openclaw-plugins',
                       filePath: join(root, 'SKILL.md'),
@@ -1635,6 +1642,97 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).assessmentTurn?.status, 'completed');
     assert.equal(sends().length, 1);
   });
+
+  for (const loseResponse of [false, true]) {
+    it(`should retain one assessment summary in openclaw after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await context(input.id);
+      const recorded = await submit(input.id);
+      assert.ok(
+        'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
+      );
+      let writes = 0;
+      let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
+      service.dependencies.feedbackConnect = async () => ({
+        ...fixture.client,
+        getItemContext: async () => ({
+          title: 'issue',
+          body: '',
+          comments: [],
+          labels: [],
+          truncated: false,
+        }),
+        listIssueComments: async () => ({ comments: [], truncated: false }),
+        getIssueComment: async () => {
+          throw new Error('unexpected source lookup');
+        },
+        createIssueComment: async (_o, _n, number, body) => {
+          assert.equal(number, 3);
+          writes++;
+          receipt = { nodeId: 'SUMMARY', databaseId: 901, body };
+          if (loseResponse) throw new Error('response-lost');
+          return receipt;
+        },
+        findOwnIssueComment: async () => receipt,
+        replies: {
+          create: async () => {
+            throw new Error('unexpected reply');
+          },
+          find: async () => undefined,
+        },
+      });
+      const summary = async (
+        operation: 'compose' | 'candidate' | 'publish' | 'reconcile',
+        digest?: string,
+        publicText?: string,
+      ) =>
+        service.run(manifest, root, assessor(input.id), {
+          action: 'summary',
+          id: input.id,
+          operation,
+          digest,
+          publicText,
+        });
+      const composed = await summary('compose');
+      assert.equal(composed.status, 'composition-ready');
+      assert.ok('digest' in composed);
+      assert.equal(
+        (
+          await summary(
+            'candidate',
+            composed.digest,
+            'The proposal would show your result immediately, so you can keep going.',
+          )
+        ).status,
+        'candidate-recorded',
+      );
+      const preview = await summary('publish');
+      assert.ok('digest' in preview);
+      const competing = await Promise.allSettled([
+        summary('publish', preview.digest),
+        summary('publish', preview.digest),
+      ]);
+      assert.ok(
+        competing.some(
+          (entry) =>
+            entry.status === 'fulfilled' &&
+            entry.value.status === (loseResponse ? 'blocked' : 'published'),
+        ),
+      );
+      assert.equal(writes, 1);
+      service = new OpenClawDispatch(service.dependencies);
+      if (loseResponse) {
+        assert.equal((await summary('publish', preview.digest)).status, 'reconcile-required');
+        assert.equal((await summary('reconcile')).status, 'published');
+      }
+      assert.equal((await summary('compose')).status, 'published');
+      assert.equal(writes, 1);
+      assert.deepEqual((await record()).result, plan);
+      assert.equal((await record()).assessmentSummaries?.[0]?.receipt?.nodeId, 'SUMMARY');
+    });
+  }
 
   it('should retain a full assessment with native caller binding and free capacity without another send', async () => {
     const input = await next();

@@ -45,6 +45,9 @@ for (const [scenario, itemType] of [
         });
         await write('feedback-source', { node_id: 'source' });
         await write('feedback-replies', [
+          ...(itemType === 'issue'
+            ? [{ node_id: 'summary', user: { login: 'tanaabot' }, body: 'Proposed plan.' }]
+            : []),
           {
             node_id: 'source',
             user: { login: 'emoriwan' },

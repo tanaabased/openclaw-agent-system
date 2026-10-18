@@ -217,6 +217,88 @@ describe('agent/codex-dispatch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  for (const loseResponse of [false, true]) {
+    it(`should retain one assessment summary in codex after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+      const prepared = await prepare();
+      created();
+      const child = { threadId: 'issue-thread' };
+      await request('context', { id: prepared.id }, child);
+      const privateResult = {
+        ...result,
+        fullAssessment: 'The complete private technical plan and its limits.',
+      };
+      const recorded = await request('result', { id: prepared.id, result: privateResult }, child);
+      assert.ok(String(recorded.presentation).includes(privateResult.fullAssessment));
+      const current = await selectCodexIntake(pluginData, deps);
+      const authority = {
+        workflow: 'issue-assignment' as const,
+        automationId: 'native-intake',
+        sourceThreadId: 'intake-thread',
+        policyDigest: automationHash(current.manifest.github!.notifications),
+        definitionDigest: 'd'.repeat(64),
+      };
+      deps.activation = async () => ({
+        sourceThreadId: 'intake-thread',
+        schedule: {
+          current: authority,
+          saved: { ...authority, version: 1, capabilities: ['assessment-summary'] },
+        },
+      });
+      deps.summaryAuthority = async () => {};
+      let writes = 0;
+      let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
+      deps.feedbackConnect = async () =>
+        ({
+          comments: {
+            createIssueComment: async (_o: string, _n: string, _i: number, body: string) => {
+              writes++;
+              receipt = { nodeId: 'SUMMARY', databaseId: 900, body };
+              if (loseResponse) throw new Error('response-lost');
+              return receipt;
+            },
+            findOwnIssueComment: async () => receipt,
+          },
+        }) as unknown as Awaited<
+          ReturnType<NonNullable<CodexDispatchDependencies['feedbackConnect']>>
+        >;
+      const summary = (input: Record<string, unknown>) =>
+        request('summary', { id: prepared.id, ...input }, child);
+      const composed = await summary({ operation: 'compose' });
+      assert.equal(composed.status, 'composition-ready');
+      assert.equal((composed.source as { kind: string }).kind, 'assessment');
+      assert.equal(
+        (
+          await summary({
+            operation: 'candidate',
+            digest: composed.digest,
+            publicText:
+              'The proposed change would show your result immediately, so you can keep going.',
+          })
+        ).status,
+        'candidate-recorded',
+      );
+      const preview = await summary({ operation: 'publish' });
+      assert.equal(preview.destination, 'https://github.com/owner/repo/issues/3');
+      assert.equal(
+        (await summary({ operation: 'publish', digest: preview.digest })).status,
+        loseResponse ? 'blocked' : 'published',
+      );
+      if (loseResponse) {
+        assert.equal(
+          (await summary({ operation: 'publish', digest: preview.digest })).status,
+          'reconcile-required',
+        );
+        assert.equal((await summary({ operation: 'reconcile' })).status, 'published');
+      }
+      assert.equal((await summary({ operation: 'compose' })).status, 'published');
+      assert.equal(writes, 1);
+      assert.deepEqual(
+        (await request('context', { id: prepared.id }, child)).previousResult,
+        privateResult,
+      );
+    });
+  }
+
   it('should fill available slots past running assessments and retain the remaining queue and notices', async () => {
     const items = [
       fixture.item,

@@ -1,5 +1,6 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
+import { assessmentSummaryRequestProperties } from './assessment-summary-state.ts';
 import { assessmentSchema } from './model-routing.ts';
 
 const id = Type.String();
@@ -27,6 +28,7 @@ const schemas = {
   }),
   reconcile: object({ id, receipt: Type.Optional(Type.Unknown()) }),
   context: object({ id }),
+  summary: object({ id, ...assessmentSummaryRequestProperties }),
   result: object({
     id,
     result: Type.Optional(Type.Unknown()),

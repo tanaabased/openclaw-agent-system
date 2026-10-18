@@ -394,7 +394,12 @@ export async function inspectCodexDispatchActivation(
   pausedRecovery = false,
   retainedWork = false,
   capability:
-    'assessment' | 'implementation' | 'review' | 'publication' | 'feedback' = 'assessment',
+    | 'assessment'
+    | 'implementation'
+    | 'review'
+    | 'publication'
+    | 'feedback'
+    | 'assessment-summary' = 'assessment',
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
@@ -440,7 +445,8 @@ export async function inspectCodexDispatchActivation(
           selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
           selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
         ).length === 0
-      : !['work', 'auto'].includes(
+      : capability !== 'assessment-summary' &&
+        !['work', 'auto'].includes(
           selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
         )) ||
     !job ||
@@ -465,10 +471,12 @@ export async function inspectCodexDispatchActivation(
       saved: {
         ...authority,
         version: 1 as const,
-        capabilities: (capability === 'feedback'
-          ? ['feedback', 'publication']
-          : ['assessment', 'implementation', 'publication']) as Array<
-          'assessment' | 'implementation' | 'publication' | 'feedback'
+        capabilities: (capability === 'assessment-summary'
+          ? ['assessment-summary']
+          : capability === 'feedback'
+            ? ['feedback', 'publication']
+            : ['assessment', 'implementation', 'publication']) as Array<
+          'assessment' | 'implementation' | 'publication' | 'feedback' | 'assessment-summary'
         >,
       },
     },

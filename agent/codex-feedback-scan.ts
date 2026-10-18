@@ -1,3 +1,5 @@
+import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
+import redactFeedback from './feedback-redaction.ts';
 import { reconcileAnnouncement } from './delivery-announcement.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -89,8 +91,16 @@ export async function scanCodexFeedback(input: {
         ownCommentIds.push(receipt.nodeId);
       }
       const source = {
-        ownCommentIds,
         state: feedback,
+        ownCommentIds: async () => [
+          ...ownCommentIds,
+          ...(await assessmentSummaryOwnPublications(
+            record,
+            admitted,
+            { client: provider.comments },
+            redactFeedback,
+          )),
+        ],
         client: provider.comments,
         policy,
         now,

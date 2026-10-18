@@ -66,7 +66,7 @@ export async function discoverFeedback(input: {
   nodeId: string;
   itemType: 'issue' | 'pull-request';
   now: number;
-  ownCommentIds?: readonly string[];
+  ownCommentIds?: readonly string[] | (() => Promise<readonly string[]>);
   discovery?: { budget: DiscoveryBudget; save(): Promise<void> };
 }) {
   const { state, owner, name, number } = input;
@@ -140,6 +140,8 @@ export async function discoverFeedback(input: {
       sources.push(reviewReplyFeedback(review, reply, parent));
     }
   }
+  const ownCommentIds =
+    typeof input.ownCommentIds === 'function' ? await input.ownCommentIds() : input.ownCommentIds;
   const revisions = new Map<string, string>();
   const next = { ...baseline };
   const pending: FeedbackSourceEvent[] = [];
@@ -162,7 +164,7 @@ export async function discoverFeedback(input: {
       continue;
     // provider receipts, not copied markers or account identity, identify our own replies.
     if (
-      input.ownCommentIds?.includes(source.nodeId) ||
+      ownCommentIds?.includes(source.nodeId) ||
       state.events.some((event) => event.receipt?.nodeId === source.nodeId)
     )
       continue;
