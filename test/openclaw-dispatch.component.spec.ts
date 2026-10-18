@@ -1366,11 +1366,13 @@ describe('agent/openclaw issue dispatch', () => {
     inputReceipts[0]!.cancelled = true;
     const cancelled = await start(input.id);
     assert.ok('code' in cancelled && cancelled.code === 'dispatch-turn-cancelled');
+    assert.equal(openClawCapacity([await record()], 1).occupied, 1);
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);
     waitResult = { status: 'error' };
     const failed = await finish(input.id);
     assert.ok('code' in failed && failed.code === 'dispatch-turn-failed');
+    assert.equal(openClawCapacity([await record()], 1).occupied, 0);
     assert.equal((await record()).firstTurn?.replyEventId, undefined);
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);

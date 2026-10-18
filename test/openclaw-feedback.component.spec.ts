@@ -456,6 +456,8 @@ describe('agent/openclaw-feedback', () => {
     idle.feedback = { baseline: {}, events: [] };
     assert.deepEqual(openClawCapacity([record, operator, idle], 3), { occupied: 2, available: 1 });
     event.phase = 'blocked';
+    assert.equal(openClawCapacity([record], 3).occupied, 1);
+    event.turn!.inactive = true;
     assert.deepEqual(openClawCapacity([record, operator, idle], 3), { occupied: 1, available: 2 });
   });
 });

@@ -10,6 +10,7 @@ export const issueTurnSchema = Type.Object(
       Type.Literal('consumed'),
       Type.Literal('completed'),
     ]),
+    inactive: Type.Optional(Type.Boolean()),
     consumedByEventId: Type.Optional(text),
     replyEventId: Type.Optional(text),
     executionModel: Type.Optional(text),

@@ -80,6 +80,7 @@ export const dispatchRecordProperties = {
   notice: Type.Optional(hash), // legacy presentation metadata; never used for intake decisions.
   dispatchedAt: Type.Optional(Type.Integer({ minimum: 0 })),
   intakeReportedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  nativeInactive: Type.Optional(Type.Boolean()),
   retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
 };
 export type SharedDispatchRecord = Static<TObject<typeof dispatchRecordProperties>> & {

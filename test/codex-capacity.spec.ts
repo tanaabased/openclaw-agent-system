@@ -17,6 +17,17 @@ const record = (phase: DispatchRecord['phase'], events: FeedbackEvent['phase'][]
     feedback: { baseline: {}, events: events.map((phase) => ({ phase }) as FeedbackEvent) },
   }) as DispatchRecord;
 describe('agent/codex-capacity', () => {
+  it('should require native inactivity before releasing blocked or retired creations', () => {
+    const item = record('blocked');
+    item.effective = { status: 'verified' };
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.retired = { at: 1, by: 'operator' };
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.nativeInactive = true;
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+    item.feedback!.events.push({ phase: 'running' } as FeedbackEvent);
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+  });
   it('should count feedback and assignments in one pool without double-counting a busy owner', () => {
     const active = [
       record('assessing', ['queued', 'queued']),

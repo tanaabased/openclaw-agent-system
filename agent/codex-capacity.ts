@@ -2,12 +2,13 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 /** a conversation occupies one slot, regardless of its pending comment count. */
 export function codexItemOccupied(record: DispatchRecord): boolean {
-  if (record.retired || record.reset || !record.request) return false;
+  if (record.reset || !record.request) return false;
   return (
     (!record.handoff &&
+      !(record.retired && record.nativeInactive) &&
       (record.phase === 'creating' ||
         record.phase === 'assessing' ||
-        (record.phase === 'blocked' && !record.effective))) ||
+        (record.phase === 'blocked' && !record.nativeInactive))) ||
     Boolean(
       !record.handoff &&
       record.continuation &&

@@ -578,6 +578,36 @@ export async function runCodexDispatch(
           await save();
           return { status, changed: false };
         };
+        // observe blocked owners without dispatching, renaming, or requiring fresh assignment authority.
+        for (const record of state.records.filter(
+          (entry) =>
+            entry.request &&
+            entry.threadId &&
+            !entry.handoff &&
+            (entry.phase === 'blocked' || entry.retired),
+        )) {
+          try {
+            const found = await withNative(current, deps, (native) =>
+              native.find({
+                sourceThreadId: record.sourceThreadId,
+                prompt: record.request!.prompt,
+                createdAfter: record.createdAt,
+                threadId: record.threadId,
+              }),
+            );
+            record.nativeInactive = Boolean(
+              found &&
+              found.id === record.threadId &&
+              found.cwd === record.worktree &&
+              found.turnId &&
+              found.turnEnded &&
+              ['idle', 'notLoaded'].includes(found.status),
+            );
+          } catch {
+            // an unreadable owner is not evidence of inactivity.
+            record.nativeInactive = false;
+          }
+        }
         for (const pending of state.records.filter(
           (record) =>
             !record.retired &&

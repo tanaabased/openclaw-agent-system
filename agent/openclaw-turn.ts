@@ -52,7 +52,13 @@ export async function reconcileOpenClawTurn(input: {
       .filter((entry) => entry.runId === turn.runId);
     if (receipts.length > 1) throw new Error('dispatch-turn-receipt-invalid');
     const receipt = receipts[0];
-    if (receipt?.cancelled === true) throw new Error('dispatch-turn-cancelled');
+    const info = sessionObject(history.sessionInfo);
+    delete turn.inactive;
+    if (receipt?.cancelled === true) {
+      turn.inactive = info.hasActiveRun === false && receipt.queued !== true;
+      await save();
+      throw new Error('dispatch-turn-cancelled');
+    }
     const consumedByEventId = !receipt
       ? consumedInputEvent(history.messages, turn)
       : receipt.state === 'consumed' &&
@@ -74,9 +80,11 @@ export async function reconcileOpenClawTurn(input: {
       await request('agent.wait', { runId: turn.runId, timeoutMs: 0 }),
     );
     if (observed.runId !== turn.runId) throw new Error('dispatch-turn-run-mismatch');
-    if (observed.status === 'error' || observed.stopReason === 'aborted')
+    if (observed.status === 'error' || observed.stopReason === 'aborted') {
+      turn.inactive = info.hasActiveRun === false && receipt?.queued !== true;
+      await save();
       throw new Error('dispatch-turn-failed');
-    const info = sessionObject(history.sessionInfo);
+    }
     const reply = issueTurnReply(history.messages, turn.runId);
     if (reply && turn.status === 'consumed' && info.hasActiveRun === false) {
       let executionModel: string | undefined;
