@@ -91,7 +91,7 @@ of the public GitHub response.
 ```markdown
 > ## 📥 Issue assigned
 >
-> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Please begin working on it in `work` mode.
+> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Assess this issue and prepare a plan. Stop before implementation or GitHub publication.
 ```
 
 ```markdown
@@ -100,13 +100,15 @@ of the public GitHub response.
 > [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18). Please begin working on it in `plan` mode.
 ```
 
-In the native OpenClaw issue conversation, show assignment → model routing →
-selected assessment instructions in that order. Assignment and routing remain visible
-with debug off; instructions require debug on. Use the shared components, canonical
-assignment actor and source, and retained skill/guidance. Keep selected model/effort,
-native settings readback, and execution evidence separately labeled. A successful
-renderer test does not prove native delivery. Full assessments and plans remain
-outside the cards; model-only provider facts never belong in them.
+For issue assessment, show the shared assignment card with its verified
+assigning actor, issue link, and assessment-stage action. Do not add model-routing or
+assessment-instruction cards to the opening, including with debug enabled. Keep trusted
+assessment instructions and retained routing, skill, and guidance available to the
+agent. Show routing beside the resulting assessment, followed by selected assessment
+instructions only when debug is enabled. Keep selected model/effort, native settings
+readback, and execution evidence separately labeled. A successful renderer test does
+not prove native delivery. Full assessments and plans remain outside the cards;
+model-only provider facts never belong in them.
 
 ## Direct Message
 

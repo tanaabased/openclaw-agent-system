@@ -1588,19 +1588,19 @@ describe('agent/openclaw issue dispatch', () => {
   }
 
   for (const debug of [false, true]) {
-    it(`should deliver ordered issue entry cards with debug ${debug ? 'on' : 'off'} without provider payloads`, async () => {
+    it(`should deliver only the issue assignment card with debug ${debug ? 'on' : 'off'} without provider payloads`, async () => {
       manifest.debug = debug;
       const input = await next();
       await prepare(input);
       await assess(input.id);
       const message = String(sends()[0]!.params.message);
-      assert.ok(message.indexOf('Issue assigned') < message.indexOf('Model routing'));
+      assert.match(message, /Issue assigned/);
+      assert.match(message, /Assess this issue and prepare a plan/);
+      assert.ok(!message.includes('Model routing'));
       assert.match(message, /https:\/\/github.com\/receiver/);
       assert.match(message, /owner\/repo#3/);
-      assert.match(message, /Execution.*not independently verified/);
-      assert.equal(message.includes('Assessment instructions'), debug);
-      if (debug)
-        assert.ok(message.indexOf('Model routing') < message.indexOf('Assessment instructions'));
+      assert.ok(!message.includes('Assessment instructions'));
+      assert.ok(!message.includes('Effective settings'));
       assert.doesNotMatch(message, /Return the missing result/);
       const snapshot = (await record()).context;
       service.dependencies.connect = async () => ({
@@ -1864,6 +1864,7 @@ describe('agent/openclaw issue dispatch', () => {
       const recorded = await submit(input.id);
       assert.ok('presentation' in recorded && typeof recorded.presentation === 'string');
       assert.equal(recorded.presentation.includes('Assessment instructions'), debug);
+      assert.ok(recorded.presentation.includes('Model routing'));
       const reloaded = await context(input.id);
       assert.ok('previousPresentation' in reloaded);
       assert.equal(reloaded.previousPresentation, recorded.presentation);

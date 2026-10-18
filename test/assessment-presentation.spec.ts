@@ -156,6 +156,58 @@ describe('channels/github/presentation/assessment-result', () => {
     assert.ok(!renderAssessmentResult(results[0]!, context).includes('Assessment instructions'));
   });
 
+  it('should keep routing and outcome content after assessment prose for every result with debug on and off', () => {
+    const results: AssessmentResult[] = [
+      {
+        ...common,
+        outcome: 'plan-ready',
+        assessment: 'Plan assessment prose.',
+        planSummary: 'Plan summary.',
+        plan: 'Complete plan.',
+        decision: { action: 'proceed', reasons: ['Bounded work.'] },
+      },
+      {
+        ...common,
+        outcome: 'clarification-needed',
+        assessment: 'Question assessment prose.',
+        questions: ['Question content.'],
+      },
+      {
+        ...common,
+        outcome: 'operator-setup-blocker',
+        code: 'setup-required',
+        remediation: 'Blocker action.',
+      },
+    ];
+    for (const result of results) {
+      for (const debug of [false, true]) {
+        const output = renderAssessmentResult(result, {
+          ...context,
+          debug,
+          assessment: { defaultSkill: true, skill: { name: 'agent-system-issue-assessment' } },
+        });
+        const routing = output.indexOf('> ## 🧠 Model routing');
+        const instructions = output.indexOf('> ## 🧩 Assessment instructions');
+        assert.ok(routing >= 0);
+        if ('assessment' in result) assert.ok(output.indexOf(result.assessment) < routing);
+        assert.equal(instructions >= 0, debug);
+        if (debug) assert.ok(routing < instructions);
+        if (result.outcome === 'plan-ready')
+          assert.ok(output.indexOf('## Plan summary') > (debug ? instructions : routing));
+        if (result.outcome === 'clarification-needed')
+          assert.ok(output.indexOf('## Question') > (debug ? instructions : routing));
+        if (result.outcome === 'operator-setup-blocker') {
+          assert.ok(output.indexOf('## Action') >= 0);
+          assert.ok(output.indexOf('## Action') < routing);
+        }
+        if (result.outcome === 'plan-ready') {
+          assert.ok(output.indexOf('Auto mode decision') > (debug ? instructions : routing));
+          assert.ok(output.indexOf('## Full plan') > output.indexOf('## Plan summary'));
+        }
+      }
+    }
+  });
+
   it('should preserve inline guidance as literal text without interpreting its markdown', () => {
     const guidance = {
       source: 'inline' as const,
