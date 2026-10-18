@@ -11,6 +11,7 @@ import type {
   RegisteredAgentSystemTool,
 } from './types.ts';
 import { requiredToolExecutables } from './executable-requirements.ts';
+import { validationErrorMessage } from './error.ts';
 
 type ExecuteTool<TParameters extends TSchema> = (
   runtime: AgentSystemToolRuntime,
@@ -87,8 +88,14 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
               const input = event.params as Static<TParameters>;
               try {
                 definition.tool.validate?.(input, configuration);
-              } catch {
-                return { allow: false, reason: `The ${definition.tool.name} request is invalid.` };
+              } catch (error) {
+                return {
+                  allow: false,
+                  reason: validationErrorMessage(
+                    error,
+                    `The ${definition.tool.name} request is invalid.`,
+                  ),
+                };
               }
               const operation = definition.tool.classify(input, configuration);
               const decision = await definition.authorization?.authorize?.(
