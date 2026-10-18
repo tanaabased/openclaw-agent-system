@@ -437,6 +437,7 @@ runCodexRuntime().catch((error: unknown) => {
         event: 'failure',
         changed: true,
         code: 'code' in details ? details.code : undefined,
+        providerDiagnostic: evidence.providerDiagnostic,
       })
     : undefined;
   process.stderr.write(

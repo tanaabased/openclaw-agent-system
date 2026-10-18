@@ -107,6 +107,17 @@ export class IntakeError extends Error {
 }
 
 export function intakeRemediation(code: string): string {
+  if (/^intake-github-(?:unknown|transport|rate-limit|authentication|permission)$/.test(code)) {
+    if (code.endsWith('authentication'))
+      return 'GitHub rejected authentication. Check the current GitHub credential and retry this scan; preserve the checkpoint.';
+    if (code.endsWith('permission'))
+      return 'GitHub denied access. Check the granted repository permissions; preserve the checkpoint.';
+    if (code.endsWith('rate-limit'))
+      return 'Wait for the reported provider cooldown; the next eligible scan retries without resetting the checkpoint.';
+    if (code.endsWith('transport'))
+      return 'Retry this scan when connectivity returns; preserve the checkpoint and any pending work.';
+    return 'Inspect the bounded provider diagnostic; this failure was not classified. Preserve the checkpoint and do not change credentials without evidence of an authentication failure.';
+  }
   if (code.includes('permission'))
     return 'Review the exact operation in the native approval prompt. Approval does not prove successful or unattended execution; verify the next run.';
   if (code.includes('profile') || code.includes('model'))
@@ -121,7 +132,7 @@ export function intakeRemediation(code: string): string {
     return 'Restore the trusted binding and policy, or authorize Install to pause the retained intake job.';
   if (code.includes('policy') || code.includes('activation') || code.includes('reserved'))
     return 'Review the current issue-assignment policy and authorize Install reconciliation before scanning.';
-  return 'Check native GitHub access and connectivity. Retained evidence and the last successful checkpoint remain available.';
+  return 'Inspect the diagnostic for the affected operation before retrying. Retained evidence and the last successful checkpoint remain available; no credential failure has been established.';
 }
 
 /** host location mapping only; the openclaw production monitor does not consume this store. */

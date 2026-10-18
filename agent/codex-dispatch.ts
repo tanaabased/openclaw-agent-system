@@ -1,3 +1,4 @@
+import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
@@ -103,6 +104,8 @@ function code(error: unknown) {
   return workflowFailure(error, 'dispatch-operation-failed').code;
 }
 function remediation(value: string) {
+  const recovery = workflowRecovery(value);
+  if (recovery) return recovery.next;
   if (value === 'dispatch-native-receipt-reused')
     return "This native receipt belongs to another assessment, including a retired attempt. Reconcile only the receipt returned by this prepared request's create_thread call, or omit receipt to recover its actual creation. Do not create again or reuse history.";
   if (value.startsWith('dispatch-assessment-skill-'))
@@ -123,7 +126,7 @@ function remediation(value: string) {
     return 'Restore current issue assignment, repository access, and configured authority before retrying. Retain the existing chat and evidence.';
   if (value.includes('result'))
     return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat to finish the assessment and submit its structured result; do not launch a replacement.';
-  return 'Inspect the retained native creation receipt, chat, and worktree. Restore host access or reconcile the existing creation; never repeat an uncertain create.';
+  return 'Inspect this operation and the retained native creation receipt, chat, and worktree. Resolve the reported condition, then reconcile the existing creation; never repeat an uncertain create or change credentials without evidence of an authentication failure.';
 }
 function blocker(
   record: DispatchRecord,
@@ -167,7 +170,9 @@ function blocker(
     outcome: 'operator-setup-blocker',
     code: value,
     summary: 'The issue assessment needs setup or recovery.',
-    remediation: action + detail,
+    remediation:
+      (workflowRecovery(value, workflowFailure(error, value).providerDiagnostic)?.next ?? action) +
+      detail,
     evidence: [{ source: 'Agent System dispatch', status: 'observed', detail: value }],
     progress: record.result?.progress ?? {
       completed: record.threadId ? ['Retained native issue chat ' + record.threadId + '.'] : [],

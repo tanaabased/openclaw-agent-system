@@ -1,3 +1,4 @@
+import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
@@ -99,7 +100,7 @@ export default function openclawIntakeReport(input: {
             ? /sync|required|disabled|ownership/.test(failure.code)
               ? 'Run Agent System Install to reconcile the owned intake automation. Nothing was repaired automatically.'
               : 'Inspect the intake automation execution and delivery health with supported Agent System Doctor. Preserve its receipts; retry observation when service access is available.'
-            : intakeRemediation(failure.code)),
+            : (workflowRecovery(failure.code)?.next ?? intakeRemediation(failure.code))),
     );
   }
   if (failures.length) lines.push('');

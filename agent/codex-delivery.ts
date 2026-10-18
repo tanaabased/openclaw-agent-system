@@ -493,11 +493,12 @@ export default async function runCodexDelivery(
         } catch (error) {
           signal.throwIfAborted();
           if (codexHostAccess(error)) throw error;
-          const { code } = workflowFailure(error, 'delivery-provider-failed');
+          const evidence = workflowFailure(error, 'delivery-provider-failed');
+          const { code } = evidence;
           const notice = codexIssueNotice({
             event: 'failure',
             changed: true,
-            code,
+            ...evidence,
             ...(delivery.pullRequest
               ? {
                   facts: [
