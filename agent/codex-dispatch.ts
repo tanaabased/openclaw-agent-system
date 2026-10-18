@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
 import assessmentSummary from './assessment-summary.ts';
@@ -98,13 +99,7 @@ function issueUrl(record: IntakeRecord) {
 }
 function code(error: unknown) {
   if (codexHostAccess(error)) return 'codex-host-access-required';
-  const value =
-    nativeObject(error) && typeof error.code === 'string'
-      ? error.code
-      : error instanceof Error
-        ? error.message
-        : '';
-  return /^[a-z][a-z0-9-]{0,127}$/u.test(value) ? value : 'dispatch-host-unavailable';
+  return workflowFailure(error, 'dispatch-operation-failed').code;
 }
 function remediation(value: string) {
   if (value === 'dispatch-native-receipt-reused')
@@ -567,6 +562,7 @@ export async function runCodexDispatch(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
         );
+        Object.assign(result, workflowFailure(error, 'dispatch-operation-failed'));
         result.changed = previousCode !== code(error);
         if ('notify' in result) result.notify = result.changed;
         await save();

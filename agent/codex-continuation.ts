@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
@@ -627,10 +628,7 @@ export default async function runCodexContinuation(
           if (codexHostAccess(error) || (input.action !== 'next' && input.action !== 'reconcile'))
             throw error;
           if (record.continuation) {
-            record.continuation.code =
-              error instanceof Error && /^[a-z][a-z0-9-]{0,127}$/u.test(error.message)
-                ? error.message
-                : 'continuation-host-unavailable';
+            record.continuation.code = workflowFailure(error, 'continuation-operation-failed').code;
             record.continuation.retryAfter = (deps.now ?? Date.now)() + 300000;
             scheduleDispatchRetry(
               record.continuation,
@@ -650,7 +648,7 @@ export default async function runCodexContinuation(
               ? dispatchFailurePhase(record.continuation, record.continuation.code!, error)
               : 'waiting',
             id: record.id,
-            code: record.continuation?.code,
+            ...workflowFailure(error, 'continuation-operation-failed'),
             nextAction: 'next',
           };
         }

@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
@@ -486,11 +487,7 @@ export default async function runCodexDelivery(
         } catch (error) {
           signal.throwIfAborted();
           if (codexHostAccess(error)) throw error;
-          const message = error instanceof Error ? error.message : '';
-          const code =
-            /^(?:dispatch|delivery|github-delivery|continuation|workflow)-[a-z-]+$/u.test(message)
-              ? message
-              : 'delivery-provider-failed';
+          const { code } = workflowFailure(error, 'delivery-provider-failed');
           const notice = codexIssueNotice({
             event: 'failure',
             changed: true,

@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import assessmentSummary from './assessment-summary.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
@@ -171,7 +172,7 @@ export default class OpenClawDispatch {
       status,
       id,
       nextAction: 'next' as const,
-      code,
+      ...workflowFailure(error, code),
       ...(stage ? { stage } : {}),
       ...(error instanceof IssueSessionMismatchError ? { mismatchedField: error.field } : {}),
     };

@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
@@ -403,6 +404,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
 
 runCodexRuntime().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'unknown Agent System Codex failure';
+  const evidence = workflowFailure(error, 'workflow-operation-failed');
   const details = codexHostAccess(error)
     ? { code: 'codex-host-access-required' }
     : error instanceof CodexDeliveryFailure
@@ -422,7 +424,7 @@ runCodexRuntime().catch((error: unknown) => {
                 message,
               )
             ? { code: message }
-            : {};
+            : { code: evidence.code };
   const notice = ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
     process.argv[2] ?? '',
   )
@@ -433,7 +435,7 @@ runCodexRuntime().catch((error: unknown) => {
       })
     : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

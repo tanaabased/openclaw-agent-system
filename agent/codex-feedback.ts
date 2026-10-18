@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
@@ -712,16 +713,8 @@ export default async function runCodexFeedback(
           }
         } catch (error) {
           if (codexHostAccess(error)) throw error;
-          const diagnostic =
-            error && typeof error === 'object' && 'code' in error
-              ? error.code
-              : error instanceof Error
-                ? error.message
-                : undefined;
-          const code =
-            typeof diagnostic === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(diagnostic)
-              ? diagnostic
-              : 'feedback-provider-unavailable';
+          const failure = workflowFailure(error, 'feedback-operation-failed');
+          const { code } = failure;
           if (event) {
             event.code = code;
             scheduleDispatchRetry(event, code, error, now);
@@ -755,7 +748,7 @@ export default async function runCodexFeedback(
                   : dispatchFailurePhase(event ?? {}, code, error),
               id: record.id,
               eventId: input.eventId,
-              code,
+              ...failure,
               ...(/(?:skill|guidance|composition-changed)/u.test(code)
                 ? {
                     next: 'Restore the configured feedback skill and guidance, then retry this retained event. No new comment or stage approval is needed; do not substitute a fallback or publish the private response.',

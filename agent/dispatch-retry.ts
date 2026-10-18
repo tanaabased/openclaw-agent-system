@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import workflowFailure from './workflow-failure.ts';
 
 export const dispatchRetryProperties = {
   retry: Type.Optional(
@@ -37,8 +37,7 @@ export function scheduleDispatchRetry(
   error: unknown,
   now: number,
 ) {
-  const diagnostic = (error as { providerDiagnostic?: ProviderDiagnostic } | null)
-    ?.providerDiagnostic;
+  const diagnostic = workflowFailure(error, code).providerDiagnostic;
   const retryable = diagnostic
     ? ['transport', 'rate-limit'].includes(diagnostic.classification)
     : transient.has(code) || /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code);
@@ -62,8 +61,7 @@ export function dispatchRetryDue(record: RetryState, now: number) {
 
 /** durable stops name an actual authority or task decision; uncertainty is waiting. */
 export function dispatchFailurePhase(record: RetryState, code: string, error?: unknown) {
-  const diagnostic = (error as { providerDiagnostic?: ProviderDiagnostic } | null)
-    ?.providerDiagnostic;
+  const diagnostic = workflowFailure(error, code).providerDiagnostic;
   if (diagnostic && ['permission', 'authentication'].includes(diagnostic.classification))
     return 'blocked' as const;
   if (
