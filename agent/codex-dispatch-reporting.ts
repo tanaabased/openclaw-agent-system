@@ -55,6 +55,24 @@ export default async function reportDispatch(
       };
     }
   }
+  const pendingDiscovery = Boolean(
+    scan.discovery ||
+    state.discoveryCycleAt ||
+    state.records.some(
+      (r) =>
+        !r.retired &&
+        !r.reset &&
+        (r.feedback?.discoveryPending || Object.keys(r.feedback?.discovery ?? {}).length),
+    ),
+  );
+  if (pendingDiscovery || state.discoveryProgress)
+    state.discoveryProgress = {
+      pending: pendingDiscovery,
+      sources: state.records.filter((r) => !r.retired && !r.reset && r.threadId).length,
+      ...(state.discoveryProgress?.pending === pendingDiscovery
+        ? { reported: state.discoveryProgress.reported }
+        : {}),
+    };
   const report = prepareDispatchReport({
     state,
     intake: scan,
@@ -67,6 +85,7 @@ export default async function reportDispatch(
   for (const record of state.records)
     for (const event of record.feedback?.events ?? [])
       if (report.sent.includes(event.id)) event.reported = true;
+  if (state.discoveryProgress) state.discoveryProgress.reported = state.discoveryProgress.pending;
   state.intakeHealth = report.health;
   // this is a report attempt, not proof of delivery; prose never gates new assignments.
   run.response = report.response;

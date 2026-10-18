@@ -10,6 +10,12 @@ on retained issues and their linked delivery PRs. Independent review requests wa
 without blocking those workflows.
 Standalone Codex uses its [native workflow controls](../../CODEX.md#github-notification-policy).
 
+Both runtimes save bounded discovery progress and resume on later polls. Ordinary
+comments are fetched by update time; unchanged history does not trigger feedback.
+OpenClaw keeps discovery inside one condition budget and wakes the coordinator for
+saved actionable work or a one-time progress/recovery card. After upgrading, run
+Install to reconcile the changed condition before relying on scheduled intake.
+
 ## CLI
 
 Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
@@ -80,6 +86,14 @@ openclaw agent-system notifications status [--agent <id>] [--repository <owner/n
 # inspect redacted state for the workspace agent.
 openclaw agent-system notifications status --json
 ```
+
+Healthy, unchanged native checks stay silent. Intake reports link started issues to
+their native conversations and show known managing, pending and slot counts. New or
+materially changed blockers appear once; verified recovery appears once. Automation
+drift directs you to supported Agent System Install; checks never repair schedules.
+An absent or disabled job cannot warn from its own run: use explicit Doctor/Install.
+Incomplete observations are not empty successful scans. Report preparation is retained
+for same-run replay; it is not proof that the final card was visibly delivered.
 
 `status` reads the native intake and dispatch records.
 The existing table and JSON envelope report baseline, capacity, item preparation,

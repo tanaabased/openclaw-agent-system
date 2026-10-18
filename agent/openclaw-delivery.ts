@@ -29,6 +29,7 @@ export default async function openClawDelivery(input: {
   feedbackEnabled: boolean;
   connect(): Promise<OpenClawDeliveryConnection>;
   assertCurrent(): Promise<void>;
+  reauthorize(): Promise<void>;
   save(): Promise<void>;
   signal: AbortSignal;
 }) {
@@ -46,6 +47,7 @@ export default async function openClawDelivery(input: {
   const connection = await input.connect();
   const git = async (argv: string[]) => {
     await assertCurrent();
+    if (argv[0] === 'push') await input.reauthorize();
     return (await connection.git(argv)).trim();
   };
   const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
@@ -122,6 +124,10 @@ export default async function openClawDelivery(input: {
     identity: connection.account.identity,
     async execute(...args) {
       await assertCurrent();
+      // The fixed provider uses explicit REST methods for writes; its GraphQL lookup is read-only.
+      const argv = args[0];
+      if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(argv[argv.indexOf('--method') + 1] ?? ''))
+        await input.reauthorize();
       return connection.account.execute(...args);
     },
   });

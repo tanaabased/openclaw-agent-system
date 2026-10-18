@@ -83,6 +83,9 @@ describe('agent/openclaw-delivery', () => {
       async save() {
         saves++;
       },
+      async reauthorize() {
+        if (revoked) throw new Error('dispatch-policy-changed');
+      },
       async assertCurrent() {
         if (revoked) throw new Error('dispatch-policy-changed');
       },

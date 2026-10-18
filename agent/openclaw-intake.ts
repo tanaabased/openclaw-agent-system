@@ -1,3 +1,4 @@
+import DiscoveryBudget from './discovery-budget.ts';
 import { realpath } from 'node:fs/promises';
 
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
@@ -10,9 +11,7 @@ import IntakeRecordStore, {
   IntakeError,
   intakeLocation,
 } from '../channels/github/intake/record-store.ts';
-import scanAssignments, {
-  type AssignmentScanInput,
-} from '../channels/github/intake/scan-assignments.ts';
+import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -28,6 +27,8 @@ export interface OpenClawIntakeDependencies {
     signal: AbortSignal,
   ): Promise<GitHubNotificationIntakeClient>;
   now?: () => number;
+  readiness?(manifest: AgentManifest, workspace: string): Promise<string | undefined>;
+  readinessFailure?(error: unknown): void;
 }
 
 /** V2 admission only. No sessions, assessment results, V1 files or publication. */
@@ -46,6 +47,14 @@ export default class OpenClawIntake {
       }),
     );
     return { selected, store, workspace };
+  }
+  async readiness(manifest: AgentManifest, workspace: string) {
+    try {
+      return await this.dependencies.readiness?.(manifest, workspace);
+    } catch (error) {
+      this.dependencies.readinessFailure?.(error);
+      return 'automation-observation-unavailable';
+    }
   }
   async inspect(manifest: AgentManifest, workspaceDir: string) {
     const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
@@ -81,6 +90,7 @@ export default class OpenClawIntake {
     expectedDigest?: string,
     signal?: AbortSignal,
     selector?: GitHubNotificationItemSelector,
+    budget = new DiscoveryBudget(20000, signal),
   ) {
     signal?.throwIfAborted();
     const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
@@ -106,22 +116,14 @@ export default class OpenClawIntake {
         throw new IntakeError('intake-policy-changed');
     };
     await assertCurrent();
-    const target: AssignmentScanInput['store'] =
-      action === 'check'
-        ? {
-            location: store.location,
-            async exclusive(run) {
-              const state = await store.read();
-              return run(
-                state ? structuredClone(state) : undefined,
-                async () => {},
-                new AbortController().signal,
-              );
-            },
-          }
-        : store;
+    if (action !== 'activate') {
+      const code = await this.readiness(manifest, workspace);
+      if (code) return { status: 'blocked' as const, code, changed: true };
+    }
+    const target = store;
     return scanAssignments({
       store: target,
+      budget,
       workspaceDir: workspace,
       agentId: manifest.agent.id,
       policy: selected.policy,
@@ -134,7 +136,7 @@ export default class OpenClawIntake {
         await assertCurrent();
         const client = await this.dependencies.connect(
           { manifest, workspaceDir: workspace },
-          AbortSignal.any([lockSignal, deadline, ...(signal ? [signal] : [])]),
+          AbortSignal.any([lockSignal, deadline, budget.signal, ...(signal ? [signal] : [])]),
         );
         const pin = selected.policy.issueAssignment?.allowed.find(
           (a) => a.login.toLowerCase() === selected.username.toLowerCase(),

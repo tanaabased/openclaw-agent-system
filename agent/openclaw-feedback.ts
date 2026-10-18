@@ -79,6 +79,7 @@ export async function advanceFeedbackTurn(input: {
   config: OpenClawConfig;
   save(): Promise<void>;
   assertCurrent(): Promise<void>;
+  reauthorize?(): Promise<void>;
 }) {
   const { record, event, request, save } = input;
   const expected = record.request;
@@ -149,6 +150,7 @@ export async function authorizeFeedback(input: {
   provider: OpenClawFeedbackProvider;
   intake: IntakeRecord;
   assertCurrent(): Promise<void>;
+  reauthorize?(): Promise<void>;
 }) {
   const { record, event, policy, provider, intake } = input;
   await input.assertCurrent();
@@ -205,6 +207,7 @@ export default async function openClawFeedback(input: {
   now: number;
   debug?: boolean;
   assertCurrent(): Promise<void>;
+  reauthorize?(): Promise<void>;
   save(): Promise<void>;
 }) {
   const { record, event, action, caller, request, provider, policy, intake, save } = input;
@@ -433,6 +436,7 @@ export default async function openClawFeedback(input: {
   const publisher = new GitHubNotificationCommentPublisher({
     redactText: redactFeedback,
     authorize: async () => {
+      await input.reauthorize?.();
       await authorizeFeedback(input);
       await select();
       return { authorized: true };

@@ -68,6 +68,38 @@ describe('core/github-account-client', () => {
     }
   });
 
+  it('should retain identity quota headers and avoid another connection probe during cooldown', async () => {
+    let executions = 0;
+    const client = new GitHubAccountClient({
+      baseEnvironment: {},
+      configStore: { configDirectory: () => '/private/gh' },
+      environmentService: { loadForWorkspace: async () => loadedEnvironment() },
+      runCli: async () => {
+        executions++;
+        return {
+          exitCode: 1,
+          timedOut: false,
+          truncated: false,
+          stdout:
+            'HTTP/2 403 Forbidden\nx-ratelimit-resource: core\nx-ratelimit-remaining: 0\nretry-after: 120\n\n{}',
+          stderr: 'gh: API rate limit exceeded (HTTP 403)',
+        };
+      },
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await assert.rejects(client.connect({ manifest, workspaceDir }), (error: unknown) => {
+        assert.ok(error instanceof GitHubAccountClientError);
+        assert.equal(error.providerDiagnostic?.classification, 'rate-limit');
+        assert.equal(error.providerDiagnostic?.httpStatus, 403);
+        assert.equal(error.providerDiagnostic?.quotaScope, 'core');
+        assert.equal(error.providerDiagnostic?.retryAfterMs, 120000);
+        if (attempt) assert.ok(error.providerDiagnostic!.localBackoffMs! > 0);
+        return true;
+      });
+    }
+    assert.equal(executions, 1);
+  });
+
   it('should invalidate once when the identity request confirms credential rejection', async () => {
     const invalidated: string[] = [];
     let executions = 0;
@@ -190,9 +222,9 @@ describe('core/github-account-client', () => {
     assert.deepEqual(
       requests.map(({ argv }) => argv),
       [
-        ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
+        ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
         ['api', '--paginate', '--slurp', '/user/keys'],
-        ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
+        ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
       ],
     );
     assert.equal(requests[1]?.environment.GH_TOKEN, 'private-token');

@@ -2,6 +2,7 @@ import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 
 import { manifestNotices, lifecycleWarningNotice } from './diagnostic-notices.ts';
 import confirmSessionDispatch from './session-dispatch-consent.ts';
+import lifecycleDetails from './lifecycle-details.ts';
 import presentCliCommand from './presentation.ts';
 import confirmSetupInstall, { type SetupConsentOptions } from './setup-consent.ts';
 import {
@@ -186,7 +187,11 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     else {
       writeCliLifecycleTable(
         options.output,
-        lifecycleTableLines(installed.outcomes),
+        lifecycleTableLines(
+          installed.outcomes.map((outcome) =>
+            lifecycleDetails(outcome, result.manifest.automations ?? []),
+          ),
+        ),
         installed.workspaceDir,
         options.styles,
         options.terminalColumns,
@@ -235,7 +240,9 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     } else if (outcomes.length > 0) {
       writeCliLifecycleTable(
         options.output,
-        lifecycleTableLines(outcomes),
+        lifecycleTableLines(
+          outcomes.map((outcome) => lifecycleDetails(outcome, result.manifest.automations ?? [])),
+        ),
         result.scope.workspaceDir,
         options.styles,
         options.terminalColumns,

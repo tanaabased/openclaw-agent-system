@@ -3,6 +3,7 @@ import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import configuredAgentEntries from '../core/configured-agents.ts';
+import type { Logger } from '../core/logger.ts';
 import planAgentInstall, {
   type AgentInstallAction,
   type CurrentAgentInstallState,
@@ -23,8 +24,10 @@ export interface AgentLifecycleCommandResult {
 }
 
 export interface AgentLifecycleDependencies {
+  logger?: Pick<Logger, 'debug' | 'info'>;
   environmentService?: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  waitForGatewayAgent?(agentId: string): Promise<void>;
   resolveAgentWorkspaceDir?(config: OpenClawConfig, agentId: string): string;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentLifecycleCommandResult>;
 }
@@ -258,17 +261,21 @@ export default function createAgentLifecycleContribution(
 
       for (const action of plan.actions) {
         const args = commandArguments(action, desired, plan.workspaceDir);
+        const started = performance.now();
+        dependencies.logger?.debug?.(
+          `agent registration action started: ${JSON.stringify({ agentId: desired.agentId, action })}`,
+        );
         const result = await dependencies.runOpenClawCommand(args, plan.workspaceDir);
+        dependencies.logger?.debug?.(
+          `agent registration action completed: ${JSON.stringify({ agentId: desired.agentId, action, exitCode: result.code, elapsedMs: Math.round(performance.now() - started) })}`,
+        );
         if (result.code !== 0) throw commandFailure(args, result);
       }
 
+      const config = await dependencies.readConfig();
       const verification = planAgentInstall(
         desired,
-        currentAgentState(
-          await dependencies.readConfig(),
-          desired.agentId,
-          dependencies.resolveAgentWorkspaceDir,
-        ),
+        currentAgentState(config, desired.agentId, dependencies.resolveAgentWorkspaceDir),
       );
       if (verification.status !== 'ready' || verification.actions.length > 0) {
         throw lifecycleError(
@@ -276,6 +283,11 @@ export default function createAgentLifecycleContribution(
           `OpenClaw agent ${desired.agentId} did not match its manifest after installation.`,
         );
       }
+
+      dependencies.logger?.debug?.(
+        `agent registration config verified: ${JSON.stringify({ agentId: desired.agentId, actions: plan.actions, reloadMode: config.gateway?.reload?.mode ?? 'hybrid' })}`,
+      );
+      await dependencies.waitForGatewayAgent?.(desired.agentId);
 
       return {
         outcomes:

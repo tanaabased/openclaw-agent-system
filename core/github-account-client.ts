@@ -1,3 +1,5 @@
+import GitHubRequestCooldown from './github-request-cooldown.ts';
+import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 import {
   withProviderDiagnostic,
   providerDiagnostic,
@@ -127,7 +129,11 @@ function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
 
   let value: unknown;
   try {
-    value = JSON.parse(result.stdout);
+    value = JSON.parse(
+      result.stdout.startsWith('HTTP/')
+        ? parseGitHubApiResponse(result.stdout).body
+        : result.stdout,
+    );
   } catch (error) {
     throw new GitHubAccountClientError(
       'github-account-identity-invalid',
@@ -179,6 +185,7 @@ function normalizedExecutionOptions(options: GitHubAccountExecutionOptions | und
 export default class GitHubAccountClient {
   readonly #dependencies: GitHubAccountClientDependencies;
   readonly #runCli: AgentSystemCliRunner;
+  readonly #cooldown = new GitHubRequestCooldown();
 
   constructor(dependencies: GitHubAccountClientDependencies) {
     this.#dependencies = dependencies;
@@ -278,6 +285,15 @@ export default class GitHubAccountClient {
       stdin?: string,
       options?: GitHubAccountExecutionOptions,
     ) => {
+      const account = `${environment.GH_HOST}:${username.value.trim().toLowerCase()}`;
+      const blocked = this.#cooldown.inspect(account, argv);
+      if (blocked)
+        throw new GitHubAccountClientError(
+          'github-account-rate-limited',
+          'GitHub requests are paused until the provider cooldown expires.',
+          undefined,
+          blocked,
+        );
       const limits = normalizedExecutionOptions(options);
       const requestSignal = options?.signal ?? signal;
       try {
@@ -295,6 +311,7 @@ export default class GitHubAccountClient {
           }),
           normalizedToken,
         );
+        this.#cooldown.observe(account, result);
         if (githubCredentialRejected(result))
           this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
         return result;
@@ -309,7 +326,7 @@ export default class GitHubAccountClient {
     };
 
     const identity = parseIdentity(
-      await execute(['api', 'user', '--jq', '{login:.login,nodeId:.node_id}']),
+      await execute(['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}']),
     );
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
       this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
@@ -359,7 +376,7 @@ export default class GitHubAccountClient {
       try {
         profileIdentity = parseIdentity(
           await runProfileCli(
-            ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
+            ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
             configDirectory,
           ),
         );

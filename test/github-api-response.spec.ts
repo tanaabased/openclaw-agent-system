@@ -11,6 +11,9 @@ describe('channels/github/provider/api-response', () => {
         '',
         'HTTP/2 200 OK',
         'x-ratelimit-remaining: 0',
+        'x-ratelimit-limit: 30',
+        'x-ratelimit-used: 30',
+        'x-ratelimit-resource: search',
         'x-ratelimit-reset: 1786460000',
         'retry-after: 12',
         'link: <https://api.github.com/items?page=2>; rel="next"',
@@ -24,6 +27,9 @@ describe('channels/github/provider/api-response', () => {
     assert.equal(response.hasNextPage, true);
     assert.deepEqual(response.rateLimit, {
       remaining: 0,
+      limit: 30,
+      used: 30,
+      resource: 'search',
       resetAt: 1_786_460_000_000,
       retryAfterMs: 12_000,
     });

@@ -44,7 +44,7 @@ Use a short bulleted fact list when a card primarily presents metadata. A
 summary sentence may replace the list when the component primarily presents an
 outcome or call to action.
 
-## Codex Issue Assignment Notices
+## Issue Assignment Intake Notices
 
 Use one compact card for the outcome of an intake check:
 
@@ -56,8 +56,10 @@ List each started item as **Issue:** followed by its repository and number linke
 to its work destination. Do not add an “Open chat” label or duplicate GitHub link.
 Reserve **Feedback** for incoming comments and review feedback, and **Review** for
 requests to review a pull request when those intake capabilities are available.
-Follow with **Managing**, **Pending**, and **Slots** facts. Quiet checks reuse the
-existing time-based message rotation. Omit unknown counts rather than showing zero.
+Follow with **Managing**, **Pending**, and **Slots** facts. Codex quiet checks reuse the existing time-based message rotation. Native OpenClaw
+healthy, unchanged checks produce no model turn and no card. Show a new or materially
+changed blocker once, suppress identical repeats, and show verified recovery once.
+Use native conversation destinations for OpenClaw issue links. Omit unknown counts rather than showing zero.
 Warnings and errors explain the affected item or intake operation and its next action;
 include the exact project folder when registration is needed and a bounded diagnostic
 when useful. Preserve successful starts in a report that also contains an obstacle.
@@ -97,6 +99,14 @@ of the public GitHub response.
 >
 > [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18). Please begin working on it in `plan` mode.
 ```
+
+In the native OpenClaw issue conversation, show assignment → model routing →
+selected assessment instructions in that order. Assignment and routing remain visible
+with debug off; instructions require debug on. Use the shared components, canonical
+assignment actor and source, and retained skill/guidance. Keep selected model/effort,
+native settings readback, and execution evidence separately labeled. A successful
+renderer test does not prove native delivery. Full assessments and plans remain
+outside the cards; model-only provider facts never belong in them.
 
 ## Direct Message
 

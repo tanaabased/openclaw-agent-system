@@ -15,6 +15,28 @@ command owns human guidance that also appears in JSON, author a separate human
 fragment rather than changing the serialized value. OpenClaw-rendered help
 internals and delegated output remain host-owned.
 
+## Doctor and Install Lifecycle Rows
+
+Keep the first column a stable lowercase kebab-case category, never a display
+name or masked identifier: `session-dispatch-credential`, `github-channel-intake`,
+and one `automation` row per job. Keep status in its own column; do not repeat a
+healthy status in the details. Doctor and Install, including completed outcomes
+on partial failure, use the same human projection.
+
+Put unquoted literal names and labeled identifiers in the detail column:
+`name: ISSUE ASSIGNMENTS; mode: persistent; thread: ***9c31; outcome: reused`.
+Preserve configured thread names exactly. Without one, use the automation's
+machine id as uppercase words, such as `BACKUP DRIVE NIGHTLY`, not `Automation`.
+Do not display a masked automation declaration id that merely repeats its name.
+Show a masked native thread only when one exists; command jobs have no thread.
+The session dispatch credential uses `name: Agent System` and a masked `device`.
+Mask identifiers to `***` plus their last four characters, including repeated
+references in recovery commands. JSON retains full identifiers and raw results.
+
+Author new human fragments in lowercase, preserving literal names and external
+errors. Do not lowercase whole result messages or identifiers to enforce style.
+Existing shared lifecycle prose remains literal data unless explicitly projected.
+
 ## Palette
 
 Use `createCliStyles` in `cli/output.ts`; callers must not define ANSI escapes or

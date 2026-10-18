@@ -18,6 +18,57 @@ const manifest: AgentManifestLoadResult = {
 };
 
 describe('cli/doctor', () => {
+  it('should show machine categories and masked thread details only in human output', async () => {
+    const result: AgentDoctorResult = {
+      agentId: 'data',
+      workspaceDir: '/workspace',
+      status: 'healthy',
+      findings: [
+        {
+          component: 'automations',
+          stepId: 'github-issue-assignment',
+          code: 'automation-healthy',
+          status: 'healthy',
+          message:
+            'Automation github-issue-assignment: healthy (persistent, reused: native-12345678).',
+        },
+      ],
+    };
+    for (const json of [false, true]) {
+      const output: string[] = [];
+      await doctorAgentSystem({
+        doctorService: {
+          async inspect() {
+            return result;
+          },
+        },
+        json,
+        manifestService: {
+          async loadForAgentId() {
+            return manifest;
+          },
+          async loadForCommandDirectory() {
+            return manifest;
+          },
+        },
+        output: { writeStderr() {}, writeStdout: (value) => output.push(value) },
+        setExitCode() {
+          assert.fail('healthy fixture must not fail');
+        },
+        styles: createCliStyles({ NO_COLOR: '1' }),
+        terminalColumns: 160,
+        workspaceDir: '/workspace',
+      });
+      const text = output.join('');
+      if (json) assert.deepEqual(JSON.parse(text), result);
+      else {
+        assert.match(text, /automation\s+healthy\s+name: ISSUE ASSIGNMENTS/u);
+        assert.ok(text.includes('thread: ***5678'));
+        assert.equal(text.includes('native-12345678'), false);
+      }
+    }
+  });
+
   it('should group human findings without changing json, aggregate status, or diagnostics', async () => {
     const result: AgentDoctorResult = {
       agentId: 'data',

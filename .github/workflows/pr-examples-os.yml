@@ -45,6 +45,8 @@ jobs:
         run: |
           HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
           brew install coreutils
+      - name: Install OpenClaw
+        uses: tanaabased/actions/setup-openclaw@v1
       - name: Install Node
         uses: tanaabased/actions/setup-node@v1
       - name: Install Bun
@@ -67,8 +69,6 @@ jobs:
       - name: Pack prepared plugin
         id: pack
         uses: tanaabased/actions/npm-pack@v1
-      - name: Install OpenClaw
-        uses: tanaabased/actions/setup-openclaw@v1
       - name: Run Leia-backed example
         shell: bash
         env:

@@ -109,6 +109,43 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should share doctor row details on success and partial failure without changing json', async () => {
+    const outcomes = [
+      {
+        component: 'automations',
+        stepId: 'backup-drive-nightly',
+        code: 'automation-synchronized',
+        status: 'unchanged' as const,
+        message: 'Automation backup-drive-nightly is synchronized (independent).',
+      },
+    ];
+    for (const failed of [false, true]) {
+      const install = failed
+        ? new AgentSystemLifecycleError(
+            'models',
+            'fixture-blocked',
+            'FixtureBlocked',
+            undefined,
+            undefined,
+            undefined,
+            { outcomes, warnings: [], unattempted: [{ component: 'models' }] },
+          )
+        : { agentId: 'tanaabot', workspaceDir: '/workspace', warnings: [], outcomes };
+      for (const json of [false, true]) {
+        const harness = createHarness({ install, json });
+        await harness.run();
+        const text = harness.output.join('');
+        if (json) assert.deepEqual(JSON.parse(text).outcomes, outcomes);
+        else {
+          assert.match(text, /automation\s+unchanged\s+name: BACKUP DRIVE NIGHTLY/u);
+          assert.ok(text.replace(/\s+/gu, ' ').includes('mode: independent'));
+          assert.equal(text.includes('backup-drive-nightly'), false);
+        }
+        assert.deepEqual(harness.exitCodes, failed ? [1] : []);
+      }
+    }
+  });
+
   it('should preview fixture-backed success and partial failure across widths and color modes', async () => {
     const literal = 'AgentX /Work/AgentX/File.JSON OP_TOKEN 2026-10-07T23:00:00Z';
     const outcomes = installOutcomes.map((item) => ({
