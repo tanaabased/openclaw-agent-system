@@ -1,4 +1,4 @@
-import { dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
+import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import assessmentSummary from './assessment-summary.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import selectFeedbackStage from './feedback-stage.ts';
@@ -155,18 +155,20 @@ export default class OpenClawDispatch {
     stage?: OpenClawDispatchRecord['failureStage'],
   ) {
     const code = openClawDispatchFailureCode(error);
+    let status: 'blocked' | 'waiting' | 'retrying' = 'waiting';
     await store.exclusive(async (state, save) => {
       const record = state.records.find((entry) => entry.id === id);
       if (record) {
         record.blocker = code;
         scheduleDispatchRetry(record, code, error, (this.dependencies.now ?? Date.now)());
         if (stage) record.failureStage = stage;
-        if (record.phase !== 'complete') record.phase = 'blocked';
+        status = dispatchFailurePhase(record, code, error);
+        if (record.phase !== 'complete') record.phase = status;
         await save();
       }
     }, true);
     return {
-      status: 'blocked' as const,
+      status,
       id,
       nextAction: 'next' as const,
       code,
@@ -317,6 +319,14 @@ export default class OpenClawDispatch {
     authority: DispatchAuthority,
   ) {
     const now = (this.dependencies.now ?? Date.now)();
+    if (!action && event.retry && !dispatchRetryDue(event, now))
+      return {
+        status: 'retrying',
+        id: record.id,
+        eventId: event.id,
+        code: event.code,
+        nextAction: 'next',
+      };
     try {
       const assertCurrent = async () => {
         authority.signal?.throwIfAborted();
@@ -386,22 +396,28 @@ export default class OpenClawDispatch {
       });
     } catch (error) {
       const code = openClawDispatchFailureCode(error);
-      if (event.phase !== 'published') event.code = code;
+      if (event.phase !== 'published') {
+        event.code = code;
+        scheduleDispatchRetry(event, code, error, now);
+      }
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
         event.phase !== 'published' &&
-        /revoked|authority-changed|policy-changed|owner-changed|source-changed|composition-(?:changed|interrupted)|skill-|guidance-|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
+        /revoked|authority-changed|policy-changed|owner-changed|source-changed|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {
         event.phase = 'blocked';
         record.feedback!.lastServedAt = now;
       }
+      if (event.phase !== 'published' && dispatchFailurePhase(event, code, error) === 'blocked')
+        event.phase = 'blocked';
       await save();
       return {
-        status: 'blocked',
+        status: event.phase === 'blocked' ? 'blocked' : dispatchFailurePhase(event, code, error),
         id: record.id,
         eventId: event.id,
+        nextAction: 'next',
         code,
         ...(event.result
           ? {
@@ -507,10 +523,14 @@ export default class OpenClawDispatch {
     const feedbackPending = state.records.some((record) =>
       record.feedback?.events.some(
         (event) =>
-          (event.phase !== 'blocked' &&
+          ((!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
+            event.phase !== 'blocked' &&
             ((event.turn && event.turn.status !== 'completed') ||
               (event.publicationAttempted && !event.receipt))) ||
-          (event.phase === 'queued' && !openClawItemOccupied(record) && capacity.available > 0),
+          (event.phase === 'queued' &&
+            (!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
+            !openClawItemOccupied(record) &&
+            capacity.available > 0),
       ),
     );
     const recoverable = state.records.some(
@@ -766,8 +786,13 @@ export default class OpenClawDispatch {
             try {
               await this.validate(manifest, workspace, record);
             } catch (error) {
-              if (openClawDispatchFailureCode(error) !== 'dispatch-assignment-superseded')
-                throw error;
+              if (openClawDispatchFailureCode(error) !== 'dispatch-assignment-superseded') {
+                record.blocker = openClawDispatchFailureCode(error);
+                scheduleDispatchRetry(record, record.blocker, error, now);
+                record.phase = dispatchFailurePhase(record, record.blocker, error);
+                await save();
+                continue;
+              }
               // supersession permits observation of the old intent, never another creation.
               record.blocker = 'dispatch-assignment-superseded';
               record.phase = 'blocked';
@@ -919,10 +944,14 @@ export default class OpenClawDispatch {
               state.records.some(
                 (record) =>
                   record.id === id &&
-                  (record.request || record.feedback?.events.some((event) => event.turn)),
+                  ((record.request && pass.candidates.includes(record.intakeId)) ||
+                    record.feedback?.events.some(
+                      (event) => pass.candidates.includes(event.id) && event.turn,
+                    )),
               ),
           ).length;
-          if (capacity.available && started >= pass.allowance) return { status: 'pass-completed' };
+          if (started >= pass.allowance)
+            return { status: pass.selected.length ? 'pass-completed' : 'at-capacity' };
           const feedback = queued.find(
             ({ record, event }) =>
               pass.candidates.includes(event.id) && !pass.selected.includes(record.id),
@@ -1001,11 +1030,16 @@ export default class OpenClawDispatch {
             };
           } catch (error) {
             if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode) throw error;
-            record.phase = 'blocked';
             record.blocker = openClawDispatchFailureCode(error);
             scheduleDispatchRetry(record, record.blocker, error, now);
+            record.phase = dispatchFailurePhase(record, record.blocker, error);
             await save();
-            return { status: 'blocked', id: record.id, code: record.blocker, nextAction: 'next' };
+            return {
+              status: record.phase,
+              id: record.id,
+              code: record.blocker,
+              nextAction: 'next',
+            };
           }
         }
         const record = state.records.find((entry) => entry.id === input.id);
@@ -1413,7 +1447,12 @@ export default class OpenClawDispatch {
           input.action === 'start' ||
           input.action === 'assess'
         )
-          return this.block(current.journal, input.id, error, preparationStage);
+          return this.block(
+            current.journal,
+            input.id,
+            authority.signal?.aborted ? new Error('dispatch-operation-cancelled') : error,
+            preparationStage,
+          );
         throw error;
       });
   }
@@ -1551,7 +1590,7 @@ function continuationStatus(record: OpenClawDispatchRecord) {
   if (!record.sessionCreation || record.retired || record.handoff || record.reset) return;
   // only the accepted receipt gap is automatically recoverable, and never by another send.
   if (
-    record.phase === 'blocked' &&
+    ['blocked', 'waiting'].includes(record.phase) &&
     record.failureStage === 'first-turn' &&
     record.blocker === 'dispatch-turn-delivery-unverified' &&
     record.sessionCreation.verified &&
@@ -1560,7 +1599,7 @@ function continuationStatus(record: OpenClawDispatchRecord) {
   )
     return 'reconcile-required';
   if (
-    record.phase === 'blocked' &&
+    ['blocked', 'waiting'].includes(record.phase) &&
     record.failureStage === 'assessment-turn' &&
     record.blocker === 'dispatch-turn-delivery-unverified' &&
     record.assessmentTurn &&

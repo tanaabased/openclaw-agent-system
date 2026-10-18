@@ -366,11 +366,11 @@ describe('agent/codex-feedback', () => {
     assert.match(('body' in preview ? preview.body : '') ?? '', /@contributor/);
     assert.doesNotMatch(JSON.stringify(preview), /Detailed private answer/);
     assert.equal(creates, 0);
-    assert.equal((await call('publish', { ...ref, digest: 'stale' }, true)).status, 'blocked');
+    assert.equal((await call('publish', { ...ref, digest: 'stale' }, true)).status, 'waiting');
     assert.equal(creates, 0);
     lost = true;
     const apply = { ...ref, digest: preview.digest };
-    assert.equal((await call('publish', apply, true)).status, 'blocked');
+    assert.equal((await call('publish', apply, true)).status, 'waiting');
     const completed = await call('publish', apply, true);
     assert.equal(completed.status, 'published');
     assert.ok('presentation' in completed && completed.presentation);
@@ -577,7 +577,7 @@ describe('agent/codex-feedback', () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
-    assert.equal((await call('compose', ref, true)).status, 'blocked');
+    assert.equal((await call('compose', ref, true)).status, 'waiting');
     const bypass = await call(
       'result',
       {
@@ -598,7 +598,7 @@ describe('agent/codex-feedback', () => {
     assert.ok('verifiedOutcome' in composition && composition.verifiedOutcome?.assessment);
     assert.equal(
       (await call('candidate', { ...ref, digest: 'stale', publicText: 'Reply.' }, true)).status,
-      'blocked',
+      'waiting',
     );
     deps.native!.assessmentSkill = async (_cwd, name) => ({
       name,

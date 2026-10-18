@@ -1,4 +1,4 @@
-import { scheduleDispatchRetry } from './dispatch-retry.ts';
+import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
 import assessmentSummary from './assessment-summary.ts';
 import {
@@ -543,7 +543,6 @@ export async function runCodexDispatch(
           await save();
           return { id: record.id, status: 'creating', changed: false };
         }
-        record.phase = 'blocked';
         record.result = blocker(
           record,
           code(error),
@@ -552,6 +551,16 @@ export async function runCodexDispatch(
         );
         record.retryAfter = now + 300000;
         scheduleDispatchRetry(record, code(error), error, now);
+        record.phase = dispatchFailurePhase(record, code(error), error);
+        if (
+          record.phase === 'retrying' &&
+          record.retryAfter &&
+          record.result.outcome === 'operator-setup-blocker'
+        )
+          record.result.remediation =
+            'Automatic recovery will retry at or after ' +
+            new Date(record.retryAfter).toISOString() +
+            '. Preserve the retained request; no new stage approval is needed.';
         // an item failure does not end the shared intake occurrence.
         if (state.run) delete state.run.stopped;
         const result = notice(
@@ -586,7 +595,10 @@ export async function runCodexDispatch(
             entry.request &&
             entry.threadId &&
             !entry.handoff &&
-            (entry.phase === 'blocked' || entry.retired),
+            (['blocked', 'waiting', 'retrying'].includes(entry.phase) ||
+              entry.retired ||
+              (entry.continuation && ['blocked', 'cancelled'].includes(entry.continuation.phase)) ||
+              entry.feedback?.events.some((event) => event.phase === 'blocked' && event.attempt)),
         )) {
           try {
             const found = await withNative(current, deps, (native) =>
@@ -597,7 +609,7 @@ export async function runCodexDispatch(
                 threadId: record.threadId,
               }),
             );
-            record.nativeInactive = Boolean(
+            const inactive = Boolean(
               found &&
               found.id === record.threadId &&
               found.cwd === record.worktree &&
@@ -605,9 +617,11 @@ export async function runCodexDispatch(
               found.turnEnded &&
               ['idle', 'notLoaded'].includes(found.status),
             );
+            if (inactive) record.nativeInactive = true;
+            else delete record.nativeInactive;
           } catch {
             // an unreadable owner is not evidence of inactivity.
-            record.nativeInactive = false;
+            delete record.nativeInactive;
           }
         }
         for (const pending of state.records.filter(
@@ -617,7 +631,9 @@ export async function runCodexDispatch(
             record.request &&
             !record.effective &&
             record.phase !== 'complete' &&
-            (!record.retry || record.retry.attempts < 5) &&
+            (record.phase !== 'blocked' ||
+              (record.result?.outcome === 'operator-setup-blocker' &&
+                record.result.code === 'dispatch-assignment-superseded')) &&
             (record.retryAfter ?? 0) <= now,
         )) {
           const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
@@ -686,9 +702,9 @@ export async function runCodexDispatch(
         if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
           return checked('at-capacity');
         const intake = pendingDispatchAssignments(state, admitted).find(
-          ({ record }) =>
+          ({ record, intake }) =>
             !record?.request &&
-            (!record?.retry || record.retry.attempts < 5) &&
+            (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
             (record?.retryAfter ?? 0) <= now,
         )?.intake;
         if (!intake) return checked('idle');

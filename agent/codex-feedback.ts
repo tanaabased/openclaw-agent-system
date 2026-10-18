@@ -1,3 +1,4 @@
+import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import { realpath } from 'node:fs/promises';
@@ -253,6 +254,7 @@ export default async function runCodexFeedback(
           if (record.sourceThreadId !== activation.sourceThreadId)
             throw new Error('feedback-schedule-owner-changed');
           if (!event) continue;
+          if (input.action === 'next' && event.retry && !dispatchRetryDue(event, now)) continue;
           if (event.phase === 'published' || (event.phase === 'blocked' && !operatorPublication))
             return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
           if (
@@ -393,7 +395,12 @@ export default async function runCodexFeedback(
             if (event.attempt.turnId && event.attempt.turnId !== receipt.turnId)
               throw new Error('feedback-turn-changed');
             event.attempt.turnId = receipt.turnId;
+            delete event.retry;
+            delete event.retryAfter;
             if (event.phase === 'prepared') event.phase = 'running';
+            if (receipt.ended && found.turnEnded && ['idle', 'notLoaded'].includes(found.status))
+              record.nativeInactive = true;
+            else delete record.nativeInactive;
             if (receipt.ended && !event.result) throw new Error('feedback-turn-ended');
             if (receipt.ended && event.phase === 'responded' && input.action === 'next') {
               // native history may omit an approval rejection; never infer permission to retry.
@@ -432,6 +439,7 @@ export default async function runCodexFeedback(
                   id,
               },
             };
+            delete record.nativeInactive;
             event.phase = 'prepared';
             await save();
             return {
@@ -673,6 +681,8 @@ export default async function runCodexFeedback(
             }
             event.phase = 'published';
             delete event.code;
+            delete event.retry;
+            delete event.retryAfter;
             feedback.lastServedAt = now;
             await save();
             return {
@@ -712,9 +722,13 @@ export default async function runCodexFeedback(
             typeof diagnostic === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(diagnostic)
               ? diagnostic
               : 'feedback-provider-unavailable';
+          if (event) {
+            event.code = code;
+            scheduleDispatchRetry(event, code, error, now);
+          }
           if (
             event &&
-            /^(?:feedback-(?:source-changed|source-owner-changed|authority-changed|turn-ended|turn-changed|native-binding-mismatch|publication-interrupted|self-publication-denied|composition-changed|composition-interrupted|skill-unavailable)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-assessment-(?:skill|guidance)|dispatch-.*(?:revoked|diverged))/.test(
+            /^(?:feedback-(?:source-changed|source-owner-changed|authority-changed|turn-ended|turn-changed|native-binding-mismatch|publication-interrupted|self-publication-denied|composition-changed|composition-interrupted)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-.*(?:revoked|diverged))/.test(
               code,
             )
           ) {
@@ -730,16 +744,21 @@ export default async function runCodexFeedback(
               records.push(record);
             }
           }
+          if (event && dispatchFailurePhase(event, code, error) === 'blocked')
+            event.phase = 'blocked';
           await save();
           if (input.action !== 'next')
             return {
-              status: 'blocked',
+              status:
+                event?.phase === 'blocked'
+                  ? 'blocked'
+                  : dispatchFailurePhase(event ?? {}, code, error),
               id: record.id,
               eventId: input.eventId,
               code,
               ...(/(?:skill|guidance|composition-changed)/u.test(code)
                 ? {
-                    next: 'Restore the configured feedback skill and guidance before retrying with a fresh admitted comment. Install or enable a missing skill; do not substitute a fallback or publish the private response.',
+                    next: 'Restore the configured feedback skill and guidance, then retry this retained event. No new comment or stage approval is needed; do not substitute a fallback or publish the private response.',
                   }
                 : {}),
               ...(event?.result

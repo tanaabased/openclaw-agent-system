@@ -23,7 +23,7 @@ export default function prepareDispatchReport(input: {
   const discovery = discoveryNotice(state.discoveryProgress);
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.effective && record.threadId);
-  const occupied = codexCapacity(active, input.slots).occupied;
+  const occupied = codexCapacity(state.records, input.slots).occupied;
   const pending = pendingDispatchAssignments(state, intake).length;
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
@@ -45,7 +45,7 @@ export default function prepareDispatchReport(input: {
   const problems = active.filter(
     (record) =>
       !record.effective &&
-      record.phase === 'blocked' &&
+      ['blocked', 'waiting', 'retrying'].includes(record.phase) &&
       record.result?.outcome === 'operator-setup-blocker',
   );
   const failures = [

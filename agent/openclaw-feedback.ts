@@ -134,6 +134,8 @@ export async function advanceFeedbackTurn(input: {
     !event.publicationAttempted
   )
     throw new Error(event.result ? 'feedback-composition-interrupted' : 'feedback-turn-ended');
+  delete event.retry;
+  delete event.retryAfter;
   await save();
   return {
     status: event.turn.status === 'completed' ? 'feedback-completed' : 'feedback-pending',
@@ -483,6 +485,8 @@ export default async function openClawFeedback(input: {
   }
   event.phase = 'published';
   delete event.code;
+  delete event.retry;
+  delete event.retryAfter;
   record.feedback!.lastServedAt = input.now;
   await save();
   return {

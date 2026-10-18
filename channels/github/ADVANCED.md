@@ -57,7 +57,17 @@ stale, or unreconciled workflows fail without enabling jobs.
 Each scheduled or explicitly requested intake run can start several assessments,
 bounded by the slots available when it begins. Already-started assessments keep
 running; quick completions do not refill that run’s allowance. Excess assignments
-wait for a later run.
+wait for a later run. Item-specific failures do not stop unrelated eligible work.
+
+Codex and OpenClaw retain uncertain creation and send attempts for reconciliation;
+a newer assignment never authorizes a duplicate conversation. Capacity is released
+when native evidence proves inactivity, not merely because an error occurred or a
+record was retired. Dispatch reports use `waiting` for unresolved receipts or setup
+requirements, `retrying` for scheduled transient recovery, and `blocked` for explicit
+stops such as denial, cancellation, or lost authority. Recognized transport and
+rate-limit failures back off across scheduled runs, from five minutes up to an hour,
+honoring longer provider cooldowns. A prolonged outage needs no fresh stage approval;
+it does not discard the request or replay an uncertain write.
 
 With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one
 immediate intake scan of that issue and reports `completed` when admission checking

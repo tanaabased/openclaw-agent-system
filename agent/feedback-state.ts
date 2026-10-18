@@ -1,3 +1,4 @@
+import { dispatchRetryProperties } from './dispatch-retry.ts';
 import { Type, type Static } from 'typebox';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
@@ -15,6 +16,7 @@ export const feedbackResultSchema = Type.Object(
 );
 export const feedbackSourceEventSchema = Type.Object(
   {
+    ...dispatchRetryProperties,
     id: hash,
     sourceId: text,
     number: Type.Integer({ minimum: 1 }),

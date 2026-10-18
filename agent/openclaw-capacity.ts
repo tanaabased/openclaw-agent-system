@@ -6,14 +6,18 @@ export function openClawItemOccupied(record: OpenClawDispatchRecord) {
   return Boolean(
     (!record.handoff &&
       record.phase !== 'complete' &&
-      (record.phase !== 'blocked' ||
+      (!['blocked', 'waiting', 'retrying'].includes(record.phase) ||
         !record.sessionCreation?.verified ||
         ((record.assessmentTurn ?? record.firstTurn)?.status !== 'completed' &&
           Boolean(record.assessmentTurn ?? record.firstTurn) &&
           !(record.assessmentTurn ?? record.firstTurn)?.inactive))) ||
     record.feedback?.activity?.busy ||
     record.feedback?.events.some(
-      (event) => event.turn && event.turn.status !== 'completed' && !event.turn.inactive,
+      (event) =>
+        event.turn &&
+        event.turn.status !== 'completed' &&
+        !event.turn.inactive &&
+        (event.phase !== 'blocked' || record.feedback?.activity?.busy !== false),
     ),
   );
 }

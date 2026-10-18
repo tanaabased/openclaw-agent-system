@@ -8,17 +8,22 @@ export function codexItemOccupied(record: DispatchRecord): boolean {
       !(record.retired && record.nativeInactive) &&
       (record.phase === 'creating' ||
         record.phase === 'assessing' ||
-        (record.phase === 'blocked' && !record.nativeInactive))) ||
+        (['blocked', 'waiting', 'retrying'].includes(record.phase) && !record.nativeInactive))) ||
     Boolean(
       !record.handoff &&
       record.continuation &&
       (['waiting', 'prepared', 'running'].includes(record.continuation.phase) ||
+        (['blocked', 'cancelled'].includes(record.continuation.phase) &&
+          Boolean(record.continuation.attempt) &&
+          !record.nativeInactive) ||
         (record.continuation.phase === 'delivery' &&
           !(record.delivery?.reconciled && record.delivery.pullRequest))),
     ) ||
     Boolean(
-      record.feedback?.events.some((event) =>
-        ['prepared', 'running', 'responded'].includes(event.phase),
+      record.feedback?.events.some(
+        (event) =>
+          ['prepared', 'running', 'responded'].includes(event.phase) ||
+          (event.phase === 'blocked' && Boolean(event.attempt) && !record.nativeInactive),
       ),
     )
   );

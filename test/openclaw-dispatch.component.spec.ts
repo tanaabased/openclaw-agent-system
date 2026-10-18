@@ -818,7 +818,7 @@ describe('agent/openclaw issue dispatch', () => {
   it('should reconcile a lost creation response after rebuilding the service without creating again', async () => {
     const input = await next();
     lost = true;
-    assert.equal((await prepare(input)).status, 'blocked');
+    assert.equal((await prepare(input)).status, 'waiting');
     assert.equal((await record()).sessionCreation?.attempted, true);
     service = new OpenClawDispatch(service.dependencies);
     const recovered = await service.run(manifest, root, coordinator, {
@@ -1106,7 +1106,8 @@ describe('agent/openclaw issue dispatch', () => {
     };
     const input = await next();
     assert.deepEqual(await prepare(input), {
-      status: 'blocked',
+      status: 'retrying',
+      nextAction: 'next',
       id: input.id,
       code: 'git-fetch-dns-exit-128',
       stage: 'worktree',
@@ -1233,7 +1234,7 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     loseSend = true;
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await start(input.id)).status, 'waiting');
     assert.equal((await record()).firstTurn?.status, 'attempted');
     assert.equal(JSON.stringify(await record()).includes('SECRET'), false);
     service = new OpenClawDispatch(service.dependencies);
@@ -1330,7 +1331,7 @@ describe('agent/openclaw issue dispatch', () => {
       if (mismatch === 'missing') messages = [];
       if (mismatch === 'duplicate') messages.push(structuredClone(user));
       if (mismatch === 'incarnation') historySessionId = 'replacement';
-      assert.equal((await start(input.id)).status, 'blocked');
+      assert.equal((await start(input.id)).status, 'waiting');
       assert.equal((await record()).firstTurn?.status, 'accepted');
       assert.equal(sends().length, 1);
     });
@@ -1429,13 +1430,13 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     messages = [{ role: 'user', content: 'unrelated' }];
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await start(input.id)).status, 'waiting');
     messages = [];
     active = true;
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await start(input.id)).status, 'waiting');
     active = false;
     session!.sessionId = 'replacement';
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await start(input.id)).status, 'waiting');
     assert.equal(sends().length, 0);
     assert.equal((await record()).firstTurn, undefined);
   });
@@ -1494,7 +1495,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).firstTurn?.status, 'consumed');
     messages[1]!.__openclaw = { id: 'tool-call', runId: `${input.id}:first-turn` };
     messages[1]!.stopReason = 'toolUse';
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await start(input.id)).status, 'waiting');
     assert.equal(sends().length, 1);
   });
 
@@ -1532,7 +1533,7 @@ describe('agent/openclaw issue dispatch', () => {
       release.resolve();
       await first;
     }
-    assert.ok('code' in (await first) && (await first).status === 'blocked');
+    assert.ok('code' in (await first) && (await first).status === 'waiting');
     assert.equal((await start(input.id)).status, 'working-turn-pending');
     assert.equal(sends().length, 1);
   });
@@ -1548,10 +1549,10 @@ describe('agent/openclaw issue dispatch', () => {
           });
       },
     });
-    assert.equal(result.status, 'blocked');
+    assert.equal(result.status, 'retrying');
     assert.ok('code' in result && result.code === privateStateFileLockBusyErrorCode);
     assert.equal((await record()).firstTurn?.status, 'attempted');
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await start(input.id)).status, 'waiting');
     assert.equal(sends().length, 0);
   });
 
@@ -1566,7 +1567,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(result.status, 'blocked');
     assert.equal((await record()).firstTurn?.status, 'attempted');
     assert.equal(sends().length, 0);
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await start(input.id)).status, 'waiting');
     assert.equal(sends().length, 0);
   });
 
@@ -2107,7 +2108,7 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     loseSend = true;
-    assert.equal((await assess(input.id)).status, 'blocked');
+    assert.equal((await assess(input.id)).status, 'waiting');
     assert.equal((await record()).assessmentTurn?.status, 'attempted');
     await context(input.id);
     await submit(input.id);
@@ -2201,10 +2202,10 @@ describe('agent/openclaw issue dispatch', () => {
     await prepare(input);
     loseSend = true;
     acceptSend = false;
-    assert.equal((await assess(input.id)).status, 'blocked');
-    assert.equal((await assess(input.id)).status, 'blocked');
+    assert.equal((await assess(input.id)).status, 'waiting');
+    assert.equal((await assess(input.id)).status, 'waiting');
     service = new OpenClawDispatch(service.dependencies);
-    assert.equal((await assess(input.id)).status, 'blocked');
+    assert.equal((await assess(input.id)).status, 'waiting');
     assert.equal(sends().length, 1);
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);

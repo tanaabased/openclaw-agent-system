@@ -24,7 +24,7 @@ export default function openclawIntakeReport(input: {
   const { state, intake, observation } = input;
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
-  const capacity = dispatchCapacity(active, input.slots);
+  const capacity = dispatchCapacity(state.records, input.slots);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
@@ -84,14 +84,19 @@ export default function openclawIntakeReport(input: {
   if (started.length) lines.push('');
   for (const failure of failures.slice(0, 12)) {
     const automation = failure.code.startsWith('automation-');
+    const retry = active.find((record) => record.id === failure.id && record.retry)?.retryAfter;
     lines.push(
       `- **Diagnostic:** \`${text(failure.code)}\``,
       '  **Action:** ' +
-        (automation
-          ? /sync|required|disabled|ownership/.test(failure.code)
-            ? 'Run Agent System Install to reconcile the owned intake automation. Nothing was repaired automatically.'
-            : 'Inspect the intake automation execution and delivery health with supported Agent System Doctor. Preserve its receipts; retry observation when service access is available.'
-          : intakeRemediation(failure.code)),
+        (retry
+          ? 'Automatic recovery will retry at or after ' +
+            new Date(retry).toISOString() +
+            '. Preserve the retained request; no new stage approval is needed.'
+          : automation
+            ? /sync|required|disabled|ownership/.test(failure.code)
+              ? 'Run Agent System Install to reconcile the owned intake automation. Nothing was repaired automatically.'
+              : 'Inspect the intake automation execution and delivery health with supported Agent System Doctor. Preserve its receipts; retry observation when service access is available.'
+            : intakeRemediation(failure.code)),
     );
   }
   if (failures.length) lines.push('');

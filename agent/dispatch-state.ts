@@ -33,6 +33,8 @@ export const dispatchRecordProperties = {
     Type.Literal('assessing'),
     Type.Literal('complete'),
     Type.Literal('blocked'),
+    Type.Literal('waiting'),
+    Type.Literal('retrying'),
   ]),
   createdAt: Type.Integer({ minimum: 0 }),
   manifestDigest: text,
@@ -232,6 +234,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               pass.allowance > pass.limit ||
               pass.recovery.length > pass.limit ||
               pass.candidates.length > 12 ||
+              (pass.allowance === 0 && pass.selected.some((id) => !pass.recovery.includes(id))) ||
               pass.selected.filter((id) => !pass.recovery.includes(id)).length >
                 pass.candidates.length ||
               pass.recovery.some((id) => !state.records.some((record) => record.id === id)) ||

@@ -35,6 +35,13 @@ export const codexContinuationStateSchema = Type.Object(
       Type.Literal('blocked'),
       Type.Literal('cancelled'),
     ]),
+    retry: Type.Optional(
+      Type.Object(
+        { code: text, attempts: Type.Integer({ minimum: 1, maximum: 5 }) },
+        { additionalProperties: false },
+      ),
+    ),
+    retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
     policyDigest: hash,
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),

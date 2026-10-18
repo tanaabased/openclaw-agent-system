@@ -172,7 +172,7 @@ export default class OpenClawNotifications {
             ? {}
             : {
                 scheduling:
-                  record?.phase === 'blocked'
+                  record && ['blocked', 'waiting', 'retrying'].includes(record.phase)
                     ? ('waiting' as const)
                     : record?.request
                       ? ('active' as const)

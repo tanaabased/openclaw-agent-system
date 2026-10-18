@@ -28,6 +28,19 @@ describe('agent/codex-capacity', () => {
     item.feedback!.events.push({ phase: 'running' } as FeedbackEvent);
     assert.equal(codexCapacity([item], 1).occupied, 1);
   });
+  it('should retain uncertain execution after cancellation or feedback authority loss', () => {
+    const item = record('complete');
+    item.continuation = { phase: 'cancelled', attempt: {} } as DispatchRecord['continuation'];
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.nativeInactive = true;
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+    delete item.continuation;
+    item.nativeInactive = false;
+    item.feedback!.events.push({ phase: 'blocked', attempt: {} } as FeedbackEvent);
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.nativeInactive = true;
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+  });
   it('should count feedback and assignments in one pool without double-counting a busy owner', () => {
     const active = [
       record('assessing', ['queued', 'queued']),

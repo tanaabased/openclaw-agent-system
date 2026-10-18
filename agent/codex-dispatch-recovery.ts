@@ -140,7 +140,7 @@ export default async function recoverDispatch(
     if (
       record.sourceThreadId !== sourceThreadId ||
       !record.request ||
-      !['creating', 'blocked'].includes(record.phase) ||
+      !['creating', 'blocked', 'waiting', 'retrying'].includes(record.phase) ||
       record.clientThreadId ||
       record.receiptThreadId ||
       record.threadId ||

@@ -174,6 +174,17 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       }
     });
 
+    it('should continue unrelated work after an item failure explicitly selects next', async () => {
+      for (const status of ['blocked', 'waiting', 'retrying']) {
+        const input = request(intakePrompt);
+        append(input, 'scan', { status: 'ready' });
+        append(input, 'next', { status, id, nextAction: 'next' });
+        await action(input, 'next');
+        append(input, 'next-1', { status: 'idle' });
+        await action(input, 'report');
+      }
+    });
+
     it('should advance manually admitted work without requesting another intake scan', async () => {
       const input = request('Advance previously admitted issue or feedback work.');
       assert.deepEqual(await action(input, 'next'), { action: 'next' });

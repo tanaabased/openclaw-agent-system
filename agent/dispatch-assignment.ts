@@ -49,7 +49,14 @@ export default async function revalidateAssignment(
     )
   )
     throw new Error('dispatch-assignment-authority-revoked');
-  if (latest.nodeId !== record.assignment.nodeId) throw new Error('dispatch-assignment-superseded');
+  if (latest.nodeId !== record.assignment.nodeId) {
+    const order =
+      Date.parse(latest.createdAt) - Date.parse(record.assignment.createdAt) ||
+      latest.databaseId - record.assignment.databaseId;
+    throw new Error(
+      order > 0 ? 'dispatch-assignment-superseded' : 'dispatch-authority-history-incomplete',
+    );
+  }
   if (!githubIdentityMatches(latest.actor, record.assignment.actor))
     throw new Error('dispatch-assignment-authority-revoked');
   return repo;

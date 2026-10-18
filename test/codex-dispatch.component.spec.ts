@@ -217,6 +217,30 @@ describe('agent/codex-dispatch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should release a blocked owner only after native terminal evidence and retain it on unreadable history', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.phase = 'blocked';
+      await save();
+    });
+    native!.status = 'notLoaded';
+    native!.turnStatus = 'interrupted';
+    await next();
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+    native!.turnEnded = true;
+    await next();
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
+    deps.native!.find = async () => {
+      throw new Error('dispatch-host-unavailable');
+    };
+    await next();
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+  });
+
   it('should retry a transient preparation failure only after its backoff', async () => {
     const original = deps.connect!;
     deps.connect = async (...args) => ({
@@ -1488,7 +1512,7 @@ describe('agent/codex-dispatch', () => {
             : git(cwd, argv, signal);
         const result = await next();
         assert.equal(preparations, managed ? 1 : 0);
-        assert.equal(result.status, broken && !managed ? 'blocked' : 'routing-required');
+        assert.equal(result.status, broken && !managed ? 'waiting' : 'routing-required');
         if (broken && !managed) assert.equal(result.code, 'dispatch-project-workspace-required');
       });
     }
@@ -2376,6 +2400,26 @@ describe('agent/codex-dispatch', () => {
     };
   }
 
+  it('should preserve a prepared continuation through host failure and retry its receipt without another send', async () => {
+    const work = await workIssue();
+    assert.equal((await work.run('next')).status, 'prepared');
+    const original = work.continuation.continuationNative;
+    work.continuation.continuationNative = async () => {
+      throw new Error('continuation-host-unavailable');
+    };
+    assert.equal((await work.run('next')).status, 'retrying');
+    assert.equal((await work.run('next')).status, 'idle');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!.continuation!;
+    assert.equal(retained.phase, 'prepared');
+    assert.equal(retained.retry?.attempts, 1);
+    now = retained.retryAfter!;
+    work.continuation.continuationNative = original;
+    assert.equal((await work.run('next')).status, 'pending');
+    assert.deepEqual((await store.read()).records[0]!.continuation!.attempt, retained.attempt);
+  });
+
   const autoResult = {
     ...result,
     fullAssessment: 'The complete assessment, including its evidence and conditions.',
@@ -3148,7 +3192,7 @@ describe('agent/codex-dispatch', () => {
       throw new Error('dispatch-assessment-skill-unavailable');
     };
     const stopped = await work.run('next');
-    assert.equal(stopped.status, 'blocked');
+    assert.equal(stopped.status, 'waiting');
     assert.equal('code' in stopped && stopped.code, 'dispatch-assessment-skill-unavailable');
   });
 
