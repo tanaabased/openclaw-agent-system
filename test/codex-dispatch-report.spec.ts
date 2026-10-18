@@ -223,6 +223,19 @@ describe('agent/codex-dispatch-report', () => {
       }).response,
       /DONT_NOTIFY/,
     );
+    const laterRetired = {
+      ...record,
+      id: 'later',
+      intakeId: successor.id,
+      retired: { at: 4, by: 'operator' },
+    };
+    const finished = prepareDispatchReport({
+      ...input,
+      intake: currentIntake,
+      state: { ...state, records: [record, laterRetired] },
+    });
+    assert.match(finished.response, /DONT_NOTIFY/);
+    assert.doesNotMatch(finished.response, /Historical reservations/);
     currentIntake.records = [];
     record.reservationVersion = 1;
     record.capacityObservation = { at: 3, code: 'dispatch-capacity-native-active' };

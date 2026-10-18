@@ -30,16 +30,15 @@ export default function prepareDispatchReport(input: {
   const discovery = discoveryNotice(state.discoveryProgress);
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.effective && record.threadId);
+  const waitingIssues = new Set(
+    pendingDispatchAssignments(state, intake)
+      .filter(({ record }) => !record?.request)
+      .map(({ intake: item }) => issueKey(item)),
+  );
   const historical = state.records.filter(
     (record) =>
       codexUnresolvedRetirement(record) &&
-      (codexItemOccupied(record) ||
-        intake.records.some(
-          (item) =>
-            issueKey(item) === record.issueKey &&
-            item.id !== record.intakeId &&
-            Date.parse(item.assignment.createdAt) > record.retired!.at,
-        )),
+      (codexItemOccupied(record) || waitingIssues.has(record.issueKey)),
   );
   const occupied = codexCapacity(state.records, input.slots).occupied;
   const pending = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).length;
