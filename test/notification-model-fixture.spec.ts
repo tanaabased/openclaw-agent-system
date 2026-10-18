@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import waitForAssessmentRelease from '../examples/openclaw-issue/assessment-barrier.ts';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
 
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
@@ -11,7 +15,19 @@ import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
 for (const scenario of [issueExampleScenario, prExampleScenario]) {
   const id = 'a'.repeat(64);
-  const digest = 'b'.repeat(64);
+  const job = openclawIntakeJobs({
+    schemaVersion: 1,
+    agent: { id: 'receiver' },
+    models: { default: { model: 'openai/gpt-6-luna', effort: 'medium' } },
+    github: {
+      username: 'receiver',
+      notifications: { ...intakeFixture().policy, runtimes: ['openclaw'] },
+    },
+  })[0]!;
+  assert.equal(job.payload.kind, 'prompt');
+  const intakePrompt = job.payload.kind === 'prompt' ? job.payload.prompt : '';
+  const digest = /Policy digest: ([a-f0-9]{64})/u.exec(intakePrompt)![1]!;
+
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
 
   function request(prompt: string): ChatCompletionRequest {
@@ -42,7 +58,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
   function append(input: ChatCompletionRequest, stage: string, result: unknown) {
     input.messages.push({
       role: 'tool',
-      tool_call_id: `call_notifications_${stage}_fc-native`,
+      tool_call_id: `call_notifications_${['next', 'prepare', 'assess', 'reconcile'].includes(stage) ? stage + '-0' : stage}_fc-native`,
       content: JSON.stringify(result),
     });
   }
@@ -73,6 +89,91 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
+    it('should release only the assessment explicitly unblocked by the native scenario', async () => {
+      const directory = '/tmp/notification-barrier-fixture';
+      const files = new Set<string>();
+      const listeners = new Set<() => void>();
+      const boundary = {
+        exists: (path: string) => files.has(path),
+        observe: (_directory: string, changed: () => void) => {
+          listeners.add(changed);
+          return () => {
+            listeners.delete(changed);
+          };
+        },
+      };
+      await waitForAssessmentRelease('no-hold', directory, boundary);
+      files.add(join(directory, 'notification-assessments-held'));
+      const first = waitForAssessmentRelease('first', directory, boundary);
+      let secondReleased = false;
+      const second = waitForAssessmentRelease('second', directory, boundary).then(() => {
+        secondReleased = true;
+      });
+      files.add(join(directory, 'notification-assessment-released-first'));
+      for (const listener of listeners) listener();
+      await first;
+      assert.equal(secondReleased, false);
+      files.add(join(directory, 'notification-assessment-released-second'));
+      for (const listener of listeners) listener();
+      await second;
+      assert.equal(listeners.size, 0);
+      await waitForAssessmentRelease('first', directory, boundary);
+    });
+
+    it('should advance three distinct pending assessments using indexed string-wrapped native results', async () => {
+      const input = request(intakePrompt);
+      append(input, 'scan', JSON.stringify({ status: 'ready' }));
+      for (let index = 0; index < 3; index++) {
+        const receipt = String(index + 1).repeat(64);
+        await action(input, 'next');
+        append(
+          input,
+          `next-${index}`,
+          JSON.stringify({
+            status: 'routing-required',
+            id: receipt,
+            digest,
+            context: { source, body: 'disposable Agent System notification-flow fixture' },
+          }),
+        );
+        assert.equal((await action(input, 'prepare')).id, receipt);
+        append(input, `prepare-${index}`, { status: 'session-created', id: receipt });
+        assert.equal((await action(input, 'assess')).id, receipt);
+        append(
+          input,
+          `assess-${index}`,
+          JSON.stringify({ status: 'assessment-pending', id: receipt }),
+        );
+      }
+      await action(input, 'next');
+      append(input, 'next-3', { status: 'pass-completed' });
+      await action(input, 'report');
+      append(input, 'report', { status: 'reported', response: 'pass completed' });
+      assert.deepEqual(await response(input), { content: 'pass completed' });
+    });
+
+    it('should continue after working turns and terminate on native capacity and blockers', async () => {
+      for (const status of [
+        'working-turn-pending',
+        'working-turn-completed',
+        'assessment-completed',
+      ]) {
+        const input = request(intakePrompt);
+        append(input, 'scan', { status: 'ready' });
+        append(input, 'next', { status: 'reconcile-required', id });
+        append(input, 'reconcile', { status, id });
+        if (status === 'working-turn-completed') {
+          await action(input, 'assess');
+          append(input, 'assess', { status: 'assessment-pending', id });
+        }
+        await action(input, 'next');
+        append(input, 'next-1', { status: 'at-capacity' });
+        await action(input, 'report');
+        append(input, 'report', { status: 'reported', response: 'at capacity' });
+        assert.deepEqual(await response(input), { content: 'at capacity' });
+      }
+    });
+
     it('should advance manually admitted work without requesting another intake scan', async () => {
       const input = request('Advance previously admitted issue or feedback work.');
       assert.deepEqual(await action(input, 'next'), { action: 'next' });
@@ -80,7 +181,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
 
     it('should carry native scan and routing receipts through preparation and assessment', async () => {
       const input = request(
-        `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+        `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       );
       assert.deepEqual(await action(input, 'scan'), { action: 'scan', policyDigest: digest });
       append(input, 'scan', { status: 'ready', admitted: 1 });
@@ -97,12 +198,14 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(input, 'prepare', { status: 'session-created', id });
       assert.equal((await action(input, 'assess')).id, id);
       append(input, 'assess', { status: 'assessment-pending', id });
+      await action(input, 'next');
+      append(input, 'next-1', { status: 'pass-completed' });
       await action(input, 'report');
       append(input, 'report', { status: 'reported', response: '> ## ℹ️ Intake complete' });
       assert.deepEqual(await response(input), { content: '> ## ℹ️ Intake complete' });
       input.messages.push({
         role: 'user',
-        content: `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+        content: `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       });
       await action(input, 'scan');
     });
@@ -110,13 +213,15 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
     it('should reconcile pending assessments and stop on native idle without fabricating work', async () => {
       for (const status of ['idle', 'reconcile-required']) {
         const input = request(
-          `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+          `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
         );
         append(input, 'scan', { status: 'ready', admitted: 0 });
         append(input, 'next', { status, id });
         if (status === 'reconcile-required') {
           assert.equal((await action(input, 'reconcile')).id, id);
           append(input, 'reconcile', { status: 'assessment-completed', id });
+          await action(input, 'next');
+          append(input, 'next-1', { status: 'pass-completed' });
         }
         await action(input, 'report');
         append(input, 'report', { status: 'reported', response: '' });
@@ -143,13 +248,13 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       ];
       for (const path of paths) {
         const input = request(
-          `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+          `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
         );
         append(input, 'scan', { status: 'ready' });
         for (const [stage, result] of path) append(input, stage, result);
         const pending = await response(input);
         assert.ok('toolCalls' in pending && pending.toolCalls?.length === 1);
-        const stage = JSON.parse(pending.toolCalls[0]!.arguments).action;
+        const stage = pending.toolCalls[0]!.id!.replace('call_notifications_', '');
         append(input, stage, { status: 'busy', code: 'private-state-file-lock-busy', id });
         for (let attempt = 1; attempt <= 3; attempt++) {
           const retry = await response(input);
@@ -167,12 +272,12 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         });
         input.messages.push({
           role: 'user',
-          content: `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+          content: `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
         });
         await action(input, 'scan');
       }
       const invalid = request(
-        `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+        `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       );
       append(invalid, 'scan', { status: 'ready' });
       append(invalid, 'next', { status: 'busy', code: 'unexpected-failure' });
@@ -289,14 +394,14 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
 
     it('should reject failed scans unrelated issues and an execution outside the verified worktree', async () => {
       const scan = request(
-        `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+        `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       );
       append(scan, 'scan', { status: 'blocked' });
       await action(scan, 'report');
       append(scan, 'report', { status: 'reported', response: '> ## ⚠️ Intake needs attention' });
       assert.deepEqual(await response(scan), { content: '> ## ⚠️ Intake needs attention' });
       const unrelated = request(
-        `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
+        `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       );
       append(unrelated, 'scan', { status: 'ready' });
       append(unrelated, 'next', {

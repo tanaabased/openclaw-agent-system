@@ -65,6 +65,48 @@ describe('agent/shared dispatch state', () => {
     assert.equal((await new OpenClawDispatchStore(root, 'c'.repeat(64)).read()).records.length, 0);
   });
 
+  it('should preserve native-run bounds across restart and reject malformed passes', async () => {
+    const store = new OpenClawDispatchStore(root, scope);
+    const pass = {
+      sessionKey: pending().sourceThreadId,
+      sessionId: 'coordinator',
+      runId: 'run-1',
+      limit: 3,
+      allowance: 2,
+      candidates: [pending().intakeId],
+      recovery: [],
+      selected: [pending().id],
+    };
+    await store.exclusive(async (state, save) => {
+      state.records.push(pending());
+      state.openclawPasses = [pass];
+      await save();
+    });
+    assert.deepEqual((await new OpenClawDispatchStore(root, scope).read()).openclawPasses, [pass]);
+    const before = await readFile(store.path, 'utf8');
+    for (const passes of [
+      [pass, pass],
+      [{ ...pass, allowance: 4 }],
+      [{ ...pass, allowance: 0 }],
+      [{ ...pass, selected: [pending().id, pending().id] }],
+      [{ ...pass, selected: ['d'.repeat(64)] }],
+      [{ ...pass, recovery: ['d'.repeat(64)] }],
+      [{ ...pass, sessionKey: 'foreign' }],
+    ]) {
+      await assert.rejects(
+        store.exclusive(async (state, save) => {
+          state.openclawPasses = passes;
+          await save();
+        }),
+        /dispatch-state-invalid/,
+      );
+      assert.equal(await readFile(store.path, 'utf8'), before);
+    }
+    const codex = new CodexDispatchStore(root, scope);
+    await codex.file.write(before);
+    await assert.rejects(codex.read(), /dispatch-state-invalid/);
+  });
+
   it('should retain an uncertain creation and its occupied slot across restart', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     await store.exclusive(async (state, save) => {

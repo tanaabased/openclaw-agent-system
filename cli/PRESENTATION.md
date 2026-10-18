@@ -94,6 +94,32 @@ renaming machine contracts or reordering JSON diagnostics. An empty collection p
 failure without a result table still displays its messages. Do not suppress or
 change severity to make output look healthy.
 
+### Condition Identity and Grouping
+
+A diagnostic block represents one collected condition, not one observation or
+line of advice. Keep its explanation, safe technical detail, and remediation in
+one `CliNotice`. Carry component, code, and relevant field, step, resource, and
+occurrence context until final presentation; do not recover identity from prose.
+
+Only producers may establish correlation with `condition`: its semantic key,
+component, and every applicable scope must match exactly. A shared code or message
+is not identity. Missing scope is not a wildcard. Use separate keys or occurrence
+identifiers for different causes or attempts; without trustworthy correlation,
+leave notices unkeyed and retain them separately.
+
+The outer command collector merges proven repeated observations into presentation
+copies. Retain complementary explanations and union safe details and remediation;
+use the highest observed severity without absorbing unrelated notices. Preserve
+first-observation order, then severity-sort only human rendering. JSON-mode stderr
+keeps first-observation order. Never mutate service results to group diagnostics.
+
+Keep primary table rows and JSON results intact. A Doctor finding in its table and
+a corresponding manifest notice on stderr are intentional cross-surface evidence.
+JSON stdout remains unchanged; plain stderr may group repeated observations but
+must preserve codes, values, safe evidence, and recovery. Do not introduce
+successful-operation notices into previously silent JSON paths. Provider details
+must remain allowlisted and system causes redacted before entering the collector.
+
 Interactive consent previews and prompts stay before mutation; they are not
 diagnostic sections. Child-tool stdout/stderr remain pass-through streams, and
 OpenClaw-owned help, logs, and prompt internals remain host-owned.

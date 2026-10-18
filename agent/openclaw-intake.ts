@@ -1,6 +1,7 @@
 import DiscoveryBudget from './discovery-budget.ts';
 import { realpath } from 'node:fs/promises';
 
+import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import {
   githubNotificationRuntimeBlocker,
@@ -161,7 +162,15 @@ export default class OpenClawIntake {
         return {
           code: 'github-notifications-declaration-valid',
           summary: 'GitHub notification declaration',
-          diagnostics: diagnostics.map(({ code, message, fieldPath }) => ({
+          diagnostics: diagnostics.map(({ code, message, fieldPath, workflow, remediation }) => ({
+            [cliDiagnosticContext]: {
+              condition: {
+                key: `notification-capability:${workflow}`,
+                component: 'github-intake',
+                fieldPath,
+              },
+              remediation: [remediation],
+            },
             code,
             message,
             fieldPath,
@@ -196,7 +205,18 @@ export default class OpenClawIntake {
           manifest.github?.notifications,
           'openclaw',
         );
-        const warnings = diagnostics.map(({ code, message }) => ({ code, message }));
+        const warnings = diagnostics.map(({ code, message, fieldPath, workflow, remediation }) => ({
+          code,
+          message,
+          [cliDiagnosticContext]: {
+            condition: {
+              key: `notification-capability:${workflow}`,
+              component: 'github-intake',
+              fieldPath,
+            },
+            remediation: [remediation],
+          },
+        }));
         const blocker = diagnostics.find(
           ({ status, workflow }) => status === 'blocked' && workflow === 'issue-assignment',
         );
