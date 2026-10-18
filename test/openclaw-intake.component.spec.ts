@@ -415,6 +415,49 @@ describe('openclaw v2 intake slice', () => {
     value.automations = [job];
     assert.throws(() => openclawIntakeJobs(value), { code: 'intake-automation-id-reserved' });
   });
+  it('should observe automation readiness before provider access and suppress acknowledged blockers', async () => {
+    const f = fixture();
+    await f.service.run(f.value, root, 'activate');
+    let inspections = 0;
+    f.service.dependencies.readiness = async () => {
+      inspections++;
+      return 'automation-sync-required';
+    };
+    const before = f.connects();
+    const result = await f.service.run(
+      f.value,
+      root,
+      'check',
+      (await f.service.select(f.value, root)).selected!.digest,
+    );
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.code, 'automation-sync-required');
+    assert.equal(inspections, 1);
+    assert.equal(f.connects(), before);
+    const failure = new Error('scheduler connection failed');
+    const failures: unknown[] = [];
+    f.service.dependencies.readiness = async () => {
+      throw failure;
+    };
+    f.service.dependencies.readinessFailure = (error) => failures.push(error);
+    assert.equal(
+      await f.service.readiness(f.value, '/workspace'),
+      'automation-observation-unavailable',
+    );
+    assert.deepEqual(failures, [failure]);
+    assert.equal(f.connects(), before);
+    const script = openclawIntakeJobs(f.value)[0]!.internalOpenClaw!.trigger.script;
+    let output: { fire: boolean } | undefined;
+    await runInNewContext(`(async()=>{${script}})()`, {
+      agent_system_intake: async () => result,
+      agent_system_dispatch: async () => ({ status: 'ready', changed: false }),
+      json: (value: { fire: boolean }) => {
+        output = value;
+      },
+    });
+    assert.equal(output!.fire, false);
+  });
+
   it('should keep the trigger quiet for empty scans and wake on changes or failed conditions', async () => {
     const script = openclawIntakeJobs(manifest())[0]!.internalOpenClaw!.trigger.script;
     for (const changed of [false, true]) {

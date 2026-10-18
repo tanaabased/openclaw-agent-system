@@ -53,11 +53,11 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   readonly maximumCommentCharacters: number;
 
   constructor(
-    client: ConnectedGitHubAccountClient,
+    readonly account: ConnectedGitHubAccountClient,
     maximumCommentCharacters = defaultMaximumCommentCharacters,
   ) {
     this.maximumCommentCharacters = validateMaximumCommentCharacters(maximumCommentCharacters);
-    this.#api = new GitHubWorkEventApiClient(client);
+    this.#api = new GitHubWorkEventApiClient(account);
     this.reviews = new GitHubReviewClient(this.#api, this.maximumCommentCharacters);
     this.replies = new GitHubReviewReplyClient(this.#api, this.reviews);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);

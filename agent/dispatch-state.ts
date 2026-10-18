@@ -107,6 +107,17 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
           { additionalProperties: false },
         ),
       ),
+      intakeReport: Type.Optional(
+        Type.Object(
+          {
+            fingerprint: hash,
+            problems: Type.Array(Type.String({ maxLength: 256 }), { maxItems: 256 }),
+            runId: text,
+            response: Type.String({ maxLength: 128000 }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
       discoveryCycleAt: Type.Optional(Type.Integer({ minimum: 0 })),
       discoveryCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
       discoveryProgress: Type.Optional(

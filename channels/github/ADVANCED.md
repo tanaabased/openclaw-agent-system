@@ -87,6 +87,14 @@ openclaw agent-system notifications status [--agent <id>] [--repository <owner/n
 openclaw agent-system notifications status --json
 ```
 
+Healthy, unchanged native checks stay silent. Intake reports link started issues to
+their native conversations and show known managing, pending and slot counts. New or
+materially changed blockers appear once; verified recovery appears once. Automation
+drift directs you to supported Agent System Install; checks never repair schedules.
+An absent or disabled job cannot warn from its own run: use explicit Doctor/Install.
+Incomplete observations are not empty successful scans. Report preparation is retained
+for same-run replay; it is not proof that the final card was visibly delivered.
+
 `status` reads the native intake and dispatch records.
 The existing table and JSON envelope report baseline, capacity, item preparation,
 and blockers. An item's optional `workflow` contains its phase and bound

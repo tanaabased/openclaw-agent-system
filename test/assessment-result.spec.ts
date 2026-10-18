@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { parseAssessmentResult } from '../agent/assessment-result.ts';
+import { Value } from 'typebox/value';
+
+import {
+  assessmentResultContextSchema,
+  parseAssessmentResult,
+} from '../agent/assessment-result.ts';
 
 describe('agent/assessment-result', () => {
   const common = {
@@ -67,8 +72,14 @@ describe('agent/assessment-result', () => {
         code: 'project-missing',
         remediation: 'Save the existing checkout as a project.',
       },
-    ])
-      assert.deepEqual(parseAssessmentResult({ ...common, ...outcome }), { ...common, ...outcome });
+    ]) {
+      const input = { ...common, ...outcome };
+      assert.deepEqual(parseAssessmentResult(input), input);
+      const contract = JSON.parse(JSON.stringify(assessmentResultContextSchema));
+      assert.equal(Value.Check(contract, input), true);
+      assert.equal(Value.Check(contract, { ...input, version: 2 }), false);
+      assert.equal(Value.Check(contract, { ...input, implement: true }), false);
+    }
   });
   it('should reject prose-only state, empty outcomes, authority fields, and excessive output', () => {
     for (const invalid of [

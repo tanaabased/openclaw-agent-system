@@ -19,6 +19,9 @@ const dispatchStages = [
   'reconcile',
   'context',
   'result',
+  'report',
+  'refresh-context',
+  'refresh-result',
   'handoff-preview',
   'handoff',
   'work-context',
@@ -87,21 +90,28 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   };
   const dispatch = (stage: string, args: unknown) =>
     call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
+  const report = (): FixtureResponse | undefined => {
+    const retained = result('report');
+    if (!retained) return dispatch('report', { action: 'report' });
+    if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
+    return { content: retained.response || 'notification-intake-unchanged' };
+  };
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Advance at most one new issue or feedback turn per run.')) {
-    if (!manual) {
+    if (!manual && !prompt.includes('consume saved discoveries')) {
       const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       if (!digest) return;
       const scan = result('scan');
       if (!scan)
         return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
+      if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
     }
     const next = result('next');
     if (!next) return dispatch('next', { action: 'next' });
     if (['feedback-pending', 'feedback-completed', 'feedback-queued'].includes(String(next.status)))
-      return { content: 'notification-feedback-advanced' };
-    if (next.status === 'idle') return { content: 'notification-intake-idle' };
+      return report();
+    if (['idle', 'at-capacity', 'blocked'].includes(String(next.status))) return report();
     if (typeof next.id !== 'string' || !/^[a-f0-9]{64}$/u.test(next.id)) return;
     if (next.status === 'routing-required') {
       const context = next.context as Record<string, unknown> | undefined;
@@ -134,7 +144,45 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (!['assessment-pending', 'assessment-completed'].includes(String(assessed.status))) return;
     } else if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status)))
       return;
-    return { content: 'notification-intake-advanced' };
+    return report();
+  }
+  const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
+    prompt,
+  )?.[1];
+  if (refreshId) {
+    const privateContext = request.messages
+      .map(({ content }) => getTextContent(content) ?? '')
+      .join('\n');
+    if (
+      !privateContext.includes('Agent System model-only current-turn facts') ||
+      !privateContext.includes('previousResultDigest')
+    )
+      return;
+    const fresh = result('refresh-context');
+    if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
+    const evidence = fresh.evidence as { body?: string } | undefined;
+    if (
+      fresh.status !== 'verified' ||
+      !fresh.previousResult ||
+      typeof fresh.previousResultDigest !== 'string' ||
+      !evidence?.body?.includes('notification-hidden-later-fact')
+    )
+      return;
+    const saved = result('refresh-result');
+    if (!saved)
+      return dispatch('refresh-result', {
+        action: 'result',
+        id: refreshId,
+        previousResultDigest: fresh.previousResultDigest,
+        result: {
+          ...(fresh.previousResult as Record<string, unknown>),
+          fullAssessment:
+            String((fresh.previousResult as Record<string, unknown>).fullAssessment) +
+            '\n\nFresh issue context verified after restart.',
+        },
+      });
+    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    return { content: saved.presentation };
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
@@ -300,7 +348,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   )?.[1];
   if (!id || !prompt.includes('Stop before implementation.')) return;
   const context = result('context');
-  if (!context) return dispatch('context', { action: 'context', id });
+  if (!context) {
+    const privateContext = request.messages
+      .map(({ content }) => getTextContent(content) ?? '')
+      .join('\n');
+    if (
+      !privateContext.includes('Agent System model-only current-turn facts') ||
+      !privateContext.includes('notification-hidden-initial-fact')
+    )
+      return;
+    return dispatch('context', { action: 'context', id });
+  }
   const project = context.project as { path?: unknown } | undefined;
   if (
     context.status !== 'verified' ||

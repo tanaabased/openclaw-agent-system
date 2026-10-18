@@ -40,6 +40,16 @@ export const openclawDispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
     work: Type.Optional(openclawWorkStateSchema),
+    turnEvidence: Type.Optional(
+      Type.Object(
+        {
+          runId: text,
+          inputEventId: text,
+          evidence: Type.String({ maxLength: 96000 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     feedback: Type.Optional(openclawFeedbackSchema),
     request: Type.Optional(Type.Union([legacyCreationSchema, sessionCreationRequestSchema])),
     sessionCreation: Type.Optional(

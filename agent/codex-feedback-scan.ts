@@ -1,3 +1,5 @@
+import { GitHubAccountClientError } from '../core/github-account-client.ts';
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
@@ -121,6 +123,16 @@ export async function scanCodexFeedback(input: {
       }
       if (error instanceof Error && /discovery-checkpoint|private-state-file/.test(error.message))
         throw error;
+      if (
+        (error instanceof GitHubAccountClientError ||
+          error instanceof GitHubWorkEventClientError) &&
+        error.providerDiagnostic?.classification === 'rate-limit'
+      ) {
+        feedback.code = 'feedback-github-rate-limit';
+        await save();
+        scans.push({ id: record.id, before, feedback });
+        break;
+      }
       if (codexHostAccess(error)) throw error;
       const diagnostic = error instanceof Error ? error.message : '';
       feedback.code = /^[a-z][a-z0-9-]{0,127}$/u.test(diagnostic)

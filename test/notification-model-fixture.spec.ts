@@ -20,6 +20,15 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       messages: [
         { role: 'system', content: 'Name: Notification Tanaabot' },
         { role: 'user', content: prompt },
+        ...(prompt.includes('Stop before implementation.')
+          ? [
+              {
+                role: 'user' as const,
+                content:
+                  '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+              },
+            ]
+          : []),
       ],
       tools: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read'].map(
         (name) => ({
@@ -88,7 +97,9 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(input, 'prepare', { status: 'session-created', id });
       assert.equal((await action(input, 'assess')).id, id);
       append(input, 'assess', { status: 'assessment-pending', id });
-      assert.deepEqual(await response(input), { content: 'notification-intake-advanced' });
+      await action(input, 'report');
+      append(input, 'report', { status: 'reported', response: '> ## ℹ️ Intake complete' });
+      assert.deepEqual(await response(input), { content: '> ## ℹ️ Intake complete' });
       input.messages.push({
         role: 'user',
         content: `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
@@ -107,8 +118,9 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
           assert.equal((await action(input, 'reconcile')).id, id);
           append(input, 'reconcile', { status: 'assessment-completed', id });
         }
-        const final = await response(input);
-        assert.ok('content' in final);
+        await action(input, 'report');
+        append(input, 'report', { status: 'reported', response: '' });
+        assert.deepEqual(await response(input), { content: 'notification-intake-unchanged' });
       }
     });
 
@@ -165,6 +177,43 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(invalid, 'scan', { status: 'ready' });
       append(invalid, 'next', { status: 'busy', code: 'unexpected-failure' });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+    });
+
+    it('should require model-only context before assessment and consume fresh later evidence after recovery', async () => {
+      const missing = request(
+        `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+      );
+      missing.messages.pop();
+      assert.equal(matchFixture([...scenario.fixtures], missing), null);
+      const later = request(`Refresh retained assessment for managed issue ${id}`);
+      assert.equal(matchFixture([...scenario.fixtures], later), null);
+      later.messages.push({
+        role: 'user',
+        content:
+          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts previousResultDigest',
+      });
+      assert.equal((await action(later, 'context')).id, id);
+      append(later, 'refresh-context', {
+        status: 'verified',
+        previousResultDigest: digest,
+        previousResult: {
+          version: 1,
+          outcome: 'plan-ready',
+          summary: 'Retained.',
+          assessment: 'Observed.',
+          plan: 'Complete retained plan.',
+          planSummary: 'Retain it.',
+          fullAssessment: 'Complete retained plan.',
+          evidence: [],
+          progress: { completed: [], remaining: [] },
+        },
+        evidence: { body: 'notification-hidden-later-fact' },
+      });
+      const revised = await action(later, 'result');
+      assert.equal(revised.previousResultDigest, digest);
+      assert.ok(!JSON.stringify(revised.result).includes('notification-hidden-later-fact'));
+      append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
+      assert.deepEqual(await response(later), { content: '> ## 🧭 Plan ready' });
     });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
@@ -243,7 +292,9 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
       );
       append(scan, 'scan', { status: 'blocked' });
-      assert.equal(matchFixture([...scenario.fixtures], scan), null);
+      await action(scan, 'report');
+      append(scan, 'report', { status: 'reported', response: '> ## ⚠️ Intake needs attention' });
+      assert.deepEqual(await response(scan), { content: '> ## ⚠️ Intake needs attention' });
       const unrelated = request(
         `Advance at most one new issue or feedback turn per run. Policy digest: ${digest}`,
       );

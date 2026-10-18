@@ -78,6 +78,17 @@ export const assessmentResultSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
+// the model-facing contract shares repeated fields instead of expanding them per outcome.
+export const assessmentResultContextSchema = {
+  $defs: common,
+  anyOf: assessmentResultSchema.anyOf.map((variant) => ({
+    ...variant,
+    properties: {
+      ...variant.properties,
+      ...Object.fromEntries(Object.keys(common).map((key) => [key, { $ref: `#/$defs/${key}` }])),
+    },
+  })),
+};
 export type AssessmentResult = Static<typeof assessmentResultSchema>;
 
 export function parseAssessmentResult(value: unknown): AssessmentResult {

@@ -164,18 +164,46 @@ try {
       'tools',
       'utils',
     ];
-    const [candidates, deleted] = await Promise.all([
-      run('git', [
-        'ls-files',
-        '--cached',
-        '--others',
-        '--exclude-standard',
-        '-z',
-        '--',
-        ...sourceDirectories,
-      ]),
-      run('git', ['ls-files', '--deleted', '-z', '--', ...sourceDirectories]),
-    ]);
+    // hosted callers may supply the same inventory through native managed Git.
+    // this changes discovery only; every source must still exist in the real archive.
+    const inventoryPath = process.env.AGENT_SYSTEM_PACKAGE_SOURCE_INVENTORY?.trim();
+    const inventory: unknown = inventoryPath
+      ? JSON.parse(await readFile(inventoryPath, 'utf8'))
+      : undefined;
+    let supplied: { candidates: string[]; deleted: string[] } | undefined;
+    if (inventory !== undefined) {
+      assert.ok(inventory && typeof inventory === 'object');
+      const value = inventory as Record<string, unknown>;
+      assert.equal(value.workspaceDir, await realpath('.'));
+      for (const key of ['candidates', 'deleted'] as const) {
+        const paths = value[key];
+        assert.ok(Array.isArray(paths) && paths.length <= 10000);
+        assert.ok(
+          paths.every(
+            (path) =>
+              typeof path === 'string' &&
+              !/[\\\0\r\n]/u.test(path) &&
+              !path.split('/').some((part) => !part || part === '.' || part === '..') &&
+              sourceDirectories.some((directory) => path.startsWith(directory + '/')),
+          ),
+        );
+      }
+      supplied = value as unknown as typeof supplied;
+    }
+    const [candidates, deleted] = supplied
+      ? [{ output: supplied.candidates.join('\0') }, { output: supplied.deleted.join('\0') }]
+      : await Promise.all([
+          run('git', [
+            'ls-files',
+            '--cached',
+            '--others',
+            '--exclude-standard',
+            '-z',
+            '--',
+            ...sourceDirectories,
+          ]),
+          run('git', ['ls-files', '--deleted', '-z', '--', ...sourceDirectories]),
+        ]);
     const deletedPaths = new Set(deleted.output.split('\0').filter(Boolean));
     const paths = candidates.output.split('\0').filter((path) => path && !deletedPaths.has(path));
     assert.notEqual(paths.length, 0, 'package source inventory must not be empty');

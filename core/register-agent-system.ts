@@ -30,7 +30,13 @@ import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../agent/resolve-codex-command-id.ts';
 import registerAgentCommandSecurity from '../agent/command-security.ts';
 import AutomationService from '../agent/automation-service.ts';
-import { requestAutomationGateway } from '../agent/automation-gateway.ts';
+import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
+import {
+  AutomationError,
+  nativeObject,
+  requestAutomationGateway,
+} from '../agent/automation-gateway.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
@@ -235,10 +241,43 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
+  let readScheduler: (() => NotificationScheduler | undefined) | undefined;
   const intakeV2 = new OpenClawIntake({
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     namespace: api.runtime.state.resolveStateDir(),
     manifestService: lifecycleManifestService,
+    // tool registrations need not share the service-start closure; use enrolled read authority.
+    readiness: (manifest, workspace) =>
+      sessionDispatch.use({ signal: AbortSignal.timeout(25000) }, (request) =>
+        notificationAutomationReadiness(
+          automationService,
+          manifest,
+          workspace,
+          undefined,
+          async (method, params) => {
+            try {
+              const result = await request(method, params);
+              if (!nativeObject(result))
+                throw new AutomationError('automation-native-response-invalid');
+              return result;
+            } catch (error) {
+              throw new AutomationError(
+                'automation-observation-unavailable',
+                automationGatewayDiagnostic(method, error),
+              );
+            }
+          },
+        ),
+      ),
+    readinessFailure: (error) =>
+      logger.warn(
+        'github-intake: automation-observation-unavailable ' +
+          JSON.stringify(
+            error instanceof AutomationError && error.diagnostic
+              ? error.diagnostic
+              : gatewayErrorDiagnostic(error),
+          ),
+      ),
     async connect(input, signal) {
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkItemClient(new GitHubWorkEventApiClient(connected));
@@ -265,16 +304,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
-    async feedbackConnect(input, signal) {
+    async feedbackConnect(input, signal, connection) {
+      if (connection instanceof GitHubWorkEventClient) return connection;
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkEventClient(connected);
     },
-    async delivery({ manifest, workspaceDir, worktree, caller, signal }) {
-      const account = await githubCapability.accountClient.connect(
-        { manifest, workspaceDir },
-        'service',
-        signal,
-      );
+    async delivery({ manifest, workspaceDir, worktree, caller, signal, connection }) {
+      const account =
+        connection instanceof GitHubWorkEventClient
+          ? connection.account
+          : await githubCapability.accountClient.connect(
+              { manifest, workspaceDir },
+              'service',
+              signal,
+            );
       return {
         account,
         async git(argv) {
@@ -521,7 +564,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   manifestServiceRef.current = manifestService;
-  let readScheduler: (() => NotificationScheduler | undefined) | undefined;
   api.registerService({
     id: 'agent-system-github-readiness',
     start(context) {
@@ -609,11 +651,40 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry);
+  registerAgentSystemHooks(
+    api,
+    manifestService,
+    toolRegistry,
+    async (manifest, workspace, binding) => {
+      if (
+        !binding.sessionKey ||
+        !binding.sessionId ||
+        manifest.github?.notifications?.schemaVersion !== 2
+      )
+        return;
+      const entry = api.runtime.agent.session.getSessionEntry({
+        sessionKey: binding.sessionKey,
+        readConsistency: 'latest',
+      });
+      if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
+      return dispatchV2.service.promptContext(manifest, workspace, binding);
+    },
+  );
   api.registerCli(({ program }) => {
     const automations = new AutomationService({
       ...automationDependencies,
       request: requestAutomationGateway,
+    });
+    const operatorIntake = new OpenClawIntake({
+      ...intakeV2.dependencies,
+      readiness: (manifest, workspace) =>
+        notificationAutomationReadiness(
+          automations,
+          manifest,
+          workspace,
+          undefined,
+          requestAutomationGateway,
+        ),
     });
     const operatorRegistry = new AgentSystemLifecycleRegistry(
       [
@@ -690,10 +761,17 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           privateStateRoot ?? api.runtime.state.resolveStateDir(),
           'agent-system-dispatch-v2',
         ),
-        intake: intakeV2,
+        intake: operatorIntake,
         scanSelected: async (manifest, workspace, selector, signal) => {
-          const { selected } = await intakeV2.select(manifest, workspace);
-          return intakeV2.run(manifest, workspace, 'scan', selected?.digest, signal, selector);
+          const { selected } = await operatorIntake.select(manifest, workspace);
+          return operatorIntake.run(
+            manifest,
+            workspace,
+            'scan',
+            selected?.digest,
+            signal,
+            selector,
+          );
         },
         inspectRun: async (manifest, workspace, runId, signal) => {
           signal.throwIfAborted();

@@ -1,0 +1,91 @@
+import assert from 'node:assert/strict';
+
+import openclawIntakeReport from '../agent/openclaw-intake-report.ts';
+import type { OpenClawDispatchState } from '../agent/openclaw-dispatch-state.ts';
+
+function state(): OpenClawDispatchState {
+  return { version: 1, scope: 'a'.repeat(64), records: [] };
+}
+
+describe('agent/openclaw-intake-report', () => {
+  it('should keep healthy unchanged checks silent and report changed blockers and recovery once', () => {
+    const journal = state();
+    const prepare = (code?: string) =>
+      openclawIntakeReport({
+        state: journal,
+        slots: 2,
+        observation: {
+          status: code ? 'blocked' : 'ready',
+          changed: false,
+          ...(code ? { code } : {}),
+        },
+      });
+    assert.equal(prepare().changed, false);
+    const blocked = prepare('automation-sync-required');
+    assert.equal(blocked.changed, true);
+    assert.match(blocked.response, /Agent System Install/);
+    assert.doesNotMatch(blocked.response, /Pending:\*\* 0/);
+    journal.intakeReport = { ...blocked, runId: 'one' };
+    assert.equal(prepare('automation-sync-required').changed, false);
+    const changed = prepare('automation-execution-failed');
+    assert.equal(changed.changed, true);
+    assert.doesNotMatch(changed.response, /earlier intake condition has cleared/);
+    journal.intakeReport = { ...changed, runId: 'two' };
+    const recovered = prepare();
+    assert.equal(recovered.changed, true);
+    assert.match(recovered.response, /Intake resumed/);
+    journal.intakeReport = { ...recovered, runId: 'three' };
+    assert.equal(prepare().changed, false);
+    assert.equal(
+      openclawIntakeReport({
+        state: structuredClone(journal),
+        slots: 2,
+        observation: { status: 'ready', changed: false },
+      }).changed,
+      false,
+    );
+  });
+
+  it('should preserve verified starts beside partial failure without exposing assessment payloads', () => {
+    const journal = state();
+    journal.records.push({
+      id: 'b'.repeat(64),
+      intakeId: 'c'.repeat(64),
+      issueKey: 'd'.repeat(64),
+      manifestDigest: 'manifest',
+      sourceThreadId: 'coordinator',
+      phase: 'created',
+      createdAt: 1,
+      threadId: 'agent:receiver:issue:1',
+      sessionCreation: {
+        attempted: true,
+        verified: true,
+        sourceSessionId: 'coordinator',
+        sourceRunId: 'run',
+        sourceToolCallId: 'tool',
+        sessionId: 'one',
+      },
+      request: {
+        key: 'agent:receiver:issue:1',
+        idempotencyKey: 'receipt',
+        agentId: 'receiver',
+        label: 'Issue',
+        category: 'repo',
+        cwd: '/work',
+        model: 'model',
+        thinkingLevel: 'high',
+      },
+      context: 'HIDDEN-PROVIDER-PAYLOAD',
+    });
+    const report = openclawIntakeReport({
+      state: journal,
+      slots: 2,
+      observation: { status: 'blocked', code: 'intake-search-incomplete', changed: true },
+    });
+    assert.equal(report.started.length, 1);
+    assert.match(report.response, /chat\?session=agent%3Areceiver%3Aissue%3A1/);
+    assert.match(report.response, /1\/2 occupied · 1 available/);
+    assert.match(report.response, /pending assignments are unknown/);
+    assert.doesNotMatch(report.response, /HIDDEN-PROVIDER-PAYLOAD|Queued feedback|plan-ready/);
+  });
+});

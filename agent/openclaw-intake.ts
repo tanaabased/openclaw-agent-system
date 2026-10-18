@@ -26,6 +26,8 @@ export interface OpenClawIntakeDependencies {
     signal: AbortSignal,
   ): Promise<GitHubNotificationIntakeClient>;
   now?: () => number;
+  readiness?(manifest: AgentManifest, workspace: string): Promise<string | undefined>;
+  readinessFailure?(error: unknown): void;
 }
 
 /** V2 admission only. No sessions, assessment results, V1 files or publication. */
@@ -44,6 +46,14 @@ export default class OpenClawIntake {
       }),
     );
     return { selected, store, workspace };
+  }
+  async readiness(manifest: AgentManifest, workspace: string) {
+    try {
+      return await this.dependencies.readiness?.(manifest, workspace);
+    } catch (error) {
+      this.dependencies.readinessFailure?.(error);
+      return 'automation-observation-unavailable';
+    }
   }
   async inspect(manifest: AgentManifest, workspaceDir: string) {
     const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
@@ -105,6 +115,10 @@ export default class OpenClawIntake {
         throw new IntakeError('intake-policy-changed');
     };
     await assertCurrent();
+    if (action !== 'activate') {
+      const code = await this.readiness(manifest, workspace);
+      if (code) return { status: 'blocked' as const, code, changed: true };
+    }
     const target = store;
     return scanAssignments({
       store: target,

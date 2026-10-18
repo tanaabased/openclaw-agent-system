@@ -17,6 +17,8 @@ A failed activation preserves its original exit status and reports the install r
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-pr
 openclaw config set skills.workshop.autonomous.mode off
+# keep unrelated nightly memory turns out of the strict notification fixture
+openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot/keys" "$HOME/.ssh"

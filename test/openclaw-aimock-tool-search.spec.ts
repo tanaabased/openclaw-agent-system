@@ -77,6 +77,11 @@ describe('scripts/aimock-tool-search', () => {
       `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
     );
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
+    input.messages.push({
+      role: 'user',
+      content:
+        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+    });
     const discover = async () => {
       append(
         input,
@@ -194,6 +199,11 @@ describe('scripts/aimock-tool-search', () => {
       `Stop before implementation. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
     );
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
+    input.messages.push({
+      role: 'user',
+      content:
+        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+    });
     append(
       input,
       (await reply(scenario, input)).response,
