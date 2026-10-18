@@ -1,3 +1,4 @@
+import deliveryBindingChange from './delivery-binding-change.ts';
 import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
@@ -99,8 +100,20 @@ export default async function openClawDelivery(input: {
   };
   const previous = work.delivery;
   // the commit belongs to this attempt; the issue, session and branch own the delivery.
-  if (previous && automationHash({ ...previous.binding, head }) !== automationHash(binding))
-    throw new Error('delivery-binding-changed');
+  const bindingChange =
+    previous &&
+    deliveryBindingChange(previous.binding, binding, [
+      'repositoryId',
+      'issueId',
+      'sessionId',
+      'threadId',
+      'worktree',
+      'branch',
+      'base',
+      'authorId',
+      'policyDigest',
+    ]);
+  if (bindingChange) throw new Error(bindingChange);
   const title = action.title ?? previous?.title;
   const body = action.body ?? previous?.body;
   if (!title?.trim() || !body?.trim() || title.includes('\0') || body.includes('\0'))

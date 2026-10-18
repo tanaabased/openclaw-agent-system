@@ -184,13 +184,12 @@ export async function authorizeFeedback(input: {
         source.feedback.receipt,
       )
     : await provider.getIssueComment(owner, name, event.number, source.databaseId);
-  if (
-    exact.nodeId !== source.nodeId ||
-    exact.author?.nodeId !== source.author?.nodeId ||
-    feedbackRevision(exact) !== event.revision ||
-    admitFeedback(policy, provider.identity, exact).disposition !== 'approved'
-  )
-    throw new Error('feedback-source-changed');
+  if (exact.nodeId !== source.nodeId) throw new Error('feedback-source-identity-changed');
+  if (exact.author?.nodeId !== source.author?.nodeId)
+    throw new Error('feedback-source-author-changed');
+  if (feedbackRevision(exact) !== event.revision) throw new Error('feedback-source-changed');
+  if (admitFeedback(policy, provider.identity, exact).disposition !== 'approved')
+    throw new Error('feedback-source-no-longer-eligible');
   return source;
 }
 

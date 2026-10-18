@@ -757,7 +757,7 @@ describe('agent/codex-dispatch', () => {
       title: 'repair contained behavior',
       assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
     });
-    assert.equal(rejected.code, 'dispatch-assignment-authority-revoked');
+    assert.equal(rejected.code, 'dispatch-issue-closed');
     assert.equal((rejected as { request?: unknown }).request, undefined);
   });
 
@@ -838,7 +838,7 @@ describe('agent/codex-dispatch', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     await assert.rejects(
       request('result', { id: prepared.id, result }, child),
-      /dispatch-assignment-authority-revoked/,
+      /dispatch-assignment-actor-not-allowed/,
     );
     const records = (await request('inspect')).records as { phase: string; result?: unknown }[];
     assert.equal(records[0]!.phase, 'assessing');
@@ -1940,10 +1940,7 @@ describe('agent/codex-dispatch', () => {
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
     const completed = await request('inspect');
     fixture.item.state = 'closed';
-    await assert.rejects(
-      request('reconcile', { id: prepared.id }),
-      /dispatch-assignment-authority-revoked/,
-    );
+    await assert.rejects(request('reconcile', { id: prepared.id }), /dispatch-issue-closed/);
     assert.deepEqual({ ...(await request('inspect')), run: completed.run }, completed);
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
@@ -1962,7 +1959,7 @@ describe('agent/codex-dispatch', () => {
     now += 300001;
     fixture.item.state = 'closed';
     const revoked = await next();
-    assert.equal(revoked.code, 'dispatch-assignment-authority-revoked');
+    assert.equal(revoked.code, 'dispatch-issue-closed');
     assert.equal(gitCalls.filter((argv) => argv[0] === 'fetch').length, 1);
   });
 

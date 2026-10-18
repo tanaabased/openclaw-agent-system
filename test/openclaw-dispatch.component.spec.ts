@@ -789,7 +789,7 @@ describe('agent/openclaw issue dispatch', () => {
     };
     const result = await prepare(input);
     assert.equal(result.status, 'blocked');
-    assert.ok('code' in result && result.code === 'dispatch-assignment-authority-revoked');
+    assert.ok('code' in result && result.code === 'dispatch-assignment-removed');
     assert.equal(creates().length, 0);
   });
 
@@ -2177,7 +2177,7 @@ describe('agent/openclaw issue dispatch', () => {
     await context(input.id);
     await submit(input.id);
     fixture.item.assignees = [];
-    await assert.rejects(context(input.id), /dispatch-assignment-authority-revoked/);
+    await assert.rejects(context(input.id), /dispatch-assignment-removed/);
     assert.deepEqual((await record()).result, plan);
     assert.equal((await record()).phase, 'complete');
     assert.equal(sends().length, 1);
@@ -2538,7 +2538,7 @@ describe('agent/openclaw issue dispatch', () => {
     });
     const before = await record();
     const result = await setup.present();
-    assert.ok('code' in result && result.code === 'dispatch-assignment-authority-revoked');
+    assert.ok('code' in result && result.code === 'dispatch-assignment-removed');
     assert.deepEqual(await record(), before);
   });
 

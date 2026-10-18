@@ -331,14 +331,16 @@ export default async function runCodexFeedback(
                   event.number,
                   source.databaseId,
                 );
-            if (
-              exact.nodeId !== source.nodeId ||
-              exact.author?.nodeId !== source.author?.nodeId ||
-              feedbackRevision(exact) !== event.revision ||
-              admitCodexFeedback(policy, provider.comments.identity, exact).disposition !==
-                'approved'
-            )
+            if (exact.nodeId !== source.nodeId) throw new Error('feedback-source-identity-changed');
+            if (exact.author?.nodeId !== source.author?.nodeId)
+              throw new Error('feedback-source-author-changed');
+            if (feedbackRevision(exact) !== event.revision)
               throw new Error('feedback-source-changed');
+            if (
+              admitCodexFeedback(policy, provider.comments.identity, exact).disposition !==
+              'approved'
+            )
+              throw new Error('feedback-source-no-longer-eligible');
           };
           await authorize();
           const found = await native.find({
@@ -721,7 +723,7 @@ export default async function runCodexFeedback(
           }
           if (
             event &&
-            /^(?:feedback-(?:source-changed|source-owner-changed|authority-changed|turn-ended|turn-changed|native-binding-mismatch|publication-interrupted|self-publication-denied|composition-changed|composition-interrupted)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-.*(?:revoked|diverged))/.test(
+            /^(?:feedback-(?:source-changed|source-identity-changed|source-author-changed|source-no-longer-eligible|source-owner-changed|authority-changed|turn-ended|turn-changed|native-binding-mismatch|publication-interrupted|self-publication-denied|composition-changed|composition-interrupted)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-.*(?:revoked|diverged))/.test(
               code,
             )
           ) {

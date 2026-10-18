@@ -404,7 +404,7 @@ export default class OpenClawDispatch {
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
         event.phase !== 'published' &&
-        /revoked|authority-changed|policy-changed|owner-changed|source-changed|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
+        /revoked|authority-changed|policy-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {

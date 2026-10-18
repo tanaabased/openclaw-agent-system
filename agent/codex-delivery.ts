@@ -1,3 +1,4 @@
+import deliveryBindingChange from './delivery-binding-change.ts';
 import workflowFailure from './workflow-failure.ts';
 import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
 import selectFeedbackStage from './feedback-stage.ts';
@@ -254,14 +255,18 @@ export default async function runCodexDelivery(
         !(input.body ?? previous?.body)?.trim()
       )
         throw new Error('delivery-body-required');
-      if (
+      const bindingChange =
         previous &&
-        ['repositoryId', 'issueId', 'threadId', 'worktree', 'branch', 'base', 'authorId'].some(
-          (key) =>
-            previous.binding[key as keyof typeof binding] !== binding[key as keyof typeof binding],
-        )
-      )
-        throw new Error('delivery-binding-changed');
+        deliveryBindingChange(previous.binding, binding, [
+          'repositoryId',
+          'issueId',
+          'threadId',
+          'worktree',
+          'branch',
+          'base',
+          'authorId',
+        ]);
+      if (bindingChange) throw new Error(bindingChange);
       const delivery: CodexDeliveryState = {
         id: previous?.id ?? automationHash({ admission: intake.id, threadId: record.threadId }),
         binding,
