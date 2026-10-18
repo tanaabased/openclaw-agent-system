@@ -11,6 +11,7 @@ const record = (phase: DispatchRecord['phase'], events: FeedbackEvent['phase'][]
     issueKey: 'issue',
     sourceThreadId: 'source',
     phase,
+    reservationVersion: 1,
     createdAt: 0,
     manifestDigest: 'digest',
     request: {} as DispatchRecord['request'],

@@ -1,7 +1,7 @@
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 
-/** a conversation occupies one slot, regardless of its pending comment count. */
-export function codexItemOccupied(record: DispatchRecord): boolean {
+/** unresolved native custody is independent of whether legacy retirement released a queue slot. */
+function reserved(record: DispatchRecord): boolean {
   if (record.reset || !record.request) return false;
   return (
     (!record.handoff &&
@@ -27,6 +27,24 @@ export function codexItemOccupied(record: DispatchRecord): boolean {
       ),
     )
   );
+}
+
+export function codexUnresolvedRetirement(record: DispatchRecord) {
+  return Boolean(record.retired && !record.nativeInactive && reserved(record));
+}
+
+/** old retirement released the slot; its unresolved same-issue reservation remains fenced. */
+export function legacyRetiredReservation(record: DispatchRecord) {
+  return Boolean(
+    codexUnresolvedRetirement(record) &&
+    !record.reservationVersion &&
+    record.capacityObservation?.code !== 'dispatch-capacity-native-active',
+  );
+}
+
+/** a conversation occupies one slot, regardless of its pending comment count. */
+export function codexItemOccupied(record: DispatchRecord): boolean {
+  return !legacyRetiredReservation(record) && reserved(record);
 }
 
 export default function codexCapacity(records: DispatchRecord[], limit: number) {

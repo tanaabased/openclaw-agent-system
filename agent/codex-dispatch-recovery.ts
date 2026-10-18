@@ -78,6 +78,7 @@ export default async function recoverDispatch(
           'Retire this closed issue from the queue, preserving its evidence. This does not stop or archive a native chat or remove its worktree; clean those up through native controls. Only a new assignment event can admit it again.',
       };
     if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    record.reservationVersion = 1;
     record.retired = { at: now, by: caller };
     await save();
     return { status: 'retired', id: record.id, retired: record.retired };

@@ -75,6 +75,20 @@ authority. Diagnostics identify the affected operation and issue, retaining succ
 starts alongside failures. Provider errors keep their bounded structured evidence;
 unclassified failures do not establish a credential problem.
 
+Codex preserves the earlier retirement contract for historical records created before
+reservation tracking: unresolved retired creations appear separately from active slots,
+while any verified active native chat still occupies a slot. Their evidence remains
+intact, and another creation for the same issue stays fenced until native inactivity
+or non-submission is proved. New retirement never releases an uncertain reservation.
+The owning intake observes at most twelve recovery candidates per check and can use
+`dispatch` action `reconcile` with a retired record's `id` to retry observation and
+search native creation history when its receipt is missing. Ordinary polling avoids
+repeating that broad search for retired records without a child ID. Native
+terminal history remains readable for this purpose even when the chat is archived or
+its worktree is gone. Missing resources alone prove nothing; inspection retains the
+specific missing evidence in `capacityObservation`. Closed historical feedback with
+no outstanding work stays quiet. Uncertain sends and publications remain visible.
+
 With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one
 immediate intake scan of that issue and reports `completed` when admission checking
 finishes. It does not run or alter the recurring automation, dispatch work, or retain

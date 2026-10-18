@@ -15,16 +15,20 @@ export function issueKey(record: IntakeRecord) {
 export default function pendingDispatchAssignments<R extends SharedDispatchRecord>(
   state: { records: R[] },
   intake: IntakeState,
+  unresolvedRetirement: (record: R) => boolean = () => false,
 ) {
   const latest = new Map<string, IntakeRecord>();
   for (const item of intake.records) latest.set(issueKey(item), item);
   return [...latest].flatMap(([key, item]) => {
+    if (state.records.some((record) => record.issueKey === key && unresolvedRetirement(record)))
+      return [];
     const previous = state.records.findLast((record) => record.issueKey === key);
     const retiredAt = previous?.retired?.at ?? previous?.reset?.at;
-    if (previous && retiredAt !== undefined)
+    if (previous && retiredAt !== undefined) {
       return item.id !== previous.intakeId && Date.parse(item.assignment.createdAt) > retiredAt
         ? [{ intake: item, record: undefined }]
         : [];
+    }
     return previous?.handoff || previous?.effective ? [] : [{ intake: item, record: previous }];
   });
 }

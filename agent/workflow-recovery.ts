@@ -19,6 +19,30 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'dispatch-capacity-observation-required': [
+      'The historical creation has no native inactivity observation.',
+      'The next owning intake run will inspect native receipts. Its action:reconcile can also observe this retired record. Preserve the request; do not create another chat for this issue.',
+    ],
+    'dispatch-capacity-creation-unresolved': [
+      'No native child or proof of non-submission was found.',
+      'Inspect the original intake preparation turn and its create_thread receipt. The owning intake can retry action:reconcile with this id after native history is readable. Missing history cannot establish that creation never happened.',
+    ],
+    'dispatch-capacity-native-missing': [
+      'The retained native chat is unavailable.',
+      'Restore access to the retained chat or inspect its archived native history and creation receipt, then retry reconciliation. A missing worktree or missing chat alone does not prove inactivity.',
+    ],
+    'dispatch-capacity-native-active': [
+      'The historical native chat is still active.',
+      'This chat consumes a live slot. Let it finish or stop it through native controls when authorized; intake must verify its terminal state before releasing it.',
+    ],
+    'dispatch-capacity-native-not-ended': [
+      'The matching native chat has no verified ended and inactive turn.',
+      'Let the native turn finish, or stop it through the native chat controls when authorized. Intake will verify terminal evidence; do not discard its request or force a slot release.',
+    ],
+    'dispatch-capacity-observation-unavailable': [
+      'Native capacity observation could not complete.',
+      'Retry native observation of the retained chat or preparation turn when host history is available. Preserve the reservation and source receipts.',
+    ],
     'dispatch-receiver-account-changed': [
       'The current GitHub account differs from the admitted receiver.',
       'Select the admitted GitHub account or explicitly reconcile the intended account change. Keep the existing issue chat.',

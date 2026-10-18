@@ -1,6 +1,11 @@
+import codexFeedbackProblem from './codex-feedback-problem.ts';
 import workflowStatus from './workflow-status.ts';
 import discoveryNotice from './discovery-notice.ts';
-import codexCapacity from './codex-capacity.ts';
+import codexCapacity, {
+  legacyRetiredReservation,
+  codexUnresolvedRetirement,
+} from './codex-capacity.ts';
+import workflowRecovery from './workflow-recovery.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
@@ -24,21 +29,17 @@ export default function prepareDispatchReport(input: {
   const discovery = discoveryNotice(state.discoveryProgress);
   const active = state.records.filter((record) => !record.retired && !record.reset);
   const managing = active.filter((record) => record.effective && record.threadId);
+  const historical = state.records.filter(
+    (record) => !record.reservationVersion && codexUnresolvedRetirement(record),
+  );
   const occupied = codexCapacity(state.records, input.slots).occupied;
-  const pending = pendingDispatchAssignments(state, intake).length;
+  const pending = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).length;
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
   );
   const sent = feedback.filter(({ event }) => event.attempt?.turnId && !event.reported);
   const queuedFeedback = feedback.filter(({ event }) => event.phase === 'queued');
-  const feedbackProblems = active.filter(
-    (record) =>
-      record.feedback?.code &&
-      (record.feedback.code !== 'dispatch-assignment-authority-revoked' ||
-        record.feedback.events.some((event) =>
-          ['queued', 'prepared', 'running', 'responded'].includes(event.phase),
-        )),
-  );
+  const feedbackProblems = active.filter(codexFeedbackProblem);
 
   const started = managing
     .filter((record) => record.dispatchedAt !== undefined && record.intakeReportedAt === undefined)
@@ -64,7 +65,11 @@ export default function prepareDispatchReport(input: {
       code: record.result!.outcome === 'operator-setup-blocker' ? record.result!.code : '',
     })),
   ];
-  const health = failures.length ? automationHash(failures) : '';
+  const history = historical.map((record) => ({
+    id: record.id,
+    code: record.capacityObservation?.code ?? 'dispatch-capacity-observation-required',
+  }));
+  const health = failures.length || history.length ? automationHash({ failures, history }) : '';
   const recovered = !health && Boolean(state.intakeHealth);
   const notices = failures.map((failure) => ({
     ...failure,
@@ -146,7 +151,23 @@ export default function prepareDispatchReport(input: {
     }
   }
   if (notices.length) lines.push('');
-  if (!started.length && !sent.length && !notices.length && !recovered)
+  if (historical.length) {
+    lines.push(
+      `**Historical reservations:** ${historical.length} unresolved; ${historical.filter(legacyRetiredReservation).length} unknown reservations excluded from active slots under the earlier retirement contract.`,
+      'Unknown reservations are not evidence of running agents; verified active work consumes slots. Another creation for the same issue remains fenced until native evidence resolves its reservation.',
+      '',
+    );
+    for (const record of historical.slice(0, 12)) {
+      const code = record.capacityObservation?.code ?? 'dispatch-capacity-observation-required';
+      lines.push(
+        `- **Issue:** ${issueLabel(record.intakeId)}`,
+        `  **Diagnostic:** \`${code}\``,
+        `  **Action:** ${workflowRecovery(code)?.next ?? 'Inspect the native creation receipt and source history. Missing or unreadable evidence does not establish inactivity. The owning intake can retry action:reconcile with this retained id.'}`,
+      );
+    }
+    lines.push('');
+  }
+  if (!started.length && !sent.length && !notices.length && !historical.length && !recovered)
     lines.push(pending ? 'Accepted assignments are waiting to start.' : quiet.message, '');
   const queuedOwners = new Set(queuedFeedback.map(({ record }) => record.id)).size;
   lines.push(

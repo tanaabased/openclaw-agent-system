@@ -1227,6 +1227,8 @@ describe('agent/codex-dispatch', () => {
     );
     fixture.item.state = 'open';
     assert.deepEqual(await next(), { status: 'idle', changed: false });
+    deps.native!.unsubmittedCreation = async () => ({ turnId: 'retired-preparation' });
+    await request('reconcile', { id: first.id });
     await reassign();
     const second = await prepare();
     assert.notEqual(second.id, first.id);
@@ -1699,6 +1701,96 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(record.request, prepared.request);
     assert.equal(record.unsubmittedCreations, undefined);
   });
+
+  for (const proof of [false, true])
+    it(`should reclassify legacy revoked creation with ${proof ? 'verified' : 'unknown'} non-submission`, async () => {
+      const prepared = await prepare();
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      await store.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        delete record.reservationVersion;
+        record.phase = 'blocked';
+        record.continuation = {
+          phase: 'waiting',
+          policyDigest: 'a'.repeat(64),
+          selection: record.assessment!,
+        };
+        record.result = {
+          version: 1,
+          outcome: 'operator-setup-blocker',
+          code: 'dispatch-assignment-authority-revoked',
+          summary: 'Legacy failure.',
+          remediation: 'Retained.',
+          evidence: [],
+          progress: { completed: [], remaining: [] },
+        };
+        await save();
+      });
+      await reassign();
+      deps.native!.unsubmittedCreation = async () =>
+        proof ? { turnId: 'original-preparation' } : undefined;
+      const recovered = await next();
+      const retained = (await store.read()).records[0]!;
+      if (proof) {
+        assert.equal(recovered.status, 'routing-required');
+        assert.equal(retained.request, undefined);
+        assert.deepEqual(retained.unsubmittedCreations?.[0]?.request, prepared.request);
+        assert.equal(retained.continuation, undefined);
+        assert.equal(retained.unsubmittedCreations?.[0]?.continuation?.phase, 'waiting');
+      } else {
+        assert.equal(recovered.code, 'dispatch-assignment-superseded');
+        assert.deepEqual(retained.request, prepared.request);
+        assert.equal(retained.threadId, undefined);
+        assert.equal(retained.unsubmittedCreations, undefined);
+        assert.equal(codexItemOccupied(retained), true);
+        assert.equal((await next()).status, 'idle');
+      }
+    });
+  it('should leave native denials outside legacy automatic reclassification', async () => {
+    const prepared = await prepare();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.phase = 'blocked';
+      state.records[0]!.result = {
+        version: 1,
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-creation-denied',
+        summary: 'Denied.',
+        remediation: 'Stop.',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+      };
+      await save();
+    });
+    await reassign();
+    deps.native!.unsubmittedCreation = async () => {
+      assert.fail('a denial requires operator recovery');
+    };
+    assert.equal((await next()).status, 'idle');
+    assert.deepEqual((await store.read()).records[0]!.request, prepared.request);
+  });
+  it('should reconcile a retired legacy creation through native reads without changing its request', async () => {
+    const prepared = await prepare();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.reservationVersion;
+      state.records[0]!.retired = { at: now, by: 'old-operator' };
+      await save();
+    });
+    deps.native!.unsubmittedCreation = async () => ({ turnId: 'original-preparation' });
+    const observed = await request('reconcile', { id: prepared.id });
+    assert.equal(observed.status, 'inactive');
+    const record = (await store.read()).records[0]!;
+    assert.deepEqual(record.request, prepared.request);
+    assert.ok(record.retired);
+    assert.equal(record.capacityObservation?.code, 'dispatch-capacity-never-submitted');
+  });
   it('should reconcile a superseded unsubmitted request before preparing its successor', async () => {
     const prepared = await prepare();
     await reassign();
@@ -1777,6 +1869,12 @@ describe('agent/codex-dispatch', () => {
         const operator = { threadId: 'operator' };
         const preview = await request('retire', { id: first.id }, operator);
         await request('retire', { id: first.id, digest: preview.digest }, operator);
+        created();
+        native!.id = 'old-native-receipt';
+        native!.status = 'idle';
+        native!.turnEnded = true;
+        await request('reconcile', { id: first.id });
+        native = undefined;
         const before = ((await request('inspect')).records as Record<string, unknown>[])[0];
         fixture.item.state = 'open';
         await reassign();

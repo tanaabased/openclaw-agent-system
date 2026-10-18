@@ -9,7 +9,7 @@ import { Value } from 'typebox/value';
 
 import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
+import codexCapacity, { codexItemOccupied, codexUnresolvedRetirement } from './codex-capacity.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
@@ -223,7 +223,7 @@ export default async function runCodexFeedback(
           record.worktree &&
           record.project,
       );
-      const queued = pendingDispatchAssignments(state, intake).filter(
+      const queued = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).filter(
         ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
       );
       const assignmentAt = Math.min(

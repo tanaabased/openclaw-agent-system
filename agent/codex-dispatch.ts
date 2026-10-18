@@ -1,3 +1,4 @@
+import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -14,7 +15,7 @@ import redactCodexFeedback from './codex-feedback-redaction.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import runCodexFeedback from './codex-feedback.ts';
-import codexCapacity from './codex-capacity.ts';
+import codexCapacity, { codexUnresolvedRetirement } from './codex-capacity.ts';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -599,41 +600,45 @@ export async function runCodexDispatch(
           await save();
           return { status, changed: false };
         };
-        // observe blocked owners without dispatching, renaming, or requiring fresh assignment authority.
-        for (const record of state.records.filter(
-          (entry) =>
-            entry.request &&
-            entry.threadId &&
-            !entry.handoff &&
-            (['blocked', 'waiting', 'retrying'].includes(entry.phase) ||
-              entry.retired ||
-              (entry.continuation && ['blocked', 'cancelled'].includes(entry.continuation.phase)) ||
-              entry.feedback?.events.some((event) => event.phase === 'blocked' && event.attempt)),
-        )) {
+        // historical custody is observed independently of provider authorization and checkout availability.
+        const observations = state.records
+          .filter(
+            (entry) =>
+              entry.request &&
+              !entry.handoff &&
+              (codexUnresolvedRetirement(entry) ||
+                ((entry.threadId || entry.receiptThreadId) &&
+                  (['blocked', 'waiting', 'retrying'].includes(entry.phase) ||
+                    (entry.continuation &&
+                      ['blocked', 'cancelled'].includes(entry.continuation.phase)) ||
+                    entry.feedback?.events.some(
+                      (event) => event.phase === 'blocked' && event.attempt,
+                    )))),
+          )
+          .sort((a, b) => (a.capacityObservation?.at ?? 0) - (b.capacityObservation?.at ?? 0))
+          .filter(
+            (entry) =>
+              !entry.retired ||
+              !entry.capacityObservation ||
+              entry.capacityObservation.at + 300000 <= now,
+          )
+          .slice(0, 12);
+        for (const record of observations) {
           try {
-            const found = await withNative(current, deps, (native) =>
-              native.find({
-                sourceThreadId: record.sourceThreadId,
-                prompt: record.request!.prompt,
-                createdAfter: record.createdAt,
-                threadId: record.threadId,
-              }),
+            await withNative(current, deps, (native) =>
+              reconcileCodexCapacity(record, native, state.run!.id, now),
             );
-            const inactive = Boolean(
-              found &&
-              found.id === record.threadId &&
-              found.cwd === record.worktree &&
-              found.turnId &&
-              found.turnEnded &&
-              ['idle', 'notLoaded'].includes(found.status),
-            );
-            if (inactive) record.nativeInactive = true;
-            else delete record.nativeInactive;
-          } catch {
-            // an unreadable owner is not evidence of inactivity.
+          } catch (error) {
+            // failure to open the native reader neither proves inactivity nor stops unrelated work.
             delete record.nativeInactive;
+            record.capacityObservation = {
+              ...record.capacityObservation,
+              at: now,
+              code: workflowFailure(error, 'dispatch-capacity-observation-unavailable').code,
+            };
           }
         }
+        if (observations.length) await save();
         for (const pending of state.records.filter(
           (record) =>
             !record.retired &&
@@ -643,7 +648,10 @@ export async function runCodexDispatch(
             record.phase !== 'complete' &&
             (record.phase !== 'blocked' ||
               (record.result?.outcome === 'operator-setup-blocker' &&
-                record.result.code === 'dispatch-assignment-superseded')) &&
+                [
+                  'dispatch-assignment-superseded',
+                  'dispatch-assignment-authority-revoked',
+                ].includes(record.result.code))) &&
             (record.retryAfter ?? 0) <= now,
         )) {
           const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
@@ -674,6 +682,8 @@ export async function runCodexDispatch(
               !pending.receiptThreadId &&
               !pending.clientThreadId &&
               !pending.worktree &&
+              !pending.continuation?.attempt &&
+              !pending.continuation?.publicationAttempt &&
               (pending.unsubmittedCreations?.length ?? 0) < 8
             ) {
               try {
@@ -690,8 +700,10 @@ export async function runCodexDispatch(
                     request: pending.request!,
                     createdAt: pending.createdAt,
                     recoveredAt: now,
+                    ...(pending.continuation ? { continuation: pending.continuation } : {}),
                     turnId: proof.turnId,
                   });
+                  delete pending.continuation;
                   delete pending.request;
                   delete pending.result;
                   delete pending.stageReceipt;
@@ -711,7 +723,7 @@ export async function runCodexDispatch(
         }
         if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
           return checked('at-capacity');
-        const intake = pendingDispatchAssignments(state, admitted).find(
+        const intake = pendingDispatchAssignments(state, admitted, codexUnresolvedRetirement).find(
           ({ record, intake }) =>
             !record?.request &&
             (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
@@ -874,6 +886,18 @@ export async function runCodexDispatch(
       const intake = record && admitted.records.find((entry) => entry.id === record.intakeId);
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
       if (record.reset) throw new Error('dispatch-assessment-reset');
+      if (record.retired && action === 'reconcile') {
+        const observation = await withNative(current, deps, (native) =>
+          reconcileCodexCapacity(record, native, state.run!.id, now, true),
+        );
+        await save();
+        return {
+          id: record.id,
+          status: record.nativeInactive ? 'inactive' : 'waiting',
+          capacityObservation: observation,
+          nextAction: 'next',
+        };
+      }
       if (record.retired) throw new Error('dispatch-assessment-retired');
       if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
       if (action === 'retire' || action === 'reset' || action === 'retry-denied')
@@ -984,6 +1008,9 @@ export async function runCodexDispatch(
           record.preparationTurnId = state.run!.id;
           delete record.retry;
           delete record.retryAfter;
+          record.reservationVersion = 1;
+          delete record.capacityObservation;
+          delete record.nativeInactive;
           record.request = {
             title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
             prompt: launchPrompt(record, intake),

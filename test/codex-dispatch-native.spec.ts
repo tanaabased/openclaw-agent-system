@@ -294,4 +294,44 @@ describe('agent/codex-dispatch-native', () => {
     });
     await assert.rejects(unavailable.find({ ...input, threadId: 'known' }), /transport failed/);
   });
+  it('should observe archived terminal history without requiring the removed worktree', async () => {
+    const native = fixtureNative(async () => ({
+      thread: {
+        id: 'known',
+        cwd: '/definitely-removed-agent-system-worktree',
+        path: '/codex/archived_sessions/history',
+        canAcceptDirectInput: false,
+        status: { type: 'notLoaded' },
+        turns: [{ id: 'initial', status: 'completed', completedAt: 2, items: [creation] }],
+      },
+    }));
+    const observed = await native.find({ ...input, threadId: 'known', observationOnly: true });
+    assert.equal(observed?.turnEnded, true);
+    assert.equal(observed?.cwd, '/definitely-removed-agent-system-worktree');
+    await assert.rejects(native.find({ ...input, threadId: 'known' }), /readback-diverged/);
+  });
+  it('should search archived native creations during observation and reject duplicate identities', async () => {
+    let duplicate = false;
+    const native = fixtureNative(async (method, params) =>
+      method === 'thread/list'
+        ? {
+            data:
+              params.archived || duplicate
+                ? [{ id: params.archived ? 'archived' : 'active', createdAt: 100 }]
+                : [],
+            nextCursor: null,
+          }
+        : {
+            thread: {
+              id: params.threadId,
+              cwd: '/removed',
+              status: { type: 'idle' },
+              turns: [{ id: 'initial', status: 'completed', completedAt: 2, items: [creation] }],
+            },
+          },
+    );
+    assert.equal((await native.find({ ...input, observationOnly: true }))?.id, 'archived');
+    duplicate = true;
+    await assert.rejects(native.find({ ...input, observationOnly: true }), /identity-ambiguous/);
+  });
 });

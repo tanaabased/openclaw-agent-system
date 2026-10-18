@@ -161,4 +161,47 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(report.response, /Status:\*\* waiting/);
     assert.doesNotMatch(report.response, /Intake could not finish/);
   });
+  it('should keep closed historical feedback quiet but retain unresolved execution and publication diagnostics', () => {
+    const record = {
+      id: 'owner',
+      phase: 'complete',
+      feedback: { baseline: {}, code: 'dispatch-issue-closed', events: [] },
+    } as unknown as DispatchRecord;
+    const report = () =>
+      prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
+    assert.match(report().response, /DONT_NOTIFY/);
+    record.feedback!.events.push({ phase: 'blocked', publicationAttempted: true } as never);
+    assert.match(report().response, /dispatch-issue-closed/);
+    record.feedback!.events = [
+      { phase: 'blocked', reported: true, attempt: { turnId: 'run' } } as never,
+    ];
+    assert.match(report().response, /dispatch-issue-closed/);
+    record.nativeInactive = true;
+    assert.match(report().response, /DONT_NOTIFY/);
+    record.feedback!.events = [{ phase: 'queued' } as never];
+    assert.match(report().response, /dispatch-issue-closed/);
+  });
+  it('should report historical reservations separately from active slots after restart', () => {
+    const record = {
+      id: 'legacy',
+      intakeId: 'old',
+      phase: 'blocked',
+      request: {},
+      retired: { at: 1 },
+      capacityObservation: { at: 2, code: 'dispatch-capacity-creation-unresolved' },
+    } as DispatchRecord;
+    const report = () =>
+      prepareDispatchReport({ ...input, state: { ...state, records: [structuredClone(record)] } });
+    const first = report();
+    assert.match(first.response, /Slots:\*\* 0\/2/);
+    assert.match(first.response, /Historical reservations:\*\* 1 unresolved/);
+    assert.match(first.response, /preparation turn/);
+    assert.match(
+      prepareDispatchReport({
+        ...input,
+        state: { ...state, intakeHealth: first.health, records: [record] },
+      }).response,
+      /DONT_NOTIFY/,
+    );
+  });
 });
