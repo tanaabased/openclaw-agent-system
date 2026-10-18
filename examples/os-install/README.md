@@ -48,12 +48,16 @@ openclaw-gateway start
 
 # should enroll dispatch while skipping unavailable reviews without activating issue intake
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
+openclaw agent-system install --yes --json 2>"$TMPDIR/review-install.stderr" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
+test "$(grep -Fc 'code=github-notification-runtime-unsupported' "$TMPDIR/review-install.stderr")" -eq 1
+grep -F 'field=/github/notifications/review-request' "$TMPDIR/review-install.stderr"
+grep -F 'Disable review requests' "$TMPDIR/review-install.stderr"
 openclaw agent-system tool git -- --version | grep -F 'git version'
 
 # should warn about unavailable reviews without blocking unrelated readiness
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findings[]; .component == "github-intake" and .code == "github-notification-runtime-unsupported" and .status == "warning") and any(.findings[]; .component == "github" and .status == "healthy")'
+openclaw agent-system doctor --json 2>"$TMPDIR/review-doctor.stderr" | jq -e '.status == "healthy" and any(.findings[]; .component == "github-intake" and .code == "github-notification-runtime-unsupported" and .status == "warning") and any(.findings[]; .component == "github" and .status == "healthy")'
+test "$(grep -Fc 'code=github-notification-runtime-unsupported' "$TMPDIR/review-doctor.stderr")" -eq 1
 ```
 
 ```bash

@@ -116,16 +116,17 @@ export function formatRedactedErrorDiagnostic(
   error: unknown,
   code: string,
 ): string {
+  return formatDiagnostic({ component, code, message: redactedErrorMessage(error) });
+}
+
+/** retain only recognized system causes, without inspecting arbitrary upstream prose. */
+export function redactedErrorMessage(error: unknown): string {
   const candidate = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
   const cause =
     ['EACCES', 'EPERM', 'ENOENT', 'ENOSPC', 'EIO', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'].find(
       (value) => value === candidate,
     ) ?? 'unknown';
-  return formatDiagnostic({
-    component,
-    code,
-    message: `operation failed; upstream details withheld. cause=${cause}`,
-  });
+  return `operation failed; upstream details withheld. cause=${cause}`;
 }
 
 export function formatManifestDiagnostics(
