@@ -364,8 +364,8 @@ explicit authorization from the conversation. Keep the existing work rather than
 resetting and reassigning it.
 
 Each scheduled check produces one intake report: newly started **Issue** links,
-**Managing** and **Pending** counts, occupied **Slots**, and intake warnings or errors.
-Managing means retained issue destinations, not currently running work. Pending means
+**Active**, **Retirement pending**, and **Pending** counts, occupied **Slots**, and intake warnings or errors.
+Active means retained issue destinations eligible for intake, not currently running work. Pending means
 accepted assignments waiting to start. Slots currently limit unfinished assessments;
 saving a plan, question, or setup outcome releases the reservation. Later work does
 not consume that assessment slot. An interrupted assessment without an outcome can
@@ -394,12 +394,12 @@ result while preserving its chat and worktree; only a
 new assignment event after reset permits a fresh dispatch. Reassignment alone does
 not create another chat, and reset never authorizes implementation.
 
-To remove a closed test issue from the queue, pause its schedule and send
-`{"action":"retire","id":"<assessment-receipt>"}` from an operator chat. Repeat
-with the returned `digest` to confirm. This preserves the launch and assessment
-evidence, including failed launches. Archive the native chat and clean up its
-worktree separately; retirement does neither. A fresh assessment requires a new
-assignment event after retirement.
+Closed issues, unassigned work, and manually archived chats leave Active on the next
+intake check. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
+for grace periods, reassignment, and current cleanup support. Codex desktop resource
+cleanup remains separate because its app-server does not expose the required native
+worktree and pin operations. The explicit `retire` action remains available for
+operator recovery; its preview and digest preserve launch and assessment evidence.
 
 After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
 with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.

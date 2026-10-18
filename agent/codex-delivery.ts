@@ -160,7 +160,8 @@ export default async function runCodexDelivery(
         !record.threadId ||
         record.threadId !== caller ||
         record.reset ||
-        record.retired
+        record.retired ||
+        record.retirement
       )
         throw new Error('delivery-managed-issue-required');
       const found = await native.find({

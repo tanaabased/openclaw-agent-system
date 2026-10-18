@@ -409,7 +409,7 @@ describe('agent/codex-dispatch', () => {
     await runCodexIntake(pluginData, false, deps);
     checked.length = 0;
     assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
-    assert.deepEqual(checked, []);
+    assert.deepEqual(checked, ['issue-thread-3', 'issue-thread-4']);
     assert.equal((await report()).status, 'report');
 
     await request('result', { id: first.id, result }, { threadId: 'issue-thread-3' });
@@ -2104,6 +2104,33 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
+  it('should remove obsolete codex work from intake without inventing desktop cleanup support', async () => {
+    const prepared = await prepare();
+    created();
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    fixture.item.assignees = [];
+    now += 60_000;
+    await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const pending = (await store.read()).records[0]!;
+    assert.equal(pending.retirement?.reason, 'assignment-removed');
+    assert.equal(codexItemOccupied(pending), false);
+    now = pending.retirement!.eligibleAt;
+    await next();
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.retirement?.code, 'retirement-native-cleanup-unavailable');
+    assert.equal(saved.retired, undefined);
+    assert.deepEqual(saved.result, pending.result);
+    assert.equal(saved.threadId, pending.threadId);
+    assert.equal(
+      gitCalls.some((args) => args.includes('remove')),
+      false,
+    );
+  });
+
   it('should revalidate assignment and metadata without giving issue prose model authority', async () => {
     const selected = await next();
     const denied = await request('prepare', {
@@ -2118,7 +2145,11 @@ describe('agent/codex-dispatch', () => {
     now += 300001;
     fixture.item.state = 'closed';
     const revoked = await next();
-    assert.equal(revoked.code, 'dispatch-issue-closed');
+    assert.equal(revoked.status, 'idle');
+    const retired = (
+      (await request('inspect')).records as Array<{ retirement?: { reason: string } }>
+    )[0]!;
+    assert.equal(retired.retirement?.reason, 'issue-closed');
     assert.equal(gitCalls.filter((argv) => argv[0] === 'fetch').length, 1);
   });
 
@@ -2397,7 +2428,7 @@ describe('agent/codex-dispatch', () => {
     await reassign();
     assert.equal((await next()).status, 'idle');
     const response = String((await report()).response);
-    assert.match(response, /\*\*Managing:\*\* 1 issues · \*\*Pending:\*\* 0/);
+    assert.match(response, /\*\*Active:\*\* 1 issues · \*\*Pending:\*\* 0/);
     assert.doesNotMatch(response, /issues? pending/);
     assert.equal(((await request('inspect')).records as unknown[]).length, 1);
   });

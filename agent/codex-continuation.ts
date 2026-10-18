@@ -124,6 +124,7 @@ export default async function runCodexContinuation(
                 record.worktree &&
                 !record.handoff &&
                 !record.retired &&
+                !record.retirement &&
                 !record.reset &&
                 !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase),
             )
@@ -141,6 +142,7 @@ export default async function runCodexContinuation(
             !record.request ||
             record.handoff ||
             record.retired ||
+            record.retirement ||
             record.reset
           )
             throw new Error('continuation-managed-issue-required');

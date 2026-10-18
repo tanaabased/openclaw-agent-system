@@ -28,7 +28,12 @@ export default function prepareDispatchReport(input: {
 }) {
   const { state, intake } = input;
   const discovery = discoveryNotice(state.discoveryProgress);
-  const active = state.records.filter((record) => !record.retired && !record.reset);
+  const active = state.records.filter(
+    (record) => !record.retired && !record.retirement && !record.reset,
+  );
+  const retirementPending = state.records.filter(
+    (record) => record.retirement && !record.retired,
+  ).length;
   const managing = active.filter((record) => record.effective && record.threadId);
   const waitingIssues = new Set(
     pendingDispatchAssignments(state, intake)
@@ -179,8 +184,9 @@ export default function prepareDispatchReport(input: {
     lines.push(pending ? 'Accepted assignments are waiting to start.' : quiet.message, '');
   const queuedOwners = new Set(queuedFeedback.map(({ record }) => record.id)).size;
   lines.push(
-    `**Managing:** ${managing.length} issues · **Pending:** ${pending}`,
+    `**Active:** ${managing.length} issues · **Pending:** ${pending}`,
     `**Queued feedback:** ${queuedFeedback.length} item${queuedFeedback.length === 1 ? '' : 's'} across ${queuedOwners} issue${queuedOwners === 1 ? '' : 's'}`,
+    `**Retirement pending:** ${retirementPending}`,
     `**Slots:** ${occupied}/${input.slots} occupied`,
   );
   if (pending && !notices.length)

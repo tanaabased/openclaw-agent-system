@@ -29,6 +29,7 @@ export default function assignmentIntakePolicy(
         runtimes: policy.runtimes,
         intervalMinutes: policy.intervalMinutes,
         maxConcurrentItems: policy.maxConcurrentItems,
+        cleanup: policy.cleanup ?? { enabled: true, graceMinutes: 60 },
         allowedRepositoryOwners: policy.allowedRepositoryOwners,
         issueAssignment: policy.issueAssignment,
       },

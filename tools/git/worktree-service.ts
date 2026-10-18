@@ -60,7 +60,7 @@ export interface GitWorktreeCleanupResult {
   branch: string;
   path: string;
   repositoryId: string;
-  status: 'dirty' | 'failed' | 'missing' | 'removed' | 'unsafe';
+  status: 'dirty' | 'failed' | 'missing' | 'removed' | 'unsafe' | 'unpreserved' | 'preserved';
   workId: string;
 }
 
@@ -314,6 +314,7 @@ export default class GitWorktreeService {
     repositoryId: string,
     workId: string,
     expectedBranch?: string,
+    verifyOnly = false,
   ): Promise<GitWorktreeCleanupResult> {
     validateIdentifier(repositoryId, 'repository id');
     validateIdentifier(workId, 'work id');
@@ -346,6 +347,16 @@ export default class GitWorktreeService {
     ]);
     if (status.exitCode !== 0) return { ...base, status: 'failed' };
     if (status.stdout.trim()) return { ...base, status: 'dirty' };
+    const preserved = await this.#run(context, path, [
+      'for-each-ref',
+      '--format=%(refname)',
+      '--contains=HEAD',
+      'refs/heads/',
+      'refs/tags/',
+    ]);
+    if (preserved.exitCode !== 0) return { ...base, status: 'failed' };
+    if (!preserved.stdout.trim()) return { ...base, status: 'unpreserved' };
+    if (verifyOnly) return { ...base, status: 'preserved' };
     const removed = await this.#run(context, repository.path, ['worktree', 'remove', path]);
     return { ...base, status: removed.exitCode === 0 ? 'removed' : 'failed' };
   }

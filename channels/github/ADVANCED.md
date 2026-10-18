@@ -16,6 +16,33 @@ OpenClaw keeps discovery inside one condition budget and wakes the coordinator f
 saved actionable work or a one-time progress/recovery card. After upgrading, run
 Install to reconcile the changed condition before relying on scheduled intake.
 
+## Assignment lifecycle
+
+The existing intake run checks retained assignments in both runtimes. Verified issue
+closure, removal of the receiving assignee, or manual chat archival moves work from
+**Active** to **Retirement pending** immediately. This stops new assessment,
+continuation, and feedback dispatch for that record. Native work already running
+still occupies a slot until inactivity is verified.
+
+Automatic cleanup defaults to enabled, with a 60-minute grace period under
+`github.notifications.cleanup`. The deadline starts when intake first observes the
+change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
+verified reassignment before archival reactivates the existing conversation. A fresh
+assignment after archival or retirement can start another attempt without erasing
+prior receipts. Reopening alone and ordinary comments do not reactivate pending work.
+
+OpenClaw archives the exact idle session and removes its managed worktree after
+verifying a clean checkout and retained branch or tag. It protects pinned sessions,
+automation owners, shared worktrees, unresolved activity, and unpreserved changes.
+Each successful cleanup step is retained so interrupted cleanup can reconcile on a
+later poll. Branches, issue content, and assessment history are preserved.
+
+Codex reconciles membership and capacity automatically, but its app-server lacks
+supported desktop worktree reclamation and pin inspection. Resource cleanup remains
+pending with `retirement-native-cleanup-unavailable`; it does not block unrelated
+intake. Disabling cleanup preserves resources and marks inactive work retired.
+Run Install after upgrading to reconcile the changed notification policy.
+
 ## CLI
 
 Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
@@ -68,7 +95,8 @@ stops such as denial, cancellation, or lost authority. Recognized transport and
 rate-limit failures back off across scheduled runs, from five minutes up to an hour,
 honoring longer provider cooldowns. A prolonged outage needs no fresh stage approval;
 it does not discard the request or replay an uncertain write. Inspection also exposes
-`workflowStatus`: `obsolete` identifies retired or superseded intent, and
+`workflowStatus`: `retirement-pending` identifies work awaiting cleanup, `retired`
+identifies completed lifecycle retirement, `obsolete` identifies other superseded intent, and
 `partially-delivered` preserves a published PR while linkage, attachment, or its
 announcement remains incomplete. These descriptions do not release capacity or grant
 authority. Diagnostics identify the affected operation and issue, retaining successful
@@ -189,8 +217,8 @@ Supported targets:
 
 V2 waits use the same native observation as `status`. `prepared` requires a
 verified conversation binding and worktree; `plan-ready` requires the retained
-assessment result. Native OpenClaw notifications do not retain rejected assignments
-or support assignment retirement. `assignment-rejected` and `retired` return
+assessment result. The wait command does not expose rejected assignments or lifecycle
+retirement as targets. `assignment-rejected` and `retired` return
 `github-notification-wait-target-unsupported` immediately without requesting a refresh.
 With `--refresh` and an issue selector, each intake refresh is limited to that
 issue. These one-off scans do not run dispatch; waits observe progress made by the

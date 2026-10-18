@@ -16,6 +16,7 @@ export interface DispatchNativeThread {
   model?: string;
   effort?: string;
   status: string;
+  archived?: boolean;
   turnStatus?: string;
   turnEnded?: boolean;
   turnId?: string;
@@ -99,6 +100,10 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       id: thread.id,
       cwd: input.observationOnly ? thread.cwd : await realpath(thread.cwd),
       status: thread.status.type,
+      archived:
+        thread.archived === true ||
+        (typeof thread.path === 'string' &&
+          thread.path.split(/[\\/]/u).includes('archived_sessions')),
       // a separate app-server can report a live desktop turn as interrupted/notLoaded.
       turnEnded:
         nativeObject(latestTurn) &&

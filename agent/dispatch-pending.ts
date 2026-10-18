@@ -23,7 +23,14 @@ export default function pendingDispatchAssignments<R extends SharedDispatchRecor
     if (state.records.some((record) => record.issueKey === key && unresolvedRetirement(record)))
       return [];
     const previous = state.records.findLast((record) => record.issueKey === key);
-    const retiredAt = previous?.retired?.at ?? previous?.reset?.at;
+    if (previous?.retirement && !previous.retired) {
+      return previous.retirement.reason === 'chat-archived' &&
+        previous.nativeInactive &&
+        item.id !== previous.retirement.intakeId
+        ? [{ intake: item, record: undefined }]
+        : [];
+    }
+    const retiredAt = previous?.retirement?.at ?? previous?.retired?.at ?? previous?.reset?.at;
     if (previous && retiredAt !== undefined) {
       return item.id !== previous.intakeId && Date.parse(item.assignment.createdAt) > retiredAt
         ? [{ intake: item, record: undefined }]

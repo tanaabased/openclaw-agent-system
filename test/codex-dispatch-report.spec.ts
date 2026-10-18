@@ -38,7 +38,7 @@ describe('agent/codex-dispatch-report', () => {
   it('should render quiet counts using the existing message rotation', () => {
     const report = prepareDispatchReport(input);
     assert.match(report.response, /DONT_NOTIFY/);
-    assert.match(report.response, /Managing:\*\* 0 issues/);
+    assert.match(report.response, /Active:\*\* 0 issues/);
     assert.match(report.response, /Pending:\*\* 0/);
     assert.match(report.response, /Slots:\*\* 0\/2 occupied/);
     assert.deepEqual(report.started, []);

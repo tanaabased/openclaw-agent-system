@@ -1,3 +1,4 @@
+import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
@@ -372,6 +373,7 @@ export async function runCodexDispatch(
 ) {
   validateDispatchRequest(action, input);
   if (action === 'next') {
+    await reconcileCodexLifecycle(pluginData, deps);
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
   }
@@ -398,7 +400,8 @@ export async function runCodexDispatch(
         !record.threadId ||
         !record.worktree ||
         record.reset ||
-        record.retired
+        record.retired ||
+        record.retirement
       )
         throw new Error('dispatch-handoff-unavailable');
       if (
@@ -618,7 +621,7 @@ export async function runCodexDispatch(
           .sort((a, b) => (a.capacityObservation?.at ?? 0) - (b.capacityObservation?.at ?? 0))
           .filter(
             (entry) =>
-              !entry.retired ||
+              (!entry.retired && !entry.retirement) ||
               !entry.capacityObservation ||
               entry.capacityObservation.at + 300000 <= now,
           )
@@ -642,6 +645,7 @@ export async function runCodexDispatch(
         for (const pending of state.records.filter(
           (record) =>
             !record.retired &&
+            !record.retirement &&
             !record.handoff &&
             record.request &&
             !record.effective &&
@@ -735,7 +739,11 @@ export async function runCodexDispatch(
         )?.intake;
         if (!intake) return checked('idle');
         let record = state.records.find(
-          (entry) => !entry.reset && !entry.retired && entry.issueKey === issueKey(intake),
+          (entry) =>
+            !entry.reset &&
+            !entry.retired &&
+            !entry.retirement &&
+            entry.issueKey === issueKey(intake),
         );
         if (!record) {
           record = {
@@ -902,7 +910,7 @@ export async function runCodexDispatch(
           nextAction: 'next',
         };
       }
-      if (record.retired) throw new Error('dispatch-assessment-retired');
+      if (record.retired || record.retirement) throw new Error('dispatch-assessment-retired');
       if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
       if (action === 'retire' || action === 'reset' || action === 'retry-denied')
         return recoverDispatch(input, {

@@ -2,6 +2,7 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 /** unresolved native custody is independent of whether legacy retirement released a queue slot. */
 function reserved(record: DispatchRecord): boolean {
+  if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
   if (record.reset || !record.request) return false;
   return (
     (!record.handoff &&

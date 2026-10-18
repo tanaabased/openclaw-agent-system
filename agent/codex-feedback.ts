@@ -192,7 +192,7 @@ export default async function runCodexFeedback(
       if (snapshot && occurrence) {
         const cycleAt = state.discoveryCycleAt ?? scanTime;
         const owners = state.records.filter(
-          (r) => !r.retired && !r.reset && r.effective && r.threadId,
+          (r) => !r.retired && !r.retirement && !r.reset && r.effective && r.threadId,
         );
         if (
           owners.some(
@@ -216,6 +216,7 @@ export default async function runCodexFeedback(
       const records = state.records.filter(
         (record) =>
           !record.retired &&
+          !record.retirement &&
           !record.reset &&
           record.effective &&
           record.threadId &&

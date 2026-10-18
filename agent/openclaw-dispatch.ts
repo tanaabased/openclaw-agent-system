@@ -1,3 +1,4 @@
+import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import workflowStatus from './workflow-status.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
@@ -82,7 +83,8 @@ export interface OpenClawDispatchDependencies {
     input: { manifest: AgentManifest; workspaceDir: string },
     signal: AbortSignal,
   ): Promise<GitHubNotificationIntakeClient & GitHubNotificationItemContextClient>;
-  worktrees: Pick<TrustedGitWorktreeService, 'prepareGitHub' | 'inspectGitHub'>;
+  worktrees: Pick<TrustedGitWorktreeService, 'prepareGitHub' | 'inspectGitHub'> &
+    Partial<Pick<TrustedGitWorktreeService, 'cleanupGitHub'>>;
   coordinator(
     manifest: AgentManifest,
     workspace: string,
@@ -215,6 +217,7 @@ export default class OpenClawDispatch {
         current.manifestDigest ||
       (!feedback && current.manifestDigest !== record.manifestDigest) ||
       record.retired ||
+      record.retirement ||
       record.reset ||
       (record.handoff && !work && !feedback)
     )
@@ -461,6 +464,13 @@ export default class OpenClawDispatch {
         undefined,
         new DiscoveryBudget(7000, budget.signal),
       ));
+    if (intake.status === 'ready')
+      await reconcileOpenClawLifecycle({
+        service: this,
+        manifest,
+        workspace,
+        authority: { signal: budget.signal },
+      });
     const state = await reporting.journal.read();
     const report = openclawIntakeReport({
       state,
@@ -494,7 +504,7 @@ export default class OpenClawDispatch {
     });
     applyOpenClawFeedbackScans(state.records, scans);
     const owners = state.records.filter(
-      (r) => !r.retired && !r.reset && r.sessionCreation?.verified && r.threadId,
+      (r) => !r.retired && !r.retirement && !r.reset && r.sessionCreation?.verified && r.threadId,
     );
     const more = Boolean(
       ('more' in intake && intake.more) ||
@@ -522,28 +532,35 @@ export default class OpenClawDispatch {
       await save();
     });
     const capacity = dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems);
-    const feedbackPending = state.records.some((record) =>
-      record.feedback?.events.some(
-        (event) =>
-          ((!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
-            event.phase !== 'blocked' &&
-            ((event.turn && event.turn.status !== 'completed') ||
-              (event.publicationAttempted && !event.receipt))) ||
-          (event.phase === 'queued' &&
-            (!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
-            !openClawItemOccupied(record) &&
-            capacity.available > 0),
-      ),
+    const feedbackPending = state.records.some(
+      (record) =>
+        !record.retired &&
+        !record.retirement &&
+        !record.reset &&
+        record.feedback?.events.some(
+          (event) =>
+            ((!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
+              event.phase !== 'blocked' &&
+              ((event.turn && event.turn.status !== 'completed') ||
+                (event.publicationAttempted && !event.receipt))) ||
+            (event.phase === 'queued' &&
+              (!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
+              !openClawItemOccupied(record) &&
+              capacity.available > 0),
+        ),
     );
     const recoverable = state.records.some(
       (record) =>
-        continuationStatus(record) ||
-        (record.blocker && dispatchRetryDue(record, (this.dependencies.now ?? Date.now)())),
+        !record.retired &&
+        !record.retirement &&
+        !record.reset &&
+        (continuationStatus(record) ||
+          (record.blocker && dispatchRetryDue(record, (this.dependencies.now ?? Date.now)()))),
     );
     const pending = pendingAssignments(state, current.admitted).some(pendingAssignment);
     const actionable = feedbackPending || recoverable || (capacity.available > 0 && pending);
     const code = state.records.find(
-      (record) => !record.retired && !record.reset && record.feedback?.code,
+      (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
     )?.feedback?.code;
     return {
       status: 'ready' as const,
@@ -654,6 +671,8 @@ export default class OpenClawDispatch {
       !(operator && ['inspect', 'retry'].includes(input.action))
     )
       throw new Error('dispatch-intake-caller-required');
+    if (input.action === 'next')
+      await reconcileOpenClawLifecycle({ service: this, manifest, workspace, authority });
     const snapshot = await current.journal.read();
     const scans =
       input.action === 'next' &&
@@ -686,7 +705,7 @@ export default class OpenClawDispatch {
         )
           throw new Error('dispatch-at-capacity');
         const activeKeys = after.records
-          .filter((record) => !record.retired && !record.reset)
+          .filter((record) => !record.retired && !record.retirement && !record.reset)
           .map((record) => record.issueKey);
         if (new Set(activeKeys).size !== activeKeys.length)
           throw new Error(stateSnapshotConflictCode);
@@ -751,6 +770,8 @@ export default class OpenClawDispatch {
               blocker: record.blocker,
               failureStage: record.failureStage,
               outcome: record.result?.outcome,
+              retirement: record.retirement,
+              retired: record.retired,
               feedback: record.feedback,
             })),
           };
@@ -759,6 +780,7 @@ export default class OpenClawDispatch {
           for (const record of state.records) {
             if (
               record.retired ||
+              record.retirement ||
               record.reset ||
               record.handoff ||
               !record.blocker ||
@@ -875,6 +897,7 @@ export default class OpenClawDispatch {
             .filter(
               (record) =>
                 !record.retired &&
+                !record.retirement &&
                 !record.reset &&
                 !record.feedback?.code &&
                 !openClawItemOccupied(record),
@@ -1595,7 +1618,14 @@ export default class OpenClawDispatch {
 }
 
 function continuationStatus(record: OpenClawDispatchRecord) {
-  if (!record.sessionCreation || record.retired || record.handoff || record.reset) return;
+  if (
+    !record.sessionCreation ||
+    record.retired ||
+    record.retirement ||
+    record.handoff ||
+    record.reset
+  )
+    return;
   // only the accepted receipt gap is automatically recoverable, and never by another send.
   if (
     ['blocked', 'waiting'].includes(record.phase) &&

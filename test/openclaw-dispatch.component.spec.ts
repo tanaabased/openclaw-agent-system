@@ -48,6 +48,7 @@ describe('agent/openclaw issue dispatch', () => {
   let consumeSend: boolean;
   let preparedWorktrees: number;
   let multiple: boolean;
+  let cronJobs: unknown[];
   const sessions = new Map<string, Record<string, unknown>>();
   const histories = new Map<
     string,
@@ -127,6 +128,7 @@ describe('agent/openclaw issue dispatch', () => {
     await writeFile(join(root, 'SKILL.md'), '# shared assessment fixture');
     session = null;
     calls = [];
+    cronJobs = [];
     lost = false;
     absent = false;
     active = false;
@@ -236,6 +238,11 @@ describe('agent/openclaw issue dispatch', () => {
                     },
                   ],
                 };
+              if (method === 'cron.list') return { jobs: cronJobs };
+              if (method === 'sessions.patch') {
+                session!.archived = params.archived;
+                return { ok: true };
+              }
               if (method === 'sessions.describe')
                 return { session: multiple ? sessions.get(String(params.key)) : session };
               if (method === 'chat.send') {
@@ -372,6 +379,105 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.length, 0);
   });
 
+  it('should retire closed sessions on intake and reclaim only preserved worktrees after the deadline', async () => {
+    await prepare(await next());
+    const inspect = service.dependencies.worktrees.inspectGitHub;
+    let removed = false;
+    const effects: string[] = [];
+    service.dependencies.worktrees.inspectGitHub = async (...args) =>
+      removed ? undefined : inspect(...args);
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      effects.push(input.verifyOnly ? 'verify' : 'remove');
+      if (!input.verifyOnly) removed = true;
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: input.verifyOnly ? 'preserved' : 'removed',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const pending = await record();
+    assert.equal(pending.retirement?.reason, 'issue-closed');
+    assert.equal(pending.retired, undefined);
+    assert.deepEqual(effects, []);
+    service.dependencies.now = () => pending.retirement!.eligibleAt;
+    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    assert.deepEqual(effects, ['verify', 'remove']);
+    assert.equal(session!.archived, true);
+    assert.ok((await record()).retired);
+    assert.equal(openClawCapacity([await record()], 1).occupied, 0);
+    await service.run(manifest, root, { ...coordinator, runId: 'again' }, { action: 'next' });
+    assert.deepEqual(effects, ['verify', 'remove']);
+  });
+
+  it('should reconcile interrupted worktree removal without repeating native archival or removal', async () => {
+    await prepare(await next());
+    const inspect = service.dependencies.worktrees.inspectGitHub;
+    let removed = false;
+    let removals = 0;
+    service.dependencies.worktrees.inspectGitHub = async (...args) =>
+      removed ? undefined : inspect(...args);
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (!input.verifyOnly) {
+        removals++;
+        await rm(input.worktree.path, { recursive: true, force: true });
+        removed = true;
+        throw new Error('lost-cleanup-response');
+      }
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: 'preserved',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    assert.equal((await record()).retirement?.code, 'lost-cleanup-response');
+    assert.equal((await record()).retired, undefined);
+    service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline + 60_000 });
+    await service.run(manifest, root, { ...coordinator, runId: 'recover' }, { action: 'next' });
+    assert.ok((await record()).retired);
+    assert.equal(removals, 1);
+    assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
+  });
+
+  it('should preserve a session targeted by a native automation', async () => {
+    await prepare(await next());
+    cronJobs = [{ sessionTarget: `session:${(await record()).threadId}` }];
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    service.dependencies.worktrees.cleanupGitHub = async () => {
+      throw new Error('must-not-remove');
+    };
+    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    assert.equal((await record()).retirement?.code, 'retirement-automation-owner');
+    assert.equal(session!.archived, undefined);
+  });
+
+  it('should preserve pinned sessions and worktrees while excluding them from active intake', async () => {
+    await prepare(await next());
+    session!.pinned = true;
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const pending = await record();
+    service.dependencies.now = () => pending.retirement!.eligibleAt;
+    service.dependencies.worktrees.cleanupGitHub = async () => {
+      throw new Error('must-not-remove');
+    };
+    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    assert.equal((await record()).retirement?.code, 'retirement-native-resource-protected');
+    assert.equal(session!.archived, undefined);
+    assert.equal((await record()).retired, undefined);
+  });
+
   it('should prepare the same intake report on retry and suppress its blocker after restart', async () => {
     const routed = await next();
     fixture.item.assignees = [];
@@ -402,6 +508,8 @@ describe('agent/openclaw issue dispatch', () => {
     });
     assert.equal(scans, 0, 'reporting must not discover or admit more assignments');
     intake.run = run;
+    assert.equal((await service.check(manifest, root)).changed, true);
+    await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);
     assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 0);
   });
@@ -809,6 +917,8 @@ describe('agent/openclaw issue dispatch', () => {
       (await service.run(manifest, root, coordinator, { action: 'next' })).status,
       'blocked',
     );
+    await acknowledgeReport();
+    assert.equal((await service.check(manifest, root)).changed, true);
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);
     assert.equal(preparedWorktrees, 0);
@@ -1889,8 +1999,14 @@ describe('agent/openclaw issue dispatch', () => {
           id: input.id,
         },
       );
-      assert.deepEqual(await record(), before);
-      assert.equal(calls.length, callsBefore);
+      assert.deepEqual(
+        { ...(await record()), lifecycleCheckedAt: 0 },
+        { ...before, lifecycleCheckedAt: 0 },
+      );
+      assert.deepEqual(
+        calls.slice(callsBefore).map((call) => call.method),
+        ['sessions.describe', 'chat.history'],
+      );
     } finally {
       release.resolve();
       await completing;
@@ -2455,7 +2571,10 @@ describe('agent/openclaw issue dispatch', () => {
         assert.ok(
           'retryable' in result && result.retryable && 'stage' in result && result.stage === stage,
         );
-        assert.deepEqual(await record(), before);
+        assert.deepEqual(
+          { ...(await record()), lifecycleCheckedAt: 0 },
+          { ...before, lifecycleCheckedAt: 0 },
+        );
       } finally {
         release.resolve();
         await locking;
@@ -2485,7 +2604,10 @@ describe('agent/openclaw issue dispatch', () => {
     });
     const before = await record();
     await assert.rejects(setup.present({ signal: controller.signal }), /dispatch-test-cancelled/);
-    assert.deepEqual(await record(), before);
+    assert.deepEqual(
+      { ...(await record()), lifecycleCheckedAt: 0 },
+      { ...before, lifecycleCheckedAt: 0 },
+    );
     cancel = false;
     setup.who.runId = 'later-owner';
     anchoredMessages = [
@@ -2528,7 +2650,10 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(result.status, 'blocked');
       assert.ok('code' in result && result.code === code);
       assert.equal('retryable' in result, false);
-      assert.deepEqual(await record(), before);
+      assert.deepEqual(
+        { ...(await record()), lifecycleCheckedAt: 0 },
+        { ...before, lifecycleCheckedAt: 0 },
+      );
     });
   }
 
@@ -2539,7 +2664,10 @@ describe('agent/openclaw issue dispatch', () => {
     const before = await record();
     const result = await setup.present();
     assert.ok('code' in result && result.code === 'dispatch-assignment-removed');
-    assert.deepEqual(await record(), before);
+    assert.deepEqual(
+      { ...(await record()), lifecycleCheckedAt: 0 },
+      { ...before, lifecycleCheckedAt: 0 },
+    );
   });
 
   it('should retain explicit implementation and publication permission without replacing the assessment', async () => {

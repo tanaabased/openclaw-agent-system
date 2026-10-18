@@ -40,6 +40,7 @@ export async function scanCodexFeedback(input: {
     .filter(
       (record) =>
         !record.retired &&
+        !record.retirement &&
         !record.reset &&
         record.effective &&
         record.threadId &&
@@ -184,7 +185,13 @@ export function applyFeedbackScans(
   let changed = false;
   for (const scan of scans) {
     const record = records.find((entry) => entry.id === scan.id);
-    if (!record || record.retired || record.reset || automationHash(record) !== scan.before)
+    if (
+      !record ||
+      record.retired ||
+      record.retirement ||
+      record.reset ||
+      automationHash(record) !== scan.before
+    )
       continue;
     record.feedback = scan.feedback;
     changed = true;

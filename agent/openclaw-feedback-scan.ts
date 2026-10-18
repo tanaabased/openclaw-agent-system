@@ -50,7 +50,11 @@ export async function scanOpenClawFeedback(input: {
   const records = input.state.records
     .filter(
       (record) =>
-        !record.retired && !record.reset && record.sessionCreation?.verified && record.threadId,
+        !record.retired &&
+        !record.retirement &&
+        !record.reset &&
+        record.sessionCreation?.verified &&
+        record.threadId,
     )
     .sort((a, b) => (a.feedback?.scannedTime ?? 0) - (b.feedback?.scannedTime ?? 0))
     .slice(0, 12);

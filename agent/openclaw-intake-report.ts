@@ -24,7 +24,12 @@ export default function openclawIntakeReport(input: {
   slots: number;
 }) {
   const { state, intake, observation } = input;
-  const active = state.records.filter((record) => !record.retired && !record.reset);
+  const active = state.records.filter(
+    (record) => !record.retired && !record.retirement && !record.reset,
+  );
+  const retirementPending = state.records.filter(
+    (record) => record.retirement && !record.retired,
+  ).length;
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
   const capacity = dispatchCapacity(state.records, input.slots);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
@@ -120,7 +125,8 @@ export default function openclawIntakeReport(input: {
       '',
     );
   lines.push(
-    `**Managing:** ${managing.length} issues${pending === undefined ? '' : ` · **Pending:** ${pending}`}`,
+    `**Active:** ${managing.length} issues${pending === undefined ? '' : ` · **Pending:** ${pending}`}`,
+    `**Retirement pending:** ${retirementPending}`,
     `**Slots:** ${capacity.occupied}/${input.slots} occupied · ${capacity.available} available`,
   );
   if (pending && !capacity.available)

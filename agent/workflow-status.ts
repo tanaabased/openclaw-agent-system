@@ -7,6 +7,7 @@ interface Delivery {
 interface State {
   phase: string;
   retired?: unknown;
+  retirement?: unknown;
   reset?: unknown;
   blocker?: string;
   retry?: unknown;
@@ -18,6 +19,7 @@ interface State {
 
 /** presentation follows retained evidence; it never grants authority or releases capacity. */
 export default function workflowStatus(record: State) {
+  if (record.retirement) return record.retired ? 'retired' : 'retirement-pending';
   if (
     record.retired ||
     record.reset ||

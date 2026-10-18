@@ -25,6 +25,7 @@ class FakeGitRunner implements GitWorktreeGitRunner {
   readonly identities = new Map<string, string>();
   readonly origins = new Map<string, string>();
   dirty = false;
+  preserved = true;
   fetchFails = false;
   removeFails = false;
   readonly worktrees = new Map<string, FakeWorktree>();
@@ -71,6 +72,8 @@ class FakeGitRunner implements GitWorktreeGitRunner {
         stdout: '',
       };
     }
+    if (command === 'for-each-ref')
+      return { exitCode: 0, stderr: '', stdout: this.preserved ? 'refs/heads/task' : '' };
     if (command === 'status') {
       return { exitCode: 0, stderr: '', stdout: this.dirty ? ' M tracked.txt\n' : '' };
     }
@@ -584,6 +587,18 @@ describe('tools/git/worktree-service', () => {
       );
       assert.equal(git.worktrees.size, 1);
       git.dirty = false;
+      git.preserved = false;
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId)).status,
+        'unpreserved',
+      );
+      assert.equal(git.worktrees.size, 1);
+      git.preserved = true;
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId, undefined, true)).status,
+        'preserved',
+      );
+      assert.equal(git.worktrees.size, 1);
       assert.equal(
         (await service.cleanup(context, input.repositoryId, input.workId)).status,
         'removed',
