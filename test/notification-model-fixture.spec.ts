@@ -476,7 +476,10 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         assert.equal((await action(input, 'delivery')).operation, 'prepare');
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).digest, digest);
-        append(input, 'delivery-publish', { status: 'published' });
+        append(input, 'delivery-publish', {
+          status: 'published',
+          workflowStatus: 'partially-delivered',
+        });
         assert.equal((await action(input, 'delivery')).operation, 'compose');
         append(input, 'delivery-compose', {
           status: 'composition-ready',
@@ -526,7 +529,10 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         assert.match(prepared.title!, /cleanup and verification/);
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).operation, 'publish');
-        append(input, 'delivery-publish', { status: 'published' });
+        append(input, 'delivery-publish', {
+          status: 'published',
+          workflowStatus: 'partially-delivered',
+        });
         assert.equal((await action(input, 'delivery')).operation, 'announce');
         append(input, 'delivery-repeat', { status: 'announced' });
         assert.equal((await action(input, 'delivery')).operation, 'present');

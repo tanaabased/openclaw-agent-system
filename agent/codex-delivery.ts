@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import workflowFailure from './workflow-failure.ts';
 import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
@@ -482,6 +483,7 @@ export default async function runCodexDelivery(
             notices: notices(delivery.attached),
             id: input.id,
             pullRequest: delivery.pullRequest,
+            workflowStatus: workflowStatus({ phase: 'complete', delivery }),
             url: url(delivery.pullRequest!.pullRequestNumber),
             instruction:
               'Call native attach_artifact for this pull_request URL in this chat, then list_artifacts, then ' +

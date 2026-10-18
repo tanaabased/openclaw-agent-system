@@ -12,6 +12,9 @@ describe('agent/dispatch-retry', () => {
     const record = {} as SharedDispatchRecord;
     for (const code of [
       'dispatch-creation-denied',
+      'delivery-human-publication-required',
+      'delivery-branch-changed',
+      'feedback-source-author-changed',
       'dispatch-turn-cancelled',
       'dispatch-assignment-authority-revoked',
     ])

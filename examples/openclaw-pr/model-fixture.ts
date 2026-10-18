@@ -378,6 +378,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           body,
         });
       if (published.status !== 'published') return;
+      if (!update && published.workflowStatus !== 'partially-delivered')
+        throw new Error('published pr must retain pending announcement as partial delivery');
     }
     if (!retry && !update) {
       const composed = result('delivery-compose');

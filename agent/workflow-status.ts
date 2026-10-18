@@ -16,7 +16,7 @@ interface State {
   work?: { delivery?: Delivery };
 }
 
-/** Presentation follows retained evidence; it never grants authority or releases capacity. */
+/** presentation follows retained evidence; it never grants authority or releases capacity. */
 export default function workflowStatus(record: State) {
   if (
     record.retired ||

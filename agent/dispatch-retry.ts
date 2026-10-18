@@ -66,10 +66,17 @@ export function dispatchFailurePhase(record: RetryState, code: string, error?: u
     return 'blocked' as const;
   if (
     /-(?:denied|cancelled|authority-revoked)$/.test(code) ||
+    /^delivery-(?:repository|issue|session|thread|worktree|branch|base|account|policy)-changed$/.test(
+      code,
+    ) ||
     /^dispatch-(?:receiver-account-changed|repository-(?:identity-changed|archived|disabled|owner-changed|name-changed|owner-not-allowed)|issue-(?:identity-changed|type-changed|closed)|assignment-(?:removed|actor-type-changed|actor-not-allowed|actor-changed))$/.test(
       code,
     ) ||
     [
+      'delivery-human-publication-required',
+      'feedback-source-identity-changed',
+      'feedback-source-author-changed',
+      'feedback-source-no-longer-eligible',
       'dispatch-assignment-superseded',
       'dispatch-policy-changed',
       'dispatch-policy-disabled',

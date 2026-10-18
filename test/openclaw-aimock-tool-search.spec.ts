@@ -168,7 +168,12 @@ describe('scripts/aimock-tool-search', () => {
     await step('work-result', 'agent_system_dispatch', { status: 'recorded' });
     await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
     assert.equal(
-      (await step('delivery-publish', 'agent_system_dispatch', { status: 'published' })).digest,
+      (
+        await step('delivery-publish', 'agent_system_dispatch', {
+          status: 'published',
+          workflowStatus: 'partially-delivered',
+        })
+      ).digest,
       digest,
     );
     await step('delivery-compose', 'agent_system_dispatch', {

@@ -67,7 +67,13 @@ requirements, `retrying` for scheduled transient recovery, and `blocked` for exp
 stops such as denial, cancellation, or lost authority. Recognized transport and
 rate-limit failures back off across scheduled runs, from five minutes up to an hour,
 honoring longer provider cooldowns. A prolonged outage needs no fresh stage approval;
-it does not discard the request or replay an uncertain write.
+it does not discard the request or replay an uncertain write. Inspection also exposes
+`workflowStatus`: `obsolete` identifies retired or superseded intent, and
+`partially-delivered` preserves a published PR while linkage, attachment, or its
+announcement remains incomplete. These descriptions do not release capacity or grant
+authority. Diagnostics identify the affected operation and issue, retaining successful
+starts alongside failures. Provider errors keep their bounded structured evidence;
+unclassified failures do not establish a credential problem.
 
 With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one
 immediate intake scan of that issue and reports `completed` when admission checking

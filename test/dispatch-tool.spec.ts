@@ -179,7 +179,12 @@ describe('tools/dispatch/tool', () => {
       const call = { ...event, params: { action: 'next' } };
       await f.hook(call, coordinator);
       const result = await f.build().execute(call.toolCallId, call.params);
-      assert.deepEqual(result.details, { status: 'waiting', code });
+      assert.deepEqual(result.details, {
+        status: 'waiting',
+        code,
+        runtime: 'openclaw',
+        operation: 'dispatch:next',
+      });
       assert.ok(!JSON.stringify(result).includes('private fixture'));
     }
   });

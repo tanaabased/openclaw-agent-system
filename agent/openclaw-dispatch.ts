@@ -1040,7 +1040,7 @@ export default class OpenClawDispatch {
             return {
               status: record.phase,
               id: record.id,
-              code: record.blocker,
+              ...workflowFailure(error, record.blocker),
               workflowStatus: workflowStatus(record),
               nextAction: 'next',
             };

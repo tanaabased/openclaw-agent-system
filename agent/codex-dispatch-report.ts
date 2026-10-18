@@ -50,10 +50,17 @@ export default function prepareDispatchReport(input: {
       record.result?.outcome === 'operator-setup-blocker',
   );
   const failures = [
-    ...(intake.blocker ? [{ id: 'scan', code: intake.blocker.code }] : []),
-    ...feedbackProblems.map((record) => ({ id: record.id, code: record.feedback!.code! })),
+    ...(intake.blocker
+      ? [{ id: 'scan', code: intake.blocker.code, operation: 'assignment scan' }]
+      : []),
+    ...feedbackProblems.map((record) => ({
+      id: record.id,
+      code: record.feedback!.code!,
+      operation: 'feedback',
+    })),
     ...problems.map((record) => ({
       id: record.id,
+      operation: 'assignment preparation',
       code: record.result!.outcome === 'operator-setup-blocker' ? record.result!.code : '',
     })),
   ];
@@ -86,9 +93,11 @@ export default function prepareDispatchReport(input: {
   });
   if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
   const title = notices.length
-    ? severity === 'error'
-      ? '❌ Intake could not finish'
-      : '⚠️ Intake needs attention'
+    ? !intake.blocker
+      ? '⚠️ Intake checked — some items need attention'
+      : severity === 'error'
+        ? '❌ Intake could not finish'
+        : '⚠️ Intake needs attention'
     : started.length
       ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
       : sent.length
@@ -120,7 +129,8 @@ export default function prepareDispatchReport(input: {
     const record = active.find((entry) => entry.id === notice.id);
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
-      `  **Action:** ${record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
+      `  **Operation:** ${notice.operation}`,
+      `  **Action:** ${notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
       ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
       `  **Diagnostic:** \`${notice.code}\``,
     );

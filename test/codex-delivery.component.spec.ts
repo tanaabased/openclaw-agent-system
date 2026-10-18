@@ -419,6 +419,7 @@ describe('agent/codex-delivery', () => {
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     const published = await publish();
     assert.equal(published.status, 'published');
+    assert.equal(published.workflowStatus, 'partially-delivered');
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(
@@ -454,7 +455,8 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(publish(), (error: unknown) => {
       assert.ok(error instanceof CodexDeliveryFailure);
       assert.match(error.message, /link unavailable/);
-      const failure = error.notices.find((notice) => notice.severity === 'error');
+      assert.equal(error.pullRequest?.pullRequestNumber, 7);
+      const failure = error.notices.find((notice) => notice.message.includes(url));
       assert.ok(failure?.message.includes(url));
       return true;
     });
@@ -736,7 +738,7 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(request('prepare'), /uncommitted-work/);
     dirty = false;
     fixture.item.assignees = [];
-    await assert.rejects(request('prepare'), /authority-revoked/);
+    await assert.rejects(request('prepare'), /dispatch-assignment-removed/);
     assert.equal(creates, 0);
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
   });

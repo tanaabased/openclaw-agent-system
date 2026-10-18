@@ -1,6 +1,6 @@
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 
-/** Match recovery to observed failure evidence rather than guessing at credential problems. */
+/** match recovery to observed failure evidence rather than guessing at credential problems. */
 export default function workflowRecovery(code: string, diagnostic?: ProviderDiagnostic) {
   if (diagnostic) {
     const safe = providerDiagnostic(

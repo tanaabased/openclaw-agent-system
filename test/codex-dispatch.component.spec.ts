@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import runCodexContinuation, {
   type CodexContinuationDependencies,
 } from '../agent/codex-continuation.ts';
@@ -1145,8 +1146,12 @@ describe('agent/codex-dispatch', () => {
 
   it('should preserve the default for legacy receipts after replacement configuration changes', async () => {
     const prepared = await prepare();
-    const legacy = await request('inspect');
-    delete (legacy.records as Array<Record<string, unknown>>)[0]!.assessment;
+    const selected = await selectCodexIntake(pluginData, deps);
+    const legacy = await new CodexDispatchStore(
+      selected.store.location.root,
+      selected.store.location.scope,
+    ).read();
+    delete legacy.records[0]!.assessment;
     await writeFile(
       join(pluginData, 'codex-dispatch-' + legacy.scope + '.json'),
       JSON.stringify(legacy),
@@ -1210,7 +1215,11 @@ describe('agent/codex-dispatch', () => {
       'retired',
     );
     const after = (await request('inspect')).records as Record<string, unknown>[];
-    assert.deepEqual(after[0], { ...before[0], retired: { at: now, by: 'operator' } });
+    assert.deepEqual(after[0], {
+      ...before[0],
+      retired: { at: now, by: 'operator' },
+      workflowStatus: 'obsolete',
+    });
     assert.deepEqual(await next(), { status: 'idle', changed: false });
     await assert.rejects(
       request('context', { id: first.id }, { threadId: 'issue-thread' }),
@@ -2776,6 +2785,33 @@ describe('agent/codex-dispatch', () => {
       'implementation' in context && context.implementation?.guidance?.content,
       'Keep this change bounded.',
     );
+  });
+
+  it('should preserve provider evidence and the existing send through continuation recovery', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    const original = fixture.client.getItem;
+    fixture.client.getItem = async () => {
+      throw Object.assign(new Error('provider request failed with details'), {
+        code: 'github-notification-request-failed',
+        providerDiagnostic: providerDiagnostic('github', 'api-request', 'rate-limit', {
+          resetAt: now + 900000,
+        }),
+      });
+    };
+    const recovered = await work.run('reconcile');
+    assert.equal(recovered.status, 'retrying');
+    assert.equal('code' in recovered && recovered.code, 'github-notification-request-failed');
+    assert.deepEqual(
+      'providerDiagnostic' in recovered && recovered.providerDiagnostic,
+      providerDiagnostic('github', 'api-request', 'rate-limit', { resetAt: now + 900000 }),
+    );
+    const records = (await request('inspect')).records as {
+      continuation: { attempt?: unknown; retryAfter?: number };
+    }[];
+    assert.ok(records[0]!.continuation.attempt);
+    assert.equal(records[0]!.continuation.retryAfter, now + 900000);
+    fixture.client.getItem = original;
   });
 
   it('should retain a starting continuation when an isolated reader reports interrupted without an end timestamp', async () => {

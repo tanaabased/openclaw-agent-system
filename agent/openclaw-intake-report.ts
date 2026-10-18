@@ -66,7 +66,9 @@ export default function openclawIntakeReport(input: {
     (fingerprint !== state.intakeReport?.fingerprint &&
       (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
   const title = failures.length
-    ? '⚠️ Intake needs attention'
+    ? observation.status === 'blocked'
+      ? '⚠️ Intake needs attention'
+      : '⚠️ Intake checked — some items need attention'
     : started.length
       ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
       : recovered.length
@@ -89,7 +91,13 @@ export default function openclawIntakeReport(input: {
     const record = active.find((record) => record.id === failure.id);
     const retry = record?.retry ? record.retryAfter : undefined;
     lines.push(
-      ...(record ? [`- **Status:** ${workflowStatus(record)}`] : []),
+      ...(record
+        ? [
+            `- **Issue:** ${text(label(record))}`,
+            `  **Operation:** ${text(record.failureStage ?? 'assignment preparation')}`,
+            `  **Status:** ${workflowStatus(record)}`,
+          ]
+        : ['- **Operation:** assignment scan']),
       `- **Diagnostic:** \`${text(failure.code)}\``,
       '  **Action:** ' +
         (retry

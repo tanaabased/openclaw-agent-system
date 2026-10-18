@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import workflowFailure from '../agent/workflow-failure.ts';
+import workflowFailure, { workflowFailureScope } from '../agent/workflow-failure.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scheduleDispatchRetry, dispatchFailurePhase } from '../agent/dispatch-retry.ts';
 
@@ -52,5 +52,31 @@ describe('agent/workflow-failure', () => {
     assert.equal(failure.providerDiagnostic?.retryAfterMs, null);
     assert.ok(!JSON.stringify(failure).includes('SECRET'));
     assert.ok(!JSON.stringify(failure).includes('untrusted replacement'));
+  });
+  it('should scope failures without copying private request content', () => {
+    assert.deepEqual(
+      workflowFailureScope('codex', 'continuation', {
+        action: 'delivery',
+        id: 'a'.repeat(64),
+        eventId: 'b'.repeat(64),
+        delivery: { action: 'publish', body: 'PRIVATE' },
+        prompt: 'PRIVATE',
+      }),
+      {
+        runtime: 'codex',
+        operation: 'continuation:delivery:publish',
+        id: 'a'.repeat(64),
+        eventId: 'b'.repeat(64),
+      },
+    );
+    assert.deepEqual(
+      workflowFailureScope('openclaw', 'dispatch', {
+        action: 'PRIVATE',
+        id: 'PRIVATE',
+        eventId: 'PRIVATE',
+        operation: 'PRIVATE',
+      }),
+      { runtime: 'openclaw', operation: 'dispatch' },
+    );
   });
 });

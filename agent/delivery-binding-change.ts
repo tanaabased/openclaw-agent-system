@@ -10,7 +10,7 @@ const reasons = {
   policyDigest: 'policy',
 } as const;
 
-/** Report the exact stable delivery field that changed, excluding per-attempt commit heads. */
+/** report the exact stable delivery field that changed, excluding per-attempt commit heads. */
 export default function deliveryBindingChange(
   previous: object,
   current: object,

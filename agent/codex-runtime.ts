@@ -1,4 +1,4 @@
-import workflowFailure from './workflow-failure.ts';
+import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
@@ -227,22 +227,26 @@ async function runSetup(args: string[]): Promise<void> {
   }
 }
 
+let failureScope: ReturnType<typeof workflowFailureScope> | undefined;
+async function readWorkflowInput(route: string) {
+  const request: unknown = JSON.parse(await readStandardInput());
+  failureScope = workflowFailureScope('codex', route, request);
+  return request;
+}
+
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'feedback') {
     writeJson(
-      await runCodexFeedback(parsePluginData(args.slice(1)), JSON.parse(await readStandardInput())),
+      await runCodexFeedback(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
     );
     return;
   }
   if (command === 'continuation') {
     writeJson(
-      await runCodexContinuation(
-        parsePluginData(args.slice(1)),
-        JSON.parse(await readStandardInput()),
-      ),
+      await runCodexContinuation(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
     );
     return;
   }
@@ -254,7 +258,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       return;
     }
     writeJson(
-      await runCodexDelivery(parsePluginData(args.slice(1)), JSON.parse(await readStandardInput())),
+      await runCodexDelivery(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
     );
     return;
   }
@@ -266,7 +270,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       return;
     }
     const pluginData = parsePluginData(args.slice(1));
-    const request: unknown = JSON.parse(await readStandardInput());
+    const request = await readWorkflowInput(command);
     if (!request || typeof request !== 'object' || Array.isArray(request))
       throw new Error('dispatch-action-invalid');
     const { action, ...input } = request as Record<string, unknown>;
@@ -441,7 +445,7 @@ runCodexRuntime().catch((error: unknown) => {
       })
     : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

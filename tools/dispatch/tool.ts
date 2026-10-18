@@ -1,4 +1,4 @@
-import workflowFailure from '../../agent/workflow-failure.ts';
+import workflowFailure, { workflowFailureScope } from '../../agent/workflow-failure.ts';
 import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
@@ -227,6 +227,7 @@ export default function createDispatchTool(input: {
                 return {
                   status: dispatchFailurePhase({}, failure.code, error),
                   ...failure,
+                  ...workflowFailureScope('openclaw', 'dispatch', params),
                 };
               });
           }

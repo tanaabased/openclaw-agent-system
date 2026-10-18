@@ -132,4 +132,33 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(pending.response, /authority-revoked/);
     assert.notEqual(pending.health, '');
   });
+  it('should scope an item failure while preserving a successful start', () => {
+    const started = {
+      id: 'good',
+      intakeId: 'good',
+      phase: 'assessing',
+      effective: { status: 'verified' },
+      threadId: 'good-chat',
+      dispatchedAt: 1,
+    } as DispatchRecord;
+    const failed = {
+      id: 'bad',
+      intakeId: 'bad',
+      phase: 'waiting',
+      result: {
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-operation-failed',
+        remediation: 'Inspect the retained request.',
+      },
+    } as DispatchRecord;
+    const report = prepareDispatchReport({
+      ...input,
+      state: { ...state, records: [started, failed] },
+    });
+    assert.deepEqual(report.started, ['good']);
+    assert.match(report.response, /codex:\/\/threads\/good-chat/);
+    assert.match(report.response, /Operation:\*\* assignment preparation/);
+    assert.match(report.response, /Status:\*\* waiting/);
+    assert.doesNotMatch(report.response, /Intake could not finish/);
+  });
 });

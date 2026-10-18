@@ -307,7 +307,10 @@ describe('agent/openclaw-feedback', () => {
       { body: '@receiver edited question' },
     ]) {
       Object.assign(source, changed);
-      await assert.rejects(action('publish', { digest }), /feedback-source-changed/);
+      await assert.rejects(
+        action('publish', { digest }),
+        /feedback-source-(?:changed|author-changed|no-longer-eligible)/,
+      );
       Object.assign(source, original);
     }
     revoked = true;

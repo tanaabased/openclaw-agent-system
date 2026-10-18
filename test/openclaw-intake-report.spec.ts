@@ -88,4 +88,28 @@ describe('agent/openclaw-intake-report', () => {
     assert.match(report.response, /pending assignments are unknown/);
     assert.doesNotMatch(report.response, /HIDDEN-PROVIDER-PAYLOAD|Queued feedback|plan-ready/);
   });
+  it('should identify the affected issue and operation without claiming the scan failed', () => {
+    const journal = state();
+    journal.records.push({
+      id: 'a'.repeat(64),
+      intakeId: 'b'.repeat(64),
+      issueKey: 'c'.repeat(64),
+      sourceThreadId: 'coordinator',
+      phase: 'waiting',
+      createdAt: 0,
+      manifestDigest: 'digest',
+      blocker: 'dispatch-assignment-event-missing',
+      failureStage: 'preparation',
+    } as never);
+    const report = openclawIntakeReport({
+      state: journal,
+      slots: 2,
+      observation: { status: 'ready', changed: true },
+    });
+    assert.match(report.response, /Issue:/);
+    assert.match(report.response, /Operation:\*\* preparation/);
+    assert.match(report.response, /Status:\*\* waiting/);
+    assert.match(report.response, /assignment-history/);
+    assert.doesNotMatch(report.response, /pending assignments are unknown/);
+  });
 });

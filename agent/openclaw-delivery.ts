@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
@@ -293,6 +294,7 @@ export default async function openClawDelivery(input: {
     status: action.operation === 'publish' ? 'published' : 'ready',
     id: record.id,
     pullRequest: receipt,
+    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
     url,
     instructions:
       'Call delivery compose, invoke the selected reply skill for the delivery event, submit candidate and execute announce with its preview digest. Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
