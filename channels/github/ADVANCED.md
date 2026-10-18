@@ -54,6 +54,11 @@ already installed native OpenClaw issue-planning automation. A successful reques
 reports `queued` and its native run ID; it does not claim the scan or assessment
 has completed. Installation and workflow activation remain explicit. Disabled,
 stale, or unreconciled workflows fail without enabling jobs.
+Each scheduled or explicitly requested intake run can start several assessments,
+bounded by the slots available when it begins. Already-started assessments keep
+running; quick completions do not refill that run’s allowance. Excess assignments
+wait for a later run.
+
 With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one
 immediate intake scan of that issue and reports `completed` when admission checking
 finishes. It does not run or alter the recurring automation, dispatch work, or retain

@@ -11,6 +11,7 @@ import { Value } from 'typebox/value';
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
+import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
@@ -88,6 +89,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       version: Type.Literal(1),
       scope: hash,
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
+      openclawPasses: Type.Optional(Type.Array(openclawIntakePassSchema)),
       continuationRun: Type.Optional(
         Type.Object(
           { id: text, actions: Type.Integer({ minimum: 0, maximum: 12 }) },
@@ -208,6 +210,28 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     if (
       !Value.Check(this.schema, state) ||
       state.scope !== this.scope ||
+      (state.openclawPasses !== undefined &&
+        (this.contract.runtime !== 'openclaw' ||
+          new Set(
+            state.openclawPasses.map((pass) =>
+              JSON.stringify([pass.sessionKey, pass.sessionId, pass.runId]),
+            ),
+          ).size !== state.openclawPasses.length ||
+          state.openclawPasses.some(
+            (pass) =>
+              pass.allowance > pass.limit ||
+              pass.recovery.length > pass.limit ||
+              pass.candidates.length > pass.allowance ||
+              pass.selected.filter((id) => !pass.recovery.includes(id)).length >
+                pass.candidates.length ||
+              pass.recovery.some((id) => !state.records.some((record) => record.id === id)) ||
+              pass.selected.some(
+                (id) =>
+                  !state.records.some(
+                    (record) => record.id === id && record.sourceThreadId === pass.sessionKey,
+                  ),
+              ),
+          ))) ||
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
       new Set(state.records.filter((r) => !r.reset && !r.retired).map((r) => r.issueKey)).size !==
         state.records.filter((r) => !r.reset && !r.retired).length ||
