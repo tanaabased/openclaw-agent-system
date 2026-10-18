@@ -213,7 +213,10 @@ export default async function runCodexDelivery(
       if (!branch || branch === checked.repo.defaultBranch)
         throw new Error('delivery-branch-required');
       await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
-      if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
+      if (
+        ['prepare', 'publish'].includes(input.action) &&
+        (await git(found.cwd, ['status', '--porcelain=v1'], signal))
+      )
         throw new Error('delivery-uncommitted-work');
       const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
       if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');

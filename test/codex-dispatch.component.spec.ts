@@ -2,6 +2,7 @@ import runCodexContinuation, {
   type CodexContinuationDependencies,
 } from '../agent/codex-continuation.ts';
 import { automationHash } from '../agent/automation-hash.ts';
+import { codexItemOccupied } from '../agent/codex-capacity.ts';
 import assert from 'node:assert/strict';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { readFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -3007,7 +3008,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal('code' in stopped && stopped.code, 'dispatch-assessment-skill-unavailable');
   });
 
-  it('should keep announcement recovery in delivery until its receipt is presented', async () => {
+  it('should release intake capacity while retaining announcement recovery after pr delivery', async () => {
     const work = await workIssue();
     const deliveryId = work.id;
     assert.ok(typeof deliveryId === 'string');
@@ -3021,6 +3022,7 @@ describe('agent/codex-dispatch', () => {
     const current = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     let confirmed = false;
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
     work.continuation.deliver = async (_data, _value, deliveryDeps) => {
       await deliveryDeps?.authorizeSchedule?.();
       await store.exclusive(async (state, save) => {
@@ -3042,6 +3044,7 @@ describe('agent/codex-dispatch', () => {
             policyDigest: 'a'.repeat(64),
           },
           creationAttempted: true,
+          pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
           reconciled: true,
           attached: true,
           cardAttempts: 1,
@@ -3060,11 +3063,13 @@ describe('agent/codex-dispatch', () => {
     };
     await work.run('delivery', { delivery: { action: 'present' } }, true);
     assert.equal((await store.read()).records[0]!.continuation!.phase, 'delivery');
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
     const context = await work.run('context', {}, true);
     assert.equal('deliveryOnly' in context && context.deliveryOnly, true);
     confirmed = true;
     await work.run('delivery', { delivery: { action: 'present' } }, true);
     assert.equal((await store.read()).records[0]!.continuation!.phase, 'complete');
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
   });
 
   it('should pass standing work publication authority to the existing delivery owner', async () => {

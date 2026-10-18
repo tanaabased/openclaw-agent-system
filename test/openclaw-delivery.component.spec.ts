@@ -203,8 +203,10 @@ describe('agent/openclaw-delivery', () => {
     return request('publish', { digest: prepared.digest, title: 'Fix issue', body: 'Closes #3' });
   }
   for (const draft of [false, true])
-    it(`should announce a ${draft ? 'draft' : 'ready'} pr and preserve its private card`, async () => {
+    it(`should reconcile announce and present a ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
+      dirty = true;
+      await request('reconcile');
       announcement.draft = draft;
       const context = await request('compose');
       assert.ok('digest' in context);

@@ -66,7 +66,11 @@ export default async function openClawDelivery(input: {
     (await realpath(record.worktree!))
   )
     throw new Error('delivery-worktree-diverged');
-  if (await git(['status', '--porcelain=v1'])) throw new Error('delivery-uncommitted-work');
+  if (
+    ['prepare', 'publish'].includes(action.operation) &&
+    (await git(['status', '--porcelain=v1']))
+  )
+    throw new Error('delivery-uncommitted-work');
   const head = await git(['rev-parse', '--verify', 'HEAD']);
   if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
   const count = Number(

@@ -274,8 +274,10 @@ describe('agent/codex-delivery', () => {
   });
 
   for (const draft of [false, true])
-    it(`should announce a delivered ${draft ? 'draft' : 'ready'} pr once with feedback disabled`, async () => {
+    it(`should reconcile announce and present a delivered ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
+      dirty = true;
+      await request('reconcile');
       announcement.draft = draft;
       const context = await request('compose');
       assert.equal(context.status, 'composition-ready');

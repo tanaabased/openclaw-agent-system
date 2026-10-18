@@ -6,7 +6,7 @@ Each manual refresh admits only this example’s issue, then asks the existing n
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. Operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device keeps `operator.read` and `operator.write`. EMORI creates the issue and posts the feedback comment. Only Tanaabot receives issue and PR assignments; EMORI has a production OpenClaw instance. CI owns the disposable workspaces, issue, PR, branch, and SSH key and cleans up only those resources.
 
-The first implementation follow-up stops after PR publication and its issue announcement. A second operator follow-up recovers the complete PR card from its retained receipt without publishing again, before the PR comment test runs.
+The first implementation follow-up stops after PR publication and its issue announcement. A second operator follow-up recovers the complete PR card from its retained receipt despite later uncommitted edits, without publishing again, before the PR comment test runs.
 
 A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
@@ -147,8 +147,10 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-announcements.json"
 jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].work.delivery.announcement.receipt.nodeId and (.[0].body | contains($delivery[0].work.delivery.announcement.publicText)) and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
 
-# should recover the complete card for the same pull request after another explicit operator request
+# should recover the complete card for the same pull request despite later uncommitted edits
 test -f "$TMPDIR/notification-activation-ready"
+worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
+printf '%s\n' 'Uncommitted follow-up work.' >> "$worktree/README.md"
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
 receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
