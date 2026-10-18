@@ -3,6 +3,7 @@ import runCodexContinuation, {
 } from '../agent/codex-continuation.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import assert from 'node:assert/strict';
+import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { readFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -3004,6 +3005,66 @@ describe('agent/codex-dispatch', () => {
     const stopped = await work.run('next');
     assert.equal(stopped.status, 'blocked');
     assert.equal('code' in stopped && stopped.code, 'dispatch-assessment-skill-unavailable');
+  });
+
+  it('should keep announcement recovery in delivery until its receipt is presented', async () => {
+    const work = await workIssue();
+    const deliveryId = work.id;
+    assert.ok(typeof deliveryId === 'string');
+    await work.run('next');
+    work.receive();
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked work.' } },
+      true,
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    let confirmed = false;
+    work.continuation.deliver = async (_data, _value, deliveryDeps) => {
+      await deliveryDeps?.authorizeSchedule?.();
+      await store.exclusive(async (state, save) => {
+        const record = state.records.find((entry) => entry.id === work.id)!;
+        const announcement = attemptedAnnouncement('U_receiver').state;
+        if (confirmed) announcement.receipt = { nodeId: 'IC_announcement', databaseId: 99 };
+        else announcement.code = 'delivery-announcement-failed';
+        record.delivery = {
+          id: deliveryId,
+          binding: {
+            repositoryId: 'R_repo',
+            issueId: 'I_issue',
+            threadId: record.threadId!,
+            worktree: record.worktree!,
+            branch: 'branch',
+            base: 'main',
+            head: 'a'.repeat(40),
+            authorId: 'U_receiver',
+            policyDigest: 'a'.repeat(64),
+          },
+          creationAttempted: true,
+          reconciled: true,
+          attached: true,
+          cardAttempts: 1,
+          announcement,
+        };
+        await save();
+      });
+      return {
+        status: 'linked',
+        instruction: 'Present the card.',
+        notices: [],
+        url: 'https://github.com/owner/repo/pull/7',
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        presentation: '> PR card',
+      };
+    };
+    await work.run('delivery', { delivery: { action: 'present' } }, true);
+    assert.equal((await store.read()).records[0]!.continuation!.phase, 'delivery');
+    const context = await work.run('context', {}, true);
+    assert.equal('deliveryOnly' in context && context.deliveryOnly, true);
+    confirmed = true;
+    await work.run('delivery', { delivery: { action: 'present' } }, true);
+    assert.equal((await store.read()).records[0]!.continuation!.phase, 'complete');
   });
 
   it('should pass standing work publication authority to the existing delivery owner', async () => {

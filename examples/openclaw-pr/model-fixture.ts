@@ -28,6 +28,10 @@ const dispatchStages = [
   'work-result',
   'delivery-prepare',
   'delivery-publish',
+  'delivery-compose',
+  'delivery-candidate',
+  'delivery-announce',
+  'delivery-repeat',
   'delivery-present',
   'feedback-context',
   'feedback-result',
@@ -241,7 +245,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   }
   const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
-    const retry = prompt.includes('Reconcile the existing PR and show its card again.');
+    const retry = prompt.includes(
+      'Reconcile the existing PR announcement and show its card again.',
+    );
     const title = 'Document disposable notification fixture cleanup';
     const body = 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
@@ -329,10 +335,50 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           body,
         });
       if (published.status !== 'published') return;
+      const composed = result('delivery-compose');
+      if (!composed)
+        return dispatch('delivery-compose', {
+          action: 'delivery',
+          operation: 'compose',
+          id: operatorId,
+        });
+      if (composed.status !== 'composition-ready' || typeof composed.digest !== 'string') return;
+      const selection = composed.selection as { skill?: { path?: string } } | undefined;
+      if (!selection?.skill?.path) return;
+      if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
+        return call('delivery-skill', 'read', { path: selection.skill.path });
+      const candidate = result('delivery-candidate');
+      if (!candidate)
+        return dispatch('delivery-candidate', {
+          action: 'delivery',
+          operation: 'candidate',
+          id: operatorId,
+          digest: composed.digest,
+          publicText: 'Adds the disposable issue cleanup note.',
+        });
+      if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
+        return;
+      const announced = result('delivery-announce');
+      if (!announced)
+        return dispatch('delivery-announce', {
+          action: 'delivery',
+          operation: 'announce',
+          id: operatorId,
+          digest: candidate.digest,
+        });
+      if (announced.status !== 'announced') return;
       return {
         content: 'Publication retained. Presentation intentionally deferred for recovery coverage.',
       };
     }
+    const repeated = result('delivery-repeat');
+    if (!repeated)
+      return dispatch('delivery-repeat', {
+        action: 'delivery',
+        operation: 'announce',
+        id: operatorId,
+      });
+    if (repeated.status !== 'announced') return;
     const presented = result('delivery-present');
     if (!presented)
       return dispatch('delivery-present', {
@@ -441,6 +487,7 @@ export const prExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'feedback-skill', name: 'read' },
+    { id: prefix + 'delivery-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + retryStage(stage, attempt),

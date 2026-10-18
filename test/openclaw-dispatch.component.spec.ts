@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -2170,6 +2171,55 @@ describe('agent/openclaw issue dispatch', () => {
     });
     return { id, who, comments };
   }
+  it('should reconcile an uncertain delivery announcement before discovering same-account feedback', async () => {
+    const { comments } = await feedbackOwner();
+    const announcement = attemptedAnnouncement(fixture.client.identity.nodeId);
+    const connect = service.dependencies.feedbackConnect!;
+    service.dependencies.feedbackConnect = async (...args) => ({
+      ...(await connect(...args)),
+      findOwnIssueComment: async () => ({
+        nodeId: 'IC_announcement',
+        databaseId: 100,
+        body: announcement.body,
+      }),
+    });
+    comments.push({
+      ...comments[0]!,
+      nodeId: 'IC_announcement',
+      databaseId: 100,
+      body: announcement.body,
+    });
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.work!.delivery = {
+        id: 'a'.repeat(64),
+        binding: {
+          repositoryId: 'R_repo',
+          issueId: 'I_issue',
+          threadId: record.threadId!,
+          sessionId: record.sessionCreation!.sessionId!,
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: fixture.client.identity.nodeId,
+          policyDigest: 'a'.repeat(64),
+        },
+        title: 'Title',
+        body: 'Body',
+        creationAttempted: true,
+        reconciled: true,
+        announcement: announcement.state,
+      };
+      await save();
+    });
+    await service.check(manifest, root);
+    assert.deepEqual(
+      (await record()).feedback!.events.map((event) => event.sourceId),
+      ['C_feedback'],
+    );
+  });
   it('should validate each feedback owner once during discovery and consume the saved result', async () => {
     await feedbackOwner();
     const validate = service.validate.bind(service);

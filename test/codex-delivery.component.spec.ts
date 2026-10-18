@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import announcementFixture from './delivery-announcement-fixture.ts';
+
 import { automationHash } from '../agent/automation-hash.ts';
 import runCodexDelivery, {
   codexDeliveryAttachment,
@@ -43,6 +45,7 @@ const result = (value: unknown) => ({
 });
 
 describe('agent/codex-delivery', () => {
+  let announcement: ReturnType<typeof announcementFixture>;
   let root: string, workspace: string, pluginData: string, store: CodexDispatchStore;
   let deps: CodexDeliveryDependencies, fixture: ReturnType<typeof intakeFixture>;
   let head: string, remote: string, dirty: boolean, attached: boolean, creates: number;
@@ -133,6 +136,7 @@ describe('agent/codex-delivery', () => {
       });
       await save();
     });
+    announcement = announcementFixture(account);
     head = firstHead;
     remote = '';
     dirty = false;
@@ -153,6 +157,12 @@ describe('agent/codex-delivery', () => {
       threadId: 'child',
       attachment: async () => attached,
       native: {
+        assessmentSkill: async (_cwd, name) => ({
+          name,
+          path: '/skills/reply/SKILL.md',
+          scope: 'user',
+          digest: 'a'.repeat(64),
+        }),
         find: async () => ({
           id: 'child',
           cwd: worktree,
@@ -182,6 +192,8 @@ describe('agent/codex-delivery', () => {
         account: {
           identity: account,
           execute: async (argv, stdin) => {
+            const comment = announcement.execute(argv, stdin);
+            if (comment) return comment;
             if (argv.includes('graphql')) {
               linkReads++;
               return result({
@@ -220,6 +232,15 @@ describe('agent/codex-delivery', () => {
               return result(pr);
             }
             if (endpoint === 'repos/owner/repo/pulls/7') {
+              if (argv.some((arg) => arg.includes('draft,state')))
+                return result({
+                  nodeId: 'PR_7',
+                  draft: announcement.draft,
+                  state: 'open',
+                  head: remote,
+                  title: pr?.title,
+                  body: pr?.body,
+                });
               if (argv.includes('PATCH')) {
                 bodyWrites++;
                 if (failLink) throw new Error('link unavailable');
@@ -250,6 +271,58 @@ describe('agent/codex-delivery', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  for (const draft of [false, true])
+    it(`should announce a delivered ${draft ? 'draft' : 'ready'} pr once with feedback disabled`, async () => {
+      await publish();
+      announcement.draft = draft;
+      const context = await request('compose');
+      assert.equal(context.status, 'composition-ready');
+      const preview = await request('candidate', {
+        digest: context.digest,
+        publicText: 'Delivers the requested change.',
+      });
+      assert.equal(preview.status, 'announcement-prepared');
+      assert.equal((await request('announce', { digest: preview.digest })).status, 'announced');
+      await request('announce');
+      const shown = await request('present');
+      assert.match(String(shown.presentation), /Pull request opened/);
+      assert.match(String(shown.presentation), /#issuecomment-91/);
+      assert.equal(announcement.posts, 1);
+      assert.match(announcement.comments[0]!.body, /pull\/7/);
+      assert.ok(announcement.comments[0]!.body.includes(draft ? 'Draft.' : 'Ready for review.'));
+      assert.equal(creates, 1);
+      assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 1);
+    });
+  it('should recover a lost announcement response from durable state without republishing the pr', async () => {
+    await publish();
+    const context = await request('compose');
+    const preview = await request('candidate', {
+      digest: context.digest,
+      publicText: 'Delivers the requested change.',
+    });
+    announcement.lost = true;
+    assert.equal(
+      (await request('announce', { digest: preview.digest })).status,
+      'announcement-blocked',
+    );
+    const saved = (await store.read())!.records[0]!.delivery!;
+    assert.equal(saved.reconciled, true);
+    assert.equal(saved.announcement!.attempted, true);
+    assert.equal(saved.announcement!.receipt, undefined);
+    assert.match(String((await request('present')).presentation), /announcement pending/);
+    announcement.lost = false;
+    assert.equal((await request('announce')).status, 'announced');
+    assert.equal(announcement.posts, 1);
+    assert.equal(creates, 1);
+  });
+  it('should block announcement when provider closing linkage has disappeared', async () => {
+    await publish();
+    providerLink = false;
+    assert.equal((await request('compose')).status, 'announcement-blocked');
+    assert.equal(announcement.posts, 0);
+    assert.equal((await store.read())!.records[0]!.delivery!.reconciled, true);
   });
 
   it('should retain linked custom implementation instructions after the pr card', async () => {

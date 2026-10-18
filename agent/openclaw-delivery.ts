@@ -1,3 +1,7 @@
+import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
+import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
+import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import { realpath } from 'node:fs/promises';
 
 import { automationHash } from './automation-hash.ts';
@@ -27,6 +31,9 @@ export default async function openClawDelivery(input: {
   base: string;
   recipients?: GitHubPullRequestRecipient[];
   feedbackEnabled: boolean;
+  selectAnnouncement?(
+    state?: DeliveryAnnouncementState,
+  ): Promise<DeliveryAnnouncementState['composition']>;
   connect(): Promise<OpenClawDeliveryConnection>;
   assertCurrent(): Promise<void>;
   reauthorize(): Promise<void>;
@@ -162,6 +169,38 @@ export default async function openClawDelivery(input: {
       await save();
     },
   };
+  if (
+    action.operation === 'compose' ||
+    action.operation === 'candidate' ||
+    action.operation === 'announce'
+  ) {
+    if (!previous?.pullRequest || !previous.reconciled)
+      throw new Error('delivery-reconciliation-required');
+    const announcement = await deliveryAnnouncement({
+      operation: action.operation,
+      digest: action.digest,
+      publicText: action.publicText,
+      delivery: previous,
+      publication,
+      provider,
+      client: new GitHubIssueCommentClient(new GitHubWorkEventApiClient(connection.account), 8000),
+      authorId: connection.account.identity.nodeId,
+      select: (state) => {
+        if (!input.selectAnnouncement) throw new Error('delivery-announcement-skill-unavailable');
+        return input.selectAnnouncement(state);
+      },
+      authorize: async () => {
+        await assertCurrent();
+        await input.reauthorize();
+      },
+      save,
+    });
+    return {
+      ...announcement,
+      id: record.id,
+      url: `https://github.com/${repository}/pull/${previous.pullRequest.pullRequestNumber}`,
+    };
+  }
   if (action.operation === 'publish') {
     if (action.digest !== digest) throw new Error('delivery-preview-stale');
     delivery.title = title;
@@ -191,13 +230,19 @@ export default async function openClawDelivery(input: {
   const receipt = delivery.pullRequest!;
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
   if (action.operation === 'present') {
-    delivery.presentation = githubNotificationPullRequestOpenedCard({
-      issueNumber: intake.issue.number,
-      pullRequestNumber: receipt.pullRequestNumber,
-      repositoryOwner: intake.repository.owner.login,
-      repositoryName: intake.repository.name,
-      commentFlow: input.feedbackEnabled ? 'openclaw' : 'unavailable',
-    });
+    delivery.presentation =
+      githubNotificationPullRequestOpenedCard({
+        issueNumber: intake.issue.number,
+        pullRequestNumber: receipt.pullRequestNumber,
+        repositoryOwner: intake.repository.owner.login,
+        repositoryName: intake.repository.name,
+        commentFlow: input.feedbackEnabled ? 'openclaw' : 'unavailable',
+      }) +
+      '\n\n' +
+      announcementPresentation(
+        delivery.announcement,
+        `https://github.com/${repository}/issues/${intake.issue.number}`,
+      );
     await save();
     return {
       status: 'presented',
@@ -213,6 +258,7 @@ export default async function openClawDelivery(input: {
     id: record.id,
     pullRequest: receipt,
     url,
-    instructions: 'Call delivery present and reproduce its complete card in this issue chat.',
+    instructions:
+      'Call delivery compose, invoke the selected reply skill for the delivery event, submit candidate and execute announce with its preview digest. Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
   };
 }

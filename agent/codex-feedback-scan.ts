@@ -1,3 +1,4 @@
+import { reconcileAnnouncement } from './delivery-announcement.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
@@ -69,7 +70,26 @@ export async function scanCodexFeedback(input: {
       if (record.sourceThreadId !== input.sourceThreadId)
         throw new Error('feedback-schedule-owner-changed');
       await revalidateAssignment(current.policy, admitted, provider.client);
+      const announcement = record.delivery?.announcement;
+      const ownCommentIds: string[] = [];
+      if (announcement?.receipt) ownCommentIds.push(announcement.receipt.nodeId);
+      else if (announcement?.attempted) {
+        const receipt = await reconcileAnnouncement({
+          state: announcement,
+          client: provider.comments,
+          authorId: provider.comments.identity.nodeId,
+          item: {
+            lifecycleId: 'issue',
+            number: admitted.issue.number,
+            repositoryOwner: admitted.repository.owner.login,
+            repositoryName: admitted.repository.name,
+            repositoryNodeId: admitted.repository.nodeId,
+          },
+        });
+        ownCommentIds.push(receipt.nodeId);
+      }
       const source = {
+        ownCommentIds,
         state: feedback,
         client: provider.comments,
         policy,
