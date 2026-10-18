@@ -332,7 +332,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
         url: 'https://github.com/' + intake.assignment.actor.login,
       },
     },
-    'Assess the requested outcome and prepare a plan. Stop before implementation or GitHub publication.',
+    'Assess this issue and prepare a plan. Stop before implementation or GitHub publication.',
   );
   return [
     card,
