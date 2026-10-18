@@ -30,7 +30,13 @@ import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../agent/resolve-codex-command-id.ts';
 import registerAgentCommandSecurity from '../agent/command-security.ts';
 import AutomationService from '../agent/automation-service.ts';
-import { requestAutomationGateway } from '../agent/automation-gateway.ts';
+import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
+import {
+  AutomationError,
+  nativeObject,
+  requestAutomationGateway,
+} from '../agent/automation-gateway.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
@@ -240,8 +246,38 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     namespace: api.runtime.state.resolveStateDir(),
     manifestService: lifecycleManifestService,
+    // tool registrations need not share the service-start closure; use enrolled read authority.
     readiness: (manifest, workspace) =>
-      notificationAutomationReadiness(automationService, manifest, workspace, readScheduler?.()),
+      sessionDispatch.use({ signal: AbortSignal.timeout(25000) }, (request) =>
+        notificationAutomationReadiness(
+          automationService,
+          manifest,
+          workspace,
+          undefined,
+          async (method, params) => {
+            try {
+              const result = await request(method, params);
+              if (!nativeObject(result))
+                throw new AutomationError('automation-native-response-invalid');
+              return result;
+            } catch (error) {
+              throw new AutomationError(
+                'automation-observation-unavailable',
+                automationGatewayDiagnostic(method, error),
+              );
+            }
+          },
+        ),
+      ),
+    readinessFailure: (error) =>
+      logger.warn(
+        'github-intake: automation-observation-unavailable ' +
+          JSON.stringify(
+            error instanceof AutomationError && error.diagnostic
+              ? error.diagnostic
+              : gatewayErrorDiagnostic(error),
+          ),
+      ),
     async connect(input, signal) {
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkItemClient(new GitHubWorkEventApiClient(connected));

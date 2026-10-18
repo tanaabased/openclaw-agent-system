@@ -434,6 +434,18 @@ describe('openclaw v2 intake slice', () => {
     assert.equal(result.code, 'automation-sync-required');
     assert.equal(inspections, 1);
     assert.equal(f.connects(), before);
+    const failure = new Error('scheduler connection failed');
+    const failures: unknown[] = [];
+    f.service.dependencies.readiness = async () => {
+      throw failure;
+    };
+    f.service.dependencies.readinessFailure = (error) => failures.push(error);
+    assert.equal(
+      await f.service.readiness(f.value, '/workspace'),
+      'automation-observation-unavailable',
+    );
+    assert.deepEqual(failures, [failure]);
+    assert.equal(f.connects(), before);
     const script = openclawIntakeJobs(f.value)[0]!.internalOpenClaw!.trigger.script;
     let output: { fire: boolean } | undefined;
     await runInNewContext(`(async()=>{${script}})()`, {

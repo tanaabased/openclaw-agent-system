@@ -17,6 +17,8 @@ Native history checks cover entry cards with debug off and retained instruction 
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-issue
 openclaw config set skills.workshop.autonomous.mode off
+# keep unrelated nightly memory turns out of the strict notification fixture
+openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/keys" "$HOME/.ssh"

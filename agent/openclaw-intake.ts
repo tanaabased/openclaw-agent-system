@@ -27,6 +27,7 @@ export interface OpenClawIntakeDependencies {
   ): Promise<GitHubNotificationIntakeClient>;
   now?: () => number;
   readiness?(manifest: AgentManifest, workspace: string): Promise<string | undefined>;
+  readinessFailure?(error: unknown): void;
 }
 
 /** V2 admission only. No sessions, assessment results, V1 files or publication. */
@@ -49,7 +50,8 @@ export default class OpenClawIntake {
   async readiness(manifest: AgentManifest, workspace: string) {
     try {
       return await this.dependencies.readiness?.(manifest, workspace);
-    } catch {
+    } catch (error) {
+      this.dependencies.readinessFailure?.(error);
       return 'automation-observation-unavailable';
     }
   }

@@ -5,7 +5,7 @@ import modelRoutingCard from '../channels/github/presentation/model-routing.ts';
 import workflowInstructions from '../channels/github/presentation/workflow-instructions.ts';
 import type { RoutingDecision } from './model-routing.ts';
 import assessmentGuidance from './assessment-guidance.ts';
-import { assessmentResultSchema } from './assessment-result.ts';
+import { assessmentResultContextSchema } from './assessment-result.ts';
 import openClawSkill from './openclaw-skill.ts';
 import { automationHash } from './automation-hash.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
@@ -214,7 +214,7 @@ export async function issueAssessmentAction(input: {
           }
         : {}),
       resultContract: 'assessment-result/v1',
-      resultSchema: assessmentResultSchema,
+      resultSchema: assessmentResultContextSchema,
       instructions:
         'Use the returned shared assessment skill and optional guidance. Preserve the complete assessment and saved routing. Use only this native tool for context and result; include previousResultDigest for revisions. After status recorded, reproduce the complete returned presentation here. No implementation or publication is authorized.',
     };

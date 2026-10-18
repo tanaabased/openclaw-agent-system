@@ -1354,6 +1354,29 @@ describe('agent/openclaw issue dispatch', () => {
       const reloaded = await context(input.id);
       assert.ok('previousPresentation' in reloaded);
       assert.equal(reloaded.previousPresentation, recorded.presentation);
+      assert.ok('previousResult' in reloaded && 'resultSchema' in reloaded);
+      assert.deepEqual(reloaded.previousResult, plan);
+      assert.equal(Value.Check(reloaded.resultSchema, plan), true);
+      // native tool search includes both content and details in its model-facing envelope.
+      const transported = JSON.stringify(
+        {
+          tool: {
+            id: 'openclaw:agent-system:agent_system_dispatch',
+            name: 'agent_system_dispatch',
+            source: 'openclaw',
+          },
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(reloaded) }],
+            details: reloaded,
+          },
+        },
+        null,
+        2,
+      );
+      assert.ok(
+        transported.length < 32000,
+        `assessment context exceeds the 128k model tool budget: ${transported.length}`,
+      );
     });
   }
 
