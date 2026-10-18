@@ -1,3 +1,4 @@
+import { scheduleDispatchRetry } from './dispatch-retry.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
 import assessmentSummary from './assessment-summary.ts';
 import {
@@ -550,6 +551,7 @@ export async function runCodexDispatch(
           admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
         );
         record.retryAfter = now + 300000;
+        scheduleDispatchRetry(record, code(error), error, now);
         // an item failure does not end the shared intake occurrence.
         if (state.run) delete state.run.stopped;
         const result = notice(
@@ -615,6 +617,7 @@ export async function runCodexDispatch(
             record.request &&
             !record.effective &&
             record.phase !== 'complete' &&
+            (!record.retry || record.retry.attempts < 5) &&
             (record.retryAfter ?? 0) <= now,
         )) {
           const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
@@ -622,6 +625,7 @@ export async function runCodexDispatch(
           try {
             await revalidateDispatchAssignment(current, intake, deps, signal);
             await recover(current, pending, intake, deps, save);
+            delete pending.retry;
             pending.retryAfter = now + 300000;
             await fresh();
             const result = notice(pending, intake);
@@ -682,7 +686,10 @@ export async function runCodexDispatch(
         if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
           return checked('at-capacity');
         const intake = pendingDispatchAssignments(state, admitted).find(
-          ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
+          ({ record }) =>
+            !record?.request &&
+            (!record?.retry || record.retry.attempts < 5) &&
+            (record?.retryAfter ?? 0) <= now,
         )?.intake;
         if (!intake) return checked('idle');
         let record = state.records.find(
@@ -949,6 +956,8 @@ export async function runCodexDispatch(
           );
           record.createdAt = now;
           record.preparationTurnId = state.run!.id;
+          delete record.retry;
+          delete record.retryAfter;
           record.request = {
             title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
             prompt: launchPrompt(record, intake),

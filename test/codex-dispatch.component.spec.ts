@@ -217,6 +217,29 @@ describe('agent/codex-dispatch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should retry a transient preparation failure only after its backoff', async () => {
+    const original = deps.connect!;
+    deps.connect = async (...args) => ({
+      ...(await original(...args)),
+      getItemContext: async () => {
+        throw new Error('dispatch-host-unavailable');
+      },
+    });
+    const failure = await next();
+    assert.equal(failure.code, 'dispatch-host-unavailable');
+    const selected = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(
+      selected.store.location.root,
+      selected.store.location.scope,
+    );
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.retry?.attempts, 1);
+    assert.equal((await next()).status, 'idle');
+    deps.connect = original;
+    now = retained.retryAfter!;
+    assert.equal((await next()).status, 'routing-required');
+  });
+
   for (const loseResponse of [false, true]) {
     it(`should retain one assessment summary in codex after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
       const prepared = await prepare();

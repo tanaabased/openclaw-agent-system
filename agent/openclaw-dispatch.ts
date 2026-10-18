@@ -1,3 +1,4 @@
+import { dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import assessmentSummary from './assessment-summary.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import selectFeedbackStage from './feedback-stage.ts';
@@ -158,6 +159,7 @@ export default class OpenClawDispatch {
       const record = state.records.find((entry) => entry.id === id);
       if (record) {
         record.blocker = code;
+        scheduleDispatchRetry(record, code, error, (this.dependencies.now ?? Date.now)());
         if (stage) record.failureStage = stage;
         if (record.phase !== 'complete') record.phase = 'blocked';
         await save();
@@ -511,7 +513,11 @@ export default class OpenClawDispatch {
           (event.phase === 'queued' && !openClawItemOccupied(record) && capacity.available > 0),
       ),
     );
-    const recoverable = state.records.some((record) => continuationStatus(record));
+    const recoverable = state.records.some(
+      (record) =>
+        continuationStatus(record) ||
+        (record.blocker && dispatchRetryDue(record, (this.dependencies.now ?? Date.now)())),
+    );
     const pending = pendingAssignments(state, current.admitted).some(pendingAssignment);
     const actionable = feedbackPending || recoverable || (capacity.available > 0 && pending);
     const code = state.records.find(
@@ -727,6 +733,24 @@ export default class OpenClawDispatch {
           };
         const now = (this.dependencies.now ?? Date.now)();
         if (input.action === 'next') {
+          for (const record of state.records) {
+            if (
+              record.retired ||
+              record.reset ||
+              record.handoff ||
+              !record.blocker ||
+              !dispatchRetryDue(record, now)
+            )
+              continue;
+            delete record.blocker;
+            record.phase = record.assessmentTurn
+              ? 'assessing'
+              : record.sessionCreation?.verified
+                ? 'created'
+                : record.request
+                  ? 'creating'
+                  : 'routing';
+          }
           const signal = authority.signal
             ? AbortSignal.any([authority.signal, transactionSignal])
             : transactionSignal;
@@ -979,6 +1003,7 @@ export default class OpenClawDispatch {
             if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode) throw error;
             record.phase = 'blocked';
             record.blocker = openClawDispatchFailureCode(error);
+            scheduleDispatchRetry(record, record.blocker, error, now);
             await save();
             return { status: 'blocked', id: record.id, code: record.blocker, nextAction: 'next' };
           }
@@ -1274,6 +1299,8 @@ export default class OpenClawDispatch {
           record.worktree = worktree.path;
           record.routing = JSON.stringify(routing);
           record.routingNote = `Requested ${routing.candidate.model} / ${routing.candidate.thinking}; session settings are verified at creation, not model execution.`;
+          delete record.retry;
+          delete record.retryAfter;
           record.request = {
             key: `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}`,
             idempotencyKey: record.id,

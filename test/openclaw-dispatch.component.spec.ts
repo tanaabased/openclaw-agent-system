@@ -341,6 +341,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(result.status, 'reported');
   }
 
+  it('should retry a transient worktree failure on a later occurrence without creating twice', async () => {
+    const input = await next();
+    const original = service.dependencies.worktrees.prepareGitHub;
+    service.dependencies.worktrees.prepareGitHub = async () => {
+      throw new Error('session-dispatch-connect-timeout');
+    };
+    const failure = await prepare(input);
+    assert.ok('code' in failure && failure.code === 'session-dispatch-connect-timeout');
+    const retained = await record();
+    assert.equal(retained.retry?.attempts, 1);
+    assert.equal(creates().length, 0);
+    service.dependencies.worktrees.prepareGitHub = original;
+    service.dependencies.now = () => retained.retryAfter!;
+    coordinator.runId = 'retry-intake';
+    const retry = await next();
+    assert.equal(retry.status, 'routing-required');
+    assert.equal((await prepare(retry)).status, 'session-created');
+    assert.equal(creates().length, 1);
+  });
+
   it('should defer reporting during an overlapping journal operation without changing work', async () => {
     const current = await service.scope(manifest, root);
     await current.journal.exclusive(async (state) => {

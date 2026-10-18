@@ -80,6 +80,12 @@ export const dispatchRecordProperties = {
   notice: Type.Optional(hash), // legacy presentation metadata; never used for intake decisions.
   dispatchedAt: Type.Optional(Type.Integer({ minimum: 0 })),
   intakeReportedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  retry: Type.Optional(
+    Type.Object(
+      { code: text, attempts: Type.Integer({ minimum: 1, maximum: 5 }) },
+      { additionalProperties: false },
+    ),
+  ),
   nativeInactive: Type.Optional(Type.Boolean()),
   retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
 };
