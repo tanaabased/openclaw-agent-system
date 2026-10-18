@@ -9,6 +9,7 @@ import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { assessmentResultSchema } from './assessment-result.ts';
+import { assessmentSummarySchema } from './assessment-summary-state.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
@@ -52,6 +53,8 @@ export const dispatchRecordProperties = {
     ),
   ),
   result: Type.Optional(assessmentResultSchema),
+  assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
+  assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema, { maxItems: 32 })),
   stageReceipt: Type.Optional(
     Type.Object(
       {

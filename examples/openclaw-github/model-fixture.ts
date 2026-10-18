@@ -12,6 +12,9 @@ export const githubExampleEmoriPrompt =
 
 export const githubExampleTanaabotCallId = 'call_example_github_tanaabot';
 export const githubExampleEmoriCallId = 'call_example_github_emori';
+export const githubExampleValidationPrompt =
+  'Use the managed GitHub tool to attempt setting git_protocol to ssh and report the configuration boundary.';
+export const githubExampleValidationCallId = 'call_example_github_validation';
 function roleText(request: ChatCompletionRequest, role: string): string {
   return request.messages
     .filter((message) => message.role === role)
@@ -69,10 +72,49 @@ function githubIdentityFixtures(prompt: string, expectedLogin: string, callId: s
 const fixtures: Fixture[] = [
   ...githubIdentityFixtures(githubExampleTanaabotPrompt, 'tanaabot', githubExampleTanaabotCallId),
   ...githubIdentityFixtures(githubExampleEmoriPrompt, 'emoriwan', githubExampleEmoriCallId),
+  {
+    match: {
+      hasToolResult: false,
+      model,
+      predicate: (request) => hasPrompt(request, githubExampleValidationPrompt),
+      toolName: 'agent_system_github',
+    },
+    response: {
+      id: `${githubExampleValidationCallId}_tool_response`,
+      toolCalls: [
+        {
+          arguments: JSON.stringify({ argv: ['config', 'set', 'git_protocol', 'ssh'] }),
+          id: githubExampleValidationCallId,
+          name: 'agent_system_github',
+        },
+      ],
+    },
+  },
+  {
+    match: {
+      hasToolResult: true,
+      model,
+      predicate: (request) => {
+        const result = openClawAIMockToolResultText(
+          request.messages,
+          githubExampleValidationCallId,
+        );
+        return (
+          hasPrompt(request, githubExampleValidationPrompt) &&
+          result?.includes('agent.yaml') === true &&
+          result.includes('may not be mutated')
+        );
+      },
+    },
+    response: {
+      content: 'Managed configuration mutation was rejected.',
+      id: `${githubExampleValidationCallId}_final_response`,
+    },
+  },
 ];
 
 export const githubExampleScenario: OpenClawAIMockScenario = {
-  finalResponses: ['tanaabot', 'emoriwan'],
+  finalResponses: ['tanaabot', 'emoriwan', 'Managed configuration mutation was rejected.'],
   fixtures,
   id: 'openclaw-github',
   model: {
@@ -83,6 +125,7 @@ export const githubExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: githubExampleTanaabotCallId, name: 'agent_system_github' },
     { id: githubExampleEmoriCallId, name: 'agent_system_github' },
+    { id: githubExampleValidationCallId, name: 'agent_system_github' },
   ],
   userPromptSignals: [],
 };

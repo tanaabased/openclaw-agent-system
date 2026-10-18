@@ -115,6 +115,9 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" delivery --help | grep -F 'present renders the card and notices even when attachment is pending'
 if output=$(printf '%s\n' '{"action":"publish","id":"missing"}' | node "$runtime" delivery --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid" and .notices[0].severity == "error"'
+if output=$(printf '%s\n' '{"action":"announce","id":"missing"}' | node "$runtime" delivery --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid"'
+
 
 # should accept separate feedback and stage selections while leaving disabled workflows inactive
 root="$TMPDIR/agent-system-codex-notifications"

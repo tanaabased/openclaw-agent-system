@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
+
 import { automationHash } from '../agent/automation-hash.ts';
 import runCodexFeedback, { type CodexFeedbackDependencies } from '../agent/codex-feedback.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
@@ -261,6 +263,54 @@ describe('agent/codex-feedback', () => {
     assert.equal(candidate.status, 'candidate-recorded');
     return composition;
   }
+  it('should reconcile a lost announcement receipt before admitting same-account feedback', async () => {
+    await call('next');
+    const announcement = attemptedAnnouncement(account.nodeId);
+    published = announcement.body;
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.delivery = {
+        id,
+        binding: {
+          repositoryId: 'R_repo',
+          issueId: 'I_issue',
+          threadId: 'child',
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: account.nodeId,
+          policyDigest: 'a'.repeat(64),
+        },
+        creationAttempted: true,
+        reconciled: true,
+        attached: true,
+        cardAttempts: 1,
+        announcement: announcement.state,
+      };
+      await save();
+    });
+    for (const [nodeId, databaseId, body] of [
+      ['reply', 99, announcement.body],
+      ['human', 100, '@receiver explain this'],
+    ] as const)
+      comments.push({
+        nodeId,
+        databaseId,
+        body,
+        author: account,
+        bodyTruncated: false,
+        createdAt: '2026-10-13T01:00:00Z',
+        updatedAt: '2026-10-13T01:00:00Z',
+      });
+    occurrence++;
+    assert.equal((await call('next')).status, 'feedback-prepared');
+    assert.deepEqual(
+      (await store.read()).records[0]!.feedback!.events.map((event) => event.sourceId),
+      ['human'],
+    );
+    assert.equal(creates, 0);
+  });
   it('should finish a quiet discovery cycle when the clock advances during the scan', async () => {
     let time = baseline + 70000;
     deps.now = () => ++time;

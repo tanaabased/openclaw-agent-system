@@ -48,6 +48,9 @@ export default function recordDispatchResult(input: {
     input.previousResultDigest !== automationHash(record.result)
   )
     throw new Error('assessment-result-conflict');
+  if (!record.result || automationHash(record.result) !== automationHash(result))
+    record.assessmentRevision = (record.assessmentRevision ?? 0) + 1;
+  record.assessmentRevision ??= 1;
   record.result = result;
   record.stageReceipt = { binding, resultDigest: automationHash(result) };
   record.resultTurnId = input.turnId;

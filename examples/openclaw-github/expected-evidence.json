@@ -1,21 +1,21 @@
 {
-  "discoveryRequestCount": 2,
-  "finalResponseCount": 2,
+  "discoveryRequestCount": 3,
+  "finalResponseCount": 3,
   "model": "aimock/gpt-5.5",
-  "promptRequestCount": 6,
+  "promptRequestCount": 9,
   "provider": "aimock",
-  "requestCount": 6,
-  "responsesApiRequestCount": 6,
+  "requestCount": 9,
+  "responsesApiRequestCount": 9,
   "scenario": "openclaw-github",
   "schemaVersion": 2,
   "strictMissCount": 0,
-  "successfulFixtureResponseCount": 6,
+  "successfulFixtureResponseCount": 9,
   "tools": [
     {
-      "callResponseCount": 2,
+      "callResponseCount": 3,
       "name": "agent_system_github",
-      "projectionRequestCount": 4,
-      "resultRequestCount": 2
+      "projectionRequestCount": 6,
+      "resultRequestCount": 3
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { Type, type TProperties } from 'typebox';
+import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
 import { assessmentResultSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
@@ -33,6 +34,7 @@ export const dispatchParameters = Type.Union([
   object({ action: Type.Literal('start'), id }),
   object({ action: Type.Literal('assess'), id }),
   object({ action: Type.Literal('context'), id }),
+  object({ action: Type.Literal('summary'), id, ...assessmentSummaryRequestProperties }),
   object({
     action: Type.Literal('handoff'),
     id,
@@ -57,8 +59,12 @@ export const dispatchParameters = Type.Union([
       Type.Literal('publish'),
       Type.Literal('reconcile'),
       Type.Literal('present'),
+      Type.Literal('compose'),
+      Type.Literal('candidate'),
+      Type.Literal('announce'),
     ]),
     digest: Type.Optional(id),
+    publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ minLength: 1, maxLength: 65536, pattern: '\\S' })),
   }),

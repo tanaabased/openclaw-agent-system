@@ -22,6 +22,11 @@ const dispatchStages = [
   'report',
   'refresh-context',
   'refresh-result',
+  'summary-compose',
+  'summary-candidate',
+  'summary-preview',
+  'summary-publish',
+  'summary-duplicate',
   'feedback-context',
   'feedback-result',
   'feedback-compose',
@@ -89,6 +94,51 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (!retained) return dispatch('report', { action: 'report' });
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
+  };
+  const summary = (id: string, saved: Record<string, unknown>): FixtureResponse | undefined => {
+    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    const args = { action: 'summary', id };
+    const composed = result('summary-compose');
+    if (!composed)
+      return {
+        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
+        content: saved.presentation,
+      };
+    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
+    if (
+      composed.status !== 'composition-ready' ||
+      typeof composed.digest !== 'string' ||
+      !skill?.path
+    )
+      return;
+    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
+      return call('summary-skill', 'read', { path: skill.path });
+    const candidate = result('summary-candidate');
+    if (!candidate)
+      return dispatch('summary-candidate', {
+        ...args,
+        operation: 'candidate',
+        digest: composed.digest,
+        publicText:
+          'Today disposable test issues can hang around after a run. The plan is to explain when to close them, so you can keep the results you need without leaving a cluttered issue list. This is proposed documentation work; implementation has not started.',
+      });
+    if (candidate.status !== 'candidate-recorded') return;
+    const preview = result('summary-preview');
+    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
+    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
+    const published = result('summary-publish');
+    if (!published)
+      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
+    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
+    const duplicate = result('summary-duplicate');
+    if (!duplicate)
+      return dispatch('summary-duplicate', {
+        ...args,
+        operation: 'publish',
+        digest: preview.digest,
+      });
+    if (duplicate.status !== 'published') return;
+    return { content: published.presentation };
   };
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
@@ -207,7 +257,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         },
       });
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return { content: saved.presentation };
+    return summary(refreshId, saved);
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
@@ -307,7 +357,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         planSummary: 'Describe closing disposable test issues after capturing evidence.',
         plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
         fullAssessment:
-          'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.',
+          'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation was performed.',
         evidence: [
           {
             source: project.path,
@@ -322,7 +372,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       },
     });
   if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  return { content: saved.presentation };
+  return summary(id, saved);
 }
 
 function response(request: ChatCompletionRequest) {
@@ -344,7 +394,10 @@ const final: Fixture = {
   match: {
     model: /^(?:aimock\/)?gpt-5\.5$/u,
     systemMessage: [identity],
-    predicate: (request) => 'content' in (response(request) ?? {}),
+    predicate: (request) => {
+      const value = response(request);
+      return !!value && 'content' in value && !('toolCalls' in value);
+    },
   },
   response: (request) => {
     const value = response(request);
@@ -362,6 +415,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'feedback-skill', name: 'read' },
+    { id: prefix + 'summary-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + retryStage(stage, attempt),

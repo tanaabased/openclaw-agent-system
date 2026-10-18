@@ -1,3 +1,6 @@
+import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
+import redactFeedback from './feedback-redaction.ts';
+import { reconcileAnnouncement } from './delivery-announcement.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
@@ -120,8 +123,35 @@ export async function scanOpenClawFeedback(input: {
           connection,
         );
         if (!provider) throw new Error('feedback-provider-unavailable');
+        const announcement = record.work?.delivery?.announcement;
+        const ownCommentIds: string[] = [];
+        if (announcement?.receipt) ownCommentIds.push(announcement.receipt.nodeId);
+        else if (announcement?.attempted) {
+          const receipt = await reconcileAnnouncement({
+            state: announcement,
+            client: provider,
+            authorId: provider.identity.nodeId,
+            item: {
+              lifecycleId: 'issue',
+              number: intake.issue.number,
+              repositoryOwner: intake.repository.owner.login,
+              repositoryName: intake.repository.name,
+              repositoryNodeId: intake.repository.nodeId,
+            },
+          });
+          ownCommentIds.push(receipt.nodeId);
+        }
         const common = {
           state: feedback,
+          ownCommentIds: async () => [
+            ...ownCommentIds,
+            ...(await assessmentSummaryOwnPublications(
+              record,
+              intake,
+              { client: provider! },
+              redactFeedback,
+            )),
+          ],
           client: provider,
           policy: manifest.github!.notifications!,
           now,

@@ -318,7 +318,10 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       assert.equal(revised.previousResultDigest, digest);
       assert.ok(!JSON.stringify(revised.result).includes('notification-hidden-later-fact'));
       append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
-      assert.deepEqual(await response(later), { content: '> ## 🧭 Plan ready' });
+      const nextResponse = await response(later);
+      assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
+      if (scenario.id === 'openclaw-issue')
+        assert.equal((await action(later, 'summary')).operation, 'compose');
     });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
@@ -378,7 +381,13 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         status: 'recorded',
         presentation: 'The complete retained presentation.',
       });
-      assert.deepEqual(await response(input), { content: 'The complete retained presentation.' });
+      const nextResponse = await response(input);
+      assert.equal(
+        'content' in nextResponse && nextResponse.content,
+        'The complete retained presentation.',
+      );
+      if (scenario.id === 'openclaw-issue')
+        assert.equal((await action(input, 'summary')).operation, 'compose');
       for (const value of [
         { ...context, runtime: 'codex' },
         { ...context, id: 'c'.repeat(64) },
@@ -457,10 +466,25 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).digest, digest);
         append(input, 'delivery-publish', { status: 'published' });
+        assert.equal((await action(input, 'delivery')).operation, 'compose');
+        append(input, 'delivery-compose', {
+          status: 'composition-ready',
+          digest,
+          selection: { skill: { path: '/skills/reply/SKILL.md' } },
+        });
+        const skill = await response(input);
+        assert.ok('toolCalls' in skill && skill.toolCalls?.[0]?.name === 'read');
+        append(input, 'delivery-skill', { content: 'Reply skill instructions.' });
+        assert.equal((await action(input, 'delivery')).operation, 'candidate');
+        append(input, 'delivery-candidate', { status: 'announcement-prepared', digest });
+        assert.equal((await action(input, 'delivery')).operation, 'announce');
+        append(input, 'delivery-announce', { status: 'announced' });
         assert.ok('content' in (await response(input)));
         const retry = request(
-          `Operator request for managed issue ${id}: Reconcile the existing PR and show its card again.`,
+          `Operator request for managed issue ${id}: Reconcile the existing PR announcement and show its card again.`,
         );
+        assert.equal((await action(retry, 'delivery')).operation, 'announce');
+        append(retry, 'delivery-repeat', { status: 'announced' });
         assert.equal((await action(retry, 'delivery')).operation, 'present');
         append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
         assert.deepEqual(await response(retry), { content: '> PR card' });

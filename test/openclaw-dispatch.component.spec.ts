@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -219,6 +220,13 @@ describe('agent/openclaw issue dispatch', () => {
               if (method === 'skills.status')
                 return {
                   skills: [
+                    {
+                      name: 'agent-system-feedback-reply',
+                      source: 'openclaw-plugins',
+                      filePath: join(root, 'SKILL.md'),
+                      eligible: true,
+                      modelVisible: true,
+                    },
                     {
                       name: 'agent-system-issue-assessment',
                       source: 'openclaw-plugins',
@@ -1635,6 +1643,97 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
+  for (const loseResponse of [false, true]) {
+    it(`should retain one assessment summary in openclaw after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await context(input.id);
+      const recorded = await submit(input.id);
+      assert.ok(
+        'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
+      );
+      let writes = 0;
+      let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
+      service.dependencies.feedbackConnect = async () => ({
+        ...fixture.client,
+        getItemContext: async () => ({
+          title: 'issue',
+          body: '',
+          comments: [],
+          labels: [],
+          truncated: false,
+        }),
+        listIssueComments: async () => ({ comments: [], truncated: false }),
+        getIssueComment: async () => {
+          throw new Error('unexpected source lookup');
+        },
+        createIssueComment: async (_o, _n, number, body) => {
+          assert.equal(number, 3);
+          writes++;
+          receipt = { nodeId: 'SUMMARY', databaseId: 901, body };
+          if (loseResponse) throw new Error('response-lost');
+          return receipt;
+        },
+        findOwnIssueComment: async () => receipt,
+        replies: {
+          create: async () => {
+            throw new Error('unexpected reply');
+          },
+          find: async () => undefined,
+        },
+      });
+      const summary = async (
+        operation: 'compose' | 'candidate' | 'publish' | 'reconcile',
+        digest?: string,
+        publicText?: string,
+      ) =>
+        service.run(manifest, root, assessor(input.id), {
+          action: 'summary',
+          id: input.id,
+          operation,
+          digest,
+          publicText,
+        });
+      const composed = await summary('compose');
+      assert.equal(composed.status, 'composition-ready');
+      assert.ok('digest' in composed);
+      assert.equal(
+        (
+          await summary(
+            'candidate',
+            composed.digest,
+            'The proposal would show your result immediately, so you can keep going.',
+          )
+        ).status,
+        'candidate-recorded',
+      );
+      const preview = await summary('publish');
+      assert.ok('digest' in preview);
+      const competing = await Promise.allSettled([
+        summary('publish', preview.digest),
+        summary('publish', preview.digest),
+      ]);
+      assert.ok(
+        competing.some(
+          (entry) =>
+            entry.status === 'fulfilled' &&
+            entry.value.status === (loseResponse ? 'blocked' : 'published'),
+        ),
+      );
+      assert.equal(writes, 1);
+      service = new OpenClawDispatch(service.dependencies);
+      if (loseResponse) {
+        assert.equal((await summary('publish', preview.digest)).status, 'reconcile-required');
+        assert.equal((await summary('reconcile')).status, 'published');
+      }
+      assert.equal((await summary('compose')).status, 'published');
+      assert.equal(writes, 1);
+      assert.deepEqual((await record()).result, plan);
+      assert.equal((await record()).assessmentSummaries?.[0]?.receipt?.nodeId, 'SUMMARY');
+    });
+  }
+
   it('should retain a full assessment with native caller binding and free capacity without another send', async () => {
     const input = await next();
     await prepare(input);
@@ -2547,6 +2646,55 @@ describe('agent/openclaw issue dispatch', () => {
     coordinator.runId = 'feedback-run';
     return { id, who, comments };
   }
+  it('should reconcile an uncertain delivery announcement before discovering same-account feedback', async () => {
+    const { comments } = await feedbackOwner();
+    const announcement = attemptedAnnouncement(fixture.client.identity.nodeId);
+    const connect = service.dependencies.feedbackConnect!;
+    service.dependencies.feedbackConnect = async (...args) => ({
+      ...(await connect(...args)),
+      findOwnIssueComment: async () => ({
+        nodeId: 'IC_announcement',
+        databaseId: 100,
+        body: announcement.body,
+      }),
+    });
+    comments.push({
+      ...comments[0]!,
+      nodeId: 'IC_announcement',
+      databaseId: 100,
+      body: announcement.body,
+    });
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.work!.delivery = {
+        id: 'a'.repeat(64),
+        binding: {
+          repositoryId: 'R_repo',
+          issueId: 'I_issue',
+          threadId: record.threadId!,
+          sessionId: record.sessionCreation!.sessionId!,
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: fixture.client.identity.nodeId,
+          policyDigest: 'a'.repeat(64),
+        },
+        title: 'Title',
+        body: 'Body',
+        creationAttempted: true,
+        reconciled: true,
+        announcement: announcement.state,
+      };
+      await save();
+    });
+    await service.check(manifest, root);
+    assert.deepEqual(
+      (await record()).feedback!.events.map((event) => event.sourceId),
+      ['C_feedback'],
+    );
+  });
   it('should validate each feedback owner once during discovery and consume the saved result', async () => {
     await feedbackOwner();
     const validate = service.validate.bind(service);

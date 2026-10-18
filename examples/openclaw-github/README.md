@@ -1,6 +1,6 @@
 # OpenClaw GitHub Example
 
-Verify two distinct GitHub identities through the packed plugin and real Gateway. Installation creates separate native OpenClaw profiles with manifest-derived Git authors; repeat installation preserves those bindings. Strict AIMock drives two managed GitHub identity calls. Direct native profile status independently verifies that OpenClaw consumes the matching agent credentials.
+Verify two distinct GitHub identities through the packed plugin and real Gateway. Installation creates separate native OpenClaw profiles with manifest-derived Git authors; repeat installation preserves those bindings. Strict AIMock drives two managed GitHub identity calls and requires the real safe rejection reason for a generated-config mutation probe. Direct native profile status independently verifies that OpenClaw consumes the matching agent credentials.
 
 Ubuntu CI supplies the existing Tanaabot and EMORI test tokens. Requests read identity only; this example creates no GitHub content. SSH-key provisioning and remote checkout belong to the worktree example.
 
@@ -36,6 +36,9 @@ test "$(openclaw config get agents.entries.emori.tools.github.profileId --json |
 # should execute each managed github tool under its own account
 openclaw agent --agent tanaabot --session-key agent:tanaabot:github-identity --message-file "$GITHUB_WORKSPACE/examples/openclaw-github/tanaabot/whoami.md" --timeout 120 | grep -F tanaabot
 openclaw agent --agent emori --session-key agent:emori:github-identity --message-file "$GITHUB_WORKSPACE/examples/openclaw-github/emori/whoami.md" --timeout 120 | grep -F emoriwan
+
+# should deliver the generated configuration boundary to the model
+openclaw agent --agent tanaabot --session-key agent:tanaabot:github-validation --message-file "$GITHUB_WORKSPACE/examples/openclaw-github/tanaabot/validation.md" --timeout 120 | grep -F 'Managed configuration mutation was rejected.'
 openclaw-aimock evidence --scenario openclaw-github --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-github/expected-evidence.json"
 
 # should expose the same distinct identities through native openclaw github profiles

@@ -248,7 +248,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'delivery') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: delivery --plugin-data <path>\nJSON on stdin: action prepare, publish, reconcile, or present; id is the retained managed issue receipt. Prepare returns a digest for explicitly authorized publication. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
+        'Usage: delivery --plugin-data <path>\nJSON on stdin: action prepare, publish, reconcile, compose, candidate, announce, or present; id is the retained managed issue receipt. Prepare returns a digest for explicitly authorized publication. compose selects the reply skill; candidate prepares the issue announcement; announce publishes its exact digest or reconciles an uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
       );
       return;
     }
@@ -278,6 +278,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         'reconcile',
         'context',
         'result',
+        'summary',
         'handoff',
         'report',
         'retry-denied',

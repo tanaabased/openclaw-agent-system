@@ -3,6 +3,8 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import announcementFixture from './delivery-announcement-fixture.ts';
+
 import { automationHash } from '../agent/automation-hash.ts';
 import openClawDelivery from '../agent/openclaw-delivery.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
@@ -18,6 +20,7 @@ const response = (value: unknown) => ({
 });
 
 describe('agent/openclaw-delivery', () => {
+  let announcement: ReturnType<typeof announcementFixture>;
   let root: string, record: OpenClawDispatchRecord;
   let creates: number, pushes: number, saves: number;
   let remote: string,
@@ -30,6 +33,7 @@ describe('agent/openclaw-delivery', () => {
   let input: Omit<Parameters<typeof openClawDelivery>[0], 'action'>;
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'openclaw-delivery-')));
+    announcement = announcementFixture({ login: 'agent', nodeId: 'U_agent', type: 'User' });
     creates = pushes = saves = 0;
     remote = '';
     dirty = lost = missing = failLink = revoked = false;
@@ -69,6 +73,18 @@ describe('agent/openclaw-delivery', () => {
     };
     input = {
       record,
+      selectAnnouncement: async (retained) => ({
+        version: 1,
+        requestedSkill: 'reply',
+        defaultSkill: true,
+        observedAt: retained?.composition.observedAt ?? 1,
+        skill: {
+          name: 'reply',
+          path: '/skills/reply/SKILL.md',
+          scope: 'user',
+          digest: 'a'.repeat(64),
+        },
+      }),
       source,
       base: 'main',
       recipients: [],
@@ -108,6 +124,8 @@ describe('agent/openclaw-delivery', () => {
           account: {
             identity: { login: 'agent', nodeId: 'U_agent' },
             async execute(argv, stdin) {
+              const comment = announcement.execute(argv, stdin);
+              if (comment) return comment;
               if (argv.includes('graphql')) {
                 if (failLink) throw new Error('link read failed');
                 return response({
@@ -136,6 +154,18 @@ describe('agent/openclaw-delivery', () => {
                 if (lost || missing) throw new Error('response lost');
                 return response(pr);
               }
+              if (
+                endpoint === 'repos/owner/repo/pulls/7' &&
+                argv.some((arg) => arg.includes('draft,state'))
+              )
+                return response({
+                  nodeId: 'PR_7',
+                  draft: announcement.draft,
+                  state: 'open',
+                  head: remote,
+                  title: pr?.title,
+                  body: pr?.body,
+                });
               if (endpoint === 'repos/owner/repo/pulls/7')
                 return response({
                   nodeId: 'PR_7',
@@ -158,7 +188,11 @@ describe('agent/openclaw-delivery', () => {
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
-  const request = (operation: 'prepare' | 'publish' | 'reconcile' | 'present', extra = {}) =>
+  const request = (
+    operation:
+      'prepare' | 'publish' | 'reconcile' | 'present' | 'compose' | 'candidate' | 'announce',
+    extra = {},
+  ) =>
     openClawDelivery({
       ...input,
       action: { action: 'delivery', id: record.id, operation, ...extra },
@@ -168,6 +202,54 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, title: 'Fix issue', body: 'Closes #3' });
   }
+  for (const draft of [false, true])
+    it(`should reconcile announce and present a ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
+      await publish();
+      dirty = true;
+      await request('reconcile');
+      announcement.draft = draft;
+      const context = await request('compose');
+      assert.ok('digest' in context);
+      const preview = await request('candidate', {
+        digest: context.digest,
+        publicText: 'Delivers the requested change.',
+      });
+      assert.ok('digest' in preview);
+      assert.equal((await request('announce', { digest: preview.digest })).status, 'announced');
+      await request('announce');
+      const shown = await request('present');
+      assert.ok('presentation' in shown);
+      assert.match(shown.presentation!, /Pull request opened/);
+      assert.match(shown.presentation!, /#issuecomment-91/);
+      assert.equal(announcement.posts, 1);
+      assert.ok(announcement.comments[0]!.body.includes(draft ? 'Draft.' : 'Ready for review.'));
+      assert.equal(creates, 1);
+      assert.equal(pushes, 1);
+    });
+  it('should reconcile a lost announcement response after restart without recreating the pr', async () => {
+    await publish();
+    const context = await request('compose');
+    assert.ok('digest' in context);
+    const preview = await request('candidate', {
+      digest: context.digest,
+      publicText: 'Delivers the requested change.',
+    });
+    assert.ok('digest' in preview);
+    announcement.lost = true;
+    assert.equal(
+      (await request('announce', { digest: preview.digest })).status,
+      'announcement-blocked',
+    );
+    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(record.work!.delivery!.announcement!.attempted, true);
+    input.record = record = JSON.parse(JSON.stringify(record));
+    announcement.lost = false;
+    assert.equal((await request('announce')).status, 'announced');
+    assert.equal(announcement.posts, 1);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
+  });
+
   it('should publish once and retain the issue pr session binding with a quoted card and truthful feedback availability', async () => {
     assert.equal((await publish()).status, 'published');
     const shown = await request('present');

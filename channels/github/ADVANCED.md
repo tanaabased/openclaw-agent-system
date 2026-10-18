@@ -175,14 +175,20 @@ complete plan and uses the existing chat, managed worktree, and model selection.
 
 Delivery requires committed work on the task branch. It applies configured
 `issue-assignment.pull-request.recipients`, verifies GitHub's closing link, and
-returns the shared quoted PR card. After an interrupted publication, ask the same
+posts one concise announcement on the originating issue with the PR link, change
+description, and GitHub's draft/ready status. It uses the configured reply skill and
+voice guidance even when feedback intake is disabled. The private response retains
+the complete quoted PR card, public quote, and publication outcome. Native approval
+still applies to the comment. After an interrupted publication, ask the same
 chat to reconcile the existing PR. A retained attempt with no verifiable PR remains
 blocked rather than risking a second creation. Native denial, reassignment, or a
 changed session/worktree stops the operation without discarding the work.
 
 If showing an already-created PR is interrupted or temporarily busy, ask the same
 issue chat to show its card again. Presentation reuses the saved PR; it does not
-push or create another one.
+push or create another one, or post an announcement. If announcing fails, the PR
+remains delivered. Ask the same chat to recover its announcement; uncertain writes
+reconcile the saved text and receipt without posting a duplicate.
 
 ## V1 Retirement
 

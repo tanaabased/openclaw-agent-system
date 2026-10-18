@@ -1,3 +1,13 @@
+import codexSummaryAuthority from './codex-summary-authority.ts';
+import assessmentSummary from './assessment-summary.ts';
+import {
+  assessmentSummaryInstructions,
+  type AssessmentSummaryRequest,
+} from './assessment-summary-state.ts';
+import selectFeedbackStage from './feedback-stage.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
+import redactCodexFeedback from './codex-feedback-redaction.ts';
+import { requireWorkflowSchedule } from './workflow-result.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import codexCapacity from './codex-capacity.ts';
@@ -73,6 +83,8 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   activation?: typeof inspectCodexDispatchActivation;
   native?: Native;
   git?: DispatchGit;
+  feedbackConnect?: typeof connectCodexFeedback;
+  summaryAuthority?: (threadId: string, turnId: string) => Promise<void>;
   prepareRepository?: typeof prepareDispatchRepository;
   threadId?: string;
 }
@@ -332,7 +344,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
         url: 'https://github.com/' + intake.assignment.actor.login,
       },
     },
-    'Assess this issue and prepare a plan. Stop before implementation or GitHub publication.',
+    'Assess the requested outcome and prepare a plan. Stop before implementation. After recording and presenting the complete assessment, follow the host-verified summary operation for its bounded GitHub comment.',
   );
   return [
     card,
@@ -454,7 +466,7 @@ export async function runCodexDispatch(
   const operatorReset = action === 'reset';
   const operatorRetire = action === 'retire';
   const operatorAction = operatorRecovery || operatorReset || operatorRetire;
-  const childAction = action === 'context' || action === 'result';
+  const childAction = action === 'context' || action === 'result' || action === 'summary';
   const retainedWork = childAction || action === 'reconcile' || action === 'report';
   if (!retainedWork && !current.policy) throw new Error('dispatch-policy-disabled');
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -992,6 +1004,79 @@ export async function runCodexDispatch(
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
           );
           await fresh();
+          if (action === 'summary') {
+            if (!record.result || !native.turnId)
+              throw new Error('assessment-summary-source-unavailable');
+            const activate = () =>
+              (deps.activation ?? inspectCodexDispatchActivation)(
+                pluginData,
+                { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                false,
+                false,
+                'assessment-summary',
+              );
+            const summaryAuthority = await activate();
+            if (!summaryAuthority.schedule)
+              throw new Error('workflow-schedule-reconciliation-required');
+            requireWorkflowSchedule(
+              summaryAuthority.schedule.saved,
+              summaryAuthority.schedule.current,
+              'assessment-summary',
+            );
+            const authorityDigest = automationHash(summaryAuthority.schedule);
+            return assessmentSummary({
+              record,
+              intake,
+              action: input as unknown as AssessmentSummaryRequest,
+              turnId: native.turnId,
+              authorityDigest,
+              presentation: assessmentPresentation(
+                record.result,
+                record,
+                intake,
+                current.workspace,
+                { debug: current.manifest.debug },
+              ),
+              save,
+              redact: redactCodexFeedback,
+              authorize: async () => {
+                await fresh();
+                if (input.operation !== 'reconcile') {
+                  if (deps.summaryAuthority) await deps.summaryAuthority(native.id, native.turnId!);
+                  else {
+                    const connection = await connectCodexThreads(
+                      current.workspace,
+                      current.codexHome,
+                    );
+                    try {
+                      await codexSummaryAuthority(connection.request, native.id, native.turnId!);
+                    } finally {
+                      await connection.close();
+                    }
+                  }
+                }
+                if (automationHash((await activate()).schedule) !== authorityDigest)
+                  throw new Error('assessment-summary-authority-changed');
+                await revalidateDispatchAssignment(current, intake, deps, signal, true);
+              },
+              select: async (previous) =>
+                (
+                  await selectFeedbackStage({
+                    policy: current.manifest.github!.notifications!,
+                    workflow: 'issue-assignment',
+                    workspace: current.workspace,
+                    observedAt: previous?.observedAt ?? now,
+                    resolveSkill: (id) =>
+                      withNative(current, deps, (host) => host.assessmentSkill(native.cwd, id)),
+                  })
+                ).selection,
+              connect: async () => ({
+                client: (
+                  await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal)
+                ).comments,
+              }),
+            });
+          }
           if (action === 'context') {
             // legacy receipts keep their original default, never today's replacement configuration.
             const selected = record.assessment;
@@ -1115,6 +1200,7 @@ export async function runCodexDispatch(
               outcome: result.outcome,
               previousResultDigest: automationHash(result),
               presentation,
+              instruction: assessmentSummaryInstructions('codex'),
             };
           }
           const result = notice(record, intake);

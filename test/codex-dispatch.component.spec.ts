@@ -2,7 +2,9 @@ import runCodexContinuation, {
   type CodexContinuationDependencies,
 } from '../agent/codex-continuation.ts';
 import { automationHash } from '../agent/automation-hash.ts';
+import { codexItemOccupied } from '../agent/codex-capacity.ts';
 import assert from 'node:assert/strict';
+import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { readFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -214,6 +216,88 @@ describe('agent/codex-dispatch', () => {
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
+
+  for (const loseResponse of [false, true]) {
+    it(`should retain one assessment summary in codex after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+      const prepared = await prepare();
+      created();
+      const child = { threadId: 'issue-thread' };
+      await request('context', { id: prepared.id }, child);
+      const privateResult = {
+        ...result,
+        fullAssessment: 'The complete private technical plan and its limits.',
+      };
+      const recorded = await request('result', { id: prepared.id, result: privateResult }, child);
+      assert.ok(String(recorded.presentation).includes(privateResult.fullAssessment));
+      const current = await selectCodexIntake(pluginData, deps);
+      const authority = {
+        workflow: 'issue-assignment' as const,
+        automationId: 'native-intake',
+        sourceThreadId: 'intake-thread',
+        policyDigest: automationHash(current.manifest.github!.notifications),
+        definitionDigest: 'd'.repeat(64),
+      };
+      deps.activation = async () => ({
+        sourceThreadId: 'intake-thread',
+        schedule: {
+          current: authority,
+          saved: { ...authority, version: 1, capabilities: ['assessment-summary'] },
+        },
+      });
+      deps.summaryAuthority = async () => {};
+      let writes = 0;
+      let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
+      deps.feedbackConnect = async () =>
+        ({
+          comments: {
+            createIssueComment: async (_o: string, _n: string, _i: number, body: string) => {
+              writes++;
+              receipt = { nodeId: 'SUMMARY', databaseId: 900, body };
+              if (loseResponse) throw new Error('response-lost');
+              return receipt;
+            },
+            findOwnIssueComment: async () => receipt,
+          },
+        }) as unknown as Awaited<
+          ReturnType<NonNullable<CodexDispatchDependencies['feedbackConnect']>>
+        >;
+      const summary = (input: Record<string, unknown>) =>
+        request('summary', { id: prepared.id, ...input }, child);
+      const composed = await summary({ operation: 'compose' });
+      assert.equal(composed.status, 'composition-ready');
+      assert.equal((composed.source as { kind: string }).kind, 'assessment');
+      assert.equal(
+        (
+          await summary({
+            operation: 'candidate',
+            digest: composed.digest,
+            publicText:
+              'The proposed change would show your result immediately, so you can keep going.',
+          })
+        ).status,
+        'candidate-recorded',
+      );
+      const preview = await summary({ operation: 'publish' });
+      assert.equal(preview.destination, 'https://github.com/owner/repo/issues/3');
+      assert.equal(
+        (await summary({ operation: 'publish', digest: preview.digest })).status,
+        loseResponse ? 'blocked' : 'published',
+      );
+      if (loseResponse) {
+        assert.equal(
+          (await summary({ operation: 'publish', digest: preview.digest })).status,
+          'reconcile-required',
+        );
+        assert.equal((await summary({ operation: 'reconcile' })).status, 'published');
+      }
+      assert.equal((await summary({ operation: 'compose' })).status, 'published');
+      assert.equal(writes, 1);
+      assert.deepEqual(
+        (await request('context', { id: prepared.id }, child)).previousResult,
+        privateResult,
+      );
+    });
+  }
 
   it('should fill available slots past running assessments and retain the remaining queue and notices', async () => {
     const items = [
@@ -3004,6 +3088,70 @@ describe('agent/codex-dispatch', () => {
     const stopped = await work.run('next');
     assert.equal(stopped.status, 'blocked');
     assert.equal('code' in stopped && stopped.code, 'dispatch-assessment-skill-unavailable');
+  });
+
+  it('should release intake capacity while retaining announcement recovery after pr delivery', async () => {
+    const work = await workIssue();
+    const deliveryId = work.id;
+    assert.ok(typeof deliveryId === 'string');
+    await work.run('next');
+    work.receive();
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked work.' } },
+      true,
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    let confirmed = false;
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+    work.continuation.deliver = async (_data, _value, deliveryDeps) => {
+      await deliveryDeps?.authorizeSchedule?.();
+      await store.exclusive(async (state, save) => {
+        const record = state.records.find((entry) => entry.id === work.id)!;
+        const announcement = attemptedAnnouncement('U_receiver').state;
+        if (confirmed) announcement.receipt = { nodeId: 'IC_announcement', databaseId: 99 };
+        else announcement.code = 'delivery-announcement-failed';
+        record.delivery = {
+          id: deliveryId,
+          binding: {
+            repositoryId: 'R_repo',
+            issueId: 'I_issue',
+            threadId: record.threadId!,
+            worktree: record.worktree!,
+            branch: 'branch',
+            base: 'main',
+            head: 'a'.repeat(40),
+            authorId: 'U_receiver',
+            policyDigest: 'a'.repeat(64),
+          },
+          creationAttempted: true,
+          pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+          reconciled: true,
+          attached: true,
+          cardAttempts: 1,
+          announcement,
+        };
+        await save();
+      });
+      return {
+        status: 'linked',
+        instruction: 'Present the card.',
+        notices: [],
+        url: 'https://github.com/owner/repo/pull/7',
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        presentation: '> PR card',
+      };
+    };
+    await work.run('delivery', { delivery: { action: 'present' } }, true);
+    assert.equal((await store.read()).records[0]!.continuation!.phase, 'delivery');
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
+    const context = await work.run('context', {}, true);
+    assert.equal('deliveryOnly' in context && context.deliveryOnly, true);
+    confirmed = true;
+    await work.run('delivery', { delivery: { action: 'present' } }, true);
+    assert.equal((await store.read()).records[0]!.continuation!.phase, 'complete');
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
   });
 
   it('should pass standing work publication authority to the existing delivery owner', async () => {

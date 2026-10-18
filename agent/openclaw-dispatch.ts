@@ -1,3 +1,8 @@
+import assessmentSummary from './assessment-summary.ts';
+import assessmentPresentation from './dispatch-presentation.ts';
+import selectFeedbackStage from './feedback-stage.ts';
+import openClawSkill from './openclaw-skill.ts';
+import redactFeedback from './feedback-redaction.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
@@ -600,7 +605,11 @@ export default class OpenClawDispatch {
       input.action === 'delivery';
     const feedbackChild = input.action === 'feedback' && input.operation !== 'reconcile';
     const childAction =
-      input.action === 'context' || input.action === 'result' || workAction || feedbackChild;
+      input.action === 'context' ||
+      input.action === 'result' ||
+      input.action === 'summary' ||
+      workAction ||
+      feedbackChild;
     if (workAction && !operator) throw new Error('dispatch-operator-required');
     const current = await this.scope(manifest, workspace);
     if (input.action === 'delivery' && input.operation === 'present')
@@ -742,11 +751,14 @@ export default class OpenClawDispatch {
               { ...authority, signal },
             );
           for (const owner of state.records) {
-            const receipts = new Set(
-              owner.feedback?.events.flatMap((event) =>
+            const receipts = new Set([
+              ...(owner.feedback?.events.flatMap((event) =>
                 event.receipt ? [event.receipt.nodeId] : [],
-              ),
-            );
+              ) ?? []),
+              ...(owner.work?.delivery?.announcement?.receipt
+                ? [owner.work.delivery.announcement.receipt.nodeId]
+                : []),
+            ]);
             for (const event of owner.feedback?.events ?? [])
               if (event.phase === 'queued' && receipts.has(event.sourceId)) {
                 event.phase = 'blocked';
@@ -1018,6 +1030,20 @@ export default class OpenClawDispatch {
               base: repo.defaultBranch,
               recipients: current.policy.policy.issueAssignment?.pullRequest?.recipients,
               feedbackEnabled: openClawFeedbackEnabled(manifest),
+              selectAnnouncement: async (retained) =>
+                (
+                  await selectFeedbackStage({
+                    policy: current.policy.policy,
+                    workflow: 'issue-assignment',
+                    workspace: current.workspace,
+                    observedAt: retained?.composition.observedAt ?? now,
+                    resolveSkill: (id) => {
+                      if (!record.request || !('key' in record.request))
+                        throw new Error('delivery-announcement-owner-required');
+                      return openClawSkill(request, record.request, id);
+                    },
+                  })
+                ).selection,
               signal,
               assertCurrent,
               reauthorize: async () => {
@@ -1049,7 +1075,7 @@ export default class OpenClawDispatch {
             });
           });
         }
-        if (input.action === 'context' || input.action === 'result') {
+        if (input.action === 'context' || input.action === 'result' || input.action === 'summary') {
           const signal = authority.signal
             ? AbortSignal.any([authority.signal, transactionSignal])
             : transactionSignal;
@@ -1064,6 +1090,63 @@ export default class OpenClawDispatch {
           };
           await childAuthority.assertCurrent();
           return this.dependencies.credential.use(childAuthority, async (request) => {
+            if (input.action === 'summary') {
+              if (
+                !record.result ||
+                !record.request ||
+                !('key' in record.request) ||
+                record.assessmentCaller?.runId !== caller.runId
+              )
+                throw new Error('assessment-summary-assessment-turn-required');
+              const expected = record.request;
+              return assessmentSummary({
+                record,
+                intake,
+                action: input,
+                turnId: caller.runId,
+                authorityDigest: automationHash({
+                  sourceThreadId,
+                  manifest: current.manifestDigest,
+                }),
+                presentation: assessmentPresentation(
+                  record.result,
+                  record,
+                  intake,
+                  current.workspace,
+                  { debug: manifest.debug },
+                ),
+                save,
+                redact: redactFeedback,
+                authorize: async () => {
+                  await childAuthority.assertCurrent();
+                  if (
+                    (await this.dependencies.coordinator(manifest, current.workspace)) !==
+                    record.sourceThreadId
+                  )
+                    throw new Error('assessment-summary-authority-changed');
+                  await this.validate(manifest, workspace, record, false, false, undefined, signal);
+                },
+                select: async (previous) =>
+                  (
+                    await selectFeedbackStage({
+                      policy: manifest.github!.notifications!,
+                      workflow: 'issue-assignment',
+                      workspace: current.workspace,
+                      observedAt: previous?.observedAt ?? now,
+                      resolveSkill: (id) => openClawSkill(request, expected, id),
+                    })
+                  ).selection,
+                connect: async () => {
+                  const provider = await this.dependencies.feedbackConnect?.(
+                    { manifest, workspaceDir: current.workspace },
+                    signal,
+                    client,
+                  );
+                  if (!provider) throw new Error('assessment-summary-provider-unavailable');
+                  return { client: provider };
+                },
+              });
+            }
             await selectOpenClawAssessment({
               request,
               record,

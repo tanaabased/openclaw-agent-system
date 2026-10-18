@@ -8,7 +8,7 @@ import resolveManifestValue from '../manifest/resolve-value.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
 import type AgentManifestService from '../manifest/service.ts';
-import AgentSystemToolError from './error.ts';
+import AgentSystemToolError, { validationErrorMessage } from './error.ts';
 import type { resolveToolExecutable } from './cli-runner.ts';
 import {
   excludedToolExecutableDirectories,
@@ -334,10 +334,10 @@ export default class AgentSystemToolRuntime {
       stage = 'validation';
       try {
         definition.tool.validate?.(input, declaredConfiguration);
-      } catch {
+      } catch (error) {
         throw new AgentSystemToolError(
           'invalid_arguments',
-          `The ${definition.tool.name} request is invalid.`,
+          validationErrorMessage(error, `The ${definition.tool.name} request is invalid.`),
         );
       }
       stage = 'classification';

@@ -107,14 +107,14 @@ export interface WorkflowScheduleAuthority {
   sourceThreadId: string;
   policyDigest: string;
   definitionDigest: string;
-  capabilities: Array<WorkflowStage | 'publication' | 'feedback'>;
+  capabilities: Array<WorkflowStage | 'publication' | 'feedback' | 'assessment-summary'>;
 }
 
 /** only a freshly reconciled native definition can authorize a new stage or publication. */
 export function requireWorkflowSchedule(
   saved: WorkflowScheduleAuthority | undefined,
   current: Omit<WorkflowScheduleAuthority, 'version' | 'capabilities'>,
-  capability: WorkflowStage | 'publication' | 'feedback',
+  capability: WorkflowStage | 'publication' | 'feedback' | 'assessment-summary',
 ): void {
   if (
     !saved ||

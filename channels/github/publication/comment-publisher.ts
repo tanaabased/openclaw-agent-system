@@ -24,7 +24,11 @@ export type GitHubNotificationCommentPublicationInput = {
       source: GitHubNotificationPublicationSource;
     }
   | {
-      intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+      intent:
+        | 'assessment-summary'
+        | 'assignment-response'
+        | 'initial-acknowledgment'
+        | 'pull-request-handoff';
       publicationId: string;
     }
 );
@@ -40,6 +44,7 @@ export interface GitHubNotificationCommentPublicationConnection {
 }
 
 export interface GitHubNotificationCommentPublisherDependencies {
+  beforeCreate?(): Promise<void>;
   redactText(text: string): string;
   authorize(
     input:
@@ -50,7 +55,11 @@ export interface GitHubNotificationCommentPublisherDependencies {
           target: string;
         }
       | {
-          intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+          intent:
+            | 'assessment-summary'
+            | 'assignment-response'
+            | 'initial-acknowledgment'
+            | 'pull-request-handoff';
           item: PublicationItem;
           publicationId: string;
           target: string;
@@ -170,6 +179,7 @@ export default class GitHubNotificationCommentPublisher {
         return { receipt: existing, status: 'reconciled', target };
       }
       if (!create) return undefined;
+      await this.#dependencies.beforeCreate?.();
       const receipt = await connection.client.createIssueComment(
         input.item.repositoryOwner,
         input.item.repositoryName,

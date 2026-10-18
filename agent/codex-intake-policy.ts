@@ -1,3 +1,4 @@
+import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { automationHash } from './automation-hash.ts';
@@ -50,6 +51,7 @@ export function codexIntakeJobs(
       payload: {
         kind: 'prompt',
         prompt: [
+          assessmentSummaryConsent,
           ...(feedbackIdentities(
             selected.policy.issueAssignment?.allowed ?? [],
             selected.policy.issueAssignment?.feedback,

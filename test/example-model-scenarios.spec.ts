@@ -10,6 +10,8 @@ import {
   githubExampleEmoriPrompt,
   githubExampleTanaabotCallId,
   githubExampleTanaabotPrompt,
+  githubExampleValidationCallId,
+  githubExampleValidationPrompt,
 } from '../examples/openclaw-github/model-fixture.ts';
 import resolveExampleModelScenario, {
   exampleModelScenarioIds,
@@ -375,6 +377,51 @@ describe('scripts/example-model-scenarios', () => {
         id: `${entry.callId}_final_response`,
       });
     }
+  });
+
+  it('should acknowledge configuration rejection only after the real safe boundary result', () => {
+    const scenario = resolveExampleModelScenario('openclaw-github');
+    const initial = request('tanaabot', githubExampleValidationPrompt, ['agent_system_github']);
+    const fixture = matchFixture([...scenario.fixtures], initial);
+    assert.deepEqual((fixture?.response as { toolCalls: unknown[] }).toolCalls, [
+      {
+        arguments: JSON.stringify({ argv: ['config', 'set', 'git_protocol', 'ssh'] }),
+        id: githubExampleValidationCallId,
+        name: 'agent_system_github',
+      },
+    ]);
+    for (const content of ['The request is invalid.', 'agent.yaml', 'may not be mutated']) {
+      assert.equal(
+        matchFixture(
+          [...scenario.fixtures],
+          request('tanaabot', githubExampleValidationPrompt, ['agent_system_github'], {
+            callId: githubExampleValidationCallId,
+            content,
+          }),
+        ),
+        null,
+      );
+    }
+    assert.ok(
+      matchFixture(
+        [...scenario.fixtures],
+        request('tanaabot', githubExampleValidationPrompt, ['agent_system_github'], {
+          callId: githubExampleValidationCallId,
+          content:
+            'Agent System GitHub config is generated from agent.yaml and may not be mutated by gh.',
+        }),
+      ),
+    );
+    assert.equal(
+      matchFixture(
+        [...scenario.fixtures],
+        request('tanaabot', githubExampleValidationPrompt, ['agent_system_github'], {
+          callId: 'wrong-call',
+          content: 'Config is generated from agent.yaml and may not be mutated.',
+        }),
+      ),
+      null,
+    );
   });
 
   it('should complete each cache turn only after a successful local git tool result', () => {

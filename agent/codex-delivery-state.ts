@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -35,6 +36,7 @@ export const codexDeliveryStateSchema = Type.Object(
     reconciled: Type.Boolean(),
     attached: Type.Boolean(),
     cardAttempts: Type.Integer({ minimum: 0 }),
+    announcement: Type.Optional(deliveryAnnouncementStateSchema),
     notices: Type.Optional(
       Type.Array(
         Type.Union([

@@ -1,4 +1,4 @@
-import { Type } from 'typebox';
+import { Type, type Static } from 'typebox';
 
 import { maximumAssessmentGuidanceBytes } from '../manifest/assessment-schema.ts';
 
@@ -28,3 +28,5 @@ export const assessmentSelectionSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export type AssessmentSelection = Static<typeof assessmentSelectionSchema>;
