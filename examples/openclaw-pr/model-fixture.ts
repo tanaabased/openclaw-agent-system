@@ -125,6 +125,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       const next = result(stage('next'));
       if (!next) return dispatch(stage('next'), { action: 'next' });
       if (next.status === 'discovery-progress') continue;
+      if (next.nextAction === 'next') continue;
       const stopped = terminal(next);
       if (stopped) return stopped;
       if (
@@ -159,6 +160,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
         advanced = reconciled;
       }
+      if (advanced.nextAction === 'next') continue;
       const stoppedAdvance = terminal(advanced);
       if (stoppedAdvance) return stoppedAdvance;
       if (
@@ -170,6 +172,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
         advanced = assessed;
       }
+      if (advanced.nextAction === 'next') continue;
       const stoppedAssessment = terminal(advanced);
       if (stoppedAssessment) return stoppedAssessment;
       if (

@@ -224,7 +224,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             (pass) =>
               pass.allowance > pass.limit ||
               pass.recovery.length > pass.limit ||
-              pass.candidates.length > pass.allowance ||
+              pass.candidates.length > 12 ||
               pass.selected.filter((id) => !pass.recovery.includes(id)).length >
                 pass.candidates.length ||
               pass.recovery.some((id) => !state.records.some((record) => record.id === id)) ||

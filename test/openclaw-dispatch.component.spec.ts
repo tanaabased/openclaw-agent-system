@@ -487,6 +487,24 @@ describe('agent/openclaw issue dispatch', () => {
     const completed = await assess(id);
     assert.equal(completed.status, 'assessment-completed', JSON.stringify(completed));
   }
+  it('should use an available slot for the next assignment after an item validation failure', async () => {
+    const { items } = await assignments(2, 1);
+    items[0]!.assignees = [];
+    const failed = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(failed.status, 'blocked');
+    assert.ok('nextAction' in failed && failed.nextAction === 'next');
+    const second = await next();
+    const current = await service.scope(manifest, root);
+    const selected = (await current.journal.read()).records.find(
+      (record) => record.id === second.id,
+    )!;
+    assert.equal(
+      current.admitted.records.find((intake) => intake.id === selected.intakeId)!.issue.number,
+      4,
+    );
+    assert.equal((await prepare(second)).status, 'session-created');
+    assert.equal(creates().length, 1);
+  });
 
   for (const [limit, occupied, expected] of [
     [3, 0, 3],

@@ -1662,6 +1662,15 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(retained.request, prepared.request);
     assert.equal(retained.unsubmittedCreations, undefined);
   });
+  it('should continue the occurrence after an item-specific failure instead of ending the report loop', async () => {
+    await prepare();
+    await reassign();
+    const failed = await next();
+    assert.equal(failed.nextAction, 'next');
+    const state = await request('inspect');
+    assert.equal((state.run as { stopped?: string }).stopped, undefined);
+    assert.equal((await next()).status, 'idle');
+  });
   it('should recover a superseded native creation without issuing another request', async () => {
     const prepared = await prepare();
     created();

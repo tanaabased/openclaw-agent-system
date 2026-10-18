@@ -166,6 +166,7 @@ export default class OpenClawDispatch {
     return {
       status: 'blocked' as const,
       id,
+      nextAction: 'next' as const,
       code,
       ...(stage ? { stage } : {}),
       ...(error instanceof IssueSessionMismatchError ? { mismatchedField: error.field } : {}),
@@ -854,7 +855,7 @@ export default class OpenClawDispatch {
                 ...queued.map(({ event, at }) => ({ id: event.id, at })),
               ]
                 .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
-                .slice(0, capacity.available)
+                .slice(0, 12)
                 .map(({ id }) => id),
               recovery: state.records
                 .filter((record) => continuationStatus(record))
@@ -888,6 +889,16 @@ export default class OpenClawDispatch {
             .sort(
               (a, b) => pass.candidates.indexOf(a.intake.id) - pass.candidates.indexOf(b.intake.id),
             )[0];
+          const started = pass.selected.filter(
+            (id) =>
+              !pass.recovery.includes(id) &&
+              state.records.some(
+                (record) =>
+                  record.id === id &&
+                  (record.request || record.feedback?.events.some((event) => event.turn)),
+              ),
+          ).length;
+          if (capacity.available && started >= pass.allowance) return { status: 'pass-completed' };
           const feedback = queued.find(
             ({ record, event }) =>
               pass.candidates.includes(event.id) && !pass.selected.includes(record.id),
@@ -969,7 +980,7 @@ export default class OpenClawDispatch {
             record.phase = 'blocked';
             record.blocker = openClawDispatchFailureCode(error);
             await save();
-            return { status: 'blocked', id: record.id, code: record.blocker };
+            return { status: 'blocked', id: record.id, code: record.blocker, nextAction: 'next' };
           }
         }
         const record = state.records.find((entry) => entry.id === input.id);

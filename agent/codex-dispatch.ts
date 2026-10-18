@@ -223,9 +223,9 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
           }),
         }
       : {}),
-    nextAction: failure ? 'report' : 'next',
+    nextAction: 'next',
     instruction: failure
-      ? 'Report this intake obstacle with any issues already started. Do not repeat an uncertain creation.'
+      ? 'Continue next for unrelated eligible assignments, then report this intake obstacle with any issues already started. Do not repeat an uncertain creation.'
       : 'Continue checking pending assignments while this run has capacity. Assessment progress belongs only in the issue.',
   };
 }
@@ -550,7 +550,8 @@ export async function runCodexDispatch(
           admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
         );
         record.retryAfter = now + 300000;
-        if (state.run) state.run.stopped = 'blocked';
+        // an item failure does not end the shared intake occurrence.
+        if (state.run) delete state.run.stopped;
         const result = notice(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
