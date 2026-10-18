@@ -154,8 +154,7 @@ openclaw cron edit "$native" --thinking high --json | jq -e '.payload.thinking =
 openclaw cron run "$native" --wait --wait-timeout 5m --json | jq -e '.completionStatus == "succeeded"'
 jq -es 'any(.[]; .intakeReport.response | contains("automation-sync-required") and contains("Agent System Install"))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount > "$TMPDIR/notification-drift-model-count"
-if openclaw cron run "$native" --wait --wait-timeout 5m --json > "$TMPDIR/notification-drift-repeat.json"; then exit 1; fi
-jq -e '.status == "skipped"' "$TMPDIR/notification-drift-repeat.json"
+openclaw cron run "$native" --wait --wait-timeout 5m --json | jq -e '.completionStatus == "succeeded"'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er .requestCount | diff - "$TMPDIR/notification-drift-model-count"
 
 # should reconcile explicitly and show recovery in the native intake chat
