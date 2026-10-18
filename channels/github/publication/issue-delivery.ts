@@ -50,6 +50,7 @@ export interface IssueDeliveryInput {
   headSha?: string;
   repositoryNodeId?: string;
   linkIssue?: boolean;
+  contentUpdate?: { title?: string; body?: string };
   beforeCreate?: () => Promise<void>;
   onLinkageRetry?: () => Promise<void>;
   checkpoint?: (receipt: GitHubNotificationIssueDeliveryReceipt) => Promise<void>;
@@ -409,6 +410,41 @@ export default class IssueDeliveryProvider {
       pullRequestNodeId: pullRequest.itemNodeId,
       pullRequestNumber: pullRequest.number,
     });
+    if (existing && input.contentUpdate && !normalize) {
+      const title = input.contentUpdate.title ?? pullRequest.title;
+      let body = input.contentUpdate.body ?? pullRequest.body;
+      if (input.linkIssue && !hasClosingReference(body, repository, input.item.number))
+        body =
+          `${body.trimEnd()}\n\nCloses https://github.com/${repository}/issues/${input.item.number}`.trim();
+      if (body.length > 65_536) throw new Error('github-delivery-body-too-large');
+      if (pullRequest.title !== title || pullRequest.body !== body) {
+        pullRequest = parsePullRequest(
+          await this.#github(
+            github,
+            [
+              'api',
+              '--method',
+              'PATCH',
+              `repos/${repository}/pulls/${pullRequest.number}`,
+              '--input',
+              '-',
+              '--jq',
+              pullRequestProjection(),
+            ],
+            input.signal,
+            JSON.stringify({ title, body }),
+          ),
+        );
+        await this.#verify(input, pullRequest, false);
+        if (
+          pullRequest.itemNodeId !== existing.itemNodeId ||
+          pullRequest.number !== existing.number ||
+          pullRequest.title !== title ||
+          pullRequest.body !== body
+        )
+          throw new Error('github-delivery-content-unverified');
+      }
+    }
     if (input.linkIssue && !(await this.#linkedIssue(input, pullRequest))) {
       const reference = `Closes https://github.com/${repository}/issues/${input.item.number}`;
       let linked = false;

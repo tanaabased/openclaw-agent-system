@@ -184,6 +184,12 @@ chat to reconcile the existing PR. A retained attempt with no verifiable PR rema
 blocked rather than risking a second creation. Native denial, reassignment, or a
 changed session/worktree stops the operation without discarding the work.
 
+In Codex and OpenClaw, authorized follow-up commits can fast-forward the same PR
+branch from its last verified push. The PR receipt and original announcement stay
+with the delivery. Explicit title/body changes update that PR; commit-only pushes
+preserve text edited on GitHub. Interrupted updates reconcile the same operation.
+If initial PR creation is still uncertain, reconcile it before changing its text.
+
 If showing an already-created PR is interrupted or temporarily busy, ask the same
 issue chat to show its card again. Presentation reuses the saved PR; it does not
 push or create another one, or post an announcement. If announcing fails, the PR

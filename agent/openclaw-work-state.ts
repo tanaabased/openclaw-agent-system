@@ -36,6 +36,15 @@ export const openclawWorkStateSchema = Type.Object(
           title: Type.String({ minLength: 1, maxLength: 512 }),
           body: Type.String({ minLength: 1, maxLength: 65536 }),
           creationAttempted: Type.Boolean(),
+          contentUpdate: Type.Optional(
+            Type.Object(
+              {
+                title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+                body: Type.Optional(Type.String({ maxLength: 65536 })),
+              },
+              { additionalProperties: false },
+            ),
+          ),
           pushedHead: Type.Optional(text),
           pullRequest: Type.Optional(
             Type.Object(

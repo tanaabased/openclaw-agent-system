@@ -237,7 +237,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         ...args,
         operation: 'result',
         privateText:
-          'The retained plan was implemented as a one-line cleanup note. The linked PR contains that committed change. This feedback turn only explains the existing result; no additional repository changes were made.',
+          'The retained plan was implemented as a cleanup note. The linked PR contains the initial commit and its follow-up. This feedback turn only explains the existing result; no additional repository changes were made.',
       });
     if (saved.status !== 'recorded') return;
     const composition = result('feedback-compose');
@@ -276,11 +276,18 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   }
   const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
+    const update = prompt.includes(
+      'Add a follow-up commit and update the existing PR title and body.',
+    );
     const retry = prompt.includes(
       'Reconcile the existing PR announcement and show its card again.',
     );
-    const title = 'Document disposable notification fixture cleanup';
-    const body = 'Document closing disposable test issues after their evidence is captured.';
+    const title = update
+      ? 'Document disposable notification fixture cleanup and verification'
+      : 'Document disposable notification fixture cleanup';
+    const body = update
+      ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
+      : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
       const preview = result('handoff-preview');
       if (!preview)
@@ -311,7 +318,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       )
         return;
       const file = `notification-fixture-${operatorId}.md`;
-      const patch = `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`;
+      const patch = update
+        ? `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1,2 @@\n Close disposable test issues after capturing their evidence.\n+Verify the same PR and announcement after follow-up commits.\n`
+        : `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`;
       const steps = [
         { stage: 'apply', argv: ['apply', '-'], stdin: patch },
         { stage: 'add', argv: ['add', '--', file] },
@@ -339,7 +348,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             outcome: 'done',
             summary: 'Committed the disposable cleanup note.',
             fullResult:
-              'Added and committed the one-line cleanup note through managed Git in the verified issue worktree.',
+              'Committed the requested cleanup note change through managed Git in the verified issue worktree.',
           },
         });
       if (saved.status !== 'recorded') return;
@@ -366,6 +375,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           body,
         });
       if (published.status !== 'published') return;
+    }
+    if (!retry && !update) {
       const composed = result('delivery-compose');
       if (!composed)
         return dispatch('delivery-compose', {

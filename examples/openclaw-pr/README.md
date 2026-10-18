@@ -6,7 +6,7 @@ Each manual refresh admits only this example’s issue, then asks the existing n
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. Operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device keeps `operator.read` and `operator.write`. EMORI creates the issue and posts the feedback comment. Only Tanaabot receives issue and PR assignments; EMORI has a production OpenClaw instance. CI owns the disposable workspaces, issue, PR, branch, and SSH key and cleans up only those resources.
 
-The first implementation follow-up stops after PR publication and its issue announcement. A second operator follow-up recovers the complete PR card from its retained receipt despite later uncommitted edits, without publishing again, before the PR comment test runs.
+The first implementation follow-up stops after PR publication and its issue announcement. A second operator follow-up adds a commit and updates the existing PR title and body while retaining its announcement. A final operator follow-up recovers the complete PR card from its retained receipt despite later uncommitted edits, without publishing again, before the PR comment test runs.
 
 A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
@@ -146,6 +146,23 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-announcements.json"
 jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].work.delivery.announcement.receipt.nodeId and (.[0].body | contains($delivery[0].work.delivery.announcement.publicText)) and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
+
+# should update the existing pr after a follow-up commit without another announcement
+test -f "$TMPDIR/notification-activation-ready"
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
+receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Add a follow-up commit and update the existing PR title and body."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-update"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-update"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-update" 300000
+jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-updated.json"
+jq -e --slurp '.[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].work.delivery.id == .[1].work.delivery.id and .[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest and .[0].work.delivery.announcement == .[1].work.delivery.announcement and .[0].work.delivery.binding.head != .[1].work.delivery.binding.head and .[1].work.delivery.binding.head == .[1].work.delivery.pushedHead and .[1].work.delivery.reconciled == true and .[1].work.delivery.contentUpdate == null' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-updated.json"
+pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-updated.json")
+openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json number,title,body,headRefOid,closingIssuesReferences | jq -e --slurpfile delivery "$TMPDIR/notification-updated.json" --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" '.number == $delivery[0].work.delivery.pullRequest.pullRequestNumber and .headRefOid == $delivery[0].work.delivery.pushedHead and .title == "Document disposable notification fixture cleanup and verification" and (.body | contains("verifying the retained delivery after follow-up commits")) and any(.closingIssuesReferences[]; .number == $issue)'
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-announcements.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 
 # should recover the complete card for the same pull request despite later uncommitted edits
 test -f "$TMPDIR/notification-activation-ready"

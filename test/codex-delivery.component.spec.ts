@@ -55,6 +55,7 @@ describe('agent/codex-delivery', () => {
   let bindingOverride: Record<string, unknown>;
   let gitCalls: string[][];
   let linkReads: number, delayedLinkReads: number, bodyWrites: number;
+  let failPatch: 'before' | 'after' | false;
   async function request(
     action: string,
     input: object = {},
@@ -62,13 +63,12 @@ describe('agent/codex-delivery', () => {
   ) {
     return runCodexDelivery(pluginData, { action, id, ...input }, { ...deps, ...overrides });
   }
-  async function publish() {
-    const preview = await request('prepare', { title: 'Authored title', body: 'Authored body.' });
+  async function publish(content = { title: 'Authored title', body: 'Authored body.' }) {
+    const preview = await request('prepare', content);
     assert.equal(preview.status, 'prepared');
     return request('publish', {
       digest: preview.digest,
-      title: 'Authored title',
-      body: 'Authored body.',
+      ...content,
     });
   }
   beforeEach(async () => {
@@ -151,6 +151,7 @@ describe('agent/codex-delivery', () => {
     bindingOverride = {};
     gitCalls = [];
     linkReads = delayedLinkReads = bodyWrites = 0;
+    failPatch = false;
     deps = {
       delay: async () => {},
       codexHome,
@@ -244,7 +245,9 @@ describe('agent/codex-delivery', () => {
               if (argv.includes('PATCH')) {
                 bodyWrites++;
                 if (failLink) throw new Error('link unavailable');
+                if (failPatch === 'before') throw new Error('update interrupted');
                 pr = { ...pr, ...(JSON.parse(stdin!) as object) };
+                if (failPatch === 'after') throw new Error('update interrupted');
               }
               if (argv.some((arg) => arg.includes('headSha:')))
                 return result({
@@ -832,6 +835,77 @@ describe('agent/codex-delivery', () => {
     remote = 'c'.repeat(40);
     await assert.rejects(publish(), /remote-head-diverged/);
   });
+  for (const interruption of ['before', 'after'] as const)
+    it(`should recover metadata updates interrupted ${interruption} the provider write`, async () => {
+      await publish();
+      bodyWrites = 0;
+      const content = { title: 'Updated title', body: 'Includes the follow-up change.' };
+      failPatch = interruption;
+      await assert.rejects(publish(content), /update interrupted/);
+      assert.equal((await store.read()).records[0]!.delivery!.reconciled, false);
+      failPatch = false;
+      await publish(content);
+      assert.equal(pr!.title, content.title);
+      assert.equal(pr!.body, content.body + '\n\nCloses https://github.com/owner/repo/issues/3');
+      assert.equal(bodyWrites, interruption === 'before' ? 2 : 1);
+      assert.equal(creates, 1);
+      assert.equal((await store.read()).records[0]!.delivery!.reconciled, true);
+    });
+  it('should freeze authored content while creation remains uncertain', async () => {
+    failCreate = true;
+    await assert.rejects(publish(), /transport lost/);
+    await assert.rejects(
+      publish({ title: 'Changed title', body: 'Changed body.' }),
+      /delivery-content-changed/,
+    );
+    assert.equal(creates, 1);
+    assert.equal(bodyWrites, 0);
+  });
+  it('should preserve github body edits when explicitly updating only the title', async () => {
+    await publish();
+    pr!.body = 'Operator clarification. Closes #3';
+    head = 'b'.repeat(40);
+    await publish();
+    assert.equal(pr!.body, 'Operator clarification. Closes #3');
+    await publish({ title: 'Revised title', body: 'Authored body.' });
+    assert.equal(pr!.title, 'Revised title');
+    assert.equal(pr!.body, 'Operator clarification. Closes #3');
+  });
+  for (const lostAnnouncement of [false, true])
+    it(`should recover an interrupted follow-up push with a ${lostAnnouncement ? 'pending' : 'confirmed'} announcement`, async () => {
+      await publish();
+      const context = await request('compose');
+      const preview = await request('candidate', {
+        digest: context.digest,
+        publicText: 'Delivers the requested change.',
+      });
+      announcement.lost = lostAnnouncement;
+      await request('announce', { digest: preview.digest });
+      const retained = (await store.read()).records[0]!.delivery!;
+      head = 'b'.repeat(40);
+      const git = deps.git!;
+      deps.git = async (...args) => {
+        const output = await git(...args);
+        if (args[1].includes('push')) throw new Error('push response lost');
+        return output;
+      };
+      await assert.rejects(publish(), /push response lost/);
+      assert.equal(remote, head);
+      assert.equal((await store.read()).records[0]!.delivery!.pushedHead, retained.pushedHead);
+      deps.git = git;
+      await publish();
+      const recovered = (await store.read()).records[0]!.delivery!;
+      assert.equal(recovered.id, retained.id);
+      assert.deepEqual(recovered.pullRequest, retained.pullRequest);
+      assert.deepEqual(recovered.announcement, retained.announcement);
+      announcement.lost = false;
+      assert.equal((await request('announce')).status, 'announced');
+      const shown = await request('present');
+      assert.match(String(shown.presentation), /#issuecomment-91/);
+      assert.equal(creates, 1);
+      assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
+      assert.equal(announcement.posts, 1);
+    });
 });
 
 describe('agent/codex-delivery native attachment', () => {

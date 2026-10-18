@@ -23,6 +23,15 @@ export const codexDeliveryStateSchema = Type.Object(
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
     body: Type.Optional(Type.String({ maxLength: 65536 })),
     creationAttempted: Type.Boolean(),
+    contentUpdate: Type.Optional(
+      Type.Object(
+        {
+          title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+          body: Type.Optional(Type.String({ maxLength: 65536 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     pushedHead: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
     pullRequest: Type.Optional(
       Type.Object(

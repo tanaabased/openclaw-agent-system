@@ -98,13 +98,18 @@ export default async function openClawDelivery(input: {
     policyDigest: record.manifestDigest,
   };
   const previous = work.delivery;
-  if (previous && automationHash(previous.binding) !== automationHash(binding))
+  // the commit belongs to this attempt; the issue, session and branch own the delivery.
+  if (previous && automationHash({ ...previous.binding, head }) !== automationHash(binding))
     throw new Error('delivery-binding-changed');
   const title = action.title ?? previous?.title;
   const body = action.body ?? previous?.body;
   if (!title?.trim() || !body?.trim() || title.includes('\0') || body.includes('\0'))
     throw new Error('delivery-authored-content-required');
-  if (previous?.creationAttempted && (title !== previous.title || body !== previous.body))
+  if (
+    previous?.creationAttempted &&
+    !previous.pullRequest &&
+    (title !== previous.title || body !== previous.body)
+  )
     throw new Error('delivery-content-changed');
   const delivery = previous ?? {
     id: automationHash({ admission: intake.id, session: binding.sessionId }),
@@ -113,6 +118,11 @@ export default async function openClawDelivery(input: {
     body,
     creationAttempted: false,
     reconciled: false,
+  };
+  const contentUpdate = {
+    ...previous?.contentUpdate,
+    ...(previous?.pullRequest && title !== previous.title ? { title } : {}),
+    ...(previous?.pullRequest && body !== previous.body ? { body } : {}),
   };
   const digest = automationHash({
     binding,
@@ -127,7 +137,7 @@ export default async function openClawDelivery(input: {
       status: 'prepared',
       id: record.id,
       digest,
-      operation: { ...delivery, title, body },
+      operation: { ...delivery, binding, title, body, contentUpdate },
       instructions:
         'Publish only under the retained explicit operator request, using this digest and the same title/body. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
     };
@@ -160,6 +170,7 @@ export default async function openClawDelivery(input: {
     headSha: head,
     repositoryNodeId: intake.repository.nodeId,
     linkIssue: true,
+    contentUpdate: Object.keys(contentUpdate).length ? contentUpdate : undefined,
     signal: input.signal,
     expectedPullRequest: delivery.pullRequest,
     async beforeCreate() {
@@ -207,13 +218,20 @@ export default async function openClawDelivery(input: {
   }
   if (action.operation === 'publish') {
     if (action.digest !== digest) throw new Error('delivery-preview-stale');
+    delivery.binding = binding;
     delivery.title = title;
     delivery.body = body;
+    if (Object.keys(contentUpdate).length) delivery.contentUpdate = contentUpdate;
+    delivery.reconciled = false;
     work.delivery = delivery;
     await save();
     const ref = `refs/heads/${branch}`;
     const remoteHead = (await git(['ls-remote', '--heads', 'origin', ref])).split(/\s/u)[0] ?? '';
-    if (remoteHead && remoteHead !== head) throw new Error('delivery-remote-head-diverged');
+    if (remoteHead && remoteHead !== head) {
+      if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
+        throw new Error('delivery-remote-head-diverged');
+      await git(['merge-base', '--is-ancestor', remoteHead, head]);
+    }
     publication.expectedPullRequest = await provider.inspect({
       ...publication,
       headSha: remoteHead,
@@ -224,6 +242,7 @@ export default async function openClawDelivery(input: {
     delivery.pushedHead = head;
     await save();
     await provider.publish(publication);
+    delete delivery.contentUpdate;
     delivery.reconciled = true;
     await save();
   } else {

@@ -275,6 +275,23 @@ export default async function runCodexDelivery(
         ...(previous?.announcement ? { announcement: previous.announcement } : {}),
         notices: previous?.notices ?? [],
       };
+      if (
+        ['prepare', 'publish'].includes(input.action) &&
+        previous?.creationAttempted &&
+        !previous.pullRequest &&
+        (delivery.title !== previous.title || delivery.body !== previous.body)
+      )
+        throw new Error('delivery-content-changed');
+      const contentUpdate = {
+        ...previous?.contentUpdate,
+        ...(previous?.pullRequest && delivery.title !== previous.title
+          ? { title: delivery.title }
+          : {}),
+        ...(previous?.pullRequest && delivery.body !== previous.body
+          ? { body: delivery.body }
+          : {}),
+      };
+      if (Object.keys(contentUpdate).length) delivery.contentUpdate = contentUpdate;
       const digest = automationHash({ delivery, turnId: found.turnId, previous });
       const notices = (attached: boolean) =>
         [
@@ -386,6 +403,7 @@ export default async function runCodexDelivery(
             headSha: head,
             repositoryNodeId: intake.repository.nodeId,
             linkIssue: true,
+            contentUpdate: delivery.contentUpdate,
             onLinkageRetry: async () => {
               delivery.notices = [
                 ...new Set([...(delivery.notices ?? []), 'delivery-linkage-retried' as const]),
@@ -449,6 +467,7 @@ export default async function runCodexDelivery(
           await save();
           await deps.authorizeSchedule?.();
           await provider.publish(publication);
+          delete delivery.contentUpdate;
           delivery.reconciled = true;
           await save();
           return {

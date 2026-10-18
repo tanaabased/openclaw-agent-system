@@ -490,6 +490,37 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         assert.deepEqual(await response(retry), { content: '> PR card' });
       });
 
+      it('should commit a follow-up and reuse the existing announcement after updating the pr', async () => {
+        const input = request(
+          `Operator request for managed issue ${id}: Add a follow-up commit and update the existing PR title and body.`,
+        );
+        append(input, 'handoff-preview', { status: 'handoff-available', digest });
+        append(input, 'handoff', { status: 'handed-off' });
+        append(input, 'work-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          publicationAuthorized: true,
+          project: { path: '/tmp/owned' },
+        });
+        const patch = await response(input);
+        assert.ok('toolCalls' in patch && patch.toolCalls?.[0]?.name === 'agent_system_git');
+        const args = JSON.parse(patch.toolCalls[0].arguments);
+        assert.match(args.stdin, /Verify the same PR and announcement/);
+        assert.doesNotMatch(args.stdin, /new file mode/);
+        for (const stage of ['apply', 'add', 'commit'])
+          append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
+        append(input, 'work-result', { status: 'recorded' });
+        const prepared = await action(input, 'delivery');
+        assert.equal(prepared.operation, 'prepare');
+        assert.match(prepared.title!, /cleanup and verification/);
+        append(input, 'delivery-prepare', { status: 'prepared', digest });
+        assert.equal((await action(input, 'delivery')).operation, 'publish');
+        append(input, 'delivery-publish', { status: 'published' });
+        assert.equal((await action(input, 'delivery')).operation, 'announce');
+        append(input, 'delivery-repeat', { status: 'announced' });
+        assert.equal((await action(input, 'delivery')).operation, 'present');
+      });
+
       it('should stop when native authority rejects the operator handoff', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
