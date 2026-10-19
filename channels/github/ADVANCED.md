@@ -289,7 +289,9 @@ Native chat identity is still checked. Presentation does not push, create a PR, 
 post an announcement. In Codex, attachment reconciliation retries only attachment
 inspection. Recipient identities remain pinned; GitHub authorizes recipient changes. If announcing fails, the PR
 remains delivered. Ask the same chat to recover its announcement; uncertain writes
-reconcile the saved text and receipt without posting a duplicate.
+reconcile the saved text and receipt without posting a duplicate. Announcement
+recovery uses the saved published commit, so newer local work does not require
+another push. Recovery instructions skip confirmed attachments and announcements.
 
 ## V1 Retirement
 

@@ -382,8 +382,12 @@ describe('agent/codex-delivery', () => {
       assert.equal(creates, 1);
       assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 1);
     });
-  it('should recover a lost announcement response from durable state without republishing the pr', async () => {
+  it('should recover only the lost announcement despite newer local work without republishing the pr', async () => {
     await publish();
+    head = 'b'.repeat(40);
+    deps.git = async () => {
+      throw new Error('announcement recovery must not inspect newer local work');
+    };
     const context = await request('compose');
     const preview = await request('candidate', {
       digest: requiredDigest(context),

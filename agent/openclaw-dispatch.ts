@@ -24,6 +24,7 @@ import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-asse
 import createIssueSession, {
   IssueSessionMismatchError,
   verifyEmptyIssueSession,
+  describeIssueSession,
   type DispatchCaller,
 } from './openclaw-session-create.ts';
 import advanceIssueTurn from './openclaw-session-turn.ts';
@@ -75,7 +76,6 @@ import type { AgentManifest } from '../manifest/types.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import openClawWorkAction, { verifyOpenClawOperator } from './openclaw-work.ts';
-import { describeIssueSession } from './openclaw-session-create.ts';
 import openClawDelivery, {
   presentOpenClawDelivery,
   type OpenClawDeliveryConnection,
@@ -1568,6 +1568,7 @@ export default class OpenClawDispatch {
               };
             })()
           : presentOpenClawDelivery(record, intake, openClawFeedbackEnabled(manifest));
+      if (action.action === 'present') return result;
       stage = 'commit';
       enteredJournal = false;
       return await current.journal.exclusive(async (state, save, lockSignal) => {
@@ -1578,8 +1579,7 @@ export default class OpenClawDispatch {
         const retained = state.records.find((entry) => entry.id === action.id);
         if (!retained || automationHash(retained) !== snapshot)
           throw new Error('delivery-presentation-state-changed');
-        if (action.action === 'delivery')
-          retained.work!.delivery!.presentation = record.work!.delivery!.presentation;
+        retained.work!.delivery!.presentation = record.work!.delivery!.presentation;
         signal.throwIfAborted();
         await save();
         return result;

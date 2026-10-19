@@ -67,6 +67,15 @@ export function announcementPresentation(
   return [quote, githubNotificationQuote(outcome)].filter(Boolean).join('\n\n');
 }
 
+/** Recovery resumes only the announcement phase that has not finished. */
+export function announcementRecoveryInstructions(state?: DeliveryAnnouncementState) {
+  if (state?.receipt && !state.code)
+    return 'The originating-issue announcement is confirmed. Keep its receipt; no announcement operation remains.';
+  if (state?.attempted || state?.receipt)
+    return 'Call delivery announce to reconcile the retained announcement attempt. Do not compose or post a replacement.';
+  return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce with its preview digest.';
+}
+
 /** the native delivery owner supplies authority and serializes state with the PR receipt. */
 export default async function deliveryAnnouncement(input: {
   operation: 'compose' | 'candidate' | 'announce';

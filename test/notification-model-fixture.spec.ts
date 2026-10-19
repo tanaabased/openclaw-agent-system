@@ -523,13 +523,13 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
         append(input, 'delivery-announce', { status: 'announced' });
         assert.ok('content' in (await response(input)));
         const retry = request(
-          `Operator request for managed issue ${id}: Reconcile the existing PR announcement and show its card again.`,
+          `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
         );
-        assert.equal((await action(retry, 'delivery')).operation, 'announce');
-        append(retry, 'delivery-repeat', { status: 'announced' });
+        await action(retry, 'present');
+        append(retry, 'assessment-present', { status: 'presented', presentation: '> Saved plan' });
         assert.equal((await action(retry, 'delivery')).operation, 'present');
         append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-        assert.deepEqual(await response(retry), { content: '> PR card' });
+        assert.deepEqual(await response(retry), { content: '> Saved plan\n\n> PR card' });
       });
 
       it('should commit a follow-up and reuse the existing announcement after updating the pr', async () => {

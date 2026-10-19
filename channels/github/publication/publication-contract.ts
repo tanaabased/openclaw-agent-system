@@ -85,7 +85,11 @@ function safeText(
     reject('github-notification-publication-commenter-token-invalid');
   }
   const secretSafetyCode = 'github-notification-publication-secret-safety-rejected';
-  if (/\b(?:[A-Z][A-Z0-9_]*_)?(?:TOKEN|PASSWORD|PASSWD|SECRET|API_KEY|PRIVATE_KEY|ACCESS_KEY(?:_ID)?|CLIENT_SECRET)\s*=\s*\S+/iu.test(text)) {
+  if (
+    /\b(?:[A-Z][A-Z0-9_]*_)?(?:TOKEN|PASSWORD|PASSWD|SECRET|API_KEY|PRIVATE_KEY|ACCESS_KEY(?:_ID)?|CLIENT_SECRET)\s*=\s*\S+/iu.test(
+      text,
+    )
+  ) {
     reject(secretSafetyCode, 'environment-assignment');
   }
   if (/(?:gh[pousr]_|github_pat_|sk-|xox[baprs]-|AKIA)[A-Za-z0-9_-]+/u.test(text)) {

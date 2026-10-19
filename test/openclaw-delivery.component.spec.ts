@@ -243,8 +243,16 @@ describe('agent/openclaw-delivery', () => {
       assert.equal(creates, 1);
       assert.equal(pushes, 1);
     });
-  it('should reconcile a lost announcement response after restart without recreating the pr', async () => {
+  it('should reconcile only the lost announcement after restart despite newer local work', async () => {
     await publish();
+    head = 'b'.repeat(40);
+    const connect = input.connect;
+    input.connect = async () => ({
+      ...(await connect()),
+      git: async () => {
+        throw new Error('announcement recovery must not inspect newer local work');
+      },
+    });
     const context = await request('compose');
     assert.ok('digest' in context);
     const preview = await request('candidate', {

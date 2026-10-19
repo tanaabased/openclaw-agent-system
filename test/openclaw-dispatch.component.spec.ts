@@ -2427,7 +2427,6 @@ describe('agent/openclaw issue dispatch', () => {
     const { journal, admitted } = await service.scope(manifest, root);
     const retained = await record();
     const intake = admitted.records.find((entry) => entry.id === retained.intakeId)!;
-    const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
     const head = 'a'.repeat(40);
     await journal.exclusive(async (state, save) => {
       state.records[0]!.work!.delivery = {

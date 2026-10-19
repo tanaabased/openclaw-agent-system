@@ -5,7 +5,10 @@ import {
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import workflowFailure from './workflow-failure.ts';
-import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
+import deliveryAnnouncement, {
+  announcementPresentation,
+  announcementRecoveryInstructions,
+} from './delivery-announcement.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
@@ -338,32 +341,36 @@ export default async function runCodexDelivery(
           ))
       )
         throw new Error('delivery-schedule-stale');
-      await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
-      const branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
-      if (!branch || branch === checked.repo.defaultBranch)
-        throw new Error('delivery-branch-required');
-      await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
-      if (
-        ['prepare', 'publish'].includes(input.action) &&
-        (await git(found.cwd, ['status', '--porcelain=v1'], signal))
-      )
-        throw new Error('delivery-uncommitted-work');
-      const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
-      if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-      const count = Number(
-        await git(
-          found.cwd,
-          ['rev-list', '--count', `refs/remotes/origin/${checked.repo.defaultBranch}..HEAD`],
-          signal,
-        ),
-      );
-      if (!Number.isSafeInteger(count) || count < 1)
-        throw new Error('delivery-committed-work-required');
+      const announcementOnly = ['compose', 'candidate', 'announce'].includes(input.action);
+      if (announcementOnly && (!previous?.pullRequest || !previous.reconciled))
+        throw new Error('delivery-reconciliation-required');
+      let branch = previous?.binding.branch ?? '';
+      let head = previous?.binding.head ?? '';
+      if (!announcementOnly) {
+        await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
+        branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
+        if (!branch || branch === checked.repo.defaultBranch)
+          throw new Error('delivery-branch-required');
+        await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
+        if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
+          throw new Error('delivery-uncommitted-work');
+        head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
+        if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
+        const count = Number(
+          await git(
+            found.cwd,
+            ['rev-list', '--count', `refs/remotes/origin/${checked.repo.defaultBranch}..HEAD`],
+            signal,
+          ),
+        );
+        if (!Number.isSafeInteger(count) || count < 1)
+          throw new Error('delivery-committed-work-required');
+      }
       const recipients =
         current.manifest.github?.notifications?.schemaVersion === 2
           ? current.manifest.github.notifications.issueAssignment?.pullRequest?.recipients
           : undefined;
-      resolvePullRequestRecipients(recipients, intake.assignment.actor);
+      if (!announcementOnly) resolvePullRequestRecipients(recipients, intake.assignment.actor);
       const binding = {
         repositoryId: intake.repository.nodeId,
         issueId: intake.issue.nodeId,
@@ -610,11 +617,11 @@ export default async function runCodexDelivery(
             workflowStatus: workflowStatus({ phase: 'complete', delivery }),
             url: url(delivery.pullRequest!.pullRequestNumber),
             instruction:
-              'Call native attach_artifact for this pull_request URL in this chat, then list_artifacts, then ' +
-              (deps.schedule
-                ? 'continuationRuntime action:delivery with nested delivery reconcile and present'
-                : 'delivery reconcile and present') +
-              '. Also call delivery compose, invoke the selected reply skill, submit candidate, and execute announce with its preview digest before final presentation. Keep these actions in the owning continuationRuntime for automatic workflows. Announcement failure never discards the PR or blocks its private card. Never recreate the PR for an attachment, announcement or card failure.',
+              (delivery.attached
+                ? 'Native PR attachment is confirmed. '
+                : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ') +
+              announcementRecoveryInstructions(delivery.announcement) +
+              ' Then call delivery present and reproduce its complete private card. For automatic workflows, use continuationRuntime action:delivery with the nested delivery operation. An attachment, announcement, or card failure never requires recreating the PR.',
           };
         } catch (error) {
           signal.throwIfAborted();

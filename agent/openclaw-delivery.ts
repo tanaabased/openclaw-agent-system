@@ -1,6 +1,9 @@
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
-import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
+import deliveryAnnouncement, {
+  announcementPresentation,
+  announcementRecoveryInstructions,
+} from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
@@ -62,33 +65,43 @@ export default async function openClawDelivery(input: {
     return (await connection.git(argv)).trim();
   };
   const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
-  const branch = await git(['branch', '--show-current']);
-  if (!branch || branch === input.base) throw new Error('delivery-branch-required');
-  await git(['check-ref-format', `refs/heads/${branch}`]);
-  if (
-    (await realpath(await git(['rev-parse', '--show-toplevel']))) !==
-    (await realpath(record.worktree!))
-  )
-    throw new Error('delivery-worktree-diverged');
-  if (
-    ['prepare', 'publish'].includes(action.operation) &&
-    (await git(['status', '--porcelain=v1']))
-  )
-    throw new Error('delivery-uncommitted-work');
-  const head = await git(['rev-parse', '--verify', 'HEAD']);
-  if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-  const count = Number(
-    await git(['rev-list', '--count', `refs/remotes/origin/${input.base}..HEAD`]),
-  );
-  if (!Number.isSafeInteger(count) || count < 1)
-    throw new Error('delivery-committed-work-required');
-  const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
-  if (
-    !remotes.length ||
-    remotes.some((remote) => gitRemoteIdentity(remote) !== `github.com/${repository.toLowerCase()}`)
-  )
-    throw new Error('delivery-push-destination-mismatch');
-  resolvePullRequestRecipients(input.recipients, intake.assignment.actor);
+  const previous = work.delivery;
+  const announcementOnly = ['compose', 'candidate', 'announce'].includes(action.operation);
+  if (announcementOnly && (!previous?.pullRequest || !previous.reconciled))
+    throw new Error('delivery-reconciliation-required');
+  let branch = previous?.binding.branch ?? '';
+  let head = previous?.binding.head ?? '';
+  if (!announcementOnly) {
+    branch = await git(['branch', '--show-current']);
+    if (!branch || branch === input.base) throw new Error('delivery-branch-required');
+    await git(['check-ref-format', `refs/heads/${branch}`]);
+    if (
+      (await realpath(await git(['rev-parse', '--show-toplevel']))) !==
+      (await realpath(record.worktree!))
+    )
+      throw new Error('delivery-worktree-diverged');
+    if (
+      ['prepare', 'publish'].includes(action.operation) &&
+      (await git(['status', '--porcelain=v1']))
+    )
+      throw new Error('delivery-uncommitted-work');
+    head = await git(['rev-parse', '--verify', 'HEAD']);
+    if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
+    const count = Number(
+      await git(['rev-list', '--count', `refs/remotes/origin/${input.base}..HEAD`]),
+    );
+    if (!Number.isSafeInteger(count) || count < 1)
+      throw new Error('delivery-committed-work-required');
+    const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
+    if (
+      !remotes.length ||
+      remotes.some(
+        (remote) => gitRemoteIdentity(remote) !== `github.com/${repository.toLowerCase()}`,
+      )
+    )
+      throw new Error('delivery-push-destination-mismatch');
+    resolvePullRequestRecipients(input.recipients, intake.assignment.actor);
+  }
   const binding = {
     repositoryId: intake.repository.nodeId,
     issueId: intake.issue.nodeId,
@@ -101,7 +114,6 @@ export default async function openClawDelivery(input: {
     authorId: connection.account.identity.nodeId,
     policyDigest: record.manifestDigest,
   };
-  const previous = work.delivery;
   // the commit belongs to this attempt; the issue, session and branch own the delivery.
   const bindingChange =
     previous &&
@@ -286,7 +298,8 @@ export default async function openClawDelivery(input: {
     workflowStatus: workflowStatus({ phase: 'complete', delivery }),
     url,
     instructions:
-      'Call delivery compose, invoke the selected reply skill for the delivery event, submit candidate and execute announce with its preview digest. Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
+      announcementRecoveryInstructions(delivery.announcement) +
+      ' Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
   };
 }
 
