@@ -6,6 +6,7 @@ function reserved(record: DispatchRecord): boolean {
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
   if (record.reset || !record.request) return false;
   return (
+    Boolean(record.autoDecision && !record.autoDecision.ended && !record.nativeInactive) ||
     (!record.handoff &&
       !(record.retired && record.nativeInactive) &&
       (record.phase === 'creating' ||

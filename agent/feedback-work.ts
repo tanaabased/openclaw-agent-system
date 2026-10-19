@@ -25,7 +25,7 @@ export function feedbackMode(record: Issue, policy: GitHubNotificationPolicy) {
     record.retired ||
     record.retirement ||
     record.reset ||
-    record.continuation?.phase === 'cancelled'
+    (record.continuation?.phase === 'cancelled' && !record.handoff)
   )
     throw new Error('feedback-issue-inactive');
   return retainedIssueProgression(record) ? 'work' : (policy.issueAssignment?.mode ?? 'plan');

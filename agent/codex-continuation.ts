@@ -1,3 +1,5 @@
+import { needsAutoDecision, autoDecisionInstructions } from './auto-decision.ts';
+import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
@@ -120,11 +122,138 @@ export default async function runCodexContinuation(
       }
       const admissions = await current.store.read();
       const liveMode = current.manifest.github?.notifications?.issueAssignment?.mode;
+      if (occurrence) {
+        for (const record of state.records) {
+          if (input.id && input.id !== record.id) continue;
+          const pending = record.autoDecision && !record.autoDecision.ended;
+          if (!pending && !needsAutoDecision(record, liveMode)) continue;
+          if (
+            record.autoDecision?.ended ||
+            record.continuation?.phase === 'cancelled' ||
+            record.handoff ||
+            record.retired ||
+            record.retirement ||
+            record.reset
+          )
+            continue;
+          const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
+          if (
+            !admitted ||
+            !record.request ||
+            !record.project ||
+            !record.threadId ||
+            !record.worktree
+          )
+            continue;
+          if (
+            !pending &&
+            (input.action !== 'next' ||
+              (!codexItemOccupied(record) &&
+                !codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 1)
+                  .available))
+          )
+            continue;
+          try {
+            if (record.sourceThreadId !== activation.sourceThreadId)
+              throw new Error('continuation-schedule-binding-mismatch');
+            await revalidateDispatchAssignment(current, admitted, deps, signal, true);
+            if (record.autoDecision) {
+              const decision = record.autoDecision;
+              if (decision.code) {
+                if (input.action === 'next') continue;
+                return { status: 'blocked', id: record.id, code: decision.code };
+              }
+              const receipt = await continuationNative(record.sourceThreadId, decision.attempt);
+              if (receipt.status === 'blocked' || receipt.status === 'mismatch') {
+                decision.code = receipt.code;
+                await save();
+                return { status: 'blocked', id: record.id, code: decision.code };
+              }
+              if (receipt.status !== 'verified')
+                return { status: 'pending', id: record.id, code: 'continuation-send-unverified' };
+              if (decision.attempt.turnId && decision.attempt.turnId !== receipt.turnId)
+                throw new Error('continuation-turn-changed');
+              decision.attempt.turnId = receipt.turnId;
+              if (receipt.ended) decision.ended = true;
+              await save();
+              if (!decision.ended) return { status: 'pending', id: record.id };
+              continue;
+            }
+            const found = await native.find({
+              sourceThreadId: record.sourceThreadId,
+              prompt: record.request.prompt,
+              createdAfter: record.createdAt,
+              threadId: record.threadId,
+            });
+            if (
+              !found ||
+              !found.turnId ||
+              found.id !== record.threadId ||
+              (await realpath(found.cwd)) !== (await realpath(record.worktree)) ||
+              found.model !== record.request.model ||
+              found.effort !== record.request.thinking
+            )
+              throw new Error('continuation-native-binding-mismatch');
+            if (found.turnStatus !== 'completed' || !['idle', 'notLoaded'].includes(found.status))
+              continue;
+            await verifyDispatchWorktree(
+              record.project,
+              found.cwd,
+              admitted.repository.owner.login + '/' + admitted.repository.name,
+              git,
+            );
+            const live = await selectCodexIntake(pluginData, deps);
+            if (
+              !needsAutoDecision(record, live.manifest.github?.notifications?.issueAssignment?.mode)
+            )
+              continue;
+            const held = liveWorkflowPolicy(live.manifest, 'codex', admitted, 'assignment');
+            if (held) continue;
+            record.autoDecision = {
+              attempt: {
+                id: automationHash({
+                  id: record.id,
+                  decision: automationHash(record.result),
+                  before: found.turnId,
+                }),
+                sourceTurnId: occurrence.id,
+                beforeTurnId: found.turnId,
+                request: {
+                  threadId: record.threadId,
+                  model: record.request.model,
+                  thinking: record.request.thinking,
+                  prompt:
+                    autoDecisionInstructions +
+                    ' Refresh dispatchRuntime assessment context with JSON on stdin: ' +
+                    JSON.stringify({ action: 'context', id: record.id }) +
+                    '.',
+                },
+              },
+            };
+            delete record.nativeInactive;
+            await save();
+            return {
+              status: 'prepared',
+              id: record.id,
+              request: record.autoDecision.attempt.request,
+            };
+          } catch (error) {
+            if (codexHostAccess(error)) throw error;
+            return {
+              status: 'pending',
+              id: record.id,
+              ...workflowFailure(error, 'auto-decision-pending'),
+            };
+          }
+        }
+      }
       if (input.action === 'next' && (liveMode === 'work' || liveMode === 'auto'))
         for (const record of state.records) {
           const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
           if (
             record.continuation ||
+            needsAutoDecision(record, liveMode) ||
+            (record.autoDecision && !record.autoDecision.ended) ||
             feedbackWorkStarted(record) ||
             record.result?.outcome !== 'plan-ready' ||
             !record.project ||
@@ -170,6 +299,7 @@ export default async function runCodexContinuation(
           ? state.records.filter(
               (record) =>
                 record.continuation &&
+                !(record.autoDecision && !record.autoDecision.ended) &&
                 !feedbackWorkStarted(record) &&
                 record.result &&
                 record.threadId &&
@@ -255,7 +385,18 @@ export default async function runCodexContinuation(
               record.delivery)
           )
             throw new Error('continuation-retry-unavailable');
-          if (!retry && ['blocked', 'cancelled', 'complete'].includes(work.phase)) {
+          const resumeBlocked =
+            input.action === 'context' &&
+            work.phase === 'blocked' &&
+            work.result?.outcome === 'blocked' &&
+            !work.code;
+          const blockedTurnId =
+            work.blockedTurnId ?? work.activeTurnId ?? work.binding?.turnId ?? work.attempt?.turnId;
+          if (
+            !retry &&
+            !resumeBlocked &&
+            ['blocked', 'cancelled', 'complete'].includes(work.phase)
+          ) {
             if (input.action === 'next') continue;
             return { status: work.phase, id: record.id, code: work.code };
           }
@@ -549,6 +690,13 @@ export default async function runCodexContinuation(
                   'The issue conversation has advanced. Reconcile current work in that chat through continuation context; do not resend the implementation request or overwrite newer user direction.',
               };
           }
+          if (resumeBlocked) {
+            if (!found.followUpUserTurn || !blockedTurnId || found.turnId === blockedTurnId)
+              return { status: 'blocked', id: record.id, result: work.result };
+            work.phase = 'running';
+            work.activeTurnId = found.turnId;
+            await save();
+          }
           if (work.phase === 'clarification-needed') {
             if (
               input.action === 'context' &&
@@ -679,6 +827,7 @@ export default async function runCodexContinuation(
             if (
               work.result &&
               work.result.outcome !== 'clarification-needed' &&
+              !(work.result.outcome === 'blocked' && work.phase === 'running') &&
               automationHash(work.result) !== automationHash(input.result)
             )
               throw new Error('continuation-result-conflict');
@@ -690,6 +839,9 @@ export default async function runCodexContinuation(
               work.head = head;
             }
             work.result = input.result;
+            delete work.code;
+            if (input.result.outcome === 'blocked') work.blockedTurnId = found.turnId;
+            else delete work.blockedTurnId;
             work.phase =
               input.result.outcome === 'done'
                 ? 'delivery'

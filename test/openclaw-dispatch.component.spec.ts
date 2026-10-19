@@ -288,9 +288,11 @@ describe('agent/openclaw issue dispatch', () => {
                   (event) => event.turn?.runId === params.idempotencyKey,
                 )?.turn;
                 const current = await record(String(params.sessionKey));
-                const workTurn = [current.work?.turn, current.work?.deliveryTurn].find(
-                  (turn) => turn?.runId === params.idempotencyKey,
-                );
+                const workTurn = [
+                  current.decisionTurn,
+                  current.work?.turn,
+                  current.work?.deliveryTurn,
+                ].find((turn) => turn?.runId === params.idempotencyKey);
                 const turn =
                   workTurn ??
                   feedbackTurn ??
@@ -1999,6 +2001,67 @@ describe('agent/openclaw issue dispatch', () => {
   }
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
+
+  for (const decision of ['plan', 'work'] as const)
+    it(`should request a missing auto decision in the same plan session and honor ${decision}`, async () => {
+      const id = await readyWork('plan');
+      const original = await record();
+      manifest.github!.notifications!.issueAssignment!.mode = 'auto';
+      loseSend = true;
+      assert.equal((await workPass('decision-pass')).status, 'assessment-pending');
+      assert.equal((await record()).decisionTurn?.status, 'attempted');
+      assert.deepEqual((await record()).result, original.result);
+      assert.deepEqual((await record()).stageReceipt, original.stageReceipt);
+      assert.equal((await record()).work, undefined);
+      assert.equal((await record()).progression, undefined);
+      loseSend = false;
+      service = new OpenClawDispatch(service.dependencies);
+      await workPass('recover-decision');
+      assert.equal(sends().length, 2);
+      assert.equal(creates().length, 1);
+      inputReceipts = [];
+      const who = assessor(id, `${id}:auto-decision`);
+      const verified = await service.run(manifest, root, who, { action: 'context', id });
+      assert.equal(verified.status, 'verified', JSON.stringify(verified));
+      assert.ok('previousResultDigest' in verified);
+      const result = await service.run(manifest, root, who, {
+        action: 'result',
+        id,
+        previousResultDigest: verified.previousResultDigest as string,
+        result: { ...plan, decision: { mode: decision, reasons: ['Bounded assessment.'] } },
+      });
+      assert.equal(result.status, 'recorded', JSON.stringify(result));
+      active = false;
+      messages.push({
+        role: 'assistant',
+        stopReason: 'stop',
+        content: [{ type: 'text', text: 'Decision retained.' }],
+        __openclaw: { id: 'decision-reply', runId: `${id}:auto-decision`, runTerminal: true },
+      });
+      const finished = await workPass('finish-decision');
+      assert.equal((await record()).decisionTurn!.status, 'completed', JSON.stringify(finished));
+      await workPass('after-decision');
+      assert.equal(sends().length, decision === 'work' ? 3 : 2);
+      assert.equal(Boolean((await record()).work), decision === 'work');
+      assert.equal((await record()).threadId, original.threadId);
+    });
+
+  it('should preserve cancellation of an auto decision request across a live work edit', async () => {
+    const id = await readyWork('auto');
+    await workPass('decision-pass');
+    active = false;
+    inputReceipts = [
+      { runId: `${id}:auto-decision`, state: 'pending', cancelled: true, queued: false },
+    ];
+    const cancelled = await workPass('cancelled-decision');
+    assert.equal('code' in cancelled && cancelled.code, 'dispatch-turn-cancelled');
+    assert.equal((await record()).decisionTurn!.inactive, true);
+    manifest.github!.notifications!.issueAssignment!.mode = 'work';
+    await workPass('after-cancellation');
+    assert.equal(sends().length, 2);
+    assert.equal((await record()).work, undefined);
+    assert.equal((await record()).progression, undefined);
+  });
 
   for (const mode of ['work', 'auto'] as const) {
     it(`should automatically continue ${mode} once in the same issue chat and reconcile a lost response`, async () => {

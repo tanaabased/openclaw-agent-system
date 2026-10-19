@@ -10,6 +10,9 @@ interface State {
   retired?: unknown;
   retirement?: unknown;
   reset?: unknown;
+  handoff?: unknown;
+  autoDecision?: { ended?: boolean; code?: string };
+  decisionTurn?: { status: string; inactive?: boolean };
   blocker?: string;
   retry?: unknown;
   result?: { code?: string; outcome?: string };
@@ -70,8 +73,12 @@ export default function workflowStatus(record: State) {
   if (record.work?.code === 'implementation-delivery-incomplete') return 'delivery';
   if (record.work?.code === 'implementation-result-missing') return 'result-missing';
   if (record.work?.code || record.work?.result?.outcome === 'blocked') return 'blocked';
+  if (record.autoDecision && !record.autoDecision.ended)
+    return record.autoDecision.code ? 'blocked' : 'assessing';
+  if (record.decisionTurn && record.decisionTurn.status !== 'completed')
+    return record.decisionTurn.inactive ? 'blocked' : 'assessing';
   const failure = record.continuation ?? record;
-  if (failure.phase === 'cancelled') return 'cancelled';
+  if (failure.phase === 'cancelled') return record.handoff ? 'running' : 'cancelled';
   if (failure.phase === 'blocked') return 'blocked';
   if (record.continuation?.policyHeld) return 'policy-held';
   if (failure.retry) return 'retrying';

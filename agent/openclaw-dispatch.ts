@@ -1,3 +1,4 @@
+import advanceOpenClawDecision, { openClawDecisionPending } from './openclaw-auto-decision.ts';
 import advanceOpenClawWork, { openClawWorkSlot } from './openclaw-continuation.ts';
 import issueProgression from './issue-progression.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
@@ -350,6 +351,48 @@ export default class OpenClawDispatch {
     authority: DispatchAuthority,
     reconcileOnly = false,
   ) {
+    if (
+      openClawDecisionPending(
+        record,
+        manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+      )
+    ) {
+      const assertDecision = async () => {
+        await authority.assertCurrent?.();
+        authority.signal?.throwIfAborted();
+        const live = await this.validateLocal(manifest, workspace, record);
+        if (
+          !record.decisionTurn &&
+          !openClawDecisionPending(
+            record,
+            live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          )
+        )
+          throw new WorkflowPolicyHeld('workflow-mode-updated');
+      };
+      try {
+        await this.validate(manifest, workspace, record);
+        return await this.guardedCredential(async () => {
+          await this.validate(manifest, workspace, record);
+          await assertDecision();
+        }).use({ ...authority, assertCurrent: assertDecision }, (request) =>
+          advanceOpenClawDecision({
+            record,
+            request,
+            config: this.dependencies.config(),
+            save,
+            assertCurrent: assertDecision,
+          }),
+        );
+      } catch (error) {
+        return {
+          status: 'assessment-pending',
+          id: record.id,
+          ...workflowFailure(error, openClawDispatchFailureCode(error)),
+          nextAction: 'next',
+        };
+      }
+    }
     const now = (this.dependencies.now ?? Date.now)();
     const assertCurrent = async () => {
       await authority.assertCurrent?.();
@@ -728,7 +771,14 @@ export default class OpenClawDispatch {
       .some(pendingAssignment);
     const workPending = state.records.some(
       (record) =>
-        openClawWorkSlot(record, manifest.github?.notifications?.issueAssignment?.mode ?? 'plan') &&
+        (openClawDecisionPending(
+          record,
+          manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        ) ||
+          openClawWorkSlot(
+            record,
+            manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          )) &&
         (openClawItemOccupied(record) || capacity.available > 0),
     );
     const actionable =
@@ -1088,9 +1138,11 @@ export default class OpenClawDispatch {
                 !entry.retirement &&
                 !entry.reset &&
                 !entry.work?.code &&
-                [entry.work?.turn, entry.work?.deliveryTurn].some(
-                  (turn) => turn && turn.status !== 'completed',
-                ),
+                [
+                  entry.decisionTurn?.inactive ? undefined : entry.decisionTurn,
+                  entry.work?.turn,
+                  entry.work?.deliveryTurn,
+                ].some((turn) => turn && turn.status !== 'completed'),
             )
             .slice(0, 12)) {
             const reconciled = await this.continueWork(
@@ -1102,10 +1154,11 @@ export default class OpenClawDispatch {
               true,
             );
             if (
-              record.work?.code &&
-              !['implementation-result-missing', 'implementation-delivery-incomplete'].includes(
-                record.work.code,
-              )
+              record.decisionTurn?.inactive ||
+              (record.work?.code &&
+                !['implementation-result-missing', 'implementation-delivery-incomplete'].includes(
+                  record.work.code,
+                ))
             )
               return reconciled;
           }
@@ -1149,14 +1202,20 @@ export default class OpenClawDispatch {
                 record,
                 manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
               );
-              return slot
+              const decision = openClawDecisionPending(
+                record,
+                manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+              );
+              return slot || decision
                 ? [
                     {
                       record,
                       slot,
                       candidateId: automationHash({ implementation: record.id }),
                       recovering: Boolean(
-                        record.work?.[slot] && record.work[slot].status !== 'completed',
+                        decision
+                          ? record.decisionTurn
+                          : slot && record.work?.[slot] && record.work[slot].status !== 'completed',
                       ),
                     },
                   ]

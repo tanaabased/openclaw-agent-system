@@ -53,6 +53,9 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   Use the existing stage transition, source identity, and provider credentials; never
   add a separate repair grant or author list. Preserve original issue results and retain
   feedback outcomes separately. Update the existing PR and reconcile uncertain writes.
+- A live Plan-to-Auto change requests a missing decision in the existing chat using
+  the retained assessment. Preserve its original receipts; neither requesting nor
+  receiving the turn grants implementation without a verified Work decision.
 - Auto results use `decision.mode: plan|work`; interpret older `wait|proceed`
   receipts without rewriting their contents or digests.
 - Preserve actual execution facts: selected native model/effort, consumed stage

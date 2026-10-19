@@ -67,6 +67,7 @@ export const openclawDispatchRecordSchema = Type.Object(
     ),
     firstTurn: Type.Optional(issueTurnSchema),
     assessmentTurn: Type.Optional(issueTurnSchema),
+    decisionTurn: Type.Optional(issueTurnSchema),
     assessmentCaller: Type.Optional(
       Type.Object({ runId: text, inputEventId: text }, { additionalProperties: false }),
     ),
@@ -185,10 +186,16 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
             (!record.feedback ||
               record.feedback.events.length === 0 ||
               (record.sessionCreation?.verified &&
-                record.feedback.events.every(
-                  (event) =>
-                    !event.turn || validIssueTurn(event.turn, `${record.id}:feedback:${event.id}`),
-                ))) &&
+                record.feedback.events.every((event) => {
+                  const prefix = `${record.id}:feedback:${event.id}`;
+                  const previous = event.previousTurnIds ?? [];
+                  const expected = (index: number) => prefix + (index ? `:resume:${index}` : '');
+                  return (
+                    previous.length === (event.resumed ?? 0) &&
+                    previous.every((id, index) => id === expected(index)) &&
+                    (!event.turn || validIssueTurn(event.turn, expected(previous.length)))
+                  );
+                }))) &&
             (!record.work ||
               ((record.progression?.stage === 'implementation' ||
                 (record.handoff && record.result?.outcome === 'plan-ready')) &&
@@ -227,6 +234,9 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
                 record.assessment &&
                 (!record.firstTurn || record.firstTurn.status === 'completed') &&
                 validIssueTurn(record.assessmentTurn, `${record.id}:assessment`))) &&
+            (!record.decisionTurn ||
+              (record.assessmentTurn?.status === 'completed' &&
+                validIssueTurn(record.decisionTurn, `${record.id}:auto-decision`))) &&
             (!record.assessmentCaller || record.assessmentTurn) &&
             (!record.result ||
               (record.assessmentTurn &&
@@ -243,6 +253,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
           !record.sessionCreation &&
           !record.firstTurn &&
           !record.assessmentTurn &&
+          !record.decisionTurn &&
           !record.assessmentCaller &&
           record.phase !== 'created' &&
           (!record.request || record.worktree === record.request.cwd) &&
@@ -308,6 +319,7 @@ export function preserveOpenClawProgress(
     if (fresh.result && record.phase === 'assessing') record.phase = 'complete';
     preserve(previous.firstTurn, record.firstTurn, fresh.firstTurn);
     preserve(previous.assessmentTurn, record.assessmentTurn, fresh.assessmentTurn);
+    preserve(previous.decisionTurn, record.decisionTurn, fresh.decisionTurn);
     for (const event of record.feedback?.events ?? []) {
       const retained = fresh.feedback?.events.find((entry) => entry.id === event.id);
       if (

@@ -1432,6 +1432,16 @@ describe('agent/codex-dispatch', () => {
       turnId: 'denied-turn',
       callId: 'denied-call',
     });
+    for (let attempt = 1; attempt < 10; attempt++) {
+      now += 300000;
+      await runCodexIntake(pluginData, false, deps);
+      const retry = await request('retry-denied', { id: first.id }, operator);
+      assert.equal(retry.status, 'retry-available');
+      await request('retry-denied', { id: first.id, digest: retry.digest }, operator);
+      await prepare();
+    }
+    const retained = (await request('inspect')).records as { deniedCreations: unknown[] }[];
+    assert.equal(retained[0]!.deniedCreations.length, 10);
   });
 
   it('should recover an explicitly approved denied request after reassignment without retaining its waiting continuation', async () => {
@@ -2929,6 +2939,72 @@ describe('agent/codex-dispatch', () => {
     assert.equal(record.continuation!.attempt!.turnId, 'implementation-turn');
   });
 
+  for (const decision of ['plan', 'work'] as const)
+    it(`should request a missing auto decision in an existing plan chat and honor ${decision}`, async () => {
+      const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      const before = (await store.read()).records[0]!;
+      const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+      configured.github.notifications['issue-assignment'].mode = 'auto';
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+      const prepared = await work.run('next');
+      assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+      assert.equal('request' in prepared && prepared.request?.threadId, native!.id);
+      assert.equal((await work.run('next')).status, 'pending');
+      const waiting = (await store.read()).records[0]!;
+      assert.deepEqual(waiting.result, before.result);
+      assert.deepEqual(waiting.stageReceipt, before.stageReceipt);
+      assert.equal(waiting.progression, undefined);
+      assert.equal(waiting.continuation?.attempt, undefined);
+      work.receive();
+      native!.turnId = 'auto-decision-turn';
+      const child = { threadId: native!.id };
+      const context = await request('context', { id: work.id }, child);
+      assert.equal(context.mode, 'auto');
+      await request(
+        'result',
+        {
+          id: work.id,
+          previousResultDigest: context.previousResultDigest,
+          result: { ...result, decision: { mode: decision, reasons: ['Assessed existing plan.'] } },
+        },
+        child,
+      );
+      native!.status = 'idle';
+      native!.turnStatus = 'completed';
+      assert.equal((await work.run('next')).status, decision === 'work' ? 'prepared' : 'idle');
+      const retained = (await store.read()).records[0]!;
+      assert.equal(retained.autoDecision!.ended, true);
+      assert.equal(Boolean(retained.continuation?.attempt), decision === 'work');
+      assert.equal(retained.threadId, before.threadId);
+    });
+
+  it('should retain an auto decision denial without sending implementation after a mode edit', async () => {
+    const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    configured.github.notifications['issue-assignment'].mode = 'auto';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-send-failed',
+    });
+    assert.equal((await work.run('reconcile')).status, 'blocked');
+    configured.github.notifications['issue-assignment'].mode = 'work';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    assert.equal((await work.run('next')).status, 'idle');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.autoDecision!.code, 'continuation-native-send-failed');
+    assert.equal(retained.continuation?.attempt, undefined);
+    assert.equal(retained.progression, undefined);
+  });
+
   it('should hold auto wait until a revised assessment explicitly chooses proceed', async () => {
     const waiting = {
       ...autoResult,
@@ -3450,6 +3526,57 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'pending');
   });
 
+  it('should permit a new user handoff after a substantive blocker while preserving the blocked result', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run('context', {}, true);
+    const blocked = {
+      outcome: 'blocked',
+      summary: 'Missing input.',
+      fullResult: 'Existing work retained.',
+    };
+    await work.run('result', { result: blocked }, true);
+    const child = { threadId: native!.id };
+    await assert.rejects(
+      request('handoff', { id: work.id }, child),
+      /continuation-implementation-blocked/,
+    );
+    native!.followUpUserTurn = true;
+    native!.turnId = 'answer-turn';
+    const preview = await request('handoff', { id: work.id }, child);
+    assert.equal(preview.status, 'handoff-available');
+    await request('handoff', { id: work.id, digest: preview.digest }, child);
+    const records = (await request('inspect')).records as {
+      continuation: { result: unknown };
+      handoff?: unknown;
+    }[];
+    assert.deepEqual(records[0]!.continuation.result, blocked);
+    assert.ok(records[0]!.handoff);
+  });
+
+  it('should hand off running work without cancelling the issue or blocking feedback', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run('context', {}, true);
+    native!.followUpUserTurn = true;
+    native!.turnId = 'operator-handoff';
+    const child = { threadId: native!.id };
+    const preview = await request('handoff', { id: work.id }, child);
+    await request('handoff', { id: work.id, digest: preview.digest }, child);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.continuation!.phase, 'running');
+    assert.equal(retained.continuation!.binding!.turnId, 'implementation-turn');
+    const { feedbackMode } = await import('../agent/feedback-work.ts');
+    assert.equal(feedbackMode(retained, current.manifest.github!.notifications!), 'work');
+    retained.continuation!.phase = 'cancelled'; // legacy handoff representation
+    assert.equal(feedbackMode(retained, current.manifest.github!.notifications!), 'work');
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
   it('should not use a standing work handoff to bypass cancellation or native denial', async () => {
     const work = await workIssue();
     await work.run('next');
@@ -3759,6 +3886,57 @@ describe('agent/codex-dispatch', () => {
     assert.equal(saved.status, 'recorded');
     assert.ok('presentation' in saved && String(saved.presentation).includes('30 or 60'));
     assert.equal((await work.run('context', {}, true)).status, 'clarification-needed');
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    assert.equal((await work.run('next')).status, 'idle');
+    work.continuation.continuationNative = async () => ({
+      status: 'verified',
+      turnId: 'implementation-turn',
+      ended: true,
+    });
+    native!.turnId = 'answer-turn';
+    native!.followUpUserTurn = true;
+    native!.status = 'active';
+    native!.turnStatus = 'inProgress';
+    const resumed = await work.run('context', {}, true);
+    assert.equal(resumed.status, 'verified');
+    assert.ok(
+      'previousResult' in resumed &&
+        JSON.stringify(resumed.previousResult) === JSON.stringify(question),
+    );
+    assert.equal(
+      (
+        await work.run(
+          'result',
+          { result: { outcome: 'done', summary: 'Done', fullResult: 'Completed with 30 days.' } },
+          true,
+        )
+      ).status,
+      'recorded',
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.progression?.stage, 'implementation');
+    assert.equal(retained.continuation!.phase, 'delivery');
+    assert.equal(retained.continuation!.retries, undefined);
+    assert.equal(retained.continuation!.binding!.turnId, 'implementation-turn');
+  });
+
+  it('should resume a substantive implementation blocker only on fresh user input', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run('context', {}, true);
+    const question = {
+      outcome: 'blocked',
+      summary: 'Choose retention.',
+      fullResult: 'Partial implementation retained.',
+    };
+    const saved = await work.run('result', { result: question }, true);
+    assert.equal(saved.status, 'recorded');
+    assert.ok('presentation' in saved);
+    assert.equal((await work.run('context', {}, true)).status, 'blocked');
     native!.status = 'idle';
     native!.turnStatus = 'completed';
     assert.equal((await work.run('next')).status, 'idle');

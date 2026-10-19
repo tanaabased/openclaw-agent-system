@@ -155,8 +155,7 @@ export default async function recoverDispatch(
       record.threadId ||
       record.worktree ||
       record.continuation?.attempt ||
-      record.continuation?.publicationAttempt ||
-      (record.deniedCreations?.length ?? 0) >= 8
+      record.continuation?.publicationAttempt
     )
       throw new Error('dispatch-denial-unverified');
     await revalidate();

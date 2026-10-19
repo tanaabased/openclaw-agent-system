@@ -2,6 +2,24 @@ import assert from 'node:assert/strict';
 import workflowStatus from '../agent/workflow-status.ts';
 
 describe('agent/workflow-status', () => {
+  it('should report decision assessment and legacy handoff without claiming cancelled work', () => {
+    assert.equal(workflowStatus({ phase: 'complete', autoDecision: {} }), 'assessing');
+    assert.equal(
+      workflowStatus({ phase: 'complete', decisionTurn: { status: 'consumed' } }),
+      'assessing',
+    );
+    assert.equal(
+      workflowStatus({
+        phase: 'complete',
+        autoDecision: { code: 'continuation-native-send-failed' },
+      }),
+      'blocked',
+    );
+    assert.equal(
+      workflowStatus({ phase: 'complete', handoff: {}, continuation: { phase: 'cancelled' } }),
+      'running',
+    );
+  });
   it('should distinguish cancellation policy holds and unfinished delivery from authorization failures', () => {
     assert.equal(
       workflowStatus({ phase: 'complete', continuation: { phase: 'cancelled' } }),

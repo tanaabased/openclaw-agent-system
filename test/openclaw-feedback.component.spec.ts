@@ -11,7 +11,9 @@ import openClawFeedback, {
   type OpenClawFeedbackAction,
   type OpenClawFeedbackProvider,
 } from '../agent/openclaw-feedback.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import OpenClawDispatchStore, {
+  type OpenClawDispatchRecord,
+} from '../agent/openclaw-dispatch-state.ts';
 import { discoverFeedback } from '../agent/feedback-source.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -510,6 +512,21 @@ describe('agent/openclaw-feedback', () => {
     return preview.digest;
   }
   it('should resume interrupted composition with saved work and a distinct native request', async () => {
+    // Exercise the durable dispatch journal, not only the embedded feedback schema.
+    record.phase = 'creating';
+    record.context = '{}';
+    record.routing = '{}';
+    record.routingNote = 'Retained fixture routing.';
+    record.effective = { status: 'verified', model: 'openai/test', effort: 'high' };
+    const journal = new OpenClawDispatchStore(root, 'd'.repeat(64));
+    const originalSave = input.save;
+    input.save = async () => {
+      await originalSave();
+      await journal.exclusive(async (state, save) => {
+        state.records = [structuredClone(record)];
+        await save();
+      });
+    };
     await start();
     await action('result', { privateText: 'Retained answer.' });
     const oldRun = event.turn!.runId;
@@ -525,6 +542,13 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(sends, 2);
     assert.equal(writes, 0);
     assert.ok(Value.Check(openclawFeedbackSchema, record.feedback));
+    const restored = (await new OpenClawDispatchStore(root, 'd'.repeat(64)).read()).records[0]!;
+    assert.equal(restored.feedback!.events[0]!.turn!.runId, oldRun + ':resume:1');
+    const mismatched = structuredClone(restored);
+    mismatched.feedback!.events[0]!.previousTurnIds = ['unrelated-native-turn'];
+    assert.equal(journal.contract.validRecord(mismatched), false);
+    await advanceFeedbackTurn(input);
+    assert.equal(sends, 2);
   });
   it('should queue on a busy owner and recover a lost send without another input or session', async () => {
     busy = true;

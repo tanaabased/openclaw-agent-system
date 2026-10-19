@@ -7,7 +7,7 @@ import { workflowBindingSchema } from './workflow-result.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
-const attemptSchema = Type.Object(
+export const attemptSchema = Type.Object(
   {
     id: hash,
     sourceTurnId: text,
@@ -48,6 +48,7 @@ export const codexContinuationStateSchema = Type.Object(
     policyDigest: hash,
     policyHeld: Type.Optional(text),
     clarificationTurnId: Type.Optional(text),
+    blockedTurnId: Type.Optional(text),
     activeTurnId: Type.Optional(text),
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),

@@ -2,7 +2,7 @@ import { Type, type Static } from 'typebox';
 
 import { codexFeedbackSchema } from './codex-feedback-state.ts';
 
-import { codexContinuationStateSchema } from './codex-continuation-state.ts';
+import { codexContinuationStateSchema, attemptSchema } from './codex-continuation-state.ts';
 import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
 import DispatchStore, {
   dispatchRecordProperties,
@@ -50,6 +50,16 @@ const creationSchema = Type.Object(
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    autoDecision: Type.Optional(
+      Type.Object(
+        {
+          attempt: attemptSchema,
+          ended: Type.Optional(Type.Literal(true)),
+          code: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     reservationVersion: Type.Optional(Type.Literal(1)),
     capacityObservation: Type.Optional(
       Type.Object(
@@ -108,7 +118,6 @@ export const dispatchRecordSchema = Type.Object(
           },
           { additionalProperties: false },
         ),
-        { maxItems: 8 },
       ),
     ),
     clientThreadId: Type.Optional(text),

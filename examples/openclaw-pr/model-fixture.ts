@@ -207,6 +207,30 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     }
     return;
   }
+  const decisionId = /Refresh agent_system_dispatch action context with id ([a-f0-9]{64})/u.exec(
+    prompt,
+  )?.[1];
+  if (decisionId) {
+    const fresh = result('refresh-context');
+    if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
+    if (fresh.status !== 'verified' || fresh.mode !== 'auto' || !fresh.previousResult) return;
+    const saved = result('refresh-result');
+    if (!saved)
+      return dispatch('refresh-result', {
+        action: 'result',
+        id: decisionId,
+        previousResultDigest: fresh.previousResultDigest,
+        result: {
+          ...(fresh.previousResult as Record<string, unknown>),
+          decision: {
+            mode: 'work',
+            reasons: ['The retained documentation plan is bounded and actionable.'],
+          },
+        },
+      });
+    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    return { content: saved.presentation };
+  }
   const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,
   )?.[1];

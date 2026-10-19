@@ -22,6 +22,7 @@ interface Issue {
   retired?: unknown;
   retirement?: unknown;
   reset?: unknown;
+  handoff?: unknown;
   result?: {
     outcome: string;
     decision?: { mode: 'plan' | 'work' } | { action: 'wait' | 'proceed' };
@@ -59,7 +60,7 @@ export default function issueProgression(
   | { status: 'stopped'; reason: string } {
   if (issue.retired || issue.retirement || issue.reset)
     return { status: 'stopped', reason: 'issue-inactive' };
-  if (issue.continuation?.phase === 'cancelled')
+  if (issue.continuation?.phase === 'cancelled' && !issue.handoff)
     return { status: 'stopped', reason: 'implementation-cancelled' };
   const retained = retainedIssueProgression(issue);
   if (retained) return { status: 'ready', progression: retained };

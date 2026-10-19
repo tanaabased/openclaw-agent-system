@@ -78,6 +78,13 @@ describe('agent/issue-progression', () => {
 
   it('should keep cancellation and inactive lifecycle separate from retained implementation', () => {
     const progression = { stage: 'implementation' as const, via: 'work' as const, enteredAt: 20 };
+    assert.equal(
+      issueProgression(
+        { ...planning, progression, handoff: {}, continuation: { phase: 'cancelled' } },
+        { mode: 'plan', now: 99 },
+      ).status,
+      'ready',
+    );
     for (const stop of [
       { retired: { at: 30 } },
       { retirement: { reason: 'unassigned' } },
