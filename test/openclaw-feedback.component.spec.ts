@@ -338,6 +338,17 @@ describe('agent/openclaw-feedback', () => {
       action('candidate', { digest: selection.digest, publicText: 'reply' }),
       /composition-changed/,
     );
+    event.phase = 'blocked';
+    event.code = 'feedback-composition-changed';
+    const refreshed = await action('compose');
+    assert.equal(refreshed.status, 'composition-ready');
+    assert.ok('digest' in refreshed && refreshed.digest !== selection.digest);
+    assert.equal(
+      (await action('candidate', { digest: refreshed.digest, publicText: 'Updated reply.' }))
+        .status,
+      'candidate-recorded',
+    );
+
     assert.equal(writes, 0);
   });
   it('should keep self feedback private', async () => {

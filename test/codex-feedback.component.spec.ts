@@ -656,6 +656,20 @@ describe('agent/codex-feedback', () => {
       true,
     );
     assert.equal('code' in changed && changed.code, 'feedback-composition-changed');
+    const refreshed = await call('compose', ref, true);
+    assert.equal(refreshed.status, 'composition-ready');
+    assert.ok('digest' in refreshed && refreshed.digest !== composition.digest);
+    assert.equal(
+      (
+        await call(
+          'candidate',
+          { ...ref, digest: refreshed.digest, publicText: 'Updated reply.' },
+          true,
+        )
+      ).status,
+      'candidate-recorded',
+    );
+
     assert.equal(creates, 0);
     assert.equal(
       (await store.read()).records[0]!.feedback!.events[0]!.result!.privateText,

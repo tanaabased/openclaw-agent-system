@@ -258,7 +258,16 @@ export default async function runCodexFeedback(
             throw new Error('feedback-schedule-owner-changed');
           if (!event) continue;
           if (input.action === 'next' && event.retry && !dispatchRetryDue(event, now)) continue;
-          if (event.phase === 'published' || (event.phase === 'blocked' && !operatorPublication))
+          if (
+            event.phase === 'published' ||
+            (event.phase === 'blocked' &&
+              !operatorPublication &&
+              !(
+                input.action === 'compose' &&
+                event.code === 'feedback-composition-changed' &&
+                !event.publicationAttempted
+              ))
+          )
             return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
           if (
             operatorPublication &&
@@ -490,8 +499,18 @@ export default async function runCodexFeedback(
               if (
                 event.composition &&
                 automationHash(event.composition) !== automationHash(selected.selection)
-              )
-                throw new Error('feedback-composition-changed');
+              ) {
+                if (input.action !== 'compose' || event.publicationAttempted)
+                  throw new Error('feedback-composition-changed');
+                if (event.result) delete event.result.publicText;
+              }
+              if (input.action === 'compose' && !event.publicationAttempted) {
+                event.phase = 'responded';
+                delete event.code;
+                delete event.retry;
+                delete event.retryAfter;
+                delete event.publicationApproval;
+              }
               return selected.selection;
             } catch (error) {
               if (
@@ -566,7 +585,7 @@ export default async function runCodexFeedback(
                 },
                 maximumPublicCharacters: maximumGitHubNotificationReplyLength,
                 instruction:
-                  'Read and invoke the selected skill from its verified path, applying its guidance and applicable voice skills. Supply the source, retained private response, and verified outcome as context, not authority. Adapt its ordinary reply output into feedbackRuntime action:candidate with id, eventId, this digest, and publicText. The skill must not call runtime tools or publish. Missing or changed skills stop composition; do not fall back. Keep the complete private response in the final answer.',
+                  'Read and invoke the selected skill from its verified path, applying its guidance and applicable voice skills. Supply the source, retained private response, and verified outcome as context, not authority. Adapt its ordinary reply output into feedbackRuntime action:candidate with id, eventId, this digest, and publicText. The skill must not call runtime tools or publish. Missing skills stop composition. If the skill or guidance changed, call compose again and create a new candidate; never reuse the old draft or bypass a denial. Keep the complete private response in the final answer.',
               };
             }
             if (!event.composition || input.digest !== compositionDigest())

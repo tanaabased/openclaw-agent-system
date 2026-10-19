@@ -94,8 +94,14 @@ export default async function assessmentSummary(input: {
       )
         throw new Error('assessment-summary-authority-changed');
       const selection = await input.select(summary?.selection);
-      if (summary && automationHash(selection) !== automationHash(summary.selection))
-        throw new Error('assessment-summary-composition-changed');
+      if (summary && automationHash(selection) !== automationHash(summary.selection)) {
+        if (action.operation !== 'compose')
+          throw new Error('assessment-summary-composition-changed');
+        summary.selection = selection;
+        delete summary.publicText;
+        delete summary.code;
+        await input.save();
+      }
       if (!summary) {
         if (action.operation !== 'compose')
           throw new Error('assessment-summary-composition-required');
