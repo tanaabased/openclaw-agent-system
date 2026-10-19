@@ -1,8 +1,9 @@
+import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { Type, type Static } from 'typebox';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
 import { automationHash } from './automation-hash.ts';
-import { admitRetainedFeedback, feedbackRevision } from './feedback-source.ts';
+import { admitFeedback, feedbackRevision } from './feedback-source.ts';
 import { feedbackResultSchema } from './feedback-state.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
@@ -80,6 +81,7 @@ export async function advanceFeedbackTurn(input: {
   save(): Promise<void>;
   assertCurrent(): Promise<void>;
   reauthorize?(): Promise<void>;
+  livePolicy?(): Promise<GitHubNotificationPolicy>;
 }) {
   const { record, event, request, save } = input;
   const expected = record.request;
@@ -153,6 +155,7 @@ export async function authorizeFeedback(input: {
   intake: IntakeRecord;
   assertCurrent(): Promise<void>;
   reauthorize?(): Promise<void>;
+  livePolicy?(): Promise<GitHubNotificationPolicy>;
 }) {
   const { record, event, provider, intake } = input;
   await input.assertCurrent();
@@ -187,8 +190,11 @@ export async function authorizeFeedback(input: {
   if (exact.author?.nodeId !== source.author?.nodeId)
     throw new Error('feedback-source-author-changed');
   if (feedbackRevision(exact) !== event.revision) throw new Error('feedback-source-changed');
-  if (admitRetainedFeedback(provider.identity, exact).disposition !== 'approved')
-    throw new Error('feedback-source-no-longer-eligible');
+  if (
+    admitFeedback((await input.livePolicy?.()) ?? input.policy, provider.identity, exact)
+      .disposition !== 'approved'
+  )
+    throw new WorkflowPolicyHeld('feedback-not-approved');
   return source;
 }
 
@@ -208,6 +214,7 @@ export default async function openClawFeedback(input: {
   debug?: boolean;
   assertCurrent(): Promise<void>;
   reauthorize?(): Promise<void>;
+  livePolicy?(): Promise<GitHubNotificationPolicy>;
   save(): Promise<void>;
 }) {
   const { record, event, action, caller, request, provider, policy, intake, save } = input;

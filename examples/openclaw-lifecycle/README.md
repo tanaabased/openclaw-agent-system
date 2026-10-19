@@ -170,6 +170,24 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one original owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 jq -e --slurpfile before "$TMPDIR/notification-historical-before.json" '. as $after | $before[0] as $before | ([.id,.intakeId,.threadId,.sessionCreation,.worktree,.routing,.effective,.manifestDigest,.assessmentTurn] == [$before.id,$before.intakeId,$before.threadId,$before.sessionCreation,$before.worktree,$before.routing,$before.effective,$before.manifestDigest,$before.assessmentTurn]) and .blocker == null and (.compatibilityRecovery.codes | index("dispatch-policy-changed")) != null and .resultTurnId == "notification-historical-context" and .assessmentRevision == ($before.assessmentRevision + 1) and .result.plan == $before.result.plan and (.result.fullAssessment | contains($before.result.fullAssessment)) and .assessmentCaller.inputEventId != null and .stageReceipt.binding.turnId == .resultTurnId and .handoff == null and .reset == null and .retirement == null and .retired == null' "$TMPDIR/notification-dispatch-before.json"
 
+# should apply live feedback policy without reinstalling the active intake automation
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+node --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+const text = readFileSync('agent.yaml', 'utf8');
+assert.ok(text.includes('feedback: true'));
+writeFileSync('agent.yaml', text.replace('feedback: true', 'feedback: false'));
+NODE
+openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
+node --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+const text = readFileSync('agent.yaml', 'utf8');
+assert.ok(text.includes('feedback: false'));
+writeFileSync('agent.yaml', text.replace('feedback: false', 'feedback: true'));
+NODE
+
 # should reactivate an unassigned issue from approved feedback in its original chat
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"

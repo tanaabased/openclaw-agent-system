@@ -28,6 +28,14 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  if (code === 'workflow-policy-held')
+    return {
+      severity: 'info',
+      title: 'Waiting on current workflow policy',
+      summary:
+        'The live agent.yaml does not currently permit this automatic operation. Saved work and receipts are retained.',
+      next: 'Update the relevant workflow setting to resume eligible work. Policy edits take effect without Install.',
+    };
   const automation = intakeAutomationNotice(code);
   if (automation) return automation;
   const recovery = workflowRecovery(code, diagnostic);

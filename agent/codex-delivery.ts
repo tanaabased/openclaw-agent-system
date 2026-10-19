@@ -1,7 +1,4 @@
-import {
-  notificationAuthorityDigest,
-  matchesNotificationAuthority,
-} from './notification-authority.ts';
+import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -249,14 +246,7 @@ export default async function runCodexDelivery(
                 activation.schedule.current,
                 'feedback',
               );
-              if (
-                current.manifest.github?.notifications &&
-                matchesNotificationAuthority(
-                  activation.schedule.current.policyDigest,
-                  current.manifest.github.notifications,
-                )
-              )
-                commentFlow = 'codex';
+              commentFlow = 'codex';
             }
           } catch {
             // presentation cannot claim active feedback when schedule readback fails.

@@ -16,29 +16,26 @@ OpenClaw keeps discovery inside one condition budget and wakes the coordinator f
 saved actionable work or a one-time progress/recovery card. After upgrading, run
 Install to reconcile the changed condition before relying on scheduled intake.
 
-Intake settings govern new admissions. Disabling intake, changing allowlists, or
-changing default mode, models, skills, guidance, timing, or capacity does not revoke
-an active task. Existing Plan tasks stay assessment-only; Work and Auto retain their
-recorded scope and selections. Native execution still needs its owning chat and
-verified receipts. Pausing or removing a scheduler can stop future scheduled turns;
-it does not require renewed permission for an existing task.
+The live bound `agent.yaml` governs the next automatic operation for every active
+issue. Mode, author, feedback, recipient, and guidance edits take effect without
+Install. Plan holds future implementation; Work permits an actionable plan to
+continue; Auto additionally requires proceed. Existing Plan issues can become
+eligible when the operator changes the mode to Work.
 
-Continued work checks the receiving account, issue and repository identities,
-active lifecycle, native chat, and recorded checkout. Git and GitHub enforce access
-and write permissions. Managed failures expose bounded, redacted provider details
-and an HTTP status when supplied; native shell output remains native output.
-Explicit cancellation, native denial, changed source content, and uncertain writes
-retain their own stops and reconciliation requirements.
+Discovery retains bounded observations independently of reply eligibility. Disabled
+feedback or an unapproved author produces a reversible policy hold; changing the
+setting reevaluates pending observations without resetting the queue. Existing
+publication receipts suppress duplicates, and historical baselines are preserved.
 
-Known configuration-only blockers in supported active records recover on read and
-persist through the next normal owner save, preserving chat, worktree, results, PRs,
-and submission receipts. Unsupported or corrupt schemas remain untouched and report
-a specific state error. Recovery never changes an old Plan grant to the current
-Work default or repeats an uncertain send or publication.
+Install reconciles changes to installed scheduling machinery. Policy-only edits do
+not change the orchestration definition. Native execution facts, explicit task
+cancellation, lifecycle state, account/repository/chat identity, and exact submitted
+requests remain distinct from mutable policy. A policy edit never repeats an
+uncertain send or publication or automatically terminates a running native turn.
 
-Changed reply skill content or guidance can be loaded again with `compose`; the
-private answer is retained and the unattempted public draft is replaced. An attempted
-write must be reconciled before further publication.
+Git and GitHub enforce provider permissions. Managed workflow failures expose safe,
+bounded provider detail and an HTTP status when supplied. Unsupported execution
+capabilities are reported for their stage without disabling discovery.
 
 ## Assignment lifecycle
 

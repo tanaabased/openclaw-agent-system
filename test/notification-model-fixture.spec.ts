@@ -33,7 +33,7 @@ for (const scenario of [
   })[0]!;
   assert.equal(job.payload.kind, 'prompt');
   const intakePrompt = job.payload.kind === 'prompt' ? job.payload.prompt : '';
-  const digest = /Policy digest: ([a-f0-9]{64})/u.exec(intakePrompt)![1]!;
+  const digest = 'd'.repeat(64);
 
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
 
@@ -511,6 +511,18 @@ for (const scenario of [
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).digest, digest);
         append(input, 'delivery-publish', {
+          status: 'waiting',
+          code: 'github-delivery-linkage-unverified',
+          pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
+        });
+        const reconciliation = await action(input, 'delivery');
+        assert.equal(reconciliation.operation, 'prepare');
+        assert.equal(reconciliation.id, id);
+        append(input, 'delivery-link-prepare-0', { status: 'prepared', digest });
+        const linkageRetry = await action(input, 'delivery');
+        assert.equal(linkageRetry.operation, 'publish');
+        assert.equal(linkageRetry.id, id);
+        append(input, 'delivery-link-publish-0', {
           status: 'published',
           workflowStatus: 'partially-delivered',
         });

@@ -1,4 +1,3 @@
-import { matchesIntakePolicy } from './assignment-intake-policy.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -173,11 +172,8 @@ export async function runCodexIntake(
     const { policy, digest } = current.policy;
     const assertCurrent = async () => {
       const fresh = await selectCodexIntake(pluginData, deps);
-      if (
-        fresh.digest !== current.digest ||
-        fresh.store.location.scope !== current.store.location.scope
-      )
-        throw new IntakeError('intake-policy-changed');
+      if (fresh.store.location.scope !== current.store.location.scope)
+        throw new IntakeError('intake-workspace-binding-changed');
       if (!activate) await assertCodexIntakeActive(pluginData, current, deps);
     };
     const result = await scanAssignments({
@@ -198,6 +194,12 @@ export async function runCodexIntake(
         );
       },
       assertCurrent,
+      async readPolicy() {
+        await assertCurrent();
+        const live = await selectCodexIntake(pluginData, deps);
+        if (!live.policy) throw new IntakeError('intake-policy-disabled');
+        return live.policy;
+      },
     });
     return {
       ...result,
@@ -271,11 +273,8 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
       ? 'intake-policy-disabled'
       : !state
         ? 'intake-activation-required'
-        : !matchesIntakePolicy(state.policyDigest, current.policy)
-          ? 'intake-policy-reconciliation-required'
-          : state.blocker?.code;
-    if (current.policy && state && matchesIntakePolicy(state.policyDigest, current.policy))
-      await assertCodexIntakeActive(pluginData, current, deps);
+        : state.blocker?.code;
+    if (current.policy && state) await assertCodexIntakeActive(pluginData, current, deps);
   } catch (error) {
     state = await retainedStore(pluginData, deps)
       .then((store) => store?.read())

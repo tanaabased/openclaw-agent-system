@@ -38,6 +38,54 @@ describe('agent/codex-feedback-source', () => {
     policy.issueAssignment!.feedback = false;
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
+  it('should observe feedback while disabled and reevaluate it without source edits or queue resets', async () => {
+    const startedAt = Date.parse('2026-10-12T00:00:00Z');
+    const state: CodexFeedback = { startedAt, baseline: {}, events: [] };
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = false;
+    const comments: ReturnType<typeof comment>[] = [];
+    const input = {
+      state,
+      policy,
+      owner: 'owner',
+      name: 'repo',
+      number: 3,
+      nodeId: 'I',
+      itemType: 'issue' as const,
+      now: startedAt + 172800000,
+      client: {
+        identity: account,
+        listIssueComments: async () => ({ comments, truncated: false }),
+        getIssueComment: async () => comments[0]!,
+      },
+    };
+    await discoverCodexFeedback(input);
+    comments.push(comment('pending'));
+    await discoverCodexFeedback(input);
+    assert.equal(state.events.length, 1);
+    const source = state.events[0]!.source;
+    const id = state.events[0]!.id;
+    assert.equal(state.events[0]!.policyHeld, 'feedback-not-approved');
+    // incremental provider reads can omit unchanged history; retained observations still reevaluate.
+    comments.length = 0;
+    policy.issueAssignment!.feedback = true;
+    await discoverCodexFeedback(input);
+    assert.equal(state.events.length, 1);
+    assert.equal(state.events[0]!.id, id);
+    assert.equal(state.events[0]!.source, source);
+    assert.equal(state.events[0]!.policyHeld, undefined);
+    policy.issueAssignment!.feedback = false;
+    await discoverCodexFeedback(input);
+    assert.equal(state.events[0]!.phase, 'queued');
+    assert.equal(state.events[0]!.policyHeld, 'feedback-not-approved');
+    policy.issueAssignment!.feedback = true;
+    state.events[0]!.phase = 'published';
+    state.events[0]!.receipt = { nodeId: 'reply', databaseId: 99 };
+    await discoverCodexFeedback(input);
+    assert.equal(state.events.length, 1);
+    assert.equal(state.events[0]!.phase, 'published');
+  });
+
   it('should baseline once, queue exact edits once and suppress confirmed own replies', async () => {
     const state: CodexFeedback = { baseline: {}, events: [] };
     const policy = intakeFixture().policy;

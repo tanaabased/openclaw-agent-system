@@ -1,5 +1,6 @@
 import retainedIntakePolicy from './retained-intake-policy.ts';
-import { admitRetainedFeedback } from './feedback-source.ts';
+import { admitFeedback } from './feedback-source.ts';
+import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -32,7 +33,6 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import {
   isReviewFeedback,
   readReviewFeedback,
@@ -89,24 +89,9 @@ export default async function runCodexFeedback(
     current.policy ??
     (admittedState ? retainedIntakePolicy(current.manifest, admittedState, 'codex') : undefined);
   const policy = selected?.policy;
-  const acceptingFeedback = Boolean(
-    current.policy &&
-    policy &&
-    feedbackIdentities(policy.issueAssignment?.allowed ?? [], policy.issueAssignment?.feedback)
-      .length,
-  );
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (!policy || !selected) return { status: 'disabled' };
-  if (
-    !acceptingFeedback &&
-    input.action === 'next' &&
-    !(await store.read()).records.some((record) =>
-      record.feedback?.events.some((event) =>
-        ['queued', 'prepared', 'running', 'responded'].includes(event.phase),
-      ),
-    )
-  )
-    return { status: 'disabled' };
+  current.policy = selected;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('feedback-caller-required');
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -117,26 +102,28 @@ export default async function runCodexFeedback(
     'feedback',
   );
   const schedule = activation.schedule;
-  if (!schedule) throw new Error('workflow-schedule-reconciliation-required');
-  requireWorkflowSchedule(
-    schedule.saved,
-    schedule.current,
-    input.action === 'publish' || operatorPublication ? 'publication' : 'feedback',
-  );
   if (['next', 'reconcile'].includes(input.action) && caller !== activation.sourceThreadId)
     throw new Error('feedback-schedule-caller-required');
 
-  const connection =
-    deps.native && deps.continuationNative
-      ? undefined
-      : await connectCodexThreads(current.workspace, current.codexHome);
+  const connection = deps.native
+    ? undefined
+    : await connectCodexThreads(current.workspace, current.codexHome);
   const native = deps.native ?? codexDispatchNative(connection!.request);
-  const receiptFor = deps.continuationNative ?? codexContinuationNative(connection!.request);
+  const receiptFor: ReturnType<typeof codexContinuationNative> =
+    deps.continuationNative ??
+    (async (...args) => {
+      const host = connection ?? (await connectCodexThreads(current.workspace, current.codexHome));
+      try {
+        return await codexContinuationNative(host.request)(...args);
+      } finally {
+        if (!connection) await host.close();
+      }
+    });
   try {
     const occurrence = ['next', 'reconcile'].includes(input.action)
       ? await native.occurrence(caller)
       : undefined;
-    if (occurrence && occurrence.automationId !== schedule.current.automationId)
+    if (occurrence && schedule && occurrence.automationId !== schedule.current.automationId)
       throw new Error('feedback-occurrence-mismatch');
     const snapshot = input.action === 'next' ? await store.read() : undefined;
     if (snapshot?.run?.id === occurrence?.id && (snapshot?.run?.actions ?? 0) >= 12)
@@ -144,7 +131,9 @@ export default async function runCodexFeedback(
     const budget = new DiscoveryBudget();
     const scanTime = (deps.now ?? Date.now)();
     const scans =
-      snapshot && occurrence && acceptingFeedback
+      snapshot &&
+      occurrence &&
+      snapshot.records.some((record) => record.threadId && !record.retired)
         ? await scanCodexFeedback({
             state: snapshot,
             budget,
@@ -171,15 +160,6 @@ export default async function runCodexFeedback(
         throw new Error('feedback-schedule-owner-changed');
     }
     return await store.exclusive(async (state, save, signal) => {
-      if (occurrence) {
-        if (state.run?.id !== occurrence.id) {
-          state.run = { ...occurrence, actions: 0 };
-          delete state.checked;
-        }
-        if (state.run.actions >= 12) return { status: 'budget-exhausted' };
-        state.run.actions++;
-        await save();
-      }
       if (applyFeedbackScans(state.records, scans)) await save();
       if (snapshot && occurrence) {
         const cycleAt = state.discoveryCycleAt ?? scanTime;
@@ -201,6 +181,8 @@ export default async function runCodexFeedback(
       const intake = await current.store.read();
       if (!intake) throw new Error('feedback-intake-missing');
       const now = (deps.now ?? Date.now)();
+      if (!state.records.some((record) => record.threadId && !record.retired))
+        return { status: 'idle' };
       const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
         current.workspace,
         signal,
@@ -216,6 +198,26 @@ export default async function runCodexFeedback(
           record.worktree &&
           record.project,
       );
+      if (
+        input.action === 'next' &&
+        !records.some((record) =>
+          record.feedback?.events.some(
+            (event) =>
+              !event.policyHeld &&
+              ['queued', 'prepared', 'running', 'responded'].includes(event.phase),
+          ),
+        )
+      )
+        return { status: 'idle' };
+      if (occurrence) {
+        if (state.run?.id !== occurrence.id) {
+          state.run = { ...occurrence, actions: 0 };
+          delete state.checked;
+        }
+        if (state.run.actions >= 12) return { status: 'budget-exhausted' };
+        state.run.actions++;
+        await save();
+      }
       const queued = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).filter(
         ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
       );
@@ -224,7 +226,7 @@ export default async function runCodexFeedback(
       );
       const queuedEvent = (record: (typeof records)[number]) =>
         record.feedback?.events
-          .filter((event) => event.phase === 'queued')
+          .filter((event) => event.phase === 'queued' && !event.policyHeld)
           .sort((a, b) => a.createdAt - b.createdAt)[0];
       const readyAt = (record: (typeof records)[number]) =>
         Math.max(queuedEvent(record)?.createdAt ?? Infinity, record.feedback?.lastServedAt ?? 0);
@@ -248,6 +250,12 @@ export default async function runCodexFeedback(
           if (record.sourceThreadId !== activation.sourceThreadId)
             throw new Error('feedback-schedule-owner-changed');
           if (!event) continue;
+          if (!schedule) throw new Error('workflow-schedule-reconciliation-required');
+          requireWorkflowSchedule(
+            schedule.saved,
+            schedule.current,
+            input.action === 'publish' || operatorPublication ? 'publication' : 'feedback',
+          );
           if (input.action === 'next' && event.retry && !dispatchRetryDue(event, now)) continue;
           if (
             event.phase === 'published' ||
@@ -301,6 +309,9 @@ export default async function runCodexFeedback(
             );
             if (fresh.sourceThreadId !== activation.sourceThreadId)
               throw new Error('feedback-schedule-owner-changed');
+            const live = await selectCodexIntake(pluginData, deps);
+            const held = liveWorkflowPolicy(live.manifest, 'codex', admitted, 'feedback');
+            if (held) throw new WorkflowPolicyHeld(held);
             const assignment = await inspectFeedbackAssignment(
               selected,
               admitted,
@@ -343,10 +354,14 @@ export default async function runCodexFeedback(
               throw new Error('feedback-source-author-changed');
             if (feedbackRevision(exact) !== event.revision)
               throw new Error('feedback-source-changed');
-            if (admitRetainedFeedback(provider.comments.identity, exact).disposition !== 'approved')
-              throw new Error('feedback-source-no-longer-eligible');
+            if (
+              admitFeedback(live.manifest.github!.notifications!, provider.comments.identity, exact)
+                .disposition !== 'approved'
+            )
+              throw new WorkflowPolicyHeld('feedback-not-approved');
           };
           await authorize();
+          delete event.policyHeld;
           const found = await native.find({
             sourceThreadId: record.sourceThreadId,
             prompt: record.request!.prompt,
@@ -457,7 +472,11 @@ export default async function runCodexFeedback(
             };
           }
           if (input.action === 'context') {
-            const admission = admitRetainedFeedback(provider.comments.identity, source);
+            const admission = admitFeedback(
+              (await selectCodexIntake(pluginData, deps)).manifest.github!.notifications!,
+              provider.comments.identity,
+              source,
+            );
             if (admission.disposition !== 'approved') throw new Error('feedback-source-changed');
             return {
               status: 'verified',
@@ -521,7 +540,7 @@ export default async function runCodexFeedback(
               source: event.source,
               privateText: event.result?.privateText,
               selection: event.composition,
-              authority: schedule.saved,
+              authority: schedule!.saved,
             });
           if (input.action === 'result') {
             if (!input.result) throw new Error('feedback-result-required');
@@ -614,7 +633,7 @@ export default async function runCodexFeedback(
               result: event.result,
               composition: event.composition,
               policyDigest: event.policyDigest,
-              authority: schedule.saved,
+              authority: schedule!.saved,
               action: input.action,
               turnId: event.attempt?.turnId ?? event.previousTurnIds?.at(-1),
               caller,
@@ -635,7 +654,7 @@ export default async function runCodexFeedback(
                 presentation:
                   feedbackReplyPresentation(source.author!.login, body) +
                   `\n\n[Reply destination ↗](${destination})`,
-                authority: schedule.saved,
+                authority: schedule!.saved,
                 instruction: operatorPublication
                   ? 'Only apply this digest after explicit human approval of this exact retained reply and destination. This operator recovery never resumes a model or changes the draft.'
                   : 'This preview makes no GitHub write. Reproduce its presentation verbatim, including the quoted title and every quoted body line, when requesting native execution approval. The freshly reconciled operator-activated feedback workflow authorizes a routine reply within this scope; call publish with this digest. Native approval review still applies: stop on denial and never substitute another route.',
@@ -728,6 +747,17 @@ export default async function runCodexFeedback(
             };
           }
         } catch (error) {
+          if (error instanceof WorkflowPolicyHeld && event) {
+            event.policyHeld = error.reason;
+            await save();
+            if (input.action === 'next') continue;
+            return {
+              status: 'policy-held',
+              id: record.id,
+              eventId: event.id,
+              reason: error.reason,
+            };
+          }
           if (codexHostAccess(error)) throw error;
           const failure = workflowFailure(error, 'feedback-operation-failed');
           const { code } = failure;

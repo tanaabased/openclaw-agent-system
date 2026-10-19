@@ -1,3 +1,4 @@
+import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import workflowStatus from './workflow-status.ts';
@@ -228,7 +229,11 @@ export default class OpenClawDispatch {
     if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
     if (!intake) throw new Error('dispatch-admission-missing');
-    return { current, intake };
+    const held =
+      !work &&
+      liveWorkflowPolicy(fresh.manifest, 'openclaw', intake, feedback ? 'feedback' : 'assignment');
+    if (held) throw new WorkflowPolicyHeld(held);
+    return { current, intake, manifest: fresh.manifest };
   }
 
   /** Refresh provider authority at action entry and immediately before native dispatch. */
@@ -382,6 +387,10 @@ export default class OpenClawDispatch {
           now,
           debug: manifest.debug,
           assertCurrent,
+          livePolicy: async () => {
+            const live = await this.validateLocal(manifest, workspace, record, false, true);
+            return live.manifest.github!.notifications!;
+          },
           reauthorize: async () => {
             await this.validate(manifest, workspace, record, false, true, client, authority.signal);
           },
@@ -389,6 +398,7 @@ export default class OpenClawDispatch {
         };
         if (!action || action.operation === 'reconcile') {
           await authorizeFeedback(common);
+          delete event.policyHeld;
           const result = await advanceFeedbackTurn(common);
           if (event.turn?.status === 'completed') {
             record.feedback!.lastServedAt = now;
@@ -409,6 +419,17 @@ export default class OpenClawDispatch {
         return openClawFeedback({ ...common, action });
       });
     } catch (error) {
+      if (error instanceof WorkflowPolicyHeld) {
+        event.policyHeld = error.reason;
+        await save();
+        return {
+          status: 'policy-held',
+          id: record.id,
+          eventId: event.id,
+          reason: error.reason,
+          nextAction: 'next',
+        };
+      }
       const code = openClawDispatchFailureCode(error);
       if (event.phase !== 'published') {
         event.code = code;
@@ -460,11 +481,6 @@ export default class OpenClawDispatch {
     signal?: AbortSignal,
     observation?: IntakeObservation,
   ) {
-    if (
-      manifest.github?.notifications?.schemaVersion !== 2 ||
-      manifest.github.notifications.issueAssignment?.mode !== 'plan'
-    )
-      return { status: 'ready' as const, changed: false };
     const budget = new DiscoveryBudget(20000, signal);
     const reporting = await this.reportScope(manifest, workspace);
     const intake =
@@ -522,13 +538,12 @@ export default class OpenClawDispatch {
     );
     const more = Boolean(
       ('more' in intake && intake.more) ||
-      (openClawFeedbackEnabled(manifest) &&
-        owners.some(
-          (r) =>
-            (r.feedback?.scannedTime ?? 0) < cycleAt ||
-            r.feedback?.discoveryPending ||
-            Object.keys(r.feedback?.discovery ?? {}).length > 0,
-        )),
+      owners.some(
+        (r) =>
+          (r.feedback?.scannedTime ?? 0) < cycleAt ||
+          r.feedback?.discoveryPending ||
+          Object.keys(r.feedback?.discovery ?? {}).length > 0,
+      ),
     );
     await current.journal.exclusive(async (fresh, save) => {
       fresh.discoveryCheckedAt = Date.now();
@@ -558,6 +573,7 @@ export default class OpenClawDispatch {
               ((event.turn && event.turn.status !== 'completed') ||
                 (event.publicationAttempted && !event.receipt))) ||
             (event.phase === 'queued' &&
+              !event.policyHeld &&
               (!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
               !openClawItemOccupied(record) &&
               capacity.available > 0),
@@ -571,7 +587,9 @@ export default class OpenClawDispatch {
         (continuationStatus(record) ||
           (record.blocker && dispatchRetryDue(record, (this.dependencies.now ?? Date.now)()))),
     );
-    const pending = pendingAssignments(state, current.admitted).some(pendingAssignment);
+    const pending = pendingAssignments(state, current.admitted)
+      .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
+      .some(pendingAssignment);
     const actionable = feedbackPending || recoverable || (capacity.available > 0 && pending);
     const code = state.records.find(
       (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
@@ -827,7 +845,9 @@ export default class OpenClawDispatch {
           const signal = authority.signal
             ? AbortSignal.any([authority.signal, transactionSignal])
             : transactionSignal;
-          for (const { record, intake } of pendingAssignments(state, current.admitted)) {
+          for (const { record, intake } of pendingAssignments(state, current.admitted).filter(
+            ({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake),
+          )) {
             if (
               !record?.request ||
               !record.sessionCreation?.attempted ||
@@ -903,7 +923,7 @@ export default class OpenClawDispatch {
                 : []),
             ]);
             for (const event of owner.feedback?.events ?? [])
-              if (event.phase === 'queued' && receipts.has(event.sourceId)) {
+              if (event.phase === 'queued' && !event.policyHeld && receipts.has(event.sourceId)) {
                 event.phase = 'blocked';
                 event.code = 'feedback-own-output';
               }
@@ -914,6 +934,7 @@ export default class OpenClawDispatch {
             current.policy.policy.maxConcurrentItems,
           );
           const assignments = pendingAssignments(state, current.admitted)
+            .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
             .filter(pendingAssignment)
             .sort(
               (a, b) =>
@@ -932,7 +953,7 @@ export default class OpenClawDispatch {
             )
             .flatMap((record) =>
               (record.feedback?.events ?? [])
-                .filter((event) => event.phase === 'queued')
+                .filter((event) => event.phase === 'queued' && !event.policyHeld)
                 .sort((a, b) => a.createdAt - b.createdAt)
                 .slice(0, 1)
                 .map((event) => ({
@@ -983,6 +1004,7 @@ export default class OpenClawDispatch {
             return { status: continuationStatus(continuing)!, id: continuing.id };
           }
           const pending = pendingAssignments(state, current.admitted)
+            .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
             .filter(pendingAssignment)
             .filter(
               ({ intake, record }) =>
@@ -1035,7 +1057,9 @@ export default class OpenClawDispatch {
             return {
               status:
                 pass.selected.length ||
-                pendingAssignments(state, current.admitted).some(pendingAssignment)
+                pendingAssignments(state, current.admitted)
+                  .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
+                  .some(pendingAssignment)
                   ? 'pass-completed'
                   : 'idle',
             };
@@ -1047,9 +1071,7 @@ export default class OpenClawDispatch {
             phase: 'routing',
             createdAt: now,
             manifestDigest: current.manifestDigest,
-            ...(openClawFeedbackEnabled(manifest)
-              ? { feedback: { startedAt: now, baseline: {}, events: [] } }
-              : {}),
+            feedback: { startedAt: now, baseline: {}, events: [] },
           };
           if (!pending.record) state.records.push(record);
           pass.selected.push(record.id);
@@ -1495,6 +1517,13 @@ export default class OpenClawDispatch {
         if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode)
           return { status: 'busy' as const, code: stateSnapshotConflictCode };
         if (!enteredTransaction) throw error;
+        if (error instanceof WorkflowPolicyHeld)
+          return {
+            status: 'policy-held' as const,
+            ...('id' in input ? { id: input.id } : {}),
+            reason: error.reason,
+            nextAction: 'next' as const,
+          };
         if (
           input.action === 'prepare' ||
           input.action === 'reconcile' ||

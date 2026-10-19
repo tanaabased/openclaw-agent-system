@@ -14,7 +14,7 @@ export default function assignmentIntakePolicy(
     policy?.schemaVersion !== 2 ||
     !policy.runtimes.includes(runtime) ||
     (!retainedWork && policy.issueAssignment?.enabled === false) ||
-    !policy.issueAssignment?.allowed.length
+    !policy.issueAssignment
   )
     return;
   const username = manifest.github?.username;
@@ -31,35 +31,4 @@ export default function assignmentIntakePolicy(
     digest: digest(notificationAuthority),
     legacyDigest: digest(legacyNotificationAuthority),
   };
-}
-
-/** original ordered admission format: retained custody only, never schedule activation. */
-export function originalIntakePolicyDigest(manifest: AgentManifest) {
-  const policy = manifest.github?.notifications;
-  const username = manifest.github?.username;
-  if (policy?.schemaVersion !== 2 || typeof username !== 'string') return;
-  return automationHash({
-    username,
-    host: manifest.github?.host,
-    policy: {
-      schemaVersion: policy.schemaVersion,
-      runtimes: policy.runtimes,
-      intervalMinutes: policy.intervalMinutes,
-      maxConcurrentItems: policy.maxConcurrentItems,
-      allowedRepositoryOwners: policy.allowedRepositoryOwners,
-      issueAssignment: policy.issueAssignment,
-    },
-  });
-}
-
-/** only the exact unchanged legacy projection can inherit its existing activation. */
-export function matchesIntakePolicy(
-  digest: string | undefined,
-  selected:
-    | Pick<NonNullable<ReturnType<typeof assignmentIntakePolicy>>, 'digest' | 'legacyDigest'>
-    | undefined,
-) {
-  return Boolean(
-    selected && digest && (digest === selected.digest || digest === selected.legacyDigest),
-  );
 }

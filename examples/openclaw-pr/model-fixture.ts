@@ -28,6 +28,10 @@ const dispatchStages = [
   'delivery-prepare',
   'delivery-publish',
   'delivery-publish-refreshed',
+  ...Array.from({ length: 3 }, (_, index) => [
+    `delivery-link-prepare-${index}`,
+    `delivery-link-publish-${index}`,
+  ]).flat(),
   'delivery-compose',
   'delivery-candidate',
   'delivery-announce',
@@ -108,10 +112,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
       const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
-      if (!digest) return;
       const scan = result('scan');
       if (!scan)
-        return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
+        return call('scan', 'agent_system_intake', {
+          action: 'scan',
+          ...(digest ? { policyDigest: digest } : {}),
+        });
       if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
     }
@@ -393,6 +399,39 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           });
         published = refreshed;
       }
+      for (
+        let index = 0;
+        index < 3 && published.code === 'github-delivery-linkage-unverified';
+        index++
+      ) {
+        const receipt = published.pullRequest as Record<string, unknown> | undefined;
+        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        const prepareStage = `delivery-link-prepare-${index}`;
+        const retained = result(prepareStage);
+        if (!retained)
+          return dispatch(prepareStage, {
+            action: 'delivery',
+            operation: 'prepare',
+            id: operatorId,
+            title,
+            body,
+          });
+        if (retained.status !== 'prepared' || typeof retained.digest !== 'string') return;
+        const publishStage = `delivery-link-publish-${index}`;
+        const reconciled = result(publishStage);
+        if (!reconciled)
+          return dispatch(publishStage, {
+            action: 'delivery',
+            operation: 'publish',
+            id: operatorId,
+            digest: retained.digest,
+            title,
+            body,
+          });
+        published = reconciled;
+      }
+      if (published.code === 'github-delivery-linkage-unverified')
+        throw new Error('notification-linkage-reconciliation-exhausted');
       if (published.status !== 'published') return;
       if (!update && published.workflowStatus !== 'partially-delivered')
         throw new Error('published pr must retain pending announcement as partial delivery');

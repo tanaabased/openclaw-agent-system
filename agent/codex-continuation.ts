@@ -1,3 +1,5 @@
+import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { realpath } from 'node:fs/promises';
@@ -114,6 +116,39 @@ export default async function runCodexContinuation(
         state.continuationRun.actions++;
         await save();
       }
+      const admissions = await current.store.read();
+      const liveMode = current.manifest.github?.notifications?.issueAssignment?.mode;
+      if (input.action === 'next' && (liveMode === 'work' || liveMode === 'auto'))
+        for (const record of state.records) {
+          const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
+          if (
+            record.continuation ||
+            record.result?.outcome !== 'plan-ready' ||
+            !record.project ||
+            !record.worktree ||
+            !record.request ||
+            record.handoff ||
+            record.retired ||
+            record.retirement ||
+            record.reset ||
+            !admitted ||
+            liveWorkflowPolicy(current.manifest, 'codex', admitted, 'implementation')
+          )
+            continue;
+          const selected = await selectWorkflowStage({
+            stage: 'implementation',
+            configuration: current.manifest.github!.notifications!.issueAssignment!.implementation,
+            workspace: current.workspace,
+            observedAt: (deps.now ?? Date.now)(),
+            resolveSkill: (id) => native.assessmentSkill(record.worktree!, id),
+          });
+          record.continuation = {
+            phase: 'waiting',
+            selection: selected.selection,
+            policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
+          };
+          await save();
+        }
       const candidates =
         input.action === 'next'
           ? state.records.filter(
@@ -127,7 +162,8 @@ export default async function runCodexContinuation(
                 !record.retirement &&
                 !record.feedbackReactivation &&
                 !record.reset &&
-                !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase),
+                (!['complete', 'blocked', 'cancelled'].includes(record.continuation.phase) ||
+                  record.continuation.code === 'continuation-auto-wait'),
             )
           : state.records.filter((record) => record.id === input.id);
       if (!candidates.length && input.action !== 'next')
@@ -135,6 +171,11 @@ export default async function runCodexContinuation(
       for (const record of candidates) {
         try {
           const work = record.continuation;
+          if (work?.code === 'continuation-auto-wait' && liveMode === 'work') {
+            work.phase = 'waiting';
+            delete work.code;
+            delete work.retryAfter;
+          }
           if (
             !work ||
             !record.threadId ||
@@ -156,10 +197,7 @@ export default async function runCodexContinuation(
             continue;
           if (!occurrence && !retry && caller !== record.threadId)
             throw new Error('continuation-issue-caller-required');
-          if (
-            record.sourceThreadId !== activation.sourceThreadId ||
-            !['work', 'auto'].includes(record.issueMode ?? 'work')
-          )
+          if (record.sourceThreadId !== activation.sourceThreadId)
             throw new Error('continuation-schedule-binding-mismatch');
           if (
             retry &&
@@ -183,8 +221,35 @@ export default async function runCodexContinuation(
             return { status: work.phase, id: record.id, code: work.code };
           }
           if (!record.result) continue;
-          if (record.issueMode === 'auto') {
-            if (!record.result.decision) throw new Error('assessment-decision-required');
+          const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
+          if (!admitted) throw new Error('continuation-admission-missing');
+          const authorizeLive = async () => {
+            const live = await selectCodexIntake(pluginData, deps);
+            const held = liveWorkflowPolicy(live.manifest, 'codex', admitted, 'implementation');
+            if (held) throw new WorkflowPolicyHeld(held);
+            if (live.manifest.github?.notifications?.issueAssignment?.mode !== liveMode)
+              throw new WorkflowPolicyHeld('workflow-mode-updated');
+            return live;
+          };
+          if (!['reconcile', 'cancel', 'result'].includes(input.action)) await authorizeLive();
+          if (
+            !work.attempt &&
+            !work.binding &&
+            (input.action === 'next' || input.action === 'context')
+          ) {
+            const live = await authorizeLive();
+            const selected = await selectWorkflowStage({
+              stage: 'implementation',
+              configuration: live.manifest.github!.notifications!.issueAssignment!.implementation,
+              workspace: current.workspace,
+              observedAt: work.selection.observedAt,
+              resolveSkill: (id) => native.assessmentSkill(record.worktree!, id),
+            });
+            work.selection = selected.selection;
+          }
+          delete work.policyHeld;
+          if (liveMode === 'auto') {
+            if (!record.result.decision) throw new WorkflowPolicyHeld('auto-decision-required');
             if (
               !record.stageReceipt ||
               record.stageReceipt.resultDigest !== automationHash(record.result) ||
@@ -202,10 +267,7 @@ export default async function runCodexContinuation(
               nextIssueStage('auto', record.result.outcome, record.result.decision.action) !==
               'implementation'
             ) {
-              work.phase = 'blocked';
-              work.code = 'continuation-auto-wait';
-              await save();
-              return { status: 'blocked', id: record.id, code: work.code };
+              throw new WorkflowPolicyHeld('auto-wait');
             }
             if (
               !record.assessment ||
@@ -222,10 +284,6 @@ export default async function runCodexContinuation(
           }
           if (work.assessmentDigest && work.assessmentDigest !== automationHash(record.result))
             throw new Error('continuation-assessment-changed');
-          const admitted = (await current.store.read())?.records.find(
-            (entry) => entry.id === record.intakeId,
-          );
-          if (!admitted) throw new Error('continuation-admission-missing');
           const { client, repo } = await revalidateDispatchAssignment(
             current,
             admitted,
@@ -233,7 +291,7 @@ export default async function runCodexContinuation(
             signal,
             true,
           );
-          if (record.issueMode === 'auto' && !work.binding) {
+          if (liveMode === 'auto' && !work.binding) {
             const retained = JSON.parse(record.context!);
             const latest = dispatchContext(
               await client.getItemContext(
@@ -299,7 +357,7 @@ export default async function runCodexContinuation(
           });
           selection.selection = { ...work.selection, skill: selection.selection.skill };
           const selections = [{ expected: work.selection, actual: selection.selection }];
-          if (record.issueMode === 'auto') {
+          if (liveMode === 'auto') {
             const assessment = await selectWorkflowStage({
               stage: 'assessment',
               configuration: {
@@ -342,6 +400,7 @@ export default async function runCodexContinuation(
           );
           if (fresh.sourceThreadId !== activation.sourceThreadId)
             throw new Error('continuation-schedule-binding-mismatch');
+          if (input.action !== 'reconcile' && input.action !== 'result') await authorizeLive();
           if (!work.attempt) {
             if (
               input.action !== 'next' ||
@@ -360,7 +419,7 @@ export default async function runCodexContinuation(
             )
               throw new Error('continuation-user-intervened');
             work.assessmentDigest = automationHash(record.result);
-            if (record.issueMode === 'auto')
+            if (liveMode === 'auto')
               work.assessmentSelectionDigest = automationHash(record.assessment);
             const id = automationHash({
               id: record.id,
@@ -639,6 +698,12 @@ export default async function runCodexContinuation(
             await save();
           }
         } catch (error) {
+          if (error instanceof WorkflowPolicyHeld && record.continuation) {
+            record.continuation.policyHeld = error.reason;
+            await save();
+            if (input.action === 'next') continue;
+            return { status: 'policy-held', id: record.id, reason: error.reason };
+          }
           if (codexHostAccess(error) || (input.action !== 'next' && input.action !== 'reconcile'))
             throw error;
           if (record.continuation) {
@@ -687,6 +752,14 @@ export default async function runCodexContinuation(
         threadId: caller,
         schedule,
         authorizeSchedule: async () => {
+          const live = await selectCodexIntake(pluginData, deps);
+          const record = (await store.read()).records.find((entry) => entry.id === input.id);
+          const admitted = (await live.store.read())?.records.find(
+            (entry) => entry.id === record?.intakeId,
+          );
+          if (!admitted) throw new Error('continuation-admission-missing');
+          const held = liveWorkflowPolicy(live.manifest, 'codex', admitted, 'implementation');
+          if (held) throw new WorkflowPolicyHeld(held);
           const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
             pluginData,
             { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },

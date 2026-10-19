@@ -2,7 +2,7 @@ import DiscoveryBudget from './discovery-budget.ts';
 import { realpath } from 'node:fs/promises';
 
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
-import assignmentIntakePolicy, { matchesIntakePolicy } from './assignment-intake-policy.ts';
+import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
@@ -72,9 +72,7 @@ export default class OpenClawIntake {
       ? 'intake-policy-disabled'
       : !state
         ? 'intake-activation-required'
-        : !matchesIntakePolicy(state.policyDigest, selected)
-          ? 'intake-policy-reconciliation-required'
-          : state.blocker?.code;
+        : state.blocker?.code;
     return {
       status: code ? 'blocked' : 'ready',
       ...(code ? { code } : {}),
@@ -87,19 +85,15 @@ export default class OpenClawIntake {
     manifest: AgentManifest,
     workspaceDir: string,
     action: 'check' | 'scan' | 'activate',
-    expectedDigest?: string,
+    _expectedDigest?: string,
     signal?: AbortSignal,
     selector?: GitHubNotificationItemSelector,
     budget = new DiscoveryBudget(20000, signal),
   ) {
     signal?.throwIfAborted();
-    const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
-    if (blocker) throw new IntakeError(blocker.code);
     const deadline = AbortSignal.timeout(action === 'check' ? 25000 : 120000);
     const { selected, store, workspace } = await this.select(manifest, workspaceDir);
     if (!selected) throw new IntakeError('intake-policy-disabled');
-    if (action !== 'activate' && !matchesIntakePolicy(expectedDigest, selected))
-      throw new IntakeError('intake-policy-changed');
     const assertCurrent = async () => {
       signal?.throwIfAborted();
       deadline.throwIfAborted();
@@ -110,10 +104,9 @@ export default class OpenClawIntake {
       if (
         fresh.status !== 'loaded' ||
         fresh.manifest.agent.id !== manifest.agent.id ||
-        (await realpath(fresh.scope.workspaceDir)) !== workspace ||
-        assignmentIntakePolicy(fresh.manifest, 'openclaw')?.digest !== selected.digest
+        (await realpath(fresh.scope.workspaceDir)) !== workspace
       )
-        throw new IntakeError('intake-policy-changed');
+        throw new IntakeError('intake-workspace-binding-changed');
     };
     await assertCurrent();
     if (action !== 'activate') {
@@ -133,6 +126,17 @@ export default class OpenClawIntake {
       activate: action === 'activate',
       selector,
       assertCurrent,
+      readPolicy: async () => {
+        await assertCurrent();
+        const live = await this.dependencies.manifestService.loadForAgentId(
+          manifest.agent.id,
+          'service',
+        );
+        const policy =
+          live.status === 'loaded' ? assignmentIntakePolicy(live.manifest, 'openclaw') : undefined;
+        if (!policy) throw new IntakeError('intake-policy-disabled');
+        return policy;
+      },
       connect: async (lockSignal) => {
         await assertCurrent();
         const client = await this.dependencies.connect(

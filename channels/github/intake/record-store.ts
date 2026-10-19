@@ -92,6 +92,11 @@ const stateSchema = Type.Object(
     blocker: Type.Optional(
       Type.Object({ code: text, since: time, retryAfter: time }, { additionalProperties: false }),
     ),
+    observedAssignments: Type.Optional(
+      Type.Array(
+        Type.Omit(intakeRecordSchema, ['evidence', 'admittedAt', 'status', 'requiresRevalidation']),
+      ),
+    ),
     records: Type.Array(intakeRecordSchema),
     notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
     noticePending: Type.Optional(Type.Boolean()),

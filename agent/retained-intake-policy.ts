@@ -23,11 +23,15 @@ export default function retainedIntakePolicy(
           issueAssignment: {
             mode: 'plan',
             ...manifest.github?.notifications?.issueAssignment,
-            allowed: state.records.length
-              ? state.records.map((record) => record.assignment.actor)
-              : [state.account],
+            allowed:
+              manifest.github?.notifications?.issueAssignment?.allowed ??
+              (state.records.length
+                ? state.records.map((record) => record.assignment.actor)
+                : [state.account]),
           },
-          allowedRepositoryOwners: state.records.map((record) => record.repository.owner),
+          allowedRepositoryOwners:
+            manifest.github?.notifications?.allowedRepositoryOwners ??
+            state.records.map((record) => record.repository.owner),
         },
       },
     },

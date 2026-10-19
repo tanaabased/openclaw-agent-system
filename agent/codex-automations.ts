@@ -414,17 +414,7 @@ export async function inspectCodexDispatchActivation(
       : 'dispatch-activation-required';
   const matchesPrompt = (prompt: string) => {
     const marker = '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId);
-    if (job?.payload.kind === 'prompt' && prompt === job.payload.prompt + marker) return true;
-    const legacy = codexIntakeJobs(
-      selected.loaded.manifest,
-      {
-        nodeExecutable: process.execPath,
-        entrypoint: resolve(process.argv[1]!),
-        pluginData: selected.root,
-      },
-      true,
-    ).find((entry) => entry.id === intakeAutomationId);
-    return legacy?.payload.kind === 'prompt' && prompt === legacy.payload.prompt + marker;
+    return job?.payload.kind === 'prompt' && prompt === job.payload.prompt + marker;
   };
   if (
     (selected.cleanupOnly && (!retainedWork || !selected.policyBlocker)) ||

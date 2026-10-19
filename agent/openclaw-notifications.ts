@@ -1,7 +1,4 @@
-import {
-  type default as assignmentIntakePolicy,
-  matchesIntakePolicy,
-} from './assignment-intake-policy.ts';
+import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
 import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
@@ -118,16 +115,12 @@ export default class OpenClawNotifications {
     if (runtimeBlocker) return blocked('github-notification-workflow-unsupported');
     if (!policy.issueAssignment || policy.issueAssignment.enabled === false)
       return blocked('github-notification-disabled');
-    if (policy.issueAssignment.mode !== 'plan')
-      return blocked('github-notification-workflow-unsupported');
     if (selector?.itemType === 'pull-request')
       return blocked('github-notification-selector-unsupported');
     try {
       const { selected, store } = await this.dependencies.intake.select(manifest, workspace);
       const state = await store.read();
       if (!selected || !state) return blocked('intake-activation-required');
-      if (!matchesIntakePolicy(state.policyDigest, selected))
-        return blocked('intake-policy-reconciliation-required');
       const journal = await (this.dependencies.readDispatch?.(store.location.scope) ??
         new OpenClawDispatchStore(this.dependencies.root, store.location.scope).read());
       const capacity = dispatchCapacity(journal.records, selected.policy.maxConcurrentItems);

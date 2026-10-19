@@ -169,6 +169,32 @@ describe('agent/openclaw issue dispatch', () => {
           };
         },
       }),
+      feedbackConnect: async () => ({
+        ...fixture.client,
+        identity: fixture.client.identity,
+        listIssueComments: async () => ({ comments: [], truncated: false }),
+        getIssueComment: async () => {
+          throw new Error('no source');
+        },
+        createIssueComment: async () => {
+          throw new Error('no publication expected');
+        },
+        findOwnIssueComment: async () => undefined,
+        getItem: fixture.client.getItem,
+        replies: {
+          find: async () => undefined,
+          create: async () => {
+            throw new Error('no review reply expected');
+          },
+        },
+        getItemContext: async () => ({
+          title: 'Repair the result',
+          body: 'Return the missing result.',
+          comments: [],
+          labels: [],
+          truncated: false,
+        }),
+      }),
       worktrees: {
         prepareGitHub: async (input) => {
           preparedWorktrees++;
@@ -370,8 +396,25 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await context(routed.id)).status, 'verified');
     const workflow = manifest.github!.notifications!.issueAssignment!;
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
-    assert.equal((await context(routed.id)).status, 'verified');
+    assert.equal((await context(routed.id)).status, 'policy-held');
   });
+  it('should resume the same prepared owner after a live policy hold without a retry grant', async () => {
+    const routed = await next();
+    const before = await record();
+    manifest.github!.notifications!.issueAssignment!.enabled = false;
+    const held = await prepare(routed);
+    assert.ok('status' in held && held.status === 'policy-held');
+    assert.equal((await record()).phase, before.phase);
+    assert.equal((await record()).blocker, undefined);
+    assert.equal(creates().length, 0);
+    manifest.github!.notifications!.issueAssignment!.enabled = true;
+    coordinator.runId = 'policy-resumed';
+    const resumed = await next();
+    assert.equal(resumed.id, routed.id);
+    await prepare(resumed);
+    assert.equal(creates().length, 1);
+  });
+
   it('should retry a transient worktree failure on a later occurrence without creating twice', async () => {
     const input = await next();
     const original = service.dependencies.worktrees.prepareGitHub;
@@ -1370,6 +1413,7 @@ describe('agent/openclaw issue dispatch', () => {
         cwd: old.worktree!,
         model: 'openai/gpt-6.1-sol',
       };
+      delete old.feedback;
       delete old.sessionCreation;
       delete old.effective;
       delete old.threadId;
@@ -1627,8 +1671,11 @@ describe('agent/openclaw issue dispatch', () => {
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);
     waitResult = { status: 'error' };
+    active = false;
+    inputReceipts = [];
     const failed = await finish(input.id);
     assert.ok('code' in failed && failed.code === 'dispatch-turn-failed');
+    await service.check(manifest, root);
     assert.equal(openClawCapacity([await record()], 1).occupied, 0);
     assert.equal((await record()).firstTurn?.replyEventId, undefined);
     await acknowledgeReport();
@@ -2128,12 +2175,13 @@ describe('agent/openclaw issue dispatch', () => {
         },
       );
       assert.deepEqual(
-        { ...(await record()), lifecycleCheckedAt: 0 },
-        { ...before, lifecycleCheckedAt: 0 },
+        { ...(await record()), lifecycleCheckedAt: 0, feedback: undefined },
+        { ...before, lifecycleCheckedAt: 0, feedback: undefined },
       );
-      assert.deepEqual(
-        calls.slice(callsBefore).map((call) => call.method),
-        ['sessions.describe', 'chat.history'],
+      assert.ok(
+        calls
+          .slice(callsBefore)
+          .every((call) => ['sessions.describe', 'chat.history'].includes(call.method)),
       );
     } finally {
       release.resolve();
@@ -2620,7 +2668,6 @@ describe('agent/openclaw issue dispatch', () => {
       const { id, who } = await originalAssignment();
       if (change === 'policy') manifest.github!.notifications!.issueAssignment!.feedback = true;
       if (change === 'models') manifest.models!.medium!.effort = 'medium';
-      if (change === 'notifications-removed') delete manifest.github!.notifications;
       if (change === 'cleanup')
         manifest.github!.notifications!.cleanup = { enabled: false, graceMinutes: 60 };
       if (change === 'stale-readback') {
@@ -2632,8 +2679,7 @@ describe('agent/openclaw issue dispatch', () => {
           ...(await load(...args)),
           manifest: fresh,
         });
-      } else if (change !== 'notifications-removed')
-        await service.dependencies.intake.run(manifest, root, 'activate');
+      } else await service.dependencies.intake.run(manifest, root, 'activate');
       const before = await record();
       assert.equal((await context(id, who)).status, 'verified');
       const handoff = await service.run(
@@ -2924,8 +2970,8 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok('code' in result && result.code === code);
       assert.equal('retryable' in result, false);
       assert.deepEqual(
-        { ...(await record()), lifecycleCheckedAt: 0 },
-        { ...before, lifecycleCheckedAt: 0 },
+        { ...(await record()), lifecycleCheckedAt: 0, feedback: undefined },
+        { ...before, lifecycleCheckedAt: 0, feedback: undefined },
       );
     });
   }

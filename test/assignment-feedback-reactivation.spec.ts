@@ -124,6 +124,20 @@ describe('assignment feedback reactivation', () => {
     assert.equal(await h.run(), false);
     assert.equal(h.record.feedback!.events.length, 0);
   });
+  it('should hold and resume the same feedback event when live feedback approval changes', async () => {
+    const h = fixture();
+    assert.equal(await h.run(), true);
+    const eventId = h.record.feedback!.events[0]!.id;
+    h.provider.policy.issueAssignment!.feedback = false;
+    assert.equal(await h.run(), false);
+    assert.equal(h.record.feedbackReactivation, undefined);
+    h.provider.policy.issueAssignment!.feedback = true;
+    assert.equal(await h.run(), true);
+    assert.equal(h.record.feedback!.events.length, 1);
+    const reactivation = () => h.record.feedbackReactivation;
+    assert.equal(reactivation()?.eventId, eventId);
+  });
+
   it('should retain comment reactivation after unrelated workflow changes', async () => {
     const h = fixture();
     assert.equal(await h.run(), true);

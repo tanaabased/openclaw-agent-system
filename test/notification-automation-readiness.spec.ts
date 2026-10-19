@@ -14,7 +14,7 @@ import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
-function fixture(legacyPolicy = false) {
+function fixture() {
   const manifest: AgentManifest = {
     schemaVersion: 1,
     agent: { id: 'receiver' },
@@ -37,7 +37,7 @@ function fixture(legacyPolicy = false) {
     agentId: 'receiver',
     workspaceDir: '/workspace',
   });
-  const job = openclawIntakeJobs(manifest, legacyPolicy)[0]!;
+  const job = openclawIntakeJobs(manifest)[0]!;
   const record: AutomationRecord = {
     id: job.id,
     marker: store.marker(job.id),
@@ -86,12 +86,12 @@ function fixture(legacyPolicy = false) {
 }
 
 describe('notification automation readiness', () => {
-  it('should retain an unchanged legacy schedule but reject changed authority and native drift', async () => {
-    const f = fixture(true);
+  it('should apply live policy without scheduler drift and still detect changed native machinery', async () => {
+    const f = fixture();
     assert.equal(await f.read(), undefined);
     const workflow = f.manifest.github!.notifications!.issueAssignment!;
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
-    assert.equal(await f.read(), 'intake-automation-update-required');
+    assert.equal(await f.read(), undefined);
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'U_receiver' };
     f.native.payload = { ...f.native.payload, text: 'changed consent' };
     assert.equal(await f.read(), 'intake-automation-update-required');

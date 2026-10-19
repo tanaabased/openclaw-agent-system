@@ -4,7 +4,10 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import IntakeRecordStore, { intakeLocation } from '../channels/github/intake/record-store.ts';
+import IntakeRecordStore, {
+  IntakeError,
+  intakeLocation,
+} from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
@@ -60,10 +63,8 @@ describe('channels/github/intake/records', () => {
         after.records.map(({ id }) => id),
         before.records.map(({ id }) => id),
       );
-      await assert.rejects(
-        scanAssignments({ ...next, policyDigest: 'changed', legacyPolicyDigest: 'changed-legacy' }),
-        /intake-policy-reconciliation-required/,
-      );
+      assert.equal((await scanAssignments({ ...next, policyDigest: 'changed' })).status, 'ready');
+      assert.equal((await store.read())!.baselineAt, before.baselineAt);
     });
   }
   it('should admit only the selected issue without searching or advancing the global checkpoint', async () => {
@@ -96,6 +97,50 @@ describe('channels/github/intake/records', () => {
       assert.equal((await store.read())!.checkpoint, checkpoint);
     }
     assert.deepEqual(fetched, [3, 4]);
+  });
+
+  it('should reconsider a policy hold immediately after intake is reenabled', async () => {
+    const { input, store, events } = setup();
+    const assigned = events.splice(0);
+    await scanAssignments({ ...input, activate: true });
+    events.push(...assigned);
+    const held = await scanAssignments({
+      ...input,
+      now: baseline + 120000,
+      readPolicy: async () => {
+        input.policy.issueAssignment!.enabled = false;
+        throw new IntakeError('intake-policy-disabled');
+      },
+    });
+    assert.equal(held.code, 'intake-policy-disabled');
+    input.policy.issueAssignment!.enabled = true;
+    const resumed = await scanAssignments({ ...input, now: baseline + 120001 });
+    assert.equal(resumed.status, 'ready');
+    assert.equal(resumed.admitted, 1);
+    assert.equal((await store.read())!.blocker, undefined);
+  });
+
+  it('should retain unapproved assignments and admit them after a live policy update without activation', async () => {
+    const { input, store, events } = setup();
+    const assigned = events.splice(0);
+    await scanAssignments({ ...input, activate: true });
+    events.push(...assigned);
+    const approved = input.policy.issueAssignment!.allowed;
+    input.policy.issueAssignment!.allowed = [];
+    assert.equal((await scanAssignments({ ...input, now: baseline + 120000 })).admitted, 0);
+    const held = (await store.read())!;
+    assert.equal(held.records.length, 0);
+    assert.equal(held.observedAssignments?.length, 1);
+    input.policy.issueAssignment!.allowed = approved;
+    assert.equal(
+      (await scanAssignments({ ...input, policyDigest: 'live-update', now: baseline + 180000 }))
+        .admitted,
+      1,
+    );
+    const resumed = (await store.read())!;
+    assert.equal(resumed.baselineAt, held.baselineAt);
+    assert.equal(resumed.records[0]!.id, held.observedAssignments![0]!.id);
+    assert.equal((await scanAssignments({ ...input, now: baseline + 240000 })).admitted, 0);
   });
 
   it('should still require assignment, actor and owner authorization for selected intake', async () => {
@@ -309,9 +354,7 @@ describe('channels/github/intake/records', () => {
   it('should preserve corrupt evidence and reject identity or policy changes', async () => {
     const { input, store } = setup();
     await scanAssignments({ ...input, activate: true });
-    await assert.rejects(scanAssignments({ ...input, policyDigest: 'unapproved' }), {
-      code: 'intake-policy-reconciliation-required',
-    });
+    assert.equal((await scanAssignments({ ...input, policyDigest: 'updated' })).status, 'ready');
     await writeFile(store.location.path, '{broken', { mode: 0o600 });
     await assert.rejects(scanAssignments(input), { code: 'intake-state-invalid' });
     assert.equal(await readFile(store.location.path, 'utf8'), '{broken');

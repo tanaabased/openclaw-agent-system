@@ -224,7 +224,7 @@ describe('github readiness channel', () => {
     code = undefined;
     checkpoint = baseline;
     value.github!.notifications!.issueAssignment!.mode = 'work';
-    assert.equal((await snapshot()).statusState, 'blocked');
+    assert.equal((await snapshot()).statusState, 'degraded');
     fail = true;
     const failed = await snapshot();
     assert.equal(failed.statusState, 'unknown');

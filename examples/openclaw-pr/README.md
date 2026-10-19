@@ -8,6 +8,8 @@ Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, m
 
 The first implementation follow-up stops after PR publication and its issue announcement. A second operator follow-up adds a commit and updates the existing PR title and body while retaining its announcement. A final follow-up recovers the saved plan and complete PR card from its retained receipt despite later uncommitted edits, without publishing again, before the PR comment test runs.
 
+The strict fixture reconciles a retained PR when GitHub’s closing-issue association is delayed, with three bounded prepare/publish passes on the same delivery. It never creates a replacement PR or skips the linkage assertion.
+
 Failed agent installation or intake activation reports allowlisted saved configuration, Gateway configuration revisions, and the running agent list. Successful steps make no extra diagnostic requests. These observations do not retry installation or change reload behavior.
 
 A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.

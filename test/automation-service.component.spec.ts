@@ -11,7 +11,6 @@ import {
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import {
   automationPatch,
-  projectAutomation,
   nativeAutomationHash,
   effectiveAutomation,
 } from '../agent/automation-projection.ts';
@@ -390,7 +389,7 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]?.enabled, false);
   });
 
-  it('should install the derived V2 job and group, detect drift and converge without duplicates', async () => {
+  it('should install the derived v2 job and group, detect drift and converge without duplicates', async () => {
     const sessions = new Map<string, Record<string, unknown>>();
     const original = service.dependencies.request!;
     service.dependencies.request = async (method, params) => {
@@ -433,25 +432,6 @@ describe('agent/automation-service', () => {
     const coordinator = native[0]!.sessionTarget;
     const { store, context } = await service.scope(manifest, root);
     const ledger = await store.read();
-    const canonical = structuredClone(native[0]!);
-    const canonicalRecord = structuredClone(ledger.records[0]!);
-    const legacy = openclawIntakeJobs(manifest, true)[0]!;
-    const legacyHash = effectiveAutomation(legacy, context).hash;
-    assert.notEqual(legacyHash, canonicalRecord.hash);
-    const projected = projectAutomation(legacy, ledger.records[0]!, context);
-    Object.assign(native[0]!, { payload: projected.payload, trigger: projected.trigger });
-    ledger.records[0]!.hash = legacyHash;
-    ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
-    await store.write(ledger);
-    calls = [];
-    assert.equal((await service.run(manifest, root, legacy.id)).status, 'queued');
-    assert.equal(
-      calls.some(({ method }) => ['cron.update', 'cron.add'].includes(method)),
-      false,
-    );
-    Object.assign(native[0]!, canonical);
-    Object.assign(ledger.records[0]!, canonicalRecord);
-    await store.write(ledger);
     const oldJob = structuredClone(openclawIntakeJobs(manifest)[0]!);
     oldJob.payload = { kind: 'prompt', prompt: 'Advance at most one issue per run.' };
     native[0]!.payload.message = oldJob.payload.prompt;
@@ -495,11 +475,8 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]!.enabled, true);
     assert.equal(sessions.size, 1);
     policy.issueAssignment!.mode = 'work';
-    const unsupported = await service.reconcile(manifest, root);
-    assert.ok(
-      unsupported.outcomes.some((outcome) => outcome.code === 'automation-disabled-retained'),
-    );
-    assert.equal(native[0]!.enabled, false);
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.enabled, true);
     assert.equal(native[0]!.id, identity);
     policy.issueAssignment!.mode = 'plan';
     await service.reconcile(manifest, root);

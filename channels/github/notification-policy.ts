@@ -111,7 +111,7 @@ export function githubNotificationRuntimeDiagnostics(
       message: `OpenClaw V2 does not support ${issue.mode} issue assignment.`,
       remediation:
         'Choose Plan mode explicitly to enable issue assignment; no mode is substituted automatically.',
-      status: 'blocked',
+      status: 'warning',
       workflow: 'issue-assignment',
     });
   if (
@@ -126,7 +126,7 @@ export function githubNotificationRuntimeDiagnostics(
       message: 'OpenClaw V2 does not support replacement assessment skills.',
       remediation:
         'Choose the default assessment skill explicitly to enable issue assignment; no skill is substituted automatically.',
-      status: 'blocked',
+      status: 'warning',
       workflow: 'issue-assignment',
     });
   return diagnostics;

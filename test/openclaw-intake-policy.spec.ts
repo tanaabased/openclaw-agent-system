@@ -24,15 +24,19 @@ function manifest(): AgentManifest {
 }
 
 describe('agent/openclaw-intake-policy', () => {
-  it('should omit unsupported notification jobs while retaining unrelated automations', () => {
+  it('should retain discovery and unrelated jobs when a workflow stage is unsupported', () => {
     for (const change of [
       { mode: 'work' as const },
       { mode: 'auto' as const },
       { assessment: { skill: 'custom:assessment' } },
     ]) {
       const value = manifest();
+      value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
       Object.assign(value.github!.notifications!.issueAssignment!, change);
-      assert.deepEqual(openclawIntakeJobs(value), value.automations);
+      assert.equal(
+        openclawIntakeJobs(value).some((job) => job.id === 'github-issue-assignment'),
+        true,
+      );
     }
   });
 

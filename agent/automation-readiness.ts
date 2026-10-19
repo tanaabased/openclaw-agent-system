@@ -26,11 +26,8 @@ export default async function notificationAutomationReadiness(
   if (!record) return 'intake-activation-required';
   if (record.removed || record.pending || !record.nativeId || !record.nativeHash)
     return 'intake-automation-update-required';
-  if (record.hash !== effectiveAutomation(declared, context).hash) {
-    const legacy = openclawIntakeJobs(manifest, true).find(({ id }) => id === declared.id);
-    if (!legacy || record.hash !== effectiveAutomation(legacy, context).hash)
-      return 'intake-automation-update-required';
-  }
+  if (record.hash !== effectiveAutomation(declared, context).hash)
+    return 'intake-automation-update-required';
   if (!scheduler && !request) return 'automation-observation-unavailable';
   const enabled = scheduler
     ? await scheduler.isEnabled?.()

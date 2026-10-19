@@ -143,6 +143,23 @@ describe('agent/codex-dispatch', () => {
       codexHome,
       assertActive: async () => {},
       now: () => now,
+      feedbackConnect: async () =>
+        ({
+          client: fixture.client,
+          comments: {
+            identity: fixture.client.identity,
+            listIssueComments: async () => ({ comments: [], truncated: false }),
+            getIssueComment: async () => {
+              throw new Error('no feedback source');
+            },
+            createIssueComment: async () => {
+              throw new Error('no public reply expected');
+            },
+            findOwnIssueComment: async () => undefined,
+          },
+        }) as unknown as Awaited<
+          ReturnType<NonNullable<CodexDispatchDependencies['feedbackConnect']>>
+        >,
       threadId: 'intake-thread',
       activation: async () => ({ sourceThreadId: 'intake-thread' }),
       prepareRepository: async (_input, dependencies) => {
@@ -717,9 +734,11 @@ describe('agent/codex-dispatch', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
   }
 
-  it('should preserve admitted dispatch after intake is disabled and still stop a closed issue', async () => {
+  it('should hold admitted dispatch while disabled and resume it before checking lifecycle', async () => {
     const selected = await next();
     await workflow(false);
+    assert.equal((await next()).status, 'idle');
+    await workflow(true);
     const resumed = await next();
     assert.equal(resumed.status, 'routing-required');
     assert.equal(resumed.id, selected.id);
@@ -790,9 +809,11 @@ describe('agent/codex-dispatch', () => {
         },
       },
     );
-    assert.equal(prepared.status, 'prepared');
+    assert.equal(prepared.status, 'policy-held');
     const retained = (await request('inspect')).records as { request?: unknown }[];
-    assert.ok(retained[0]!.request);
+    assert.equal(retained[0]!.request, undefined);
+    await workflow(true);
+    assert.equal((await next()).id, selected.id);
   });
 
   it('should retain a child task when intake and assigner defaults change', async () => {
@@ -1517,7 +1538,7 @@ describe('agent/codex-dispatch', () => {
     );
     await assert.rejects(
       request('next', { projects }, { threadId: 'other-chat' }),
-      /dispatch-intake-caller-required/,
+      /(?:dispatch-intake|feedback-schedule)-caller-required/,
     );
     assert.equal(gitCalls.length, 0);
   });
@@ -2259,7 +2280,7 @@ describe('agent/codex-dispatch', () => {
     };
     const first = next();
     await started;
-    assert.deepEqual(await next(), { status: 'busy', changed: false });
+    assert.equal((await next()).status, 'busy');
     release();
     assert.equal((await first).status, 'routing-required');
   });
@@ -2578,7 +2599,7 @@ describe('agent/codex-dispatch', () => {
     assessment: Record<string, unknown> | null = result,
     guidance: string | { file: string } = 'Follow the plan.',
     skill: string | undefined = 'company:implement',
-    mode: 'work' | 'auto' = 'work',
+    mode: 'plan' | 'work' | 'auto' = 'work',
     assessmentGuidance?: string | { file: string },
   ) {
     const configured = structuredClone(manifest);
@@ -2784,18 +2805,37 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should retain active work when notifications and model defaults are removed', async () => {
+  it('should hold active work on disablement and resume the same task without install', async () => {
     const work = await workIssue();
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    delete configured.github.notifications;
-    delete configured.models;
+    configured.github.notifications['issue-assignment'].enabled = false;
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    assert.equal((await work.run('next')).status, 'idle');
+    const records = (await request('inspect')).records as Array<{
+      continuation: { policyHeld?: string };
+    }>;
+    assert.equal(records[0]!.continuation.policyHeld, 'issue-workflow-disabled');
+    configured.github.notifications['issue-assignment'].enabled = true;
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     assert.equal((await work.run('next')).status, 'prepared');
     work.receive();
     assert.equal((await work.run('context', {}, true)).status, 'verified');
   });
 
-  it('should keep a plan admission assessment-only when the default becomes work', async () => {
+  it('should start an existing actionable plan after a live mode edit without recreating its chat', async () => {
+    const work = await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
+    assert.equal((await work.run('next')).status, 'idle');
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    configured.github.notifications['issue-assignment'].mode = 'work';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    const prepared = await work.run('next');
+    assert.equal(prepared.status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+  });
+
+  it('should apply live work mode to a plan admission without reinstalling', async () => {
     const configured = structuredClone(manifest);
     Object.assign(configured.github.notifications['issue-assignment'], { mode: 'work' });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -2803,9 +2843,9 @@ describe('agent/codex-dispatch', () => {
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
     const context = await request('context', { id: prepared.id }, { threadId: native!.id });
-    assert.equal(context.mode, 'plan');
+    assert.equal(context.mode, 'work');
     const saved = (await request('inspect')).records as { continuation?: unknown }[];
-    assert.equal(saved[0]!.continuation, undefined);
+    assert.ok(saved[0]!.continuation);
   });
 
   it('should adopt auto proceed once and retain its complete source, selection, and routing across restart', async () => {
@@ -3417,7 +3457,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(records[0]!.continuation, undefined);
   });
 
-  it('should stop blocked assessments and changed implementation selections without sending', async () => {
+  it('should select current implementation inputs before preparing an unsubmitted stage', async () => {
     const work = await workIssue();
     work.continuation.native!.assessmentSkill = async () => ({
       name: 'changed',
@@ -3426,12 +3466,11 @@ describe('agent/codex-dispatch', () => {
       digest: 'c'.repeat(64),
     });
     const stopped = await work.run('next');
-    assert.equal(stopped.status, 'blocked');
-    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
-    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal(stopped.status, 'prepared');
+    assert.ok('request' in stopped);
   });
 
-  it('should retain an occupied slot and original guidance when its file changes', async () => {
+  it('should use live guidance for an unsubmitted stage and preserve its occupied slot', async () => {
     await writeFile(join(workspace, 'implementation.md'), 'Original implementation guidance.');
     const work = await workIssue(result, { file: 'implementation.md' });
     await next();
@@ -3443,7 +3482,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(retained.status, 'verified');
     assert.equal(
       'implementation' in retained && retained.implementation?.guidance?.content,
-      'Original implementation guidance.',
+      'Changed implementation guidance.',
     );
     assert.match(String((await report()).response), /Slots:\*\* 1\/2/);
   });

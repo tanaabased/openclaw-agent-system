@@ -26,6 +26,7 @@ export const feedbackSourceEventSchema = Type.Object(
     revision: hash,
     createdAt: Type.Integer({ minimum: 0 }),
     policyDigest: hash,
+    policyHeld: Type.Optional(text),
     phase: Type.Union([
       Type.Literal('queued'),
       Type.Literal('prepared'),
@@ -51,6 +52,7 @@ export const feedbackSourceEventSchema = Type.Object(
 );
 export const feedbackSourceStateSchema = Type.Object(
   {
+    evaluatedPolicyDigests: Type.Optional(Type.Record(text, hash)),
     startedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     scannedAt: Type.Optional(Type.String()),
     scannedTime: Type.Optional(Type.Integer({ minimum: 0 })),

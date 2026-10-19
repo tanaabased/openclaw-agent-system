@@ -33,6 +33,7 @@ export interface AssignmentScanInput {
   selector?: GitHubNotificationItemSelector;
   connect(signal: AbortSignal): Promise<GitHubNotificationIntakeClient>;
   assertCurrent(): Promise<void>;
+  readPolicy?(): Promise<{ policy: GitHubNotificationPolicy; digest: string }>;
 }
 
 interface AssignmentScanResult {
@@ -67,11 +68,14 @@ export default async function scanAssignments(
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
     if (
       !input.activate &&
-      previous?.policyDigest !== input.policyDigest &&
-      previous?.policyDigest !== input.legacyPolicyDigest
-    )
-      throw new IntakeError('intake-policy-reconciliation-required');
-    if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now) {
+      previous?.blocker &&
+      previous.blocker.retryAfter > input.now &&
+      ![
+        'intake-policy-changed',
+        'intake-policy-reconciliation-required',
+        'intake-policy-disabled',
+      ].includes(previous.blocker.code)
+    ) {
       const result = { status: 'blocked' as const, changed: false, code: previous.blocker.code };
       return result;
     }
@@ -150,6 +154,10 @@ export default async function scanAssignments(
         return value;
       }
       for (const candidate of discovery.candidates) {
+        if (input.readPolicy) {
+          const live = await input.readPolicy();
+          input = { ...input, policy: live.policy, policyDigest: live.digest };
+        }
         budget.check();
         await input.assertCurrent();
         const observe = async () => {
@@ -204,16 +212,11 @@ export default async function scanAssignments(
             !event ||
             event.event !== 'assigned' ||
             Date.parse(event.createdAt) <= state!.baselineAt ||
-            event.actor.type !== 'User' ||
-            !input.policy.issueAssignment?.allowed.some((actor) =>
-              identityMatches(actor, event.actor),
-            )
+            event.actor.type !== 'User'
           )
             return;
           const id = automationHash([state!.scope, repository.nodeId, item.nodeId, event.nodeId]);
-          if (seen.has(id)) return;
-          seen.add(id);
-          records.push({
+          const record: IntakeRecord = {
             version: 1,
             id,
             scope: state!.scope,
@@ -231,7 +234,7 @@ export default async function scanAssignments(
             assignment: { ...event, event: 'assigned' },
             evidence: {
               policyDigest: input.policyDigest,
-              mode: input.policy.issueAssignment.mode,
+              mode: input.policy.issueAssignment!.mode,
               open: true,
               assigned: true,
               repositoryReadable: true,
@@ -242,7 +245,33 @@ export default async function scanAssignments(
             admittedAt: input.now,
             status: 'admitted',
             requiresRevalidation: true,
-          });
+          };
+          const observation = {
+            version: record.version,
+            id: record.id,
+            scope: record.scope,
+            receiving: record.receiving,
+            workspaceDir: record.workspaceDir,
+            agentId: record.agentId,
+            host: record.host,
+            repository: record.repository,
+            issue: record.issue,
+            assignment: record.assignment,
+            observedAt: record.observedAt,
+          };
+          state!.observedAssignments ??= [];
+          const observedIndex = state!.observedAssignments.findIndex((entry) => entry.id === id);
+          if (observedIndex < 0) state!.observedAssignments.push(observation);
+          else state!.observedAssignments[observedIndex] = observation;
+          if (
+            seen.has(id) ||
+            !input.policy.issueAssignment!.allowed.some((actor) =>
+              identityMatches(actor, event.actor),
+            )
+          )
+            return;
+          seen.add(id);
+          records.push(record);
         };
         await observe();
         state.records.push(...records.splice(0));

@@ -254,24 +254,26 @@ feedback cannot promote it; explicitly direct further work in the same chat thro
 the [manual handoff](#issue-assessment). Missing or invalid decisions, changed issue
 evidence before implementation, changed selected skill content, lost task identity, and native
 denials stop continuation. Fix the stated obstacle and give explicit direction;
-never recreate the issue chat to bypass its retained stop. Existing Plan/Work tasks retain their original mode; changing the default does not
-turn them into Auto tasks. Native OpenClaw Auto is not supported.
+never recreate the issue chat to bypass its retained stop. Live mode changes apply to existing issues at their next decision. Auto requires
+a verified proceed decision before implementation. Native OpenClaw Auto is not supported.
 
 ### Work Mode
 
 Set `github.notifications.issue-assignment.mode: work`, optionally override its
-implementation skill or guidance, then authorize Install to reconcile the saved schedule. Activating Work
-mode authorizes assessment, implementation, and PR publication without routine
-stage approvals. Existing Plan-mode tasks remain assessment-only until the operator
-requests further work through their retained handoff. An actionable assessment continues in its original issue chat
+implementation skill or guidance. Initial setup uses Install to create the native
+schedule; later mode and guidance edits apply without Install. Work mode permits
+assessment, implementation, and PR publication without routine
+stage approvals. Changing the live mode to Work also makes existing actionable Plan issues eligible
+for automatic continuation; an explicit operator request can still use the retained handoff. An actionable assessment continues in its original issue chat
 with the complete plan, retained guidance, and selected model and effort.
 
-The runtime checks the recorded task grant, owning chat, active assignment, and
-native receipts without renewed approval. Intake disablement and changes to
-allowlists, default mode, models, skills, or guidance do not cancel or expand an
-existing grant. Missing requirements, changed selected skill content, unavailable
-execution inputs, cancellation, and actual native approval or provider denials
-stop the affected operation. Implementation and delivery count against workflow capacity;
+The runtime reads live workflow policy and checks the owning chat, active assignment,
+and native receipts without renewed stage approval. Policy-only edits take effect
+without Install. Disabled effects and currently ineligible authors are held and
+reconsidered automatically. Preserve completed work, explicit cancellations, native
+denials, and uncertain submissions. Choose current implementation instructions
+before preparing a new send; never rewrite a submitted request.
+Implementation and delivery count against workflow capacity;
 intake reports stay limited to admission and capacity.
 
 Automatic PR publication requires an explicit public description of the change,

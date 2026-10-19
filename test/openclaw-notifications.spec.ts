@@ -587,7 +587,7 @@ describe('agent/openclaw-notifications', () => {
     assert.match(errors.join(''), /github-notification-status-failed/u);
   });
 
-  it('should reject disabled inactive stale and unsupported refreshes without starting work', async () => {
+  it('should apply live policy revisions while rejecting disabled inactive or unsupported runtime refreshes', async () => {
     for (const change of ['disabled', 'inactive', 'stale', 'runtime', 'mode']) {
       const f = fixture();
       const policy = f.manifest.github!.notifications!;
@@ -601,7 +601,11 @@ describe('agent/openclaw-notifications', () => {
         signal: new AbortController().signal,
         selector,
       });
-      assert.equal(result.status, 'failed', change);
+      assert.equal(
+        result.status,
+        ['stale', 'mode'].includes(change) ? 'completed' : 'failed',
+        change,
+      );
       assert.equal(f.requests, 0, change);
     }
   });

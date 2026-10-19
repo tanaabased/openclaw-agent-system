@@ -2,105 +2,74 @@
 
 ## Scope
 
-Apply this guidance to GitHub intake, issue conversations, continuation, feedback,
-and delivery, including their runtime owners in `agent/` and `tools/dispatch/`.
+Apply this guidance to GitHub discovery, issue conversations, continuation, feedback,
+and delivery, including their owners in `agent/` and `tools/dispatch/`.
 Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 [Presentation](./PRESENTATION.md) for visual components.
 
-These are maintainer requirements for changes and audits. Existing runtime checks
-must be assessed against them; this file does not claim that all paths already
-conform.
+## Live Policy
 
-## Provider Permissions
+- Read the current bound `agent.yaml` when deciding the next automatic operation.
+  Its workflow settings apply to existing issues as well as new ones. Admission
+  snapshots and saved configuration hashes never preserve an obsolete grant.
+- Separate discovery, eligibility, and execution. Observe bounded assignment and
+  comment activity within configured repository/issue scope even when its author,
+  feedback setting, or mode does not currently permit dispatch. Retain observations
+  independently of the queue of eligible effects.
+- Reevaluate observed, unprocessed activity after policy changes without rebuilding
+  the queue, resetting discovery, replaying completed effects, or requiring Install.
+  Keep historical baselines so enabling a workflow does not publish old history.
+- Use reversible policy holds for disabled effects and ineligible actors. Turning
+  the setting back on resumes eligible pending work automatically. A hold is not
+  cancellation, lost identity, native denial, or a request for renewed consent.
+- Live Plan permits assessment; live Work permits actionable implementation and
+  PR delivery without another routine stage approval; live Auto additionally
+  requires a verified proceed decision. A mode edit affects the next decision for
+  existing active issues. Never infer policy or authorization from provider prose.
+- Preserve actual execution facts: selected native model/effort, consumed stage
+  inputs, assessment results, source revisions, cancellations, and submission
+  receipts. Live policy does not undo completed work or automatically terminate
+  a running native turn. Choose current skills/guidance for the next unsubmitted
+  stage; never silently rewrite an already-submitted request.
+- Install reconciles installed machinery, such as native cadence, executable
+  identity, and scheduler configuration. Mode, approved authors, recipients,
+  guidance, capacity, and other runtime policy edits must not change the installed
+  orchestration definition or produce an automation-update requirement.
 
-- Let GitHub credentials, repository roles, organization policy, and server-side
-  rules enforce repository access and operations. Apply the same boundary through
-  native commands, managed tools, and workflow adapters.
-- Do not duplicate provider authorization with workflow permission preflights,
-  configuration fingerprints, or another per-stage approval. Execute the requested
-  operation under its existing task scope and correct credentials; report the
-  provider's actual result. Do not issue speculative write probes.
-- Retain a local tool protection only for a concrete capability gap the provider
-  cannot adequately express. Name that gap and the protected effect; a broad risk
-  label is insufficient. Follow the repository's policy design requirements.
-- Preserve bound agent identity, credential selection, workspace containment,
-  signing, and managed-resource ownership. Possession of another agent's usable
-  credential never makes that identity substitution valid.
-- Keep repository-owner and assigner allowlists as automated admission rules.
-  Changes to those defaults do not retroactively revoke an existing issue's task.
-  An explicit restriction on existing work must identify the affected scope.
+## Provider Permissions and Local Boundaries
 
-## Continued Work
-
-- Separate new admission from the lifetime of an admitted issue conversation.
-  Disabling notifications or pausing intake stops new intake; it does not cancel
-  existing chats, their recorded task scope, or their permitted continuation.
-- Changes to default Plan/Work/Auto mode, model profiles, skills, guidance,
-  recipients, polling, capacity, debug, or cleanup settings do not invalidate
-  existing task permission. Preserve the recorded scope and selected execution
-  inputs. Apply changed defaults to future admissions unless the operator
-  explicitly changes an existing task.
-- A Plan task remains assessment-only until the operator requests more work.
-  A recorded Work grant covers its implementation and PR delivery without another
-  routine stage approval. Auto retains its recorded proceed/wait contract. A new
-  default must neither expand nor shrink these existing grants implicitly.
-- Keep existing continuation recoverable independently of new-intake enablement.
-  If its execution mechanism is unavailable, explain that limitation and preserve
-  the task; do not manufacture a permission revocation or require repeated consent.
-- Pause affected work for an explicit cancellation, pause, or scope restriction;
-  an inactive lifecycle state; an agent, destination, or checkout identity
-  mismatch; an actual provider or native approval denial; or a concrete execution
-  failure. Name the observed condition and distinguish a durable stop from
-  retryable unavailability. Missing evidence does not establish revocation.
-- Let structured lifecycle reconciliation own unassignment, closure, retirement,
-  and reactivation. A pending or retired issue gets lifecycle-specific guidance.
-  Resume through the supported eligible reassignment or explicit reactivation,
-  verifying retained resources before use. Do not silently self-assign to undo a
-  stop, infer active status from a chat's existence, or promise resources survived
-  because retirement is still pending.
-- Prefer the issue worktree for changes, while permitting task work in the bound
-  workspace, approved local repositories, and temporary attempt directories. Verify
-  the actual repository, branch, and destination before commits or publication;
-  changing default worktree roots must not invalidate an existing checkout.
-- Confine an issue-specific failure to that issue or operation. Stop a whole pass
-  only when the observed condition actually applies to the whole pass.
-
-## Fingerprints and Recovery
-
-- Do not require whole-manifest equality, or equality with a retained notification
-  policy/model fingerprint, as continuing permission to work on an existing issue.
-  Retain configuration snapshots and hashes only for provenance, drift reporting,
-  or the reconciliation of the configuration they actually describe.
-- Keep exact request, source, destination, result, and native receipt bindings
-  where they prevent wrong-target actions, changed publication content, duplicate
-  creation, or replay. A fingerprint of a prepared operation serves a different
-  purpose from a fingerprint of all current defaults.
-- Reconcile uncertain submissions through their existing receipts before retrying.
-  Preserve the original issue, chat, worktree, and PR; never create replacements to
-  escape a diagnostic.
-- Reuse bounded provider diagnostics for authentication, permission, rate limits,
-  transport, and unknown failures. Surface safe upstream evidence and recovery
-  guidance for the affected operation. Do not turn every failure into an
-  authorization rejection or prescribe Install for unrelated provider failures.
-- Keep the automation-update reconciliation gate specific to the saved intake
-  automation. It must not become a cancellation of existing issue work.
+- Let GitHub credentials, repository roles, organization rules, and server-side
+  protections enforce provider permissions. The manifest selects what automation
+  should attempt; it does not grant privileges denied by GitHub.
+- Do not duplicate provider permissions with speculative write probes, broad risk
+  gates, configuration fingerprints, or per-stage conversational approval.
+  Keep local protections only for a concrete high-consequence provider gap under
+  the repository's policy-design rules.
+- Preserve trusted agent/account/workspace binding, signing, and resource ownership.
+  Verify actual repository, branch, issue, chat, and publication destination.
+- Let structured lifecycle state own closure, unassignment, retirement, explicit
+  cancellation, and reactivation. Live mode changes do not resurrect cancelled or
+  retired work. Verify retained resources before resuming eligible active work.
+- Prefer the issue worktree; permit the bound workspace, approved local repositories,
+  and attempt directories. Changed default roots do not invalidate a recorded
+  checkout. Keep destination and checkout identity checks operation-specific.
+- Retain exact source, draft, request, result, and native receipt bindings to prevent
+  wrong-target actions and duplicate effects. Preserve uncertain submissions for
+  reconciliation using the original receipt; a policy hold never permits a retry.
+- Report bounded, redacted provider messages and supplied HTTP status. Distinguish
+  authentication, permission, throttling, transport, and unknown failures. An
+  issue-specific failure must not stop unrelated eligible work.
 
 ## Optimization Audit
 
-For every local gate, identify the exact effect, authorization owner, affected
-scope, state transition, and recovery. Then ask:
+For each gate, identify the effect, owner, scope, and recovery. Ask whether it:
 
-1. Does GitHub, Git, or the credential provider already enforce this condition?
-   Prefer removing the duplicate gate and retaining useful upstream diagnostics.
-2. Is the setting an admission/default setting or an explicit instruction about
-   this existing task? Flag hashes that conflate those roles.
-3. Does the gate protect identity, containment, task scope, lifecycle, or replay?
-   Name that invariant directly instead of calling every failure policy drift.
-4. Can unrelated configuration changes block assessments, implementation, PRs,
-   replies, or presentation? Can one issue's failure stop unrelated issues?
-5. Do tests prove the required boundary, or merely require broad fingerprint
-   invalidation and generic errors? Replace the latter with operation-specific
-   cases for continued work, explicit stops, upstream denials, and safe recovery.
+1. Duplicates a permission the provider already enforces.
+2. Uses a historical manifest or policy hash instead of current policy.
+3. Couples discovery or installed scheduling to runtime eligibility settings.
+4. Turns a reversible live-policy hold into a permanent blocker or reauthorization.
+5. Protects a concrete identity, lifecycle, execution-input, or replay invariant.
 
-Report retained exceptions and their concrete provider gaps. Do not replace one
-broad permission layer with a more intricate local copy of provider permissions.
+Remove obsolete gates and tests that merely freeze them. Preserve behavioral
+coverage for live policy changes, actual denials, exact custody, and duplicate
+prevention. Do not replace one permission layer with a more intricate copy.

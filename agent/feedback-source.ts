@@ -56,8 +56,8 @@ export function admitFeedback(
     : admitGitHubComment({ ...input, comment: source });
 }
 
-/** revalidate an already admitted exact source without applying today's author defaults. */
-export function admitRetainedFeedback(account: GitHubIdentity, source: GitHubCanonicalFeedback) {
+/** inspect source eligibility separately from the current author approval policy. */
+export function inspectFeedbackSource(account: GitHubIdentity, source: GitHubCanonicalFeedback) {
   const input = {
     account,
     allowSelf: true,
@@ -93,6 +93,20 @@ export async function discoverFeedback(input: {
   const comments = await client.listIssueComments(owner, name, number);
   if (comments.truncated) throw new Error('feedback-source-incomplete');
   const sources: GitHubCanonicalFeedback[] = [...comments.comments];
+  const policyDigest = feedbackAuthorityDigest(input.policy);
+  if (state.evaluatedPolicyDigests?.[input.nodeId] !== policyDigest)
+    for (const encoded of Object.values(baseline ?? {})) {
+      const saved = JSON.parse(encoded) as GitHubCanonicalFeedback;
+      if (!sources.some((source) => source.nodeId === saved.nodeId)) sources.push(saved);
+    }
+  for (const event of state.events) {
+    if (event.phase === 'published' || event.receipt) continue;
+    const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
+    event.policyHeld =
+      admitFeedback(input.policy, client.identity, source).disposition === 'approved'
+        ? undefined
+        : 'feedback-not-approved';
+  }
   const changedReviewBodies = new Set<string>();
   const reviewMarkers = { ...state.reviewMarkers };
   if (input.itemType === 'pull-request') {
@@ -174,7 +188,10 @@ export async function discoverFeedback(input: {
         (state.startedAt === undefined ||
           Date.parse(source.updatedAt) <= state.startedAt ||
           !Number.isFinite(Date.parse(source.updatedAt)))) ||
-      (previous && feedbackRevision(JSON.parse(previous) as GitHubCanonicalFeedback) === revision)
+      (previous &&
+        feedbackRevision(JSON.parse(previous) as GitHubCanonicalFeedback) === revision &&
+        (state.evaluatedPolicyDigests?.[input.nodeId] === policyDigest ||
+          Date.parse(source.updatedAt) <= (state.startedAt ?? 0)))
     )
       continue;
     // provider receipts, not copied markers or account identity, identify our own replies.
@@ -183,12 +200,9 @@ export async function discoverFeedback(input: {
       state.events.some((event) => event.receipt?.nodeId === source.nodeId)
     )
       continue;
+    if (inspectFeedbackSource(client.identity, source).disposition !== 'approved') continue;
     const id = automationHash([input.nodeId, source.nodeId, revision]);
-    if (
-      state.events.some((event) => event.id === id) ||
-      pending.some((event) => event.id === id) ||
-      admitFeedback(input.policy, client.identity, source).disposition !== 'approved'
-    )
+    if (state.events.some((event) => event.id === id) || pending.some((event) => event.id === id))
       continue;
     pending.push({
       id,
@@ -202,13 +216,17 @@ export async function discoverFeedback(input: {
         !changedReviewBodies.has(source.nodeId) && Number.isFinite(Date.parse(source.updatedAt))
           ? Math.max(0, Math.min(input.now, Date.parse(source.updatedAt)))
           : input.now,
-      policyDigest: feedbackAuthorityDigest(input.policy),
+      policyDigest,
+      ...(admitFeedback(input.policy, client.identity, source).disposition !== 'approved'
+        ? { policyHeld: 'feedback-not-approved' }
+        : {}),
       phase: 'queued',
     });
   }
   if (state.events.length + pending.length > 400 || Object.keys(next).length > 1000)
     throw new Error('feedback-queue-full');
   if (discovery) state.reviewMarkers = reviewMarkers;
+  (state.evaluatedPolicyDigests ??= {})[input.nodeId] = policyDigest;
   state.baseline[input.nodeId] = next;
   state.events.push(...pending);
   await discovery?.complete();
