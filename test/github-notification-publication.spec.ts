@@ -133,6 +133,15 @@ describe('channels/github/publication/publication', () => {
     );
   });
 
+  it('should allow ordinary environment examples without weakening credential detection', () => {
+    const text = 'Run NODE_ENV=production PORT=3000 LOG_LEVEL=debug TOKEN_COUNT=10 bun start.';
+    assert.equal(githubNotificationPublicationText('github-reply', [{ text }]), text);
+    for (const name of ['GH_TOKEN', 'DATABASE_PASSWORD', 'AWS_SECRET_ACCESS_KEY', 'api_key'])
+      assert.throws(
+        () => githubNotificationPublicationText('github-reply', [{ text: `${name}=sensitive` }]),
+        /not safe to publish/u,
+      );
+  });
   it('should classify secret safety rejections without retaining candidate text', () => {
     for (const [text, safetyCategory] of [
       ['OPENAI_API_KEY=value', 'environment-assignment'],
