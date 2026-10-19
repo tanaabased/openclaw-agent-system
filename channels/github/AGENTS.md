@@ -31,8 +31,8 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   requires a verified Work decision. Mode selects the planning-to-implementation transition for existing active
   issues. Once implementation is recorded, a later mode edit does not send the
   issue back to planning or demand another Auto decision. Only verified comments from live approved feedback authors may provide task direction; unverified provider prose cannot grant authority.
-- Intake enablement and original-assigner eligibility govern admission, not continued
-  implementation. Preserve an entered implementation stage while the issue remains
+- Intake enablement and original-assigner eligibility govern admission, not progression within an admitted issue. Live mode still governs
+  its first implementation transition. Preserve an entered implementation stage while the issue remains
   active; feedback still requires its current approved source.
 - Recover older implementation stages from native continuation attempts or retained
   implementation handoffs, preserving the issue, assessment, and execution receipts.
@@ -62,7 +62,10 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   inputs, assessment results, source revisions, cancellations, and submission
   receipts. Live policy does not undo completed work or automatically terminate
   a running native turn. Choose current skills/guidance for the next unsubmitted
-  stage; never silently rewrite an already-submitted request.
+  stage or refreshed context; never silently rewrite an already-submitted request.
+- Cosmetic chat titles, labels, and categories never gate continued work. A replacement
+  intake coordinator may continue existing issue chats. Preserve their original creation
+  records and record the actual sender on each new continuation or feedback attempt.
 - Install reconciles installed machinery, such as native cadence, executable
   identity, and scheduler configuration. Mode, approved authors, recipients,
   guidance, capacity, and other runtime policy edits must not change the installed

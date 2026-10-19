@@ -13,7 +13,6 @@ describe('agent/dispatch-retry', () => {
     for (const code of [
       'dispatch-creation-denied',
       'delivery-branch-changed',
-      'continuation-skill-identity-changed',
       'feedback-source-author-changed',
       'dispatch-turn-cancelled',
       'dispatch-assignment-authority-revoked',
@@ -23,6 +22,9 @@ describe('agent/dispatch-retry', () => {
       'dispatch-project-registration-unavailable',
       'dispatch-creation-unresolved',
       'dispatch-operation-failed',
+      'continuation-skill-identity-changed',
+      'continuation-schedule-binding-mismatch',
+      'feedback-schedule-owner-changed',
     ])
       assert.equal(dispatchFailurePhase(record, code), 'waiting');
     scheduleDispatchRetry(record, 'dispatch-host-unavailable', undefined, 0);

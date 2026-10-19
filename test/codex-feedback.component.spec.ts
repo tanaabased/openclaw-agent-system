@@ -438,7 +438,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(first.feedback, undefined);
     assert.deepEqual(
       scans.map((scan) => [scan.id, scan.feedback.code]),
-      [['e'.repeat(64), 'feedback-schedule-owner-changed']],
+      [['e'.repeat(64), undefined]],
     );
   });
   async function prepare(author = commenter) {
@@ -458,6 +458,30 @@ describe('agent/codex-feedback', () => {
     assert.ok('eventId' in result && result.eventId);
     return { id, eventId: result.eventId };
   }
+  it('should preserve feedback receipt custody when the scheduler moves to another chat', async () => {
+    const ref = await prepare();
+    const original = structuredClone((await store.read()).records[0]!.feedback!.events[0]!.attempt);
+    const activation = deps.activation!;
+    deps.activation = async (...args) => {
+      const selected = await activation(...args);
+      return {
+        ...selected,
+        sourceThreadId: 'replacement',
+        schedule: selected.schedule && {
+          current: { ...selected.schedule.current, sourceThreadId: 'replacement' },
+          saved: { ...selected.schedule.saved, sourceThreadId: 'replacement' },
+        },
+      };
+    };
+    sent = true;
+    turn = 'feedback';
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.sourceThreadId, 'intake');
+    assert.deepEqual(retained.feedback!.events[0]!.attempt, { ...original, turnId: 'feedback' });
+    assert.equal(original?.sourceThreadId, 'intake');
+  });
+
   it('should reactivate unassigned codex feedback in the original chat and retire again on closure', async () => {
     const provider = await deps.feedbackConnect!('', new AbortController().signal);
     const item = await provider.client.getItem('owner', 'repo', 3);

@@ -69,8 +69,6 @@ export async function scanOpenClawFeedback(input: {
     try {
       await save();
       {
-        if (record.sourceThreadId !== input.sourceThreadId)
-          throw new Error('feedback-schedule-owner-changed');
         const validateLocal = async () => {
           budget.check();
           await input.authority.assertCurrent?.();

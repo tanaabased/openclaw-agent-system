@@ -6,7 +6,6 @@ import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { realpath } from 'node:fs/promises';
-import { relative } from 'node:path';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -27,7 +26,6 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, validateWorkflowResult } from './workflow-result.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import issueProgression, { retainedIssueProgression } from './issue-progression.ts';
-import isPathContained from '../utils/is-path-contained.ts';
 
 const requestSchema = Type.Object(
   {
@@ -160,8 +158,6 @@ export default async function runCodexContinuation(
           )
             continue;
           try {
-            if (record.sourceThreadId !== activation.sourceThreadId)
-              throw new Error('continuation-schedule-binding-mismatch');
             await revalidateDispatchAssignment(current, admitted, deps, signal, true);
             if (record.autoDecision && !record.autoDecision.ended) {
               const decision = record.autoDecision;
@@ -233,6 +229,7 @@ export default async function runCodexContinuation(
                   decision: automationHash(record.result),
                   before: found.turnId,
                 }),
+                sourceThreadId: activation.sourceThreadId,
                 sourceTurnId: occurrence.id,
                 beforeTurnId: found.turnId,
                 request: {
@@ -385,8 +382,6 @@ export default async function runCodexContinuation(
             continue;
           if (!occurrence && !retry && caller !== record.threadId)
             throw new Error('continuation-issue-caller-required');
-          if (record.sourceThreadId !== activation.sourceThreadId)
-            throw new Error('continuation-schedule-binding-mismatch');
           if (
             retry &&
             (!(
@@ -525,31 +520,13 @@ export default async function runCodexContinuation(
           if (input.action === 'context' && work.result?.outcome !== 'done') {
             const currentSelection = await selectWorkflowStage({
               stage: 'implementation',
-              configuration: {
-                skill: work.selection.requestedSkill,
-                guidance: work.selection.guidance?.content,
-              },
+              configuration:
+                current.manifest.github?.notifications?.issueAssignment?.implementation,
               workspace: current.workspace,
-              observedAt: work.selection.observedAt,
+              observedAt: (deps.now ?? Date.now)(),
               resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
             });
-            const expectedSkill = work.selection.skill,
-              actualSkill = currentSelection.selection.skill;
-            const samePath =
-              expectedSkill.path === actualSkill.path ||
-              (expectedSkill.scope === 'repo' &&
-                actualSkill.scope === 'repo' &&
-                isPathContained(record.project.path, expectedSkill.path) &&
-                isPathContained(found.cwd, actualSkill.path) &&
-                relative(record.project.path, expectedSkill.path) ===
-                  relative(found.cwd, actualSkill.path));
-            if (
-              !samePath ||
-              expectedSkill.name !== actualSkill.name ||
-              expectedSkill.scope !== actualSkill.scope
-            )
-              throw new Error('continuation-skill-identity-changed');
-            selection = { ...work.selection, skill: actualSkill };
+            selection = currentSelection.selection;
           }
           // recheck the saved native activation after provider and skill reads, before side effects.
           const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -586,6 +563,7 @@ export default async function runCodexContinuation(
             });
             work.attempt = {
               id,
+              sourceThreadId: activation.sourceThreadId,
               sourceTurnId: occurrence.id,
               beforeTurnId: found.turnId,
               request: {
@@ -903,6 +881,7 @@ export default async function runCodexContinuation(
                 stage: 'publication',
                 result: work.result,
               }),
+              sourceThreadId: activation.sourceThreadId,
               sourceTurnId: occurrence.id,
               beforeTurnId: found.turnId,
               request: {
@@ -936,6 +915,7 @@ export default async function runCodexContinuation(
             ];
             const resume = {
               id: automationHash({ previous: activeAttempt.id, resume: work.retries.length }),
+              sourceThreadId: activation.sourceThreadId,
               sourceTurnId: occurrence.id,
               beforeTurnId: found.turnId,
               request: {

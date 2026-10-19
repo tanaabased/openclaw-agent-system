@@ -10,6 +10,7 @@ export const feedbackEventSchema = Type.Object(
       Type.Object(
         {
           id: hash,
+          sourceThreadId: Type.Optional(text),
           sourceTurnId: text,
           beforeTurnId: text,
           turnId: Type.Optional(text),

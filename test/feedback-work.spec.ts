@@ -109,6 +109,29 @@ describe('agent/feedback-work', () => {
     record.retirement = { reason: 'unassigned' };
     assert.throws(() => feedbackMode(record, policy), /feedback-issue-inactive/u);
   });
+  it('should refresh implementation selection for the next feedback context without replacing its plan', async () => {
+    const record = { createdAt: 1, result: { outcome: 'plan-ready' } };
+    const event = eventFixture();
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.mode = 'work';
+    const input = {
+      record,
+      event,
+      policy,
+      workspace: '/unused',
+      now: 20,
+      resolveSkill: async (id: string) => ({ ...skill, name: id }),
+    };
+    await beginFeedbackWork(input);
+    policy.issueAssignment!.implementation = {
+      skill: 'company:updated',
+      guidance: 'New guidance.',
+    };
+    const selected = await beginFeedbackWork(input);
+    assert.equal(selected.requestedSkill, 'company:updated');
+    assert.equal(selected.guidance?.content, 'New guidance.');
+    assert.equal(record.result.outcome, 'plan-ready');
+  });
   it('should not start the original openclaw plan again after feedback takes implementation', () => {
     const record = {
       createdAt: 1,

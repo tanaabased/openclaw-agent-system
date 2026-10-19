@@ -1571,9 +1571,7 @@ export default class OpenClawDispatch {
               const selected = (
                 await selectWorkflowStage({
                   stage: 'implementation',
-                  configuration: previous
-                    ? { skill: previous.requestedSkill, guidance: previous.guidance?.content }
-                    : configured,
+                  configuration: configured,
                   workspace: current.workspace,
                   observedAt: previous?.observedAt ?? now,
                   resolveSkill: (id) =>
@@ -1597,10 +1595,7 @@ export default class OpenClawDispatch {
               }
               return {
                 ...response,
-                implementation: record.work?.selection && {
-                  ...record.work.selection,
-                  skill: selected.skill,
-                },
+                implementation: selected,
               };
             }
             if (input.action !== 'delivery')
@@ -1738,13 +1733,16 @@ export default class OpenClawDispatch {
                 },
               });
             }
-            await selectOpenClawAssessment({
-              request,
-              record,
-              workspace: current.workspace,
-              configuration: current.policy.policy.issueAssignment?.assessment,
-              now,
-            });
+            const selection =
+              input.action === 'context' || !record.assessment
+                ? await selectOpenClawAssessment({
+                    request,
+                    record,
+                    workspace: current.workspace,
+                    configuration: current.policy.policy.issueAssignment?.assessment,
+                    now,
+                  })
+                : undefined;
             const evidence =
               input.action === 'context'
                 ? JSON.stringify(
@@ -1763,6 +1761,7 @@ export default class OpenClawDispatch {
                 : undefined;
             await childAuthority.assertCurrent();
             return issueAssessmentAction({
+              selection,
               evidence,
               request,
               record,

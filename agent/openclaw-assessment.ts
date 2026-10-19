@@ -74,20 +74,16 @@ export async function selectOpenClawAssessment(input: {
     throw new Error('dispatch-assessment-replacement-unsupported');
   const skill = await openClawSkill(request, expected, defaultAssessmentSkill);
   const guidance = await assessmentGuidance(input.workspace, configuration?.guidance);
-  if (
-    record.assessment &&
-    (automationHash(record.assessment.skill) !== automationHash(skill) ||
-      automationHash(record.assessment.guidance ?? null) !== automationHash(guidance ?? null))
-  )
-    throw new Error('dispatch-assessment-skill-changed');
-  record.assessment ??= {
-    version: 1,
+  const selection = {
+    version: 1 as const,
     requestedSkill: defaultAssessmentSkill,
     defaultSkill: true,
     skill,
     ...(guidance ? { guidance } : {}),
     observedAt: input.now,
   };
+  record.assessment ??= selection;
+  return selection;
 }
 
 export async function issueAssessmentAction(input: {
@@ -100,6 +96,7 @@ export async function issueAssessmentAction(input: {
   config: OpenClawConfig;
   debug?: boolean;
   action: 'context' | 'result';
+  selection?: OpenClawDispatchRecord['assessment'];
   result?: unknown;
   evidence?: string;
   previousResultDigest?: string;
@@ -188,7 +185,7 @@ export async function issueAssessmentAction(input: {
       effective: record.effective,
       executionEffort: 'unverified',
       evidence: JSON.parse(input.evidence ?? record.turnEvidence?.evidence ?? record.context!),
-      assessment: record.assessment,
+      assessment: input.selection ?? record.assessment,
       currentTurnId: caller.runId,
       ...(record.result
         ? {

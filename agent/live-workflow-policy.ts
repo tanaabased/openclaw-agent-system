@@ -9,9 +9,13 @@ export default function liveWorkflowPolicy(
   intake: IntakeRecord,
   effect: 'assignment' | 'implementation' | 'continued-work' | 'feedback' = 'assignment',
 ) {
-  // Intake eligibility cannot revoke an active issue's recorded implementation stage.
-  if (['continued-work', 'feedback'].includes(effect)) return;
   const policy = manifest.github?.notifications;
+  // admission rules apply once; live mode governs the first implementation transition.
+  if (effect === 'implementation')
+    return (policy?.issueAssignment?.mode ?? 'plan') === 'plan'
+      ? 'implementation-disabled'
+      : undefined;
+  if (effect !== 'assignment') return;
   if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment || policy.issueAssignment.enabled === false)
     return 'issue-workflow-disabled';
@@ -27,8 +31,6 @@ export default function liveWorkflowPolicy(
     )
   )
     return 'assigner-not-approved';
-  if (effect === 'implementation' && policy.issueAssignment.mode === 'plan')
-    return 'implementation-disabled';
 }
 
 export class WorkflowPolicyHeld extends Error {

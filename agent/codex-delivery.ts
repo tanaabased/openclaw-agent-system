@@ -247,7 +247,7 @@ export default async function runCodexDelivery(
               false,
               'feedback',
             );
-            if (activation.schedule && activation.sourceThreadId === record.sourceThreadId) {
+            if (activation.schedule) {
               requireWorkflowSchedule(
                 activation.schedule.saved,
                 activation.schedule.current,
@@ -332,8 +332,7 @@ export default async function runCodexDelivery(
           true,
           'feedback',
         );
-        if (!activated.schedule || activated.sourceThreadId !== record.sourceThreadId)
-          throw new Error('feedback-schedule-owner-changed');
+        if (!activated.schedule) throw new Error('feedback-schedule-owner-changed');
         requireWorkflowSchedule(activated.schedule.saved, activated.schedule.current, 'feedback');
         await authorizeCodexFeedback({
           current: live,
@@ -357,10 +356,7 @@ export default async function runCodexDelivery(
             record.continuation.result?.outcome !== 'done')
         )
           throw new Error('delivery-continuation-stopped');
-        if (
-          deps.schedule.current.workflow !== 'issue-assignment' ||
-          deps.schedule.current.sourceThreadId !== record.sourceThreadId
-        )
+        if (deps.schedule.current.workflow !== 'issue-assignment')
           throw new Error('delivery-schedule-binding-mismatch');
         requireWorkflowSchedule(deps.schedule.saved, deps.schedule.current, 'publication');
       } else {

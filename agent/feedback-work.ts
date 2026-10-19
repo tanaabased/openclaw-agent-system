@@ -60,12 +60,7 @@ export async function beginFeedbackWork(input: {
   if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
   const selected = await selectWorkflowStage({
     stage: 'implementation',
-    configuration: event.work
-      ? {
-          skill: event.work.selection.requestedSkill,
-          guidance: event.work.selection.guidance?.content,
-        }
-      : input.policy.issueAssignment?.implementation,
+    configuration: input.policy.issueAssignment?.implementation,
     workspace: input.workspace,
     observedAt: event.work?.selection.observedAt ?? input.now,
     resolveSkill: input.resolveSkill,

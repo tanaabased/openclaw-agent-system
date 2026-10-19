@@ -648,7 +648,7 @@ describe('agent/codex-delivery', () => {
     assert.ok(shown.includes('[work.md](<'));
     assert.ok(!shown.includes('Private instructions'));
   });
-  it('should show feedback only when the configured schedule and owner are verified', async () => {
+  it('should show feedback under a verified replacement scheduler without changing the issue owner', async () => {
     const configured = structuredClone(manifest);
     Object.assign(configured.github.notifications['issue-assignment'], { feedback: true });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -674,11 +674,12 @@ describe('agent/codex-delivery', () => {
     assert.match(String(active.presentation), /Approved feedback.*original issue chat/u);
     assert.match(String(active.presentation), /originating item or review thread/u);
     activation.sourceThreadId = 'other-intake';
+    activation.schedule.current.sourceThreadId = 'other-intake';
+    activation.schedule.saved.sourceThreadId = 'other-intake';
     assert.match(
       String((await request('present')).presentation),
-      /active intake could not be verified/u,
+      /Approved feedback.*original issue chat/u,
     );
-    activation.sourceThreadId = 'intake';
     activation.schedule.saved.policyDigest = 'stale';
     assert.match(
       String((await request('present')).presentation),

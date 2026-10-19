@@ -903,7 +903,7 @@ describe('agent/codex-dispatch', () => {
       assert.deepEqual(records[0]!.result, result);
     });
 
-  it('should retain a normalized replacement and guidance across continuation without expanding authority', async () => {
+  it('should use live assessment guidance without expanding authority', async () => {
     await writeFile(join(workspace, 'guidance.md'), 'Prefer small fixes.');
     await configureAssessment({ skill: ' $company:assess ', guidance: { file: 'guidance.md' } });
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
@@ -927,7 +927,7 @@ describe('agent/codex-dispatch', () => {
     };
     assert.equal(assessment.requestedSkill, 'company:assess');
     assert.equal(assessment.defaultSkill, false);
-    assert.equal(assessment.guidance.content, 'Prefer small fixes.');
+    assert.equal(assessment.guidance.content, 'Implement and publish immediately.');
     assert.equal(context.resultContract, 'assessment-result/v1');
     assert.match(String(context.instructions), /assessment.skill.name/u);
     assert.match(String(context.instructions), /never implement or publish/u);
@@ -1086,7 +1086,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await prepare()).id, selected.id);
   });
 
-  it('should reject skill changes in the child without replacing the native request', async () => {
+  it('should use updated assessment skill content without replacing the native request', async () => {
     const prepared = await prepare();
     created();
     const selected = deps.native!.assessmentSkill;
@@ -1094,30 +1094,28 @@ describe('agent/codex-dispatch', () => {
       ...(await selected(cwd, id)),
       digest: 'b'.repeat(64),
     });
-    await assert.rejects(
-      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
-      /dispatch-assessment-skill-changed/,
+    const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    assert.equal(
+      (context.assessment as { skill: { digest: string } }).skill.digest,
+      'b'.repeat(64),
     );
     const records = (await request('inspect')).records as Array<{ request: unknown }>;
     assert.deepEqual(records[0]!.request, prepared.request);
   });
 
-  it('should retain an inferred qualified skill when a later catalog makes the bare id ambiguous', async () => {
+  it('should report ambiguous live skill selection without silently choosing the historical skill', async () => {
     await configureAssessment({ skill: '$assess' });
     const resolve = deps.native!.assessmentSkill;
-    const calls: string[] = [];
     deps.native!.assessmentSkill = async (cwd, id) => {
-      calls.push(id);
       if (native && id === 'assess') throw new Error('dispatch-assessment-skill-ambiguous');
       return resolve(cwd, 'company:assess');
     };
     const prepared = await prepare();
     created();
-    const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
-    const assessment = context.assessment as { requestedSkill: string; skill: { name: string } };
-    assert.equal(assessment.requestedSkill, 'assess');
-    assert.equal(assessment.skill.name, 'company:assess');
-    assert.deepEqual(calls, ['assess', 'company:assess']);
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-skill-ambiguous/,
+    );
   });
 
   it('should block unreadable guidance before native creation without discarding the assignment', async () => {
@@ -1153,7 +1151,7 @@ describe('agent/codex-dispatch', () => {
     );
   });
 
-  it('should preserve the default for legacy receipts after replacement configuration changes', async () => {
+  it('should apply live assessment configuration to legacy receipts', async () => {
     const prepared = await prepare();
     const selected = await selectCodexIntake(pluginData, deps);
     const legacy = await new CodexDispatchStore(
@@ -1173,9 +1171,9 @@ describe('agent/codex-dispatch', () => {
       skill: { name: string };
       guidance?: unknown;
     };
-    assert.equal(assessment.defaultSkill, true);
-    assert.equal(assessment.skill.name, 'agent-system:agent-system-issue-assessment');
-    assert.equal(assessment.guidance, undefined);
+    assert.equal(assessment.defaultSkill, false);
+    assert.equal(assessment.skill.name, 'company:assess');
+    assert.equal((assessment.guidance as { content: string }).content, 'New assessment guidance.');
     const resumed = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
     assert.deepEqual(resumed.assessment, assessment);
   });
@@ -2390,7 +2388,7 @@ describe('agent/codex-dispatch', () => {
     }
   });
 
-  it('should normalize a title before the first child assessment without an intake repair race', async () => {
+  it('should preserve a native title edit without blocking assessment or reconciliation', async () => {
     const prepared = await prepare();
     created();
     native!.name = 'a normalized native title';
@@ -2398,7 +2396,7 @@ describe('agent/codex-dispatch', () => {
       (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
       'verified',
     );
-    assert.equal(native!.name, '#3: REPAIR CONTAINED BEHAVIOR');
+    assert.equal(native!.name, 'a normalized native title');
     assert.equal((await request('reconcile', { id: prepared.id })).status, 'assessing');
     native!.turnStatus = 'failed';
     native!.status = 'idle';
@@ -2434,23 +2432,19 @@ describe('agent/codex-dispatch', () => {
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
   });
 
-  it('should retain verified child identity on rename failure and recover without another creation', async () => {
+  it('should not require a cosmetic rename to continue a verified issue chat', async () => {
     const prepared = await prepare();
     created();
-    native!.name = 'shortened title';
-    const rename = deps.native!.rename;
+    native!.name = 'Operator title';
     deps.native!.rename = async () => {
       throw new Error('rename-unavailable');
     };
-    await assert.rejects(
-      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
-      /rename-unavailable/,
+    assert.equal(
+      (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
+      'verified',
     );
-    const record = ((await request('inspect')).records as { threadId: string }[])[0]!;
-    assert.equal(record.threadId, 'issue-thread');
-    deps.native!.rename = rename;
+    assert.equal(native!.name, 'Operator title');
     assert.equal((await request('reconcile', { id: prepared.id })).status, 'assessing');
-    assert.equal(native!.name, '#3: REPAIR CONTAINED BEHAVIOR');
   });
 
   it('should not rename a chat whose worktree or model verification fails', async () => {
@@ -2833,21 +2827,48 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should hold active work on disablement and resume the same task without install', async () => {
+  it('should start admitted work after intake disablement and original assigner removal', async () => {
     const work = await workIssue();
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     configured.github.notifications['issue-assignment'].enabled = false;
-    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-    assert.equal((await work.run('next')).status, 'idle');
-    const records = (await request('inspect')).records as Array<{
-      continuation: { policyHeld?: string };
-    }>;
-    assert.equal(records[0]!.continuation.policyHeld, 'issue-workflow-disabled');
-    configured.github.notifications['issue-assignment'].enabled = true;
+    configured.github.notifications['issue-assignment'].allowed = [
+      { login: 'someone-else', 'node-id': 'U_other' },
+    ];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     assert.equal((await work.run('next')).status, 'prepared');
     work.receive();
     assert.equal((await work.run('context', {}, true)).status, 'verified');
+  });
+
+  it('should continue an existing issue from a replacement intake chat and retain original creation ownership', async () => {
+    const work = await workIssue();
+    const activate = work.continuation.activation!;
+    const replacement: NonNullable<typeof deps.activation> = async (...args) => {
+      const activation = await activate(...args);
+      return {
+        ...activation,
+        sourceThreadId: 'replacement-intake',
+        schedule: activation.schedule && {
+          current: { ...activation.schedule.current, sourceThreadId: 'replacement-intake' },
+          saved: { ...activation.schedule.saved, sourceThreadId: 'replacement-intake' },
+        },
+      };
+    };
+    deps.activation = replacement;
+    work.continuation.activation = replacement;
+    assert.equal(
+      (await request('context', { id: work.id }, { threadId: native!.id })).status,
+      'verified',
+    );
+    assert.equal((await work.run('next', {}, 'replacement-intake')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    const current = await selectCodexIntake(pluginData, deps);
+    const retained = (
+      await new CodexDispatchStore(current.store.location.root, current.store.location.scope).read()
+    ).records[0]!;
+    assert.equal(retained.sourceThreadId, 'intake-thread');
+    assert.equal(retained.continuation!.attempt!.sourceThreadId, 'replacement-intake');
   });
 
   it('should start an existing actionable plan after a live mode edit without recreating its chat', async () => {
@@ -4122,7 +4143,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'idle');
   });
 
-  it('should still reject a changed implementation skill identity', async () => {
+  it('should use a live implementation skill from a changed catalog location', async () => {
     const work = await workIssue();
     await work.run('next');
     work.receive();
@@ -4131,7 +4152,11 @@ describe('agent/codex-dispatch', () => {
       ...(await original(cwd, id)),
       path: '/different/SKILL.md',
     });
-    await assert.rejects(work.run('context', {}, true), /continuation-skill-identity-changed/);
+    const context = await work.run('context', {}, true);
+    assert.equal(
+      'implementation' in context && context.implementation?.skill.path,
+      '/different/SKILL.md',
+    );
   });
 
   it('should record finished work and recover delivery without reloading an implementation skill', async () => {

@@ -10,6 +10,7 @@ const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const attemptSchema = Type.Object(
   {
     id: hash,
+    sourceThreadId: Type.Optional(text),
     sourceTurnId: text,
     beforeTurnId: text,
     request: Type.Object(

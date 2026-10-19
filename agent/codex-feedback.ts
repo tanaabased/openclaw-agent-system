@@ -270,8 +270,6 @@ export default async function runCodexFeedback(
               ) ?? queuedEvent(record))
             : feedback.events.find((item) => item.id === input.eventId);
         try {
-          if (record.sourceThreadId !== activation.sourceThreadId)
-            throw new Error('feedback-schedule-owner-changed');
           if (!event) continue;
           const reconcilingPublication =
             ['next', 'reconcile'].includes(input.action) && event.publicationAttempted === true;
@@ -434,6 +432,7 @@ export default async function runCodexFeedback(
             const id = automationHash([event.id, occurrence!.id, found.turnId]);
             event.attempt = {
               id,
+              sourceThreadId: activation.sourceThreadId,
               sourceTurnId: occurrence!.id,
               beforeTurnId: found.turnId,
               request: {

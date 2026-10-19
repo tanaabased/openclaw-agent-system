@@ -128,6 +128,24 @@ describe('agent/codex-continuation-native', () => {
       status: 'uncertain',
     });
   });
+  it('should reconcile a send from its recorded owner after the coordinator is replaced', async () => {
+    assert.equal(
+      (await fixture()('old-coordinator', { ...attempt, sourceThreadId: 'source' })).status,
+      'verified',
+    );
+    assert.equal(
+      (
+        await fixture({ sameTurn: true })('old-coordinator', {
+          ...attempt,
+          sourceThreadId: 'source',
+        })
+      ).status,
+      'verified',
+    );
+    // Older attempts have no source field and keep using the original owner.
+    assert.equal((await fixture()('source', attempt)).status, 'verified');
+  });
+
   it('should accept an explicit local host without relaxing the prepared request', async () => {
     assert.equal(
       (await fixture({ arguments: { ...attempt.request, hostId: 'local' } })('source', attempt))

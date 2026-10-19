@@ -3,7 +3,10 @@ import type { Static } from 'typebox';
 
 import { implementationResultSchema, implementationPresentation } from './implementation-result.ts';
 import { automationHash } from './automation-hash.ts';
-import issueProgression, { type IssueProgression } from './issue-progression.ts';
+import issueProgression, {
+  retainedIssueProgression,
+  type IssueProgression,
+} from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { operatorInputEvent, nativeInputEvent } from './openclaw-session-input.ts';
@@ -34,7 +37,7 @@ export async function verifyOpenClawWork(input: {
     caller.sessionId !== record.sessionCreation?.sessionId ||
     !record.result ||
     !record.stageReceipt ||
-    record.result.outcome !== 'plan-ready'
+    (record.result.outcome !== 'plan-ready' && !retainedIssueProgression(record))
   )
     throw new Error('dispatch-work-context-mismatch');
   await describeIssueSession(input.request, record, input.config);
@@ -146,10 +149,17 @@ export default async function openClawWorkAction(input: {
       effective: record.effective,
       resultSchema: implementationResultSchema,
       previousImplementationResult: record.work.result,
+      feedbackWork: record.feedback?.events
+        .filter((event) => event.work)
+        .map((event) => ({
+          id: event.id,
+          decision: event.work?.decision,
+          result: event.work?.result,
+        })),
       publicationAuthorized: true,
       deliveryOnly: record.work.result?.outcome === 'done',
       instructions:
-        'When deliveryOnly is true, reconcile the recorded result and finish managed PR delivery without repeating implementation. Otherwise use the returned implementation skill and guidance with this complete assessment in the existing worktree. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or denial. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. A done result permits managed PR delivery without a separate publication grant; honor explicit user restrictions. Do not use Codex runtime commands.',
+        'When deliveryOnly is true, reconcile the recorded result and finish managed PR delivery without repeating implementation. Otherwise use the returned implementation skill and guidance in the existing worktree. Read feedbackWork for later resolved plans and partial implementation; it supplements the preserved original assessment. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or denial. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. A done result permits managed PR delivery without a separate publication grant; honor explicit user restrictions. Do not use Codex runtime commands.',
     };
   }
   if (!record.work?.caller || automationHash(record.work.caller) !== automationHash(source))

@@ -13,7 +13,7 @@ export default function openclawTurnContext(
     inputId?: string;
   },
 ) {
-  const implementation = Boolean(record.work && retainedIssueProgression(record));
+  const implementation = Boolean(retainedIssueProgression(record));
   if (
     !binding.runId ||
     record.feedback?.events.some((event) => event.turn?.runId === binding.runId) ||

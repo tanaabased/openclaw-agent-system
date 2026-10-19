@@ -24,7 +24,7 @@ import runCodexFeedback from './codex-feedback.ts';
 import codexCapacity, { codexUnresolvedRetirement } from './codex-capacity.ts';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
 import { inspectActiveIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import dispatchContext from './dispatch-context.ts';
@@ -41,7 +41,6 @@ import recordDispatchResult from './dispatch-result.ts';
 import codexAssessmentInstructions, {
   autoAssessmentInstructions,
 } from './codex-assessment-instructions.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
   assessmentDecisionMode,
   assessmentResultContextSchema,
@@ -84,8 +83,6 @@ import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
-import { defaultAssessmentSkill } from '../manifest/assessment-schema.ts';
-import isPathContained from '../utils/is-path-contained.ts';
 
 type Client = GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
 type Selection = Awaited<ReturnType<typeof selectCodexIntake>>;
@@ -270,27 +267,6 @@ async function withNative<T>(
   }
 }
 
-function sameAssessmentSkill(
-  selected: CodexAssessmentSkill,
-  current: CodexAssessmentSkill,
-  project: string,
-  worktree: string,
-) {
-  const sameSource =
-    selected.path === current.path ||
-    (selected.scope === 'repo' &&
-      current.scope === 'repo' &&
-      isPathContained(project, selected.path) &&
-      isPathContained(worktree, current.path) &&
-      relative(project, selected.path) === relative(worktree, current.path));
-  return (
-    sameSource &&
-    selected.name === current.name &&
-    selected.scope === current.scope &&
-    selected.digest === current.digest
-  );
-}
-
 async function recover(
   current: Selection,
   record: DispatchRecord,
@@ -298,7 +274,6 @@ async function recover(
   deps: CodexDispatchDependencies,
   save: () => Promise<void>,
   threadId = record.threadId ?? record.receiptThreadId,
-  readOnly = false,
 ) {
   if (!record.request || !record.project) throw new Error('dispatch-creation-not-prepared');
   const found = await withNative(current, deps, (native) =>
@@ -320,9 +295,7 @@ async function recover(
     (found.effort && found.effort !== record.request.thinking)
   )
     throw new Error('dispatch-native-model-diverged');
-  // titles are presentation, not identity; normalize only after native authority checks.
-  if (!readOnly && found.name !== record.request.title)
-    await withNative(current, deps, (native) => native.rename(found.id, record.request!.title));
+  // native titles may be edited independently of the retained issue identity.
   if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
   record.effective = {
     status: found.model && found.effort ? 'verified' : 'unverified',
@@ -724,7 +697,7 @@ export async function runCodexDispatch(
           } catch (error) {
             if (code(error) === 'dispatch-assignment-superseded') {
               try {
-                await recover(current, pending, intake, deps, save, undefined, true);
+                await recover(current, pending, intake, deps, save);
               } catch (recoveryError) {
                 if (code(recoveryError) !== 'dispatch-creation-unresolved')
                   return fail(pending, recoveryError);
@@ -1181,8 +1154,6 @@ export async function runCodexDispatch(
               record.clientThreadId = input.receipt.clientThreadId as string;
             await save();
           }
-          if (record.sourceThreadId !== activation.sourceThreadId)
-            throw new Error('dispatch-intake-caller-required');
           if (childAction && record.threadId && record.threadId !== caller)
             throw new Error('dispatch-assessment-caller-mismatch');
           await revalidateDispatchAssignment(current, intake, deps, signal, true);
@@ -1249,8 +1220,7 @@ export async function runCodexDispatch(
                     }
                   }
                 }
-                if ((await activate()).sourceThreadId !== record.sourceThreadId)
-                  throw new Error('assessment-summary-authority-changed');
+                await activate();
                 await revalidateDispatchAssignment(current, intake, deps, signal, true);
               },
               select: async (previous) =>
@@ -1272,23 +1242,18 @@ export async function runCodexDispatch(
             });
           }
           if (action === 'context') {
-            // legacy receipts keep their original default, never today's replacement configuration.
-            const selected = record.assessment;
-            const skill = await withNative(current, deps, (host) =>
-              host.assessmentSkill(native.cwd, selected?.skill.name ?? defaultAssessmentSkill),
-            );
-            if (
-              selected &&
-              !sameAssessmentSkill(selected.skill, skill, record.project!.path, native.cwd)
-            )
-              throw new Error('dispatch-assessment-skill-changed');
-            record.assessment ??= {
-              version: 1,
-              requestedSkill: defaultAssessmentSkill,
-              defaultSkill: true,
-              skill,
-              observedAt: now,
-            };
+            const assessment = (
+              await selectWorkflowStage({
+                stage: 'assessment',
+                configuration: current.manifest.github?.notifications?.issueAssignment?.assessment,
+                workspace: current.workspace,
+                observedAt: now,
+                resolveSkill: (id) =>
+                  withNative(current, deps, (host) => host.assessmentSkill(native.cwd, id)),
+              })
+            ).selection;
+            // historical selection remains evidence; each invocation uses live configuration.
+            record.assessment ??= assessment;
             await save();
             return {
               status: 'verified',
@@ -1298,7 +1263,7 @@ export async function runCodexDispatch(
               routingNote: record.routingNote,
               effective: record.effective,
               evidence: JSON.parse(record.context!),
-              assessment: { ...record.assessment, skill },
+              assessment,
               ...(native.turnId ? { currentTurnId: native.turnId } : {}),
               ...(record.result
                 ? {

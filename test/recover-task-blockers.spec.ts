@@ -40,6 +40,10 @@ describe('agent/recover-task-blockers', () => {
       'feedback-work-authority-denied',
       'continuation-user-intervened',
       'continuation-selection-changed',
+      'continuation-skill-identity-changed',
+      'dispatch-assessment-skill-changed',
+      'continuation-schedule-binding-mismatch',
+      'feedback-schedule-owner-changed',
       'continuation-assessment-evidence-changed',
       'continuation-assessment-evidence-incomplete',
     ]) {

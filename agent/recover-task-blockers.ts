@@ -20,6 +20,10 @@ const obsolete = new Set([
   'feedback-turn-ended',
   'continuation-user-intervened',
   'continuation-selection-changed',
+  'continuation-skill-identity-changed',
+  'dispatch-assessment-skill-changed',
+  'continuation-schedule-binding-mismatch',
+  'feedback-schedule-owner-changed',
 ]);
 
 /** normalize supported active records without granting new work or replaying any effect. */

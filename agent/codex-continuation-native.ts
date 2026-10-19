@@ -19,6 +19,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
     sourceThreadId: string,
     attempt: NonNullable<CodexContinuationState['attempt']>,
   ) => {
+    sourceThreadId = attempt.sourceThreadId ?? sourceThreadId;
     const entries = await dispatchHistoryPages(request, 'thread/items/list', {
       threadId: sourceThreadId,
       turnId: attempt.sourceTurnId,
