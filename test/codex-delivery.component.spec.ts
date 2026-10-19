@@ -63,11 +63,15 @@ describe('agent/codex-delivery', () => {
   ) {
     return runCodexDelivery(pluginData, { action, id, ...input }, { ...deps, ...overrides });
   }
+  function requiredDigest(result: object) {
+    assert.ok('digest' in result && typeof result.digest === 'string');
+    return result.digest;
+  }
   async function publish(content = { title: 'Authored title', body: 'Authored body.' }) {
     const preview = await request('prepare', content);
     assert.equal(preview.status, 'prepared');
     return request('publish', {
-      digest: preview.digest,
+      digest: requiredDigest(preview),
       ...content,
     });
   }
@@ -285,11 +289,14 @@ describe('agent/codex-delivery', () => {
       const context = await request('compose');
       assert.equal(context.status, 'composition-ready');
       const preview = await request('candidate', {
-        digest: context.digest,
+        digest: requiredDigest(context),
         publicText: 'Delivers the requested change.',
       });
       assert.equal(preview.status, 'announcement-prepared');
-      assert.equal((await request('announce', { digest: preview.digest })).status, 'announced');
+      assert.equal(
+        (await request('announce', { digest: requiredDigest(preview) })).status,
+        'announced',
+      );
       await request('announce');
       const shown = await request('present');
       assert.match(String(shown.presentation), /Pull request opened/);
@@ -304,12 +311,12 @@ describe('agent/codex-delivery', () => {
     await publish();
     const context = await request('compose');
     const preview = await request('candidate', {
-      digest: context.digest,
+      digest: requiredDigest(context),
       publicText: 'Delivers the requested change.',
     });
     announcement.lost = true;
     assert.equal(
-      (await request('announce', { digest: preview.digest })).status,
+      (await request('announce', { digest: requiredDigest(preview) })).status,
       'announcement-blocked',
     );
     const saved = (await store.read())!.records[0]!.delivery!;
@@ -520,8 +527,8 @@ describe('agent/codex-delivery', () => {
   it('should serialize competing publications and invalidate the consumed preview', async () => {
     const preview = await request('prepare');
     const outcomes = await Promise.allSettled([
-      request('publish', { digest: preview.digest }),
-      request('publish', { digest: preview.digest }),
+      request('publish', { digest: requiredDigest(preview) }),
+      request('publish', { digest: requiredDigest(preview) }),
     ]);
     assert.equal(
       outcomes.filter(
@@ -551,7 +558,7 @@ describe('agent/codex-delivery', () => {
     delayedLinkReads = 2;
     const body = 'Authored body.\n\nCloses #3.';
     const preview = await request('prepare', { body });
-    const published = await request('publish', { body, digest: preview.digest });
+    const published = await request('publish', { body, digest: requiredDigest(preview) });
     assert.equal(published.status, 'published');
     assert.equal(pr!.body, body);
     assert.equal(bodyWrites, 0);
@@ -683,7 +690,7 @@ describe('agent/codex-delivery', () => {
     const body =
       'Added the marker. Exact bytes and final newline verified; git diff --check passed. Closes #3.';
     const preview = await request('prepare', { body });
-    await request('publish', { body, digest: preview.digest });
+    await request('publish', { body, digest: requiredDigest(preview) });
     assert.equal(pr!.body, body);
     // recovery must not require inventing a body for an already attempted publication.
     await store.exclusive(async (state, save) => {
@@ -740,9 +747,9 @@ describe('agent/codex-delivery', () => {
   it('should refresh stale previews and reject changed assignments foreign chats and dirty work before writes', async () => {
     const preview = await request('prepare');
     head = 'b'.repeat(40);
-    const refreshed = await request('publish', { digest: preview.digest });
+    const refreshed = await request('publish', { digest: requiredDigest(preview) });
     assert.equal(refreshed.status, 'prepared');
-    assert.ok('digest' in refreshed && refreshed.digest !== preview.digest);
+    assert.ok('digest' in refreshed && requiredDigest(refreshed) !== requiredDigest(preview));
     await assert.rejects(request('prepare', {}, { threadId: 'other' }), /managed-issue-required/);
     dirty = true;
     await assert.rejects(request('prepare'), /uncommitted-work/);
@@ -888,11 +895,11 @@ describe('agent/codex-delivery', () => {
       await publish();
       const context = await request('compose');
       const preview = await request('candidate', {
-        digest: context.digest,
+        digest: requiredDigest(context),
         publicText: 'Delivers the requested change.',
       });
       announcement.lost = lostAnnouncement;
-      await request('announce', { digest: preview.digest });
+      await request('announce', { digest: requiredDigest(preview) });
       const retained = (await store.read()).records[0]!.delivery!;
       head = 'b'.repeat(40);
       const git = deps.git!;
