@@ -1,4 +1,4 @@
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { feedbackIdentities, repairIdentities } from '../channels/github/feedback-policy.ts';
 import { automationHash } from './automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 
@@ -30,8 +30,11 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
   for (const workflow of [value.issueAssignment, value.reviewRequest]) {
     if (!workflow) continue;
     workflow.allowed = ordered(workflow.allowed);
-    if (workflow.feedback && typeof workflow.feedback === 'object')
+    if (workflow.feedback && typeof workflow.feedback === 'object') {
       workflow.feedback.allowed = ordered(workflow.feedback.allowed);
+      if (workflow.feedback.repairs)
+        workflow.feedback.repairs.allowed = ordered(workflow.feedback.repairs.allowed);
+    }
   }
   const recipients = value.issueAssignment?.pullRequest?.recipients;
   if (recipients)
@@ -85,4 +88,20 @@ export function matchesFeedbackAuthority(digest: string, policy: GitHubNotificat
     digest === automationHash(feedbackAuthority(policy)) ||
     matchesNotificationAuthority(digest, policy)
   );
+}
+
+/** no legacy reply digest can authorize code changes. */
+export function repairAuthorityDigest(policy: GitHubNotificationPolicy) {
+  const feedback = policy.issueAssignment?.feedback;
+  return automationHash({
+    effect: 'feedback-repair-existing-pr/v1',
+    schemaVersion: policy.schemaVersion,
+    runtimes: ordered(policy.runtimes),
+    owners: ordered(policy.allowedRepositoryOwners),
+    enabled: policy.issueAssignment?.enabled !== false,
+    authors: ordered(repairIdentities(policy)),
+    assessment: typeof feedback === 'object' ? feedback.repairs?.skill : undefined,
+    guidance: typeof feedback === 'object' ? feedback.repairs?.guidance : undefined,
+    implementation: policy.issueAssignment?.implementation,
+  });
 }

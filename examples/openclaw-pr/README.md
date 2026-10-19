@@ -1,6 +1,6 @@
 # OpenClaw PR Delivery and Feedback Example
 
-Assign one disposable issue, retain its plan, and use an authenticated operator follow-up to implement it and deliver a linked PR in the same chat and worktree. Answer one approved PR conversation comment, then verify exact publication and no duplicate reply after another scan. Issue-comment coverage belongs to `openclaw-issue`; installed review-thread coverage is deferred to the OpenClaw review flow.
+Assign one disposable issue, retain its plan, and use an authenticated operator follow-up to implement it and deliver a linked PR in the same chat and worktree. Answer one approved PR conversation question, then act on an explicitly granted GitHub repair request and verify a new commit on the same PR without a private operator follow-up. Verify exact publication and no duplicate work after another scan. Issue-comment coverage belongs to `openclaw-issue`; installed review-thread coverage is deferred to the OpenClaw review flow.
 
 Each manual refresh admits only this example’s issue, then asks the existing native coordinator to advance retained work. The 24-hour recurring interval keeps scheduled discovery outside the bounded CI run; the examples still run in parallel.
 
@@ -201,6 +201,36 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]] | length == 1 and (.[0].feedback.events | length) == 1 and all(.[0].feedback.events[]; .turn.status == "completed" and .phase == "published")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
+
+# should update the same pr from an authorized github repair request without private repetition
+test -f "$TMPDIR/notification-activation-ready"
+# remove only the uncommitted sentinel created by the presentation recovery test
+worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
+test "$(tail -n 1 "$worktree/README.md")" = 'Uncommitted follow-up work.'
+sed '$d' "$worktree/README.md" > "$TMPDIR/notification-readme-before-sentinel"
+cat "$TMPDIR/notification-readme-before-sentinel" > "$worktree/README.md"
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/emori"
+pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$pr/comments" -f 'body=@tanaabot please add a verification note and push to this PR.' > "$TMPDIR/notification-repair-source.json"
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+repair_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-repair-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one repair turn required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$repair_run" 300000
+jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-repaired.json"
+jq -e --slurp '.[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest and .[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead and .[1].work.delivery.reconciled == true and (.[1].feedback.events | length) == 2 and .[1].feedback.events[0].repair.decision.outcome == "reply" and .[1].feedback.events[0].repair.started == null and .[1].feedback.events[1].repair.decision.outcome == "repair" and .[1].feedback.events[1].repair.result.outcome == "done" and .[1].feedback.events[1].repair.head == .[1].work.delivery.pushedHead and .[1].feedback.events[1].phase == "published"' "$TMPDIR/notification-feedback.json" "$TMPDIR/notification-repaired.json"
+openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json number,headRefOid | jq -e --slurpfile repaired "$TMPDIR/notification-repaired.json" '.number == $repaired[0].work.delivery.pullRequest.pullRequestNumber and .headRefOid == $repaired[0].feedback.events[1].repair.head'
+
+# should preserve the repair receipt and suppress duplicate implementation and replies on another scan
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-repaired.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$pr/comments" > "$TMPDIR/notification-repair-replies.json"
+jq -e --slurpfile repaired "$TMPDIR/notification-repaired.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $repaired[0].feedback.events[1].receipt.nodeId and (.body | contains($repaired[0].feedback.events[1].result.publicText)))' "$TMPDIR/notification-repair-replies.json"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --slurpfile repaired "$TMPDIR/notification-repaired.json" '[.[].records[]] | length == 1 and .[0].work.delivery.pushedHead == $repaired[0].work.delivery.pushedHead and .[0].feedback.events[1].repair == $repaired[0].feedback.events[1].repair and .[0].feedback.events[1].receipt == $repaired[0].feedback.events[1].receipt' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$pr/comments" | jq -e --slurpfile before "$TMPDIR/notification-repair-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
 ```

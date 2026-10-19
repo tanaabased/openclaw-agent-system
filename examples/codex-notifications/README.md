@@ -4,6 +4,18 @@ Verify packaged notification activation boundaries, intake responses, and work p
 
 These headless checks establish activation and authority boundaries. Successful assignment admission and plan creation need a separate installed end-to-end example; these checks do not establish that flow or desktop rendering.
 
+Native repair acceptance also requires an explicitly authorized desktop run against
+a disposable `tanaabased/big-test-bucket` issue assigned only to `tanaabot`. Activate
+pinned reply and repair grants through Install, deliver the initial PR, then post
+one ordinary question and one explicit repair request from the granted author.
+Capture the retained decisions, original chat/worktree/PR identities, focused check
+result, new commit head and exact source-bound reply. Confirm the question makes no
+changes and a second scan does not repeat implementation or publication. Revoke the
+repair grant and verify a subsequent request remains non-mutating; clean up only
+those disposable fixtures. Headless activation checks and fake native adapters do
+not establish model interpretation or desktop execution. This procedure is not a
+local repository check and was not run by this scenario.
+
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 ## Setup

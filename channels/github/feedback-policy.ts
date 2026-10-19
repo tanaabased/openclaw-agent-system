@@ -35,3 +35,29 @@ export function allowsWorkflowFeedback(
       identity.login.toLowerCase() === actor.login.toLowerCase(),
   );
 }
+
+/** repairs never inherit reply or operator grants. */
+export function repairIdentities(policy: GitHubNotificationPolicy): GitHubIdentityPin[] {
+  const feedback = policy.issueAssignment?.feedback;
+  if (!feedback || typeof feedback !== 'object' || !feedback.repairs) return [];
+  const replies = feedbackIdentities(policy.issueAssignment?.allowed ?? [], feedback);
+  const repairs = githubIdentitySet(feedback.repairs.allowed);
+  if (
+    repairs.some(
+      (actor) =>
+        !replies.some(
+          (reply) =>
+            reply.nodeId === actor.nodeId &&
+            reply.login.toLowerCase() === actor.login.toLowerCase(),
+        ),
+    )
+  )
+    throw new Error('github-notification-repair-author-not-admitted');
+  return repairs;
+}
+
+export function allowsFeedbackRepair(policy: GitHubNotificationPolicy, actor: GitHubIdentityPin) {
+  return repairIdentities(policy).some(
+    (pin) => pin.nodeId === actor.nodeId && pin.login.toLowerCase() === actor.login.toLowerCase(),
+  );
+}

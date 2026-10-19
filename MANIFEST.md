@@ -608,7 +608,8 @@ investigation and initial planning; workspace preparation belongs to runtime dis
 
 No mode grants merge, deployment, expanded repository scope, or authority to
 change its own mode. Feedback continues the existing work's trusted mode and
-cannot turn planning into implementation. `review-request` and nested feedback do not
+cannot turn planning into initial implementation. A separately installed repair grant
+permits only bounded corrections to an already delivered PR without changing mode. `review-request` and nested feedback do not
 accept a separate mode in this contract. Review behavior will be specified with
 its lifecycle, not borrowed from issue Work mode. Codex supports `plan`, `work`, and opt-in [`auto`](./CODEX.md#auto-mode). Auto requires
 explicit saved workflow activation and a recorded proceed decision; OpenClaw Auto
@@ -640,8 +641,8 @@ Top-level v2 `feedback` is rejected, including disabled declarations. Remove it
 and explicitly choose feedback permissions beneath each intended workflow.
 Use `true` only when assigners/requesters should also provide feedback; otherwise
 use an explicit list. Migration never copies the old list into both scopes.
-Codex supports feedback in the owning issue chat; independent reviewer intake and
-OpenClaw v2 feedback execution still require their execution adapters.
+Codex and OpenClaw support feedback in the owning issue chat; independent reviewer
+intake remains unavailable.
 
 Object-form feedback also accepts optional `skill` and `guidance` using the
 [assessment selection](#assessment-selection) value shapes. Both workflows default
@@ -649,6 +650,49 @@ to `agent-system:agent-system-feedback-reply`; each may replace that skill or ad
 inline or contained-file guidance independently. These composition fields grant
 no feedback authority: choose `inherit` or `allowed` explicitly. Missing or changed
 selected skills stop composition instead of silently falling back.
+
+#### Repair permissions
+
+Set `github.notifications.issue-assignment.feedback.repairs` only when pinned
+feedback authors should be able to request implementation and an update to the
+existing managed PR. Omission disables repairs; `feedback: true`, reply inheritance
+and `operator-owner` never imply repair permission. Independent `review-request`
+workflows reject this object. Reconcile Install after adding or changing the grant;
+passive discovery cannot activate it. Previously admitted reply-only events remain
+reply-only; a new eligible source revision is needed after activation.
+
+| Field      | Type                                | Required | Default                                         | Contract                                                                                                     |
+| ---------- | ----------------------------------- | -------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `allowed`  | nonempty list of `{login, node-id}` | yes      | none                                            | Explicit repair authors; each must also have matching effective feedback permission.                         |
+| `guidance` | inline string or `{file: path}`     | no       | none                                            | Trusted guidance for interpreting repair requests; uses [assessment selection](#assessment-selection) rules. |
+| `skill`    | skill ID                            | no       | `agent-system:agent-system-feedback-assessment` | Read-only interpretation, separate from reply composition and implementation.                                |
+
+```yaml
+feedback:
+  allowed:
+    - login: trusted-reviewer
+      node-id: U_verifiedReviewer
+  repairs:
+    allowed:
+      - login: trusted-reviewer
+        node-id: U_verifiedReviewer
+```
+
+The assessment skill distinguishes explicit applicable requests from questions,
+suggestions, ambiguity and unsuitable changes. A retained repair decision is not
+itself authority: the runtime checks the installed grant, exact source revision,
+owner, selected skills and existing PR before issuing implementation context and
+again before publication. Implementation uses the workflow's existing
+`implementation` selection; final replies use `feedback.skill`.
+
+Repairs run serially in the existing feedback turn and worktree, sharing normal
+capacity. Plan remains Plan: without a verified existing PR, request initial
+implementation/publication in the owning private chat. Source edits/deletion,
+revocation, changed selections, cancellation or native denial stop new effects and
+preserve work. Uncertain native outcomes are not automatically rerun. A retained
+successful result resumes delivery only; uncertain pushes reconcile through the
+existing PR receipt rather than creating another PR. A later GitHub withdrawal is
+new discussion until interpreted; it is not an immediate interrupt of a running turn.
 
 #### Assessment selection
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { repairAuthorityDigest } from '../agent/notification-authority.ts';
 import { Value } from 'typebox/value';
 import {
   openclawFeedbackSchema,
@@ -135,7 +136,11 @@ describe('agent/openclaw-feedback', () => {
       workspace: root,
       now: Date.now(),
       config: {},
-      intake: { repository: fixture.repository, issue: fixture.item } as unknown as IntakeRecord,
+      intake: {
+        repository: fixture.repository,
+        issue: fixture.item,
+        assignment: { actor },
+      } as unknown as IntakeRecord,
       caller: {
         sessionKey: 'issue-chat',
         sessionId: 'session',
@@ -167,14 +172,16 @@ describe('agent/openclaw-feedback', () => {
           return {
             skills: skill
               ? [
-                  {
-                    name: 'agent-system-feedback-reply',
-                    eligible: true,
-                    modelVisible: true,
-                    source: 'openclaw-plugins',
-                    filePath: join(root, 'SKILL.md'),
-                  },
-                ]
+                  'agent-system-feedback-reply',
+                  'agent-system-feedback-assessment',
+                  'agent-system-issue-implementation',
+                ].map((name) => ({
+                  name,
+                  eligible: true,
+                  modelVisible: true,
+                  source: 'openclaw-plugins',
+                  filePath: join(root, 'SKILL.md'),
+                }))
               : [],
           };
         if (method === 'chat.send') {
@@ -235,6 +242,195 @@ describe('agent/openclaw-feedback', () => {
     assert.ok('digest' in preview);
     return preview.digest;
   }
+
+  async function enableRepair() {
+    record.manifestDigest = 'c'.repeat(64);
+    input.policy.issueAssignment!.feedback = {
+      inherit: true,
+      allowed: [actor],
+      repairs: { allowed: [actor] },
+    };
+    event.repairPolicyDigest = repairAuthorityDigest(input.policy);
+    record.result = {
+      version: 1,
+      outcome: 'plan-ready',
+      summary: 'plan',
+      assessment: 'plan',
+      plan: 'plan',
+      evidence: [],
+      progress: { completed: [], remaining: [] },
+    };
+    record.work = {
+      assessmentDigest: 'a'.repeat(64),
+      delivery: {
+        id: 'b'.repeat(64),
+        binding: {
+          repositoryId: 'R',
+          issueId: 'I_issue',
+          threadId: 'issue-chat',
+          sessionId: 'session',
+          worktree: root,
+          branch: 'fix',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: account.nodeId,
+          policyDigest: 'c'.repeat(64),
+        },
+        title: 'fix',
+        body: 'fix',
+        creationAttempted: true,
+        reconciled: true,
+        pushedHead: 'a'.repeat(40),
+        pullRequest: { pullRequestNodeId: 'PR', pullRequestNumber: 7 },
+      },
+    };
+    return start();
+  }
+  it('should authorize only an explicit retained repair decision and preserve finished implementation', async () => {
+    const context = await enableRepair();
+    assert.ok('repair' in context && context.repair);
+    await assert.rejects(action('repair-context'), /decision-required/);
+    await action('repair-decision', {
+      decision: {
+        outcome: 'repair',
+        rationale: 'Explicit correction.',
+        plan: 'Fix parser and test empty input.',
+      },
+    });
+    assert.equal((await action('repair-context')).status, 'verified');
+    input.connectDelivery = async () => ({ git: async () => 'd'.repeat(40), account: {} }) as never;
+    const result = {
+      outcome: 'done' as const,
+      summary: 'Fixed parser.',
+      fullResult: 'Regression passed; committed fix.',
+    };
+    await action('repair-result', { implementationResult: result });
+    const retained = await action('repair-context');
+    assert.equal(retained.status, 'finished');
+    assert.equal(event.repair?.head, 'd'.repeat(40));
+    assert.equal(record.work!.result, undefined);
+    assert.equal(writes, 0);
+  });
+
+  it('should deliver the granted repair on the retained pr through existing delivery only', async () => {
+    await enableRepair();
+    let remote = 'a'.repeat(40),
+      pushes = 0,
+      creates = 0;
+    const head = 'd'.repeat(40);
+    const delivery = record.work!.delivery!;
+    delivery.binding.repositoryId = input.intake.repository.nodeId;
+    delivery.binding.authorId = account.nodeId;
+    const pr = {
+      itemNodeId: 'PR',
+      number: 7,
+      state: 'open',
+      baseRef: 'main',
+      headRef: 'fix',
+      headRepository: 'owner/repo',
+      title: delivery.title,
+      body: 'Closes #3',
+    };
+    delivery.body = pr.body;
+    input.connectDelivery = async () => ({
+      git: async (argv) => {
+        if (argv[0] === 'branch') return 'fix';
+        if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
+        if (argv.includes('--show-toplevel')) return root;
+        if (argv[0] === 'rev-parse') return head;
+        if (argv[0] === 'rev-list') return '2';
+        if (argv[0] === 'ls-remote') return `${remote} refs/heads/fix`;
+        if (argv[0] === 'push') {
+          pushes++;
+          remote = head;
+        }
+        return '';
+      },
+      account: {
+        identity: account,
+        execute: async (argv) => {
+          const endpoint = argv.find((arg) => arg.startsWith('repos/'));
+          let data: unknown;
+          if (argv.includes('POST')) {
+            creates++;
+            throw new Error('must not create');
+          }
+          if (argv.includes('graphql'))
+            data = { id: 'PR', closingIssuesReferences: { nodes: [{ id: 'I_issue' }] } };
+          else if (endpoint === 'repos/owner/repo/issues/3')
+            data = { databaseId: 20, nodeId: 'I_issue', number: 3, title: 'issue' };
+          else if (endpoint === 'repos/owner/repo/pulls') data = [pr];
+          else if (endpoint === 'repos/owner/repo/pulls/7')
+            data = {
+              nodeId: 'PR',
+              repositoryId: input.intake.repository.nodeId,
+              headRepositoryId: input.intake.repository.nodeId,
+              headSha: remote,
+              authorId: account.nodeId,
+              baseRef: 'main',
+              headRef: 'fix',
+              state: 'open',
+              number: 7,
+            };
+          else throw new Error('unexpected request');
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify(data),
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      },
+    });
+    await action('repair-decision', {
+      decision: { outcome: 'repair', rationale: 'Explicit request.', plan: 'Fix and verify.' },
+    });
+    await action('repair-context');
+    await action('repair-result', {
+      implementationResult: {
+        outcome: 'done',
+        summary: 'Fixed.',
+        fullResult: 'Regression passed.',
+      },
+    });
+    const preview = await action('repair-delivery', { deliveryOperation: 'prepare' });
+    assert.ok('digest' in preview);
+    const outcome = await action('repair-delivery', {
+      deliveryOperation: 'publish',
+      digest: preview.digest,
+    });
+    assert.equal(outcome.status, 'published');
+    assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.equal(record.work!.delivery!.pullRequest!.pullRequestNumber, 7);
+    assert.equal(pushes, 1);
+    assert.equal(creates, 0);
+    assert.equal((await action('repair-context')).status, 'finished');
+  });
+  it('should keep questions and suggestions read-only and reject changed or revoked repair sources', async () => {
+    await enableRepair();
+    await action('repair-decision', {
+      decision: {
+        outcome: 'reply',
+        rationale: 'Question, not an instruction.',
+        plan: 'Explain current behavior.',
+      },
+    });
+    await assert.rejects(action('repair-context'), /decision-required/);
+    await assert.rejects(
+      action('repair-decision', { decision: { outcome: 'repair', rationale: 'new', plan: 'new' } }),
+      /decision-conflict/,
+    );
+    source.body = '@receiver changed request';
+    await assert.rejects(action('repair-context'), /source-changed/);
+    assert.equal(writes, 0);
+  });
+  it('should stop repair context when the explicit grant is removed', async () => {
+    await enableRepair();
+    input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
+    await assert.rejects(action('repair-context'), /authority-revoked/);
+    assert.equal(writes, 0);
+  });
   it('should queue on a busy owner and recover a lost send without another input or session', async () => {
     busy = true;
     assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-queued');
@@ -403,6 +599,15 @@ describe('agent/openclaw-feedback', () => {
         merged: false,
       },
     });
+    record.result = {
+      version: 1,
+      outcome: 'plan-ready',
+      summary: 'plan',
+      assessment: 'plan',
+      plan: 'plan',
+      evidence: [],
+      progress: { completed: [], remaining: [] },
+    };
     record.work = {
       assessmentDigest: 'd'.repeat(64),
       delivery: {

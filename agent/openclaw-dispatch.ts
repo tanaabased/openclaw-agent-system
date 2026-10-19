@@ -392,6 +392,18 @@ export default class OpenClawDispatch {
           workspace,
           now,
           debug: manifest.debug,
+          signal: authority.signal,
+          connectDelivery: async () => {
+            if (!this.dependencies.delivery) throw new Error('delivery-runtime-unavailable');
+            return this.dependencies.delivery({
+              manifest,
+              workspaceDir: workspace,
+              worktree: record.worktree!,
+              caller,
+              signal: authority.signal ?? AbortSignal.timeout(60000),
+              connection: client,
+            });
+          },
           assertCurrent,
           reauthorize: async () => {
             await this.validate(manifest, workspace, record, false, true, client, authority.signal);
@@ -428,7 +440,7 @@ export default class OpenClawDispatch {
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
         event.phase !== 'published' &&
-        /revoked|authority-changed|policy-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
+        /revoked|authority-changed|policy-changed|owner-changed|repair-(?:binding-changed|head-changed|pr-required)|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {

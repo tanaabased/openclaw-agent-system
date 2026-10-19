@@ -1,3 +1,12 @@
+import { selectFeedbackRepair } from './feedback-repair.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
+import { feedbackRevision, admitCodexFeedback } from './codex-feedback-source.ts';
+import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
+import {
+  isReviewFeedback,
+  readReviewFeedback,
+  type GitHubCanonicalFeedback,
+} from '../channels/github/provider/review-feedback.ts';
 import {
   notificationAuthorityDigest,
   matchesNotificationAuthority,
@@ -55,6 +64,7 @@ const requestSchema = Type.Object(
         (value) => Type.Literal(value),
       ),
     ),
+    eventId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     id: Type.String({ pattern: '^[a-f0-9]{64}$' }),
     digest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
@@ -66,6 +76,7 @@ const requestSchema = Type.Object(
 type DeliveryRequest = Static<typeof requestSchema>;
 export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
   activation?: typeof inspectCodexDispatchActivation;
+  feedbackConnect?: typeof connectCodexFeedback;
   connect?: typeof connectCodexGitHubAccount;
   git?: DispatchGit;
   delay?: typeof abortableDelay;
@@ -303,8 +314,122 @@ export default async function runCodexDelivery(
           ].join('\n\n'),
         };
       }
-      if (deps.schedule) {
+      const feedbackEvent = record.feedback?.events.find(
+        (event) => event.attempt?.turnId === found.turnId,
+      );
+      if (feedbackEvent && input.eventId !== feedbackEvent.id)
+        throw new Error('feedback-work-authority-denied');
+      if (input.eventId && (!feedbackEvent || feedbackEvent.id !== input.eventId))
+        throw new Error('feedback-owner-caller-required');
+      const authorizePublication = async () => {
         await deps.authorizeSchedule?.();
+        if (!input.eventId) return;
+        const event = feedbackEvent!;
+        const repair = event.repair;
+        if (
+          !repair ||
+          repair.decision?.outcome !== 'repair' ||
+          !repair.started ||
+          repair.result?.outcome !== 'done' ||
+          event.phase === 'blocked' ||
+          event.phase === 'published'
+        )
+          throw new Error('feedback-repair-result-required');
+        const policy = current.manifest.github?.notifications;
+        if (
+          !policy ||
+          !previous?.pullRequest ||
+          automationHash(previous.pullRequest) !== automationHash(repair.pullRequest)
+        )
+          throw new Error('feedback-repair-pr-required');
+        const activated = await (deps.activation ?? inspectCodexDispatchActivation)(
+          pluginData,
+          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+          false,
+          false,
+          'feedback',
+        );
+        if (
+          !activated.schedule ||
+          activated.sourceThreadId !== record.sourceThreadId ||
+          !matchesNotificationAuthority(activated.schedule.current.policyDigest, policy)
+        )
+          throw new Error('feedback-authority-changed');
+        requireWorkflowSchedule(activated.schedule.saved, activated.schedule.current, 'feedback');
+        const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+          current.workspace,
+          signal,
+        );
+        await inspectFeedbackAssignment(current.policy!, intake, provider.client, record);
+        const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
+        const item = await provider.client.getItem(
+          intake.repository.owner.login,
+          intake.repository.name,
+          event.number,
+        );
+        if (
+          item.nodeId !== event.nodeId ||
+          item.itemType !== event.itemType ||
+          item.state !== 'open' ||
+          (event.itemType === 'issue'
+            ? event.nodeId !== intake.issue.nodeId
+            : event.nodeId !== repair.pullRequest.pullRequestNodeId ||
+              event.number !== repair.pullRequest.pullRequestNumber)
+        )
+          throw new Error('feedback-source-owner-changed');
+        const exact = isReviewFeedback(source)
+          ? await readReviewFeedback(
+              provider.comments.reviews,
+              intake.repository.owner.login,
+              intake.repository.name,
+              event.number,
+              source.databaseId,
+              source.feedback.receipt,
+            )
+          : await provider.comments.getIssueComment(
+              intake.repository.owner.login,
+              intake.repository.name,
+              event.number,
+              source.databaseId,
+            );
+        if (
+          exact.nodeId !== source.nodeId ||
+          feedbackRevision(exact) !== event.revision ||
+          exact.author?.nodeId !== source.author?.nodeId
+        )
+          throw new Error('feedback-source-changed');
+        if (
+          admitCodexFeedback(policy, provider.comments.identity, exact).disposition !== 'approved'
+        )
+          throw new Error('feedback-source-no-longer-eligible');
+        if (!native.assessmentSkill) throw new Error('feedback-skill-unavailable');
+        const selected = await selectFeedbackRepair({
+          event,
+          policy,
+          author: source.author!,
+          self: source.author?.nodeId === provider.comments.identity.nodeId,
+          binding: {
+            id: record.id,
+            threadId: record.threadId,
+            worktree: record.worktree,
+            assessment: record.result,
+            routing: record.routing,
+            branch: record.delivery?.binding.branch,
+          },
+          pullRequest: previous.pullRequest,
+          workspace: current.workspace,
+          now: Date.now(),
+          resolveSkill: (id) => native.assessmentSkill!(found.cwd, id),
+        });
+        if (!selected) throw new Error('feedback-repair-authority-revoked');
+        if (
+          (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim() !== repair.head
+        )
+          throw new Error('feedback-repair-head-changed');
+      };
+      if (input.eventId) await authorizePublication();
+      else if (deps.schedule) {
+        await authorizePublication();
         if (
           record.continuation &&
           (record.continuation.phase !== 'delivery' ||
@@ -366,8 +491,9 @@ export default async function runCodexDelivery(
         if (!Number.isSafeInteger(count) || count < 1)
           throw new Error('delivery-committed-work-required');
       }
-      const recipients =
-        current.manifest.github?.notifications?.schemaVersion === 2
+      const recipients = input.eventId
+        ? []
+        : current.manifest.github?.notifications?.schemaVersion === 2
           ? current.manifest.github.notifications.issueAssignment?.pullRequest?.recipients
           : undefined;
       if (!announcementOnly) resolvePullRequestRecipients(recipients, intake.assignment.actor);
@@ -484,7 +610,7 @@ export default async function runCodexDelivery(
           },
           authorize: async () => {
             signal.throwIfAborted();
-            await deps.authorizeSchedule?.();
+            await authorizePublication();
             await revalidateDispatchAssignment(
               current,
               intake,
@@ -516,7 +642,7 @@ export default async function runCodexDelivery(
               : 'Use the existing explicit human publication authorization for this issue, including authorized follow-up commits; ask only if the requested effect is outside that authorization. Execute delivery publish with this id and digest through native approval, retaining title/body if supplied. Preparation does not grant permission and a native denial stops the operation.'),
         };
       if (input.action === 'publish') {
-        await deps.authorizeSchedule?.();
+        await authorizePublication();
         record.delivery = delivery;
         await save();
         try {
@@ -548,7 +674,8 @@ export default async function runCodexDelivery(
               await save();
             },
             beforeCreate: async () => {
-              await deps.authorizeSchedule?.();
+              await authorizePublication();
+              if (input.eventId) throw new Error('feedback-repair-pr-required');
               if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
               delivery.creationAttempted = true;
               await save();
@@ -558,7 +685,22 @@ export default async function runCodexDelivery(
               await save();
             },
           };
-          const provider = new IssueDeliveryProvider(connected.account, deps.delay);
+          const provider = new IssueDeliveryProvider(
+            {
+              identity: connected.account.identity,
+              execute: async (...args) => {
+                const argv = args[0];
+                if (
+                  ['POST', 'PATCH', 'PUT', 'DELETE'].includes(
+                    argv[argv.indexOf('--method') + 1] ?? '',
+                  )
+                )
+                  await authorizePublication();
+                return connected.account.execute(...args);
+              },
+            },
+            deps.delay,
+          );
           const remoteRef = `refs/heads/${branch}`;
           const remote = (
             await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
@@ -587,7 +729,7 @@ export default async function runCodexDelivery(
               const preferred = preferGitHubSshWorktreeRemote(remote);
               return preferred === remote ? [] : ['-c', `url.${preferred}.insteadOf=${remote}`];
             });
-            await deps.authorizeSchedule?.();
+            await authorizePublication();
             await git(
               found.cwd,
               [...transport, 'push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
@@ -602,7 +744,7 @@ export default async function runCodexDelivery(
             throw new Error('delivery-push-unverified');
           delivery.pushedHead = head;
           await save();
-          await deps.authorizeSchedule?.();
+          await authorizePublication();
           // only the exact pre-push observation may lag behind a verified fast-forward.
           if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
           await provider.publish(publication);

@@ -212,6 +212,7 @@ export default async function openClawDelivery(input: {
     expectedPullRequest: delivery.pullRequest,
     async beforeCreate() {
       await assertCurrent();
+      if (work.repairEventId) throw new Error('feedback-repair-pr-required');
       if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
       delivery.creationAttempted = true;
       await save();

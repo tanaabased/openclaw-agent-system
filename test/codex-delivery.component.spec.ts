@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { selectFeedbackRepair } from '../agent/feedback-repair.ts';
+import { discoverFeedback } from '../agent/feedback-source.ts';
+import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -75,6 +78,193 @@ describe('agent/codex-delivery', () => {
       ...content,
     });
   }
+
+  async function repairFixture() {
+    const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    declaration.github.notifications['issue-assignment'].feedback = {
+      allowed: [{ login: 'reviewer', 'node-id': 'U_reviewer' }],
+      repairs: { allowed: [{ login: 'reviewer', 'node-id': 'U_reviewer' }] },
+    };
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
+    await runCodexIntake(pluginData, true, {
+      codexHome: deps.codexHome,
+      connect: async () => fixture.client,
+    });
+    await publish();
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const policy = current.manifest.github!.notifications!;
+    const source = {
+      nodeId: 'C_repair',
+      databaseId: 42,
+      author: { login: 'reviewer', nodeId: 'U_reviewer', type: 'User' },
+      body: '@receiver fix empty input and push',
+      bodyTruncated: false,
+      createdAt: new Date(baseline + 70000).toISOString(),
+      updatedAt: new Date(baseline + 70000).toISOString(),
+    };
+    const comments = {
+      ...fixture.client,
+      identity: account,
+      listIssueComments: async () => ({ comments: [source], truncated: false }),
+      getIssueComment: async () => source,
+    };
+    const authority = {
+      workflow: 'issue-assignment' as const,
+      automationId: 'automation',
+      sourceThreadId: 'intake',
+      policyDigest: notificationAuthorityDigest(policy),
+      definitionDigest: 'e'.repeat(64),
+    };
+    deps.activation = async () => ({
+      sourceThreadId: 'intake',
+      schedule: {
+        current: authority,
+        saved: { ...authority, version: 1, capabilities: ['feedback', 'publication'] },
+      },
+    });
+    deps.feedbackConnect = async () => ({ client: fixture.client, comments }) as never;
+    head = 'b'.repeat(40);
+    const eventId = await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.feedback = { baseline: { I_issue: {} }, events: [] };
+      await discoverFeedback({
+        state: record.feedback,
+        client: comments,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I_issue',
+        itemType: 'issue',
+        now: baseline + 80000,
+      });
+      const event = record.feedback.events[0]!;
+      event.phase = 'running';
+      event.attempt = {
+        id: 'f'.repeat(64),
+        sourceTurnId: 'intake',
+        beforeTurnId: 'before',
+        turnId: 'turn',
+        request: { threadId: 'child', prompt: 'feedback', model: 'model', thinking: 'high' },
+      };
+      event.repair = await selectFeedbackRepair({
+        event,
+        policy,
+        author: source.author,
+        self: false,
+        binding: {
+          id: record.id,
+          threadId: record.threadId,
+          worktree: record.worktree,
+          assessment: record.result,
+          routing: record.routing,
+          branch: record.delivery!.binding.branch,
+        },
+        pullRequest: record.delivery!.pullRequest,
+        workspace,
+        now: baseline + 80000,
+        implementation: true,
+        resolveSkill: (id) => deps.native!.assessmentSkill!(record.worktree!, id),
+      });
+      assert.ok(event.repair);
+      event.repair.decision = {
+        outcome: 'repair',
+        rationale: 'Explicit correction.',
+        plan: 'Fix parser, test, commit and update PR.',
+      };
+      event.repair.started = true;
+      event.repair.result = {
+        outcome: 'done',
+        summary: 'Fixed.',
+        fullResult: 'Regression passed; committed.',
+      };
+      event.repair.head = head;
+      await save();
+      return event.id;
+    });
+    return { eventId, source };
+  }
+  it('should publish a source-bound repair to the same pr without a new operator turn', async () => {
+    const { eventId } = await repairFixture();
+    deps.native!.find = async () => ({
+      id: 'child',
+      cwd: (await store.read()).records[0]!.worktree!,
+      status: 'active',
+      turnId: 'turn',
+      followUpUserTurn: false,
+    });
+    await assert.rejects(request('prepare'), /feedback-work-authority-denied/);
+    const preview = await request('prepare', { eventId });
+    const outcome = await request('publish', { eventId, digest: requiredDigest(preview) });
+    assert.equal(outcome.status, 'published');
+    assert.equal(creates, 1);
+    assert.equal(remote, head);
+    assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
+  });
+
+  it('should reconcile an uncertain repair push without repeating implementation or push', async () => {
+    const { eventId } = await repairFixture();
+    const git = deps.git!;
+    let lost = true;
+    deps.git = async (cwd, args, signal) => {
+      const result = await git(cwd, args, signal);
+      if (lost && args.includes('push')) {
+        lost = false;
+        throw new Error('transport lost');
+      }
+      return result;
+    };
+    const preview = await request('prepare', { eventId });
+    await assert.rejects(
+      request('publish', { eventId, digest: requiredDigest(preview) }),
+      /transport lost/,
+    );
+    assert.equal(remote, head);
+    const retained = (await store.read()).records[0]!.feedback!.events[0]!.repair;
+    const retry = await request('prepare', { eventId });
+    assert.equal(
+      (await request('publish', { eventId, digest: requiredDigest(retry) })).status,
+      'published',
+    );
+    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0]!.repair, retained);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
+    assert.equal(creates, 1);
+  });
+  it('should stop a repair push when its native activated authority is revoked after preparation', async () => {
+    const { eventId } = await repairFixture();
+    const preview = await request('prepare', { eventId });
+    const active = deps.activation!;
+    const git = deps.git!;
+    let revoked = false;
+    deps.activation = async (...args) => {
+      if (revoked) throw new Error('feedback-authority-revoked');
+      return active(...args);
+    };
+    deps.git = async (cwd, args, signal) => {
+      const value = await git(cwd, args, signal);
+      if (args[0] === 'ls-remote') revoked = true;
+      return value;
+    };
+    await assert.rejects(
+      request('publish', { eventId, digest: requiredDigest(preview) }),
+      /authority-revoked/,
+    );
+    assert.equal(remote, firstHead);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
+  });
+  it('should stop a changed source before a repair push and retain the existing receipt', async () => {
+    const { eventId, source } = await repairFixture();
+    const preview = await request('prepare', { eventId });
+    source.body = '@receiver withdrawn';
+    await assert.rejects(
+      request('publish', { eventId, digest: requiredDigest(preview) }),
+      /feedback-source-changed/,
+    );
+    assert.equal(remote, firstHead);
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
+  });
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'codex_delivery-')));
     workspace = join(root, 'workspace');

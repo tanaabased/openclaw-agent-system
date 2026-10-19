@@ -1,3 +1,4 @@
+import { implementationResultSchema } from './implementation-result.ts';
 import { dispatchRetryProperties } from './dispatch-retry.ts';
 import { Type, type Static } from 'typebox';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
@@ -14,6 +15,37 @@ export const feedbackResultSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const repairDecisionSchema = Type.Object(
+  {
+    outcome: Type.Union([
+      Type.Literal('repair'),
+      Type.Literal('reply'),
+      Type.Literal('clarify'),
+      Type.Literal('decline'),
+    ]),
+    rationale: Type.String({ minLength: 1, maxLength: 16000, pattern: '\\S' }),
+    plan: Type.String({ minLength: 1, maxLength: 32000, pattern: '\\S' }),
+  },
+  { additionalProperties: false },
+);
+export const feedbackRepairSchema = Type.Object(
+  {
+    authorityDigest: hash,
+    bindingDigest: hash,
+    assessment: assessmentSelectionSchema,
+    implementation: Type.Optional(assessmentSelectionSchema),
+    decision: Type.Optional(repairDecisionSchema),
+    started: Type.Optional(Type.Boolean()),
+    result: Type.Optional(implementationResultSchema),
+    head: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
+    pullRequest: Type.Object(
+      { pullRequestNodeId: text, pullRequestNumber: Type.Integer({ minimum: 1 }) },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+export type FeedbackRepair = Static<typeof feedbackRepairSchema>;
 export const feedbackSourceEventSchema = Type.Object(
   {
     ...dispatchRetryProperties,
@@ -34,6 +66,8 @@ export const feedbackSourceEventSchema = Type.Object(
       Type.Literal('published'),
       Type.Literal('blocked'),
     ]),
+    repairPolicyDigest: Type.Optional(hash),
+    repair: Type.Optional(feedbackRepairSchema),
     result: Type.Optional(feedbackResultSchema),
     replyRequested: Type.Optional(Type.Boolean()),
     composition: Type.Optional(assessmentSelectionSchema),

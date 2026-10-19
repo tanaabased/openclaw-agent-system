@@ -23,6 +23,11 @@ actors, workflow mode, and cleanup enablement remain permission-bearing settings
 A retained feedback reply is narrower: it checks runtime and workflow enablement,
 repository scope, and approved feedback actors. Assessment, implementation, cleanup,
 and review settings do not revoke that reply or grant it permission to change code.
+An explicitly installed [repair grant](../../MANIFEST.md#repair-permissions) is separate:
+a specific applicable request may correct the existing PR in the same issue session.
+The runtime retains the interpretation and implementation result independently of
+reply publication. It uses feedback `repair-context`, `repair-result` and
+`repair-delivery` operations; the private-operator handoff remains unchanged.
 Changed reply skill content or guidance can be loaded again with `compose`; the
 private answer is retained and the unattempted public draft is replaced. An attempted
 write must be reconciled before further publication.
@@ -43,8 +48,8 @@ change. Polling and restart preserve it; new native activity defers cleanup. Fre
 verified reassignment before archival reactivates the existing conversation. A fresh
 assignment after archival or retirement can start another attempt without erasing
 prior receipts. An admitted new comment from a configured feedback author can also
-reactivate an unarchived conversation before cleanup starts. This resumes feedback,
-not implementation or a mode change. Reopening alone, incidental comments, and the
+reactivate an unarchived conversation before cleanup starts. This resumes feedback, not initial implementation or a mode change; an installed
+repair grant is required for corrections to the retained existing PR. Reopening alone, incidental comments, and the
 agent's own published replies do not reactivate work.
 
 OpenClaw archives the exact idle session and removes its managed worktree after

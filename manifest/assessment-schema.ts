@@ -2,6 +2,7 @@ import { Type, type Static } from 'typebox';
 
 export const defaultAssessmentSkill = 'agent-system:agent-system-issue-assessment';
 export const defaultImplementationSkill = 'agent-system:agent-system-issue-implementation';
+export const defaultFeedbackAssessmentSkill = 'agent-system:agent-system-feedback-assessment';
 export const defaultFeedbackSkill = 'agent-system:agent-system-feedback-reply';
 export const maximumAssessmentGuidanceBytes = 32 * 1024;
 const assessmentSkillIdPattern =

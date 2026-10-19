@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Feedback Assessment'
+  short_description: 'Distinguish repair requests from questions and suggestions'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-feedback-assessment to assess the exact admitted feedback and return a bounded repair or discussion decision without granting authority.'

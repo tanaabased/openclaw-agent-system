@@ -9,6 +9,7 @@ const input = Type.Object({ runId: text, inputEventId: text }, { additionalPrope
 export const openclawWorkStateSchema = Type.Object(
   {
     assessmentDigest: hash,
+    repairEventId: Type.Optional(hash),
     implementation: Type.Optional(input),
     publication: Type.Optional(input),
     caller: Type.Optional(input),

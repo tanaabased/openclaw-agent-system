@@ -62,10 +62,19 @@ const externalNotificationTriggerSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const externalRepairSchema = Type.Object(
+  {
+    allowed: Type.Array(externalGitHubIdentitySchema, { minItems: 1, uniqueItems: true }),
+    ...assessmentConfigurationSchema.properties,
+  },
+  { additionalProperties: false },
+);
+
 const externalFeedbackSchema = Type.Union([
   Type.Boolean(),
   Type.Object(
     {
+      repairs: Type.Optional(externalRepairSchema),
       inherit: Type.Optional(Type.Boolean()),
       allowed: Type.Optional(Type.Array(externalGitHubIdentitySchema)),
       ...assessmentConfigurationSchema.properties,
@@ -146,7 +155,12 @@ export interface GitHubApprovedActor extends GitHubIdentityPin {
 }
 
 export type GitHubFeedbackPolicy =
-  boolean | ({ inherit: boolean; allowed: GitHubIdentityPin[] } & AssessmentConfiguration);
+  | boolean
+  | ({
+      inherit: boolean;
+      allowed: GitHubIdentityPin[];
+      repairs?: { allowed: GitHubIdentityPin[] } & AssessmentConfiguration;
+    } & AssessmentConfiguration);
 
 export interface GitHubNotificationPolicy {
   schemaVersion: 2;
@@ -196,6 +210,14 @@ export function decodeGitHubNotifications(
                   inherit: input.inherit ?? false,
                   allowed: (input.allowed ?? []).map(decodeIdentity),
                   ...decodeAssessmentConfiguration(input),
+                  ...(input.repairs
+                    ? {
+                        repairs: {
+                          allowed: input.repairs.allowed.map(decodeIdentity),
+                          ...decodeAssessmentConfiguration(input.repairs),
+                        },
+                      }
+                    : {}),
                 },
         };
   const actors = (trigger: Static<typeof externalNotificationTriggerSchema>) =>

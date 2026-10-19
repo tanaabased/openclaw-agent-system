@@ -1,6 +1,6 @@
 import resolvePullRequestRecipients from './pull-request-recipients.ts';
 import type { GitHubNotificationsDeclaration } from './config-schema.ts';
-import { feedbackIdentities } from './feedback-policy.ts';
+import { feedbackIdentities, repairIdentities } from './feedback-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
 import { defaultAssessmentSkill } from '../../manifest/assessment-schema.ts';
@@ -57,6 +57,20 @@ export function validateGitHubNotificationPolicy(
         severity: 'error',
       });
     }
+  }
+  try {
+    repairIdentities(policy);
+    const reviewFeedback = policy.reviewRequest?.feedback;
+    if (typeof reviewFeedback === 'object' && reviewFeedback.repairs)
+      throw new Error('github-notification-review-repairs-unsupported');
+  } catch (error) {
+    diagnostics.push({
+      code: error instanceof Error ? error.message : 'github-notification-repair-invalid',
+      fieldPath: '/github/notifications/issue-assignment/feedback/repairs',
+      message:
+        'Repair authors must have matching feedback pins; repairs are supported only for issue assignment.',
+      severity: 'error',
+    });
   }
   try {
     resolvePullRequestRecipients(

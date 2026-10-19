@@ -35,6 +35,12 @@ const dispatchStages = [
   'delivery-present',
   'assessment-present',
   'feedback-context',
+  'repair-decision',
+  'repair-context',
+  'repair-result',
+  'repair-delivery-prepare',
+  'repair-delivery-publish',
+  'repair-delivery-refreshed',
   'feedback-result',
   'feedback-compose',
   'feedback-candidate',
@@ -238,13 +244,122 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       context.publication !== 'allowed'
     )
       return;
+    const source = context.source as { body?: string } | undefined;
+    const repairing =
+      source?.body === '@tanaabot please add a verification note and push to this PR.';
+    const repair = context.repair as
+      | {
+          assessment?: { skill?: { path?: string } };
+          implementation?: { skill?: { path?: string } };
+        }
+      | undefined;
+    if (repair) {
+      const assessmentPath = repair.assessment?.skill?.path;
+      if (!assessmentPath) return;
+      if (openClawAIMockToolResultText(messages, prefix + 'repair-assessment-skill') === undefined)
+        return call('repair-assessment-skill', 'read', { path: assessmentPath });
+      if (!result('repair-decision'))
+        return dispatch('repair-decision', {
+          ...args,
+          operation: 'repair-decision',
+          decision: {
+            outcome: repairing ? 'repair' : 'reply',
+            rationale: repairing
+              ? 'Explicit bounded request to update existing PR.'
+              : 'Question only; no implementation requested.',
+            plan: repairing
+              ? 'Add verification note; check diff; commit and update the same PR.'
+              : 'Explain existing delivery without edits.',
+          },
+        });
+    }
+    if (repairing) {
+      const implementation = result('repair-context');
+      if (!implementation)
+        return dispatch('repair-context', { ...args, operation: 'repair-context' });
+      if (implementation.status !== 'verified' || typeof implementation.worktree !== 'string')
+        return;
+      const implementationPath = (
+        implementation.repair as { implementation?: { skill?: { path?: string } } }
+      )?.implementation?.skill?.path;
+      if (!implementationPath) return;
+      if (
+        openClawAIMockToolResultText(messages, prefix + 'repair-implementation-skill') === undefined
+      )
+        return call('repair-implementation-skill', 'read', { path: implementationPath });
+      const file = `notification-fixture-${id}.md`;
+      const patch = `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Verify repairs against the exact authorized request.\n`;
+      const steps = [
+        { stage: 'repair-apply', argv: ['apply', '-'], stdin: patch },
+        { stage: 'repair-check', argv: ['diff', '--check'] },
+        { stage: 'repair-add', argv: ['add', '--', file] },
+        {
+          stage: 'repair-commit',
+          argv: [
+            'commit',
+            '-m',
+            `#${(implementation.issue as { number: number }).number}: add repair verification note`,
+            '--',
+            file,
+          ],
+        },
+      ];
+      for (const step of steps) {
+        const executed = result(step.stage);
+        if (!executed)
+          return call(step.stage, 'agent_system_git', {
+            argv: step.argv,
+            cwd: implementation.worktree,
+            ...('stdin' in step ? { stdin: step.stdin } : {}),
+          });
+        if (executed.exitCode !== 0 || executed.truncated !== false) return;
+      }
+      if (!result('repair-result'))
+        return dispatch('repair-result', {
+          ...args,
+          operation: 'repair-result',
+          implementationResult: {
+            outcome: 'done',
+            summary: 'Added verification note.',
+            fullResult: 'Diff check passed; committed note for the exact authorized request.',
+          },
+        });
+      const preview = result('repair-delivery-prepare');
+      if (!preview)
+        return dispatch('repair-delivery-prepare', {
+          ...args,
+          operation: 'repair-delivery',
+          deliveryOperation: 'prepare',
+        });
+      if (typeof preview.digest !== 'string') return;
+      const delivered = result('repair-delivery-publish');
+      if (!delivered)
+        return dispatch('repair-delivery-publish', {
+          ...args,
+          operation: 'repair-delivery',
+          deliveryOperation: 'publish',
+          digest: preview.digest,
+        });
+      if (delivered.status === 'prepared' && typeof delivered.digest === 'string') {
+        const retried = result('repair-delivery-refreshed');
+        if (!retried)
+          return dispatch('repair-delivery-refreshed', {
+            ...args,
+            operation: 'repair-delivery',
+            deliveryOperation: 'publish',
+            digest: delivered.digest,
+          });
+        if (retried.status !== 'published') return;
+      } else if (delivered.status !== 'published') return;
+    }
     const saved = result('feedback-result');
     if (!saved)
       return dispatch('feedback-result', {
         ...args,
         operation: 'result',
-        privateText:
-          'The retained plan was implemented as a cleanup note. The linked PR contains the initial commit and its follow-up. This feedback turn only explains the existing result; no additional repository changes were made.',
+        privateText: repairing
+          ? 'Added the requested verification note, checked the diff, committed and updated the same retained PR. The authorized GitHub comment initiated this repair without a private operator message.'
+          : 'The retained plan was implemented as a cleanup note. The linked PR contains the initial commit and its follow-up. This feedback turn only explains the existing result; no additional repository changes were made.',
       });
     if (saved.status !== 'recorded') return;
     const composition = result('feedback-compose');
@@ -264,8 +379,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         ...args,
         operation: 'candidate',
         digest: composition.digest,
-        publicText:
-          'The linked PR adds the cleanup note from the retained plan. No further code changes were made in response to this comment.',
+        publicText: repairing
+          ? 'Added the requested verification note and updated this same PR. Diff check passed.'
+          : 'The linked PR adds the cleanup note from the retained plan. No further code changes were made in response to this comment.',
       });
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('feedback-preview');
@@ -563,6 +679,8 @@ export const prExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'feedback-skill', name: 'read' },
+    { id: prefix + 'repair-assessment-skill', name: 'read' },
+    { id: prefix + 'repair-implementation-skill', name: 'read' },
     { id: prefix + 'delivery-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
@@ -570,7 +688,16 @@ export const prExampleScenario: OpenClawAIMockScenario = {
         name: 'agent_system_dispatch',
       })),
     ),
-    ...['git', 'apply', 'add', 'commit'].map((stage) => ({
+    ...[
+      'git',
+      'apply',
+      'add',
+      'commit',
+      'repair-apply',
+      'repair-check',
+      'repair-add',
+      'repair-commit',
+    ].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_git',
     })),

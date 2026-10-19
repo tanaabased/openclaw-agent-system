@@ -20,6 +20,11 @@ github:
         allowed:
           - login: example-feedback
             node-id: U_feedback
+        repairs:
+          allowed:
+            - login: example-feedback
+              node-id: U_feedback
+          guidance: Ask a focused clarification for ambiguous changes.
     review-request:
       enabled: false
       allowed:

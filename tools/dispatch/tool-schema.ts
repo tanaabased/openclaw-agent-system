@@ -2,7 +2,7 @@ import { Type, type TProperties } from 'typebox';
 import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
 import { assessmentResultSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
-import { feedbackResultSchema } from '../../agent/feedback-state.ts';
+import { feedbackResultSchema, repairDecisionSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -81,6 +81,10 @@ export const dispatchParameters = Type.Union([
     eventId: id,
     operation: Type.Union([
       Type.Literal('context'),
+      Type.Literal('repair-decision'),
+      Type.Literal('repair-context'),
+      Type.Literal('repair-result'),
+      Type.Literal('repair-delivery'),
       Type.Literal('result'),
       Type.Literal('compose'),
       Type.Literal('candidate'),
@@ -88,6 +92,11 @@ export const dispatchParameters = Type.Union([
       Type.Literal('reconcile'),
     ]),
     digest: Type.Optional(id),
+    decision: Type.Optional(repairDecisionSchema),
+    implementationResult: Type.Optional(implementationResultSchema),
+    deliveryOperation: Type.Optional(
+      Type.Union([Type.Literal('prepare'), Type.Literal('publish'), Type.Literal('reconcile')]),
+    ),
     privateText: Type.Optional(feedbackResultSchema.properties.privateText),
     publicText: Type.Optional(feedbackResultSchema.properties.publicText),
     reply: Type.Optional(Type.Boolean()),

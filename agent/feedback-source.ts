@@ -1,10 +1,10 @@
-import { feedbackAuthorityDigest } from './notification-authority.ts';
+import { feedbackAuthorityDigest, repairAuthorityDigest } from './notification-authority.ts';
 import feedbackDiscovery from './feedback-discovery.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import type { FeedbackSourceState, FeedbackSourceEvent } from './feedback-state.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { feedbackIdentities, allowsFeedbackRepair } from '../channels/github/feedback-policy.ts';
 import {
   admitGitHubComment,
   githubCommentRevision,
@@ -189,6 +189,11 @@ export async function discoverFeedback(input: {
           ? Math.max(0, Math.min(input.now, Date.parse(source.updatedAt)))
           : input.now,
       policyDigest: feedbackAuthorityDigest(input.policy),
+      ...(source.author &&
+      source.author.nodeId !== client.identity.nodeId &&
+      allowsFeedbackRepair(input.policy, source.author)
+        ? { repairPolicyDigest: repairAuthorityDigest(input.policy) }
+        : {}),
       phase: 'queued',
     });
   }

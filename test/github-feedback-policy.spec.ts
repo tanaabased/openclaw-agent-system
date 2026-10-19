@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 
 import { stringify } from 'yaml';
 
-import { allowsWorkflowFeedback, feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import {
+  allowsWorkflowFeedback,
+  feedbackIdentities,
+  repairIdentities,
+} from '../channels/github/feedback-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 const pirog = { login: 'pirog', nodeId: 'U_pirog' };
@@ -161,5 +165,40 @@ describe('channels/github/feedback-policy', () => {
     assert.equal(policy.reviewRequest!.review!.skill, 'company:review');
     for (const skill of ['../file', 'do arbitrary work'])
       assert.equal(parse({ 'review-request': { review: { skill } } }).status, 'invalid');
+  });
+  it('should require explicit repair pins admitted for replies and reject review repair grants', () => {
+    for (const feedback of [true, { inherit: true }, { allowed: [pin(pirog)] }]) {
+      const parsed = parse({ 'issue-assignment': { allowed: [pin(pirog)], feedback } });
+      assert.ok(parsed.status === 'valid');
+      assert.deepEqual(repairIdentities(parsed.manifest.github!.notifications!), []);
+    }
+    const parsed = parse({
+      'issue-assignment': {
+        feedback: {
+          allowed: [pin(pirog)],
+          repairs: { allowed: [pin(pirog)], skill: '$company:assess', guidance: 'Bound the fix.' },
+        },
+      },
+    });
+    assert.ok(parsed.status === 'valid');
+    assert.deepEqual(repairIdentities(parsed.manifest.github!.notifications!), [pirog]);
+    for (const configuration of [
+      { 'issue-assignment': { feedback: { repairs: { allowed: [pin(pirog)] } } } },
+      {
+        'issue-assignment': {
+          feedback: {
+            allowed: [pin(pirog)],
+            repairs: { allowed: [{ ...pin(pirog), 'node-id': 'wrong' }] },
+          },
+        },
+      },
+      { 'issue-assignment': { feedback: { repairs: { allowed: [] } } } },
+      {
+        'review-request': {
+          feedback: { allowed: [pin(pirog)], repairs: { allowed: [pin(pirog)] } },
+        },
+      },
+    ])
+      assert.equal(parse(configuration).status, 'invalid');
   });
 });

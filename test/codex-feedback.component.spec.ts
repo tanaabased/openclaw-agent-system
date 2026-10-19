@@ -207,7 +207,15 @@ describe('agent/codex-feedback', () => {
         args[0] === 'remote' ? 'https://github.com/owner/repo.git' : commonDir,
       feedbackConnect: async () =>
         ({
-          client: fixture.client,
+          client: Object.assign(fixture.client, {
+            getItemContext: async () => ({
+              title: 'issue',
+              body: '',
+              comments: [],
+              labels: [],
+              truncated: false,
+            }),
+          }),
           comments: {
             identity: account,
             listIssueComments: async () => ({ comments, truncated: false }),
@@ -228,6 +236,123 @@ describe('agent/codex-feedback', () => {
     };
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
+
+  async function enableRepairs() {
+    const workspace = join(root, 'workspace');
+    const manifest = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    manifest.github.notifications['issue-assignment'].feedback.repairs = {
+      allowed: [{ login: commenter.login, 'node-id': commenter.nodeId }],
+    };
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    const provider = await deps.feedbackConnect!(workspace, AbortSignal.timeout(1000));
+    await runCodexIntake(pluginData, true, {
+      codexHome: deps.codexHome,
+      now: () => baseline,
+      connect: async () => provider.client,
+    });
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const authority = {
+      workflow: 'issue-assignment' as const,
+      automationId: 'automation',
+      sourceThreadId: 'intake',
+      policyDigest: automationHash(current.manifest.github!.notifications),
+      definitionDigest: 'e'.repeat(64),
+    };
+    deps.activation = async () => ({
+      sourceThreadId: 'intake',
+      schedule: {
+        current: authority,
+        saved: { ...authority, version: 1, capabilities: ['feedback', 'publication'] },
+      },
+    });
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.handoff = { at: baseline, by: 'child', turnId: 'operator' };
+      record.delivery = {
+        id: 'a'.repeat(64),
+        binding: {
+          repositoryId: 'R_repo',
+          issueId: 'I_issue',
+          threadId: 'child',
+          worktree: record.worktree!,
+          branch: 'fix',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: account.nodeId,
+          policyDigest: authority.policyDigest,
+        },
+        creationAttempted: true,
+        reconciled: true,
+        attached: true,
+        cardAttempts: 1,
+        pushedHead: 'a'.repeat(40),
+        pullRequest: { pullRequestNodeId: 'PR', pullRequestNumber: 7 },
+      };
+      await save();
+    });
+  }
+  it('should retain a granted repair decision and implementation separately from the feedback reply', async () => {
+    await enableRepairs();
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback-turn';
+    const context = await call('context', ref, true);
+    assert.ok('repair' in context && context.repair);
+    await call(
+      'repair-decision',
+      {
+        ...ref,
+        decision: {
+          outcome: 'repair',
+          rationale: 'Explicit bounded correction.',
+          plan: 'Fix parser and run regression.',
+        },
+      },
+      true,
+    );
+    assert.equal((await call('repair-context', ref, true)).status, 'verified');
+    const git = deps.git!;
+    deps.git = async (cwd, args, signal) =>
+      args[0] === 'rev-parse' && args.includes('HEAD') ? 'c'.repeat(40) : git(cwd, args, signal);
+    const implementationResult = {
+      outcome: 'done',
+      summary: 'Fixed.',
+      fullResult: 'Regression passed, fix committed.',
+    };
+    assert.equal(
+      (await call('repair-result', { ...ref, implementationResult }, true)).status,
+      'recorded',
+    );
+    assert.equal((await call('repair-context', ref, true)).status, 'finished');
+    const record = (await store.read()).records[0]!;
+    assert.equal(record.feedback!.events[0]!.repair?.head, 'c'.repeat(40));
+    assert.equal(record.feedback!.events[0]!.result, undefined);
+    assert.equal(record.continuation, undefined);
+    assert.equal(creates, 0);
+  });
+  it('should not let a granted question or suggestion enter implementation', async () => {
+    await enableRepairs();
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback-turn';
+    await call('context', ref, true);
+    await call(
+      'repair-decision',
+      {
+        ...ref,
+        decision: {
+          outcome: 'reply',
+          rationale: 'Question, not implementation request.',
+          plan: 'Explain.',
+        },
+      },
+      true,
+    );
+    const response = await call('repair-context', ref, true);
+    assert.ok('code' in response && response.code === 'feedback-repair-decision-required');
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.repair?.started, undefined);
+    assert.equal(creates, 0);
+  });
   it('should continue scanning after an owner changes during its first checkpoint', async () => {
     const state = await store.read();
     const first = state.records[0]!;
