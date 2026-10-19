@@ -43,7 +43,9 @@ describe('channels/github/presentation/assessment-result', () => {
         { ...context, debug },
       );
       assert.ok(output.includes('## ' + (action === 'wait' ? '⏸️' : '▶️') + ' Auto mode decision'));
-      assert.ok(output.includes('**Decision:** `' + action + '`'));
+      assert.ok(
+        output.includes('**Decision:** `' + (action === 'proceed' ? 'work' : 'plan') + '`'),
+      );
       assert.match(output, /Scope is bounded/);
       assert.match(
         output,

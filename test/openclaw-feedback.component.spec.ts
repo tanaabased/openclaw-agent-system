@@ -13,7 +13,6 @@ import openClawFeedback, {
 } from '../agent/openclaw-feedback.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import { discoverFeedback } from '../agent/feedback-source.ts';
-import { verifyOpenClawOperator } from '../agent/openclaw-work.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
@@ -278,18 +277,8 @@ describe('agent/openclaw-feedback', () => {
     assert.equal((await action('reconcile')).status, 'uncertain');
     assert.equal(writes, 1);
   });
-  it('should prevent feedback from claiming operator authority despite owner metadata and old grants', async () => {
+  it('should reject feedback results from another native run', async () => {
     await start();
-    await assert.rejects(
-      verifyOpenClawOperator({
-        record,
-        caller: input.caller,
-        operator: true,
-        request: input.request,
-        config: {},
-      }),
-      /dispatch-operator-followup-required/,
-    );
     input.caller.runId = 'foreign';
     await assert.rejects(
       action('result', { privateText: 'forged' }),

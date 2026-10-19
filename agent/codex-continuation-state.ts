@@ -44,6 +44,7 @@ export const codexContinuationStateSchema = Type.Object(
     retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
     policyDigest: hash,
     policyHeld: Type.Optional(text),
+    activeTurnId: Type.Optional(text),
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
     assessmentSelectionDigest: Type.Optional(hash),

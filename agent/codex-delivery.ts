@@ -1,3 +1,5 @@
+import issueProgression from './issue-progression.ts';
+import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
@@ -307,8 +309,31 @@ export default async function runCodexDelivery(
         )
           throw new Error('delivery-schedule-binding-mismatch');
         requireWorkflowSchedule(deps.schedule.saved, deps.schedule.current, 'publication');
-      } else if (!record.handoff || !found.followUpUserTurn)
-        throw new Error('delivery-human-publication-required');
+      } else {
+        if (
+          !record.handoff &&
+          record.continuation &&
+          (record.continuation.phase !== 'delivery' ||
+            record.continuation.result?.outcome !== 'done')
+        )
+          throw new Error('delivery-continuation-stopped');
+        const transition = issueProgression(record, {
+          mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          now: (deps.now ?? Date.now)(),
+        });
+        if (
+          transition.status === 'stopped' &&
+          !(transition.reason === 'implementation-cancelled' && record.handoff)
+        )
+          throw new Error(transition.reason);
+        if (transition.status === 'ready') record.progression = transition.progression;
+        else if (record.handoff || found.followUpUserTurn)
+          record.progression ??= {
+            stage: 'implementation',
+            via: record.handoff ? 'legacy' : 'operator',
+          };
+        else throw new WorkflowPolicyHeld('implementation-disabled');
+      }
       const connected = await (deps.connect ?? connectCodexGitHubAccount)(
         current.workspace,
         signal,

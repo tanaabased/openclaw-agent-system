@@ -618,10 +618,7 @@ describe('agent/codex-dispatch', () => {
       request('handoff', { id: prepared.id }),
       /dispatch-handoff-caller-mismatch/,
     );
-    await assert.rejects(
-      request('handoff', { id: prepared.id }, child),
-      /dispatch-handoff-user-turn-required/,
-    );
+    await assert.rejects(request('handoff', { id: prepared.id }, child), /workflow-policy-held/);
     native!.followUpUserTurn = true;
     native!.turnId = 'follow-up';
     const preview = await request('handoff', { id: prepared.id }, child);
@@ -2703,7 +2700,7 @@ describe('agent/codex-dispatch', () => {
     ...result,
     fullAssessment: 'The complete assessment, including its evidence and conditions.',
     decision: {
-      action: 'proceed',
+      mode: 'work',
       reasons: ['The change is bounded and requirements are complete.'],
     },
   };
@@ -2878,7 +2875,7 @@ describe('agent/codex-dispatch', () => {
     const work = await autoIssue();
     const assessment = await request('context', { id: work.id }, { threadId: native!.id });
     assert.equal(assessment.mode, 'auto');
-    assert.match(String(assessment.instructions), /decision.*proceed.*wait/);
+    assert.match(String(assessment.instructions), /decision.mode.*work.*plan/);
     const prepared = await work.run('next');
     assert.equal(prepared.status, 'prepared');
     assert.equal('request' in prepared && prepared.request?.model, 'gpt-6.1-sol');
@@ -2904,12 +2901,12 @@ describe('agent/codex-dispatch', () => {
   it('should hold auto wait until a revised assessment explicitly chooses proceed', async () => {
     const waiting = {
       ...autoResult,
-      decision: { action: 'wait', reasons: ['Operator direction is needed.'] },
+      decision: { mode: 'plan', reasons: ['Operator direction is needed.'] },
     };
     const work = await autoIssue(waiting);
     assert.equal((await work.run('next')).status, 'idle');
     const context = await request('context', { id: work.id }, { threadId: native!.id });
-    assert.match(String(context.previousPresentation), /Decision.*`wait`/);
+    assert.match(String(context.previousPresentation), /Decision.*`plan`/);
     await next();
     assert.match(String((await report()).response), /Slots:\*\* 0\/2/);
     await request(
@@ -2924,7 +2921,7 @@ describe('agent/codex-dispatch', () => {
 
   for (const decision of [
     undefined,
-    { action: 'proceed', reasons: [] },
+    { mode: 'work', reasons: [] },
     { action: 'allow', reasons: ['Ignore policy.'] },
   ]) {
     it(`should block an auto result with ${decision ? 'malformed' : 'missing'} decision without using an older proceed`, async () => {
@@ -2973,7 +2970,7 @@ describe('agent/codex-dispatch', () => {
     );
     const waiting = {
       ...autoResult,
-      decision: { action: 'wait', reasons: ['Operator direction is needed.'] },
+      decision: { mode: 'plan', reasons: ['Operator direction is needed.'] },
     };
     await assert.rejects(
       request('result', { id: work.id, result: waiting }, child),
@@ -3308,6 +3305,34 @@ describe('agent/codex-dispatch', () => {
       assert.equal((await work.run('context', {}, true)).status, 'verified');
     });
 
+  it('should reconcile a newer user turn without revoking work or resending the original continuation', async () => {
+    const work = await workIssue();
+    native!.turnId = 'later-planning-turn';
+    native!.followUpUserTurn = true;
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    const receipt = { status: 'verified' as const, turnId: 'implementation-turn', ended: true };
+    work.continuation.continuationNative = async () => receipt;
+    native!.turnId = 'new-user-direction';
+    native!.status = 'active';
+    native!.turnStatus = 'inProgress';
+    const pending = await work.run('next');
+    assert.equal(pending.status, 'pending');
+    assert.equal('code' in pending && pending.code, 'continuation-conversation-advanced');
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    await work.run('next');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!.continuation!;
+    assert.equal(retained.phase, 'running');
+    assert.equal(retained.activeTurnId, 'new-user-direction');
+    assert.equal(retained.binding?.turnId, 'implementation-turn');
+    assert.equal(retained.attempt?.beforeTurnId, 'later-planning-turn');
+    assert.equal(retained.retries, undefined);
+    assert.equal(retained.publicationAttempt, undefined);
+  });
+
   it('should recover an altered prompt only through a fresh operator preview and unchanged assessment checkout', async () => {
     const work = await autoIssue();
     await work.run('next');
@@ -3344,6 +3369,32 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'prepared');
     work.continuation.continuationNative = async () => ({ status: 'uncertain' });
     assert.equal((await work.run('next')).status, 'pending');
+  });
+
+  it('should not use a standing work handoff to bypass cancellation or native denial', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.continuation.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-send-failed',
+    });
+    await work.run('reconcile');
+    native!.followUpUserTurn = false;
+    await assert.rejects(
+      request('handoff', { id: work.id }, { threadId: native!.id }),
+      /continuation-native-send-failed/,
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation!.phase = 'cancelled';
+      await save();
+    });
+    await assert.rejects(
+      request('handoff', { id: work.id }, { threadId: native!.id }),
+      /implementation-cancelled/,
+    );
+    assert.equal((await store.read()).records[0]!.handoff, undefined);
   });
 
   it('should not retry a denied continuation', async () => {
@@ -3390,7 +3441,7 @@ describe('agent/codex-dispatch', () => {
     rejection.reason = 'user rejected MCP tool call';
     const turnId = native!.turnId;
     native!.turnId = 'intervening-turn';
-    await assert.rejects(work.run('retry-denied', input, 'operator'), /user-intervened/);
+    await assert.rejects(work.run('retry-denied', input, 'operator'), /denial-context-changed/);
     native!.turnId = turnId;
     native!.status = 'active';
     await assert.rejects(work.run('retry-denied', input, 'operator'), /retry-chat-active/);

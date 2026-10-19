@@ -426,13 +426,6 @@ export default async function runCodexContinuation(
               !['idle', 'notLoaded'].includes(found.status)
             )
               continue;
-            if (
-              found.turnId !==
-              (work.retries?.at(-1)?.resumeAfterTurnId ??
-                work.retries?.at(-1)?.attempt.turnId ??
-                record.resultTurnId)
-            )
-              throw new Error('continuation-user-intervened');
             if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
             record.progression = transition.progression;
             work.assessmentDigest = automationHash(record.result);
@@ -454,7 +447,7 @@ export default async function runCodexContinuation(
                 model: record.request.model,
                 thinking: record.request.thinking,
                 prompt:
-                  'Continue this managed issue through implementation and pull-request delivery. The activated workflow authorizes this sequence after its recorded assessment decision; do not request routine stage approval. Before editing, call continuationRuntime from the newest trusted Agent System context with JSON on stdin: ' +
+                  'Continue this managed issue through implementation and pull-request delivery. Reconcile the latest conversation with the retained plan first; honor newer user instructions, including cancellation, before changing files. The activated workflow authorizes this sequence after its recorded assessment decision; do not request routine stage approval. Before editing, call continuationRuntime from the newest trusted Agent System context with JSON on stdin: ' +
                   JSON.stringify({ action: 'context', id: record.id }) +
                   '. Proceed only after verified context; follow its retained assessment, implementation selection, and instructions. Stop on substantive blockers or native denial. Continuation receipt: ' +
                   id +
@@ -485,7 +478,7 @@ export default async function runCodexContinuation(
             )
               throw new Error('continuation-denial-unverified');
             if (found.turnId !== activeAttempt.beforeTurnId)
-              throw new Error('continuation-user-intervened');
+              throw new Error('continuation-denial-context-changed');
             if (found.turnStatus !== 'completed' || !['idle', 'notLoaded'].includes(found.status))
               throw new Error('continuation-retry-chat-active');
             await verifyDispatchWorktree(
@@ -549,9 +542,26 @@ export default async function runCodexContinuation(
           if (activeAttempt.turnId && activeAttempt.turnId !== receipt.turnId)
             throw new Error('continuation-turn-changed');
           if (
-            found.turnId !== (receipt.status === 'mismatch' ? receipt.latestTurnId : receipt.turnId)
-          )
-            throw new Error('continuation-user-intervened');
+            found.turnId !==
+              (receipt.status === 'mismatch' ? receipt.latestTurnId : receipt.turnId) &&
+            found.turnId !== work.activeTurnId
+          ) {
+            if (retry) throw new Error('continuation-retry-context-changed');
+            if (
+              input.action === 'context' &&
+              caller === record.threadId &&
+              found.followUpUserTurn
+            ) {
+              work.activeTurnId = found.turnId;
+            } else
+              return {
+                status: 'pending',
+                id: record.id,
+                code: 'continuation-conversation-advanced',
+                instructions:
+                  'The issue conversation has advanced. Reconcile current work in that chat through continuation context; do not resend the implementation request or overwrite newer user direction.',
+              };
+          }
           if (retry) {
             if (!receipt.ended || !['idle', 'notLoaded'].includes(found.status))
               throw new Error('continuation-retry-chat-active');
@@ -594,11 +604,15 @@ export default async function runCodexContinuation(
             ];
             delete work.attempt;
             delete work.binding;
+            delete work.activeTurnId;
             delete work.code;
             work.phase = 'waiting';
             await save();
             return { status: 'retry-ready', id: record.id, threadId: record.threadId };
           }
+          const currentTurnEnded = work.activeTurnId
+            ? ['completed', 'failed', 'interrupted'].includes(found.turnStatus ?? '')
+            : receipt.ended;
           activeAttempt.turnId = receipt.turnId;
           if (work.phase === 'prepared') work.phase = 'running';
           work.binding ??= {
@@ -630,7 +644,7 @@ export default async function runCodexContinuation(
               previousResult: work.result,
               deliveryOnly: Boolean(work.result?.outcome === 'done'),
               instructions:
-                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto requires its verified proceed recommendation when entering implementation; later mode edits preserve the recorded stage. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|compose|candidate|announce|present,...}; reuse the managed operation and returned digest, never create a replacement PR. For new PR delivery, compose a concise public title and body from the verified implementation outcome, validation, and limitations. Include issue-required evidence and a closing reference; do not copy private context or the full private report. Pass title/body to delivery prepare and retain them unchanged with its digest on publish. Use native attach_artifact. After PR linkage use delivery compose, invoke the selected reply skill for the delivery event, submit candidate, and execute announce with its preview digest through native approval. Preserve the delivered PR if the announcement fails. Then present and reproduce the complete private PR card and announcement outcome. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
+                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto requires its verified Work decision when entering implementation; later mode edits preserve the recorded stage. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|compose|candidate|announce|present,...}; reuse the managed operation and returned digest, never create a replacement PR. For new PR delivery, compose a concise public title and body from the verified implementation outcome, validation, and limitations. Include issue-required evidence and a closing reference; do not copy private context or the full private report. Pass title/body to delivery prepare and retain them unchanged with its digest on publish. Use native attach_artifact. After PR linkage use delivery compose, invoke the selected reply skill for the delivery event, submit candidate, and execute announce with its preview digest through native approval. Preserve the delivered PR if the announcement fails. Then present and reproduce the complete private PR card and announcement outcome. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
             };
           if (input.action === 'result') {
             if (work.publicationAttempt)
@@ -680,7 +694,7 @@ export default async function runCodexContinuation(
             work.phase === 'delivery' &&
             work.result?.outcome === 'done' &&
             !work.publicationAttempt &&
-            receipt.ended &&
+            currentTurnEnded &&
             found.turnStatus === 'completed' &&
             ['idle', 'notLoaded'].includes(found.status)
           ) {
@@ -707,7 +721,7 @@ export default async function runCodexContinuation(
           }
           if (
             occurrence &&
-            receipt.ended &&
+            currentTurnEnded &&
             ['idle', 'notLoaded'].includes(found.status) &&
             work.phase !== 'complete'
           ) {

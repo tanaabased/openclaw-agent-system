@@ -8,6 +8,12 @@ const obsolete = new Set([
   'feedback-authority-changed',
   'feedback-authority-revoked',
   'delivery-schedule-stale',
+  'dispatch-operator-followup-required',
+  'dispatch-handoff-user-turn-required',
+  'dispatch-implementation-authorization-required',
+  'delivery-human-publication-required',
+  'feedback-work-authority-denied',
+  'continuation-user-intervened',
 ]);
 
 /** normalize supported active records without granting new work or replaying any effect. */

@@ -161,7 +161,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
    revisions and handoff; summaries do not replace it.
 
    When trusted context selects Auto, use this same assessment and guidance to
-   recommend `proceed` or `wait`. Wait when requirements are incomplete, consequential
+   record `decision.mode: work` or `decision.mode: plan`. Choose Plan when requirements are incomplete, consequential
    ambiguity remains, scope is broad, or the work has high consequences requiring
    operator direction. A complete plan can still warrant waiting. Record the decision
    and bounded, non-sensitive reasons in the returned result schema; never infer

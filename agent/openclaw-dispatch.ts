@@ -84,7 +84,7 @@ import GitCommandError from '../tools/git/command-error.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
-import openClawWorkAction, { verifyOpenClawOperator } from './openclaw-work.ts';
+import openClawWorkAction, { verifyOpenClawWork } from './openclaw-work.ts';
 import openClawDelivery, {
   presentOpenClawDelivery,
   type OpenClawDeliveryConnection,
@@ -739,7 +739,6 @@ export default class OpenClawDispatch {
       input.action === 'summary' ||
       workAction ||
       feedbackChild;
-    if (workAction && !operator) throw new Error('dispatch-operator-required');
     const current = await this.scope(manifest, workspace);
     const retained =
       childAction && 'id' in input
@@ -1199,8 +1198,38 @@ export default class OpenClawDispatch {
               : transactionSignal,
           });
         }
-        if (record.feedback?.events.some((event) => event.turn?.runId === caller.runId))
-          throw new Error('feedback-work-authority-denied');
+        const feedbackSource = record.feedback?.events.find(
+          (event) => event.turn?.runId === caller.runId,
+        );
+        if (feedbackSource) {
+          if (!workAction)
+            return this.feedback(
+              manifest,
+              current.workspace,
+              record,
+              feedbackSource,
+              caller,
+              {
+                action: 'feedback',
+                id: record.id,
+                eventId: feedbackSource.id,
+                operation: 'context',
+              },
+              save,
+              authority,
+            );
+          const checked = await this.feedback(
+            manifest,
+            current.workspace,
+            record,
+            feedbackSource,
+            caller,
+            { action: 'feedback', id: record.id, eventId: feedbackSource.id, operation: 'context' },
+            save,
+            authority,
+          );
+          if (checked.status !== 'verified') return checked;
+        }
         if (input.action === 'retry') {
           if (record.request) throw new Error('dispatch-native-recovery-required');
           record.manifestDigest = current.manifestDigest;
@@ -1250,10 +1279,14 @@ export default class OpenClawDispatch {
             signal.throwIfAborted();
           };
           return this.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
-            const source = await verifyOpenClawOperator({
+            const { source, progression } = await verifyOpenClawWork({
               record,
               caller,
               operator,
+              mode:
+                (await this.validateLocal(manifest, workspace, record, true)).manifest.github
+                  ?.notifications?.issueAssignment?.mode ?? 'plan',
+              now,
               request,
               config: this.dependencies.config(),
             });
@@ -1263,6 +1296,7 @@ export default class OpenClawDispatch {
                 record,
                 caller,
                 source,
+                progression,
                 action: input,
                 now,
                 assertCurrent,

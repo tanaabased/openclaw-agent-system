@@ -703,12 +703,14 @@ describe('agent/codex-delivery', () => {
     assert.equal(presented.notices?.[0]?.severity, 'warning');
     assert.match(String(presented.presentation), /delivery-attachment-pending/);
   });
-  it('should require human handoff or a fresh publication schedule and reject request-supplied authority', async () => {
+  it('should require issue work or current operator direction and reject request-supplied authority', async () => {
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.handoff;
       await save();
     });
-    await assert.rejects(request('prepare'), /human-publication-required/);
+    const find = deps.native!.find;
+    deps.native!.find = async (...args) => ({ ...(await find(...args))!, followUpUserTurn: false });
+    await assert.rejects(request('prepare'), /workflow-policy-held/);
     const current = {
       workflow: 'issue-assignment' as const,
       sourceThreadId: 'intake',
@@ -734,6 +736,19 @@ describe('agent/codex-delivery', () => {
     );
     await assert.rejects(request('prepare', { schedule: current }), /request-invalid/);
     assert.equal(creates, 0);
+  });
+  it('should publish retained implementation without another human turn or handoff', async () => {
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.handoff;
+      state.records[0]!.progression = { stage: 'implementation', via: 'work' };
+      await save();
+    });
+    const find = deps.native!.find;
+    deps.native!.find = async (...args) => ({ ...(await find(...args))!, followUpUserTurn: false });
+    await publish();
+    assert.equal(creates, 1);
+    assert.equal((await request('reconcile')).status, 'ready');
+    assert.equal(creates, 1);
   });
   async function workSchedule() {
     const configured = structuredClone(manifest);

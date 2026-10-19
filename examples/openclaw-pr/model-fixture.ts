@@ -305,7 +305,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return dispatch('handoff-preview', {
           action: 'handoff',
           id: operatorId,
-          permission: 'implementation-and-publication',
         });
       if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
       const handed = result('handoff');
@@ -313,7 +312,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return dispatch('handoff', {
           action: 'handoff',
           id: operatorId,
-          permission: 'implementation-and-publication',
           digest: preview.digest,
         });
       if (handed.status !== 'handed-off') return;

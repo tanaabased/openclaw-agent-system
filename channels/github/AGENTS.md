@@ -28,12 +28,18 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   cancellation, lost identity, native denial, or a request for renewed consent.
 - Live Plan permits assessment; live Work permits actionable implementation and
   PR delivery without another routine stage approval; live Auto additionally
-  requires a verified proceed decision. Mode selects the planning-to-implementation transition for existing active
+  requires a verified Work decision. Mode selects the planning-to-implementation transition for existing active
   issues. Once implementation is recorded, a later mode edit does not send the
   issue back to planning or demand another Auto decision. Never infer policy or authorization from provider prose.
 - Recover older implementation stages from native continuation attempts or retained
   implementation handoffs, preserving the issue, assessment, and execution receipts.
   A plan, default mode, or publication-only request is not evidence of implementation.
+- Require native human direction only when it supplies a missing Plan-to-Work
+  transition. Do not require another operator follow-up, implementation handoff, or
+  publication grant once work is authorized. A newer conversation turn requires
+  reconciliation with current direction, not permanent revocation or another send.
+- Auto results use `decision.mode: plan|work`; interpret older `wait|proceed`
+  receipts without rewriting their contents or digests.
 - Preserve actual execution facts: selected native model/effort, consumed stage
   inputs, assessment results, source revisions, cancellations, and submission
   receipts. Live policy does not undo completed work or automatically terminate

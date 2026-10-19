@@ -487,7 +487,7 @@ for (const scenario of [
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
-        assert.equal((await action(input, 'handoff')).permission, 'implementation-and-publication');
+        await action(input, 'handoff');
         append(input, 'handoff-preview', { status: 'handoff-available', digest });
         assert.equal((await action(input, 'handoff')).digest, digest);
         append(input, 'handoff', { status: 'handed-off' });

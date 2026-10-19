@@ -501,10 +501,20 @@ describe('agent/openclaw-delivery', () => {
     await publish();
     assert.equal(creates, 1);
   });
+  it('should publish completed implementation without a publication-only grant', async () => {
+    delete record.handoff;
+    delete record.work!.publication;
+    record.progression = { stage: 'implementation', via: 'work' };
+    record.work!.implementation = input.source;
+    record.work!.result = { outcome: 'done', summary: 'Done', fullResult: 'Done and tested.' };
+    await publish();
+    assert.equal(creates, 1);
+    assert.equal(record.work!.delivery!.reconciled, true);
+  });
   it('should refresh stale previews and reject unauthorized dirty divergent and revoked publication before writes', async () => {
     const permission = record.work!.publication;
     delete record.work!.publication;
-    await assert.rejects(publish(), /delivery-human-publication-required/);
+    await assert.rejects(publish(), /delivery-implementation-incomplete/);
     record.work!.publication = permission;
     dirty = true;
     await assert.rejects(publish(), /delivery-uncommitted-work/);

@@ -31,6 +31,32 @@ describe('agent/recover-task-blockers', () => {
     recoverTaskBlockers(original);
     assert.deepEqual(original, once);
   });
+  it('should clear obsolete stage gates while preserving exact submission receipts', () => {
+    for (const code of [
+      'dispatch-operator-followup-required',
+      'dispatch-handoff-user-turn-required',
+      'dispatch-implementation-authorization-required',
+      'delivery-human-publication-required',
+      'feedback-work-authority-denied',
+      'continuation-user-intervened',
+    ]) {
+      const value = {
+        ...record(),
+        blocker: code,
+        continuation: {
+          phase: 'blocked',
+          code,
+          attempt: { id: 'sent-once' },
+          binding: { turnId: 'original' },
+        },
+      };
+      recoverTaskBlockers(value);
+      assert.equal(value.blocker, undefined);
+      assert.equal(value.continuation.phase, 'running');
+      assert.deepEqual(value.continuation.attempt, { id: 'sent-once' });
+      assert.deepEqual(value.continuation.binding, { turnId: 'original' });
+    }
+  });
   it('should preserve inactive tasks, explicit cancellation and native denial', () => {
     for (const inactive of [
       { retirement: { reason: 'assignment-removed' } },

@@ -73,7 +73,6 @@ export function dispatchFailurePhase(record: RetryState, code: string, error?: u
       code,
     ) ||
     [
-      'delivery-human-publication-required',
       'feedback-source-identity-changed',
       'feedback-source-author-changed',
       'feedback-source-no-longer-eligible',
@@ -97,7 +96,8 @@ export function dispatchFailurePhase(record: RetryState, code: string, error?: u
       'continuation-assessment-evidence-changed',
       'continuation-selection-changed',
       'continuation-turn-changed',
-      'continuation-user-intervened',
+      'continuation-denial-context-changed',
+      'continuation-retry-context-changed',
     ].includes(code)
   )
     return 'blocked' as const;

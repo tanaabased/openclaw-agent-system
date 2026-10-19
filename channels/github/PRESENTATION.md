@@ -313,7 +313,7 @@ invented file list.
 
 When an assessment includes a continuation decision, show an **Auto mode decision**
 card after the instruction card (or routing card when debug is off). Keep it visible
-regardless of debug presentation. Use ▶️ for `proceed` and ⏸️ for `wait`, with the exact
+regardless of debug presentation. Use ▶️ for `work` and ⏸️ for `plan`, with the exact
 code-formatted value in **Decision**. Use **Next** to distinguish automatic continuation
 once runtime checks pass from waiting for the operator's direction before implementation.
 Follow with bounded **Reason** rows. Escape reason text and withhold credential-shaped

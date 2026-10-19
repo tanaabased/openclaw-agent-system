@@ -1,5 +1,7 @@
 import { Type, type Static } from 'typebox';
 
+import { assessmentDecisionMode } from './assessment-result.ts';
+
 export const issueProgressionSchema = Type.Object(
   {
     stage: Type.Literal('implementation'),
@@ -13,14 +15,17 @@ export const issueProgressionSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-type Progression = Static<typeof issueProgressionSchema>;
+export type IssueProgression = Static<typeof issueProgressionSchema>;
 interface Issue {
-  progression?: Progression;
+  progression?: IssueProgression;
   createdAt: number;
   retired?: unknown;
   retirement?: unknown;
   reset?: unknown;
-  result?: { outcome: string; decision?: { action: 'wait' | 'proceed' } };
+  result?: {
+    outcome: string;
+    decision?: { mode: 'plan' | 'work' } | { action: 'wait' | 'proceed' };
+  };
   continuation?: {
     phase?: string;
     runId?: string;
@@ -32,7 +37,7 @@ interface Issue {
 }
 
 /** recover stage from execution receipts, never from a default mode or a plan alone. */
-export function retainedIssueProgression(issue: Issue): Progression | undefined {
+export function retainedIssueProgression(issue: Issue): IssueProgression | undefined {
   return (
     issue.progression ??
     (issue.continuation?.attempt ||
@@ -49,7 +54,7 @@ export default function issueProgression(
   issue: Issue,
   input: { mode: 'plan' | 'work' | 'auto'; now: number; operator?: boolean },
 ):
-  | { status: 'ready'; progression: Progression }
+  | { status: 'ready'; progression: IssueProgression }
   | { status: 'held'; reason: string }
   | { status: 'stopped'; reason: string } {
   if (issue.retired || issue.retirement || issue.reset)
@@ -62,7 +67,7 @@ export default function issueProgression(
     return { status: 'held', reason: 'assessment-not-actionable' };
   if (!input.operator) {
     if (input.mode === 'plan') return { status: 'held', reason: 'implementation-disabled' };
-    if (input.mode === 'auto' && issue.result.decision?.action !== 'proceed')
+    if (input.mode === 'auto' && assessmentDecisionMode(issue.result.decision) !== 'work')
       return {
         status: 'held',
         reason: issue.result.decision ? 'auto-wait' : 'auto-decision-required',

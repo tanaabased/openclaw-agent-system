@@ -1,3 +1,4 @@
+import { retainedIssueProgression } from './issue-progression.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import deliveryAnnouncement, {
@@ -49,7 +50,8 @@ export default async function openClawDelivery(input: {
   if (action.operation === 'present')
     return presentOpenClawDelivery(record, intake, input.feedbackEnabled);
   const work = record.work;
-  if (!record.handoff || !work?.publication) throw new Error('delivery-human-publication-required');
+  if (!work || (!retainedIssueProgression(record) && !work.publication))
+    throw new Error('delivery-implementation-incomplete');
   if (
     work.result?.outcome === 'blocked' ||
     (work.implementation && work.result?.outcome !== 'done')
@@ -156,7 +158,7 @@ export default async function openClawDelivery(input: {
     title,
     body,
     source: input.source,
-    authorization: work.publication,
+    progression: retainedIssueProgression(record) ?? work.publication,
     previous: previous ?? null,
   });
   if (

@@ -1,3 +1,4 @@
+import issueProgression from './issue-progression.ts';
 import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
@@ -42,7 +43,8 @@ import codexAssessmentInstructions, {
 } from './codex-assessment-instructions.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import {
-  assessmentResultSchema,
+  assessmentDecisionMode,
+  assessmentResultContextSchema,
   parseAssessmentResult,
   type AssessmentResult,
 } from './assessment-result.ts';
@@ -481,8 +483,22 @@ export async function runCodexDispatch(
           threadId: record.threadId,
           ...retainedAssessment,
         };
-      if (!native.turnId || !native.followUpUserTurn)
-        throw new Error('dispatch-handoff-user-turn-required');
+      if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
+      if (
+        record.continuation?.phase === 'blocked' &&
+        (record.continuation.code === 'continuation-native-send-failed' ||
+          record.continuation.result?.outcome === 'blocked')
+      )
+        throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
+      const transition = issueProgression(record, {
+        mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        now: (deps.now ?? Date.now)(),
+        operator: native.followUpUserTurn,
+      });
+      if (!native.turnId || (!native.followUpUserTurn && transition.status !== 'ready'))
+        throw new WorkflowPolicyHeld(
+          transition.status === 'ready' ? 'native-turn-unavailable' : transition.reason,
+        );
       // polling and presentation do not change the work being handed off; retain all authority and result fields.
       const digest = automationHash({
         record: {
@@ -502,9 +518,10 @@ export async function runCodexDispatch(
           threadId: record.threadId,
           ...retainedAssessment,
           instruction:
-            'Only after the user requests continuation outside assessment, apply this handoff to end assessment monitoring. It preserves all results and files and grants no implementation or publication authority.',
+            'Apply this handoff when the live workflow or explicit user request permits implementation. It records the transition and preserves the assessment and checkout. Implementation includes ordinary PR delivery; honor explicit restrictions and native denials.',
         };
       if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+      if (transition.status === 'ready') record.progression = transition.progression;
       if (record.continuation) record.continuation.phase = 'cancelled';
       record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
       const response = notice(record, intake);
@@ -1302,7 +1319,7 @@ export async function runCodexDispatch(
                   }
                 : {}),
               resultContract: 'assessment-result/v1',
-              resultSchema: assessmentResultSchema,
+              resultSchema: assessmentResultContextSchema,
               mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
               instructions:
                 codexAssessmentInstructions +
@@ -1357,7 +1374,10 @@ export async function runCodexDispatch(
               continuation.phase = 'waiting';
               delete continuation.code;
             }
-            if (continuation?.phase === 'waiting' && result.decision?.action === 'wait') {
+            if (
+              continuation?.phase === 'waiting' &&
+              assessmentDecisionMode(result.decision) === 'plan'
+            ) {
               continuation.phase = 'blocked';
               continuation.code = 'continuation-auto-wait';
             }

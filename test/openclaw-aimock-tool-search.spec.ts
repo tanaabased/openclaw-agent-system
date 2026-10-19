@@ -140,15 +140,10 @@ describe('scripts/aimock-tool-search', () => {
       },
     );
     await discover();
-    assert.equal(
-      (
-        await step('handoff-preview', 'agent_system_dispatch', {
-          status: 'handoff-available',
-          digest,
-        })
-      ).permission,
-      'implementation-and-publication',
-    );
+    await step('handoff-preview', 'agent_system_dispatch', {
+      status: 'handoff-available',
+      digest,
+    });
     assert.equal(
       (await step('handoff', 'agent_system_dispatch', { status: 'handed-off' })).digest,
       digest,

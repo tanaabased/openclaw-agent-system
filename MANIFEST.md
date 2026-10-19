@@ -474,7 +474,7 @@ owned schedule. Work mode continues actionable assessments through implementatio
 and managed PR delivery; Plan mode stops after assessment. Explicitly authorized
 manual delivery remains available after implementation handoff. Configured Codex issue
 feedback resumes the owning chat for explanation and bounded replies, including on its
-verified delivery PR. Codex Auto conditionally continues a recorded proceed decision
+verified delivery PR. Codex Auto conditionally continues a recorded Work decision
 through the same implementation and delivery stages. Review requests remain unavailable.
 OpenClaw v2 supports the default assessment skill in Plan mode; broader workflow rollout
 remains separate.
@@ -611,8 +611,9 @@ change its own mode. Feedback continues the existing work's trusted mode and
 cannot turn planning into implementation. `review-request` and nested feedback do not
 accept a separate mode in this contract. Review behavior will be specified with
 its lifecycle, not borrowed from issue Work mode. Codex supports `plan`, `work`, and opt-in [`auto`](./CODEX.md#auto-mode). Auto requires
-explicit saved workflow activation and a recorded proceed decision; OpenClaw Auto
-execution remains unavailable.
+explicit saved workflow activation and a recorded Work decision. OpenClaw can verify
+Work/Auto authority in an existing issue turn; automatic continuation transport
+remains unavailable.
 
 #### Feedback permissions
 

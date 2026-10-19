@@ -39,11 +39,13 @@ export const dispatchParameters = Type.Union([
   object({
     action: Type.Literal('handoff'),
     id,
-    permission: Type.Union([
-      Type.Literal('implementation'),
-      Type.Literal('publication'),
-      Type.Literal('implementation-and-publication'),
-    ]),
+    permission: Type.Optional(
+      Type.Union([
+        Type.Literal('implementation'),
+        Type.Literal('publication'),
+        Type.Literal('implementation-and-publication'),
+      ]),
+    ),
     digest: Type.Optional(id),
   }),
   object({ action: Type.Literal('implementation-context'), id }),

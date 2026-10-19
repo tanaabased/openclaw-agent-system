@@ -2664,7 +2664,8 @@ describe('agent/openclaw issue dispatch', () => {
     });
     assert.deepEqual(after.assessmentCaller, { runId: who.runId, inputEventId: 'operator-event' });
     assert.equal(after.work?.implementation?.inputEventId, 'implement-event');
-    assert.deepEqual(after.work?.publication, after.work?.implementation);
+    assert.equal(after.work?.publication, undefined);
+    assert.equal(after.progression?.stage, 'implementation');
     assert.equal(after.reset, undefined);
     assert.equal(after.retirement, undefined);
     assert.equal(after.retired, undefined);
@@ -3028,7 +3029,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(foreign.status, 'blocked');
   });
 
-  it('should retain explicit implementation and publication permission without replacing the assessment', async () => {
+  it('should retain one implementation transition without replacing the assessment', async () => {
     const { id, who } = await operatorFollowup();
     const request = {
       action: 'handoff' as const,
@@ -3041,7 +3042,8 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
     const retained = await record();
     assert.deepEqual(retained.result, plan);
-    assert.equal(retained.work?.publication?.inputEventId, 'operator-event');
+    assert.equal(retained.progression?.via, 'operator');
+    assert.equal(retained.work?.publication, undefined);
     assert.equal(retained.work?.implementation?.runId, 'operator');
     const verified = await service.run(
       manifest,
@@ -3071,6 +3073,88 @@ describe('agent/openclaw issue dispatch', () => {
       service.run(manifest, root, who, { ...request, digest: preview.digest }, true),
       /dispatch-handoff-stale/,
     );
+  });
+
+  for (const mode of ['work', 'auto'] as const) {
+    it(`should enter ${mode} implementation without a human followup or separate handoff`, async () => {
+      const { id } = await operatorFollowup(false);
+      const who = assessor(id);
+      // The assessment turn itself may continue under current standing policy.
+      inputReceipts = [];
+      manifest.github!.notifications!.issueAssignment!.mode = mode;
+      if (mode === 'auto') {
+        const { journal } = await service.scope(manifest, root);
+        await journal.exclusive(async (state, save) => {
+          const retained = state.records[0]!;
+          retained.result = { ...plan, decision: { mode: 'work', reasons: ['Bounded change.'] } };
+          retained.stageReceipt!.resultDigest = automationHash(retained.result);
+          await save();
+        });
+      }
+      const before = await record();
+      const verified = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'implementation-context', id },
+        false,
+      );
+      assert.equal(verified.status, 'verified');
+      const after = await record();
+      assert.equal(after.progression?.via, mode);
+      assert.equal(after.work?.publication, undefined);
+      assert.deepEqual(after.result, before.result);
+      assert.equal(after.threadId, before.threadId);
+      assert.equal(after.worktree, before.worktree);
+      assert.equal(creates().length, 1);
+      await service.run(
+        manifest,
+        root,
+        who,
+        {
+          action: 'implementation-result',
+          id,
+          implementationResult: {
+            outcome: 'done',
+            summary: 'Done',
+            fullResult: 'Done and checked.',
+          },
+        },
+        false,
+      );
+      assert.equal((await record()).work?.result?.outcome, 'done');
+    });
+  }
+
+  it('should keep plan feedback in planning even when native metadata says owner', async () => {
+    const { id } = await feedbackOwner(false);
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.ok(event.turn);
+    const result = await service.run(
+      manifest,
+      root,
+      assessor(id, event.turn.runId),
+      { action: 'implementation-context', id },
+      true,
+    );
+    assert.equal(result.status, 'policy-held');
+    assert.equal((await record()).progression, undefined);
+  });
+
+  it('should preserve a legacy publication-only request without promoting implementation', async () => {
+    const { id, who } = await operatorFollowup();
+    const request = { action: 'handoff' as const, id, permission: 'publication' as const };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview);
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    const retained = await record();
+    assert.equal(retained.progression, undefined);
+    assert.equal(retained.work?.implementation, undefined);
+    assert.equal(retained.work?.publication?.runId, who.runId);
   });
 
   it('should recover an existing implementation stage without replacing the openclaw issue', async () => {
@@ -3131,7 +3215,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
-  it('should keep implementation-only handoff separate from publication and require context before its result', async () => {
+  it('should include ordinary publication in implementation while requiring context and a completed result', async () => {
     const { id, who } = await operatorFollowup();
     const request = { action: 'handoff' as const, id, permission: 'implementation' as const };
     const preview = await service.run(manifest, root, who, request, true);
@@ -3150,7 +3234,7 @@ describe('agent/openclaw issue dispatch', () => {
         },
         true,
       ),
-      /dispatch-implementation-context-required/,
+      /implementation-context-missing/,
     );
     const delivery = await service.run(
       manifest,
@@ -3159,8 +3243,8 @@ describe('agent/openclaw issue dispatch', () => {
       { action: 'delivery', operation: 'prepare', id },
       true,
     );
-    assert.equal(delivery.status, 'blocked');
-    assert.ok('code' in delivery && delivery.code === 'delivery-human-publication-required');
+    assert.equal(delivery.status, 'waiting');
+    assert.ok('code' in delivery && delivery.code === 'delivery-implementation-incomplete');
   });
 
   it('should reject owner-looking tool requests without native owner input evidence', async () => {
@@ -3174,17 +3258,14 @@ describe('agent/openclaw issue dispatch', () => {
       service.run(manifest, root, who, request, true),
       /dispatch-operator-input-unverified/,
     );
-    await assert.rejects(
-      service.run(manifest, root, who, request, false),
-      /dispatch-operator-required/,
-    );
+    assert.equal((await service.run(manifest, root, who, request, false)).status, 'policy-held');
     await assert.rejects(
       service.run(manifest, root, coordinator, request, true),
       /dispatch-assessment-caller-mismatch/,
     );
-    await assert.rejects(
-      service.run(manifest, root, assessor(id), request, true),
-      /dispatch-operator-followup-required/,
+    assert.equal(
+      (await service.run(manifest, root, assessor(id), request, true)).status,
+      'policy-held',
     );
     assert.equal((await record()).work, undefined);
     assert.deepEqual((await record()).result, plan);
@@ -3485,11 +3566,13 @@ describe('agent/openclaw issue dispatch', () => {
   });
   it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
     const { id } = await feedbackOwner();
+    consumeSend = true;
     assert.equal((await service.check(manifest, root)).changed, true);
     assert.equal((await record()).feedback!.events.length, 1);
     await service.run(manifest, root, coordinator, { action: 'next' });
     const event = (await record()).feedback!.events[0]!;
     assert.ok(event.turn);
+    (messages.at(-1)!.__openclaw as Record<string, unknown>).id = 'feedback-input';
     assert.equal(creates().length, 1);
     assert.equal((await record()).result?.fullAssessment, plan.fullAssessment);
     const who = assessor(id, event.turn.runId);
@@ -3501,9 +3584,9 @@ describe('agent/openclaw issue dispatch', () => {
     });
     assert.equal(context.status, 'verified');
     for (const action of ['context', 'implementation-context'] as const)
-      await assert.rejects(
-        service.run(manifest, root, who, { action, id }, true),
-        /feedback-work-authority-denied/,
+      assert.equal(
+        (await service.run(manifest, root, who, { action, id }, false)).status,
+        'verified',
       );
     const result = await service.run(manifest, root, who, {
       action: 'feedback',

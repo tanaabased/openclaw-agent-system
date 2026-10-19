@@ -19,7 +19,7 @@ Install to reconcile the changed condition before relying on scheduled intake.
 The live bound `agent.yaml` governs the next automatic operation for every active
 issue. Mode, author, feedback, recipient, and guidance edits take effect without
 Install. Plan holds future implementation; Work permits an actionable plan to
-continue; Auto additionally requires proceed. Existing Plan issues can become
+continue; Auto additionally requires a Work decision. Existing Plan issues can become
 eligible when the operator changes the mode to Work. Once implementation has
 started, changing the default mode does not return the issue to planning. Both
 runtimes retain this stage across restart and recover older implementation receipts
@@ -270,12 +270,17 @@ and waits for its exact native run before requesting another cycle. Without
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.
 
-## Operator-Requested PR Delivery
+## Issue Implementation and PR Delivery
 
 An authenticated operator can continue a retained Plan-mode assessment in its
-owning issue chat. Request implementation, PR publication, or both explicitly;
-assignment and a completed plan alone authorize neither. The agent retains the
+owning issue chat. An actionable Plan-mode issue needs human direction to enter implementation;
+once there, ordinary PR delivery needs no separate publication grant. The agent retains the
 complete plan and uses the existing chat, managed worktree, and model selection.
+
+Work policy or an Auto Work decision also permits an actionable plan to enter
+implementation through the verified issue context. OpenClaw automatic continuation
+transport remains unavailable; this does not schedule a new turn. Existing
+implementation stages survive later default-mode edits.
 
 Delivery requires committed work on the task branch. It applies configured
 `issue-assignment.pull-request.recipients`, verifies GitHub's closing link, and
