@@ -3,6 +3,29 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should customize informational icons while preserving warning and error icons', () => {
+    assert.ok(
+      codexIssueNotice({ event: 'intake-recovered', changed: true }).message.startsWith('> ## 💡 '),
+    );
+    assert.ok(
+      codexIssueNotice({
+        event: 'intake-recovered',
+        changed: true,
+        emoji: '✨',
+      }).message.startsWith('> ## ✨ '),
+    );
+    for (const [code, emoji] of [
+      ['intake-activation-required', '⚠️'],
+      ['native-approval-denied', '❌'],
+    ]) {
+      assert.ok(
+        codexIssueNotice({ event: 'failure', code, changed: true, emoji: '✨' }).message.startsWith(
+          `> ## ${emoji} `,
+        ),
+      );
+    }
+  });
+
   it('should distinguish waiting for a scheduled trigger from an approval rejection', () => {
     const notice = codexIssueNotice({
       event: 'failure',

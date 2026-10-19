@@ -220,8 +220,8 @@ for (const scenario of [
       await action(input, 'next');
       append(input, 'next-1', { status: 'pass-completed' });
       await action(input, 'report');
-      append(input, 'report', { status: 'reported', response: '> ## ℹ️ Intake complete' });
-      assert.deepEqual(await response(input), { content: '> ## ℹ️ Intake complete' });
+      append(input, 'report', { status: 'reported', response: '> ## 💡 Intake complete' });
+      assert.deepEqual(await response(input), { content: '> ## 💡 Intake complete' });
       input.messages.push({
         role: 'user',
         content: `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,

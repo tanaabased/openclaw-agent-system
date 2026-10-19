@@ -48,9 +48,13 @@ outcome or call to action.
 
 Use one compact card for the outcome of an intake check:
 
-- **ℹ️ Information:** issues started, pending assignments, or intake recovery.
+- **💡 Information:** issues started, pending assignments, or intake recovery.
+- **✨ Update:** an informational notice about an available update.
 - **⚠️ Warning:** an intake action is needed or a temporary provider delay.
 - **❌ Error:** intake or preparation could not complete.
+
+Informational notices may supply a custom header emoji. Keep warning and error
+icons fixed, and choose severity independently of the informational icon.
 
 List each started item as **Issue:** followed by its repository and number linked
 to its work destination. Do not add an “Open chat” label or duplicate GitHub link.
@@ -65,7 +69,7 @@ include the exact project folder when registration is needed and a bounded diagn
 when useful. Preserve successful starts in a report that also contains an obstacle.
 
 ```markdown
-> ## ℹ️ Intake complete — 2 issues started
+> ## 💡 Intake complete — 2 issues started
 >
 > - **Issue:** [example/project #7](codex://threads/example-7)
 > - **Issue:** [example/project #8](codex://threads/example-8)
@@ -401,7 +405,7 @@ it when the turn finishes. Keep the source card outside the public reply quote.
 >
 > <complete GitHub-facing response>
 
-> ## ℹ️ Reply published
+> ## 💡 Reply published
 >
 > [Published reply ↗](https://github.com/example/project/issues/7#issuecomment-123)
 ```

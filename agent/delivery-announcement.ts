@@ -62,7 +62,7 @@ export function announcementPresentation(
     : '';
   const outcome =
     state?.receipt && !state.code
-      ? `## ℹ️ PR announcement published\n\n[Published announcement ↗](${issueUrl}#issuecomment-${state.receipt.databaseId})`
+      ? `## 💡 PR announcement published\n\n[Published announcement ↗](${issueUrl}#issuecomment-${state.receipt.databaseId})`
       : `## ⚠️ PR announcement pending\n\nThe PR is retained. Recover the announcement in this chat; do not recreate the PR.${state?.code ? `\n\nDiagnostic: \`${state.code}\`.` : ''}`;
   return [quote, githubNotificationQuote(outcome)].filter(Boolean).join('\n\n');
 }

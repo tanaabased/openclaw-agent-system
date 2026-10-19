@@ -26,12 +26,12 @@ describe('agent/codex-dispatch-report', () => {
   it('should show progress transitions as information cards without repeating unchanged notices', () => {
     const progress = { pending: true, sources: 4, reported: undefined as boolean | undefined };
     const current = { ...input, state: { ...state, discoveryProgress: progress } };
-    assert.match(prepareDispatchReport(current).response, /> ## ℹ️ Intake discovery continues/u);
+    assert.match(prepareDispatchReport(current).response, /> ## 💡 Intake discovery continues/u);
     assert.doesNotMatch(prepareDispatchReport(current).response, /DONT_NOTIFY/);
     progress.reported = true;
     assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
     progress.pending = false;
-    assert.match(prepareDispatchReport(current).response, /> ## ℹ️ Intake discovery caught up/u);
+    assert.match(prepareDispatchReport(current).response, /> ## 💡 Intake discovery caught up/u);
     progress.reported = false;
     assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
   });
@@ -43,7 +43,7 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(report.response, /Slots:\*\* 0\/2 occupied/);
     assert.deepEqual(report.started, []);
     const message = report.response.split('<message>')[1]!.split('</message>')[0]!;
-    assert.ok(message.startsWith('> ## ℹ️'));
+    assert.ok(message.startsWith('> ## 💡'));
     assert.ok(message.split('\n').every((line) => line.startsWith('>')));
   });
   it('should report an intake failure and recovery without repeating notifications', () => {

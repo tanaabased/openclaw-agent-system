@@ -32,7 +32,7 @@ export default function feedbackResponse(
     sections.push(
       'url' in input.publication
         ? githubNotificationQuote(
-            `## ℹ️ Reply published\n\n[Published reply ↗](${input.publication.url})`,
+            `## 💡 Reply published\n\n[Published reply ↗](${input.publication.url})`,
           )
         : githubNotificationQuote(
             `## ⚠️ Public reply withheld\n\nPublic reply withheld: \`${input.publication.withheld}\`.`,

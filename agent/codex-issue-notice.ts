@@ -250,6 +250,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
 export default function codexIssueNotice(input: {
   event: IssueNoticeEvent;
   changed: boolean;
+  emoji?: string;
   code?: string;
   providerDiagnostic?: ProviderDiagnostic;
   issue?: { label: string; url: string };
@@ -277,7 +278,10 @@ export default function codexIssueNotice(input: {
     severity: copy.severity,
     notify: input.changed,
     message: githubNotificationCard({
-      emoji: { info: 'ℹ️', warning: '⚠️', error: '❌' }[copy.severity],
+      emoji:
+        copy.severity === 'info'
+          ? (input.emoji ?? '💡')
+          : { warning: '⚠️', error: '❌' }[copy.severity],
       title: copy.title,
       facts,
     }),

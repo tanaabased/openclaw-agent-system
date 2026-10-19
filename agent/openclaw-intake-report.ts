@@ -75,10 +75,10 @@ export default function openclawIntakeReport(input: {
       ? '⚠️ Intake needs attention'
       : '⚠️ Intake checked — some items need attention'
     : started.length
-      ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
+      ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
       : recovered.length
-        ? 'ℹ️ Intake resumed'
-        : 'ℹ️ Intake checked';
+        ? '💡 Intake resumed'
+        : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   const label = (record: OpenClawDispatchRecord) => {
     const item = intake?.records.find((entry) => entry.id === record.intakeId);

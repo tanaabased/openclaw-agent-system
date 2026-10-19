@@ -117,14 +117,14 @@ export default function prepareDispatchReport(input: {
         ? '❌ Intake could not finish'
         : '⚠️ Intake needs attention'
     : started.length
-      ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
+      ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
       : sent.length
-        ? `ℹ️ Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
+        ? `💡 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
         : recovered
-          ? 'ℹ️ Intake resumed'
+          ? '💡 Intake resumed'
           : pending
-            ? `ℹ️ Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-            : 'ℹ️ Intake checked';
+            ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+            : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
   for (const record of started)
