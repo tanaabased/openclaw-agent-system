@@ -2,12 +2,30 @@ import assert from 'node:assert/strict';
 import registrationEvidence from '../scripts/registration-evidence.js';
 
 const config = {
-  agents: { list: [{ id: 'tanaabot', workspace: '/fixture', identity: { secret: 'private' } }] },
+  agents: { entries: { tanaabot: { workspace: '/fixture', identity: { secret: 'private' } } } },
   gateway: { auth: { token: 'secret-token' }, reload: { mode: 'hybrid' } },
 };
 const saved = () => ({ text: JSON.stringify(config), ino: 42, mtimeMs: 123, size: 456 });
 
 describe('registration evidence', () => {
+  it('should retain the legacy roster projection without exposing identity data', () => {
+    const evidence = registrationEvidence({
+      configPath: '/fixture/openclaw.json',
+      read: () => ({
+        ...saved(),
+        text: JSON.stringify({
+          agents: {
+            list: [{ id: 'legacy', workspace: '/legacy', identity: { secret: 'private' } }],
+          },
+        }),
+      }),
+      request: () => ({}),
+    });
+    assert.deepEqual((evidence.saved.value as { agents: unknown }).agents, [
+      { id: 'legacy', workspace: '/legacy' },
+    ]);
+    assert.doesNotMatch(JSON.stringify(evidence), /secret|private/u);
+  });
   it('should distinguish saved and observed config from the running agent list without exposing secrets', () => {
     const calls: string[] = [];
     const evidence = registrationEvidence({

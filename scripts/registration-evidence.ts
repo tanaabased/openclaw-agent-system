@@ -3,6 +3,10 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
+import configuredAgentEntries from '../core/configured-agents.ts';
+
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 const string = (value: unknown) => (typeof value === 'string' ? value : null);
@@ -34,7 +38,7 @@ export default function registrationEvidence(input: {
       return {
         path: input.configPath,
         ...file,
-        agents: agents(object(config.agents).list),
+        agents: agents(configuredAgentEntries(config as OpenClawConfig)),
         reloadMode: string(object(object(config.gateway).reload).mode),
       };
     }),
@@ -46,7 +50,7 @@ export default function registrationEvidence(input: {
         valid: typeof snapshot.valid === 'boolean' ? snapshot.valid : null,
         configRevisionHash: string(snapshot.configRevisionHash),
         appliedConfigHash: string(snapshot.appliedConfigHash),
-        agents: agents(object(object(snapshot.config).agents).list),
+        agents: agents(configuredAgentEntries(object(snapshot.config) as OpenClawConfig)),
       };
     }),
     runningAgents: observe(() => agents(object(input.request('agents.list')).agents)),
