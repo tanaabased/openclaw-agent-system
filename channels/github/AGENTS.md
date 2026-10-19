@@ -41,6 +41,11 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 - Treat implementation clarification as a pause inside the authorized stage.
   Preserve questions and partial work; a new native answer resumes through the
   owning context without another handoff. Never retry unanswered questions on a timer.
+- Admitted feedback follows the issue stage: Plan investigates and plans, Work may
+  implement appropriate changes, and Auto chooses Plan or Work with a reasoned decision.
+  Use the existing stage transition, source identity, and provider credentials; never
+  add a separate repair grant or author list. Preserve original issue results and retain
+  feedback outcomes separately. Update the existing PR and reconcile uncertain writes.
 - Auto results use `decision.mode: plan|work`; interpret older `wait|proceed`
   receipts without rewriting their contents or digests.
 - Preserve actual execution facts: selected native model/effort, consumed stage

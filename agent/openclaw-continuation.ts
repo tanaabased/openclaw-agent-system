@@ -1,3 +1,4 @@
+import { feedbackWorkStarted } from './feedback-work.ts';
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { automationHash } from './automation-hash.ts';
@@ -25,6 +26,7 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
   if (work?.turn && work.turn.status !== 'completed') return 'turn' as const;
   if (work?.deliveryTurn && work.deliveryTurn.status !== 'completed')
     return 'deliveryTurn' as const;
+  if (feedbackWorkStarted(record)) return;
   if (
     work?.result?.outcome === 'done' &&
     !work.deliveryTurn &&

@@ -18,6 +18,15 @@ const record = (phase: DispatchRecord['phase'], events: FeedbackEvent['phase'][]
     feedback: { baseline: {}, events: events.map((phase) => ({ phase }) as FeedbackEvent) },
   }) as DispatchRecord;
 describe('agent/codex-capacity', () => {
+  it('should release an unsubmitted initial continuation once feedback owns implementation', () => {
+    const item = record('complete', ['published']);
+    item.continuation = { phase: 'waiting' } as DispatchRecord['continuation'];
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.feedback!.events[0]!.work = { selection: {} as never };
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+    item.feedback!.events[0]!.phase = 'running';
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+  });
   it('should require native inactivity before releasing blocked or retired creations', () => {
     const item = record('blocked');
     item.effective = { status: 'verified' };

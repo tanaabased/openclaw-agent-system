@@ -208,10 +208,14 @@ until reconciled and are never blindly repeated.
 
 The intake card reports feedback delivered to chats, queued items across issues, and
 occupied slots. Answers and publication outcomes stay in the owning chat;
-unchanged checks remain quiet. Feedback authorizes read-only investigation,
-private explanation and an optional concise public reply. It does not start
-implementation or a review. Publication rechecks the exact source, assignment
-and permissions, and reconciles uncertain writes before another action.
+unchanged checks remain quiet. Feedback follows the issue's stage: Plan permits
+investigation and planning; Work permits appropriate implementation; Auto may choose
+Plan or Work with a reasoned decision. An issue already in implementation keeps that
+stage after default mode changes. Questions can still receive a direct answer.
+Feedback work retains its own result and commit, preserving the original assessment
+and implementation. Delivery updates the same PR and reuses its announcement.
+Publication rechecks the exact source and active assignment, and reconciles uncertain
+writes before another action.
 The chat displays the complete retained private response. The configured
 `feedback.skill` (default `agent-system:agent-system-feedback-reply`) then composes
 a separate public candidate, applying optional `feedback.guidance` and applicable
@@ -249,12 +253,11 @@ work can continue through the configured implementation and managed PR delivery;
 incomplete requirements, broad scope, or consequential uncertainty should wait.
 A ready plan alone does not authorize implementation.
 
-A wait retains the complete plan and releases its implementation slot. Polling and
-feedback cannot promote it; explicitly direct further work in the same chat through
-the [manual handoff](#issue-assessment). Missing or invalid decisions, changed issue
-evidence before implementation, changed selected skill content, lost task identity, and native
-denials stop continuation. Fix the stated obstacle and give explicit direction;
-never recreate the issue chat to bypass its retained stop. Live mode changes govern
+A Plan decision retains the complete plan and releases its implementation slot.
+Polling alone does not change the decision. Newly admitted feedback may support a
+new Auto decision; Plan mode still needs operator direction to enter implementation.
+Missing or invalid decisions, lost task identity, and native denials stop continuation.
+Preserve the issue chat and its retained work when resolving an obstacle. Live mode changes govern
 entry into implementation for existing planning issues. Once implementation has
 started, later mode changes preserve that stage. Auto requires
 a verified Work decision before implementation. OpenClaw uses the same Plan/Work decision and continues eligible work in its existing issue chat.

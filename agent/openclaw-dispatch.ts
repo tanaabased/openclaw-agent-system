@@ -473,6 +473,18 @@ export default class OpenClawDispatch {
           workspace,
           now,
           debug: manifest.debug,
+          signal: authority.signal,
+          connectDelivery: async () => {
+            if (!this.dependencies.delivery) throw new Error('delivery-runtime-unavailable');
+            return this.dependencies.delivery({
+              manifest,
+              workspaceDir: workspace,
+              worktree: record.worktree!,
+              caller,
+              signal: authority.signal ?? AbortSignal.timeout(60000),
+              connection: client,
+            });
+          },
           assertCurrent,
           livePolicy: async () => {
             const live = await this.validateLocal(manifest, workspace, record, false, true);
@@ -1352,33 +1364,36 @@ export default class OpenClawDispatch {
           (event) => event.turn?.runId === caller.runId,
         );
         if (feedbackSource) {
-          if (!workAction)
-            return this.feedback(
-              manifest,
-              current.workspace,
-              record,
-              feedbackSource,
-              caller,
-              {
-                action: 'feedback',
-                id: record.id,
-                eventId: feedbackSource.id,
-                operation: 'context',
-              },
-              save,
-              authority,
-            );
-          const checked = await this.feedback(
+          return this.feedback(
             manifest,
             current.workspace,
             record,
             feedbackSource,
             caller,
-            { action: 'feedback', id: record.id, eventId: feedbackSource.id, operation: 'context' },
+            input.action === 'implementation-context' || input.action === 'implementation-result'
+              ? {
+                  ...input,
+                  action: 'feedback',
+                  operation: input.action,
+                  eventId: feedbackSource.id,
+                }
+              : input.action === 'delivery'
+                ? {
+                    ...input,
+                    action: 'feedback',
+                    operation: 'delivery',
+                    deliveryOperation: input.operation,
+                    eventId: feedbackSource.id,
+                  }
+                : {
+                    action: 'feedback',
+                    id: record.id,
+                    eventId: feedbackSource.id,
+                    operation: 'context',
+                  },
             save,
             authority,
           );
-          if (checked.status !== 'verified') return checked;
         }
         if (input.action === 'retry') {
           if (record.request) throw new Error('dispatch-native-recovery-required');

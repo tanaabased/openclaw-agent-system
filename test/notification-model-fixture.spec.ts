@@ -664,6 +664,44 @@ for (const scenario of [
         runtime: 'openclaw',
         publication: 'allowed',
       });
+      if (scenario.id === 'openclaw-pr') {
+        const last = input.messages.at(-1)!;
+        last.content = JSON.stringify({
+          status: 'verified',
+          runtime: 'openclaw',
+          publication: 'allowed',
+          mode: 'work',
+        });
+        assert.equal((await action(input, 'feedback')).operation, 'implementation-context');
+        append(input, 'feedback-work-context', {
+          status: 'verified',
+          worktree: '/tmp/worktree',
+          implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
+        });
+        const selected = await response(input);
+        assert.ok('toolCalls' in selected);
+        assert.equal(selected.toolCalls?.[0]?.name, 'read');
+        append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+        for (const stage of [
+          'feedback-apply',
+          'feedback-check',
+          'feedback-add',
+          'feedback-commit',
+        ]) {
+          const step = await response(input);
+          assert.ok('toolCalls' in step);
+          assert.equal(step.toolCalls?.[0]?.name, 'agent_system_git');
+          append(input, stage, { exitCode: 0, truncated: false });
+        }
+        assert.equal((await action(input, 'feedback')).operation, 'implementation-result');
+        append(input, 'feedback-work-result', { status: 'recorded' });
+        assert.equal((await action(input, 'feedback')).deliveryOperation, 'prepare');
+        append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });
+        const delivered = await action(input, 'feedback');
+        assert.equal(delivered.deliveryOperation, 'publish');
+        assert.equal(delivered.digest, digest);
+        append(input, 'feedback-delivery-publish', { status: 'published' });
+      }
       const retained = await action(input, 'feedback');
       assert.equal(retained.operation, 'result');
       if (scenario.id !== 'openclaw-pr')

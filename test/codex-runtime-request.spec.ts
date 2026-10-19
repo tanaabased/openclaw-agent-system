@@ -8,6 +8,8 @@ describe('agent/codex-runtime-request', () => {
       ['dispatch', 'context'],
       ['continuation', 'result'],
       ['feedback', 'publish'],
+      ['feedback', 'implementation-context'],
+      ['feedback', 'implementation-result'],
       ['delivery', 'prepare'],
       ['delivery', 'publish'],
       ['delivery', 'announce'],

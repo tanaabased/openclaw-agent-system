@@ -1,3 +1,4 @@
+import { feedbackWorkStarted } from './feedback-work.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -124,6 +125,7 @@ export default async function runCodexContinuation(
           const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
           if (
             record.continuation ||
+            feedbackWorkStarted(record) ||
             record.result?.outcome !== 'plan-ready' ||
             !record.project ||
             !record.worktree ||
@@ -155,6 +157,7 @@ export default async function runCodexContinuation(
           ? state.records.filter(
               (record) =>
                 record.continuation &&
+                !feedbackWorkStarted(record) &&
                 record.result &&
                 record.threadId &&
                 record.worktree &&

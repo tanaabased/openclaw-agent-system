@@ -4,8 +4,8 @@
 
 GitHub notifications require `github.notifications.schema-version: 2`. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
-authority, runtime selection, and current support. OpenClaw currently supports
-Plan-mode issue assignment with the default assessment skill and configured feedback
+authority, runtime selection, and current support. OpenClaw supports
+Plan, Work, and Auto issue assignment with configured feedback
 on retained issues and their linked delivery PRs. Independent review requests warn
 without blocking those workflows.
 Standalone Codex uses its [native workflow controls](../../CODEX.md#github-notification-policy).
@@ -24,6 +24,15 @@ eligible when the operator changes the mode to Work. Once implementation has
 started, changing the default mode does not return the issue to planning. Both
 runtimes retain this stage across restart and recover older implementation receipts
 in place; existing lifecycle and native execution checks still apply.
+
+Feedback uses that same stage in Codex and OpenClaw. Plan feedback can investigate
+and refine the plan; Work feedback may implement appropriate changes; Auto feedback
+may choose Plan or Work with a reasoned decision. Questions need not produce code.
+Each feedback attempt retains its own outcome and commit without replacing the
+original assessment or implementation. Finished work updates the existing PR;
+uncertain pushes are reconciled, and the original announcement is reused. A
+clarification request preserves implementation authority for the next admitted answer.
+No separate repair policy or author list is required.
 
 Discovery retains bounded observations independently of reply eligibility.
 Feedback observed while disabled stays in GitHub history and is not queued for

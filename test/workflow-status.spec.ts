@@ -2,6 +2,32 @@ import assert from 'node:assert/strict';
 import workflowStatus from '../agent/workflow-status.ts';
 
 describe('agent/workflow-status', () => {
+  it('should report feedback progress without reviving the original continuation status', () => {
+    const event = {
+      phase: 'running',
+      work: { head: 'new', result: { outcome: 'clarification-needed' } },
+    };
+    const record = {
+      phase: 'complete',
+      continuation: { phase: 'waiting' },
+      feedback: { events: [event] },
+    };
+    assert.equal(workflowStatus(record), 'clarification-needed');
+    event.work.result.outcome = 'done';
+    assert.equal(workflowStatus(record), 'delivery');
+    const delivery = {
+      pullRequest: { pullRequestNumber: 7 },
+      reconciled: true,
+      pushedHead: 'old',
+      announcement: { receipt: {} },
+    };
+    assert.equal(workflowStatus({ ...record, delivery }), 'delivery');
+    delivery.pushedHead = 'new';
+    assert.equal(workflowStatus({ ...record, delivery }), 'complete');
+    assert.equal(workflowStatus({ ...record, work: { delivery } }), 'complete');
+    event.work.result.outcome = 'blocked';
+    assert.equal(workflowStatus({ ...record, delivery }), 'blocked');
+  });
   it('should report the current implementation stage instead of the completed assessment', () => {
     const assessment = { phase: 'complete', result: { outcome: 'plan-ready' } };
     assert.equal(workflowStatus(assessment), 'plan-ready');

@@ -2676,6 +2676,43 @@ describe('agent/codex-dispatch', () => {
     };
   }
 
+  it('should not replay the initial plan after feedback has begun implementation', async () => {
+    const work = await workIssue();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.feedback = {
+        baseline: {},
+        events: [
+          {
+            id: 'a'.repeat(64),
+            sourceId: 'comment',
+            number: 3,
+            nodeId: 'I_issue',
+            itemType: 'issue',
+            source: '{}',
+            revision: 'b'.repeat(64),
+            createdAt: now,
+            policyDigest: 'c'.repeat(64),
+            phase: 'published',
+            work: {
+              selection: record.continuation!.selection,
+              result: {
+                outcome: 'done',
+                summary: 'Completed from feedback.',
+                fullResult: 'Work retained on feedback.',
+              },
+            },
+          },
+        ],
+      };
+      record.progression = { stage: 'implementation', via: 'work', enteredAt: now };
+      await save();
+    });
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await store.read()).records[0]!.continuation!.attempt, undefined);
+  });
   it('should preserve a prepared continuation through host failure and retry its receipt without another send', async () => {
     const work = await workIssue();
     assert.equal((await work.run('next')).status, 'prepared');

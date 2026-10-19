@@ -1,3 +1,6 @@
+import authorizeCodexFeedback from './codex-feedback-authority.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
+import { feedbackMode } from './feedback-work.ts';
 import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
@@ -55,6 +58,7 @@ const requestSchema = Type.Object(
       ),
     ),
     id: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+    eventId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     digest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
@@ -65,6 +69,7 @@ const requestSchema = Type.Object(
 type DeliveryRequest = Static<typeof requestSchema>;
 export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
   activation?: typeof inspectCodexDispatchActivation;
+  feedbackConnect?: typeof connectCodexFeedback;
   connect?: typeof connectCodexGitHubAccount;
   git?: DispatchGit;
   delay?: typeof abortableDelay;
@@ -295,8 +300,57 @@ export default async function runCodexDelivery(
           ].join('\n\n'),
         };
       }
-      if (deps.schedule) {
+      const feedbackEvent = record.feedback?.events.find(
+        (event) => event.attempt?.turnId === found.turnId,
+      );
+      if (feedbackEvent && input.eventId !== feedbackEvent.id)
+        throw new Error('feedback-event-required');
+      if (input.eventId && feedbackEvent?.id !== input.eventId)
+        throw new Error('feedback-owner-caller-required');
+      const authorizePublication = async () => {
         await deps.authorizeSchedule?.();
+        if (!input.eventId) return;
+        const event = feedbackEvent!;
+        if (
+          !event.work ||
+          event.work.result?.outcome !== 'done' ||
+          !event.work.head ||
+          ['blocked', 'published'].includes(event.phase)
+        )
+          throw new Error('feedback-implementation-result-required');
+        if (
+          event.work.pullRequest &&
+          automationHash(record.delivery?.pullRequest) !== automationHash(event.work.pullRequest)
+        )
+          throw new Error('feedback-delivery-owner-changed');
+        const live = await selectCodexIntake(pluginData, { ...deps, connect: undefined });
+        feedbackMode(record, live.manifest.github!.notifications!);
+        const activated = await (deps.activation ?? inspectCodexDispatchActivation)(
+          pluginData,
+          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+          false,
+          true,
+          'feedback',
+        );
+        if (!activated.schedule || activated.sourceThreadId !== record.sourceThreadId)
+          throw new Error('feedback-schedule-owner-changed');
+        requireWorkflowSchedule(activated.schedule.saved, activated.schedule.current, 'feedback');
+        await authorizeCodexFeedback({
+          current: live,
+          record,
+          event,
+          intake,
+          provider: await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal),
+        });
+        if (
+          (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim() !==
+          event.work.head
+        )
+          throw new Error('feedback-implementation-head-changed');
+      };
+      if (input.eventId) await authorizePublication();
+      else if (deps.schedule) {
+        await authorizePublication();
         if (
           record.continuation &&
           (record.continuation.phase !== 'delivery' ||
@@ -374,9 +428,11 @@ export default async function runCodexDelivery(
           throw new Error('delivery-committed-work-required');
       }
       const recipients =
-        current.manifest.github?.notifications?.schemaVersion === 2
-          ? current.manifest.github.notifications.issueAssignment?.pullRequest?.recipients
-          : undefined;
+        input.eventId && previous?.pullRequest
+          ? []
+          : current.manifest.github?.notifications?.schemaVersion === 2
+            ? current.manifest.github.notifications.issueAssignment?.pullRequest?.recipients
+            : undefined;
       if (!announcementOnly) resolvePullRequestRecipients(recipients, intake.assignment.actor);
       const binding = {
         repositoryId: intake.repository.nodeId,
@@ -491,7 +547,7 @@ export default async function runCodexDelivery(
           },
           authorize: async () => {
             signal.throwIfAborted();
-            await deps.authorizeSchedule?.();
+            await authorizePublication();
             await revalidateDispatchAssignment(
               current,
               intake,
@@ -522,7 +578,7 @@ export default async function runCodexDelivery(
               : 'Use the existing explicit human publication authorization for this issue, including authorized follow-up commits; ask only if the requested effect is outside that authorization. Execute delivery publish with this id and digest through native approval, retaining title/body if supplied. Preparation does not grant permission and a native denial stops the operation.'),
         };
       if (input.action === 'publish') {
-        await deps.authorizeSchedule?.();
+        await authorizePublication();
         record.delivery = delivery;
         await save();
         try {
@@ -554,7 +610,9 @@ export default async function runCodexDelivery(
               await save();
             },
             beforeCreate: async () => {
-              await deps.authorizeSchedule?.();
+              await authorizePublication();
+              if (feedbackEvent?.work?.pullRequest)
+                throw new Error('feedback-delivery-owner-changed');
               if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
               delivery.creationAttempted = true;
               await save();
@@ -564,7 +622,22 @@ export default async function runCodexDelivery(
               await save();
             },
           };
-          const provider = new IssueDeliveryProvider(connected.account, deps.delay);
+          const provider = new IssueDeliveryProvider(
+            {
+              identity: connected.account.identity,
+              execute: async (...args) => {
+                const argv = args[0];
+                if (
+                  ['POST', 'PATCH', 'PUT', 'DELETE'].includes(
+                    argv[argv.indexOf('--method') + 1] ?? '',
+                  )
+                )
+                  await authorizePublication();
+                return connected.account.execute(...args);
+              },
+            },
+            deps.delay,
+          );
           const remoteRef = `refs/heads/${branch}`;
           const remote = (
             await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
@@ -593,7 +666,7 @@ export default async function runCodexDelivery(
               const preferred = preferGitHubSshWorktreeRemote(remote);
               return preferred === remote ? [] : ['-c', `url.${preferred}.insteadOf=${remote}`];
             });
-            await deps.authorizeSchedule?.();
+            await authorizePublication();
             await git(
               found.cwd,
               [...transport, 'push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
@@ -608,7 +681,7 @@ export default async function runCodexDelivery(
             throw new Error('delivery-push-unverified');
           delivery.pushedHead = head;
           await save();
-          await deps.authorizeSchedule?.();
+          await authorizePublication();
           // only the exact pre-push observation may lag behind a verified fast-forward.
           if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
           await provider.publish(publication);

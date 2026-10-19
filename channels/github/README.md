@@ -24,12 +24,14 @@ only the requested work. The agent keeps the same worktree and returns a quoted
 card linking the issue and PR. If publication is interrupted, continue in that chat
 so it can reconcile the existing attempt without creating another PR.
 
-Set `issue-assignment.feedback` and run Install to activate comment intake. Approved
+Once intake is installed, set `issue-assignment.feedback` to enable comment intake. Approved
 mentions in issue comments, PR conversation comments, submitted reviews, and inline
 replies return to the original issue chat. The agent retains its complete private
 answer and composes a separate public reply with the configured feedback skill.
 Inline replies return to their original review thread; other replies return to the
-source issue or PR. Feedback grants explanation and replies, never implementation.
+source issue or PR. Feedback follows the issue stage: Plan investigates and plans;
+Work may implement appropriate changes; Auto may choose Plan or Work. Updates stay
+on the existing PR, with the original assessment and implementation preserved.
 Busy chats queue comments in the shared oldest-eligible capacity pool. Edited or
 removed sources and changed authority stop pending replies; uncertain sends or
 publications are reconciled without repeating them.

@@ -497,7 +497,8 @@ The coordinator then starts one journaled assessment turn. The issue session use
 retain a complete plan, clarification, or setup blocker through the shared assessment
 contract. Later answers refresh context and revise the retained result in the same
 session. An authenticated operator can authorize implementation and linked PR delivery
-in that chat. Feedback never inherits those grants. Uncertain creation or send
+in that chat. Admitted feedback follows the same issue stage: Plan stays in planning,
+Work may implement, and Auto may choose with a reasoned decision. Uncertain creation or send
 effects are retained, never repeated.
 For blocked creation confirmation, inspect with `agent_system_dispatch` action
 `inspect` (no `id`), then request action `reconcile` with the saved receipt `id`

@@ -39,6 +39,10 @@ const dispatchStages = [
   'delivery-present',
   'assessment-present',
   'feedback-context',
+  'feedback-work-context',
+  'feedback-work-result',
+  'feedback-delivery-prepare',
+  'feedback-delivery-publish',
   'feedback-result',
   'feedback-compose',
   'feedback-candidate',
@@ -253,13 +257,79 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       context.publication !== 'allowed'
     )
       return;
+    if (context.mode !== 'work') return;
+    const work = result('feedback-work-context');
+    if (!work)
+      return dispatch('feedback-work-context', { ...args, operation: 'implementation-context' });
+    const implementation = work.implementation as { skill?: { path?: string } } | undefined;
+    if (
+      work.status !== 'verified' ||
+      typeof work.worktree !== 'string' ||
+      !implementation?.skill?.path
+    )
+      return;
+    if (
+      openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') === undefined
+    )
+      return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
+    const file = `notification-fixture-${id}.md`;
+    const patch = `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep feedback changes on the original PR.\n`;
+    const steps = [
+      { stage: 'feedback-apply', argv: ['apply', '-'], stdin: patch },
+      { stage: 'feedback-check', argv: ['diff', '--check'] },
+      { stage: 'feedback-add', argv: ['add', '--', file] },
+      {
+        stage: 'feedback-commit',
+        argv: ['commit', '-m', 'document feedback update continuity', '--', file],
+      },
+    ];
+    for (const step of steps) {
+      const executed = result(step.stage);
+      if (!executed)
+        return call(step.stage, 'agent_system_git', {
+          argv: step.argv,
+          cwd: work.worktree,
+          ...('stdin' in step ? { stdin: step.stdin } : {}),
+        });
+      if (executed.exitCode !== 0 || executed.truncated !== false) return;
+    }
+    const completed = result('feedback-work-result');
+    if (!completed)
+      return dispatch('feedback-work-result', {
+        ...args,
+        operation: 'implementation-result',
+        implementationResult: {
+          outcome: 'done',
+          summary: 'Added the feedback continuity note.',
+          fullResult:
+            'Updated the original note, checked the diff, and committed the feedback change.',
+        },
+      });
+    if (completed.status !== 'recorded') return;
+    const delivery = result('feedback-delivery-prepare');
+    if (!delivery)
+      return dispatch('feedback-delivery-prepare', {
+        ...args,
+        operation: 'delivery',
+        deliveryOperation: 'prepare',
+      });
+    if (delivery.status !== 'prepared' || typeof delivery.digest !== 'string') return;
+    const delivered = result('feedback-delivery-publish');
+    if (!delivered)
+      return dispatch('feedback-delivery-publish', {
+        ...args,
+        operation: 'delivery',
+        deliveryOperation: 'publish',
+        digest: delivery.digest,
+      });
+    if (delivered.status !== 'published') return;
     const saved = result('feedback-result');
     if (!saved)
       return dispatch('feedback-result', {
         ...args,
         operation: 'result',
         privateText:
-          'The retained plan was implemented as a cleanup note. The linked PR contains the initial commit and its follow-up. This feedback turn only explains the existing result; no additional repository changes were made.',
+          'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.',
       });
     if (saved.status !== 'recorded') return;
     const composition = result('feedback-compose');
@@ -280,7 +350,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         operation: 'candidate',
         digest: composition.digest,
         publicText:
-          'The linked PR adds the cleanup note from the retained plan. No further code changes were made in response to this comment.',
+          'Added the requested note about keeping feedback changes on the original PR, checked the diff, and pushed the commit to this PR.',
       });
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('feedback-preview');
@@ -643,6 +713,7 @@ export const prExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'feedback-skill', name: 'read' },
+    { id: prefix + 'feedback-implementation-skill', name: 'read' },
     { id: prefix + 'delivery-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
@@ -650,7 +721,16 @@ export const prExampleScenario: OpenClawAIMockScenario = {
         name: 'agent_system_dispatch',
       })),
     ),
-    ...['git', 'apply', 'add', 'commit'].map((stage) => ({
+    ...[
+      'git',
+      'apply',
+      'add',
+      'commit',
+      'feedback-apply',
+      'feedback-check',
+      'feedback-add',
+      'feedback-commit',
+    ].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_git',
     })),

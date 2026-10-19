@@ -37,6 +37,7 @@ export default async function openClawDelivery(input: {
   base: string;
   recipients?: GitHubPullRequestRecipient[];
   feedbackEnabled: boolean;
+  existingOnly?: boolean;
   selectAnnouncement?(
     state?: DeliveryAnnouncementState,
   ): Promise<DeliveryAnnouncementState['composition']>;
@@ -213,6 +214,7 @@ export default async function openClawDelivery(input: {
     expectedPullRequest: delivery.pullRequest,
     async beforeCreate() {
       await assertCurrent();
+      if (input.existingOnly) throw new Error('feedback-delivery-owner-changed');
       if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
       delivery.creationAttempted = true;
       await save();

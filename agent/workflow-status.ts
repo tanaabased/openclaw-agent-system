@@ -2,6 +2,7 @@ interface Delivery {
   pullRequest?: { pullRequestNumber: number };
   reconciled?: boolean;
   attached?: boolean;
+  pushedHead?: string;
   announcement?: { receipt?: unknown };
 }
 interface State {
@@ -15,6 +16,14 @@ interface State {
   continuation?: { phase?: string; code?: string; retry?: unknown; message?: string };
   progression?: { stage: string };
   delivery?: Delivery;
+  feedback?: {
+    events: Array<{
+      phase: string;
+      retry?: unknown;
+      work?: { head?: string; result?: { outcome: string } };
+      workDelivery?: Delivery;
+    }>;
+  };
   work?: {
     delivery?: Delivery;
     result?: { outcome: string };
@@ -36,12 +45,22 @@ export default function workflowStatus(record: State) {
     record.result?.code === 'dispatch-assignment-superseded'
   )
     return 'obsolete';
-  const delivery = record.delivery ?? record.work?.delivery;
+  const feedback = record.feedback?.events.findLast((event) => event.work);
+  const delivery = feedback?.workDelivery ?? record.delivery ?? record.work?.delivery;
+  if (feedback) {
+    if (feedback.phase === 'blocked' || feedback.work?.result?.outcome === 'blocked')
+      return 'blocked';
+    if (feedback.retry) return 'retrying';
+    if (feedback.work?.result?.outcome === 'clarification-needed') return 'clarification-needed';
+    if (!feedback.work?.result) return 'running';
+    if (!delivery?.reconciled || delivery.pushedHead !== feedback.work.head) return 'delivery';
+  }
   if (
     delivery?.pullRequest &&
     (!delivery.reconciled || delivery.attached === false || !delivery.announcement?.receipt)
   )
     return 'partially-delivered';
+  if (feedback) return 'complete';
   if (record.work?.code || record.work?.result?.outcome === 'blocked') return 'blocked';
   const failure = record.continuation ?? record;
   if (failure.phase === 'blocked' || failure.phase === 'cancelled') return 'blocked';

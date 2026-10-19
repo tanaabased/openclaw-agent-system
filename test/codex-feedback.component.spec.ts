@@ -207,7 +207,16 @@ describe('agent/codex-feedback', () => {
         args[0] === 'remote' ? 'https://github.com/owner/repo.git' : commonDir,
       feedbackConnect: async () =>
         ({
-          client: fixture.client,
+          client: {
+            ...fixture.client,
+            getItemContext: async () => ({
+              title: 'Issue',
+              body: 'Issue context',
+              comments: [],
+              labels: [],
+              truncated: false,
+            }),
+          },
           comments: {
             identity: account,
             listIssueComments: async () => ({ comments, truncated: false }),
@@ -228,6 +237,119 @@ describe('agent/codex-feedback', () => {
     };
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
+  async function feedbackMode(mode: 'plan' | 'work' | 'auto') {
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].mode = mode;
+    await writeFile(path, JSON.stringify(manifest));
+  }
+  it('should keep plan feedback in planning and use live work policy without install', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const context = await call('context', ref, true);
+    assert.equal('mode' in context && context.mode, 'plan');
+    const held = await call('implementation-context', ref, true);
+    assert.equal('reason' in held && held.reason, 'implementation-disabled');
+    await feedbackMode('work');
+    const active = await call('implementation-context', ref, true);
+    assert.equal(active.status, 'verified');
+    await feedbackMode('plan');
+    const retained = await call('context', ref, true);
+    assert.equal('mode' in retained && retained.mode, 'work');
+    assert.equal((await store.read()).records[0]!.result!.outcome, 'plan-ready');
+  });
+  it('should retain feedback clarification and completed work without overwriting the initial result', async () => {
+    await feedbackMode('work');
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const original = (await store.read()).records[0]!.result;
+    await call('implementation-context', ref, true);
+    const result = {
+      outcome: 'clarification-needed',
+      summary: 'Need a value.',
+      fullResult: 'Partial work is retained.',
+      questions: ['Which value?'],
+    };
+    assert.equal(
+      (await call('implementation-result', { ...ref, implementationResult: result }, true)).status,
+      'recorded',
+    );
+    assert.equal((await call('implementation-context', ref, true)).status, 'finished');
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.progression?.stage, 'implementation');
+    assert.deepEqual(saved.feedback!.events[0]!.work!.result, result);
+    assert.deepEqual(saved.result, original);
+    await call('result', { ...ref, result: { privateText: 'Which value?' }, reply: false }, true);
+    await feedbackMode('plan');
+    sent = false;
+    ended = true;
+    occurrence++;
+    comments.push({
+      ...comments[0]!,
+      nodeId: 'answer',
+      databaseId: 43,
+      body: '@receiver use the smaller value.',
+      createdAt: '2026-10-13T01:01:00Z',
+      updatedAt: '2026-10-13T01:01:00Z',
+    });
+    const next = await call('next');
+    assert.equal(next.status, 'feedback-prepared');
+    assert.ok('eventId' in next && next.eventId);
+    sent = true;
+    ended = false;
+    turn = 'feedback-answer';
+    const resumed = await call('implementation-context', { id, eventId: next.eventId }, true);
+    assert.equal(resumed.status, 'verified');
+    assert.ok('previousFeedbackWork' in resumed && resumed.previousFeedbackWork);
+    assert.deepEqual(resumed.previousFeedbackWork[0]!.result, result);
+  });
+  it('should require a reasoned auto work decision and bind done feedback to its commit', async () => {
+    await feedbackMode('auto');
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const held = await call('implementation-context', ref, true);
+    assert.equal('reason' in held && held.reason, 'auto-decision-required');
+    const selected = await call(
+      'implementation-context',
+      {
+        ...ref,
+        decision: {
+          mode: 'work',
+          reasons: ['Bounded correction.'],
+          plan: 'Correct and test the handler.',
+        },
+      },
+      true,
+    );
+    assert.equal(selected.status, 'verified');
+    const git = deps.git!;
+    deps.git = async (cwd, args, signal) =>
+      args[0] === 'status'
+        ? ''
+        : args.join(' ') === 'rev-parse --verify HEAD'
+          ? 'c'.repeat(40)
+          : git(cwd, args, signal);
+    const result = { outcome: 'done', summary: 'Corrected.', fullResult: 'Corrected and tested.' };
+    assert.equal(
+      (await call('implementation-result', { ...ref, implementationResult: result }, true)).status,
+      'recorded',
+    );
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.feedback!.events[0]!.work!.head, 'c'.repeat(40));
+    assert.equal(saved.progression?.via, 'auto');
+    assert.equal((await call('implementation-context', ref, true)).status, 'finished');
+    const conflict = await call(
+      'implementation-result',
+      { ...ref, implementationResult: { ...result, summary: 'Different.' } },
+      true,
+    );
+    assert.equal('code' in conflict && conflict.code, 'feedback-implementation-result-conflict');
+  });
   it('should retain the previous policy check even when feedback discovery is cached', async () => {
     const path = join(root, 'workspace', 'agent.yaml');
     const manifest = JSON.parse(await readFile(path, 'utf8'));
@@ -445,7 +567,9 @@ describe('agent/codex-feedback', () => {
     turn = 'feedback';
     const context = await call('context', ref, true);
     assert.equal(context.status, 'verified');
-    assert.ok('resultSchema' in context && context.resultSchema);
+    assert.ok(
+      'resultSchema' in context && context.resultSchema && 'properties' in context.resultSchema,
+    );
     assert.deepEqual(Object.keys(context.resultSchema.properties), ['privateText']);
     await recordReply(ref, 'Detailed private answer.', 'A concise answer.');
     const preview = await call('publish', ref, true);

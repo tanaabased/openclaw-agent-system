@@ -26,6 +26,8 @@ const actions: Record<string, readonly string[]> = {
   ],
   delivery: ['prepare', 'publish', 'reconcile', 'compose', 'candidate', 'announce', 'present'],
   feedback: [
+    'implementation-context',
+    'implementation-result',
     'next',
     'context',
     'result',

@@ -3827,6 +3827,21 @@ describe('agent/openclaw issue dispatch', () => {
         (await service.run(manifest, root, who, { action, id }, false)).status,
         'verified',
       );
+    const priorWork = (await record()).work?.result;
+    const clarification = {
+      outcome: 'clarification-needed' as const,
+      summary: 'Need a value.',
+      fullResult: 'Partial feedback work retained.',
+      questions: ['Which value?'],
+    };
+    const completed = await service.run(manifest, root, who, {
+      action: 'implementation-result',
+      id,
+      implementationResult: clarification,
+    });
+    assert.equal(completed.status, 'recorded');
+    assert.deepEqual((await record()).feedback!.events[0]!.work!.result, clarification);
+    assert.deepEqual((await record()).work?.result, priorWork);
     const result = await service.run(manifest, root, who, {
       action: 'feedback',
       operation: 'result',

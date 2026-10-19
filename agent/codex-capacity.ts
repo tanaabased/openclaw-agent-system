@@ -1,3 +1,4 @@
+import { feedbackWorkStarted } from './feedback-work.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 /** unresolved native custody is independent of whether legacy retirement released a queue slot. */
@@ -13,6 +14,9 @@ function reserved(record: DispatchRecord): boolean {
     Boolean(
       !record.handoff &&
       record.continuation &&
+      (!feedbackWorkStarted(record) ||
+        record.continuation.attempt ||
+        record.continuation.binding) &&
       (!record.continuation.policyHeld ||
         record.continuation.attempt ||
         record.continuation.binding) &&
