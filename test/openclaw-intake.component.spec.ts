@@ -23,7 +23,7 @@ import type { NativeAutomation } from '../agent/automation-gateway.ts';
 import { intakeLocation } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
-import { baseline, intakeFixture } from './github-intake-fixture.ts';
+import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 function manifest() {
   const { policy } = intakeFixture();
@@ -110,6 +110,28 @@ describe('openclaw v2 intake slice', () => {
       'ready',
     );
     assert.equal((await store.read())!.policyDigest, selected!.digest);
+  });
+  it('should require current activation rather than upgrading an original retained-work digest', async () => {
+    const f = fixture();
+    await f.service.run(f.value, root, 'activate');
+    const { selected, store } = await f.service.select(f.value, root);
+    const original = originalIntakeDigest(f.value);
+    await store.exclusive(async (state, save) => {
+      state!.policyDigest = original;
+      await save(state!);
+    });
+    assert.equal(
+      (await f.service.inspect(f.value, root)).code,
+      'intake-policy-reconciliation-required',
+    );
+    const connects = f.connects();
+    await assert.rejects(f.service.run(f.value, root, 'scan', original), /intake-policy-changed/);
+    await assert.rejects(
+      f.service.run(f.value, root, 'scan', selected!.digest),
+      /intake-policy-reconciliation-required/,
+    );
+    assert.equal((await store.read())!.policyDigest, original);
+    assert.equal(f.connects(), connects);
   });
   it('should keep activated intake after cadence, capacity and grace changes', async () => {
     const f = fixture();

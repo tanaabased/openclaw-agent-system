@@ -79,6 +79,12 @@ touch "$TMPDIR/notification-activation-ready"
 
 ## Testing
 
+The historical-receipt regression seeds one original fingerprint only while the
+disposable Gateway is stopped. Checkout helpers prepare that input; the packed
+plugin performs the native continuation. This is test setup, not an operator
+recovery procedure. It follows the separate current-format reordering journey;
+historical hashes remain order-sensitive.
+
 ```bash
 # should expose the install-managed account through the native channel status interface
 test -f "$TMPDIR/notification-activation-ready"
@@ -161,6 +167,43 @@ node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-refresh-context" 300000
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,inputRunIds:["notification-refresh-context"]}')" --json | jq -e '[.messages[] | select(.role == "assistant" and .__openclaw.runId == "notification-refresh-context" and .stopReason == "stop")] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | if contains("## Assessment") and contains("Model routing") and contains("Assessment instructions") and contains("Plan summary") then (index("## Assessment") < index("Model routing")) and (index("Model routing") < index("Assessment instructions")) and (index("Assessment instructions") < index("Plan summary")) and contains("Fresh issue context verified after restart") and contains("notification-hidden-initial-fact") == false and contains("notification-hidden-later-fact") == false else error("required refreshed response heading missing") end else error("one stopped refreshed response required") end'
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+
+# should continue an unchanged original receipt in its existing issue conversation after restart
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
+openclaw-gateway stop --timeout 340
+node --import tsx --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+const { default: parse } = await import(process.env.GITHUB_WORKSPACE + '/manifest/parse.ts');
+const { originalIntakeDigest } = await import(process.env.GITHUB_WORKSPACE + '/test/github-intake-fixture.ts');
+const { automationHash } = await import(process.env.GITHUB_WORKSPACE + '/agent/automation-hash.ts');
+const parsed = parse(readFileSync('agent.yaml', 'utf8'));
+assert.equal(parsed.status, 'valid');
+const before = JSON.parse(readFileSync(process.env.TMPDIR + '/notification-dispatch-before.json', 'utf8'));
+const directory = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
+let found = 0;
+for (const file of readdirSync(directory).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json'))) {
+  const path = directory + '/' + file;
+  const state = JSON.parse(readFileSync(path, 'utf8'));
+  for (const record of state.records.filter(record => record.id === before.id)) {
+    found++;
+    record.manifestDigest = automationHash({ policy: originalIntakeDigest(parsed.manifest), models: parsed.manifest.models });
+    writeFileSync(process.env.TMPDIR + '/notification-historical-before.json', JSON.stringify(record));
+  }
+  writeFileSync(path, JSON.stringify(state));
+}
+assert.equal(found, 1);
+NODE
+openclaw-gateway start
+conversation=$(jq -er .threadId "$TMPDIR/notification-historical-before.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-historical-before.json")
+receipt=$(jq -er .id "$TMPDIR/notification-historical-before.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:("Refresh retained assessment for managed issue " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-historical-context"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-historical-context"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-historical-context 300000
+jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one original owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+jq -e --slurpfile before "$TMPDIR/notification-historical-before.json" '. as $after | $before[0] as $before | ([.id,.intakeId,.threadId,.sessionCreation,.worktree,.routing,.effective,.manifestDigest,.assessmentTurn] == [$before.id,$before.intakeId,$before.threadId,$before.sessionCreation,$before.worktree,$before.routing,$before.effective,$before.manifestDigest,$before.assessmentTurn]) and .resultTurnId == "notification-historical-context" and .assessmentRevision == ($before.assessmentRevision + 1) and .result.plan == $before.result.plan and (.result.fullAssessment | contains($before.result.fullAssessment)) and .assessmentCaller.inputEventId != null and .stageReceipt.binding.turnId == .resultTurnId and .handoff == null and .reset == null and .retirement == null and .retired == null' "$TMPDIR/notification-dispatch-before.json"
 
 # should reactivate an unassigned issue from approved feedback in its original chat
 test -f "$TMPDIR/notification-activation-ready"

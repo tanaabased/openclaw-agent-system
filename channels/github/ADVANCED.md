@@ -26,8 +26,10 @@ and review settings do not revoke that reply or grant it permission to change co
 Changed reply skill content or guidance can be loaded again with `compose`; the
 private answer is retained and the unattempted public draft is replaced. An attempted
 write must be reconciled before further publication.
-Older receipts retain their original authority check until replaced; changed older policies
-can still require reconciliation.
+After current activation is reconciled through Install, supported unchanged original
+OpenClaw assignments can refresh their assessment in the existing chat and accept
+fresh authorization to continue, preserving the saved work. Changed or unprovable
+historical settings can still block continuation.
 
 ## Assignment lifecycle
 

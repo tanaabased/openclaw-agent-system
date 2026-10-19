@@ -23,7 +23,7 @@ import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import { Value } from 'typebox/value';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { baseline, intakeFixture } from './github-intake-fixture.ts';
+import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 describe('agent/openclaw issue dispatch', () => {
   let root: string;
@@ -2473,6 +2473,183 @@ describe('agent/openclaw issue dispatch', () => {
       __openclaw: { id: 'operator-event', idempotencyKey: 'operator:user', senderIsOwner: owner },
     });
     return { id: input.id, who: assessor(input.id, 'operator') };
+  }
+
+  async function originalAssignment() {
+    const setup = await operatorFollowup();
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.manifestDigest = automationHash({
+        policy: originalIntakeDigest(manifest),
+        models: manifest.models,
+      });
+      await save();
+    });
+    const before = await record();
+    service = new OpenClawDispatch(service.dependencies);
+    return { ...setup, before };
+  }
+
+  it('should refresh an original assignment and hand off in the same native owner after upgrade', async () => {
+    const { id, who, before } = await originalAssignment();
+    const refreshed = await context(id, who);
+    assert.equal(refreshed.status, 'verified');
+    assert.ok('previousResult' in refreshed && 'previousResultDigest' in refreshed);
+    assert.deepEqual(refreshed.previousResult, plan);
+    assert.equal(refreshed.previousResultDigest, automationHash(plan));
+    const afterRefresh = await record();
+    assert.deepEqual(afterRefresh.stageReceipt, before.stageReceipt);
+    assert.deepEqual(afterRefresh.result, before.result);
+    const revised = { ...plan, plan: plan.plan + ' Preserve existing callers.' };
+    assert.equal(
+      (await submit(id, revised, refreshed.previousResultDigest, who)).status,
+      'recorded',
+    );
+    messages.push({
+      role: 'user',
+      content: 'Implement the revised plan and open a PR.',
+      idempotencyKey: 'implement:user',
+      __openclaw: { id: 'implement-event', idempotencyKey: 'implement:user', senderIsOwner: true },
+    });
+    const operator = { ...who, runId: 'implement' };
+    const request = {
+      action: 'handoff' as const,
+      id,
+      permission: 'implementation-and-publication' as const,
+    };
+    const preview = await service.run(manifest, root, operator, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    assert.equal(
+      (await service.run(manifest, root, operator, { ...request, digest: preview.digest }, true))
+        .status,
+      'handed-off',
+    );
+    assert.equal(
+      (await service.run(manifest, root, operator, { action: 'implementation-context', id }, true))
+        .status,
+      'verified',
+    );
+    const after = await record();
+    for (const key of [
+      'id',
+      'intakeId',
+      'threadId',
+      'sessionCreation',
+      'worktree',
+      'routing',
+      'effective',
+      'manifestDigest',
+      'assessmentTurn',
+    ] as const)
+      assert.deepEqual(after[key], before[key], key);
+    assert.deepEqual(after.result, revised);
+    assert.equal(after.assessmentRevision, before.assessmentRevision! + 1);
+    assert.deepEqual(after.stageReceipt, {
+      binding: { ...before.stageReceipt!.binding, turnId: who.runId },
+      resultDigest: automationHash(revised),
+    });
+    assert.deepEqual(after.assessmentCaller, { runId: who.runId, inputEventId: 'operator-event' });
+    assert.equal(after.work?.implementation?.inputEventId, 'implement-event');
+    assert.deepEqual(after.work?.publication, after.work?.implementation);
+    assert.equal(after.reset, undefined);
+    assert.equal(after.retirement, undefined);
+    assert.equal(after.retired, undefined);
+    assert.equal(creates().length, 1);
+    assert.equal(preparedWorktrees, 1);
+    assert.equal(sends().length, 1);
+  });
+
+  for (const change of ['policy', 'models', 'cleanup', 'stale-readback'] as const) {
+    it(`should reject original custody after changed ${change} before provider or native credentials`, async () => {
+      const { id, who } = await originalAssignment();
+      if (change === 'policy') manifest.github!.notifications!.issueAssignment!.feedback = true;
+      if (change === 'models') manifest.models!.medium!.effort = 'medium';
+      if (change === 'cleanup')
+        manifest.github!.notifications!.cleanup = { enabled: false, graceMinutes: 60 };
+      if (change === 'stale-readback') {
+        const manifests = service.dependencies.intake.dependencies.manifestService;
+        const load = manifests.loadForAgentId.bind(manifests);
+        const fresh = structuredClone(manifest);
+        fresh.models!.medium!.effort = 'medium';
+        manifests.loadForAgentId = async (...args) => ({
+          ...(await load(...args)),
+          manifest: fresh,
+        });
+      } else await service.dependencies.intake.run(manifest, root, 'activate');
+      service.dependencies.connect = async () => {
+        throw new Error('provider must not connect');
+      };
+      service.dependencies.credential.use = async () => {
+        throw new Error('native credentials must not resolve');
+      };
+      await assert.rejects(context(id, who), /dispatch-policy-changed/);
+      await assert.rejects(
+        service.run(
+          manifest,
+          root,
+          who,
+          { action: 'handoff', id, permission: 'implementation' },
+          true,
+        ),
+        /dispatch-policy-changed/,
+      );
+    });
+  }
+  for (const change of ['account', 'repository', 'assignment'] as const) {
+    it(`should reject original custody with invalid ${change} before native credentials`, async () => {
+      const { id, who } = await originalAssignment();
+      const connect = service.dependencies.connect;
+      service.dependencies.connect = async (...args) => {
+        const client = await connect(...args);
+        if (change === 'account')
+          return { ...client, identity: { ...client.identity, nodeId: 'foreign' } };
+        return client;
+      };
+      if (change === 'repository') fixture.repository.nodeId = 'foreign';
+      if (change === 'assignment') fixture.item.assignees = [];
+      service.dependencies.credential.use = async () => {
+        throw new Error('native credentials must not resolve');
+      };
+      await assert.rejects(
+        context(id, who),
+        new RegExp(
+          {
+            account: 'dispatch-receiver-account-changed',
+            repository: 'dispatch-repository-identity-changed',
+            assignment: 'dispatch-assignment-removed',
+          }[change],
+        ),
+      );
+      assert.equal(creates().length, 1);
+      assert.equal(preparedWorktrees, 1);
+    });
+  }
+  for (const change of ['session', 'source', 'worktree'] as const) {
+    it(`should reject original custody with diverged ${change} without duplicate creation`, async () => {
+      const { id, who } = await originalAssignment();
+      if (change === 'session') who.sessionId = 'foreign';
+      if (change === 'source')
+        messages.at(-1)!.__openclaw = {
+          id: 'foreign',
+          idempotencyKey: 'foreign:user',
+          senderIsOwner: true,
+        };
+      if (change === 'worktree')
+        service.dependencies.worktrees.inspectGitHub = async () => undefined;
+      await assert.rejects(
+        service.run(
+          manifest,
+          root,
+          who,
+          { action: 'handoff', id, permission: 'implementation' },
+          true,
+        ),
+        /dispatch-(assessment-caller-mismatch|operator-input-unverified|worktree-diverged)/,
+      );
+      assert.equal((await record()).work, undefined);
+      assert.equal(creates().length, 1);
+      assert.equal(preparedWorktrees, 1);
+    });
   }
 
   async function publishedFollowup(onInspect: () => Promise<void> = async () => {}) {
