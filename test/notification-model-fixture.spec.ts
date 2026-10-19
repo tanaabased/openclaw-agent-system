@@ -557,7 +557,25 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
         assert.match(prepared.title!, /cleanup and verification/);
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).operation, 'publish');
+        const refreshedDigest = 'f'.repeat(64);
         append(input, 'delivery-publish', {
+          status: 'prepared',
+          code: 'delivery-preview-stale',
+          digest: refreshedDigest,
+        });
+        const refreshed = await action(input, 'delivery');
+        assert.equal(refreshed.operation, 'publish');
+        assert.equal(refreshed.digest, refreshedDigest);
+        assert.equal(refreshed.title, prepared.title);
+        assert.equal(refreshed.body, prepared.body);
+        const stopped = structuredClone(input);
+        append(stopped, 'delivery-publish-refreshed', {
+          status: 'prepared',
+          code: 'delivery-preview-stale',
+          digest,
+        });
+        assert.equal(matchFixture([...scenario.fixtures], stopped), null);
+        append(input, 'delivery-publish-refreshed', {
           status: 'published',
           workflowStatus: 'partially-delivered',
         });

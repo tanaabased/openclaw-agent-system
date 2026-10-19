@@ -20,7 +20,13 @@ Polling cadence, concurrent-item limits, and cleanup grace periods control execu
 they do not revoke intake or feedback authority. Schedule changes still need Install
 to update the native timer. Runtime enablement, identities, repository scope, allowed
 actors, workflow mode, and cleanup enablement remain permission-bearing settings.
-Older receipts retain their full-policy check until replaced; changed older policies
+A retained feedback reply is narrower: it checks runtime and workflow enablement,
+repository scope, and approved feedback actors. Assessment, implementation, cleanup,
+and review settings do not revoke that reply or grant it permission to change code.
+Changed reply skill content or guidance can be loaded again with `compose`; the
+private answer is retained and the unattempted public draft is replaced. An attempted
+write must be reconciled before further publication.
+Older receipts retain their original authority check until replaced; changed older policies
 can still require reconciliation.
 
 ## Assignment lifecycle
@@ -270,6 +276,10 @@ branch from its last verified push. The PR receipt and original announcement sta
 with the delivery. Explicit title/body changes update that PR; commit-only pushes
 preserve text edited on GitHub. Interrupted updates reconcile the same operation.
 If initial PR creation is still uncertain, reconcile it before changing its text.
+A stale publication preview returns a refreshed operation without writing. Inspect
+it and retry once within the existing authorization; repeated staleness needs
+investigation. Workflow activation or an operator request already covering that
+effect needs no additional stage approval. Native approval denials remain terminal.
 
 If showing an already-created PR is interrupted or temporarily busy, ask the same
 issue chat to show its card again. Presentation reuses the saved PR; it does not

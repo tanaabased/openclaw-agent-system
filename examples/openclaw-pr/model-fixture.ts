@@ -27,6 +27,7 @@ const dispatchStages = [
   'work-result',
   'delivery-prepare',
   'delivery-publish',
+  'delivery-publish-refreshed',
   'delivery-compose',
   'delivery-candidate',
   'delivery-announce',
@@ -369,7 +370,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           body,
         });
       if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-      const published = result('delivery-publish');
+      let published = result('delivery-publish');
       if (!published)
         return dispatch('delivery-publish', {
           action: 'delivery',
@@ -379,6 +380,20 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           title,
           body,
         });
+      if (published.status === 'prepared' && published.code === 'delivery-preview-stale') {
+        if (typeof published.digest !== 'string') return;
+        const refreshed = result('delivery-publish-refreshed');
+        if (!refreshed)
+          return dispatch('delivery-publish-refreshed', {
+            action: 'delivery',
+            operation: 'publish',
+            id: operatorId,
+            digest: published.digest,
+            title,
+            body,
+          });
+        published = refreshed;
+      }
       if (published.status !== 'published') return;
       if (!update && published.workflowStatus !== 'partially-delivered')
         throw new Error('published pr must retain pending announcement as partial delivery');

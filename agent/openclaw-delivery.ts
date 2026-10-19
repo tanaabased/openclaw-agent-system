@@ -159,7 +159,10 @@ export default async function openClawDelivery(input: {
       digest,
       operation: { ...delivery, binding, title, body, contentUpdate },
       instructions:
-        'Publish only under the retained explicit operator request, using this digest and the same title/body. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
+        (action.operation === 'publish'
+          ? 'This stale preview made no publication write. Inspect the refreshed operation and retry once with its digest only within the retained authorization; investigate repeated staleness. '
+          : '') +
+        'Publish only under the retained explicit operator request, including authorized follow-up commits, using this digest and the same title/body. No new stage approval is needed within that request; native denials still stop the operation. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
     };
   const provider = new IssueDeliveryProvider({
     identity: connection.account.identity,

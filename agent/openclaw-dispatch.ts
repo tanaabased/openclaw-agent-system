@@ -425,8 +425,13 @@ export default class OpenClawDispatch {
         status: event.phase === 'blocked' ? 'blocked' : dispatchFailurePhase(event, code, error),
         id: record.id,
         eventId: event.id,
-        nextAction: 'next',
+        nextAction: code === 'feedback-composition-changed' ? 'compose' : 'next',
         code,
+        ...(code === 'feedback-composition-changed'
+          ? {
+              next: 'Call feedback compose with this id and eventId, then create a new candidate using the selected skill and guidance. No new stage approval is needed; do not repeat an attempted publication.',
+            }
+          : {}),
         ...(event.result
           ? {
               presentation: feedbackResponse({

@@ -38,7 +38,7 @@ export default function dispatchContext(
   };
 }
 
-/** Presentation order and receipted output do not change the assessed requirements. */
+/** presentation order and receipted output do not change the assessed requirements. */
 export function dispatchEvidence(
   context: ReturnType<typeof dispatchContext>,
   ownCommentUrls: ReadonlySet<string> = new Set(),

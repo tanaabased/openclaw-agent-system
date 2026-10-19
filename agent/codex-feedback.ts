@@ -782,7 +782,7 @@ export default async function runCodexFeedback(
               ...failure,
               ...(/(?:skill|guidance|composition-changed)/u.test(code)
                 ? {
-                    next: 'Restore the configured feedback skill and guidance, then retry this retained event. No new comment or stage approval is needed; do not substitute a fallback or publish the private response.',
+                    next: 'If the configured skill is missing, restore it. For changed content or guidance, call compose on this retained event and create a new candidate before publication. No new comment or stage approval is needed; do not substitute a fallback or publish the private response.',
                   }
                 : {}),
               ...(event?.result
