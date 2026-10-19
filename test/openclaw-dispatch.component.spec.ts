@@ -3372,6 +3372,48 @@ describe('agent/openclaw issue dispatch', () => {
     await service.check(manifest, root);
     assert.equal((await record()).feedback!.discoveryPending, false);
   });
+  it('should reactivate scoped feedback even when assignment membership was checked recently', async () => {
+    const { comments } = await feedbackOwner(false);
+    const comment = comments.pop()!;
+    await service.check(manifest, root);
+    const before = await record();
+    fixture.item.assignees = [];
+    fixture.events.push({
+      ...fixture.events[0]!,
+      nodeId: 'removed',
+      databaseId: 31,
+      event: 'unassigned',
+      createdAt: new Date(service.dependencies.now!()).toISOString(),
+    });
+    comments.push({
+      ...comment,
+      createdAt: new Date(service.dependencies.now!() + 1000).toISOString(),
+      updatedAt: new Date(service.dependencies.now!() + 1000).toISOString(),
+    });
+    const now = service.dependencies.now!() + 2000;
+    service.dependencies.now = () => now;
+    const intake = service.dependencies.intake;
+    const selector = { repository: 'owner/repo', itemType: 'issue' as const, number: 3 };
+    const observation = await intake.run(
+      manifest,
+      root,
+      'scan',
+      (await intake.select(manifest, root)).selected!.digest,
+      undefined,
+      selector,
+    );
+    await service.check(manifest, root, undefined, observation, { ...selector, number: 4 });
+    assert.equal((await record()).lifecycleCheckedAt, before.lifecycleCheckedAt);
+    assert.equal((await record()).feedbackReactivation, undefined);
+    await service.check(manifest, root, undefined, observation, selector);
+    const after = await record();
+    assert.equal(after.retirement, undefined);
+    assert.equal(after.feedbackReactivation?.assignmentEventId, 'removed');
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.feedback?.events[0]?.sourceId, comment.nodeId);
+    assert.equal(creates().length, 1);
+  });
+
   it('should discover new feedback on a scoped refresh despite a recent empty discovery', async () => {
     const { comments } = await feedbackOwner();
     const comment = comments.pop()!;

@@ -188,9 +188,29 @@ sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-notifications/a
 mv "$root/work-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
 jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
-node_executable=$(node -p 'process.execPath')
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" \
-  | jq -e --arg node "$node_executable" --arg runtime "$runtime" --arg data "$plugin_data" '.actions[0].expected.prompt | contains([$node,$runtime,"continuation","--plugin-data",$data] | tojson)'
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-schedule.json"
+node --input-type=module - "$root/work-schedule.json" "$runtime" "$plugin_data" <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+const [planPath, runtimePath, pluginData] = process.argv.slice(2);
+const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+const block = plan.actions[0].expected.prompt.split('\n\n').find(part => part.startsWith('const runtime = '));
+assert.ok(block, 'installed schedule must contain its execution block');
+const calls = [];
+await runInNewContext('(async () => {' + block + '})()', {
+  runtimeRoute: 'continuation', runtimeInput: { action: 'next' },
+  load: () => undefined, store: () => {}, text: () => {},
+  tools: { exec_command: async request => {
+    calls.push(request);
+    return { exit_code: 0, output: JSON.stringify({ status: 'idle' }) };
+  } },
+});
+const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+const argv = [process.execPath, runtimePath, 'continuation', 'next', '--plugin-data', pluginData];
+assert.equal(calls.length, 1);
+assert.equal(calls[0].cmd, argv.map(quote).join(' ') + " <<'AGENT_SYSTEM_INPUT'\n" + JSON.stringify({ action: 'next' }) + '\nAGENT_SYSTEM_INPUT');
+NODE
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$CODEX_HOME/rules"
 

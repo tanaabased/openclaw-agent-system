@@ -36,6 +36,10 @@ import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 
 import { automationHash } from './automation-hash.ts';
+import {
+  githubNotificationItemMatchesSelector,
+  type GitHubNotificationItemSelector,
+} from '../channels/github/provider/work-item.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import dispatchCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
 import openClawFeedback, {
@@ -482,6 +486,7 @@ export default class OpenClawDispatch {
     workspace: string,
     signal?: AbortSignal,
     observation?: IntakeObservation,
+    selector?: GitHubNotificationItemSelector,
   ) {
     const budget = new DiscoveryBudget(20000, signal);
     const reporting = await this.reportScope(manifest, workspace);
@@ -496,13 +501,43 @@ export default class OpenClawDispatch {
         undefined,
         new DiscoveryBudget(7000, budget.signal),
       ));
-    if (intake.status === 'ready')
+    if (intake.status === 'ready') {
+      if (selector) {
+        const admitted = (await reporting.store.read())?.records ?? [];
+        await reporting.journal.exclusive(async (state, save) => {
+          let changed = false;
+          for (const record of state.records) {
+            const source = admitted.find((item) => item.id === record.intakeId);
+            if (!source || record.retired || record.reset) continue;
+            const repository = `${source.repository.owner.login}/${source.repository.name}`;
+            const pr = record.work?.delivery?.pullRequest;
+            const matches =
+              githubNotificationItemMatchesSelector(
+                { itemType: 'issue', number: source.issue.number },
+                repository,
+                selector,
+              ) ||
+              (pr &&
+                githubNotificationItemMatchesSelector(
+                  { itemType: 'pull-request', number: pr.pullRequestNumber },
+                  repository,
+                  selector,
+                ));
+            if (matches && record.lifecycleCheckedAt !== undefined) {
+              delete record.lifecycleCheckedAt;
+              changed = true;
+            }
+          }
+          if (changed) await save();
+        });
+      }
       await reconcileOpenClawLifecycle({
         service: this,
         manifest,
         workspace,
         authority: { signal: budget.signal },
       });
+    }
     const state = await reporting.journal.read();
     const report = openclawIntakeReport({
       state,
