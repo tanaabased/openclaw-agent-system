@@ -32,6 +32,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
     record: R,
     intake: IntakeRecord,
     fresh: () => Promise<void>,
+    shared: readonly R[],
   ): Promise<RetirementCleanupResult>;
   reactivate?(record: R, intake: IntakeRecord): Promise<boolean>;
   fresh(): Promise<void>;
@@ -55,20 +56,20 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
     const admitted = input.admitted.find((item) => item.id === record.intakeId);
     if (!admitted) continue;
     try {
-      const provider = async () => {
+      const provider = async (admission = admitted) => {
         if (
-          !githubIdentityMatches(client.identity, admitted.receiving) ||
+          !githubIdentityMatches(client.identity, admission.receiving) ||
           client.identity.login.toLowerCase() !== policy.username.toLowerCase()
         )
           throw new Error('dispatch-receiver-account-changed');
         const item = await client.getItem(
-          admitted.repository.owner.login,
-          admitted.repository.name,
-          admitted.issue.number,
+          admission.repository.owner.login,
+          admission.repository.name,
+          admission.issue.number,
         );
         if (
-          item.nodeId !== admitted.issue.nodeId ||
-          item.databaseId !== admitted.issue.databaseId ||
+          item.nodeId !== admission.issue.nodeId ||
+          item.databaseId !== admission.issue.databaseId ||
           item.itemType !== 'issue'
         )
           throw new Error('dispatch-issue-identity-changed');
@@ -182,7 +183,32 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       if (reclaimed?.retirement?.worktreeRemovedAt)
         record.retirement.worktreeRemovedAt = reclaimed.retirement.worktreeRemovedAt;
       const fresh = async () => {
-        if (shared.some((other) => !other.retired)) throw new Error('retirement-worktree-shared');
+        // pending owners can archive independently; active or unknown owners still fence reclamation.
+        if (shared.length > 12) throw new Error('retirement-worktree-shared');
+        for (const other of shared) {
+          if (other.retired) continue;
+          const otherIntake = input.admitted.find((item) => item.id === other.intakeId);
+          if (
+            other.sourceThreadId !== input.owner ||
+            other.reset ||
+            !otherIntake ||
+            !other.retirement ||
+            now < other.retirement.eligibleAt
+          )
+            throw new Error('retirement-worktree-shared');
+          const otherNative = await input.observe(other);
+          const otherReason = await provider(otherIntake);
+          if (
+            !otherNative?.idle ||
+            otherNative.activityId !== other.retirement.activityId ||
+            (!otherReason && !otherNative.archived) ||
+            (!otherNative.archived &&
+              otherReason !== 'issue-closed' &&
+              input.reactivate &&
+              (await input.reactivate(other, otherIntake)))
+          )
+            throw new Error('retirement-worktree-shared');
+        }
         await input.fresh();
         if (await reactivate()) throw new Error('retirement-reactivated');
         const currentReason = await provider();
@@ -195,7 +221,12 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           throw new Error('retirement-observation-changed');
       };
       await fresh();
-      const result = await input.cleanup(record, admitted, fresh);
+      const result = await input.cleanup(
+        record,
+        admitted,
+        fresh,
+        shared.filter((other) => !other.retired),
+      );
       if (result.archived) record.retirement.archivedAt ??= now;
       if (result.worktreeRemoved) record.retirement.worktreeRemovedAt ??= now;
       if (result.code) record.retirement.code = result.code;

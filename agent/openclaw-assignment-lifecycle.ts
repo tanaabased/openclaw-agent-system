@@ -122,7 +122,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             : undefined,
         });
       },
-      cleanup: async (record, intake, recheck) => {
+      cleanup: async (record, intake, recheck, shared) => {
         if (!record.request) return { archived: true, worktreeRemoved: true };
         const cleanup = service.dependencies.worktrees.cleanupGitHub;
         if (!cleanup)
@@ -143,9 +143,16 @@ export default async function reconcileOpenClawLifecycle(input: {
           const jobs = sessionObject(await request('cron.list', { includeDisabled: true }));
           if (!Array.isArray(jobs.jobs))
             throw new Error('retirement-automation-ownership-unavailable');
+          for (const other of shared) {
+            const peer = await observeRetiringSession(request, other);
+            if (!peer?.idle || peer.row.pinned === true || other.threadId === owner)
+              throw new Error('retirement-native-resource-protected');
+          }
+          const owners = new Set(
+            [record, ...shared].flatMap((entry) => [entry.threadId, `session:${entry.threadId}`]),
+          );
           const owns = (value: unknown): boolean =>
-            value === record.threadId ||
-            value === `session:${record.threadId}` ||
+            (typeof value === 'string' && owners.has(value)) ||
             (Array.isArray(value)
               ? value.some(owns)
               : !!value && typeof value === 'object' && Object.values(value).some(owns));
@@ -211,6 +218,15 @@ export default async function reconcileOpenClawLifecycle(input: {
             throw new Error('retirement-archive-unverified');
           record.retirement!.archivedAt ??= now;
           await save();
+          for (const other of shared) {
+            const peer = await observeRetiringSession(request, other);
+            if (!peer?.archived || !peer.idle)
+              return {
+                archived: true,
+                worktreeRemoved: false,
+                code: 'retirement-shared-archive-pending',
+              };
+          }
           if (worktree) {
             await recheck();
             record.retirement!.worktreeRemovalAttemptedAt ??= now;

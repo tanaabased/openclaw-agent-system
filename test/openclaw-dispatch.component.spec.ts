@@ -242,7 +242,8 @@ describe('agent/openclaw issue dispatch', () => {
                 };
               if (method === 'cron.list') return { jobs: cronJobs };
               if (method === 'sessions.patch') {
-                session!.archived = params.archived;
+                (multiple ? sessions.get(String(params.key))! : session!).archived =
+                  params.archived;
                 return { ok: true };
               }
               if (method === 'sessions.describe')
@@ -412,6 +413,42 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(openClawCapacity([await record()], 1).occupied, 0);
     await service.run(manifest, root, { ...coordinator, runId: 'again' }, { action: 'next' });
     assert.deepEqual(effects, ['verify', 'remove']);
+  });
+
+  it('should archive all eligible owners before removing a shared checkout once', async () => {
+    const { items } = await assignments(2, 2);
+    const sharedTree = {
+      path: join(root, 'shared'),
+      branch: 'shared',
+      repositoryId: 'github-10',
+      workId: 'shared',
+      status: 'existing' as const,
+    };
+    await mkdir(sharedTree.path);
+    let removals = 0;
+    service.dependencies.worktrees.prepareGitHub = async () => sharedTree;
+    service.dependencies.worktrees.inspectGitHub = async () => (removals ? undefined : sharedTree);
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (!input.verifyOnly) {
+        assert.ok([...sessions.values()].every((entry) => entry.archived));
+        removals++;
+      }
+      return { ...sharedTree, status: input.verifyOnly ? 'preserved' : 'removed' };
+    };
+    await prepare(await next());
+    await prepare(await next());
+    for (const item of items) item.state = 'closed';
+    service.dependencies.now = () => baseline + 180_001;
+    await service.run(manifest, root, { ...coordinator, runId: 'close' }, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    service.dependencies.now = () => deadline + 60_000;
+    await service.run(manifest, root, { ...coordinator, runId: 'finish' }, { action: 'next' });
+    const state = await (await service.scope(manifest, root)).journal.read();
+    assert.ok(state.records.every((entry) => entry.retired));
+    assert.equal(removals, 1);
+    assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 2);
   });
 
   it('should reconcile interrupted worktree removal without repeating native archival or removal', async () => {

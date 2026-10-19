@@ -81,6 +81,18 @@ describe('codex retirement cleanup', () => {
     await rm(h.input.record.worktree!, { recursive: true });
     assert.deepEqual(await h.run(), { archived: true, worktreeRemoved: true });
   });
+  it('should permit verified retiring peers while protecting pinned or unowned peers', async () => {
+    const h = await fixture();
+    h.input.shared = [{ ...h.input.record, id: 'peer', threadId: 'peer' }];
+    h.input.native.worktreeUsers = async () => ['child', 'peer'];
+    h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'peer' }] };
+    assert.equal((await h.run()).code, 'retirement-native-resource-protected');
+    h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [] };
+    h.input.native.worktreeUsers = async () => ['child', 'peer', 'unowned'];
+    assert.equal((await h.run()).code, 'retirement-worktree-shared');
+    h.input.native.worktreeUsers = async () => ['child', 'peer'];
+    assert.ok((await h.run()).request);
+  });
   it('should retry only a natively proved unsubmitted archive', async () => {
     const h = await fixture();
     await h.run();

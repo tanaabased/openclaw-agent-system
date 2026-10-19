@@ -212,6 +212,10 @@ openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversat
 worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
+for other in $(jq -r --arg retired "$conversation" '.[] | select(.threadId != $retired) | .threadId' "$TMPDIR/notification-all-after.json"); do
+  openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$other" '{key:$key}')" --json | jq -e '.session.archived != true and (.session.archivedAt == null or .session.archivedAt == 0)'
+  test -d "$(jq -er --arg key "$other" '.[] | select(.threadId == $key) | .worktree' "$TMPDIR/notification-all-after.json")"
+done
 
 ```
 

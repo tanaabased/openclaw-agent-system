@@ -12,6 +12,7 @@ export type RetirementArchiveRequest = { threadId: string; archived: true; hostI
 /** prepare a native desktop archive once; only observed reclamation finishes retirement. */
 export default async function codexRetirementCleanup(input: {
   record: DispatchRecord;
+  shared?: readonly DispatchRecord[];
   codexHome: string;
   repository: string;
   archived: boolean;
@@ -65,18 +66,24 @@ export default async function codexRetirementCleanup(input: {
     inventory.unavailableSources.some((source) => typeof source !== 'string' || source === 'codex')
   )
     return pending('retirement-native-inventory-required');
-  if (inventory.pinnedThreads.some((entry) => !nativeObject(entry) || entry.id === threadId))
+  const owners = new Set([threadId]);
+  for (const other of input.shared ?? []) {
+    const id = other.threadId ?? other.receiptThreadId;
+    if (!id) return pending('retirement-native-resource-unresolved');
+    owners.add(id);
+  }
+  if (inventory.pinnedThreads.some((entry) => !nativeObject(entry) || owners.has(String(entry.id))))
     return pending('retirement-native-resource-protected');
   const jobs = await readCodexAutomations(input.codexHome);
   if (
     jobs.some(
       (job) =>
-        ('targetThreadId' in job.definition && job.definition.targetThreadId === threadId) ||
+        ('targetThreadId' in job.definition && owners.has(String(job.definition.targetThreadId))) ||
         job.cwds?.includes(record.worktree!),
     )
   )
     return pending('retirement-automation-owner');
-  if ((await input.native.worktreeUsers(record.worktree)).some((id) => id !== threadId))
+  if ((await input.native.worktreeUsers(record.worktree)).some((id) => !owners.has(id)))
     return pending('retirement-worktree-shared');
   if (
     exists.isSymbolicLink() ||

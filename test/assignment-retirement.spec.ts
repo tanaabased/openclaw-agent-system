@@ -247,6 +247,82 @@ describe('assignment retirement', () => {
       assert.ok(h.record.retired);
     });
   }
+  it('should archive eligible shared owners before reclaiming their checkout once', async () => {
+    const h = setup();
+    h.fixture.item.state = 'closed';
+    h.record.worktree = '/managed/shared';
+    h.records.push({ ...h.record, id: 'second' });
+    const archived = new Set<string>();
+    let removals = 0;
+    let now = baseline;
+    const run = () =>
+      reconcile({
+        records: h.records,
+        admitted: h.admissions,
+        policy: { policy: h.fixture.policy, username: 'receiver', digest: 'digest' },
+        client: h.fixture.client,
+        owner: 'intake',
+        now,
+        save: async () => {},
+        fresh: async () => {},
+        observe: async (record) => ({
+          archived: archived.has(record.id),
+          idle: true,
+          activityId: 'turn',
+        }),
+        cleanup: async (record, _intake, fresh, shared) => {
+          await fresh();
+          archived.add(record.id);
+          const removed = shared.every((other) => archived.has(other.id));
+          if (removed && !removals) removals++;
+          return { archived: true, worktreeRemoved: removed };
+        },
+      });
+    await run();
+    now += 3_600_000;
+    await run();
+    now += 60_000;
+    await run();
+    assert.equal(archived.size, 2);
+    assert.equal(removals, 1);
+    assert.ok(h.records.every((record) => record.retired));
+  });
+  for (const condition of ['busy', 'unknown', 'grace', 'reactivated'] as const) {
+    it(`should keep a shared checkout when a pending peer is ${condition}`, async () => {
+      const h = setup();
+      h.fixture.item.state = 'closed';
+      h.record.worktree = '/managed/shared';
+      await h.run();
+      const other = { ...structuredClone(h.record), id: 'second' };
+      if (condition === 'grace') other.retirement!.eligibleAt += 60_000;
+      h.records.push(other);
+      let cleanups = 0;
+      await reconcile({
+        records: h.records,
+        admitted: h.admissions,
+        policy: { policy: h.fixture.policy, username: 'receiver', digest: 'digest' },
+        client: h.fixture.client,
+        owner: 'intake',
+        now: baseline + 3_600_000,
+        save: async () => {},
+        fresh: async () => {},
+        observe: async (record) =>
+          record.id === 'second' && condition === 'unknown'
+            ? undefined
+            : {
+                archived: false,
+                idle: condition !== 'busy',
+                activityId: condition === 'reactivated' ? 'new-turn' : 'turn-1',
+              },
+        cleanup: async () => {
+          cleanups++;
+          return { archived: true, worktreeRemoved: true };
+        },
+      });
+      assert.equal(cleanups, 0);
+      assert.ok(h.records.every((record) => !record.retired));
+    });
+  }
   it('should retain observation of busy work even when automatic cleanup is disabled', async () => {
     const h = setup();
     h.fixture.policy.cleanup = { enabled: false, graceMinutes: 60 };

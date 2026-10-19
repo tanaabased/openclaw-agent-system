@@ -132,7 +132,7 @@ export default async function reconcileCodexLifecycle(
               : undefined,
           });
         },
-        cleanup: async (record, intake, fresh) => {
+        cleanup: async (record, intake, fresh, shared) => {
           if (!record.request && !record.worktree) return { archived: true, worktreeRemoved: true };
           if (prepared) return { archived: false, worktreeRemoved: false };
           if (state.run?.id === occurrence.id && state.run.actions >= 12)
@@ -143,6 +143,7 @@ export default async function reconcileCodexLifecycle(
             };
           const result = await codexRetirementCleanup({
             record,
+            shared,
             codexHome: current.codexHome,
             repository: intake.repository.owner.login + '/' + intake.repository.name,
             archived: record.retirement?.reason === 'chat-archived',
