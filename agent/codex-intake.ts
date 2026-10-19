@@ -227,6 +227,7 @@ export async function runCodexIntake(
       !(error instanceof IntakeError) ||
       ![
         'intake-binding-unavailable',
+        'intake-manifest-unavailable',
         'intake-policy-disabled',
         'intake-policy-reconciliation-required',
       ].includes(error.code)

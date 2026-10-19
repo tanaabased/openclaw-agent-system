@@ -700,7 +700,7 @@ describe('agent/codex-intake', () => {
     const retained = await inspectCodexIntake(pluginData, { codexHome });
     assert.equal(
       retained.code,
-      disable === 'manifest corruption' ? 'intake-binding-unavailable' : 'intake-policy-disabled',
+      disable === 'manifest corruption' ? 'intake-manifest-unavailable' : 'intake-policy-disabled',
     );
     assert.equal(retained.baselineAt, baseline);
     assert.equal(retained.checkpoint, baseline);
