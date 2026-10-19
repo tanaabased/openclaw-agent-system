@@ -280,6 +280,55 @@ describe('agent/codex-delivery', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  for (const deny of [false, true])
+    it(`should let github ${deny ? 'reject' : 'accept'} recipient changes without permission preflights`, async () => {
+      const configured = structuredClone(manifest);
+      Object.assign(configured.github.notifications['issue-assignment']['pull-request'], {
+        recipients: [
+          { login: account.login, 'node-id': account.nodeId, roles: ['assignee', 'reviewer'] },
+        ],
+      });
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+      const connect = deps.connect!;
+      let assigned = false,
+        requested = false;
+      deps.connect = async (...args) => {
+        const connection = await connect(...args);
+        const execute = connection.account.execute;
+        return {
+          ...connection,
+          account: {
+            ...connection.account,
+            execute: async (argv, ...rest) => {
+              const endpoint = argv.find(
+                (arg) => arg.startsWith('repos/') || arg.startsWith('users/'),
+              );
+              if (endpoint === `users/${account.login}`) return result([account]);
+              if (endpoint === 'repos/owner/repo/issues/7') return result([]);
+              if (endpoint === 'repos/owner/repo/issues/7/assignees') {
+                assigned = true;
+                return result([account.login]);
+              }
+              if (endpoint === 'repos/owner/repo/pulls/7/reviews') return result([[]]);
+              if (endpoint === 'repos/owner/repo/pulls/7/requested_reviewers') {
+                if (argv.includes('POST')) {
+                  requested = true;
+                  if (deny)
+                    return { ...result({ message: 'Forbidden' }), exitCode: 1, stderr: 'HTTP 403' };
+                }
+                return result(requested ? [account.login] : []);
+              }
+              return execute(argv, ...rest);
+            },
+          },
+        };
+      };
+      if (deny) await assert.rejects(publish(), /GitHub/);
+      else assert.equal((await publish()).status, 'published');
+      assert.ok(assigned && requested);
+      assert.equal(creates, 1);
+    });
+
   for (const draft of [false, true])
     it(`should reconcile announce and present a delivered ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
