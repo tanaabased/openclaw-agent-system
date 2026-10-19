@@ -32,6 +32,130 @@ describe('codex retirement native evidence', () => {
       );
     }
   });
+  function helper(id: string, parent = 'owner') {
+    return {
+      id,
+      cwd: '/worktree',
+      parentThreadId: parent,
+      source: { subAgent: { thread_spawn: { parent_thread_id: parent } } },
+      status: { type: 'notLoaded' },
+    };
+  }
+  it('should release completed descendants but retain independent owners across inventory pages', async () => {
+    const rows = [helper('nested', 'helper'), helper('helper'), helper('independent', 'other')];
+    const inspected: string[] = [];
+    const reader = nativeRetirement(async (method, params) => {
+      if (method === 'thread/list')
+        return params.cursor
+          ? { data: rows.slice(1), nextCursor: null }
+          : { data: [{ id: 'owner', cwd: '/worktree' }, rows[0]], nextCursor: 'next' };
+      if (method === 'thread/read') {
+        inspected.push(String(params.threadId));
+        return { thread: rows.find((row) => row.id === params.threadId) };
+      }
+      assert.equal(method, 'thread/turns/list');
+      assert.equal(params.sortDirection, 'desc');
+      assert.equal(params.limit, 1);
+      return { data: [{ id: 'done', status: 'completed', completedAt: 10 }] };
+    });
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), [
+      'owner',
+      'independent',
+    ]);
+    assert.deepEqual(inspected, ['nested', 'helper', 'independent']);
+  });
+  it('should resolve a completed guardian parent from native reads when the list omits it', async () => {
+    const reader = nativeRetirement(async (method) => {
+      const guardian = {
+        id: 'guardian',
+        cwd: '/worktree',
+        source: { subAgent: { other: 'guardian' } },
+      };
+      if (method === 'thread/list') return { data: [{ ...guardian, parentThreadId: null }] };
+      if (method === 'thread/read')
+        return {
+          thread: {
+            ...guardian,
+            parentThreadId: 'owner',
+            threadSource: 'guardian_review',
+            status: { type: 'notLoaded' },
+          },
+        };
+      return { data: [{ status: 'completed', completedAt: 10 }] };
+    });
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), []);
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['other'])), ['guardian']);
+    assert.deepEqual(
+      await reader.worktreeUsers('/worktree', new Set(['owner']), new Set(['guardian'])),
+      ['guardian'],
+    );
+  });
+  for (const kind of [
+    'active',
+    'unfinished',
+    'interrupted',
+    'missing-turn',
+    'missing-time',
+    'reparented',
+    'moved',
+    'fork',
+    'protected',
+    'unrelated',
+    'unknown-source',
+  ]) {
+    it(`should retain a ${kind} helper as another worktree user`, async () => {
+      const row = helper('helper');
+      const reader = nativeRetirement(async (method) => {
+        if (method === 'thread/list') return { data: [row], nextCursor: null };
+        if (method === 'thread/read')
+          return {
+            thread: {
+              ...row,
+              ...(kind === 'active' ? { status: { type: 'active' } } : {}),
+              ...(kind === 'reparented' ? { parentThreadId: 'other' } : {}),
+              ...(kind === 'moved' ? { cwd: '/elsewhere' } : {}),
+              ...(kind === 'fork' ? { forkedFromId: 'owner' } : {}),
+            },
+          };
+        return {
+          data:
+            kind === 'missing-turn'
+              ? []
+              : [
+                  {
+                    status:
+                      kind === 'unfinished'
+                        ? 'inProgress'
+                        : kind === 'interrupted'
+                          ? 'interrupted'
+                          : 'completed',
+                    completedAt: kind === 'missing-time' ? null : 10,
+                  },
+                ],
+        };
+      });
+      if (kind === 'unrelated') row.parentThreadId = 'other';
+      if (kind === 'unknown-source') Object.assign(row, { source: 'unknown' });
+      assert.deepEqual(
+        await reader.worktreeUsers(
+          '/worktree',
+          new Set(['owner']),
+          new Set(kind === 'protected' ? ['helper'] : []),
+        ),
+        ['helper'],
+      );
+    });
+  }
+  it('should propagate unavailable helper evidence instead of permitting cleanup', async () => {
+    const reader = nativeRetirement(async (method) => {
+      if (method === 'thread/list') return { data: [helper('helper')] };
+      throw new Error('native-unavailable');
+    });
+    await assert.rejects(
+      reader.worktreeUsers('/worktree', new Set(['owner'])),
+      /native-unavailable/,
+    );
+  });
   function history(item?: Record<string, unknown>): CodexThreadRequest {
     const message = { id: 'message', type: 'agentMessage', text: 'archive completed' };
     return async (method, params) => {

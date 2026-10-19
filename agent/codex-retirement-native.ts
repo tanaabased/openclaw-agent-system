@@ -3,11 +3,34 @@ import codexTurnApprovalDenied from './codex-turn-approval.ts';
 import creationHistory from './codex-dispatch-creation-history.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 
+function helperParent(thread: Record<string, unknown>): string | undefined {
+  const source = thread.source;
+  if (!nativeObject(source) || !nativeObject(source.subAgent)) return undefined;
+  if (
+    source.subAgent.other === 'guardian' &&
+    thread.threadSource === 'guardian_review' &&
+    typeof thread.parentThreadId === 'string' &&
+    thread.forkedFromId == null
+  )
+    return thread.parentThreadId;
+  const spawn = source.subAgent.thread_spawn;
+  return nativeObject(spawn) &&
+    typeof spawn.parent_thread_id === 'string' &&
+    thread.parentThreadId === spawn.parent_thread_id &&
+    thread.forkedFromId == null
+    ? spawn.parent_thread_id
+    : undefined;
+}
+
 /** desktop resource effects stay in native tools; this adapter only reads custody evidence. */
 export default function codexRetirementNative(request: CodexThreadRequest) {
   return {
-    async worktreeUsers(cwd: string): Promise<string[]> {
-      const users: string[] = [];
+    async worktreeUsers(
+      cwd: string,
+      retiringOwners: ReadonlySet<string> = new Set(),
+      protectedThreads: ReadonlySet<string> = new Set(),
+    ): Promise<string[]> {
+      const users = new Map<string, Record<string, unknown>>();
       let cursor: string | undefined;
       const seen = new Set<string>();
       for (let page = 0; page < 20; page++) {
@@ -33,9 +56,9 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
         for (const row of result.data) {
           if (!nativeObject(row) || typeof row.id !== 'string' || typeof row.cwd !== 'string')
             throw new Error('retirement-native-inventory-invalid');
-          if (row.cwd === cwd) users.push(row.id);
+          if (row.cwd === cwd) users.set(row.id, row);
         }
-        if (result.nextCursor == null) return users;
+        if (result.nextCursor == null) break;
         if (
           typeof result.nextCursor !== 'string' ||
           !result.nextCursor ||
@@ -44,8 +67,59 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
           throw new Error('retirement-native-inventory-invalid');
         seen.add(result.nextCursor);
         cursor = result.nextCursor;
+        if (page === 19) throw new Error('retirement-native-inventory-incomplete');
       }
-      throw new Error('retirement-native-inventory-incomplete');
+      const owners = new Set(retiringOwners);
+      const helpers = [...users.values()].filter(
+        (row) =>
+          !owners.has(String(row.id)) &&
+          nativeObject(row.source) &&
+          nativeObject(row.source.subAgent),
+      );
+      // list metadata can omit guardian parentage; read each candidate before classifying ownership.
+      if (helpers.length > 12) return [...users.keys()];
+      const parents = new Map<string, string>();
+      for (const row of helpers) {
+        const id = String(row.id);
+        if (protectedThreads.has(id)) continue;
+        const { thread } = await request('thread/read', { threadId: id, includeTurns: false });
+        if (
+          !nativeObject(thread) ||
+          thread.id !== id ||
+          thread.cwd !== cwd ||
+          !nativeObject(thread.status) ||
+          !['idle', 'notLoaded'].includes(String(thread.status.type))
+        )
+          continue;
+        const parent = helperParent(thread);
+        if (!parent) continue;
+        const turns = await request('thread/turns/list', {
+          threadId: id,
+          limit: 1,
+          sortDirection: 'desc',
+          itemsView: 'notLoaded',
+        });
+        const last = Array.isArray(turns.data) && turns.data.length === 1 ? turns.data[0] : null;
+        if (
+          !nativeObject(last) ||
+          last.status !== 'completed' ||
+          typeof last.completedAt !== 'number' ||
+          !Number.isFinite(last.completedAt)
+        )
+          continue;
+        parents.set(id, parent);
+      }
+      // only completed descendants of retiring owners can share their parent's cleanup.
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const [id, parent] of parents) {
+          if (owners.has(id) || !owners.has(parent)) continue;
+          owners.add(id);
+          changed = true;
+        }
+      }
+      return [...users.keys()].filter((id) => retiringOwners.has(id) || !owners.has(id));
     },
     async archiveOutcome(
       sourceThreadId: string,

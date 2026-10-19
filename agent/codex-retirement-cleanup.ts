@@ -83,7 +83,17 @@ export default async function codexRetirementCleanup(input: {
     )
   )
     return pending('retirement-automation-owner');
-  if ((await input.native.worktreeUsers(record.worktree)).some((id) => !owners.has(id)))
+  const protectedThreads = new Set(
+    inventory.pinnedThreads.map((entry) => String((entry as Record<string, unknown>).id)),
+  );
+  for (const job of jobs)
+    if ('targetThreadId' in job.definition)
+      protectedThreads.add(String(job.definition.targetThreadId));
+  if (
+    (await input.native.worktreeUsers(record.worktree, owners, protectedThreads)).some(
+      (id) => !owners.has(id),
+    )
+  )
     return pending('retirement-worktree-shared');
   if (
     exists.isSymbolicLink() ||

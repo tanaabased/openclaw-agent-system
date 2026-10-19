@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import cleanup from '../agent/codex-retirement-cleanup.ts';
+import nativeRetirement from '../agent/codex-retirement-native.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 
 describe('codex retirement cleanup', () => {
@@ -100,6 +101,54 @@ describe('codex retirement cleanup', () => {
     h.input.turnId = 'next-turn';
     assert.ok('request' in (await h.run()));
     assert.equal(h.input.record.retirement!.archiveAttempt?.turnId, 'next-turn');
+  });
+  it('should allow a completed guardian but preserve pinned and automation-owned helpers', async () => {
+    const h = await fixture();
+    const guardian = {
+      id: 'guardian',
+      cwd: h.input.record.worktree,
+      source: { subAgent: { other: 'guardian' } },
+    };
+    h.input.native = nativeRetirement(async (method) => {
+      if (method === 'thread/list') return { data: [guardian] };
+      if (method === 'thread/read')
+        return {
+          thread: {
+            ...guardian,
+            parentThreadId: 'child',
+            threadSource: 'guardian_review',
+            status: { type: 'notLoaded' },
+          },
+        };
+      return { data: [{ status: 'completed', completedAt: 10 }] };
+    });
+    h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'guardian' }] };
+    assert.equal((await h.run()).code, 'retirement-worktree-shared');
+    h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [] };
+    const job = join(root, 'automations', 'job');
+    await mkdir(job, { recursive: true });
+    await writeFile(
+      join(job, 'automation.toml'),
+      [
+        'version = 1',
+        'id = "job"',
+        'name = "test"',
+        'prompt = "test"',
+        'status = "PAUSED"',
+        'kind = "heartbeat"',
+        'rrule = "FREQ=MINUTELY;INTERVAL=5"',
+        'target_thread_id = "guardian"',
+        'created_at = 1',
+        'updated_at = 1',
+      ].join('\n'),
+    );
+    assert.equal((await h.run()).code, 'retirement-worktree-shared');
+    await rm(job, { recursive: true });
+    assert.deepEqual((await h.run()).request, {
+      threadId: 'child',
+      archived: true,
+      hostId: 'local',
+    });
   });
   for (const kind of [
     'pinned',
