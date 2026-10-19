@@ -230,6 +230,10 @@ async function runSetup(args: string[]): Promise<void> {
 
 let failureScope: ReturnType<typeof workflowFailureScope> | undefined;
 async function readWorkflowCommand(route: string, args: string[]) {
+  if (args.includes('--input'))
+    throw new Error(
+      'expected <action> [<operation>] --plugin-data <path>; send JSON on stdin without --input',
+    );
   const result = codexRuntimeRequest(route, args, JSON.parse(await readStandardInput()));
   failureScope = workflowFailureScope('codex', route, result.request);
   return result;
