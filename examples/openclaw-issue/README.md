@@ -2,7 +2,7 @@
 
 Assign one disposable issue, retain its assessment in a native chat and managed worktree, publish the proposed-plan summary after the private plan, and answer one approved comment. A repeat scan verifies the same owner and no duplicate assessment or reply.
 
-Concurrency, restart recovery, reactivation, retirement, and notification installation compatibility belong to `openclaw-notifications`. Implementation and PR delivery belong to `openclaw-pr`; scheduler drift belongs to `openclaw-automations`.
+Notification installation compatibility and concurrent admission belong to `openclaw-intake`; restart recovery, reactivation, replay-safe replies, and retirement belong to `openclaw-lifecycle`. Implementation and PR delivery belong to `openclaw-pr`; scheduler drift belongs to `openclaw-automations`.
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and receipts remain real. Scoped refreshes admit only this run’s issue, and the 24-hour schedule avoids unrelated recurring scans. Only Tanaabot receives assignments. Failed activation preserves its status and redacted diagnostics; cleanup stops the Gateway before closing fixtures or revoking the disposable key.
 

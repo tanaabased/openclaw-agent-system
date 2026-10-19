@@ -32,7 +32,7 @@ node() {
 jq() { cat; }
 `;
 
-for (const scenario of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications']) {
+for (const scenario of ['openclaw-issue', 'openclaw-pr', 'openclaw-intake', 'openclaw-lifecycle']) {
   for (const agent of ['emori', 'tanaabot']) {
     describe(`examples/${scenario} ${agent} install evidence`, () => {
       for (const [install, automation, diagnostic, expected] of [

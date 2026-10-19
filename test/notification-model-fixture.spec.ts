@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import waitForAssessmentRelease from '../examples/openclaw-notifications/assessment-barrier.ts';
+import waitForAssessmentRelease from '../examples/openclaw-intake/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -9,12 +9,18 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
-import { notificationsExampleScenario } from '../examples/openclaw-notifications/model-fixture.ts';
+import { intakeExampleScenario } from '../examples/openclaw-intake/model-fixture.ts';
+import { lifecycleExampleScenario } from '../examples/openclaw-lifecycle/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
-for (const scenario of [issueExampleScenario, prExampleScenario, notificationsExampleScenario]) {
+for (const scenario of [
+  issueExampleScenario,
+  prExampleScenario,
+  intakeExampleScenario,
+  lifecycleExampleScenario,
+]) {
   const id = 'a'.repeat(64);
   const job = openclawIntakeJobs({
     schemaVersion: 1,
@@ -90,7 +96,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
-    if (scenario.id === 'openclaw-notifications')
+    if (scenario.id === 'openclaw-intake')
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
         const directory = '/tmp/notification-barrier-fixture';
         const files = new Set<string>();

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 for (const [scenario, itemType] of [
   ['openclaw-issue', 'issue'],
   ['openclaw-pr', 'pull-request'],
-  ['openclaw-notifications', 'issue'],
+  ['openclaw-lifecycle', 'issue'],
 ]) {
   describe(`examples/${scenario} feedback evidence`, () => {
     it('should inspect only its requested run while rejecting real duplicate responses', async () => {
@@ -33,7 +33,7 @@ for (const [scenario, itemType] of [
       try {
         const summaries =
           itemType === 'issue'
-            ? ['summary', ...(scenario === 'openclaw-notifications' ? ['refreshed-summary'] : [])]
+            ? ['summary', ...(scenario === 'openclaw-lifecycle' ? ['refreshed-summary'] : [])]
             : [];
         await write('feedback', {
           assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),

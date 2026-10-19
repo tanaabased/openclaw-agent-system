@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
@@ -402,16 +402,32 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.length, 0);
   });
 
-  it('should retire closed sessions on intake and reclaim only preserved worktrees after the deadline', async () => {
-    await prepare(await next());
+  it('should retire only the closed owner after its deadline and preserve active sibling work', async () => {
+    const { items } = await assignments(2, 2);
+    const first = await next();
+    await prepare(first);
+    await assess(first.id);
+    const second = await next();
+    await prepare(second);
+    await assess(second.id);
+    await completeAssessment(first.id);
+    await completeAssessment(second.id);
+    const closed = structuredClone(await record(assessor(first.id).sessionKey));
+    const sibling = structuredClone(await record(assessor(second.id).sessionKey));
+    const siblingSession = structuredClone(sessions.get(sibling.threadId!)!);
     const inspect = service.dependencies.worktrees.inspectGitHub;
-    let removed = false;
-    const effects: string[] = [];
-    service.dependencies.worktrees.inspectGitHub = async (...args) =>
-      removed ? undefined : inspect(...args);
+    const removed = new Set<string>();
+    const effects: Array<[string, string]> = [];
+    service.dependencies.worktrees.inspectGitHub = async (...args) => {
+      const tree = await inspect(...args);
+      return tree && !removed.has(tree.path) ? tree : undefined;
+    };
     service.dependencies.worktrees.cleanupGitHub = async (input) => {
-      effects.push(input.verifyOnly ? 'verify' : 'remove');
-      if (!input.verifyOnly) removed = true;
+      effects.push([input.verifyOnly ? 'verify' : 'remove', input.worktree.path]);
+      if (!input.verifyOnly) {
+        removed.add(input.worktree.path);
+        await rm(input.worktree.path, { recursive: true });
+      }
       return {
         ...input.worktree,
         repositoryId: 'github-10',
@@ -419,20 +435,40 @@ describe('agent/openclaw issue dispatch', () => {
         status: input.verifyOnly ? 'preserved' : 'removed',
       };
     };
-    fixture.item.state = 'closed';
-    await service.run(manifest, root, coordinator, { action: 'next' });
-    const pending = await record();
+    items[0]!.state = 'closed';
+    service.dependencies.now = () => baseline + 180_001;
+    await service.run(manifest, root, { ...coordinator, runId: 'close' }, { action: 'next' });
+    const pending = await record(closed.threadId);
     assert.equal(pending.retirement?.reason, 'issue-closed');
     assert.equal(pending.retired, undefined);
     assert.deepEqual(effects, []);
     service.dependencies.now = () => pending.retirement!.eligibleAt;
     await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
-    assert.deepEqual(effects, ['verify', 'remove']);
-    assert.equal(session!.archived, true);
-    assert.ok((await record()).retired);
-    assert.equal(openClawCapacity([await record()], 1).occupied, 0);
+    assert.deepEqual(effects, [
+      ['verify', closed.worktree!],
+      ['remove', closed.worktree!],
+    ]);
+    assert.equal(sessions.get(closed.threadId!)!.archived, true);
+    const retired = await record(closed.threadId);
+    assert.ok(retired.retired);
+    assert.deepEqual(retired.result, closed.result);
+    assert.deepEqual(retired.stageReceipt, closed.stageReceipt);
+    await assert.rejects(stat(closed.worktree!), { code: 'ENOENT' });
+    const retained = await record(sibling.threadId);
+    assert.equal(retained.retirement, undefined);
+    assert.equal(retained.retired, undefined);
+    assert.equal(retained.threadId, sibling.threadId);
+    assert.equal(retained.worktree, sibling.worktree);
+    assert.deepEqual(retained.result, sibling.result);
+    assert.deepEqual(retained.stageReceipt, sibling.stageReceipt);
+    assert.deepEqual(sessions.get(sibling.threadId!), siblingSession);
+    assert.ok((await stat(sibling.worktree!)).isDirectory());
+    assert.deepEqual(
+      calls.filter((call) => call.method === 'sessions.patch').map(({ params }) => params.key),
+      [closed.threadId],
+    );
     await service.run(manifest, root, { ...coordinator, runId: 'again' }, { action: 'next' });
-    assert.deepEqual(effects, ['verify', 'remove']);
+    assert.equal(effects.length, 2);
   });
 
   it('should archive all eligible owners before removing a shared checkout once', async () => {

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 import parseAgentManifest from '../manifest/parse.ts';
 
-for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications']) {
+for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-intake', 'openclaw-lifecycle']) {
   const scenario = { id };
   const issueOnly = id !== 'openclaw-pr';
   const owner = 'tanaabot';
@@ -30,7 +30,7 @@ for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications']) {
         ),
         [
           { login: actorLogin, nodeId: '__ACTOR_NODE_ID__' },
-          ...(id === 'openclaw-notifications'
+          ...(['openclaw-intake', 'openclaw-lifecycle'].includes(id)
             ? [{ login: ownerLogin, nodeId: '__RECEIVER_NODE_ID__' }]
             : []),
         ],
