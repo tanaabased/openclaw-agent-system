@@ -6,6 +6,7 @@ import { issueKey } from '../agent/dispatch-pending.ts';
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import refresh from '../channels/github/cli/refresh.ts';
 import status from '../channels/github/cli/status.ts';
@@ -191,6 +192,30 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(result.items[0]?.workflow?.phase, 'clarification-needed');
     assert.equal(result.items[0]?.waitingReason, 'clarification-needed');
     assert.equal(item.result!.outcome, 'plan-ready');
+    assert.equal(f.requests, 0);
+  });
+
+  it('should use the shared workflow status for implementation and delivery without mutating old records', async () => {
+    const f = fixture();
+    const item = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: { outcome: 'plan-ready' },
+      work: {
+        assessmentDigest: 'a'.repeat(64),
+        implementation: { runId: 'original', inputEventId: 'original-input' },
+      },
+    } as OpenClawDispatchRecord;
+    f.records.push(item);
+    for (const outcome of [undefined, 'done'] as const) {
+      if (outcome) item.work!.result = { outcome, summary: 'Done.', fullResult: 'Checked.' };
+      const before = structuredClone(item);
+      const result = await f.service.inspect(f.manifest, '/workspace', selector);
+      assert.equal(result.items[0]?.workflow?.phase, outcome ? 'delivery' : 'running');
+      assert.equal(result.items[0]?.workflow?.phase, workflowStatus(item));
+      assert.deepEqual(item, before);
+    }
     assert.equal(f.requests, 0);
   });
 

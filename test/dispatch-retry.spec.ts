@@ -13,6 +13,7 @@ describe('agent/dispatch-retry', () => {
     for (const code of [
       'dispatch-creation-denied',
       'delivery-branch-changed',
+      'continuation-skill-identity-changed',
       'feedback-source-author-changed',
       'dispatch-turn-cancelled',
       'dispatch-assignment-authority-revoked',

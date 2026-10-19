@@ -235,15 +235,12 @@ describe('openclaw v2 intake slice', () => {
     await inspect('healthy', 'intake-ready');
   });
 
-  it('should keep discovery available while reporting unsupported workflow stages', async () => {
+  it('should keep discovery available for supported work mode', async () => {
     const f = fixture();
     f.value.github.notifications.issueAssignment!.mode = 'work';
     const contribution = f.service.contribution();
     const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
-    assert.equal(
-      contribution.validate!(context)?.diagnostics?.[0]?.code,
-      'github-notification-runtime-unsupported',
-    );
+    assert.deepEqual(contribution.validate!(context)?.diagnostics ?? [], []);
     await f.service.run(f.value, root, 'activate');
     assert.equal((await f.service.inspect(f.value, root)).status, 'ready');
     assert.ok(f.connects() > 0);
@@ -262,8 +259,13 @@ describe('openclaw v2 intake slice', () => {
     const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
     const validated = registry.validate(context);
     const reconciled = await registry.reconcile(context);
-    assert.equal(validated.diagnostics.length, 3);
-    assert.equal(reconciled.warnings.length, 3);
+    assert.deepEqual(
+      new Set(validated.diagnostics.map(({ fieldPath }) => fieldPath)),
+      new Set([
+        '/github/notifications/review-request',
+        '/github/notifications/issue-assignment/assessment/skill',
+      ]),
+    );
     assert.deepEqual(
       reconciled.warnings.map(getCliDiagnosticContext),
       validated.diagnostics.map(getCliDiagnosticContext),
@@ -311,7 +313,7 @@ describe('openclaw v2 intake slice', () => {
         .map(({ text }) => text)
         .join('');
       assert.equal(events.at(-1)?.stream, 'stderr');
-      assert.equal(stderr.match(/code=github-notification-runtime-unsupported/gu)?.length, 3);
+      assert.match(stderr, /code=github-notification-runtime-unsupported/u);
       for (const diagnostic of validated.diagnostics) {
         assert.equal(stderr.split(`field=${diagnostic.fieldPath}`).length - 1, 1);
         assert.equal(
@@ -320,7 +322,7 @@ describe('openclaw v2 intake slice', () => {
         );
       }
       if (json) assert.equal(events[0]!.text, `${JSON.stringify(installed, undefined, 2)}\n`);
-      else assert.equal(stderr.match(/⚠ warning/gu)?.length, 3);
+      else assert.match(stderr, /⚠ warning/u);
     }
     assert.ok(f.connects() > 0);
   });

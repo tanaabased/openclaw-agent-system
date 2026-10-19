@@ -152,7 +152,7 @@ describe('manifest/service', () => {
     ]);
   });
 
-  it('should warn for unsupported work mode but load supported planning without a warning', async () => {
+  it('should load supported work and planning modes without runtime warnings', async () => {
     const root = await temporaryRoot();
     await writeFile(
       join(root, 'agent.yaml'),
@@ -195,10 +195,7 @@ describe('manifest/service', () => {
     assert.equal(result.status, 'loaded');
     if (result.status !== 'loaded') return;
     assert.equal(result.manifest.git?.policy?.forcePush, 'deny');
-    assert.deepEqual(
-      result.diagnostics.map(({ code, severity }) => ({ code, severity })),
-      [{ code: 'github-notification-runtime-unsupported', severity: 'warning' }],
-    );
+    assert.deepEqual(result.diagnostics, []);
     const path = join(root, 'agent.yaml');
     await writeFile(path, (await readFile(path, 'utf8')).replace('"mode":"work"', '"mode":"plan"'));
     const supported = await service.loadForAgentId('tanaabot', 'before_tool_call');

@@ -16,6 +16,7 @@ import {
 } from '../channels/github/cli/contracts.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import workflowStatus from './workflow-status.ts';
 import abortableDelay from '../utils/abortable-delay.ts';
 
 export type NotificationRefreshResult = GitHubNotificationRefreshResult;
@@ -148,14 +149,7 @@ export default class OpenClawNotifications {
         const latestFeedback = feedback?.events.at(-1);
         const feedbackFailure =
           feedback?.code ?? (latestFeedback?.phase === 'blocked' ? latestFeedback.code : undefined);
-        const phase = record?.retired
-          ? 'retired'
-          : record?.work?.code || record?.work?.result?.outcome === 'blocked'
-            ? 'blocked'
-            : record?.work?.result?.outcome === 'clarification-needed'
-              ? 'clarification-needed'
-              : (record?.result?.outcome ??
-                (record?.phase === 'creating' ? 'uncertain' : (record?.phase ?? 'queued')));
+        const phase = record ? workflowStatus(record) : 'queued';
         return {
           itemType: 'issue',
           lifecycleId: 'issue',

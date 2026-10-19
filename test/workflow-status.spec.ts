@@ -2,6 +2,28 @@ import assert from 'node:assert/strict';
 import workflowStatus from '../agent/workflow-status.ts';
 
 describe('agent/workflow-status', () => {
+  it('should report the current implementation stage instead of the completed assessment', () => {
+    const assessment = { phase: 'complete', result: { outcome: 'plan-ready' } };
+    assert.equal(workflowStatus(assessment), 'plan-ready');
+    for (const phase of ['waiting', 'prepared', 'running', 'delivery', 'complete'])
+      assert.equal(workflowStatus({ ...assessment, continuation: { phase } }), phase);
+    for (const [status, expected] of [
+      ['attempted', 'uncertain'],
+      ['accepted', 'prepared'],
+      ['consumed', 'running'],
+      ['completed', 'running'],
+    ])
+      assert.equal(
+        workflowStatus({ ...assessment, work: { turn: { status: status! } } }),
+        expected,
+      );
+    assert.equal(workflowStatus({ ...assessment, work: { implementation: {} } }), 'running');
+    assert.equal(
+      workflowStatus({ ...assessment, work: { result: { outcome: 'done' } } }),
+      'delivery',
+    );
+    assert.deepEqual(assessment, { phase: 'complete', result: { outcome: 'plan-ready' } });
+  });
   it('should distinguish obsolete intent without discarding its native reservation', () => {
     const record = { phase: 'blocked', blocker: 'dispatch-assignment-superseded' };
     assert.equal(workflowStatus(record), 'obsolete');
@@ -27,6 +49,13 @@ describe('agent/workflow-status', () => {
     );
     const work = { result: { outcome: 'clarification-needed' } };
     assert.equal(workflowStatus({ phase: 'complete', work }), 'clarification-needed');
+    assert.equal(
+      workflowStatus({
+        phase: 'complete',
+        work: { ...work, caller: { runId: 'answer' }, clarificationInput: { runId: 'question' } },
+      }),
+      'running',
+    );
     assert.equal(
       workflowStatus({ phase: 'complete', work: { ...work, code: 'dispatch-turn-cancelled' } }),
       'blocked',

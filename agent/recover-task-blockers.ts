@@ -14,6 +14,7 @@ const obsolete = new Set([
   'delivery-human-publication-required',
   'feedback-work-authority-denied',
   'continuation-user-intervened',
+  'continuation-selection-changed',
 ]);
 
 /** normalize supported active records without granting new work or replaying any effect. */
@@ -91,13 +92,15 @@ export default function recoverTaskBlockers(record: {
   if (work?.phase === 'blocked' && work.code && obsolete.has(work.code)) {
     clear(work);
     work.phase =
-      work.publicationAttempt || work.result?.outcome === 'done'
-        ? 'delivery'
-        : work.binding
-          ? 'running'
-          : work.attempt
-            ? 'prepared'
-            : 'waiting';
+      work.result?.outcome === 'clarification-needed' || work.result?.outcome === 'blocked'
+        ? work.result.outcome
+        : work.publicationAttempt || work.result?.outcome === 'done'
+          ? 'delivery'
+          : work.binding
+            ? 'running'
+            : work.attempt
+              ? 'prepared'
+              : 'waiting';
   }
   for (const event of record.feedback?.events ?? [])
     if (event.phase === 'blocked' && event.code && obsolete.has(event.code)) {

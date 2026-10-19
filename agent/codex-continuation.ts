@@ -362,34 +362,20 @@ export default async function runCodexContinuation(
             await save();
             return { status: 'cancelled', id: record.id };
           }
-          const selection = await selectWorkflowStage({
-            stage: 'implementation',
-            configuration: {
-              skill: work.selection.requestedSkill,
-              guidance: work.selection.guidance?.content,
-            },
-            workspace: current.workspace,
-            observedAt: work.selection.observedAt,
-            resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
-          });
-          selection.selection = { ...work.selection, skill: selection.selection.skill };
-          const selections = [{ expected: work.selection, actual: selection.selection }];
-          if (enteringImplementation && liveMode === 'auto') {
-            const assessment = await selectWorkflowStage({
-              stage: 'assessment',
+          let selection = work.selection;
+          if (input.action === 'context' && work.result?.outcome !== 'done') {
+            const currentSelection = await selectWorkflowStage({
+              stage: 'implementation',
               configuration: {
-                skill: record.assessment!.requestedSkill,
-                guidance: record.assessment!.guidance?.content,
+                skill: work.selection.requestedSkill,
+                guidance: work.selection.guidance?.content,
               },
               workspace: current.workspace,
-              observedAt: record.assessment!.observedAt,
+              observedAt: work.selection.observedAt,
               resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
             });
-            selections.push({ expected: record.assessment!, actual: assessment.selection });
-          }
-          for (const { expected, actual } of selections) {
-            const expectedSkill = expected.skill,
-              actualSkill = actual.skill;
+            const expectedSkill = work.selection.skill,
+              actualSkill = currentSelection.selection.skill;
             const samePath =
               expectedSkill.path === actualSkill.path ||
               (expectedSkill.scope === 'repo' &&
@@ -401,11 +387,10 @@ export default async function runCodexContinuation(
             if (
               !samePath ||
               expectedSkill.name !== actualSkill.name ||
-              expectedSkill.scope !== actualSkill.scope ||
-              expectedSkill.digest !== actualSkill.digest ||
-              expected.guidance?.content !== actual.guidance?.content
+              expectedSkill.scope !== actualSkill.scope
             )
-              throw new Error('continuation-selection-changed');
+              throw new Error('continuation-skill-identity-changed');
+            selection = { ...work.selection, skill: actualSkill };
           }
           // recheck the saved native activation after provider and skill reads, before side effects.
           const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -657,7 +642,7 @@ export default async function runCodexContinuation(
               issueStage: record.progression?.stage ?? 'planning',
               assessment: record.result,
               assessmentSelection: record.assessment,
-              implementation: selection.selection,
+              implementation: selection,
               binding: work.binding,
               resultContract: 'implementation-result/v1',
               resultSchema: implementationResultSchema,

@@ -2744,20 +2744,13 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  for (const stop of ['cancel', 'changed-selection', 'denial'] as const) {
+  for (const stop of ['cancel', 'denial'] as const) {
     it(`should preserve auto ${stop} through invalid and corrected assessments`, async () => {
       const work = await autoIssue();
       const child = { threadId: native!.id };
       const previousResultDigest = automationHash(autoResult);
       if (stop === 'cancel') {
         await work.run('cancel', {}, true);
-      } else if (stop === 'changed-selection') {
-        const original = work.continuation.native!.assessmentSkill;
-        work.continuation.native!.assessmentSkill = async (cwd, id) => ({
-          ...(await original(cwd, id)),
-          digest: id.includes('assessment') ? 'b'.repeat(64) : 'a'.repeat(64),
-        });
-        await work.run('next');
       } else {
         await work.run('next');
         work.continuation.continuationNative = async () => ({
@@ -3027,15 +3020,21 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('context', {}, true)).status, 'verified');
   });
 
-  it('should stop auto when the assessment skill changes', async () => {
+  it('should retain the completed auto assessment when its skill content changes', async () => {
     const work = await autoIssue();
     const original = work.continuation.native!.assessmentSkill;
     work.continuation.native!.assessmentSkill = async (cwd, id) => ({
       ...(await original(cwd, id)),
       digest: id.includes('assessment') ? 'b'.repeat(64) : 'a'.repeat(64),
     });
-    const stopped = await work.run('next');
-    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!;
+    assert.deepEqual(retained.result, autoResult);
+    assert.equal(retained.assessment!.skill.digest, 'a'.repeat(64));
   });
 
   it('should continue auto after its receipted assessment summary is added to the issue', async () => {
@@ -3746,6 +3745,80 @@ describe('agent/codex-dispatch', () => {
       { id: work.id, result, previousResultDigest: automationHash(previous) },
       { threadId: native!.id },
     );
+    assert.equal((await work.run('next')).status, 'prepared');
+  });
+
+  it('should recover an old skill-content stop without rewriting or resending its implementation request', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run('context', {}, true);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = (await store.read()).records[0]!;
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation!.phase = 'blocked';
+      state.records[0]!.continuation!.code = 'continuation-selection-changed';
+      await save();
+    });
+    const original = work.continuation.native!.assessmentSkill;
+    work.continuation.native!.assessmentSkill = async (cwd, id) => ({
+      ...(await original(cwd, id)),
+      digest: 'b'.repeat(64),
+    });
+    const context = await work.run('context', {}, true);
+    assert.equal(context.status, 'verified');
+    assert.equal(
+      'implementation' in context && context.implementation?.skill.digest,
+      'b'.repeat(64),
+    );
+    const after = (await store.read()).records[0]!;
+    assert.deepEqual(after.continuation!.attempt, before.continuation!.attempt);
+    assert.deepEqual(after.continuation!.binding, before.continuation!.binding);
+    assert.deepEqual(after.continuation!.selection, before.continuation!.selection);
+    assert.deepEqual(after.result, before.result);
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  it('should still reject a changed implementation skill identity', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    const original = work.continuation.native!.assessmentSkill;
+    work.continuation.native!.assessmentSkill = async (cwd, id) => ({
+      ...(await original(cwd, id)),
+      path: '/different/SKILL.md',
+    });
+    await assert.rejects(work.run('context', {}, true), /continuation-skill-identity-changed/);
+  });
+
+  it('should record finished work and recover delivery without reloading an implementation skill', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run('context', {}, true);
+    work.continuation.native!.assessmentSkill = async () => {
+      throw new Error('dispatch-assessment-skill-unavailable');
+    };
+    assert.equal(
+      (
+        await work.run(
+          'result',
+          {
+            result: { outcome: 'done', summary: 'Done.', fullResult: 'Full evidence.' },
+          },
+          true,
+        )
+      ).status,
+      'recorded',
+    );
+    const context = await work.run('context', {}, true);
+    assert.equal(context.status, 'verified');
+    assert.equal('deliveryOnly' in context && context.deliveryOnly, true);
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
     assert.equal((await work.run('next')).status, 'prepared');
   });
 

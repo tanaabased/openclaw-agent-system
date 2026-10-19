@@ -39,6 +39,7 @@ describe('agent/recover-task-blockers', () => {
       'delivery-human-publication-required',
       'feedback-work-authority-denied',
       'continuation-user-intervened',
+      'continuation-selection-changed',
     ]) {
       const value = {
         ...record(),
@@ -80,6 +81,25 @@ describe('agent/recover-task-blockers', () => {
       const before = structuredClone(value);
       recoverTaskBlockers(value);
       assert.deepEqual(value, before);
+    }
+  });
+  it('should preserve questions and substantive stops when clearing an obsolete skill-content blocker', () => {
+    for (const outcome of ['clarification-needed', 'blocked']) {
+      const value = {
+        ...record(),
+        continuation: {
+          phase: 'blocked',
+          code: 'continuation-selection-changed',
+          binding: { turnId: 'original' },
+          result: { outcome, fullResult: 'Retained implementation output.' },
+        },
+      };
+      const previous = structuredClone(value.continuation);
+      recoverTaskBlockers(value);
+      assert.equal(value.continuation.code, undefined);
+      assert.equal(value.continuation.phase, outcome);
+      assert.deepEqual(value.continuation.result, previous.result);
+      assert.deepEqual(value.continuation.binding, previous.binding);
     }
   });
   it('should retain uncertain feedback publication for reconciliation instead of sending again', () => {
