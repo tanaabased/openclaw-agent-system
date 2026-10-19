@@ -7,7 +7,6 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import waitForAssessmentRelease from './assessment-barrier.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -439,11 +438,9 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
         systemMessage: [identity],
         predicate: (request) => 'toolCalls' in (response(request) ?? {}),
       },
-      response: async (request) => {
+      response: (request) => {
         const value = response(request);
         assert.ok(value && 'toolCalls' in value);
-        const context = value.toolCalls?.find((tool) => tool.id === prefix + 'context');
-        if (context) await waitForAssessmentRelease(JSON.parse(context.arguments).id);
         return value;
       },
     },

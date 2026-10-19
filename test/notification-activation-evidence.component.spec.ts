@@ -26,7 +26,7 @@ node() { cat; return "$DIAGNOSTIC_STATUS"; }
 jq() { cat; }
 `;
 
-for (const scenario of ['openclaw-issue', 'openclaw-pr']) {
+for (const scenario of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications']) {
   describe(`examples/${scenario} activation evidence`, () => {
     for (const [install, automation, diagnostic, expected] of [
       [0, 0, 0, 0],

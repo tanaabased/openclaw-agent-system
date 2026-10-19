@@ -3,9 +3,9 @@ import { readFile } from 'node:fs/promises';
 
 import parseAgentManifest from '../manifest/parse.ts';
 
-for (const id of ['openclaw-issue', 'openclaw-pr']) {
+for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications']) {
   const scenario = { id };
-  const issueOnly = id === 'openclaw-issue';
+  const issueOnly = id !== 'openclaw-pr';
   const owner = 'tanaabot';
   const ownerLogin = 'tanaabot';
   const actorFolder = 'emori';

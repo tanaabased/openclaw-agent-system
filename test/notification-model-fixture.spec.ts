@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import waitForAssessmentRelease from '../examples/openclaw-issue/assessment-barrier.ts';
+import waitForAssessmentRelease from '../examples/openclaw-notifications/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -9,11 +9,12 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
+import { notificationsExampleScenario } from '../examples/openclaw-notifications/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
-for (const scenario of [issueExampleScenario, prExampleScenario]) {
+for (const scenario of [issueExampleScenario, prExampleScenario, notificationsExampleScenario]) {
   const id = 'a'.repeat(64);
   const job = openclawIntakeJobs({
     schemaVersion: 1,
@@ -89,36 +90,37 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
-    it('should release only the assessment explicitly unblocked by the native scenario', async () => {
-      const directory = '/tmp/notification-barrier-fixture';
-      const files = new Set<string>();
-      const listeners = new Set<() => void>();
-      const boundary = {
-        exists: (path: string) => files.has(path),
-        observe: (_directory: string, changed: () => void) => {
-          listeners.add(changed);
-          return () => {
-            listeners.delete(changed);
-          };
-        },
-      };
-      await waitForAssessmentRelease('no-hold', directory, boundary);
-      files.add(join(directory, 'notification-assessments-held'));
-      const first = waitForAssessmentRelease('first', directory, boundary);
-      let secondReleased = false;
-      const second = waitForAssessmentRelease('second', directory, boundary).then(() => {
-        secondReleased = true;
+    if (scenario.id === 'openclaw-notifications')
+      it('should release only the assessment explicitly unblocked by the native scenario', async () => {
+        const directory = '/tmp/notification-barrier-fixture';
+        const files = new Set<string>();
+        const listeners = new Set<() => void>();
+        const boundary = {
+          exists: (path: string) => files.has(path),
+          observe: (_directory: string, changed: () => void) => {
+            listeners.add(changed);
+            return () => {
+              listeners.delete(changed);
+            };
+          },
+        };
+        await waitForAssessmentRelease('no-hold', directory, boundary);
+        files.add(join(directory, 'notification-assessments-held'));
+        const first = waitForAssessmentRelease('first', directory, boundary);
+        let secondReleased = false;
+        const second = waitForAssessmentRelease('second', directory, boundary).then(() => {
+          secondReleased = true;
+        });
+        files.add(join(directory, 'notification-assessment-released-first'));
+        for (const listener of listeners) listener();
+        await first;
+        assert.equal(secondReleased, false);
+        files.add(join(directory, 'notification-assessment-released-second'));
+        for (const listener of listeners) listener();
+        await second;
+        assert.equal(listeners.size, 0);
+        await waitForAssessmentRelease('first', directory, boundary);
       });
-      files.add(join(directory, 'notification-assessment-released-first'));
-      for (const listener of listeners) listener();
-      await first;
-      assert.equal(secondReleased, false);
-      files.add(join(directory, 'notification-assessment-released-second'));
-      for (const listener of listeners) listener();
-      await second;
-      assert.equal(listeners.size, 0);
-      await waitForAssessmentRelease('first', directory, boundary);
-    });
 
     it('should advance three distinct pending assessments using indexed string-wrapped native results', async () => {
       const input = request(intakePrompt);
@@ -357,7 +359,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
       const nextResponse = await response(later);
       assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.equal((await action(later, 'summary')).operation, 'compose');
     });
 
@@ -423,7 +425,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         'content' in nextResponse && nextResponse.content,
         'The complete retained presentation.',
       );
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.equal((await action(input, 'summary')).operation, 'compose');
       for (const value of [
         { ...context, runtime: 'codex' },
@@ -597,7 +599,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       });
       const retained = await action(input, 'feedback');
       assert.equal(retained.operation, 'result');
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.match(retained.privateText!, /implementation remains unstarted/);
       append(input, 'feedback-result', {
         status: 'recorded',
@@ -615,7 +617,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(input, 'feedback-skill', { text: 'Selected reply method' });
       const candidate = await action(input, 'feedback');
       assert.equal(candidate.operation, 'candidate');
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.match(candidate.publicText!, /Implementation has not started/);
       append(input, 'feedback-candidate', { status: 'candidate-recorded' });
       assert.equal((await action(input, 'feedback')).digest, undefined);
