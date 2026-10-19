@@ -17,7 +17,7 @@ import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit, verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
-import dispatchContext from './dispatch-context.ts';
+import dispatchContext, { dispatchEvidence } from './dispatch-context.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, validateWorkflowResult } from './workflow-result.ts';
@@ -263,7 +263,17 @@ export default async function runCodexContinuation(
             );
             if (latest.truncated || retained.truncated)
               throw new Error('continuation-assessment-evidence-incomplete');
-            if (automationHash(latest) !== automationHash(retained))
+            const ownCommentUrls = new Set(
+              (record.assessmentSummaries ?? []).flatMap((summary) =>
+                summary.receipt
+                  ? [`${retained.source}#issuecomment-${summary.receipt.databaseId}`]
+                  : [],
+              ),
+            );
+            if (
+              automationHash(dispatchEvidence(latest, ownCommentUrls)) !==
+              automationHash(dispatchEvidence(retained, ownCommentUrls))
+            )
               throw new Error('continuation-assessment-evidence-changed');
           }
           const found = await native.find({

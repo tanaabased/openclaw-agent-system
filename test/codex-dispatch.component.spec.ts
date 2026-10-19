@@ -2929,6 +2929,55 @@ describe('agent/codex-dispatch', () => {
     assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
   });
 
+  it('should continue auto after its receipted assessment summary is added to the issue', async () => {
+    const work = await autoIssue();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    let source = '';
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      source = JSON.parse(record.context!).source;
+      record.assessmentSummaries = [
+        {
+          revision: record.assessmentRevision!,
+          resultDigest: automationHash(record.result),
+          binding: record.stageReceipt!.binding,
+          turnId: record.resultTurnId!,
+          authorityDigest: 'a'.repeat(64),
+          selection: record.assessment!,
+          publicText: 'Published summary.',
+          attempt: 'summary-attempt',
+          receipt: { nodeId: 'SUMMARY', databaseId: 7 },
+        },
+      ];
+      await save();
+    });
+    const connect = work.continuation.connect!;
+    work.continuation.connect = async (workspace, signal) => {
+      const client = await connect(workspace, signal);
+      return {
+        ...client,
+        getItemContext: async (...args) => {
+          const context = await client.getItemContext(...args);
+          return {
+            ...context,
+            comments: [
+              ...context.comments,
+              {
+                url: source + '#issuecomment-7',
+                authorLogin: 'receiver',
+                body: 'Published summary.',
+                createdAt: '2026-10-07T10:03:00Z',
+              },
+            ],
+          };
+        },
+      };
+    };
+    const ready = await work.run('next');
+    assert.equal(ready.status, 'prepared', JSON.stringify(ready));
+  });
+
   it('should stop auto when issue evidence changes before implementation', async () => {
     const work = await autoIssue();
     const connect = work.continuation.connect!;
