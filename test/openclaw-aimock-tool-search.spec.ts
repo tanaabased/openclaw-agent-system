@@ -74,7 +74,7 @@ describe('scripts/aimock-tool-search', () => {
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
     const input = request(
-      `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+      `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
     );
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
     input.messages.push({
@@ -213,7 +213,7 @@ describe('scripts/aimock-tool-search', () => {
   it('should identify a rejected notification tool envelope without exposing call arguments', async () => {
     const scenario = withToolSearch(resolveScenario('openclaw-pr'));
     const input = request(
-      `Stop before implementation. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
+      `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
     );
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
     input.messages.push({

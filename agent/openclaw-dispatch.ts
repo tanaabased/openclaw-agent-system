@@ -1547,7 +1547,7 @@ export default class OpenClawDispatch {
             signal.throwIfAborted();
           };
           return this.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
-            const { source, progression } = await verifyOpenClawWork({
+            const { source, message, progression } = await verifyOpenClawWork({
               record,
               caller,
               operator,
@@ -1585,6 +1585,7 @@ export default class OpenClawDispatch {
                 source,
                 progression,
                 action: input,
+                message,
                 now,
                 assertCurrent,
                 save,
@@ -1845,7 +1846,6 @@ export default class OpenClawDispatch {
           if (!record.sessionCreation || !record.request || !('key' in record.request))
             throw new Error('dispatch-legacy-handoff-retained');
           if (
-            record.sourceThreadId !== caller.sessionKey ||
             record.request.agentId !== manifest.agent.id ||
             record.request.key !==
               `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}` ||

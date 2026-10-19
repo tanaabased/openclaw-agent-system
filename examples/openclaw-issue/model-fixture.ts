@@ -323,7 +323,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
   )?.[1];
-  if (!id || !prompt.includes('Stop before implementation.')) return;
+  if (
+    !id ||
+    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
+  )
+    return;
   const context = result('context');
   if (!context) {
     const privateContext = request.messages

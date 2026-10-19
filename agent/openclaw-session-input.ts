@@ -92,7 +92,11 @@ export async function nativeInputEvent(input: {
     (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
   )
     fail();
-  return { runId, inputEventId };
+  return {
+    runId,
+    inputEventId,
+    message: typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content),
+  };
 }
 
 /** owner verification is needed only when human direction supplies the transition. */
@@ -100,7 +104,8 @@ export async function operatorInputEvent(
   input: Omit<Parameters<typeof nativeInputEvent>[0], 'requireOwner'> & { senderIsOwner: boolean },
 ) {
   if (!input.senderIsOwner) throw new Error('dispatch-operator-input-unverified');
-  return nativeInputEvent({ ...input, requireOwner: true });
+  const { runId, inputEventId } = await nativeInputEvent({ ...input, requireOwner: true });
+  return { runId, inputEventId };
 }
 
 /** user input custody is journaled by idempotency key; run metadata is optional. */

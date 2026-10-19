@@ -268,12 +268,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               pass.selected.filter((id) => !pass.recovery.includes(id)).length >
                 pass.candidates.length ||
               pass.recovery.some((id) => !state.records.some((record) => record.id === id)) ||
-              pass.selected.some(
-                (id) =>
-                  !state.records.some(
-                    (record) => record.id === id && record.sourceThreadId === pass.sessionKey,
-                  ),
-              ),
+              pass.selected.some((id) => !state.records.some((record) => record.id === id)),
           ))) ||
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
       new Set(

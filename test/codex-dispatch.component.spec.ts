@@ -930,7 +930,6 @@ describe('agent/codex-dispatch', () => {
     assert.equal(assessment.guidance.content, 'Implement and publish immediately.');
     assert.equal(context.resultContract, 'assessment-result/v1');
     assert.match(String(context.instructions), /assessment.skill.name/u);
-    assert.match(String(context.instructions), /never implement or publish/u);
     await assert.rejects(
       request(
         'result',
@@ -2648,11 +2647,11 @@ describe('agent/codex-dispatch', () => {
     let received = false;
     const continuation: CodexContinuationDependencies = {
       ...deps,
-      continuationNative: async () =>
-        received
+      continuationNative: async (_source, attempt) =>
+        received || attempt.origin === 'assessment'
           ? {
               status: 'verified',
-              turnId: native!.turnId!,
+              turnId: attempt.origin === 'assessment' ? attempt.turnId! : native!.turnId!,
               ended: ['completed', 'failed', 'interrupted'].includes(native!.turnStatus!),
             }
           : { status: 'uncertain' },
@@ -2678,6 +2677,87 @@ describe('agent/codex-dispatch', () => {
       },
     };
   }
+
+  for (const mode of ['work', 'auto'] as const)
+    it(`should hand ${mode} directly from assessment to implementation without a coordinator send`, async () => {
+      const assessment =
+        mode === 'auto'
+          ? { ...result, decision: { mode: 'work' as const, reasons: ['Ready.'] } }
+          : result;
+      const work = await workIssue(assessment, 'Follow the plan.', 'company:implement', mode);
+      native!.status = 'active';
+      native!.turnStatus = 'inProgress';
+      const turnId = native!.turnId;
+      const recorded = await request(
+        'result',
+        { id: work.id, result: assessment },
+        { threadId: native!.id },
+      );
+      assert.equal((recorded.handoff as { next: string }).next, 'implementation');
+      const verified = await work.run('context', {}, true);
+      assert.equal(verified.status, 'verified', JSON.stringify(verified));
+      assert.equal(
+        'implementation' in verified && verified.implementation?.skill.name,
+        'company:implement',
+      );
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      const started = (await store.read()).records[0]!;
+      assert.equal(started.continuation!.attempt!.origin, 'assessment');
+      assert.equal(started.continuation!.binding!.turnId, turnId);
+      assert.equal(started.progression!.via, mode);
+      assert.equal((await work.run('next')).status, 'idle');
+      assert.equal(
+        (
+          await work.run(
+            'result',
+            { result: { outcome: 'done', summary: 'Done.', fullResult: 'Validated.' } },
+            true,
+          )
+        ).status,
+        'recorded',
+      );
+      let delivered = false;
+      work.continuation.deliver = async (_data, _input, deliveryDeps) => {
+        await deliveryDeps?.authorizeSchedule?.();
+        delivered = true;
+        throw new Error('direct-delivery-boundary');
+      };
+      await assert.rejects(
+        work.run('delivery', { delivery: { action: 'prepare' } }, true),
+        /direct-delivery-boundary/,
+      );
+      assert.equal(delivered, true);
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+      assert.equal(native!.turnId, turnId);
+      native!.status = 'idle';
+      native!.turnStatus = 'completed';
+      const recovery = await work.run('next');
+      assert.equal(recovery.status, 'prepared');
+      assert.match('request' in recovery ? recovery.request!.prompt : '', /only.*delivery/i);
+      assert.deepEqual((await store.read()).records[0]!.result, assessment);
+    });
+
+  it('should recover interrupted direct work using its original assessment and native receipt', async () => {
+    const work = await workIssue();
+    native!.status = 'active';
+    native!.turnStatus = 'inProgress';
+    await work.run('context', {}, true);
+    native!.status = 'idle';
+    native!.turnStatus = 'interrupted';
+    const resumed = await work.run('next');
+    assert.equal(resumed.status, 'prepared', JSON.stringify(resumed));
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.continuation!.attempt!.origin, undefined);
+    assert.equal(retained.continuation!.retries![0]!.attempt.origin, 'assessment');
+    assert.deepEqual(retained.result, result);
+    assert.equal(retained.progression!.stage, 'implementation');
+  });
 
   it('should not replay the initial plan after feedback has begun implementation', async () => {
     const work = await workIssue();
@@ -2959,48 +3039,60 @@ describe('agent/codex-dispatch', () => {
   });
 
   for (const decision of ['plan', 'work'] as const)
-    it(`should request a missing auto decision in an existing plan chat and honor ${decision}`, async () => {
-      const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
-      const current = await selectCodexIntake(pluginData, deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
-      const before = (await store.read()).records[0]!;
-      const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-      configured.github.notifications['issue-assignment'].mode = 'auto';
-      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-      const prepared = await work.run('next');
-      assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
-      assert.equal('request' in prepared && prepared.request?.threadId, native!.id);
-      assert.equal((await work.run('next')).status, 'pending');
-      const waiting = (await store.read()).records[0]!;
-      assert.deepEqual(waiting.result, before.result);
-      assert.deepEqual(waiting.stageReceipt, before.stageReceipt);
-      assert.equal(waiting.progression, undefined);
-      assert.equal(waiting.continuation?.attempt, undefined);
-      work.receive();
-      native!.turnId = 'auto-decision-turn';
-      const child = { threadId: native!.id };
-      const context = await request('context', { id: work.id }, child);
-      assert.equal(context.mode, 'auto');
-      await request(
-        'result',
-        {
-          id: work.id,
-          previousResultDigest: context.previousResultDigest,
-          result: { ...result, decision: { mode: decision, reasons: ['Assessed existing plan.'] } },
-        },
-        child,
-      );
-      native!.status = 'idle';
-      native!.turnStatus = 'completed';
-      assert.equal((await work.run('next')).status, decision === 'work' ? 'prepared' : 'idle');
-      const retained = (await store.read()).records[0]!;
-      assert.equal(retained.autoDecision!.ended, true);
-      assert.equal(Boolean(retained.continuation?.attempt), decision === 'work');
-      assert.equal(retained.threadId, before.threadId);
-    });
+    for (const direct of [false, true])
+      it(`should request a missing auto decision in an existing plan chat and honor ${decision} with direct handoff ${direct}`, async () => {
+        const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
+        const current = await selectCodexIntake(pluginData, deps);
+        const store = new CodexDispatchStore(
+          current.store.location.root,
+          current.store.location.scope,
+        );
+        const before = (await store.read()).records[0]!;
+        const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+        configured.github.notifications['issue-assignment'].mode = 'auto';
+        await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+        const prepared = await work.run('next');
+        assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+        assert.equal('request' in prepared && prepared.request?.threadId, native!.id);
+        assert.equal((await work.run('next')).status, 'pending');
+        const waiting = (await store.read()).records[0]!;
+        assert.deepEqual(waiting.result, before.result);
+        assert.deepEqual(waiting.stageReceipt, before.stageReceipt);
+        assert.equal(waiting.progression, undefined);
+        assert.equal(waiting.continuation?.attempt, undefined);
+        work.receive();
+        native!.turnId = 'auto-decision-turn';
+        const child = { threadId: native!.id };
+        const context = await request('context', { id: work.id }, child);
+        assert.equal(context.mode, 'auto');
+        await request(
+          'result',
+          {
+            id: work.id,
+            previousResultDigest: context.previousResultDigest,
+            result: {
+              ...result,
+              decision: { mode: decision, reasons: ['Assessed existing plan.'] },
+            },
+          },
+          child,
+        );
+        if (direct && decision === 'work') {
+          const entered = await work.run('context', {}, true);
+          assert.equal(entered.status, 'verified', JSON.stringify(entered));
+          assert.equal(
+            (await store.read()).records[0]!.continuation!.attempt!.origin,
+            'assessment',
+          );
+        }
+        native!.status = 'idle';
+        native!.turnStatus = 'completed';
+        assert.equal((await work.run('next')).status, decision === 'work' ? 'prepared' : 'idle');
+        const retained = (await store.read()).records[0]!;
+        assert.equal(retained.autoDecision!.ended, true);
+        assert.equal(Boolean(retained.continuation?.attempt), decision === 'work');
+        assert.equal(retained.threadId, before.threadId);
+      });
 
   it('should continue another issue while an auto decision receipt remains uncertain', async () => {
     const work = await workIssue(
@@ -3972,57 +4064,67 @@ describe('agent/codex-dispatch', () => {
     await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
   });
 
-  it('should retain implementation questions and resume a new answer without a fresh send or approval', async () => {
-    const work = await workIssue();
-    await work.run('next');
-    work.receive();
-    await work.run('context', {}, true);
-    const question = {
-      outcome: 'clarification-needed',
-      summary: 'Choose retention.',
-      fullResult: 'Partial implementation retained.',
-      questions: ['Keep records for 30 or 60 days?'],
-    };
-    const saved = await work.run('result', { result: question }, true);
-    assert.equal(saved.status, 'recorded');
-    assert.ok('presentation' in saved && String(saved.presentation).includes('30 or 60'));
-    assert.equal((await work.run('context', {}, true)).status, 'clarification-needed');
-    native!.status = 'idle';
-    native!.turnStatus = 'completed';
-    assert.equal((await work.run('next')).status, 'idle');
-    work.continuation.continuationNative = async () => ({
-      status: 'verified',
-      turnId: 'implementation-turn',
-      ended: true,
+  for (const direct of [false, true])
+    it(`should retain implementation questions and resume a new answer without approval with direct handoff ${direct}`, async () => {
+      const work = await workIssue();
+      if (direct) {
+        native!.status = 'active';
+        native!.turnStatus = 'inProgress';
+      } else {
+        await work.run('next');
+        work.receive();
+      }
+      const implementationTurn = native!.turnId!;
+      await work.run('context', {}, true);
+      const question = {
+        outcome: 'clarification-needed',
+        summary: 'Choose retention.',
+        fullResult: 'Partial implementation retained.',
+        questions: ['Keep records for 30 or 60 days?'],
+      };
+      const saved = await work.run('result', { result: question }, true);
+      assert.equal(saved.status, 'recorded');
+      assert.ok('presentation' in saved && String(saved.presentation).includes('30 or 60'));
+      assert.equal((await work.run('context', {}, true)).status, 'clarification-needed');
+      native!.status = 'idle';
+      native!.turnStatus = 'completed';
+      assert.equal((await work.run('next')).status, 'idle');
+      work.continuation.continuationNative = async () => ({
+        status: 'verified',
+        turnId: implementationTurn,
+        ended: true,
+      });
+      native!.turnId = 'answer-turn';
+      native!.followUpUserTurn = true;
+      native!.status = 'active';
+      native!.turnStatus = 'inProgress';
+      const resumed = await work.run('context', {}, true);
+      assert.equal(resumed.status, 'verified');
+      assert.ok(
+        'previousResult' in resumed &&
+          JSON.stringify(resumed.previousResult) === JSON.stringify(question),
+      );
+      assert.equal(
+        (
+          await work.run(
+            'result',
+            { result: { outcome: 'done', summary: 'Done', fullResult: 'Completed with 30 days.' } },
+            true,
+          )
+        ).status,
+        'recorded',
+      );
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      const retained = (await store.read()).records[0]!;
+      assert.equal(retained.progression?.stage, 'implementation');
+      assert.equal(retained.continuation!.phase, 'delivery');
+      assert.equal(retained.continuation!.retries, undefined);
+      assert.equal(retained.continuation!.binding!.turnId, implementationTurn);
     });
-    native!.turnId = 'answer-turn';
-    native!.followUpUserTurn = true;
-    native!.status = 'active';
-    native!.turnStatus = 'inProgress';
-    const resumed = await work.run('context', {}, true);
-    assert.equal(resumed.status, 'verified');
-    assert.ok(
-      'previousResult' in resumed &&
-        JSON.stringify(resumed.previousResult) === JSON.stringify(question),
-    );
-    assert.equal(
-      (
-        await work.run(
-          'result',
-          { result: { outcome: 'done', summary: 'Done', fullResult: 'Completed with 30 days.' } },
-          true,
-        )
-      ).status,
-      'recorded',
-    );
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    const retained = (await store.read()).records[0]!;
-    assert.equal(retained.progression?.stage, 'implementation');
-    assert.equal(retained.continuation!.phase, 'delivery');
-    assert.equal(retained.continuation!.retries, undefined);
-    assert.equal(retained.continuation!.binding!.turnId, 'implementation-turn');
-  });
 
   it('should resume a substantive implementation blocker only on fresh user input', async () => {
     const work = await workIssue();

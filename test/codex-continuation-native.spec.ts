@@ -110,6 +110,50 @@ describe('agent/codex-continuation-native', () => {
       ended: false,
     });
   });
+
+  it('should verify a direct assessment origin without looking for a coordinator send', async () => {
+    const direct = {
+      ...attempt,
+      origin: 'assessment' as const,
+      sourceThreadId: attempt.request.threadId,
+      sourceTurnId: 'assessment',
+      turnId: 'assessment',
+    };
+    const verify = fixture({ call: false });
+    assert.deepEqual(await verify('source', direct), {
+      status: 'verified',
+      turnId: 'assessment',
+      ended: false,
+    });
+    await assert.rejects(
+      verify('source', { ...direct, sourceThreadId: 'other' }),
+      /continuation-assessment-origin-invalid/,
+    );
+    await assert.rejects(
+      verify('source', { ...direct, turnId: 'missing', sourceTurnId: 'missing' }),
+      /continuation-history-incomplete/,
+    );
+  });
+
+  it('should retain native denial and completion evidence for a direct origin', async () => {
+    const direct = {
+      ...attempt,
+      origin: 'assessment' as const,
+      sourceThreadId: attempt.request.threadId,
+      sourceTurnId: 'implementation',
+      turnId: 'implementation',
+    };
+    const denied = await fixture({
+      call: false,
+      items: [{ type: 'commandExecution', status: 'declined' }],
+    })('source', direct);
+    assert.equal(denied.status, 'blocked');
+    assert.equal('code' in denied && denied.code, 'continuation-native-approval-denied');
+    assert.deepEqual(
+      await fixture({ call: false, turnStatus: 'completed', completedAt: 2 })('source', direct),
+      { status: 'verified', turnId: 'implementation', ended: true },
+    );
+  });
   it('should reconcile native steering within the observed turn without resending', async () => {
     assert.deepEqual(await fixture({ sameTurn: true })('source', attempt), {
       status: 'verified',

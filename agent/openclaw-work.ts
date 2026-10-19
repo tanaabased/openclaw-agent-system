@@ -67,17 +67,23 @@ export async function verifyOpenClawWork(input: {
     runId: caller.runId,
     retained,
   };
-  const source =
+  const verifiedInput =
     automatic.status !== 'ready'
       ? await operatorInputEvent({ ...context, senderIsOwner: operator })
       : await nativeInputEvent(context);
-  return { source, progression: transition.progression };
+  const { runId, inputEventId } = verifiedInput;
+  const message =
+    'message' in verifiedInput && typeof verifiedInput.message === 'string'
+      ? verifiedInput.message
+      : undefined;
+  return { source: { runId, inputEventId }, message, progression: transition.progression };
 }
 
 export default async function openClawWorkAction(input: {
   record: OpenClawDispatchRecord;
   caller: DispatchCaller;
   source: { runId: string; inputEventId: string };
+  message?: string;
   progression: IssueProgression;
   action: Exclude<OpenClawWorkAction, { action: 'delivery' }>;
   now: number;
@@ -137,6 +143,15 @@ export default async function openClawWorkAction(input: {
     record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
     record.work.implementation ??= source;
     record.work.caller = source;
+    if (!record.work.turn && record.resultTurnId === source.runId && input.message) {
+      record.work.turn = {
+        origin: 'assessment',
+        runId: source.runId,
+        message: input.message,
+        status: 'consumed',
+        consumedByEventId: source.inputEventId,
+      };
+    }
     await input.save();
     return {
       status: 'verified',

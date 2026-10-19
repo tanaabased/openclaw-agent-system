@@ -17,7 +17,7 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
     record.retirement ||
     record.reset ||
     record.feedbackReactivation ||
-    (record.decisionTurn && record.decisionTurn.status !== 'completed') ||
+    (!record.work?.turn && record.decisionTurn && record.decisionTurn.status !== 'completed') ||
     (record.work?.code &&
       ![
         'implementation-result-missing',
@@ -25,7 +25,7 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
         'dispatch-turn-failed',
       ].includes(record.work.code)) ||
     !record.sessionCreation?.verified ||
-    record.assessmentTurn?.status !== 'completed'
+    (!record.work?.turn && record.assessmentTurn?.status !== 'completed')
   )
     return;
   const work = record.work;

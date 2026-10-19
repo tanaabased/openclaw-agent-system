@@ -1,4 +1,5 @@
 import issueProgression from './issue-progression.ts';
+import assessmentHandoff from './assessment-handoff.ts';
 import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
@@ -324,7 +325,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
         url: 'https://github.com/' + intake.assignment.actor.login,
       },
     },
-    'Assess the requested outcome and prepare a plan. Stop before implementation. After recording and presenting the complete assessment, follow the host-verified summary operation for its bounded GitHub comment.',
+    'Assess the requested outcome and prepare a plan. After recording and presenting it, handle its host-verified summary and follow the returned handoff in this same turn.',
   );
   return [
     card,
@@ -1268,6 +1269,11 @@ export async function runCodexDispatch(
               ...(record.result
                 ? {
                     previousResult: record.result,
+                    handoff: assessmentHandoff(
+                      record,
+                      current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                      'codex',
+                    ),
                     previousResultDigest: automationHash(record.result),
                     previousResultTurnId: record.resultTurnId,
                     previousPresentation: assessmentPresentation(
@@ -1361,6 +1367,11 @@ export async function runCodexDispatch(
               id: record.id,
               outcome: result.outcome,
               previousResultDigest: automationHash(result),
+              handoff: assessmentHandoff(
+                record,
+                current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                'codex',
+              ),
               presentation,
               instruction: assessmentSummaryInstructions('codex'),
             };

@@ -166,13 +166,18 @@ function validWorkTurns(record: OpenClawDispatchRecord) {
     const prefix = `${record.id}:${slot === 'turn' ? 'implementation' : 'delivery'}`;
     const previous = (work.previousTurns ?? []).filter((entry) => entry.slot === slot);
     const expected = (index: number) => prefix + (index ? `:resume:${index}` : '');
-    if (
-      previous.some(
-        ({ turn }, index) => turn.status !== 'completed' || !validIssueTurn(turn, expected(index)),
-      )
-    )
+    const valid = (turn: Static<typeof issueTurnSchema>, index: number) =>
+      turn.origin === 'assessment'
+        ? slot === 'turn' &&
+          index === 0 &&
+          turn.runId === record.resultTurnId &&
+          turn.consumedByEventId === work.implementation?.inputEventId &&
+          turn.runId === work.implementation?.runId &&
+          validIssueTurn(turn, record.resultTurnId)
+        : validIssueTurn(turn, expected(index));
+    if (previous.some(({ turn }, index) => turn.status !== 'completed' || !valid(turn, index)))
       return false;
-    if (work[slot] && !validIssueTurn(work[slot], expected(previous.length))) return false;
+    if (work[slot] && !valid(work[slot], previous.length)) return false;
   }
   return true;
 }

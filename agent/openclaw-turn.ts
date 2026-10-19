@@ -1,4 +1,4 @@
-import issueInputEvent from './openclaw-session-input.ts';
+import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
 import issueTurnReply from './openclaw-session-reply.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
@@ -17,7 +17,10 @@ export function consumedInputEvent(messages: unknown[], turn: OpenClawTurn) {
   if (!inputs.length && turn.consumedByEventId) return turn.consumedByEventId;
   if (inputs.length !== 1) throw new Error('dispatch-turn-delivery-unverified');
   const entry = inputs[0]!;
-  const eventId = issueInputEvent(entry, turn);
+  const eventId =
+    turn.origin === 'assessment'
+      ? issueInputEventId(entry, turn.runId)
+      : issueInputEvent(entry, turn);
   if (!eventId) throw new Error('dispatch-turn-input-mismatch');
   return eventId;
 }

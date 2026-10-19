@@ -231,7 +231,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         },
       });
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return { content: saved.presentation };
+    if ((saved.handoff as { next?: string } | undefined)?.next !== 'implementation') return;
   }
   const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,
@@ -393,6 +393,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return { content: published.presentation };
   }
   const automaticId =
+    decisionId ??
     /Call agent_system_dispatch action implementation-context with id ([a-f0-9]{64})/u.exec(
       prompt,
     )?.[1];
@@ -456,7 +457,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             },
           });
         if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-        return { content: saved.presentation };
+        return {
+          content: [result('refresh-result')?.presentation, saved.presentation]
+            .filter(Boolean)
+            .join('\n\n'),
+        };
       }
       if (
         answerId &&
@@ -644,7 +649,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
   )?.[1];
-  if (!id || !prompt.includes('Stop before implementation.')) return;
+  if (
+    !id ||
+    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
+  )
+    return;
   const context = result('context');
   if (!context) {
     const privateContext = request.messages

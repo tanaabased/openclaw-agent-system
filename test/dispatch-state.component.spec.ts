@@ -91,7 +91,6 @@ describe('agent/shared dispatch state', () => {
       [{ ...pass, selected: [pending().id, pending().id] }],
       [{ ...pass, selected: ['d'.repeat(64)] }],
       [{ ...pass, recovery: ['d'.repeat(64)] }],
-      [{ ...pass, sessionKey: 'foreign' }],
     ]) {
       await assert.rejects(
         store.exclusive(async (state, save) => {

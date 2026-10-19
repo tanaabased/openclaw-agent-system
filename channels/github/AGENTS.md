@@ -34,6 +34,9 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 - Intake enablement and original-assigner eligibility govern admission, not progression within an admitted issue. Live mode still governs
   its first implementation transition. Preserve an entered implementation stage while the issue remains
   active; feedback still requires its current approved source.
+- After a ready assessment, enter permitted implementation in the same native turn through
+  its verified implementation context. Keep coordinator continuation as recovery for
+  interrupted or older issues, not a required wake-up between skills.
 - Recover older implementation stages from native continuation attempts or retained
   implementation handoffs, preserving the issue, assessment, and execution receipts.
   A plan, default mode, or publication-only request is not evidence of implementation.

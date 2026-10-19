@@ -269,8 +269,10 @@ implementation skill or guidance. Initial setup uses Install to create the nativ
 schedule; later mode and guidance edits apply without Install. Work mode permits
 assessment, implementation, and PR publication without routine
 stage approvals. Changing the live mode to Work also makes existing actionable Plan issues eligible
-for automatic continuation; an explicit operator request can still use the retained handoff. An actionable assessment continues in its original issue chat
-with the complete plan, retained guidance, and selected model and effort.
+for automatic continuation; an explicit operator request can still use the retained handoff. An actionable assessment hands directly to the implementation skill in the same
+native turn, with the complete plan, current guidance, and selected model and effort.
+The coordinator resumes interrupted or older issues; a second wake-up is not
+required between assessment and implementation.
 
 The runtime reads live workflow policy and checks the owning chat, active assignment,
 and native receipts without renewed stage approval. Policy-only edits take effect

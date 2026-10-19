@@ -3,6 +3,7 @@ const text = Type.String({ minLength: 1, maxLength: 4096 });
 export const issueTurnSchema = Type.Object(
   {
     runId: text,
+    origin: Type.Optional(Type.Literal('assessment')),
     message: Type.String({ minLength: 1, maxLength: 128000 }),
     status: Type.Union([
       Type.Literal('attempted'),

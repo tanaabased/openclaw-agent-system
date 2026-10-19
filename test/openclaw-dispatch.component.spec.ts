@@ -2009,6 +2009,137 @@ describe('agent/openclaw issue dispatch', () => {
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
 
+  for (const mode of ['work', 'auto'] as const)
+    it(`should hand ${mode} directly from assessment to implementation without a coordinator send`, async () => {
+      manifest.github!.notifications!.issueAssignment!.mode = mode;
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await context(input.id);
+      const result = await submit(
+        input.id,
+        mode === 'auto' ? { ...plan, decision: { mode: 'work', reasons: ['Ready.'] } } : plan,
+      );
+      assert.ok('handoff' in result && result.handoff?.next === 'implementation');
+      inputReceipts = [];
+      const who = assessor(input.id);
+      const verified = await service.run(manifest, root, who, {
+        action: 'implementation-context',
+        id: input.id,
+      });
+      assert.equal(verified.status, 'verified', JSON.stringify(verified));
+      assert.equal((await record()).work?.turn?.runId, who.runId);
+      assert.equal((await record()).work?.turn?.origin, 'assessment');
+      assert.equal((await record()).progression?.via, mode);
+      assert.equal(sends().length, 1);
+      await service.run(manifest, root, who, {
+        action: 'implementation-result',
+        id: input.id,
+        implementationResult: { outcome: 'done', summary: 'Done.', fullResult: 'Validated.' },
+      });
+      assessmentReply(input.id);
+      service = new OpenClawDispatch(service.dependencies);
+      await workPass('recover-direct-delivery');
+      assert.equal((await record()).work?.result?.outcome, 'done');
+      assert.equal((await record()).work?.deliveryTurn?.runId, `${input.id}:delivery`);
+      assert.equal(sends().length, 2);
+      assert.equal(creates().length, 1);
+    });
+
+  for (const outcome of ['interrupted', 'clarification-needed'] as const)
+    it(`should recover direct work after ${outcome} without repeating assessment or approval`, async () => {
+      manifest.github!.notifications!.issueAssignment!.mode = 'work';
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await context(input.id);
+      await submit(input.id, plan);
+      inputReceipts = [];
+      const who = assessor(input.id);
+      await service.run(manifest, root, who, { action: 'implementation-context', id: input.id });
+      if (outcome === 'clarification-needed')
+        await service.run(manifest, root, who, {
+          action: 'implementation-result',
+          id: input.id,
+          implementationResult: {
+            outcome,
+            summary: 'Need input.',
+            fullResult: 'Partial work.',
+            questions: ['30 or 60 days?'],
+          },
+        });
+      assessmentReply(input.id);
+      service = new OpenClawDispatch(service.dependencies);
+      const recovered = await workPass('recover-direct-work');
+      if (outcome === 'interrupted') {
+        assert.equal(recovered.status, 'implementation-pending', JSON.stringify(recovered));
+        const saved = await record();
+        assert.equal(saved.work!.previousTurns![0]!.turn.origin, 'assessment');
+        assert.equal(saved.work!.turn!.runId, `${input.id}:implementation:resume:1`);
+        assert.equal(saved.work!.turn!.origin, undefined);
+        assert.equal(sends().length, 2);
+      } else {
+        assert.equal(recovered.status, 'idle');
+        assert.equal((await workPass('leave-questions')).status, 'idle');
+        assert.equal(sends().length, 1);
+        messages.push({
+          role: 'user',
+          content: '30 days.',
+          idempotencyKey: 'answer:user',
+          __openclaw: { id: 'answer-event', idempotencyKey: 'answer:user' },
+        });
+        const answer = await service.run(
+          manifest,
+          root,
+          { ...who, runId: 'answer' },
+          { action: 'implementation-context', id: input.id },
+        );
+        assert.equal(answer.status, 'verified', JSON.stringify(answer));
+        assert.ok('previousImplementationResult' in answer);
+        assert.equal(answer.previousImplementationResult?.outcome, 'clarification-needed');
+      }
+      assert.deepEqual((await record()).result, plan);
+      assert.equal((await record()).progression!.stage, 'implementation');
+      assert.equal(creates().length, 1);
+    });
+
+  for (const stage of ['assessment', 'implementation'] as const)
+    it(`should resume ${stage} through the current coordinator and retain original creation evidence`, async () => {
+      let id: string;
+      if (stage === 'implementation') id = await readyWork('work');
+      else {
+        const routed = await next();
+        id = routed.id;
+        await prepare(routed);
+      }
+      const original = structuredClone(await record());
+      const replacement = {
+        ...coordinator,
+        sessionKey: 'agent:receiver:automation:replacement',
+        sessionId: 'replacement-id',
+        runId: 'replacement-run',
+      };
+      service.dependencies.coordinator = async () => replacement.sessionKey;
+      await assert.rejects(workPass('obsolete-coordinator'), /dispatch-intake-caller-required/);
+      const selected = await service.run(manifest, root, replacement, { action: 'next' });
+      assert.ok('id' in selected);
+      assert.equal(selected.id, id);
+      if (stage === 'assessment') {
+        assert.equal(selected.status, 'assessment-required');
+        await service.run(manifest, root, replacement, { action: 'assess', id });
+      } else assert.equal(selected.status, 'implementation-pending');
+      service = new OpenClawDispatch(service.dependencies);
+      await service.run(manifest, root, replacement, { action: 'next' });
+      const retained = await record();
+      assert.equal(retained.sourceThreadId, original.sourceThreadId);
+      assert.deepEqual(retained.sessionCreation, original.sessionCreation);
+      assert.equal(retained.threadId, original.threadId);
+      assert.equal(retained.worktree, original.worktree);
+      assert.deepEqual(retained.result, original.result);
+      assert.equal(creates().length, 1);
+      assert.equal(sends().length, stage === 'assessment' ? 1 : 2);
+    });
+
   for (const decision of ['plan', 'work'] as const)
     it(`should request a missing auto decision in the same plan session and honor ${decision}`, async () => {
       const id = await readyWork('plan');

@@ -8,6 +8,13 @@ For native intake verification, reconcile the installed schedule before its next
 
 For coordinator replacement verification, retain an active issue, reconcile the automation to a new intake chat, and continue that same issue. Verify its original creation source remains intact, new sends record the replacement coordinator, and both old and new send receipts reconcile without duplicate messages. Rename the issue chat and change its live assessment or implementation guidance before a subsequent context request; neither requires another issue admission or Install. Controlled tests cover these transitions; the desktop run remains the native transport proof.
 
+Native same-turn verification also requires the desktop: run one Work issue and one
+Auto issue whose recorded decision selects Work. Confirm implementation context
+binds to the assessment turn and implementation starts without a coordinator send.
+End a turn before implementation completes and confirm the next intake resumes the
+same issue with its saved assessment and checkout. A clarification result must wait
+for an answer rather than being retried on each scan.
+
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 ## Setup

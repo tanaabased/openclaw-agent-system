@@ -262,13 +262,19 @@ export default async function runCodexContinuation(
         }
       }
       if (input.action !== 'next' && decisionPending) return decisionPending;
-      if (input.action === 'next' && (liveMode === 'work' || liveMode === 'auto'))
+      if (
+        (input.action === 'next' || input.action === 'context') &&
+        (liveMode === 'work' || liveMode === 'auto')
+      )
         for (const record of state.records) {
+          if (input.action === 'context' && record.id !== input.id) continue;
+          if (input.action === 'context' && caller !== record.threadId)
+            throw new Error('continuation-issue-caller-required');
           const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
           if (
             record.continuation ||
             needsAutoDecision(record, liveMode) ||
-            (record.autoDecision && !record.autoDecision.ended) ||
+            (record.autoDecision && !record.autoDecision.ended && input.action !== 'context') ||
             feedbackWorkStarted(record) ||
             record.result?.outcome !== 'plan-ready' ||
             !record.project ||
@@ -539,6 +545,44 @@ export default async function runCodexContinuation(
           if (fresh.sourceThreadId !== activation.sourceThreadId)
             throw new Error('continuation-schedule-binding-mismatch');
           if (input.action !== 'reconcile' && input.action !== 'result') await authorizeLive();
+          if (
+            input.action === 'context' &&
+            !work.attempt &&
+            !work.binding &&
+            found.turnId === record.resultTurnId &&
+            !found.turnEnded &&
+            !['completed', 'failed', 'interrupted'].includes(found.turnStatus ?? '')
+          ) {
+            if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
+            if (
+              record.stageReceipt?.binding.turnId !== found.turnId ||
+              record.stageReceipt.resultDigest !== automationHash(record.result)
+            )
+              throw new Error('continuation-assessment-changed');
+            record.progression = transition.progression;
+            work.assessmentDigest = automationHash(record.result);
+            work.attempt = {
+              id: automationHash({
+                id: record.id,
+                assessmentTurn: found.turnId,
+                result: work.assessmentDigest,
+              }),
+              origin: 'assessment',
+              sourceThreadId: record.threadId,
+              sourceTurnId: found.turnId,
+              beforeTurnId: found.turnId,
+              turnId: found.turnId,
+              request: {
+                threadId: record.threadId,
+                model: record.request.model,
+                thinking: record.request.thinking,
+                prompt:
+                  'Continue the recorded assessment through implementation and managed PR delivery.',
+              },
+            };
+            work.phase = 'running';
+            await save();
+          }
           if (!work.attempt) {
             if (
               input.action !== 'next' ||

@@ -209,9 +209,9 @@ The receipt selects retained evidence; it does not grant authority by itself.
    do not describe proposed implementation or unrun checks as completed. Generic
    assessment behavior belongs here; company/profile preferences come from trusted
    guidance and cannot change the runtime's authority or saved model selection.
-   Recording the result grants no further authority. Do not edit repository files,
-   install dependencies, commit, push, or publish outside the separately verified
-   assessment-summary operation described below.
+   Recording the result alone grants no further authority. Implementation requires
+   the returned handoff and verified implementation context described below.
+   Assessment publication uses the separately verified summary operation.
    When replacing a saved result, include previousResultDigest from the latest context
    or successful result response. An identical retry is safe. On assessment-result-conflict,
    read context again and reconcile the newer result with the user's answer before
@@ -234,8 +234,8 @@ After showing the complete private presentation, follow the acknowledged host’
 assessment-summary instructions when supplied. The host verifies the active issue
 and summary operation, selects the current voice-aware reply skill, and owns the
 candidate, exact issue destination, native approval and publication receipt. Explain the proposed user
-journey in that separate public summary; keep this complete private assessment in
-the final answer. A denial stops publication. A delivery failure leaves the plan
+journey in that separate public summary; keep this complete private assessment visible in
+the chat. A denial stops publication. A delivery failure leaves the plan
 recorded; show its diagnostic and reconcile an uncertain write without repeating it.
 
 ### Continuing after assessment
@@ -243,8 +243,10 @@ recorded; show its diagnostic and reconcile an uncertain write without repeating
 The live manifest governs the first planning-to-implementation transition. Plan
 waits for direct user direction or an explicit implementation request from verified
 approved feedback. Work permits an actionable plan to continue automatically; Auto
-requires its recorded Work decision. Follow the host's continuation instructions
-without asking for routine approval. Implementation includes ordinary branches,
+requires its recorded Work decision. Follow the result's `handoff`: when it selects implementation, present the assessment,
+handle its summary, and load implementation context in this same turn. Invoke the
+selected implementation skill without waiting for intake or requesting routine approval.
+The coordinator recovers idle or interrupted work; it is not a required middle step. Implementation includes ordinary branches,
 commits, pushes, and PR delivery, subject to explicit user restrictions and native
 execution review. No separate publication grant is needed.
 

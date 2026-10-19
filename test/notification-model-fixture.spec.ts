@@ -43,7 +43,9 @@ for (const scenario of [
       messages: [
         { role: 'system', content: 'Name: Notification Tanaabot' },
         { role: 'user', content: prompt },
-        ...(prompt.includes('Stop before implementation.')
+        ...(prompt.includes(
+          'Agent System: assess this admitted issue and retain its complete plan.',
+        )
           ? [
               {
                 role: 'user' as const,
@@ -331,7 +333,7 @@ for (const scenario of [
 
     it('should require model-only context before assessment and consume fresh later evidence after recovery', async () => {
       const missing = request(
-        `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+        `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
       missing.messages.pop();
       assert.equal(matchFixture([...scenario.fixtures], missing), null);
@@ -370,7 +372,7 @@ for (const scenario of [
     });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
-      const prompt = `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`;
+      const prompt = `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`;
       for (const code of ['private-state-file-lock-busy', 'private-state-snapshot-conflict']) {
         const input = request(prompt);
         const original = await action(input, 'context');
@@ -400,7 +402,7 @@ for (const scenario of [
 
     it('should retain a plan only after native context and git verify its worktree', async () => {
       const input = request(
-        `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+        `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
       assert.equal((await action(input, 'context')).id, id);
       const context = {
@@ -439,7 +441,7 @@ for (const scenario of [
         { ...context, status: 'blocked' },
       ]) {
         const invalid = request(
-          `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+          `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
         );
         append(invalid, 'context', value);
         assert.equal(matchFixture([...scenario.fixtures], invalid), null);
@@ -469,7 +471,7 @@ for (const scenario of [
       });
       assert.equal(matchFixture([...scenario.fixtures], unrelated), null);
       const invalid = request(
-        `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+        `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
       append(invalid, 'context', {
         status: 'verified',
@@ -483,37 +485,69 @@ for (const scenario of [
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
     if (scenario.id === 'openclaw-pr') {
-      it('should ask clarification during automatic work and resume an answer without a handoff', async () => {
-        const automatic = request(
-          `Continue this issue through implementation. Call agent_system_dispatch action implementation-context with id ${id}.`,
-        );
-        await action(automatic, 'implementation-context');
-        append(automatic, 'work-context', {
-          status: 'verified',
-          runtime: 'openclaw',
-          publicationAuthorized: true,
-          project: { path: '/tmp/owned' },
+      for (const direct of [false, true])
+        it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
+          const automatic = request(
+            direct
+              ? `Resume the unfinished Auto decision. Refresh agent_system_dispatch action context with id ${id}.`
+              : `Continue this issue through implementation. Call agent_system_dispatch action implementation-context with id ${id}.`,
+          );
+          if (direct) {
+            await action(automatic, 'context');
+            append(automatic, 'refresh-context', {
+              status: 'verified',
+              mode: 'auto',
+              previousResult: {
+                version: 1,
+                outcome: 'plan-ready',
+                summary: 'Ready.',
+                assessment: 'Bounded documentation.',
+                plan: 'Document cleanup.',
+                evidence: [],
+                progress: { completed: [], remaining: [] },
+              },
+              previousResultDigest: digest,
+            });
+            await action(automatic, 'result');
+            append(automatic, 'refresh-result', {
+              status: 'recorded',
+              presentation: 'The retained plan.',
+              handoff: { next: 'implementation' },
+            });
+          }
+          await action(automatic, 'implementation-context');
+          append(automatic, 'work-context', {
+            status: 'verified',
+            runtime: 'openclaw',
+            publicationAuthorized: true,
+            project: { path: '/tmp/owned' },
+          });
+          const question = await action(automatic, 'implementation-result');
+          assert.equal(question.implementationResult.outcome, 'clarification-needed');
+          append(automatic, 'work-result', {
+            status: 'recorded',
+            presentation: 'Which cleanup timing?',
+          });
+          assert.deepEqual(await response(automatic), {
+            content: direct
+              ? 'The retained plan.\n\nWhich cleanup timing?'
+              : 'Which cleanup timing?',
+          });
+          const answer = request(
+            `Answer for managed issue ${id}: Yes, after evidence is captured.`,
+          );
+          await action(answer, 'implementation-context');
+          append(answer, 'work-context', {
+            status: 'verified',
+            runtime: 'openclaw',
+            publicationAuthorized: true,
+            project: { path: '/tmp/owned' },
+            previousImplementationResult: question.implementationResult,
+          });
+          const resumed = await response(answer);
+          assert.ok('toolCalls' in resumed);
+          assert.equal(resumed.toolCalls?.[0]?.name, 'agent_system_git');
         });
-        const question = await action(automatic, 'implementation-result');
-        assert.equal(question.implementationResult.outcome, 'clarification-needed');
-        append(automatic, 'work-result', {
-          status: 'recorded',
-          presentation: 'Which cleanup timing?',
-        });
-        assert.deepEqual(await response(automatic), { content: 'Which cleanup timing?' });
-        const answer = request(`Answer for managed issue ${id}: Yes, after evidence is captured.`);
-        await action(answer, 'implementation-context');
-        append(answer, 'work-context', {
-          status: 'verified',
-          runtime: 'openclaw',
-          publicationAuthorized: true,
-          project: { path: '/tmp/owned' },
-          previousImplementationResult: question.implementationResult,
-        });
-        const resumed = await response(answer);
-        assert.ok('toolCalls' in resumed);
-        assert.equal(resumed.toolCalls?.[0]?.name, 'agent_system_git');
-      });
       it('should wait for native handoff before implementation and use the same delivery for an operator retry', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
