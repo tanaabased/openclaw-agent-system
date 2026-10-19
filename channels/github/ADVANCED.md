@@ -277,10 +277,16 @@ owning issue chat. An actionable Plan-mode issue needs human direction to enter 
 once there, ordinary PR delivery needs no separate publication grant. The agent retains the
 complete plan and uses the existing chat, managed worktree, and model selection.
 
-Work policy or an Auto Work decision also permits an actionable plan to enter
-implementation through the verified issue context. OpenClaw automatic continuation
-transport remains unavailable; this does not schedule a new turn. Existing
+Work policy or an Auto Work decision lets the next intake pass continue an
+actionable plan in the same issue chat, using shared capacity and its saved native
+send receipt. An uncertain send is reconciled without sending again. Existing
 implementation stages survive later default-mode edits.
+
+Implementation may return `clarification-needed` with specific questions and a
+complete account of partial work. The issue remains in implementation. Its chat
+displays the questions and waits; a new answer resumes through verified context
+without another handoff or approval. Scheduled intake does not replay the request.
+A recorded `done` result can continue through PR delivery without repeating implementation.
 
 Delivery requires committed work on the task branch. It applies configured
 `issue-assignment.pull-request.recipients`, verifies GitHub's closing link, and
@@ -319,8 +325,7 @@ another push. Recovery instructions skip confirmed attachments and announcements
 
 Unversioned notification declarations are rejected with
 `github-notification-v1-retired`. The polling channel, its Work/guided engine,
-reply-staging tool, and task-PR tool have been removed. Native OpenClaw Work/Auto,
-independent review requests and custom assessment skills remain unavailable.
+reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
 Retirement does not imply feature parity.
 
 The channel id `agent-system-github` remains registered as a read-only readiness

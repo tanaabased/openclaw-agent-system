@@ -1,6 +1,7 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
 
+import { implementationResultSchema, implementationPresentation } from './implementation-result.ts';
 import { automationHash } from './automation-hash.ts';
 import issueProgression, { type IssueProgression } from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -118,6 +119,15 @@ export default async function openClawWorkAction(input: {
     };
   }
   if (action.action === 'implementation-context') {
+    if (
+      record.work?.result?.outcome === 'clarification-needed' &&
+      record.work.clarificationInput?.runId === source.runId
+    )
+      return {
+        status: 'clarification-needed',
+        id: record.id,
+        presentation: implementationPresentation(record.work.result),
+      };
     record.progression = input.progression;
     record.work ??= { assessmentDigest };
     record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
@@ -133,20 +143,31 @@ export default async function openClawWorkAction(input: {
       assessment: record.result,
       routing: record.routing && JSON.parse(record.routing),
       effective: record.effective,
+      resultSchema: implementationResultSchema,
       previousImplementationResult: record.work.result,
       publicationAuthorized: true,
+      deliveryOnly: record.work.result?.outcome === 'done',
       instructions:
-        'Use agent-system-issue-implementation with this complete assessment in the existing worktree. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or denial. Commit validated work and retain the complete outcome with implementation-result. A done result permits managed PR delivery without a separate publication grant; honor explicit user restrictions. Do not use Codex runtime commands.',
+        'When deliveryOnly is true, reconcile the recorded result and finish managed PR delivery without repeating implementation. Otherwise use the returned implementation skill and guidance with this complete assessment in the existing worktree. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or denial. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. A done result permits managed PR delivery without a separate publication grant; honor explicit user restrictions. Do not use Codex runtime commands.',
     };
   }
   if (!record.work?.caller || automationHash(record.work.caller) !== automationHash(source))
     throw new Error('implementation-context-missing');
+  if (
+    record.work.result?.outcome === 'clarification-needed' &&
+    record.work.clarificationInput?.runId === source.runId &&
+    automationHash(record.work.result) !== automationHash(action.implementationResult)
+  )
+    throw new Error('implementation-answer-required');
   record.work.result = action.implementationResult;
+  if (action.implementationResult.outcome === 'clarification-needed')
+    record.work.clarificationInput = source;
+  else delete record.work.clarificationInput;
   await input.save();
   return {
     status: 'recorded',
     id: record.id,
     outcome: action.implementationResult.outcome,
-    presentation: action.implementationResult.fullResult,
+    presentation: implementationPresentation(action.implementationResult),
   };
 }

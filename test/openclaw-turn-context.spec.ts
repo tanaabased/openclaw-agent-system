@@ -42,6 +42,24 @@ describe('agent/openclaw-turn-context', () => {
     } as OpenClawDispatchRecord;
     assert.equal(openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' }), undefined);
   });
+  it('should route an automatic implementation and its later answer through implementation context', () => {
+    const working = {
+      ...structuredClone(record),
+      result: { outcome: 'plan-ready', plan: 'RETAINED-PLAN' },
+      progression: { stage: 'implementation', via: 'work' },
+      handoff: { at: 1, by: 'intake', turnId: 'implementation' },
+      work: {
+        assessmentDigest: 'b'.repeat(64),
+        turn: { runId: 'implementation', status: 'attempted', message: 'Continue.' },
+      },
+    } as OpenClawDispatchRecord;
+    for (const runId of ['implementation', 'answer']) {
+      const output = openclawTurnContext(working, { ...binding, runId })!;
+      assert.match(output.appendSystemContext, /implementation-context/);
+      assert.match(output.appendContext, /"stage":"implementation"/);
+      assert.equal(working.work!.implementation, undefined);
+    }
+  });
   it('should refuse wrong agent, session, incarnation, missing run and premature later turns', () => {
     for (const change of [
       { agentId: 'other' },

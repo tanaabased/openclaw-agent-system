@@ -3663,6 +3663,58 @@ describe('agent/codex-dispatch', () => {
     await assert.rejects(work.run('retry', {}, 'operator'), /retry-unavailable/);
   });
 
+  it('should retain implementation questions and resume a new answer without a fresh send or approval', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run('context', {}, true);
+    const question = {
+      outcome: 'clarification-needed',
+      summary: 'Choose retention.',
+      fullResult: 'Partial implementation retained.',
+      questions: ['Keep records for 30 or 60 days?'],
+    };
+    const saved = await work.run('result', { result: question }, true);
+    assert.equal(saved.status, 'recorded');
+    assert.ok('presentation' in saved && String(saved.presentation).includes('30 or 60'));
+    assert.equal((await work.run('context', {}, true)).status, 'clarification-needed');
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    assert.equal((await work.run('next')).status, 'idle');
+    work.continuation.continuationNative = async () => ({
+      status: 'verified',
+      turnId: 'implementation-turn',
+      ended: true,
+    });
+    native!.turnId = 'answer-turn';
+    native!.followUpUserTurn = true;
+    native!.status = 'active';
+    native!.turnStatus = 'inProgress';
+    const resumed = await work.run('context', {}, true);
+    assert.equal(resumed.status, 'verified');
+    assert.ok(
+      'previousResult' in resumed &&
+        JSON.stringify(resumed.previousResult) === JSON.stringify(question),
+    );
+    assert.equal(
+      (
+        await work.run(
+          'result',
+          { result: { outcome: 'done', summary: 'Done', fullResult: 'Completed with 30 days.' } },
+          true,
+        )
+      ).status,
+      'recorded',
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.progression?.stage, 'implementation');
+    assert.equal(retained.continuation!.phase, 'delivery');
+    assert.equal(retained.continuation!.retries, undefined);
+    assert.equal(retained.continuation!.binding!.turnId, 'implementation-turn');
+  });
+
   it('should leave consequential assessment questions in the issue without preparing implementation', async () => {
     const work = await workIssue({
       version: 1,

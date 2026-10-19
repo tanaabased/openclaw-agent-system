@@ -169,6 +169,31 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
 
+  it('should report implementation questions without changing the retained assessment', async () => {
+    const f = fixture();
+    const item = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: { outcome: 'plan-ready' },
+      work: {
+        assessmentDigest: 'a'.repeat(64),
+        result: {
+          outcome: 'clarification-needed',
+          summary: 'Need input.',
+          fullResult: 'Partial work.',
+          questions: ['Which caller?'],
+        },
+      },
+    } as OpenClawDispatchRecord;
+    f.records.push(item);
+    const result = await f.service.inspect(f.manifest, '/workspace', selector);
+    assert.equal(result.items[0]?.workflow?.phase, 'clarification-needed');
+    assert.equal(result.items[0]?.waitingReason, 'clarification-needed');
+    assert.equal(item.result!.outcome, 'plan-ready');
+    assert.equal(f.requests, 0);
+  });
+
   it('should expose capability warnings without failing supported refreshes and waits', async () => {
     const f = fixture();
     f.manifest.github!.notifications!.issueAssignment!.feedback = true;

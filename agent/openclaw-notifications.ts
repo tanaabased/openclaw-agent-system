@@ -150,8 +150,12 @@ export default class OpenClawNotifications {
           feedback?.code ?? (latestFeedback?.phase === 'blocked' ? latestFeedback.code : undefined);
         const phase = record?.retired
           ? 'retired'
-          : (record?.result?.outcome ??
-            (record?.phase === 'creating' ? 'uncertain' : (record?.phase ?? 'queued')));
+          : record?.work?.code || record?.work?.result?.outcome === 'blocked'
+            ? 'blocked'
+            : record?.work?.result?.outcome === 'clarification-needed'
+              ? 'clarification-needed'
+              : (record?.result?.outcome ??
+                (record?.phase === 'creating' ? 'uncertain' : (record?.phase ?? 'queued')));
         return {
           itemType: 'issue',
           lifecycleId: 'issue',
@@ -160,6 +164,7 @@ export default class OpenClawNotifications {
           disposition: record?.retired ? 'retired' : 'approved',
           reasonCode:
             feedbackFailure ??
+            record?.work?.code ??
             record?.blocker ??
             (record?.result?.outcome === 'operator-setup-blocker'
               ? record.result.code
@@ -175,9 +180,7 @@ export default class OpenClawNotifications {
                       ? ('active' as const)
                       : ('queued' as const),
               }),
-          ...(record?.result?.outcome === 'clarification-needed'
-            ? { waitingReason: 'clarification-needed' }
-            : {}),
+          ...(phase === 'clarification-needed' ? { waitingReason: 'clarification-needed' } : {}),
           worktree: record?.worktree ? 'ready' : 'pending',
           ...(feedbackFailure ? { failureCode: feedbackFailure } : {}),
           ...(feedback
@@ -192,8 +195,8 @@ export default class OpenClawNotifications {
                 },
               }
             : {}),
-          ...(record?.blocker
-            ? { failureCode: record.blocker }
+          ...(record?.work?.code || record?.blocker
+            ? { failureCode: record?.work?.code ?? record!.blocker }
             : record?.result?.outcome === 'operator-setup-blocker'
               ? { failureCode: record.result.code }
               : {}),

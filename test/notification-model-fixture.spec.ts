@@ -483,6 +483,37 @@ for (const scenario of [
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
     if (scenario.id === 'openclaw-pr') {
+      it('should ask clarification during automatic work and resume an answer without a handoff', async () => {
+        const automatic = request(
+          `Continue this issue through implementation. Call agent_system_dispatch action implementation-context with id ${id}.`,
+        );
+        await action(automatic, 'implementation-context');
+        append(automatic, 'work-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          publicationAuthorized: true,
+          project: { path: '/tmp/owned' },
+        });
+        const question = await action(automatic, 'implementation-result');
+        assert.equal(question.implementationResult.outcome, 'clarification-needed');
+        append(automatic, 'work-result', {
+          status: 'recorded',
+          presentation: 'Which cleanup timing?',
+        });
+        assert.deepEqual(await response(automatic), { content: 'Which cleanup timing?' });
+        const answer = request(`Answer for managed issue ${id}: Yes, after evidence is captured.`);
+        await action(answer, 'implementation-context');
+        append(answer, 'work-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          publicationAuthorized: true,
+          project: { path: '/tmp/owned' },
+          previousImplementationResult: question.implementationResult,
+        });
+        const resumed = await response(answer);
+        assert.ok('toolCalls' in resumed);
+        assert.equal(resumed.toolCalls?.[0]?.name, 'agent_system_git');
+      });
       it('should wait for native handoff before implementation and use the same delivery for an operator retry', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,

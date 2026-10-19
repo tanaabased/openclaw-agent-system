@@ -11,7 +11,7 @@ import { Value } from 'typebox/value';
 import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
-import { implementationResultSchema } from './implementation-result.ts';
+import { implementationResultSchema, implementationPresentation } from './implementation-result.ts';
 import runCodexDelivery, { type CodexDeliveryDependencies } from './codex-delivery.ts';
 import { revalidateDispatchAssignment, type CodexDispatchDependencies } from './codex-dispatch.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -163,7 +163,9 @@ export default async function runCodexContinuation(
                 !record.retirement &&
                 !record.feedbackReactivation &&
                 !record.reset &&
-                (!['complete', 'blocked', 'cancelled'].includes(record.continuation.phase) ||
+                (!['complete', 'blocked', 'cancelled', 'clarification-needed'].includes(
+                  record.continuation.phase,
+                ) ||
                   ['continuation-auto-wait', 'continuation-assessment-not-actionable'].includes(
                     record.continuation.code ?? '',
                   )),
@@ -562,6 +564,24 @@ export default async function runCodexContinuation(
                   'The issue conversation has advanced. Reconcile current work in that chat through continuation context; do not resend the implementation request or overwrite newer user direction.',
               };
           }
+          if (work.phase === 'clarification-needed') {
+            if (
+              input.action === 'context' &&
+              found.followUpUserTurn &&
+              found.turnId !== work.clarificationTurnId
+            ) {
+              work.phase = 'running';
+              work.activeTurnId = found.turnId;
+              await save();
+            } else
+              return {
+                status: 'clarification-needed',
+                id: record.id,
+                questions:
+                  work.result?.outcome === 'clarification-needed' ? work.result.questions : [],
+                presentation: work.result && implementationPresentation(work.result),
+              };
+          }
           if (retry) {
             if (!receipt.ended || !['idle', 'notLoaded'].includes(found.status))
               throw new Error('continuation-retry-chat-active');
@@ -644,7 +664,7 @@ export default async function runCodexContinuation(
               previousResult: work.result,
               deliveryOnly: Boolean(work.result?.outcome === 'done'),
               instructions:
-                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto requires its verified Work decision when entering implementation; later mode edits preserve the recorded stage. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|compose|candidate|announce|present,...}; reuse the managed operation and returned digest, never create a replacement PR. For new PR delivery, compose a concise public title and body from the verified implementation outcome, validation, and limitations. Include issue-required evidence and a closing reference; do not copy private context or the full private report. Pass title/body to delivery prepare and retain them unchanged with its digest on publish. Use native attach_artifact. After PR linkage use delivery compose, invoke the selected reply skill for the delivery event, submit candidate, and execute announce with its preview digest through native approval. Preserve the delivered PR if the announcement fails. Then present and reproduce the complete private PR card and announcement outcome. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
+                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto requires its verified Work decision when entering implementation; later mode edits preserve the recorded stage. If previousResult needs clarification, incorporate the new answer and reconcile partial work without another approval; ask again if consequential requirements remain unanswered. Reproduce a recorded clarification presentation in this chat and wait for a new answer. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked|clarification-needed,summary,fullResult,questions (required only for clarification-needed)}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|compose|candidate|announce|present,...}; reuse the managed operation and returned digest, never create a replacement PR. For new PR delivery, compose a concise public title and body from the verified implementation outcome, validation, and limitations. Include issue-required evidence and a closing reference; do not copy private context or the full private report. Pass title/body to delivery prepare and retain them unchanged with its digest on publish. Use native attach_artifact. After PR linkage use delivery compose, invoke the selected reply skill for the delivery event, submit candidate, and execute announce with its preview digest through native approval. Preserve the delivered PR if the announcement fails. Then present and reproduce the complete private PR card and announcement outcome. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
             };
           if (input.action === 'result') {
             if (work.publicationAttempt)
@@ -660,7 +680,11 @@ export default async function runCodexContinuation(
               },
               { stage: 'implementation', authorized: true, binding: work.binding },
             );
-            if (work.result && automationHash(work.result) !== automationHash(input.result))
+            if (
+              work.result &&
+              work.result.outcome !== 'clarification-needed' &&
+              automationHash(work.result) !== automationHash(input.result)
+            )
               throw new Error('continuation-result-conflict');
             if (input.result.outcome === 'done') {
               if ((await git(found.cwd, ['status', '--porcelain=v1'], signal)).trim())
@@ -670,13 +694,22 @@ export default async function runCodexContinuation(
               work.head = head;
             }
             work.result = input.result;
-            work.phase = input.result.outcome === 'done' ? 'delivery' : 'blocked';
+            work.phase =
+              input.result.outcome === 'done'
+                ? 'delivery'
+                : input.result.outcome === 'clarification-needed'
+                  ? 'clarification-needed'
+                  : 'blocked';
+            if (input.result.outcome === 'clarification-needed')
+              work.clarificationTurnId = found.turnId;
+            else delete work.clarificationTurnId;
             await save();
             return {
               status: 'recorded',
               id: record.id,
               outcome: input.result.outcome,
               next: work.phase,
+              presentation: implementationPresentation(input.result),
             };
           }
           if (input.action === 'delivery') {

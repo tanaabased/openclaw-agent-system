@@ -1,3 +1,6 @@
+import advanceOpenClawWork, { openClawWorkSlot } from './openclaw-continuation.ts';
+import issueProgression from './issue-progression.ts';
+import { selectWorkflowStage } from './workflow-stage.ts';
 import { observeFeedbackPolicy } from './feedback-source.ts';
 import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -336,6 +339,84 @@ export default class OpenClawDispatch {
     }
   }
 
+  private async continueWork(
+    manifest: AgentManifest,
+    workspace: string,
+    record: OpenClawDispatchRecord,
+    save: () => Promise<void>,
+    authority: DispatchAuthority,
+  ) {
+    const now = (this.dependencies.now ?? Date.now)();
+    const assertCurrent = async () => {
+      await authority.assertCurrent?.();
+      authority.signal?.throwIfAborted();
+      const live = await this.validateLocal(manifest, workspace, record, true);
+      const transition = issueProgression(record, {
+        mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        now,
+      });
+      if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
+    };
+    try {
+      await this.validate(manifest, workspace, record, true);
+      const live = await this.validateLocal(manifest, workspace, record, true);
+      return await this.guardedCredential(async () => {
+        await this.validate(manifest, workspace, record, true);
+        await assertCurrent();
+      }).use({ ...authority, assertCurrent }, async (request) => {
+        if (!record.request || !('key' in record.request))
+          throw new Error('dispatch-work-context-mismatch');
+        const selection =
+          record.work?.selection ??
+          (!record.work
+            ? (
+                await selectWorkflowStage({
+                  stage: 'implementation',
+                  configuration:
+                    live.manifest.github?.notifications?.issueAssignment?.implementation,
+                  workspace,
+                  observedAt: now,
+                  resolveSkill: (id) =>
+                    openClawSkill(request, record.request as { key: string; agentId: string }, id),
+                })
+              ).selection
+            : undefined);
+        return advanceOpenClawWork({
+          record,
+          mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          selection,
+          now,
+          request,
+          config: this.dependencies.config(),
+          save,
+          assertCurrent,
+        });
+      });
+    } catch (error) {
+      if (error instanceof WorkflowPolicyHeld)
+        return { status: 'policy-held', id: record.id, reason: error.reason, nextAction: 'next' };
+      const code = openClawDispatchFailureCode(error);
+      if (
+        record.work &&
+        [
+          'dispatch-turn-cancelled',
+          'dispatch-turn-failed',
+          'dispatch-turn-input-mismatch',
+          'dispatch-turn-model-mismatch',
+        ].includes(code)
+      ) {
+        record.work.code = code;
+        await save();
+      }
+      return {
+        status: 'implementation-pending',
+        id: record.id,
+        ...workflowFailure(error, code),
+        nextAction: 'next',
+      };
+    }
+  }
+
   private async feedback(
     manifest: AgentManifest,
     workspace: string,
@@ -627,7 +708,13 @@ export default class OpenClawDispatch {
     const pending = pendingAssignments(state, current.admitted)
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
       .some(pendingAssignment);
-    const actionable = feedbackPending || recoverable || (capacity.available > 0 && pending);
+    const workPending = state.records.some(
+      (record) =>
+        openClawWorkSlot(record, manifest.github?.notifications?.issueAssignment?.mode ?? 'plan') &&
+        (openClawItemOccupied(record) || capacity.available > 0),
+    );
+    const actionable =
+      feedbackPending || recoverable || workPending || (capacity.available > 0 && pending);
     const code = state.records.find(
       (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
     )?.feedback?.code;
@@ -1010,6 +1097,28 @@ export default class OpenClawDispatch {
                 })),
             )
             .sort((a, b) => a.at - b.at || a.event.id.localeCompare(b.event.id));
+          const workItems = state.records
+            .flatMap((record) => {
+              const slot = openClawWorkSlot(
+                record,
+                manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+              );
+              return slot
+                ? [
+                    {
+                      record,
+                      slot,
+                      candidateId: automationHash({ implementation: record.id }),
+                      recovering: Boolean(record.work?.[slot]),
+                    },
+                  ]
+                : [];
+            })
+            .sort(
+              (a, b) =>
+                a.record.createdAt - b.record.createdAt ||
+                a.candidateId.localeCompare(b.candidateId),
+            );
           let pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
           if (!pass) {
             pass = {
@@ -1024,12 +1133,22 @@ export default class OpenClawDispatch {
                   at: Date.parse(intake.assignment.createdAt),
                 })),
                 ...queued.map(({ event, at }) => ({ id: event.id, at })),
+                ...workItems
+                  .filter((item) => !item.recovering)
+                  .map(({ record, candidateId }) => ({
+                    id: candidateId,
+                    at: record.createdAt,
+                  })),
               ]
                 .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
                 .slice(0, 12)
                 .map(({ id }) => id),
               recovery: state.records
-                .filter((record) => continuationStatus(record))
+                .filter(
+                  (record) =>
+                    continuationStatus(record) ||
+                    workItems.some((item) => item.record.id === record.id && item.recovering),
+                )
                 .slice(0, current.policy.policy.maxConcurrentItems)
                 .map((record) => record.id),
               selected: [],
@@ -1043,11 +1162,17 @@ export default class OpenClawDispatch {
             (record) =>
               pass.recovery.includes(record.id) &&
               !pass.selected.includes(record.id) &&
-              continuationStatus(record),
+              (continuationStatus(record) ||
+                workItems.some((item) => item.record.id === record.id && item.recovering)),
           );
           if (continuing) {
             pass.selected.push(continuing.id);
             await save();
+            if (workItems.some((item) => item.record.id === continuing.id && item.recovering))
+              return this.continueWork(manifest, current.workspace, continuing, save, {
+                ...authority,
+                signal,
+              });
             return { status: continuationStatus(continuing)!, id: continuing.id };
           }
           const pending = pendingAssignments(state, current.admitted)
@@ -1067,7 +1192,9 @@ export default class OpenClawDispatch {
               state.records.some(
                 (record) =>
                   record.id === id &&
-                  ((record.request && pass.candidates.includes(record.intakeId)) ||
+                  ((record.work &&
+                    pass.candidates.includes(automationHash({ implementation: record.id }))) ||
+                    (record.request && pass.candidates.includes(record.intakeId)) ||
                     record.feedback?.events.some(
                       (event) => pass.candidates.includes(event.id) && event.turn,
                     )),
@@ -1081,6 +1208,29 @@ export default class OpenClawDispatch {
           );
           if (!capacity.available && (pending || feedback || !pass.selected.length))
             return { status: 'at-capacity' };
+          const workItem = workItems.find(
+            (item) =>
+              !item.recovering &&
+              pass.candidates.includes(item.candidateId) &&
+              !pass.selected.includes(item.record.id),
+          );
+          if (
+            workItem &&
+            capacity.available > 0 &&
+            (!pending ||
+              pass.candidates.indexOf(workItem.candidateId) <
+                pass.candidates.indexOf(pending.intake.id)) &&
+            (!feedback ||
+              pass.candidates.indexOf(workItem.candidateId) <
+                pass.candidates.indexOf(feedback.event.id))
+          ) {
+            pass.selected.push(workItem.record.id);
+            await save();
+            return this.continueWork(manifest, current.workspace, workItem.record, save, {
+              ...authority,
+              signal,
+            });
+          }
           if (
             feedback &&
             (!pending ||
@@ -1291,6 +1441,50 @@ export default class OpenClawDispatch {
               config: this.dependencies.config(),
             });
             await assertCurrent();
+            if (
+              input.action === 'implementation-context' &&
+              record.work?.result?.outcome !== 'done'
+            ) {
+              if (!record.request || !('key' in record.request))
+                throw new Error('dispatch-work-context-mismatch');
+              const previous = record.work?.selection;
+              const configured = (await this.validateLocal(manifest, workspace, record, true))
+                .manifest.github?.notifications?.issueAssignment?.implementation;
+              const selected = (
+                await selectWorkflowStage({
+                  stage: 'implementation',
+                  configuration: previous
+                    ? { skill: previous.requestedSkill, guidance: previous.guidance?.content }
+                    : configured,
+                  workspace: current.workspace,
+                  observedAt: previous?.observedAt ?? now,
+                  resolveSkill: (id) =>
+                    openClawSkill(request, record.request as { key: string; agentId: string }, id),
+                })
+              ).selection;
+              // retain selection with the context that first enters implementation.
+              const response = await openClawWorkAction({
+                record,
+                caller,
+                source,
+                progression,
+                action: input,
+                now,
+                assertCurrent,
+                save,
+              });
+              if (record.work) {
+                record.work.selection ??= selected;
+                await save();
+              }
+              return {
+                ...response,
+                implementation: record.work?.selection && {
+                  ...record.work.selection,
+                  skill: selected.skill,
+                },
+              };
+            }
             if (input.action !== 'delivery')
               return openClawWorkAction({
                 record,

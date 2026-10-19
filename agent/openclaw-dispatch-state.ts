@@ -174,7 +174,11 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
             (!record.work ||
               (record.handoff &&
                 record.result?.outcome === 'plan-ready' &&
-                record.work.assessmentDigest === record.stageReceipt?.resultDigest)) &&
+                record.work.assessmentDigest === record.stageReceipt?.resultDigest &&
+                (!record.work.turn ||
+                  validIssueTurn(record.work.turn, `${record.id}:implementation`)) &&
+                (!record.work.deliveryTurn ||
+                  validIssueTurn(record.work.deliveryTurn, `${record.id}:delivery`)))) &&
             record.sessionCreation &&
             record.worktree === record.request.cwd &&
             !record.native &&

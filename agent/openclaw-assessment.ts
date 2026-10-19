@@ -200,9 +200,13 @@ export async function issueAssessmentAction(input: {
             }),
           }
         : {}),
+      mode: input.policy?.issueAssignment?.mode ?? 'plan',
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       instructions:
+        (input.policy?.issueAssignment?.mode === 'auto'
+          ? 'Trusted mode: auto. Include decision.mode plan or work with bounded reasons based on the assessment and plan; work requires plan-ready. '
+          : '') +
         'Use the returned shared assessment skill and optional guidance. Preserve the complete assessment and saved routing. Use only this native tool for context and result; include previousResultDigest for revisions. After status recorded, reproduce the complete returned presentation here. No implementation is authorized. After result acknowledgment, follow its bounded assessment-summary instructions; the context/result actions themselves grant no publication.',
     };
   }
@@ -219,6 +223,8 @@ export async function issueAssessmentAction(input: {
       (typeof candidate.planSummary !== 'string' || !candidate.planSummary.trim()))
   )
     throw new Error('assessment-result-incomplete');
+  if (input.policy?.issueAssignment?.mode === 'auto' && !candidate.decision)
+    throw new Error('assessment-decision-required');
   const result = recordDispatchResult({
     record,
     intake,

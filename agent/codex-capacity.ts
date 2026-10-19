@@ -17,7 +17,7 @@ function reserved(record: DispatchRecord): boolean {
         record.continuation.attempt ||
         record.continuation.binding) &&
       (['waiting', 'prepared', 'running'].includes(record.continuation.phase) ||
-        (['blocked', 'cancelled'].includes(record.continuation.phase) &&
+        (['blocked', 'cancelled', 'clarification-needed'].includes(record.continuation.phase) &&
           Boolean(record.continuation.attempt) &&
           !record.nativeInactive) ||
         (record.continuation.phase === 'delivery' &&

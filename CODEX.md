@@ -257,7 +257,7 @@ denials stop continuation. Fix the stated obstacle and give explicit direction;
 never recreate the issue chat to bypass its retained stop. Live mode changes govern
 entry into implementation for existing planning issues. Once implementation has
 started, later mode changes preserve that stage. Auto requires
-a verified Work decision before implementation. Native OpenClaw Auto is not supported.
+a verified Work decision before implementation. OpenClaw uses the same Plan/Work decision and continues eligible work in its existing issue chat.
 
 ### Work Mode
 
@@ -302,6 +302,12 @@ reconciled, never repeated blindly. A recorded implementation can resume deliver
 without reimplementing or creating another PR. A stopped implementation remains
 in the same chat with its files and evidence: inspect the blocker and explicitly
 continue through the existing manual handoff if human intervention is needed.
+For missing consequential requirements, an implementation result can be
+`clarification-needed`, with questions and the complete partial-work report. The
+issue keeps its implementation stage. A new answer in the same chat resumes
+through continuation context without another approval; scheduled scans leave it
+waiting instead of resending the request.
+
 Use `continuationRuntime` action `cancel` in the issue chat to stop further automatic
 work; it does not undo files or an already-started external operation. Disable the
 workflow in the live manifest to hold pending automatic work; Install reconciles

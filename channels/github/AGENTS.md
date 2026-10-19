@@ -38,6 +38,9 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   transition. Do not require another operator follow-up, implementation handoff, or
   publication grant once work is authorized. A newer conversation turn requires
   reconciliation with current direction, not permanent revocation or another send.
+- Treat implementation clarification as a pause inside the authorized stage.
+  Preserve questions and partial work; a new native answer resumes through the
+  owning context without another handoff. Never retry unanswered questions on a timer.
 - Auto results use `decision.mode: plan|work`; interpret older `wait|proceed`
   receipts without rewriting their contents or digests.
 - Preserve actual execution facts: selected native model/effort, consumed stage

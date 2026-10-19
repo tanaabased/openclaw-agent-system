@@ -11,6 +11,7 @@ export default async function openClawSkill(
   const name = [
     'agent-system:agent-system-feedback-reply',
     'agent-system:agent-system-issue-assessment',
+    'agent-system:agent-system-issue-implementation',
   ].includes(id)
     ? id.split(':').at(-1)!
     : id;

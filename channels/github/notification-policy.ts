@@ -104,16 +104,6 @@ export function githubNotificationRuntimeDiagnostics(
     });
   if (runtime !== 'openclaw' || !issue || !(issue.enabled ?? Boolean(issue.allowed.length)))
     return diagnostics;
-  if (issue.mode !== 'plan')
-    diagnostics.push({
-      code: 'github-notification-runtime-unsupported',
-      fieldPath: '/github/notifications/issue-assignment/mode',
-      message: `OpenClaw V2 does not support ${issue.mode} issue assignment.`,
-      remediation:
-        'Choose Plan mode explicitly to enable issue assignment; no mode is substituted automatically.',
-      status: 'warning',
-      workflow: 'issue-assignment',
-    });
   if (
     issue.assessment?.skill &&
     ![defaultAssessmentSkill, defaultAssessmentSkill.split(':').at(-1)!].includes(

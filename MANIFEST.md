@@ -476,12 +476,11 @@ manual delivery remains available after implementation handoff. Configured Codex
 feedback resumes the owning chat for explanation and bounded replies, including on its
 verified delivery PR. Codex Auto conditionally continues a recorded Work decision
 through the same implementation and delivery stages. Review requests remain unavailable.
-OpenClaw v2 supports the default assessment skill in Plan mode; broader workflow rollout
-remains separate.
-OpenClaw Work/Auto modes, independent review requests, and replacement assessment
-skills remain unsupported. Unavailable review requests warn without blocking
-supported issue assignment or configured feedback. Unsupported assignment modes and assessment skills
-block only the dependent assignment workflow; no fallback mode or skill is selected. Supported Plan-mode declarations are checked by the enrollment, intake, and
+OpenClaw v2 supports the default assessment skill in Plan, Work, and Auto modes.
+Eligible Work and Auto assessments continue in the same issue chat through implementation
+and managed PR delivery. Independent review requests and replacement assessment
+skills remain unavailable and warn without stopping supported issue intake. No
+replacement skill is silently selected. Declarations are checked by enrollment, intake, and
 automation lifecycle owners. A Codex-only declaration does not activate OpenClaw
 intake. Binding and passive discovery never activate work.
 OpenClaw also derives an `Agent System: github-issue-assignment`
@@ -611,9 +610,9 @@ change its own mode. Feedback continues the existing work's trusted mode and
 cannot turn planning into implementation. `review-request` and nested feedback do not
 accept a separate mode in this contract. Review behavior will be specified with
 its lifecycle, not borrowed from issue Work mode. Codex supports `plan`, `work`, and opt-in [`auto`](./CODEX.md#auto-mode). Auto requires
-explicit saved workflow activation and a recorded Work decision. OpenClaw can verify
-Work/Auto authority in an existing issue turn; automatic continuation transport
-remains unavailable.
+explicit saved workflow activation and a recorded Work decision. OpenClaw continues eligible Work/Auto issues in their existing chats on the next
+intake pass, within shared capacity. Clarification pauses implementation without
+revoking its stage; an answer resumes through the owning context without renewed approval.
 
 #### Feedback permissions
 

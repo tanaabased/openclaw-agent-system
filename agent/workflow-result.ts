@@ -46,7 +46,11 @@ export const workflowResultSchema = Type.Union([
       resultContract: Type.Literal(stageResultContracts.implementation),
       result: Type.Object(
         {
-          outcome: Type.Union([Type.Literal('done'), Type.Literal('blocked')]),
+          outcome: Type.Union([
+            Type.Literal('done'),
+            Type.Literal('blocked'),
+            Type.Literal('clarification-needed'),
+          ]),
           summary,
         },
         { additionalProperties: false },

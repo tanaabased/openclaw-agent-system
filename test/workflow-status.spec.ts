@@ -20,6 +20,18 @@ describe('agent/workflow-status', () => {
       'retrying',
     );
   });
+  it('should retain clarification separately from native failure in both runtimes', () => {
+    assert.equal(
+      workflowStatus({ phase: 'complete', continuation: { phase: 'clarification-needed' } }),
+      'clarification-needed',
+    );
+    const work = { result: { outcome: 'clarification-needed' } };
+    assert.equal(workflowStatus({ phase: 'complete', work }), 'clarification-needed');
+    assert.equal(
+      workflowStatus({ phase: 'complete', work: { ...work, code: 'dispatch-turn-cancelled' } }),
+      'blocked',
+    );
+  });
   it('should preserve published work when delivery remains incomplete in either runtime', () => {
     const delivery = { pullRequest: { pullRequestNumber: 7 }, reconciled: true };
     assert.equal(workflowStatus({ phase: 'complete', delivery }), 'partially-delivered');

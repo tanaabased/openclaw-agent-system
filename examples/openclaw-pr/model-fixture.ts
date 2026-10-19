@@ -139,7 +139,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       const stopped = terminal(next);
       if (stopped) return stopped;
       if (
-        ['feedback-pending', 'feedback-completed', 'feedback-queued'].includes(String(next.status))
+        [
+          'implementation-pending',
+          'implementation-completed',
+          'implementation-queued',
+          'implementation-idle',
+          'policy-held',
+          'feedback-pending',
+          'feedback-completed',
+          'feedback-queued',
+        ].includes(String(next.status))
       )
         continue;
       if (typeof next.id !== 'string' || !/^[a-f0-9]{64}$/u.test(next.id)) return;
@@ -287,7 +296,15 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
-  const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  const automaticId =
+    /Call agent_system_dispatch action implementation-context with id ([a-f0-9]{64})/u.exec(
+      prompt,
+    )?.[1];
+  const answerId = /Answer for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  const operatorId =
+    automaticId ??
+    answerId ??
+    /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
     const update = prompt.includes(
       'Add a follow-up commit and update the existing PR title and body.',
@@ -300,21 +317,23 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
-      const preview = result('handoff-preview');
-      if (!preview)
-        return dispatch('handoff-preview', {
-          action: 'handoff',
-          id: operatorId,
-        });
-      if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
-      const handed = result('handoff');
-      if (!handed)
-        return dispatch('handoff', {
-          action: 'handoff',
-          id: operatorId,
-          digest: preview.digest,
-        });
-      if (handed.status !== 'handed-off') return;
+      if (!automaticId && !answerId) {
+        const preview = result('handoff-preview');
+        if (!preview)
+          return dispatch('handoff-preview', {
+            action: 'handoff',
+            id: operatorId,
+          });
+        if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
+        const handed = result('handoff');
+        if (!handed)
+          return dispatch('handoff', {
+            action: 'handoff',
+            id: operatorId,
+            digest: preview.digest,
+          });
+        if (handed.status !== 'handed-off') return;
+      }
       const context = result('work-context');
       if (!context)
         return dispatch('work-context', { action: 'implementation-context', id: operatorId });
@@ -324,6 +343,30 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         context.runtime !== 'openclaw' ||
         !path ||
         context.publicationAuthorized !== true
+      )
+        return;
+      if (automaticId) {
+        const saved = result('work-result');
+        if (!saved)
+          return dispatch('work-result', {
+            action: 'implementation-result',
+            id: operatorId,
+            implementationResult: {
+              outcome: 'clarification-needed',
+              summary: 'Confirm cleanup timing.',
+              fullResult:
+                'Reviewed the retained plan. No files changed; cleanup timing needs confirmation.',
+              questions: ['Should cleanup happen after evidence is captured?'],
+            },
+          });
+        if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+        return { content: saved.presentation };
+      }
+      if (
+        answerId &&
+        ((context.previousImplementationResult as { outcome?: string })?.outcome !==
+          'clarification-needed' ||
+          !prompt.includes('Yes, after evidence is captured.'))
       )
         return;
       const file = `notification-fixture-${operatorId}.md`;

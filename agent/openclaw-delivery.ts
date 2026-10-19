@@ -53,7 +53,7 @@ export default async function openClawDelivery(input: {
   if (!work || (!retainedIssueProgression(record) && !work.publication))
     throw new Error('delivery-implementation-incomplete');
   if (
-    work.result?.outcome === 'blocked' ||
+    (work.result && work.result.outcome !== 'done') ||
     (work.implementation && work.result?.outcome !== 'done')
   )
     throw new Error('delivery-implementation-incomplete');
