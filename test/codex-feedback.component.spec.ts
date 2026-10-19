@@ -603,6 +603,38 @@ describe('agent/codex-feedback', () => {
       assert.ok(!published!.includes('custom:latin'));
       assert.ok(!published!.includes('Private English'));
     });
+  it('should preserve a pending reply after unrelated workflow settings change', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await recordReply(ref, 'Private answer.', 'Public answer.');
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].mode = 'work';
+    manifest.github.notifications['issue-assignment'].implementation = {
+      skill: 'custom:implementation',
+    };
+    manifest.github.notifications.cleanup = { enabled: false, 'grace-minutes': 5 };
+    await writeFile(path, JSON.stringify(manifest));
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const activation = deps.activation!;
+    deps.activation = async (...args) => {
+      const result = await activation(...args);
+      result.schedule!.current.policyDigest = automationHash(
+        current.manifest.github!.notifications,
+      );
+      result.schedule!.saved.policyDigest = result.schedule!.current.policyDigest;
+      return result;
+    };
+    const preview = await call('publish', ref, true);
+    assert.equal(preview.status, 'publication-ready');
+    assert.ok('digest' in preview && preview.digest);
+    assert.equal(
+      (await call('publish', { ...ref, digest: preview.digest }, true)).status,
+      'published',
+    );
+    assert.equal(creates, 1);
+  });
   it('should reuse one issue observation per authorization and refresh it on the next call', async () => {
     const ref = await prepare();
     sent = true;

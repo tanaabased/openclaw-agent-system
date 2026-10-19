@@ -297,6 +297,15 @@ describe('agent/openclaw-feedback', () => {
     );
     assert.equal(event.result, undefined);
   });
+  it('should retain reply authority when unrelated work settings change', async () => {
+    await start();
+    const digest = await compose();
+    input.policy.issueAssignment!.mode = 'work';
+    input.policy.issueAssignment!.implementation = { skill: 'custom:implementation' };
+    input.policy.cleanup = { enabled: false, graceMinutes: 5 };
+    assert.equal((await action('publish', { digest })).status, 'published');
+    assert.equal(writes, 1);
+  });
   it('should block changed source author mention policy and assignment before publishing', async () => {
     await start();
     const digest = await compose();

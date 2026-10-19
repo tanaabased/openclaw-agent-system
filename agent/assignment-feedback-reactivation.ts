@@ -1,7 +1,4 @@
-import {
-  notificationAuthorityDigest,
-  matchesNotificationAuthority,
-} from './notification-authority.ts';
+import { feedbackAuthorityDigest, matchesFeedbackAuthority } from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
@@ -34,7 +31,7 @@ export async function inspectFeedbackAssignment(
   const { latest } = observation;
   if (
     latest?.nodeId !== record.feedbackReactivation.assignmentEventId ||
-    !matchesNotificationAuthority(record.feedbackReactivation.policyDigest, policy.policy)
+    !matchesFeedbackAuthority(record.feedbackReactivation.policyDigest, policy.policy)
   )
     throw new Error('feedback-reactivation-superseded');
   return observation;
@@ -74,10 +71,10 @@ export default async function reactivateAssignmentFeedback(input: {
   }
   const { latest } = await inspectAssignment(policy, intake, client);
   if (!latest) throw new Error('dispatch-assignment-event-missing');
-  const digest = notificationAuthorityDigest(policy.policy);
+  const digest = feedbackAuthorityDigest(policy.policy);
   if (
     record.feedbackReactivation?.assignmentEventId === latest.nodeId &&
-    matchesNotificationAuthority(record.feedbackReactivation.policyDigest, policy.policy)
+    matchesFeedbackAuthority(record.feedbackReactivation.policyDigest, policy.policy)
   )
     return true;
   delete record.feedbackReactivation;
@@ -149,7 +146,7 @@ export default async function reactivateAssignmentFeedback(input: {
         event.nodeId === target.nodeId &&
         event.phase === 'queued' &&
         event.createdAt >= since &&
-        matchesNotificationAuthority(event.policyDigest, policy.policy) &&
+        matchesFeedbackAuthority(event.policyDigest, policy.policy) &&
         revisions.get(event.sourceId) === event.revision,
     );
     if (event) {
