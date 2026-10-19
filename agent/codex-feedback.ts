@@ -166,8 +166,11 @@ export default async function runCodexFeedback(
         for (const record of state.records) {
           if (record.retired || record.reset || !record.feedback) continue;
           const enabled = record.feedback.admission?.enabled;
+          const observedAt = record.feedback.admission?.observedAt;
           observeFeedbackPolicy(record.feedback, current.manifest.github?.notifications, scanTime);
-          policyObserved ||= enabled !== record.feedback.admission?.enabled;
+          policyObserved ||=
+            enabled !== record.feedback.admission?.enabled ||
+            observedAt !== record.feedback.admission?.observedAt;
         }
         if (policyObserved) await save();
       }

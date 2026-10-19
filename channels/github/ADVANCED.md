@@ -25,10 +25,13 @@ eligible when the operator changes the mode to Work.
 Discovery retains bounded observations independently of reply eligibility.
 Feedback observed while disabled stays in GitHub history and is not queued for
 later dispatch. When the runtime observes feedback reenabled, it saves an admission
-cutoff for the issue and its PR; only subsequent approved comments or revisions
-become new feedback. The cutoff records runtime observation, not the exact file-edit
-time. Work already admitted before a pause remains recoverable, and publication
-receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
+cutoff for the issue and its PR using the previous policy-check time. Approved
+comments or revisions after that cutoff become new feedback, including those
+between the last check and reenabling. This overlap avoids missing comments posted
+just after a configuration edit; a longer polling gap means a longer overlap.
+Older records without a policy-check timestamp use their last saved scan time,
+or the current check when neither timestamp is available. Work already admitted
+before a pause remains recoverable, and publication receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
 
 Install reconciles changes to installed scheduling machinery. Policy-only edits do
 not change the orchestration definition. Native execution facts, explicit task

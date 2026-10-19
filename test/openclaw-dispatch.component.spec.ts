@@ -415,6 +415,22 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should retain the previous feedback policy check across coordinator runs', async () => {
+    manifest.github!.notifications!.issueAssignment!.feedback = false;
+    await next();
+    const first = service.dependencies.now!();
+    let now = first + 1000;
+    service.dependencies.now = () => now;
+    coordinator.runId = 'disabled-feedback-check';
+    await next();
+    assert.equal((await record()).feedback!.admission?.observedAt, now);
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
+    now += 1000;
+    coordinator.runId = 'enabled-feedback-check';
+    await next();
+    assert.equal((await record()).feedback!.admission?.after, first + 1000);
+  });
+
   it('should retry a transient worktree failure on a later occurrence without creating twice', async () => {
     const input = await next();
     const original = service.dependencies.worktrees.prepareGitHub;

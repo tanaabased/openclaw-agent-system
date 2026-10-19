@@ -829,8 +829,11 @@ export default class OpenClawDispatch {
           for (const record of state.records) {
             if (record.retired || record.reset || !record.feedback) continue;
             const enabled = record.feedback.admission?.enabled;
+            const observedAt = record.feedback.admission?.observedAt;
             observeFeedbackPolicy(record.feedback, manifest.github?.notifications, now);
-            policyObserved ||= enabled !== record.feedback.admission?.enabled;
+            policyObserved ||=
+              enabled !== record.feedback.admission?.enabled ||
+              observedAt !== record.feedback.admission?.observedAt;
           }
           if (policyObserved) await save();
           for (const record of state.records) {
@@ -1084,6 +1087,7 @@ export default class OpenClawDispatch {
             feedback: {
               startedAt: now,
               admission: {
+                observedAt: now,
                 enabled: workflowFeedbackEnabled(
                   manifest.github?.notifications,
                   'issue-assignment',

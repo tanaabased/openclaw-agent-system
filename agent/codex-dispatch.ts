@@ -787,6 +787,7 @@ export async function runCodexDispatch(
             feedback: {
               startedAt: now,
               admission: {
+                observedAt: now,
                 enabled: workflowFeedbackEnabled(
                   current.manifest.github?.notifications,
                   'issue-assignment',

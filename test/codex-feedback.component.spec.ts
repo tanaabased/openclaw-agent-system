@@ -228,6 +228,24 @@ describe('agent/codex-feedback', () => {
     };
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
+  it('should retain the previous policy check even when feedback discovery is cached', async () => {
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].feedback = false;
+    await writeFile(path, JSON.stringify(manifest));
+    await call('next');
+    const first = deps.now!();
+    let now = first + 1000;
+    deps.now = () => now;
+    // the same native occurrence reuses discovery, but must still save the policy check.
+    await call('next');
+    assert.equal((await store.read()).records[0]!.feedback!.admission?.observedAt, now);
+    manifest.github.notifications['issue-assignment'].feedback = true;
+    await writeFile(path, JSON.stringify(manifest));
+    now += 1000;
+    await call('next');
+    assert.equal((await store.read()).records[0]!.feedback!.admission?.after, first + 1000);
+  });
   it('should continue scanning after an owner changes during its first checkpoint', async () => {
     const state = await store.read();
     const first = state.records[0]!;

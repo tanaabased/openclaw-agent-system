@@ -1,3 +1,4 @@
+import { observeFeedbackPolicy } from '../agent/feedback-source.ts';
 import { Value } from 'typebox/value';
 import { codexFeedbackSchema, type CodexFeedback } from '../agent/codex-feedback-state.ts';
 import { openclawFeedbackSchema } from '../agent/openclaw-feedback-state.ts';
@@ -40,7 +41,7 @@ describe('agent/codex-feedback-source', () => {
     policy.issueAssignment!.feedback = false;
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
-  it('should baseline disabled-period feedback and admit only later feedback after reenabling', async () => {
+  it('should admit the interval since the last disabled policy check without replaying older feedback', async () => {
     const startedAt = Date.parse('2026-10-12T00:00:00Z');
     let state: CodexFeedback = { startedAt, baseline: {}, events: [] };
     const policy = intakeFixture().policy;
@@ -79,51 +80,78 @@ describe('agent/codex-feedback-source', () => {
     await run(2000);
     assert.equal(state.events.length, 0);
     assert.ok(state.baseline.I?.disabled);
+    await run(4000);
+    state = JSON.parse(JSON.stringify(state));
+    comments.push(at('interval', 4500), {
+      ...at('unapproved', 4600),
+      author: { ...account, nodeId: 'foreign' },
+    });
     policy.issueAssignment!.feedback = true;
-    await run(3000);
-    assert.equal(state.admission?.after, startedAt + 3000);
-    assert.equal(state.events.length, 0);
-    // Include disabled-period history first discovered after reenabling and the exact boundary.
-    comments.push(at('late-history', 2500), at('boundary', 3000), at('fresh', 4000));
     await run(5000);
+    assert.equal(state.admission?.after, startedAt + 4000);
     assert.deepEqual(
       state.events.map((event) => event.sourceId),
-      ['fresh'],
+      ['interval'],
+    );
+    // late discovery does not admit history before or exactly at the previous check.
+    comments.push(at('late-history', 3000), at('boundary', 4000), at('fresh', 6000));
+    await run(7000);
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['interval', 'fresh'],
     );
     const admitted = state.events[0]!.id;
     state = JSON.parse(JSON.stringify(state));
-    await run(6000);
-    assert.equal(state.admission?.after, startedAt + 3000);
+    await run(8000);
+    assert.equal(state.admission?.after, startedAt + 4000);
     assert.equal(Value.Check(codexFeedbackSchema, state), true);
     assert.equal(Value.Check(openclawFeedbackSchema, state), true);
-    assert.equal(state.events.length, 1);
-    // A new resource in the same issue workflow uses the same enablement cutoff.
-    await run(7000, 'linked-pr');
+    assert.equal(state.events.length, 2);
+    // the linked pr shares the interval and the author checks.
+    await run(9000, 'linked-pr');
     assert.deepEqual(
       state.events.map((event) => event.sourceId),
-      ['fresh', 'fresh-pr'],
+      ['interval', 'fresh', 'interval-pr', 'fresh-pr'],
     );
     policy.issueAssignment!.feedback = false;
-    comments.push(at('second-disabled-period', 8000));
-    await run(9000);
+    comments.push(at('second-disabled-period', 10000));
+    await run(11000);
     assert.equal(state.events[0]!.policyHeld, 'feedback-not-approved');
     policy.issueAssignment!.feedback = true;
-    await run(10000);
-    assert.equal(state.admission?.after, startedAt + 10000);
+    await run(12000);
+    assert.equal(state.admission?.after, startedAt + 11000);
     assert.equal(state.events[0]!.id, admitted);
     assert.equal(state.events[0]!.policyHeld, undefined);
-    assert.equal(state.events.length, 2);
+    assert.equal(state.events.length, 4);
     comments[0] = {
       ...comments[0]!,
       body: '@receiver a new revision',
-      updatedAt: new Date(startedAt + 11000).toISOString(),
+      updatedAt: new Date(startedAt + 13000).toISOString(),
     };
-    await run(12000);
+    await run(14000);
     assert.equal(state.events.at(-1)?.sourceId, 'disabled');
     state.events.at(-1)!.phase = 'published';
     state.events.at(-1)!.receipt = { nodeId: 'reply', databaseId: 99 };
-    await run(13000);
-    assert.equal(state.events.length, 3);
+    await run(15000);
+    assert.equal(state.events.length, 5);
+  });
+
+  it('should preserve legacy feedback state when no previous policy timestamp was saved', () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = true;
+    for (const scannedTime of [undefined, 2000]) {
+      const state: CodexFeedback = {
+        admission: { enabled: false },
+        scannedTime,
+        baseline: {},
+        events: [],
+      };
+      observeFeedbackPolicy(state, policy, 3000);
+      assert.equal(state.admission?.after, scannedTime ?? 3000);
+      observeFeedbackPolicy(state, policy, 4000);
+      assert.equal(state.admission?.after, scannedTime ?? 3000);
+      assert.equal(state.admission?.observedAt, 4000);
+    }
   });
 
   it('should baseline once, queue exact edits once and suppress confirmed own replies', async () => {

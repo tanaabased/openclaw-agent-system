@@ -64,10 +64,14 @@ export function observeFeedbackPolicy(
 ) {
   const accepting = workflowFeedbackEnabled(policy, 'issue-assignment');
   if (accepting && state.admission?.enabled === false) {
-    state.admission = { enabled: true, after: now };
+    state.admission = {
+      enabled: true,
+      after: state.admission.observedAt ?? state.scannedTime ?? now,
+      observedAt: now,
+    };
     // fresh reads baseline the new window instead of resuming disabled-period pages.
     delete state.discovery;
-  } else state.admission = { ...state.admission, enabled: accepting };
+  } else state.admission = { ...state.admission, enabled: accepting, observedAt: now };
   return accepting;
 }
 

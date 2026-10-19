@@ -57,6 +57,7 @@ export const feedbackSourceStateSchema = Type.Object(
       Type.Object(
         {
           enabled: Type.Boolean(),
+          observedAt: Type.Optional(Type.Integer({ minimum: 0 })),
           after: Type.Optional(Type.Integer({ minimum: 0 })),
         },
         { additionalProperties: false },
