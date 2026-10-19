@@ -171,11 +171,12 @@ openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bu
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
-feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one feedback turn required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" '[.[].records[].feedback | (.events[] | select(.sourceId == $source and .turn != null) | .turn.runId), (.history[]? | select(.sourceId == $source) | .turnId)] | if length == 1 then .[0] else error("one feedback turn required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 300000
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
+node --import tsx --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const {retainedFeedback} = await import(process.argv[1]); const path = process.argv[2]; const record = JSON.parse(readFileSync(path, "utf8")); record.feedback.events.push(...(record.feedback.history ?? []).map(entry => retainedFeedback(record.feedback, entry.id))); writeFileSync(path, JSON.stringify(record));' "$GITHUB_WORKSPACE/agent/feedback-retention.ts" "$TMPDIR/notification-feedback.json"
 jq -e --slurp '.[1].retirement == null and .[1].feedbackReactivation.eventId != null and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].stageReceipt == .[1].stageReceipt and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .phase == "published" and .itemType == "issue" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-feedback.json"
 
 # should verify the exact response and suppress another reply on a repeat scan
@@ -210,8 +211,9 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-retired.json"
-jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
+jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived == true or .session.archivedAt != null'
+node --import tsx --input-type=module -e 'import {readFileSync} from "node:fs"; import assert from "node:assert/strict"; const {retainedDispatch} = await import(process.argv[1]); const full = retainedDispatch(JSON.parse(readFileSync(process.argv[2], "utf8"))); const before = JSON.parse(readFileSync(process.argv[3], "utf8")); assert.deepEqual(full.result, before.result); assert.deepEqual(full.stageReceipt, before.stageReceipt);' "$GITHUB_WORKSPACE/agent/dispatch-retention.ts" "$TMPDIR/notification-retired.json" "$TMPDIR/notification-dispatch-before.json"
 worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
@@ -221,6 +223,9 @@ for other in $(jq -r --arg retired "$conversation" '.[] | select(.threadId != $r
 done
 
 ```
+
+The assertions above use the owning retained-history readback helpers when ordinary writes
+have compacted a record. They compare the complete saved plan, not copied chat prose.
 
 ## Cleanup
 

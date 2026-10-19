@@ -29,6 +29,32 @@ write must be reconciled before further publication.
 Older receipts retain their original authority check until replaced; changed older policies
 can still require reconciliation.
 
+## Retained history and capacity
+
+Ordinary writes compact safely finished assignments, feedback, summary receipts,
+and completed intake passes in both runtimes. No separate archive or cleanup command
+is required. Active plans, unseen feedback, pending cleanup, uncertain sends, and
+unconfirmed publications stay protected. Retirement alone is not enough: native
+execution and publication recovery must also be settled.
+
+Compact records retain routing and duplicate-prevention identities. Required source
+and result evidence stays losslessly packed and integrity-checked in the same private
+journal; saved assessment presentation remains available through the existing owning
+chat's `present` operation. Reading history grants no new work or publication authority.
+Old valid journals migrate on their next normal write, without resetting the intake
+baseline or checkpoint. Interrupted writes leave the previous complete journal intact.
+
+Intake and dispatch content each retain their 4 MiB limits; dispatch's separate 1 MiB
+reporting reserve is not history space. Compact history collections are limited to
+8,192 entries, individual decoded evidence to 4 MiB, and total decoded evidence per
+journal to 64 MiB. These bounds do not promise unlimited history. Capacity diagnostics
+identify the journal, affected record, limiting bytes or count, and protected evidence.
+If protected data fills a limit, new writes stop: resolve the named unfinished recovery
+where applicable, or arrange operator recovery preserving the required evidence.
+Oversized, unreadable, or corrupt journals remain untouched. Preserve the file and
+restore only a verified complete copy through operator recovery; never delete journals
+or reset baselines to manufacture space.
+
 ## Assignment lifecycle
 
 The existing intake run checks retained assignments in both runtimes. Verified issue

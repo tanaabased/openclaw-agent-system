@@ -1,5 +1,6 @@
 import { matchesFeedbackAuthority } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
+import { retainedFeedback } from './feedback-retention.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
@@ -249,14 +250,33 @@ export default async function runCodexFeedback(
         // reconcile every prepared send before considering another event for this owner.
         const event =
           input.action === 'next'
-            ? (feedback.events.find((item) =>
-                ['prepared', 'running', 'responded'].includes(item.phase),
+            ? (feedback.events.find(
+                (item) =>
+                  ['prepared', 'running', 'responded'].includes(item.phase) ||
+                  (item.phase === 'published' && !item.nativeCompleted && Boolean(item.attempt)),
               ) ?? queuedEvent(record))
-            : feedback.events.find((item) => item.id === input.eventId);
+            : retainedFeedback(feedback, input.eventId);
         try {
           if (record.sourceThreadId !== activation.sourceThreadId)
             throw new Error('feedback-schedule-owner-changed');
           if (!event) continue;
+          if (
+            event.phase === 'published' &&
+            !event.nativeCompleted &&
+            event.attempt &&
+            ['next', 'reconcile'].includes(input.action)
+          ) {
+            const receipt = await receiptFor(record.sourceThreadId, event.attempt);
+            if (
+              receipt.status === 'verified' &&
+              receipt.ended &&
+              (!event.attempt.turnId || event.attempt.turnId === receipt.turnId)
+            ) {
+              event.attempt.turnId = receipt.turnId;
+              event.nativeCompleted = true;
+              await save();
+            } else if (input.action === 'next') continue;
+          }
           if (input.action === 'next' && event.retry && !dispatchRetryDue(event, now)) continue;
           if (
             event.phase === 'published' ||
@@ -268,7 +288,14 @@ export default async function runCodexFeedback(
                 !event.publicationAttempted
               ))
           )
-            return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
+            return {
+              status: event.phase,
+              id: record.id,
+              eventId: event.id,
+              code: event.code,
+              receipt: event.receipt,
+              result: event.result,
+            };
           if (
             operatorPublication &&
             (caller === activation.sourceThreadId ||

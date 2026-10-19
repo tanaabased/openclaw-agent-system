@@ -11,6 +11,7 @@ import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import runCodexFeedback, { type CodexFeedbackDependencies } from '../agent/codex-feedback.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import { retainedFeedback } from '../agent/feedback-retention.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
@@ -461,6 +462,17 @@ describe('agent/codex-feedback', () => {
     const saved = (await store.read())!.records[0]!.feedback!.events[0]!;
     assert.equal(saved.result!.privateText, 'Detailed private answer.');
     assert.equal(saved.receipt!.nodeId, 'reply');
+    ended = true;
+    assert.equal((await call('reconcile', ref)).status, 'published');
+    const history = (await store.read()).records[0]!.feedback!;
+    assert.equal(history.events.length, 0);
+    assert.equal(history.history?.length, 1);
+    assert.equal(
+      retainedFeedback(history, saved.id)?.result?.privateText,
+      'Detailed private answer.',
+    );
+    assert.equal((await call('publish', apply, true)).status, 'published');
+    assert.equal(creates, 1);
   });
   it('should preview and publish an inline reply only in its retained review thread', async () => {
     const connect = deps.feedbackConnect!;

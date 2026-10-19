@@ -31,6 +31,7 @@ import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch from './codex-dispatch-reporting.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
+import { retainedDispatch } from './dispatch-retention.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 
@@ -76,7 +77,7 @@ import {
   githubNotificationMarkdownText,
   githubNotificationQuote,
 } from '../channels/github/presentation/card.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import { retainedIntake, type IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
@@ -397,10 +398,10 @@ export async function runCodexDispatch(
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
   if (action === 'present') {
-    const record = (await store.read()).records.find((entry) => entry.id === input.id);
-    const intake = (await current.store.read())?.records.find(
-      (entry) => entry.id === record?.intakeId,
+    const record = retainedDispatch(
+      (await store.read()).records.find((entry) => entry.id === input.id),
     );
+    const intake = retainedIntake(await current.store.read(), record?.intakeId);
     if (
       !record?.request ||
       !record.result ||
@@ -933,10 +934,11 @@ export async function runCodexDispatch(
       }
       if (typeof input.id !== 'string') throw new Error('dispatch-request-invalid');
       const record = state.records.find((entry) => entry.id === input.id);
-      const intake = record && admitted.records.find((entry) => entry.id === record.intakeId);
+      const intake = record && retainedIntake(admitted, record.intakeId);
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
       if (record.reset) throw new Error('dispatch-assessment-reset');
       if (record.retired && action === 'reconcile') {
+        if (record.retained) return { id: record.id, status: 'inactive', nextAction: 'next' };
         const observation = await withNative(current, deps, (native) =>
           reconcileCodexCapacity(record, native, state.run!.id, now, true),
         );

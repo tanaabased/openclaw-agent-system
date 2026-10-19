@@ -3,6 +3,9 @@ import feedbackDiscovery from './feedback-discovery.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import type { FeedbackSourceState, FeedbackSourceEvent } from './feedback-state.ts';
+import { compactFeedback } from './feedback-retention.ts';
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import {
@@ -16,6 +19,7 @@ import {
   reviewFeedback,
   reviewReplyFeedback,
   type GitHubCanonicalFeedback,
+  type GitHubReviewReceipt,
 } from '../channels/github/provider/review-feedback.ts';
 import type { GitHubNotificationCommentClient } from '../channels/github/provider/work-event-types.ts';
 import type { GitHubIdentity } from '../channels/github/provider/work-item.ts';
@@ -24,6 +28,65 @@ export function feedbackRevision(source: GitHubCanonicalFeedback) {
   return isReviewFeedback(source)
     ? reviewFeedbackRevision(source).revisionId
     : githubCommentRevision(source).revisionId;
+}
+
+const fingerprint = Type.String({ pattern: '^[a-f0-9]{64}$' });
+const baselineSchema = Type.Object(
+  {
+    retainedBaseline: Type.Literal(1),
+    revision: fingerprint,
+    receipt: Type.Optional(
+      Type.Object(
+        {
+          kind: Type.Union([Type.Literal('review'), Type.Literal('review-comment')]),
+          reviewId: Type.Integer({ minimum: 1 }),
+          summaryDigest: fingerprint,
+          members: Type.Record(
+            Type.String(),
+            Type.Object(
+              { databaseId: Type.Integer({ minimum: 1 }), digest: fingerprint },
+              { additionalProperties: false },
+            ),
+          ),
+          selected: Type.Array(Type.String(), { uniqueItems: true }),
+          summarySelected: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export function feedbackBaseline(value: string): {
+  retainedBaseline: 1;
+  revision: string;
+  receipt?: GitHubReviewReceipt;
+} {
+  const parsed = JSON.parse(value);
+  if (parsed?.retainedBaseline !== undefined) {
+    if (
+      !Value.Check(baselineSchema, parsed) ||
+      parsed.receipt?.selected.some((id) => !parsed.receipt!.members[id])
+    )
+      throw new Error('feedback-baseline-invalid');
+    return parsed;
+  }
+  const source = parsed as GitHubCanonicalFeedback;
+  return {
+    retainedBaseline: 1,
+    revision: feedbackRevision(source),
+    ...(isReviewFeedback(source) ? { receipt: source.feedback.receipt } : {}),
+  };
+}
+
+export function compactFeedbackBaseline(state: FeedbackSourceState) {
+  for (const baseline of Object.values(state.baseline))
+    for (const [id, value] of Object.entries(baseline))
+      baseline[id] = JSON.stringify(feedbackBaseline(value));
+  for (const [id, marker] of Object.entries(state.reviewMarkers ?? {}))
+    if (!/^[a-f0-9]{64}$/.test(marker))
+      state.reviewMarkers![id] = automationHash(JSON.parse(marker));
 }
 
 export function admitFeedback(
@@ -100,12 +163,16 @@ export async function discoverFeedback(input: {
     for (const review of reviews) {
       if (!review.submittedAt || review.state === 'PENDING') continue;
       const previous = baseline?.[review.nodeId];
-      const group = previous ? (JSON.parse(previous) as GitHubCanonicalFeedback) : undefined;
+      const group = previous ? feedbackBaseline(previous) : undefined;
       // reviews lack an edit timestamp: retain the small body marker, expanding members only for changes.
       if (discovery) {
-        const marker = JSON.stringify(review);
+        const marker = automationHash(review);
+        const previousMarker = reviewMarkers[review.nodeId];
         const changed =
-          reviewMarkers[review.nodeId] !== undefined && reviewMarkers[review.nodeId] !== marker;
+          previousMarker !== undefined &&
+          (/^[a-f0-9]{64}$/.test(previousMarker)
+            ? previousMarker
+            : automationHash(JSON.parse(previousMarker))) !== marker;
         if (changed) changedReviewBodies.add(review.nodeId);
         const changedMember = reviewComments.some(
           (comment) =>
@@ -127,7 +194,7 @@ export async function discoverFeedback(input: {
         reviewFeedback(
           review,
           await client.reviews.getReviewComments(owner, name, number, review.databaseId),
-          group && isReviewFeedback(group) ? group.feedback.receipt : undefined,
+          group?.receipt,
         ),
       );
     }
@@ -152,7 +219,7 @@ export async function discoverFeedback(input: {
     if (revisions.has(source.nodeId) && revisions.get(source.nodeId) !== revision)
       throw new Error('feedback-source-incomplete');
     revisions.set(source.nodeId, revision);
-    next[source.nodeId] = JSON.stringify(source);
+    next[source.nodeId] = JSON.stringify(feedbackBaseline(JSON.stringify(source)));
     if (
       ((!baseline || discovery) &&
         !previous &&
@@ -160,18 +227,20 @@ export async function discoverFeedback(input: {
         (state.startedAt === undefined ||
           Date.parse(source.updatedAt) <= state.startedAt ||
           !Number.isFinite(Date.parse(source.updatedAt)))) ||
-      (previous && feedbackRevision(JSON.parse(previous) as GitHubCanonicalFeedback) === revision)
+      (previous && feedbackBaseline(previous).revision === revision)
     )
       continue;
     // provider receipts, not copied markers or account identity, identify our own replies.
     if (
       ownCommentIds?.includes(source.nodeId) ||
-      state.events.some((event) => event.receipt?.nodeId === source.nodeId)
+      state.events.some((event) => event.receipt?.nodeId === source.nodeId) ||
+      state.history?.some((event) => event.receipt?.nodeId === source.nodeId)
     )
       continue;
     const id = automationHash([input.nodeId, source.nodeId, revision]);
     if (
       state.events.some((event) => event.id === id) ||
+      state.history?.some((event) => event.id === id) ||
       pending.some((event) => event.id === id) ||
       admitFeedback(input.policy, client.identity, source).disposition !== 'approved'
     )
@@ -192,6 +261,7 @@ export async function discoverFeedback(input: {
       phase: 'queued',
     });
   }
+  compactFeedback(state);
   if (state.events.length + pending.length > 400 || Object.keys(next).length > 1000)
     throw new Error('feedback-queue-full');
   if (discovery) state.reviewMarkers = reviewMarkers;

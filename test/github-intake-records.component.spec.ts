@@ -1,4 +1,5 @@
 import DiscoveryBudget from '../agent/discovery-budget.ts';
+import { RetainedHistoryError } from '../agent/retained-history.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,29 @@ describe('channels/github/intake/records', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+  it('should preserve a retention failure without calling it a provider outage or advancing intake', async () => {
+    const { input, store } = setup();
+    await scanAssignments({ ...input, activate: true });
+    const before = await readFile(store.location.path, 'utf8');
+    const failure = new RetainedHistoryError('retained-history-capacity', {
+      journal: 'codex-dispatch',
+      record: 'protected',
+      reason: 'required-evidence',
+      limit: 4194304,
+      actual: 4194305,
+    });
+    await assert.rejects(
+      scanAssignments({
+        ...input,
+        now: baseline + 120000,
+        connect: async () => {
+          throw failure;
+        },
+      }),
+      (error) => error === failure,
+    );
+    assert.equal(await readFile(store.location.path, 'utf8'), before);
   });
   function setup(runtime: 'codex' | 'openclaw' = 'codex') {
     const fixture = intakeFixture();
@@ -268,7 +292,7 @@ describe('channels/github/intake/records', () => {
     assert.equal((await scanAssignments({ ...input, now: baseline + 400_000 })).changed, true);
     assert.equal((await store.read())!.blocker, undefined);
   });
-  it('should serialize overlapping store instances and refuse commits after policy changes', async () => {
+  it('should release the lock during provider work and reject stale checkpoints or policy changes', async () => {
     const { input, store, events } = setup();
     events[0]!.createdAt = new Date(baseline - 1).toISOString();
     await scanAssignments({ ...input, activate: true });
@@ -289,12 +313,9 @@ describe('channels/github/intake/records', () => {
       },
     });
     await ready;
-    await assert.rejects(
-      scanAssignments({ ...input, store: new IntakeRecordStore(store.location) }),
-      { code: 'private-state-file-lock-busy' },
-    );
+    await scanAssignments({ ...input, store: new IntakeRecordStore(store.location) });
     release();
-    await first;
+    await assert.rejects(first, /private-state-snapshot-conflict/);
     const before = (await store.read())!.checkpoint;
     const failed = await scanAssignments({
       ...input,

@@ -34,6 +34,8 @@ import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 
 import { automationHash } from './automation-hash.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
+import { retainedDispatch } from './dispatch-retention.ts';
+import { retainedFeedback } from './feedback-retention.ts';
 import dispatchCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
 import openClawFeedback, {
   advanceFeedbackTurn,
@@ -59,7 +61,11 @@ import OpenClawDispatchStore, {
   type OpenClawDispatchRecord,
 } from './openclaw-dispatch-state.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
-import { IntakeError, type IntakeRecord } from '../channels/github/intake/record-store.ts';
+import {
+  IntakeError,
+  retainedIntake,
+  type IntakeRecord,
+} from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
@@ -399,14 +405,15 @@ export default class OpenClawDispatch {
           save,
         };
         if (!action || action.operation === 'reconcile') {
-          await authorizeFeedback(common);
+          if (event.phase !== 'published') await authorizeFeedback(common);
           const result = await advanceFeedbackTurn(common);
           if (event.turn?.status === 'completed') {
             record.feedback!.lastServedAt = now;
             if (record.feedback!.activity) record.feedback!.activity.busy = false;
             await save();
           }
-          if (!event.publicationAttempted || event.receipt) return result;
+          if (!event.publicationAttempted || event.receipt)
+            return { ...result, receipt: event.receipt, feedbackResult: event.result };
           return openClawFeedback({
             ...common,
             action: {
@@ -903,6 +910,9 @@ export default class OpenClawDispatch {
             );
           for (const owner of state.records) {
             const receipts = new Set([
+              ...(owner.feedback?.history?.flatMap((event) =>
+                event.receipt ? [event.receipt.nodeId] : [],
+              ) ?? []),
               ...(owner.feedback?.events.flatMap((event) =>
                 event.receipt ? [event.receipt.nodeId] : [],
               ) ?? []),
@@ -951,6 +961,8 @@ export default class OpenClawDispatch {
             )
             .sort((a, b) => a.at - b.at || a.event.id.localeCompare(b.event.id));
           let pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
+          if (state.openclawPassHistory?.some((entry) => sameIntakeRun(entry, caller)))
+            return { status: 'pass-completed' };
           if (!pass) {
             pass = {
               sessionKey: caller.sessionKey,
@@ -1012,8 +1024,26 @@ export default class OpenClawDispatch {
                     )),
               ),
           ).length;
-          if (started >= pass.allowance)
+          const finishPass = async () => {
+            if (
+              pass.selected.every((id) =>
+                state.records.some(
+                  (record) =>
+                    record.id === id &&
+                    (record.request ||
+                      record.retired ||
+                      record.feedback?.events.some((event) => event.turn)),
+                ),
+              )
+            ) {
+              pass.completed = true;
+              await save();
+            }
+          };
+          if (started >= pass.allowance) {
+            await finishPass();
             return { status: pass.selected.length ? 'pass-completed' : 'at-capacity' };
+          }
           const feedback = queued.find(
             ({ record, event }) =>
               pass.candidates.includes(event.id) && !pass.selected.includes(record.id),
@@ -1039,7 +1069,8 @@ export default class OpenClawDispatch {
               { ...authority, signal },
             );
           }
-          if (!pending)
+          if (!pending) {
+            await finishPass();
             return {
               status:
                 pass.selected.length ||
@@ -1047,6 +1078,7 @@ export default class OpenClawDispatch {
                   ? 'pass-completed'
                   : 'idle',
             };
+          }
           const record: OpenClawDispatchRecord = pending.record ?? {
             id: automationHash([current.journal.scope, randomUUID()]),
             intakeId: pending.intake.id,
@@ -1108,7 +1140,7 @@ export default class OpenClawDispatch {
         const record = state.records.find((entry) => entry.id === input.id);
         if (!record) throw new Error('dispatch-receipt-missing');
         if (input.action === 'feedback') {
-          const event = record.feedback?.events.find((event) => event.id === input.eventId);
+          const event = retainedFeedback(record.feedback, input.eventId);
           if (!event) throw new Error('feedback-event-missing');
           if (input.operation === 'reconcile' && !event.turn)
             throw new Error('feedback-send-unverified');
@@ -1126,7 +1158,10 @@ export default class OpenClawDispatch {
               : transactionSignal,
           });
         }
-        if (record.feedback?.events.some((event) => event.turn?.runId === caller.runId))
+        if (
+          record.feedback?.events.some((event) => event.turn?.runId === caller.runId) ||
+          record.feedback?.history?.some((event) => event.turnId === caller.runId)
+        )
           throw new Error('feedback-work-authority-denied');
         if (input.action === 'retry') {
           if (record.request) throw new Error('dispatch-native-recovery-required');
@@ -1540,7 +1575,7 @@ export default class OpenClawDispatch {
       const record = await current.journal.exclusive(async (state) => {
         enteredJournal = true;
         signal.throwIfAborted();
-        const retained = state.records.find((entry) => entry.id === action.id);
+        const retained = retainedDispatch(state.records.find((entry) => entry.id === action.id));
         if (!retained) throw new Error('dispatch-receipt-missing');
         if (
           caller.sessionKey !== retained.threadId ||
@@ -1557,7 +1592,7 @@ export default class OpenClawDispatch {
         await authority.assertCurrent?.();
       };
       await assertCurrent();
-      const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
+      const intake = retainedIntake(current.admitted, record.intakeId);
       if (!intake) throw new Error('dispatch-intake-record-missing');
       await this.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
         await describeIssueSession(request, record, this.dependencies.config(), true);
@@ -1587,10 +1622,11 @@ export default class OpenClawDispatch {
         signal.throwIfAborted();
         lockSignal.throwIfAborted();
         await authority.assertCurrent?.();
-        const retained = state.records.find((entry) => entry.id === action.id);
+        const retained = retainedDispatch(state.records.find((entry) => entry.id === action.id));
         if (!retained || automationHash(retained) !== snapshot)
           throw new Error('delivery-presentation-state-changed');
         retained.work!.delivery!.presentation = record.work!.delivery!.presentation;
+        state.records[state.records.findIndex((entry) => entry.id === action.id)] = retained;
         signal.throwIfAborted();
         await save();
         return result;

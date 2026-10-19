@@ -1,6 +1,8 @@
 import { Type, type Static } from 'typebox';
 
-import { codexFeedbackSchema } from './codex-feedback-state.ts';
+import { codexFeedbackSchema, feedbackEventSchema } from './codex-feedback-state.ts';
+import { validFeedbackHistory } from './feedback-retention.ts';
+import { settledCodexRecord } from './dispatch-retention.ts';
 
 import { codexContinuationStateSchema } from './codex-continuation-state.ts';
 import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
@@ -128,7 +130,10 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
     super(root, scope, {
       runtime: 'codex',
       recordSchema: dispatchRecordSchema,
-      validRecord: (record) => !record.request || Boolean(record.project),
+      settledRecord: settledCodexRecord,
+      validRecord: (record) =>
+        (!record.request || Boolean(record.project)) &&
+        (!record.feedback || validFeedbackHistory(record.feedback, feedbackEventSchema)),
     });
   }
 }

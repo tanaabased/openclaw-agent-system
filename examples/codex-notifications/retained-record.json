@@ -1,0 +1,27 @@
+{
+  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "intakeId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "issueKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "sourceThreadId": "fixture-intake",
+  "phase": "routing",
+  "createdAt": 1,
+  "manifestDigest": "fixture",
+  "nativeInactive": true,
+  "retirement": {
+    "reason": "issue-closed",
+    "intakeId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "at": 2,
+    "checkedAt": 2,
+    "eligibleAt": 2
+  },
+  "retired": {
+    "at": 2,
+    "by": "fixture-intake"
+  },
+  "retained": {
+    "version": 1,
+    "digest": "1812b8963b1819368b1c76ea0d335fcb8919986aafbbe1191dd6c796587eb697",
+    "bytes": 1126,
+    "data": "7VAxbsMwDPxKwNkp0I7eAnQJuhUdvdDSxSbsyIZEBQkM/72006JAO7pjbpBE3el05ETiqSTeCCpIgnKH4+JWb8TillLGG27m5jbC3NKQo8NHG8F+TXiSq+aI/T20KcaWE4yIQ1YJjd04Eyv8Qal8LujMQU5I+iqNrT8OJgyscsExsFt2KjVmFBShEnFGMPFkFach2LO1r73rhwT/70Nj++vFkrdw3T25VeilkbrHWs7fwfyS6ktf3/5OxIRuCIrr0utU0dhzqKis6B3KEuB3I7uOGzvgIh7B4Wn34B7cb66imeZP"
+  }
+}

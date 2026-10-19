@@ -13,6 +13,7 @@ import openClawFeedback, {
 } from '../agent/openclaw-feedback.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import { discoverFeedback } from '../agent/feedback-source.ts';
+import { compactFeedback, retainedFeedback } from '../agent/feedback-retention.ts';
 import { verifyOpenClawOperator } from '../agent/openclaw-work.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -262,6 +263,29 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(writes, 1);
     await action('publish', { digest });
     assert.equal(writes, 1);
+    terminal = true;
+    busy = false;
+    messages.push({
+      role: 'assistant',
+      stopReason: 'stop',
+      content: [{ type: 'text', text: 'Retained answer.' }],
+      __openclaw: { id: 'reply-event', runId: event.turn!.runId },
+    });
+    await advanceFeedbackTurn(input);
+    assert.equal(event.turn!.status, 'completed');
+    compactFeedback(record.feedback!);
+    record.feedback = JSON.parse(JSON.stringify(record.feedback));
+    assert.equal(record.feedback!.events.length, 0);
+    event = retainedFeedback(record.feedback!, event.id)!;
+    input.event = event;
+    assert.equal((await action('reconcile')).status, 'published');
+    assert.equal((await action('publish', { digest })).status, 'published');
+    assert.equal(
+      event.result!.privateText,
+      'Full private evidence, implications, uncertainty, and answer.',
+    );
+    assert.equal(writes, 1);
+    assert.equal(sends, 1);
   });
   it('should reconcile a lost publication without another create and retain uncertainty when absent', async () => {
     await start();

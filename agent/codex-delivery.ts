@@ -33,6 +33,8 @@ import {
   type DispatchGit,
 } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
+import { retainedDispatch } from './dispatch-retention.ts';
+import { retainedIntake } from '../channels/github/intake/record-store.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch.ts';
 import type { CodexDeliveryState } from './codex-delivery-state.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
@@ -159,7 +161,9 @@ export default async function runCodexDelivery(
   const native = deps.native ?? codexDispatchNative(connection!.request);
   try {
     return await store.exclusive(async (state, save, signal) => {
-      const record = state.records.find((entry) => entry.id === input.id);
+      const record = retainedDispatch(state.records.find((entry) => entry.id === input.id));
+      if (record)
+        state.records[state.records.findIndex((entry) => entry.id === record.id)] = record;
       if (
         !record?.request ||
         !record.project ||
@@ -183,9 +187,7 @@ export default async function runCodexDelivery(
         (await realpath(found.cwd)) !== (await realpath(record.worktree))
       )
         throw new Error('delivery-native-binding-mismatch');
-      const intake = (await current.store.read())?.records.find(
-        (entry) => entry.id === record.intakeId,
-      );
+      const intake = retainedIntake(await current.store.read(), record.intakeId);
       if (!intake) throw new Error('delivery-admission-missing');
       const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
       const previous = record.delivery;

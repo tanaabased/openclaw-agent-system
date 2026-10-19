@@ -15,6 +15,7 @@ import properLockfile from 'proper-lockfile';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import { retainedDispatch } from '../agent/dispatch-retention.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
@@ -2201,7 +2202,11 @@ describe('agent/codex-dispatch', () => {
     await next();
     const retired = (await store.read()).records[0]!;
     assert.equal(retired.retired?.at, now);
-    assert.equal(retired.result?.summary, result.summary);
+    assert.ok(retired.retained);
+    assert.deepEqual(retainedDispatch(retired)?.result, result);
+    const presented = await request('present', { id: prepared.id }, { threadId: 'issue-thread' });
+    assert.equal(presented.status, 'presented');
+    assert.ok(String(presented.presentation).includes(result.summary));
   });
 
   it('should request native inventory for obsolete codex work without deleting resources', async () => {

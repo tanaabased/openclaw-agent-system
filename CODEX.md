@@ -239,6 +239,9 @@ completed feedback turn and waits if the owning chat is active.
 Independent reviewer feedback still requires the reviewer intake adapter. Discovery
 and retained queues are bounded: incomplete provider reads or a full journal stop
 new feedback admission with a diagnostic; they do not silently discard comments.
+Finished history is compacted automatically while active and uncertain work stays
+protected. See [retained history and capacity](channels/github/ADVANCED.md#retained-history-and-capacity)
+for retained evidence, migration, limits, and operator recovery.
 
 ### Auto Mode
 

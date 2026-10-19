@@ -12,6 +12,8 @@ import IntakeRecordStore, {
   intakeLocation,
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
+import compactIntakeHistory from './intake-retention.ts';
+import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -121,6 +123,10 @@ export default class OpenClawIntake {
       if (code) return { status: 'blocked' as const, code, changed: true };
     }
     const target = store;
+    await compactIntakeHistory(
+      store,
+      new OpenClawDispatchStore(store.location.root, store.location.scope),
+    );
     return scanAssignments({
       store: target,
       budget,

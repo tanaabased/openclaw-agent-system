@@ -1,5 +1,6 @@
 import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../../../agent/discovery-budget.ts';
+import { RetainedHistoryError } from '../../../agent/retained-history.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
@@ -21,7 +22,7 @@ import {
 } from './record-store.ts';
 
 export interface AssignmentScanInput {
-  store: Pick<IntakeRecordStore, 'exclusive' | 'location'>;
+  store: Pick<IntakeRecordStore, 'transaction' | 'location'>;
   workspaceDir: string;
   agentId: string;
   policy: GitHubNotificationPolicy;
@@ -54,7 +55,7 @@ export default async function scanAssignments(
     throw new IntakeError('intake-policy-disabled');
   if (input.selector?.itemType === 'pull-request')
     throw new IntakeError('intake-selector-unsupported');
-  return input.store.exclusive(async (previous, persist, signal) => {
+  return input.store.transaction(async (previous, persist, signal) => {
     let persistenceError: unknown;
     const save = async (state: IntakeState) => {
       try {
@@ -138,7 +139,7 @@ export default async function scanAssignments(
       if (!input.selector) state.discovery = progress;
       await save(state);
       const records: IntakeRecord[] = [];
-      const seen = new Set(state.records.map((r) => r.id));
+      const seen = new Set([...state.records, ...(state.history ?? [])].map((r) => r.id));
       async function observeRead<T>(key: string, read: () => Promise<T>): Promise<T> {
         budget.check();
         if (progress.observations[key] !== undefined)
@@ -245,8 +246,8 @@ export default async function scanAssignments(
           });
         };
         await observe();
+        admitted += records.length;
         state.records.push(...records.splice(0));
-        admitted = state.records.length - (previous?.records.length ?? 0);
         progress.pending.shift();
         progress.observations = {};
         await input.assertCurrent();
@@ -276,6 +277,7 @@ export default async function scanAssignments(
       next = state;
     } catch (error) {
       if (error === persistenceError) throw error;
+      if (error instanceof RetainedHistoryError) throw error;
       if (error instanceof DiscoveryPaused || budget.exhausted) {
         if (!state) throw error;
         state.lastAttemptAt = input.now;

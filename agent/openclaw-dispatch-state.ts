@@ -4,7 +4,9 @@ import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 
 import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
 import { issueTurnSchema, type OpenClawTurn } from './openclaw-turn-state.ts';
-import { openclawFeedbackSchema } from './openclaw-feedback-state.ts';
+import { openclawFeedbackSchema, openclawFeedbackEventSchema } from './openclaw-feedback-state.ts';
+import { validFeedbackHistory } from './feedback-retention.ts';
+import { settledOpenClawRecord } from './dispatch-retention.ts';
 import { openclawWorkStateSchema } from './openclaw-work-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -161,7 +163,10 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
     super(root, scope, {
       runtime: 'openclaw',
       recordSchema: openclawDispatchRecordSchema,
+      settledRecord: settledOpenClawRecord,
       validRecord: (record) => {
+        if (record.feedback && !validFeedbackHistory(record.feedback, openclawFeedbackEventSchema))
+          return false;
         if (record.request && 'key' in record.request) {
           return Boolean(
             (!record.feedback ||

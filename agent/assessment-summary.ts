@@ -10,6 +10,7 @@ import GitHubNotificationCommentPublisher, {
 } from '../channels/github/publication/comment-publisher.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
+import { compactAssessmentSummaries } from './assessment-retention.ts';
 
 /** A retained assessment is its own publication source, never synthetic incoming feedback. */
 export default async function assessmentSummary(input: {
@@ -53,6 +54,7 @@ export default async function assessmentSummary(input: {
       record.handoff
     )
       throw new Error('assessment-summary-source-unavailable');
+    compactAssessmentSummaries(record);
     const summaries = (record.assessmentSummaries ??= []);
     // Uncertain older writes must be reconciled before a revised summary can be composed.
     summary =
@@ -261,7 +263,7 @@ export async function assessmentSummaryOwnPublications(
   connection: GitHubNotificationCommentPublicationConnection,
   redact: (text: string) => string,
 ) {
-  const ids: string[] = [];
+  const ids: string[] = (record.assessmentHistory ?? []).map((entry) => entry.receipt.nodeId);
   const publisher = new GitHubNotificationCommentPublisher({
     redactText: redact,
     authorize: () => ({ authorized: true }),

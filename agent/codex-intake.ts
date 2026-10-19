@@ -17,6 +17,8 @@ import IntakeRecordStore, {
   type IntakeState,
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
+import compactIntakeHistory from './intake-retention.ts';
+import CodexDispatchStore from './codex-dispatch-state.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
@@ -184,6 +186,10 @@ export async function runCodexIntake(
       activate,
       async connect(signal) {
         await assertCurrent();
+        await compactIntakeHistory(
+          current.store,
+          new CodexDispatchStore(current.store.location.root, current.store.location.scope),
+        );
         return connectSelected(
           current,
           deps,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { admitCodexFeedback, discoverCodexFeedback } from '../agent/codex-feedback-source.ts';
 import type { CodexFeedback } from '../agent/codex-feedback-state.ts';
+import { compactFeedback, retainedFeedback } from '../agent/feedback-retention.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
   reviewFixture,
@@ -20,6 +21,59 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  it('should discover more than 400 settled edits and suppress historical replies after restart', async () => {
+    let state: CodexFeedback = { baseline: { I: {} }, events: [] };
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = true;
+    let current = comment('edited');
+    const discover = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: 10,
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments: [current], truncated: false }),
+          getIssueComment: async () => current,
+        },
+      });
+    let firstId = '';
+    let firstSource = '';
+    for (let index = 0; index < 405; index++) {
+      current = comment('edited', '@receiver edit ' + index);
+      await discover();
+      assert.equal(state.events.length, 1);
+      const event = state.events[0]!;
+      if (!index) {
+        firstId = event.id;
+        firstSource = event.source;
+      }
+      event.phase = 'published';
+      event.nativeCompleted = true;
+      event.replyRequested = true;
+      event.result = {
+        privateText: 'Private result ' + index,
+        publicText: 'Public result ' + index,
+      };
+      event.receipt = { nodeId: 'own-' + index, databaseId: index + 1 };
+      compactFeedback(state);
+    }
+    state = JSON.parse(JSON.stringify(state));
+    await discover();
+    current = comment('edited', '@receiver edit 0');
+    await discover();
+    current = comment('own-0');
+    await discover();
+    assert.equal(state.events.length, 0);
+    assert.equal(state.history?.length, 405);
+    assert.equal(retainedFeedback(state, firstId)?.source, firstSource);
+    assert.equal(retainedFeedback(state, firstId)?.result?.privateText, 'Private result 0');
+  });
   it('should admit configured human self-feedback and reject changed pins or quoted mentions', () => {
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = true;

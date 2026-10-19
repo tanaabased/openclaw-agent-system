@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -9,6 +10,17 @@ import ensurePrivateStateDirectories from '../../../core/ensure-private-state-di
 import PrivateStateFile from '../../../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
+import mergeStateSnapshot, {
+  refreshStateSnapshot,
+  stateSnapshotConflictCode,
+} from '../../../core/merge-state-snapshot.ts';
+import {
+  retainedDecodeBudget,
+  retainedEvidenceSchema,
+  retainedHistoryLimit,
+  unpackRetained,
+  RetainedHistoryError,
+} from '../../../agent/retained-history.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0 });
@@ -93,12 +105,52 @@ const stateSchema = Type.Object(
       Type.Object({ code: text, since: time, retryAfter: time }, { additionalProperties: false }),
     ),
     records: Type.Array(intakeRecordSchema),
+    history: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            id: text,
+            issueKey: text,
+            assignmentAt: text,
+            retiredAt: time,
+            dispatchId: text,
+            evidence: retainedEvidenceSchema,
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: retainedHistoryLimit },
+      ),
+    ),
     notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
     noticePending: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
 export type IntakeState = Static<typeof stateSchema>;
+
+export function retainedIntake(
+  state: IntakeState | undefined,
+  id: string | undefined,
+): IntakeRecord | undefined {
+  const live = state?.records.find((record) => record.id === id);
+  if (live) return live;
+  const entry = state?.history?.find((record) => record.id === id);
+  if (!entry) return;
+  const record = unpackRetained(entry.evidence);
+  if (
+    !Value.Check(intakeRecordSchema, record) ||
+    record.id !== entry.id ||
+    record.assignment.createdAt !== entry.assignmentAt ||
+    automationHash([
+      record.scope,
+      record.receiving.nodeId,
+      record.repository.nodeId,
+      record.issue.nodeId,
+    ]) !== entry.issueKey
+  )
+    throw new IntakeError('intake-state-invalid');
+  return record;
+}
 
 export class IntakeError extends Error {
   constructor(readonly code: string) {
@@ -168,11 +220,8 @@ export default class IntakeRecordStore {
       maximumBytes: 4 * 1024 * 1024,
     });
   }
-  async read(): Promise<IntakeState | undefined> {
-    const contents = await this.file.read();
-    if (contents === undefined) return;
+  private validate(value: unknown): asserts value is IntakeState {
     try {
-      const value: unknown = JSON.parse(contents);
       if (
         !Value.Check(stateSchema, value) ||
         value.scope !== this.location.scope ||
@@ -193,13 +242,88 @@ export default class IntakeRecordStore {
         )
       )
         throw new Error('invalid state');
-      // old notification backlogs never control admission or survive the next save.
+      retainedDecodeBudget('intake', value.scope)(value);
+      const ids = [...value.records, ...(value.history ?? [])].map((record) => record.id);
+      if (new Set(ids).size !== ids.length) throw new Error('invalid state');
+      for (const entry of value.history ?? []) {
+        const record = retainedIntake(value, entry.id)!;
+        if (
+          record.scope !== value.scope ||
+          record.workspaceDir !== value.workspaceDir ||
+          record.agentId !== value.agentId ||
+          record.receiving.nodeId !== value.account.nodeId ||
+          record.id !==
+            automationHash([
+              value.scope,
+              record.repository.nodeId,
+              record.issue.nodeId,
+              record.assignment.nodeId,
+            ])
+        )
+          throw new Error('invalid state');
+      }
+    } catch (error) {
+      if (error instanceof RetainedHistoryError) throw error;
+      throw new IntakeError('intake-state-invalid');
+    }
+  }
+  async read(): Promise<IntakeState | undefined> {
+    const contents = await this.file.read();
+    if (contents === undefined) return;
+    try {
+      const value: unknown = JSON.parse(contents);
+      this.validate(value);
+      // obsolete presentation never controls admission.
       delete value.notices;
       delete value.noticePending;
       return value;
-    } catch {
+    } catch (error) {
+      if (error instanceof RetainedHistoryError) throw error;
       throw new IntakeError('intake-state-invalid');
     }
+  }
+  /** provider reads run unlocked; only a fresh, nonconflicting snapshot may advance discovery. */
+  async transaction<T>(
+    operation: (
+      state: IntakeState | undefined,
+      save: (state: IntakeState) => Promise<void>,
+      signal: AbortSignal,
+    ) => Promise<T>,
+  ): Promise<T> {
+    let before = await this.read();
+    return operation(
+      before && structuredClone(before),
+      async (proposed) => {
+        await this.exclusive(async (current, save) => {
+          if (
+            before &&
+            current &&
+            [
+              'scope',
+              'workspaceDir',
+              'agentId',
+              'account',
+              'policyDigest',
+              'baselineAt',
+              'checkpoint',
+              'discovery',
+            ].some(
+              (key) =>
+                !isDeepStrictEqual(
+                  before![key as keyof IntakeState],
+                  current[key as keyof IntakeState],
+                ),
+            )
+          )
+            throw new Error(stateSnapshotConflictCode);
+          const merged = mergeStateSnapshot(before, proposed, current) as IntakeState;
+          await save(merged);
+          refreshStateSnapshot(proposed, merged);
+          before = structuredClone(merged);
+        });
+      },
+      new AbortController().signal,
+    );
   }
   async exclusive<T>(
     operation: (
@@ -223,11 +347,17 @@ export default class IntakeRecordStore {
           await this.read(),
           async (state) => {
             lock.assertHeld();
-            if (!Value.Check(stateSchema, state) || state.scope !== this.location.scope)
-              throw new IntakeError('intake-state-invalid');
+            this.validate(state);
             const contents = JSON.stringify(state);
             if (Buffer.byteLength(contents) > 4 * 1024 * 1024)
-              throw new IntakeError('intake-state-capacity');
+              throw new RetainedHistoryError('intake-state-capacity', {
+                journal: 'intake',
+                record: state.records.at(-1)?.id ?? state.scope,
+                reason: 'protected-admissions-and-required-history',
+                limit: 4 * 1024 * 1024,
+                actual: Buffer.byteLength(contents),
+              });
+            retainedDecodeBudget('intake', state.scope)(state);
             await this.file.write(contents);
           },
           lock.signal,

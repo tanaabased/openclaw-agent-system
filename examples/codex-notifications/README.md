@@ -4,6 +4,9 @@ Verify packaged notification activation boundaries, intake responses, and work p
 
 These headless checks establish activation and authority boundaries. Successful assignment admission and plan creation need a separate installed end-to-end example; these checks do not establish that flow or desktop rendering.
 
+The small retained-record fixture checks packed-journal compatibility through the installed
+runtime. Cumulative byte and event limits belong to deterministic source tests, not this scenario.
+
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 ## Setup
@@ -62,6 +65,20 @@ printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_dat
 node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
+test ! -d "$CODEX_HOME/automations"
+
+# should read packed terminal evidence without activating or rewriting it
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/retained-notification-data"
+node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" --confirm | jq -e '.status == "bound"'
+scope=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$plugin_data" | jq -er .scope)
+jq -n --arg scope "$scope" --slurpfile record "$GITHUB_WORKSPACE/examples/codex-notifications/retained-record.json" '{version:1,scope:$scope,records:$record}' > "$plugin_data/codex-dispatch-$scope.json"
+chmod 600 "$plugin_data/codex-dispatch-$scope.json"
+cp "$plugin_data/codex-dispatch-$scope.json" "$root/retained-before.json"
+printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$plugin_data" | jq -e '.records[0].retained.version == 1 and .records[0].retired.at == 2'
+cmp "$root/retained-before.json" "$plugin_data/codex-dispatch-$scope.json"
 test ! -d "$CODEX_HOME/automations"
 
 # should reject removed global feedback before binding or activation

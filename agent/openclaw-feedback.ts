@@ -129,6 +129,7 @@ export async function advanceFeedbackTurn(input: {
     turn: event.turn,
     save,
   });
+  if (event.turn.status === 'completed') event.nativeCompleted = true;
   if (
     event.turn.status === 'completed' &&
     event.phase !== 'published' &&
@@ -253,27 +254,29 @@ export default async function openClawFeedback(input: {
       caller.sessionKey !== record.threadId ||
       caller.sessionId !== record.sessionCreation?.sessionId ||
       caller.runId !== event.turn.runId ||
-      event.turn.status === 'completed'
+      (event.turn.status === 'completed' && event.phase !== 'published')
     )
       throw new Error('feedback-owner-caller-required');
     await describeIssueSession(request, record, input.config);
-    const history = sessionObject(
-      await request('chat.history', {
-        sessionKey: record.threadId,
-        inputRunIds: [caller.runId],
-        limit: 200,
-        maxChars: 100000,
-      }),
-    );
-    if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
-      throw new Error('feedback-input-unverified');
-    const inputId = consumedInputEvent(history.messages, event.turn);
-    event.turn.consumedByEventId = inputId;
-    event.turn.status = 'consumed';
-    if (action.operation === 'context') {
-      event.contextInputId = inputId;
-      await save();
-    } else if (event.contextInputId !== inputId) throw new Error('feedback-context-required');
+    if (event.turn.status !== 'completed') {
+      const history = sessionObject(
+        await request('chat.history', {
+          sessionKey: record.threadId,
+          inputRunIds: [caller.runId],
+          limit: 200,
+          maxChars: 100000,
+        }),
+      );
+      if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
+        throw new Error('feedback-input-unverified');
+      const inputId = consumedInputEvent(history.messages, event.turn);
+      event.turn.consumedByEventId = inputId;
+      event.turn.status = 'consumed';
+      if (action.operation === 'context') {
+        event.contextInputId = inputId;
+        await save();
+      } else if (event.contextInputId !== inputId) throw new Error('feedback-context-required');
+    }
   }
   if (
     event.phase === 'blocked' &&

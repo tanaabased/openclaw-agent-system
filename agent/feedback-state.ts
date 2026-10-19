@@ -2,6 +2,7 @@ import { dispatchRetryProperties } from './dispatch-retry.ts';
 import { Type, type Static } from 'typebox';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
+import { retainedEvidenceSchema, retainedHistoryLimit } from './retained-history.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -45,6 +46,7 @@ export const feedbackSourceEventSchema = Type.Object(
       ),
     ),
     reported: Type.Optional(Type.Boolean()),
+    nativeCompleted: Type.Optional(Type.Literal(true)),
     code: Type.Optional(text),
   },
   { additionalProperties: false },
@@ -77,6 +79,23 @@ export const feedbackSourceStateSchema = Type.Object(
       Type.Record(Type.String(), Type.String({ maxLength: 128000 })),
     ),
     events: Type.Array(feedbackSourceEventSchema, { maxItems: 400 }),
+    history: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            id: hash,
+            sourceId: text,
+            nodeId: text,
+            revision: hash,
+            turnId: Type.Optional(text),
+            receipt: feedbackSourceEventSchema.properties.receipt,
+            evidence: retainedEvidenceSchema,
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: retainedHistoryLimit },
+      ),
+    ),
     code: Type.Optional(text),
   },
   { additionalProperties: false },

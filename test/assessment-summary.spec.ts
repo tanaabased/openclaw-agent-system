@@ -8,6 +8,7 @@ import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
+import { unpackRetained } from '../agent/retained-history.ts';
 
 function fixture() {
   const github = intakeFixture();
@@ -107,7 +108,8 @@ function fixture() {
       }),
       connect: async () => ({
         client: {
-          findOwnIssueComment: async () => receipt,
+          findOwnIssueComment: async (_owner, _repo, _number, marker) =>
+            receipt?.body.includes(marker) ? receipt : undefined,
           createIssueComment: async (_owner, _repo, number, body) => {
             assert.equal(number, 3);
             writes++;
@@ -304,7 +306,8 @@ describe('agent/assessment-summary', () => {
     assert.equal((await f.run({ operation: 'compose' })).status, 'reconcile-required');
     assert.equal((await f.run({ operation: 'reconcile' })).status, 'published');
     assert.equal((await f.run({ operation: 'compose' })).status, 'composition-ready');
-    assert.equal(f.record.assessmentSummaries?.length, 2);
+    assert.equal(f.record.assessmentSummaries?.length, 1);
+    assert.equal(f.record.assessmentHistory?.length, 1);
   });
   it('rejects a summary bound to another issue without changing the private plan', async () => {
     const f = fixture();
@@ -319,7 +322,7 @@ describe('agent/assessment-summary', () => {
     assert.equal(f.writes, 0);
     assert.deepEqual(f.record.result, f.result);
   });
-  it('bounds revision history without deleting receipts or blocking assessment readiness', async () => {
+  it('compacts settled revisions before the runnable summary limit without losing receipts', async () => {
     const f = fixture();
     f.retain();
     const digest = await f.compose();
@@ -331,11 +334,32 @@ describe('agent/assessment-summary', () => {
     }));
     f.record.assessmentRevision = 32;
     f.retain({ ...f.result, fullAssessment: 'A thirty-third deliberate revision.' });
-    const blocked = await f.run({ operation: 'compose' });
-    assert.ok('code' in blocked && blocked.code === 'assessment-summary-history-full');
+    const composed = await f.run({ operation: 'compose' });
+    assert.equal(composed.status, 'composition-ready');
     assert.equal(f.record.phase, 'complete');
-    assert.equal(f.record.assessmentSummaries.length, 32);
+    assert.equal(f.record.assessmentSummaries.length, 1);
+    assert.equal(f.record.assessmentHistory?.length, 32);
     assert.equal(f.writes, 1);
+  });
+  it('should publish more than 32 revisions and retain historical bindings and exact receipts', async () => {
+    const f = fixture();
+    for (let revision = 1; revision <= 35; revision++) {
+      f.retain({ ...f.result, fullAssessment: 'Complete private revision ' + revision });
+      const digest = await f.compose();
+      assert.equal((await f.run({ operation: 'publish', digest })).status, 'published');
+      assert.equal((await f.run({ operation: 'publish', digest })).status, 'published');
+    }
+    assert.equal(f.writes, 35);
+    assert.equal(f.record.assessmentSummaries?.length, 1);
+    assert.equal(f.record.assessmentHistory?.length, 34);
+    const old = unpackRetained(f.record.assessmentHistory![0]!.evidence) as {
+      revision: number;
+      receipt: { databaseId: number };
+      binding: { subjectId: string };
+    };
+    assert.equal(old.revision, 1);
+    assert.equal(old.receipt.databaseId, 1);
+    assert.equal(old.binding.subjectId, 'I_issue');
   });
   it('rejects secrets and private plan as an automatic fallback', async () => {
     const f = fixture();

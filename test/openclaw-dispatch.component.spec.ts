@@ -8,6 +8,8 @@ import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { issueKey } from '../agent/dispatch-pending.ts';
+import { unpackRetained } from '../agent/retained-history.ts';
+import type { OpenClawIntakePass } from '../agent/openclaw-intake-pass.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import type { AssessmentResult } from '../agent/assessment-result.ts';
 import AgentSystemToolError from '../api/error.ts';
@@ -815,7 +817,10 @@ describe('agent/openclaw issue dispatch', () => {
     const later = { ...coordinator, runId: 'later-pass' };
     const input = await service.run(manifest, root, later, { action: 'next' });
     assert.equal(input.status, 'routing-required');
-    assert.equal(state.openclawPasses![0]!.selected.length, 3);
+    assert.equal(state.openclawPasses!.length, 0);
+    const completed = unpackRetained(state.openclawPassHistory![0]!.evidence) as OpenClawIntakePass;
+    assert.equal(completed.selected.length, 3);
+    assert.equal(completed.completed, true);
     assert.equal(
       (await service.run(manifest, root, coordinator, { action: 'next' })).status,
       'pass-completed',
@@ -2286,7 +2291,9 @@ describe('agent/openclaw issue dispatch', () => {
     const fresh = await context(input.id, who);
     assert.ok(
       'previousResult' in fresh &&
-        fresh.previousResult?.fullAssessment === clarification.fullAssessment,
+        fresh.previousResult &&
+        'fullAssessment' in fresh.previousResult &&
+        fresh.previousResult.fullAssessment === clarification.fullAssessment,
     );
     await assert.rejects(submit(input.id, plan, undefined, who), /assessment-result-conflict/);
     assert.deepEqual((await record()).result, clarification);

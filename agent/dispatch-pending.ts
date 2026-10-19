@@ -20,6 +20,14 @@ export default function pendingDispatchAssignments<R extends SharedDispatchRecor
   const latest = new Map<string, IntakeRecord>();
   for (const item of intake.records) latest.set(issueKey(item), item);
   return [...latest].flatMap(([key, item]) => {
+    if (
+      intake.history?.some(
+        (entry) =>
+          entry.issueKey === key &&
+          (entry.id === item.id || entry.retiredAt >= Date.parse(item.assignment.createdAt)),
+      )
+    )
+      return [];
     if (state.records.some((record) => record.issueKey === key && unresolvedRetirement(record)))
       return [];
     const previous = state.records.findLast((record) => record.issueKey === key);

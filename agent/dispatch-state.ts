@@ -9,13 +9,29 @@ import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { retirementSchema } from './assignment-retirement.ts';
+import { automationHash } from './automation-hash.ts';
 
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSummarySchema } from './assessment-summary-state.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
-import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
+import {
+  compactIntakePasses,
+  openclawIntakePassSchema,
+  openclawPassHistorySchema,
+  sameIntakeRun,
+} from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
+import {
+  checkRetainedCount,
+  RetainedHistoryError,
+  retainedDecodeBudget,
+  retainedEvidenceSchema,
+  retainedHistoryLimit,
+  unpackRetained,
+} from './retained-history.ts';
+import { compactDispatchRecord, retainedDispatch } from './dispatch-retention.ts';
+import { validAssessmentHistory } from './assessment-retention.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
@@ -59,6 +75,24 @@ export const dispatchRecordProperties = {
   result: Type.Optional(assessmentResultSchema),
   assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
   assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema, { maxItems: 32 })),
+  assessmentHistory: Type.Optional(
+    Type.Array(
+      Type.Object(
+        {
+          id: hash,
+          revision: Type.Integer({ minimum: 1 }),
+          receipt: Type.Object(
+            { nodeId: text, databaseId: Type.Integer({ minimum: 1 }) },
+            { additionalProperties: false },
+          ),
+          evidence: retainedEvidenceSchema,
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: retainedHistoryLimit },
+    ),
+  ),
+  retained: Type.Optional(retainedEvidenceSchema),
   stageReceipt: Type.Optional(
     Type.Object(
       {
@@ -117,6 +151,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       scope: hash,
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
       openclawPasses: Type.Optional(Type.Array(openclawIntakePassSchema)),
+      openclawPassHistory: Type.Optional(openclawPassHistorySchema),
       continuationRun: Type.Optional(
         Type.Object(
           { id: text, actions: Type.Integer({ minimum: 0, maximum: 12 }) },
@@ -195,17 +230,25 @@ const journalBytes = contentBytes + 1024 * 1024;
 
 function serializeState<R extends SharedDispatchRecord>(state: DispatchState<R>) {
   const contents = JSON.stringify(state);
-  if (
-    Buffer.byteLength(contents) > journalBytes ||
-    Buffer.byteLength(
-      JSON.stringify({
-        ...state,
-        reports: undefined,
-        run: state.run && { ...state.run, response: undefined },
-      }),
-    ) > contentBytes
-  )
-    throw new Error('dispatch-state-capacity');
+  const serializedBytes = Buffer.byteLength(contents);
+  const serializedContentBytes = Buffer.byteLength(
+    JSON.stringify({
+      ...state,
+      reports: undefined,
+      run: state.run && { ...state.run, response: undefined },
+    }),
+  );
+  if (serializedBytes > journalBytes || serializedContentBytes > contentBytes)
+    throw new RetainedHistoryError('dispatch-state-capacity', {
+      journal: 'dispatch',
+      record: state.records.at(-1)?.id ?? state.scope,
+      reason:
+        serializedContentBytes > contentBytes
+          ? 'protected-work-and-required-history'
+          : 'journal-including-reporting-reserve',
+      limit: serializedContentBytes > contentBytes ? contentBytes : journalBytes,
+      actual: serializedContentBytes > contentBytes ? serializedContentBytes : serializedBytes,
+    });
   return contents;
 }
 
@@ -221,6 +264,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       runtime: 'codex' | 'openclaw';
       recordSchema: TSchema;
       validRecord(record: R): boolean;
+      settledRecord?(record: R): boolean;
     },
   ) {
     this.schema = dispatchStateSchema<R>(contract.recordSchema);
@@ -234,6 +278,36 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     });
   }
   private validate(state: unknown): asserts state is DispatchState<R> {
+    if (!Value.Check(this.schema, state)) throw new Error('dispatch-state-invalid');
+    const countEvidence = retainedDecodeBudget(this.contract.runtime + '-dispatch', this.scope);
+    countEvidence(state);
+    const retainedPasses = (state.openclawPassHistory ?? []).map((entry) => {
+      const pass = unpackRetained(entry.evidence);
+      if (
+        !Value.Check(openclawIntakePassSchema, pass) ||
+        !pass.completed ||
+        !sameIntakeRun(pass, entry) ||
+        entry.id !== automationHash([entry.sessionKey, entry.sessionId, entry.runId])
+      )
+        throw new Error('retained-intake-pass-invalid');
+      return pass;
+    });
+    const full = {
+      ...state,
+      records: state.records.map((record) => retainedDispatch(record)!),
+      ...(retainedPasses.length
+        ? { openclawPasses: [...(state.openclawPasses ?? []), ...retainedPasses] }
+        : {}),
+    };
+    countEvidence(full);
+    if (
+      state.records.some(
+        (record, index) => record.retained && !this.contract.settledRecord?.(full.records[index]!),
+      )
+    )
+      throw new Error('retained-dispatch-eligibility-invalid');
+    // validate the original contract as well as the compact routing index.
+    state = full;
     if (
       !Value.Check(this.schema, state) ||
       state.scope !== this.scope ||
@@ -274,25 +348,27 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           (r.handoff && (!r.request || !r.threadId || !r.worktree)),
       ) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId)) ||
-      state.records.some((r) => !this.contract.validRecord(r))
+      state.records.some((r) => !this.contract.validRecord(r) || !validAssessmentHistory(r))
     )
       throw new Error('dispatch-state-invalid');
   }
   async read(): Promise<DispatchState<R>> {
     const contents = await this.file.read();
     let state: unknown = { version: 1, scope: this.scope, records: [] };
-    if (contents !== undefined) {
-      try {
-        state = JSON.parse(contents);
-      } catch {
-        throw new Error('dispatch-state-invalid');
-      }
+    try {
+      if (contents !== undefined) state = JSON.parse(contents);
+      this.validate(state);
+    } catch (error) {
+      if (error instanceof RetainedHistoryError) throw error;
+      throw new RetainedHistoryError('dispatch-state-invalid', {
+        journal: this.contract.runtime + '-dispatch',
+        record: this.scope,
+        reason: 'restore-verified-evidence',
+      });
     }
-    this.validate(state);
     // discard obsolete presentation queues, preserving all assignment and assessment records.
     delete state.notices;
     delete state.reports;
-    serializeState(state);
     return state;
   }
   /** external work runs unlocked; each save commits only checked changes to fresh state. */
@@ -350,6 +426,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           if (!isDeepStrictEqual(current, merged)) {
             refreshStateSnapshot(current, merged);
             await save();
+            refreshStateSnapshot(merged, current);
           }
           refreshStateSnapshot(state, merged);
           before = structuredClone(merged);
@@ -382,7 +459,19 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           async () => {
             lock.assertHeld();
             this.validate(state);
-            await this.file.write(serializeState(state));
+            const compact = structuredClone(state);
+            compact.records = compact.records.map((record) =>
+              compactDispatchRecord(record, this.contract.settledRecord ?? (() => false)),
+            );
+            compactIntakePasses(compact);
+            checkRetainedCount(
+              compact.records.filter((record) => record.retained).length,
+              'dispatch',
+              this.scope,
+            );
+            this.validate(compact);
+            await this.file.write(serializeState(compact));
+            refreshStateSnapshot(state, compact);
           },
           lock.signal,
         );

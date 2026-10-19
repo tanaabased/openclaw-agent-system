@@ -1,4 +1,5 @@
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import { RetainedHistoryError } from './retained-history.ts';
 
 /** preserve public codes and bounded provider evidence through wrapped runtime failures. */
 export default function workflowFailure(error: unknown, fallback: string) {
@@ -27,7 +28,13 @@ export default function workflowFailure(error: unknown, fallback: string) {
       );
     value = entry.cause;
   }
-  return { code: code ?? fallback, ...(diagnostic ? { providerDiagnostic: diagnostic } : {}) };
+  return {
+    code: code ?? fallback,
+    ...(diagnostic ? { providerDiagnostic: diagnostic } : {}),
+    ...(error instanceof RetainedHistoryError
+      ? { retentionDiagnostic: error.retentionDiagnostic }
+      : {}),
+  };
 }
 
 /** return bounded operation identity without copying prompts, paths, or other request content. */
