@@ -56,7 +56,4 @@ export default async function notificationAutomationReadiness(
   if (native.enabled !== true) return 'intake-automation-update-required';
   if (nativeAutomationHash(native) !== record.nativeHash)
     return 'intake-automation-update-required';
-  if (native.state?.lastRunStatus === 'error') return 'automation-execution-failed';
-  if (native.state?.lastDeliveryStatus === 'not-delivered' || native.state?.lastDeliveryError)
-    return 'automation-delivery-failed';
 }

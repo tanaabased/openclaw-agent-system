@@ -84,6 +84,11 @@ test -f "$TMPDIR/notification-activation-ready"
 openclaw gateway call channels.status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))'
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["intake-tanaabot"].enabled == true'
 
+# should retain an unavailable issue without blocking later assignments
+cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number 2147483647 --json | jq -e '.status == "completed" and .admitted == 0'
+jq -es '[.[].deferred[]?] | any(.[]; (.candidate | fromjson).number == 2147483647 and .code == "intake-github-permission")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
+
 # should assign three disposable issues from emori to tanaabot after the safe intake baseline
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-intake/emori"

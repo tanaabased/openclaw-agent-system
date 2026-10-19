@@ -8,6 +8,43 @@ function state(): OpenClawDispatchState {
 }
 
 describe('agent/openclaw-intake-report', () => {
+  it('should report deferred assignments as item failures and recognize their recovery', () => {
+    const journal = state();
+    const intake = {
+      version: 1 as const,
+      scope: journal.scope,
+      workspaceDir: '/workspace',
+      agentId: 'agent',
+      account: { login: 'agent', nodeId: 'actor' },
+      policyDigest: 'policy',
+      baselineAt: 0,
+      records: [],
+      deferred: [
+        {
+          key: 'one',
+          code: 'intake-assignment-history-incomplete',
+          candidate: JSON.stringify({ repositoryPath: '/repos/owner/repo', number: 3 }),
+        },
+      ],
+    };
+    const input = {
+      state: journal,
+      intake,
+      slots: 2,
+      observation: { status: 'ready' as const, changed: false },
+    };
+    const report = openclawIntakeReport(input);
+    assert.match(report.response, /owner\/repo#3/);
+    assert.match(report.response, /Unrelated intake continues/);
+    assert.equal(report.changed, true);
+    journal.intakeReport = { ...report, runId: 'one' };
+    assert.equal(openclawIntakeReport(input).changed, false);
+    intake.deferred = [];
+    const recovered = openclawIntakeReport(input);
+    assert.equal(recovered.changed, true);
+    assert.match(recovered.response, /condition has cleared/);
+  });
+
   it('should keep healthy unchanged checks silent and report changed blockers and recovery once', () => {
     const journal = state();
     const prepare = (code?: string) =>

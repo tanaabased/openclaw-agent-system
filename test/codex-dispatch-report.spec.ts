@@ -23,6 +23,32 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should report a deferred assignment without saying unrelated intake is paused', () => {
+    const current = {
+      ...intake,
+      deferred: [
+        {
+          key: 'one',
+          code: 'intake-assignment-history-incomplete',
+          candidate: JSON.stringify({ repositoryPath: '/repos/owner/repo', number: 3 }),
+        },
+      ],
+    };
+    const report = prepareDispatchReport({ ...input, intake: current });
+    assert.match(report.response, /owner\/repo#3/);
+    assert.match(report.response, /intake-assignment-history-incomplete/);
+    assert.match(report.response, /Unrelated intake continues/);
+    assert.doesNotMatch(report.response, /Issue checks are temporarily paused/);
+    assert.match(
+      prepareDispatchReport({
+        ...input,
+        intake: current,
+        state: { ...state, intakeHealth: report.health },
+      }).response,
+      /DONT_NOTIFY/,
+    );
+  });
+
   it('should report an automation update once and preserve the first-setup distinction', () => {
     const current = {
       ...intake,

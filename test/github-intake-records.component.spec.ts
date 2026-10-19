@@ -1,3 +1,5 @@
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import DiscoveryBudget from '../agent/discovery-budget.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -299,20 +301,106 @@ describe('channels/github/intake/records', () => {
       assert.equal((await fixture.store.read())!.records.length, 0);
     }
   });
-  it('should retain the checkpoint on partial scans and suppress unchanged blockers', async () => {
-    const { input, client, store, events } = setup();
-    events[0]!.createdAt = new Date(baseline - 1).toISOString();
-    await scanAssignments({ ...input, activate: true });
-    client.listAssignmentEvents = async () => ({ events, truncated: true });
-    const failure = await scanAssignments({ ...input, now: baseline + 10_000 });
-    assert.equal(failure.code, 'intake-assignment-history-incomplete');
-    assert.equal(failure.changed, true);
-    assert.equal((await store.read())!.checkpoint, baseline);
-    assert.equal((await scanAssignments({ ...input, now: baseline + 11_000 })).changed, false);
-    client.listAssignmentEvents = async () => ({ events, truncated: false });
-    assert.equal((await scanAssignments({ ...input, now: baseline + 400_000 })).changed, true);
-    assert.equal((await store.read())!.blocker, undefined);
-  });
+  for (const failure of ['history', 'identity', 'permission', 'missing'] as const) {
+    it(`should defer an issue with ${failure} failure and admit unrelated work before retrying after restart`, async () => {
+      const { input, client, store, events, item } = setup();
+      const assigned = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assigned);
+      let broken = true;
+      let search = true;
+      const candidate = (number: number) => ({
+        repositoryPath: '/repos/owner/repo',
+        itemType: 'issue' as const,
+        updatedAt: item.updatedAt,
+        number,
+        nodeId: `I_${number}`,
+        databaseId: number,
+      });
+      client.discoverAssigned = async () => ({
+        candidates: search ? [candidate(3), candidate(4)] : [],
+        totalCount: search ? 2 : 0,
+        incomplete: false,
+        truncated: false,
+      });
+      client.getItem = async (_owner, _repo, number) => {
+        if (broken && number === 3 && ['permission', 'missing'].includes(failure))
+          throw new GitHubWorkEventClientError(
+            'github-denied',
+            'denied',
+            {},
+            undefined,
+            providerDiagnostic(
+              'github',
+              'api-request',
+              failure === 'missing' ? 'unknown' : 'permission',
+              { httpStatus: failure === 'missing' ? 404 : 403 },
+            ),
+          );
+        return {
+          ...item,
+          number,
+          databaseId: number,
+          nodeId: broken && number === 3 && failure === 'identity' ? 'wrong' : `I_${number}`,
+        };
+      };
+      client.listAssignmentEvents = async (_owner, _repo, number) => ({
+        events,
+        truncated: broken && number === 3 && failure === 'history',
+      });
+      const first = await scanAssignments({ ...input, now: baseline + 10000 });
+      assert.equal(first.status, 'ready');
+      assert.equal(first.admitted, 1);
+      const held = (await store.read())!;
+      assert.deepEqual(
+        held.records.map((entry) => entry.issue.number),
+        [4],
+      );
+      assert.equal(held.deferred?.length, 1);
+      assert.equal(held.blocker, undefined);
+      assert.equal(held.checkpoint, baseline + 10000);
+      const again = await scanAssignments({ ...input, now: baseline + 11000 });
+      assert.equal(again.changed, false);
+      broken = false;
+      search = false;
+      const resumed = await scanAssignments({
+        ...input,
+        store: new IntakeRecordStore(store.location),
+        now: baseline + 12000,
+      });
+      assert.equal(resumed.status, 'ready');
+      assert.equal(resumed.admitted, 1);
+      const after = (await store.read())!;
+      assert.deepEqual(
+        after.records.map((entry) => entry.issue.number),
+        [4, 3],
+      );
+      assert.deepEqual(after.deferred, []);
+      assert.equal(after.baselineAt, baseline);
+    });
+  }
+
+  for (const classification of ['authentication', 'rate-limit', 'transport'] as const) {
+    it(`should retain scan-wide backoff for ${classification} failures`, async () => {
+      const { input, client, store } = setup();
+      await scanAssignments({ ...input, activate: true });
+      client.getItem = async () => {
+        throw new GitHubWorkEventClientError(
+          'github-failed',
+          'failed',
+          {},
+          undefined,
+          providerDiagnostic('github', 'api-request', classification),
+        );
+      };
+      const result = await scanAssignments({ ...input, now: baseline + 10000 });
+      assert.equal(result.status, 'blocked');
+      assert.equal(result.code, `intake-github-${classification}`);
+      assert.equal((await store.read())!.deferred, undefined);
+      assert.equal((await store.read())!.blocker?.retryAfter, baseline + 310000);
+    });
+  }
+
   it('should serialize overlapping store instances and refuse commits after policy changes', async () => {
     const { input, store, events } = setup();
     events[0]!.createdAt = new Date(baseline - 1).toISOString();

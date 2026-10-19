@@ -638,7 +638,7 @@ export default class OpenClawDispatch {
       slots: reporting.selected.policy.maxConcurrentItems,
       observation: intake,
     });
-    if (intake.status !== 'ready')
+    if (intake.status !== 'ready' && intake.code !== 'intake-search-incomplete')
       return {
         status: 'ready' as const,
         changed: report.changed,

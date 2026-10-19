@@ -68,6 +68,16 @@ export default function prepareDispatchReport(input: {
     ...(intake.blocker
       ? [{ id: 'scan', code: intake.blocker.code, operation: 'assignment scan' }]
       : []),
+    ...(intake.deferred ?? []).map((entry) => {
+      const candidate = JSON.parse(entry.candidate) as { repositoryPath: string; number: number };
+      return {
+        id: 'deferred-' + entry.key,
+        code: entry.code,
+        operation:
+          'assignment scan for ' +
+          text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number),
+      };
+    }),
     ...feedbackProblems.map((record) => ({
       id: record.id,
       code: record.feedback!.code!,
@@ -92,6 +102,13 @@ export default function prepareDispatchReport(input: {
       code: failure.code,
       changed: health !== state.intakeHealth,
     }),
+    ...(failure.id.startsWith('deferred-')
+      ? {
+          severity: 'warning' as const,
+          summary: 'This assignment could not be checked. Unrelated intake continues.',
+          next: 'A later scan will retry this assignment. Preserve the retained issue and check its diagnostic if the problem persists.',
+        }
+      : {}),
   }));
   const severity = notices.some((notice) => notice.severity === 'error')
     ? 'error'

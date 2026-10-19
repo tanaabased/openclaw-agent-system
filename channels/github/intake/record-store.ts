@@ -88,6 +88,18 @@ const stateSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    deferred: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            key: text,
+            candidate: Type.String({ maxLength: 16000 }),
+            code: text,
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     lastAttemptAt: Type.Optional(time),
     blocker: Type.Optional(
       Type.Object({ code: text, since: time, retryAfter: time }, { additionalProperties: false }),

@@ -3794,6 +3794,34 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).result?.summary, 'A newer assessment.');
     assert.equal((await record()).feedback!.events.length, 1);
   });
+  it('should discover and deliver existing feedback while assignment search is incomplete', async () => {
+    await feedbackOwner();
+    const check = await service.check(manifest, root, undefined, {
+      status: 'blocked',
+      changed: true,
+      code: 'intake-search-incomplete',
+    });
+    assert.equal(check.changed, true);
+    assert.equal((await record()).feedback!.events.length, 1);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.ok((await record()).feedback!.events[0]!.turn);
+  });
+  it('should keep feedback discovery paused for shared authentication or identity failures', async () => {
+    await feedbackOwner();
+    for (const code of [
+      'intake-github-authentication',
+      'intake-account-changed',
+      'intake-automation-update-required',
+    ]) {
+      const check = await service.check(manifest, root, undefined, {
+        status: 'blocked',
+        changed: true,
+        code,
+      });
+      assert.equal(check.outcome, 'failed');
+      assert.equal((await record()).feedback?.events.length ?? 0, 0);
+    }
+  });
   it('should validate each feedback owner once during discovery and consume the saved result', async () => {
     await feedbackOwner();
     const validate = service.validate.bind(service);

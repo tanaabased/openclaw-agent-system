@@ -40,6 +40,7 @@ export default function openclawIntakeReport(input: {
     ...(observation.status === 'blocked'
       ? [{ id: 'intake', code: observation.code ?? 'intake-check-incomplete' }]
       : []),
+    ...(intake?.deferred ?? []).map((entry) => ({ id: 'deferred-' + entry.key, code: entry.code })),
     ...active
       .filter(
         (record) =>
@@ -58,6 +59,7 @@ export default function openclawIntakeReport(input: {
     if (problems.includes(problem)) return false;
     const id = problem.slice(0, problem.indexOf(':'));
     if (id === 'intake') return observation.status === 'ready';
+    if (id.startsWith('deferred-')) return true;
     const record = active.find((entry) => entry.id === id);
     return Boolean(record && !record.blocker);
   });
@@ -103,6 +105,19 @@ export default function openclawIntakeReport(input: {
         `- **What happened:** ${notice.summary}`,
         `- **Next step:** ${notice.next}`,
         `- **Technical detail:** \`${failure.code}\``,
+      );
+      continue;
+    }
+    const deferred = intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id);
+    if (deferred) {
+      const candidate = JSON.parse(deferred.candidate) as {
+        repositoryPath: string;
+        number: number;
+      };
+      lines.push(
+        `- **Issue:** ${text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number)}`,
+        `  **Diagnostic:** \`${text(deferred.code)}\``,
+        '  **Action:** This assignment will be checked again on a later scan. Unrelated intake continues.',
       );
       continue;
     }

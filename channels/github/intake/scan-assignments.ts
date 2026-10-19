@@ -45,6 +45,7 @@ interface AssignmentScanResult {
   baselineAt?: number;
   checkpoint?: number;
   more?: boolean;
+  deferred?: number;
 }
 
 /** admission evidence only: no workspaces, chats, model decisions, or publication. */
@@ -74,6 +75,8 @@ export default async function scanAssignments(
         'intake-policy-changed',
         'intake-policy-reconciliation-required',
         'intake-policy-disabled',
+        'intake-resource-changed',
+        'intake-assignment-history-incomplete',
       ].includes(previous.blocker.code)
     ) {
       const result = { status: 'blocked' as const, changed: false, code: previous.blocker.code };
@@ -133,10 +136,28 @@ export default async function scanAssignments(
             );
       if (discovery.truncated || discovery.incomplete)
         throw new IntakeError('intake-search-incomplete');
+      const candidateKey = (
+        candidate: Pick<GitHubAssignedItemCandidate, 'repositoryPath' | 'number'>,
+      ) => automationHash([candidate.repositoryPath, candidate.number]);
+      const candidates = [
+        ...new Map(
+          [
+            ...(!input.selector &&
+            !state.discovery?.pending.length &&
+            (state.discovery?.page ?? 1) === 1
+              ? (state.deferred ?? []).map(
+                  ({ candidate }) => JSON.parse(candidate) as GitHubAssignedItemCandidate,
+                )
+              : []),
+            ...discovery.candidates,
+          ].map((candidate) => [candidateKey(candidate), candidate]),
+        ).values(),
+      ];
+      const deferredBefore = automationHash(state.deferred ?? []);
       const progress = {
         observations: input.selector ? {} : (state.discovery?.observations ?? {}),
         page: state.discovery?.page ?? 1,
-        pending: discovery.candidates.map((value) => JSON.stringify(value)),
+        pending: candidates.map((value) => JSON.stringify(value)),
         nextPage: 'nextPage' in discovery ? (discovery.nextPage ?? 1) : 1,
       };
       if (!input.selector) state.discovery = progress;
@@ -153,7 +174,7 @@ export default async function scanAssignments(
         await save(state!);
         return value;
       }
-      for (const candidate of discovery.candidates) {
+      for (const candidate of candidates) {
         if (input.readPolicy) {
           const live = await input.readPolicy();
           input = { ...input, policy: live.policy, policyDigest: live.digest };
@@ -273,7 +294,28 @@ export default async function scanAssignments(
           seen.add(id);
           records.push(record);
         };
-        await observe();
+        const key = candidateKey(candidate);
+        try {
+          await observe();
+          state.deferred = state.deferred?.filter((entry) => entry.key !== key);
+        } catch (error) {
+          const diagnostic =
+            error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
+          const localCode =
+            error instanceof IntakeError &&
+            ['intake-resource-changed', 'intake-assignment-history-incomplete'].includes(error.code)
+              ? error.code
+              : diagnostic?.classification === 'permission' ||
+                  (diagnostic?.classification === 'unknown' && diagnostic.httpStatus === 404)
+                ? 'intake-github-permission'
+                : undefined;
+          if (!localCode || error === persistenceError || budget.exhausted || signal.aborted)
+            throw error;
+          state.deferred = [
+            ...(state.deferred ?? []).filter((entry) => entry.key !== key),
+            { key, candidate: JSON.stringify(candidate), code: localCode },
+          ];
+        }
         state.records.push(...records.splice(0));
         admitted = state.records.length - (previous?.records.length ?? 0);
         progress.pending.shift();
@@ -295,8 +337,10 @@ export default async function scanAssignments(
       delete state.blocker;
       result = {
         status: 'ready' as const,
-        changed: admitted > 0 || recovered,
+        changed:
+          admitted > 0 || recovered || deferredBefore !== automationHash(state.deferred ?? []),
         admitted,
+        deferred: state.deferred?.length ?? 0,
         more,
         ...(recovered ? { recovered: true } : {}),
         baselineAt: state.baselineAt,

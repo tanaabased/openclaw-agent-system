@@ -149,7 +149,7 @@ describe('notification automation readiness', () => {
     assert.equal(await f.read(), 'intake-automation-update-required');
   });
 
-  it('should report scheduler availability and distinguish execution from delivery failure', async () => {
+  it('should require an available scheduler without blocking recovery after earlier run or delivery failures', async () => {
     const f = fixture();
     assert.equal(await f.unavailable(), 'automation-observation-unavailable');
     assert.equal(await f.read({ list: f.scheduler.list }), 'automation-observation-unavailable');
@@ -163,10 +163,10 @@ describe('notification automation readiness', () => {
       'automation-scheduler-disabled',
     );
     f.native.state.lastRunStatus = 'error';
-    assert.equal(await f.read(), 'automation-execution-failed');
+    assert.equal(await f.read(), undefined);
     f.native.state.lastRunStatus = 'ok';
     f.native.state.lastDeliveryStatus = 'not-delivered';
-    assert.equal(await f.read(), 'automation-delivery-failed');
+    assert.equal(await f.read(), undefined);
   });
 
   it('should refuse ambiguous or differently owned native jobs', async () => {
