@@ -3,6 +3,7 @@ import workflowStatus from './workflow-status.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import pendingAssignments from './dispatch-pending.ts';
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import type { OpenClawDispatchState, OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { intakeRemediation, type IntakeState } from '../channels/github/intake/record-store.ts';
 import {
@@ -70,15 +71,19 @@ export default function openclawIntakeReport(input: {
     started.length > 0 ||
     (fingerprint !== state.intakeReport?.fingerprint &&
       (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
-  const title = failures.length
-    ? observation.status === 'blocked'
-      ? '⚠️ Intake needs attention'
-      : '⚠️ Intake checked — some items need attention'
-    : started.length
-      ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
-      : recovered.length
-        ? '💡 Intake resumed'
-        : '💡 Intake checked';
+  const automationNotice = intakeAutomationNotice(observation.code ?? '');
+  const title =
+    automationNotice && failures.length === 1
+      ? `${automationNotice.emoji} ${automationNotice.title}`
+      : failures.length
+        ? observation.status === 'blocked'
+          ? '⚠️ Intake needs attention'
+          : '⚠️ Intake checked — some items need attention'
+        : started.length
+          ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
+          : recovered.length
+            ? '💡 Intake resumed'
+            : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   const label = (record: OpenClawDispatchRecord) => {
     const item = intake?.records.find((entry) => entry.id === record.intakeId);
@@ -92,6 +97,15 @@ export default function openclawIntakeReport(input: {
     );
   if (started.length) lines.push('');
   for (const failure of failures.slice(0, 12)) {
+    const notice = intakeAutomationNotice(failure.code);
+    if (failure.id === 'intake' && notice) {
+      lines.push(
+        `- **What happened:** ${notice.summary}`,
+        `- **Next step:** ${notice.next}`,
+        `- **Technical detail:** \`${failure.code}\``,
+      );
+      continue;
+    }
     const automation = failure.code.startsWith('automation-');
     const record = active.find((record) => record.id === failure.id);
     const retry = record?.retry ? record.retryAfter : undefined;

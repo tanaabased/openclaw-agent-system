@@ -26,6 +26,7 @@ export type NotificationRefreshResult = GitHubNotificationRefreshResult;
 interface Dependencies {
   root: string;
   intake: {
+    readiness(manifest: AgentManifest, workspace: string): Promise<string | undefined>;
     select(
       manifest: AgentManifest,
       workspace: string,
@@ -206,7 +207,8 @@ export default class OpenClawNotifications {
           workflow: { phase, ...(record?.threadId ? { conversation: record.threadId } : {}) },
         };
       });
-      const code = state.blocker?.code;
+      const code =
+        (await this.dependencies.intake.readiness(manifest, workspace)) ?? state.blocker?.code;
       return {
         ...base,
         baseline: { status: 'ready', observedAt: state.baselineAt },

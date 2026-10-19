@@ -23,6 +23,35 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should report an automation update once and preserve the first-setup distinction', () => {
+    const current = {
+      ...intake,
+      blocker: {
+        code: 'intake-automation-update-required',
+        since: 1,
+        retryAfter: 2,
+      },
+    };
+    const update = prepareDispatchReport({ ...input, intake: current });
+    assert.match(update.response, /> ## ✨ Automation update available/);
+    assert.match(update.response, /New intake is paused/);
+    assert.match(update.response, /Install.*update.*resume intake/);
+    assert.match(update.response, /`intake-automation-update-required`/);
+    assert.match(update.response, /<decision>NOTIFY<\/decision>/);
+    const repeat = prepareDispatchReport({
+      ...input,
+      intake: current,
+      state: { ...state, intakeHealth: update.health },
+    });
+    assert.match(repeat.response, /DONT_NOTIFY/);
+    const initial = prepareDispatchReport({
+      ...input,
+      intake: { ...current, blocker: { ...current.blocker, code: 'intake-activation-required' } },
+    });
+    assert.match(initial.response, /> ## ⚠️ Set up intake automation/);
+    assert.doesNotMatch(initial.response, /update available/);
+  });
+
   it('should show progress transitions as information cards without repeating unchanged notices', () => {
     const progress = { pending: true, sources: 4, reported: undefined as boolean | undefined };
     const current = { ...input, state: { ...state, discoveryProgress: progress } };

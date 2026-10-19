@@ -22,7 +22,11 @@ import {
   runCodexIntake,
   selectCodexIntake,
 } from '../agent/codex-intake.ts';
-import { codexIntakeJobs, codexIntakePolicy } from '../agent/codex-intake-policy.ts';
+import {
+  codexIntakeJobs,
+  codexIntakePolicy,
+  intakeAutomationId,
+} from '../agent/codex-intake-policy.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
 import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
@@ -503,6 +507,45 @@ describe('agent/codex-intake', () => {
     await acknowledgeCodexAutomation(pluginData, desired.digest, undefined, deps);
     assert.equal((await plan()).status, 'aligned');
     assert.equal((await plan()).actions.length, 0);
+    if (!legacy) {
+      const selected = await selectCodexIntake(pluginData, deps);
+      const before = await selected.store.read();
+      const file = (await readdir(pluginData)).find(
+        (name) => name.startsWith('codex-automations-') && name.endsWith('.json'),
+      )!;
+      const path = join(pluginData, file);
+      const original = await readFile(path, 'utf8');
+      const ledger = JSON.parse(original);
+      const oldPrompt =
+        'Previously reconciled automation instructions.\n\n' +
+        codexAutomationMarker(ledger.scope, intakeAutomationId);
+      ledger.records[0].definition.prompt = oldPrompt;
+      await writeFile(path, JSON.stringify(ledger));
+      await saveNative({ ...prepared.request, prompt: oldPrompt });
+      const inspection = await inspectCodexIntake(pluginData, { codexHome });
+      assert.equal(inspection.code, 'intake-automation-update-required');
+      assert.match(inspection.remediation!, /apply the update/);
+      assert.deepEqual(await selected.store.read(), before);
+      const blocked = await runCodexIntake(pluginData, false, {
+        codexHome,
+        now: () => baseline + 60000,
+        connect: async () => assert.fail('an update must block before provider access'),
+      });
+      assert.equal(blocked.status, 'blocked');
+      assert.ok('code' in blocked);
+      assert.equal(blocked.code, 'intake-automation-update-required');
+      assert.ok('notice' in blocked && blocked.notice!.message.startsWith('> ## ✨ '));
+      assert.equal((await selected.store.read())!.baselineAt, before!.baselineAt);
+      assert.deepEqual((await selected.store.read())!.records, before!.records);
+      const update = await plan();
+      assert.equal(update.actions[0]!.id, nativeId);
+      const repair = await prepareCodexAutomation(pluginData, update.digest, {}, deps);
+      await saveNative(repair.request);
+      await acknowledgeCodexAutomation(pluginData, update.digest, undefined, deps);
+      assert.equal((await inspectCodexIntake(pluginData, { codexHome })).status, 'ready');
+      assert.equal((await selected.store.read())!.baselineAt, before!.baselineAt);
+      assert.equal(creates, 1);
+    }
     if (legacy) {
       const selected = await selectCodexIntake(pluginData, deps);
       assert.notEqual(selected.policy!.digest, selected.policy!.legacyDigest);
@@ -733,7 +776,7 @@ describe('agent/codex-intake', () => {
       },
     });
     assert.ok('code' in stale);
-    assert.equal(stale.code, 'intake-activation-required');
+    assert.equal(stale.code, 'intake-automation-update-required');
     const reenable = await plan();
     assert.equal(reenable.actions[0]!.id, nativeId);
     const resume = await prepareCodexAutomation(pluginData, reenable.digest, {}, deps);

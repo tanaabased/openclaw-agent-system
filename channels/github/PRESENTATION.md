@@ -49,12 +49,24 @@ outcome or call to action.
 Use one compact card for the outcome of an intake check:
 
 - **💡 Information:** issues started, pending assignments, or intake recovery.
-- **✨ Update:** an informational notice about an available update.
+- **✨ Update:** an available automation update, including a required update that pauses intake.
 - **⚠️ Warning:** an intake action is needed or a temporary provider delay.
 - **❌ Error:** intake or preparation could not complete.
 
-Informational notices may supply a custom header emoji. Keep warning and error
-icons fixed, and choose severity independently of the informational icon.
+Informational notices may supply a custom header emoji. Required automation updates
+use ✨ with warning severity and explicitly say that new intake is paused. Other
+warnings and errors keep their standard icons.
+
+Reserve `intake-activation-required` for initial setup. An existing intake automation
+that needs reconciliation uses `intake-automation-update-required`:
+
+```markdown
+> ## ✨ Automation update available
+>
+> - **What happened:** Your intake automation needs an update. New intake is paused until it’s applied. Existing chats and work are retained.
+> - **Next step:** Run Agent System Install to apply the update and resume intake.
+> - **Technical detail:** `intake-automation-update-required`
+```
 
 List each started item as **Issue:** followed by its repository and number linked
 to its work destination. Do not add an “Open chat” label or duplicate GitHub link.

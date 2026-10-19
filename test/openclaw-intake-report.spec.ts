@@ -21,12 +21,19 @@ describe('agent/openclaw-intake-report', () => {
         },
       });
     assert.equal(prepare().changed, false);
-    const blocked = prepare('automation-sync-required');
+    const blocked = prepare('intake-automation-update-required');
     assert.equal(blocked.changed, true);
+    assert.match(blocked.response, /> ## ✨ Automation update available/);
+    assert.match(blocked.response, /New intake is paused/);
+    assert.match(blocked.response, /Existing chats and work are retained/);
     assert.match(blocked.response, /Agent System Install/);
+    assert.match(blocked.response, /`intake-automation-update-required`/);
+    const initial = prepare('intake-activation-required');
+    assert.match(initial.response, /> ## ⚠️ Set up intake automation/);
+    assert.doesNotMatch(initial.response, /update available/);
     assert.doesNotMatch(blocked.response, /Pending:\*\* 0/);
     journal.intakeReport = { ...blocked, runId: 'one' };
-    assert.equal(prepare('automation-sync-required').changed, false);
+    assert.equal(prepare('intake-automation-update-required').changed, false);
     const changed = prepare('automation-execution-failed');
     assert.equal(changed.changed, true);
     assert.doesNotMatch(changed.response, /earlier intake condition has cleared/);

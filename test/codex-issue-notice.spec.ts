@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should distinguish required automation updates from first-time setup while retaining warning severity', () => {
+    const update = codexIssueNotice({
+      event: 'failure',
+      code: 'intake-automation-update-required',
+      changed: true,
+    });
+    assert.equal(update.severity, 'warning');
+    assert.ok(update.message.startsWith('> ## ✨ Automation update available'));
+    assert.match(update.summary, /New intake is paused/);
+    assert.match(update.summary, /Existing chats and work are retained/);
+    assert.match(update.next, /Install.*update.*resume intake/);
+    assert.match(update.message, /`intake-automation-update-required`/);
+    const initial = codexIssueNotice({
+      event: 'failure',
+      code: 'intake-activation-required',
+      changed: true,
+    });
+    assert.ok(initial.message.startsWith('> ## ⚠️ Set up intake automation'));
+    assert.match(initial.summary, /not been activated/);
+    assert.doesNotMatch(initial.message, /update available|needs an update/);
+  });
+
   it('should customize informational icons while preserving warning and error icons', () => {
     assert.ok(
       codexIssueNotice({ event: 'intake-recovered', changed: true }).message.startsWith('> ## 💡 '),

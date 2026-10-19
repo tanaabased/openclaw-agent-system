@@ -91,10 +91,10 @@ describe('notification automation readiness', () => {
     assert.equal(await f.read(), undefined);
     const workflow = f.manifest.github!.notifications!.issueAssignment!;
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'U_receiver' };
     f.native.payload = { ...f.native.payload, text: 'changed consent' };
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
   });
   it('should reject malformed scheduler observations instead of inventing an empty scan', async () => {
     const f = fixture();
@@ -124,17 +124,17 @@ describe('notification automation readiness', () => {
     );
     assert.equal(await f.readOperator(async () => ({})), 'automation-observation-unavailable');
     f.manifest.models!.default!.effort = 'high';
-    assert.equal(await f.read(), 'automation-sync-required');
-    assert.equal(await f.readOperator(request), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
+    assert.equal(await f.readOperator(request), 'intake-automation-update-required');
   });
 
   it('should report missing, changed, disabled and uncertain projections', async () => {
     const f = fixture();
     f.records.length = 0;
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-activation-required');
     f.records.push(f.record);
     f.record.pending = { kind: 'update', nativeHash: 'a'.repeat(64) };
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
     delete f.record.pending;
     assert.equal(
       await f.read({
@@ -143,10 +143,10 @@ describe('notification automation readiness', () => {
           return [];
         },
       }),
-      'automation-sync-required',
+      'intake-automation-update-required',
     );
     f.native.enabled = false;
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
   });
 
   it('should report scheduler availability and distinguish execution from delivery failure', async () => {

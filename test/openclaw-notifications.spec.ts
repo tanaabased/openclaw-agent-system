@@ -64,10 +64,14 @@ function fixture() {
   };
   const records: OpenClawDispatchRecord[] = [];
   let requests = 0;
+  let readiness: string | undefined;
   let now = baseline;
   const service = new OpenClawNotifications({
     root: '/unused',
     intake: {
+      async readiness() {
+        return readiness;
+      },
       async select(value) {
         return {
           selected: assignmentIntakePolicy(value, 'openclaw'),
@@ -105,6 +109,9 @@ function fixture() {
     manifest,
     service,
     records,
+    set readiness(value: string | undefined) {
+      readiness = value;
+    },
     get state() {
       return state;
     },
@@ -136,6 +143,21 @@ function record(): OpenClawDispatchRecord {
 }
 
 describe('agent/openclaw-notifications', () => {
+  it('should expose required automation updates without losing retained admission evidence', async () => {
+    const f = fixture();
+    const before = structuredClone(f.state);
+    f.readiness = 'intake-automation-update-required';
+    const result = await f.service.inspect(f.manifest, '/workspace');
+    assert.equal(result.status, 'degraded');
+    assert.equal(result.diagnosticCode, 'intake-automation-update-required');
+    assert.equal(result.baseline.status, 'ready');
+    assert.equal(result.items.length, 1);
+    assert.equal(f.requests, 0);
+    assert.deepEqual(f.state, before);
+    f.readiness = undefined;
+    assert.equal((await f.service.inspect(f.manifest, '/workspace')).status, 'ready');
+  });
+
   it('should inspect native admission and capacity without running intake or exposing provider prose', async () => {
     const f = fixture();
     const result = await f.service.inspect(f.manifest, '/workspace', selector);

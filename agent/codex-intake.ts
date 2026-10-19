@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import codexIssueNotice from './codex-issue-notice.ts';
-import codexHostAccess from './codex-host-access.ts';
+import { CodexAutomationError } from './codex-automation-state.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
@@ -141,6 +141,27 @@ export async function preflightCodexIntake(pluginData: string, deps: CodexIntake
   return { manifestDigest: current.digest };
 }
 
+async function assertCodexIntakeActive(
+  pluginData: string,
+  current: Awaited<ReturnType<typeof selectCodexIntake>>,
+  deps: CodexIntakeDependencies,
+) {
+  try {
+    if (deps.assertActive) await deps.assertActive();
+    else
+      await inspectCodexDispatchActivation(
+        pluginData,
+        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        false,
+        false,
+        'intake',
+      );
+  } catch (error) {
+    if (error instanceof CodexAutomationError) throw new IntakeError(error.code);
+    throw error;
+  }
+}
+
 export async function runCodexIntake(
   pluginData: string,
   activate = false,
@@ -150,20 +171,6 @@ export async function runCodexIntake(
     const current = await selectCodexIntake(pluginData, deps);
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const { policy, digest } = current.policy;
-    const assertActive = async () => {
-      if (activate) return;
-      try {
-        if (deps.assertActive) await deps.assertActive();
-        else
-          await inspectCodexDispatchActivation(pluginData, {
-            codexHome: current.codexHome,
-            inspectBinding: deps.inspectBinding,
-          });
-      } catch (error) {
-        if (codexHostAccess(error)) throw error;
-        throw new IntakeError('intake-activation-required');
-      }
-    };
     const assertCurrent = async () => {
       const fresh = await selectCodexIntake(pluginData, deps);
       if (
@@ -171,7 +178,7 @@ export async function runCodexIntake(
         fresh.store.location.scope !== current.store.location.scope
       )
         throw new IntakeError('intake-policy-changed');
-      await assertActive();
+      if (!activate) await assertCodexIntakeActive(pluginData, current, deps);
     };
     const result = await scanAssignments({
       store: current.store,
@@ -267,6 +274,8 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
         : !matchesIntakePolicy(state.policyDigest, current.policy)
           ? 'intake-policy-reconciliation-required'
           : state.blocker?.code;
+    if (current.policy && state && matchesIntakePolicy(state.policyDigest, current.policy))
+      await assertCodexIntakeActive(pluginData, current, deps);
   } catch (error) {
     state = await retainedStore(pluginData, deps)
       .then((store) => store?.read())

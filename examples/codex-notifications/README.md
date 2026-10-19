@@ -31,6 +31,18 @@ printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access
   | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("> ## ⚠️ Codex needs access to its tracking files\n>\n>")) and (.response | contains("> - **Technical detail:**")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
 test ! -e "$root/uncreated-failure-data"
 
+# should distinguish a required automation update from first-time setup in the packaged failure response
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","code":"intake-automation-update-required"}' \
+  | node "$runtime" intake failure-response --plugin-data "$root/uncreated-update-data" \
+  | jq -e '.status == "failure" and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("✨")) and (.response | contains("New intake is paused")) and (.response | contains("intake-automation-update-required"))'
+printf '%s\n' '{"automationId":"fixture-native-intake","code":"intake-activation-required"}' \
+  | node "$runtime" intake failure-response --plugin-data "$root/uncreated-update-data" \
+  | jq -e '.status == "failure" and (.response | contains("⚠️")) and (.response | contains("intake-activation-required")) and (.response | contains("✨") | not)'
+test ! -e "$root/uncreated-update-data"
+
 # should format a packaged quiet heartbeat without activating intake or changing its state
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

@@ -576,10 +576,10 @@ describe('agent/openclaw issue dispatch', () => {
   it('should report scheduler drift and its recovery without creating issue sessions', async () => {
     const intake = service.dependencies.intake;
     const readiness = intake.readiness.bind(intake);
-    intake.readiness = async () => 'automation-sync-required';
+    intake.readiness = async () => 'intake-automation-update-required';
     const warning = await service.run(manifest, root, coordinator, { action: 'report' });
     assert.ok('response' in warning && typeof warning.response === 'string');
-    assert.match(warning.response, /automation-sync-required/);
+    assert.match(warning.response, /intake-automation-update-required/);
     assert.match(warning.response, /Agent System Install/);
     intake.readiness = readiness;
     const recovered = await service.run(

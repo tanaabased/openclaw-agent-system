@@ -184,7 +184,15 @@ describe('github readiness channel', () => {
     assert.equal((await snapshot()).stateReason, 'intake-scan-overdue');
     code = 'intake-policy-reconciliation-required';
     assert.equal((await snapshot()).statusState, 'sync-required');
+    code = 'intake-automation-update-required';
+    assert.equal((await snapshot()).statusState, 'sync-required');
+    code = 'intake-activation-required';
+    assert.equal((await snapshot()).statusState, 'setup-required');
     code = undefined;
+    automation = 'intake-automation-update-required';
+    assert.equal((await snapshot()).statusState, 'sync-required');
+    automation = 'intake-activation-required';
+    assert.equal((await snapshot()).statusState, 'setup-required');
     for (const expected of [
       'automation-sync-required',
       'automation-execution-failed',

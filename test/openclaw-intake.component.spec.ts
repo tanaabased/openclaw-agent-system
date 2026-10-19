@@ -558,7 +558,7 @@ describe('openclaw v2 intake slice', () => {
     let inspections = 0;
     f.service.dependencies.readiness = async () => {
       inspections++;
-      return 'automation-sync-required';
+      return 'intake-automation-update-required';
     };
     const before = f.connects();
     const result = await f.service.run(
@@ -568,7 +568,7 @@ describe('openclaw v2 intake slice', () => {
       (await f.service.select(f.value, root)).selected!.digest,
     );
     assert.equal(result.status, 'blocked');
-    assert.equal(result.code, 'automation-sync-required');
+    assert.equal(result.code, 'intake-automation-update-required');
     assert.equal(inspections, 1);
     assert.equal(f.connects(), before);
     const failure = new Error('scheduler connection failed');

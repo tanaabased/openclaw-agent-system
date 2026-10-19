@@ -107,6 +107,9 @@ export class IntakeError extends Error {
 }
 
 export function intakeRemediation(code: string): string {
+  if (code === 'intake-automation-update-required')
+    return 'Run Agent System Install to apply the update and resume intake. Existing chats and work are retained.';
+  if (code === 'intake-activation-required') return 'Run Agent System Install to activate intake.';
   if (/^intake-github-(?:unknown|transport|rate-limit|authentication|permission)$/.test(code)) {
     if (code.endsWith('authentication'))
       return 'GitHub rejected authentication. Check the current GitHub credential and retry this scan; preserve the checkpoint.';

@@ -15,6 +15,8 @@ export default function nativeNotificationDiagnostic(code: string): string | und
       'refresh admission is uncertain; inspect native workflow status before requesting another cycle',
     'intake-activation-required':
       'run openclaw agent-system install to activate the declared native workflow',
+    'intake-automation-update-required':
+      'run openclaw agent-system install to apply the intake automation update and resume intake; existing chats and work are retained',
     'intake-policy-reconciliation-required':
       'run openclaw agent-system install to reconcile the changed native workflow policy',
   }[code];

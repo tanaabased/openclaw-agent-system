@@ -395,6 +395,7 @@ export async function inspectCodexDispatchActivation(
   pausedRecovery = false,
   retainedWork = false,
   capability:
+    | 'intake'
     | 'assessment'
     | 'implementation'
     | 'review'
@@ -405,6 +406,12 @@ export async function inspectCodexDispatchActivation(
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
   const record = selected.ledger.records.find((entry) => entry.id === intakeAutomationId);
+  const activationCode =
+    capability === 'intake'
+      ? record
+        ? 'intake-automation-update-required'
+        : 'intake-activation-required'
+      : 'dispatch-activation-required';
   const matchesPrompt = (prompt: string) => {
     const marker = '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId);
     if (job?.payload.kind === 'prompt' && prompt === job.payload.prompt + marker) return true;
@@ -431,7 +438,7 @@ export async function inspectCodexDispatchActivation(
         record.definition.status !== 'ACTIVE' ||
         !matchesPrompt(record.definition.prompt)))
   )
-    throw new Error('dispatch-activation-required');
+    throw new CodexAutomationError(activationCode);
   const saved = await readCodexAutomations(selected.codexHome);
   const actual = saved.find((entry) => entry.id === record.nativeId);
   if (
@@ -446,8 +453,9 @@ export async function inspectCodexDispatchActivation(
       selected.workspace,
     )
   )
-    throw new Error('dispatch-activation-required');
-  if (capability === 'assessment') return { sourceThreadId: record.definition.targetThreadId };
+    throw new CodexAutomationError(activationCode);
+  if (capability === 'intake' || capability === 'assessment')
+    return { sourceThreadId: record.definition.targetThreadId };
   // work activation is read back against the current definition; old consent never widens.
   if (
     capability === 'review' ||

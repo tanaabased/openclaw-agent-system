@@ -1,4 +1,5 @@
 import workflowRecovery from './workflow-recovery.ts';
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import githubNotificationCard, {
   githubNotificationMarkdownText as text,
@@ -8,6 +9,7 @@ export type IssueNoticeEvent = 'intake-recovered' | 'failure';
 
 interface NoticeCopy {
   severity: 'info' | 'warning' | 'error';
+  emoji?: string;
   title: string;
   summary: string;
   next: string;
@@ -23,6 +25,8 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  const automation = intakeAutomationNotice(code);
+  if (automation) return automation;
   const recovery = workflowRecovery(code, diagnostic);
   if (recovery)
     return { severity: 'warning', title: 'This operation needs attention', ...recovery };
@@ -279,9 +283,10 @@ export default function codexIssueNotice(input: {
     notify: input.changed,
     message: githubNotificationCard({
       emoji:
-        copy.severity === 'info'
+        copy.emoji ??
+        (copy.severity === 'info'
           ? (input.emoji ?? '💡')
-          : { warning: '⚠️', error: '❌' }[copy.severity],
+          : { warning: '⚠️', error: '❌' }[copy.severity]),
       title: copy.title,
       facts,
     }),

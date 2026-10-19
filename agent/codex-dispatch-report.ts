@@ -10,6 +10,7 @@ import workflowRecovery from './workflow-recovery.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
@@ -110,21 +111,25 @@ export default function prepareDispatchReport(input: {
     dispatch: [{ status: 'idle', changed: false }],
   });
   if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
-  const title = notices.length
-    ? !intake.blocker
-      ? '⚠️ Intake checked — some items need attention'
-      : severity === 'error'
-        ? '❌ Intake could not finish'
-        : '⚠️ Intake needs attention'
-    : started.length
-      ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
-      : sent.length
-        ? `💡 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
-        : recovered
-          ? '💡 Intake resumed'
-          : pending
-            ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-            : '💡 Intake checked';
+  const automationNotice = intakeAutomationNotice(intake.blocker?.code ?? '');
+  const title =
+    automationNotice && notices.length === 1
+      ? `${automationNotice.emoji} ${automationNotice.title}`
+      : notices.length
+        ? !intake.blocker
+          ? '⚠️ Intake checked — some items need attention'
+          : severity === 'error'
+            ? '❌ Intake could not finish'
+            : '⚠️ Intake needs attention'
+        : started.length
+          ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
+          : sent.length
+            ? `💡 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
+            : recovered
+              ? '💡 Intake resumed'
+              : pending
+                ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+                : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
   for (const record of started)
@@ -145,6 +150,14 @@ export default function prepareDispatchReport(input: {
   if (sent.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
     const record = active.find((entry) => entry.id === notice.id);
+    if (notice.id === 'scan' && intakeAutomationNotice(notice.code)) {
+      lines.push(
+        `- **What happened:** ${notice.summary}`,
+        `- **Next step:** ${notice.next}`,
+        `- **Technical detail:** \`${notice.code}\``,
+      );
+      continue;
+    }
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
       `  **Operation:** ${notice.operation}`,
