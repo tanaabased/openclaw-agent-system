@@ -36,6 +36,7 @@
 - Before editing or auditing documentation, read and apply [Documentation Design](./DOCUMENTATION.md), including its change gate and protected README positioning.
 - Before changing CLI output, read [CLI Presentation](./cli/PRESENTATION.md). Use the shared palette and command presentation boundary; never print command-owned diagnostics directly or add a second message section.
 - Before optimization assessments or changes to an accepted optimization decision, read and apply [Optimization Guidance](./.github/OPTIMIZATION.md).
+- Before changing or auditing GitHub issue workflows, including their owners in `agent/` and `tools/dispatch/`, read and apply [GitHub Workflow Guidance](./channels/github/AGENTS.md).
 
 ## Identity and configuration
 
