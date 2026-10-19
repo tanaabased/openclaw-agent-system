@@ -311,7 +311,10 @@ describe('agent/openclaw-delivery', () => {
     assert.deepEqual(prepared.operation.pullRequest, retained.pullRequest);
     assert.deepEqual(record.work!.delivery, retained);
     head = 'c'.repeat(40);
-    await assert.rejects(request('publish', { digest: prepared.digest }), /delivery-preview-stale/);
+    const refreshed = await request('publish', { digest: prepared.digest });
+    assert.equal(refreshed.status, 'prepared');
+    assert.ok('digest' in refreshed && refreshed.digest !== prepared.digest);
+    assert.deepEqual(record.work!.delivery, retained);
     assert.equal(pushes, 1);
   });
   it('should still reject a changed session or policy on an existing delivery', async () => {
@@ -493,7 +496,7 @@ describe('agent/openclaw-delivery', () => {
     await publish();
     assert.equal(creates, 1);
   });
-  it('should reject unauthorized stale dirty divergent and revoked publication before writes', async () => {
+  it('should refresh stale previews and reject unauthorized dirty divergent and revoked publication before writes', async () => {
     const permission = record.work!.publication;
     delete record.work!.publication;
     await assert.rejects(publish(), /delivery-human-publication-required/);
@@ -501,9 +504,9 @@ describe('agent/openclaw-delivery', () => {
     dirty = true;
     await assert.rejects(publish(), /delivery-uncommitted-work/);
     dirty = false;
-    await assert.rejects(
-      request('publish', { title: 'Fix', body: 'Fix', digest: '0'.repeat(64) }),
-      /delivery-preview-stale/,
+    assert.equal(
+      (await request('publish', { title: 'Fix', body: 'Fix', digest: '0'.repeat(64) })).status,
+      'prepared',
     );
     remote = 'b'.repeat(40);
     await assert.rejects(publish(), /delivery-remote-head-diverged/);

@@ -387,9 +387,12 @@ export default async function runCodexDelivery(
         });
         return { ...announce, id: input.id, url: url(previous.pullRequest.pullRequestNumber) };
       }
-      if (input.action === 'prepare')
+      if (input.action === 'prepare' || (input.action === 'publish' && input.digest !== digest))
         return {
           status: 'prepared',
+          ...(input.action === 'publish'
+            ? { code: 'delivery-preview-stale', refreshed: true }
+            : {}),
           id: input.id,
           digest,
           operation: delivery,
@@ -398,7 +401,6 @@ export default async function runCodexDelivery(
             : 'Only after explicit human publication authorization, execute delivery publish with this id and digest through native approval. Retain title/body if supplied. Automatic callers require freshly reconciled schedule authority. Preparation does not grant publication permission.',
         };
       if (input.action === 'publish') {
-        if (input.digest !== digest) throw new Error('delivery-preview-stale');
         await deps.authorizeSchedule?.();
         record.delivery = delivery;
         await save();

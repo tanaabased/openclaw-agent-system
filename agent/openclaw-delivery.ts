@@ -146,9 +146,15 @@ export default async function openClawDelivery(input: {
     authorization: work.publication,
     previous: previous ?? null,
   });
-  if (action.operation === 'prepare')
+  if (
+    action.operation === 'prepare' ||
+    (action.operation === 'publish' && action.digest !== digest)
+  )
     return {
       status: 'prepared',
+      ...(action.operation === 'publish'
+        ? { code: 'delivery-preview-stale', refreshed: true }
+        : {}),
       id: record.id,
       digest,
       operation: { ...delivery, binding, title, body, contentUpdate },
@@ -231,7 +237,6 @@ export default async function openClawDelivery(input: {
     };
   }
   if (action.operation === 'publish') {
-    if (action.digest !== digest) throw new Error('delivery-preview-stale');
     delivery.binding = binding;
     delivery.title = title;
     delivery.body = body;

@@ -523,10 +523,18 @@ describe('agent/codex-delivery', () => {
       request('publish', { digest: preview.digest }),
       request('publish', { digest: preview.digest }),
     ]);
-    assert.equal(outcomes.filter((outcome) => outcome.status === 'fulfilled').length, 1);
-    const failure = outcomes.find((outcome) => outcome.status === 'rejected');
-    assert.ok(failure?.status === 'rejected');
-    assert.match(String(failure.reason), /preview-stale/);
+    assert.equal(
+      outcomes.filter(
+        (outcome) => outcome.status === 'fulfilled' && outcome.value.status === 'published',
+      ).length,
+      1,
+    );
+    assert.equal(
+      outcomes.filter(
+        (outcome) => outcome.status === 'fulfilled' && outcome.value.status === 'prepared',
+      ).length,
+      1,
+    );
     assert.equal(creates, 1);
   });
   it('should verify the provider issue link instead of trusting closing prose', async () => {
@@ -729,10 +737,12 @@ describe('agent/codex-delivery', () => {
         boundary === 'create',
       );
     });
-  it('should reject stale previews, changed assignments, foreign chats and dirty work before writes', async () => {
+  it('should refresh stale previews and reject changed assignments foreign chats and dirty work before writes', async () => {
     const preview = await request('prepare');
     head = 'b'.repeat(40);
-    await assert.rejects(request('publish', { digest: preview.digest }), /preview-stale/);
+    const refreshed = await request('publish', { digest: preview.digest });
+    assert.equal(refreshed.status, 'prepared');
+    assert.ok('digest' in refreshed && refreshed.digest !== preview.digest);
     await assert.rejects(request('prepare', {}, { threadId: 'other' }), /managed-issue-required/);
     dirty = true;
     await assert.rejects(request('prepare'), /uncommitted-work/);
