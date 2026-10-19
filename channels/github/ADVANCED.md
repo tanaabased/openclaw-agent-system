@@ -20,7 +20,10 @@ The live bound `agent.yaml` governs the next automatic operation for every activ
 issue. Mode, author, feedback, recipient, and guidance edits take effect without
 Install. Plan holds future implementation; Work permits an actionable plan to
 continue; Auto additionally requires proceed. Existing Plan issues can become
-eligible when the operator changes the mode to Work.
+eligible when the operator changes the mode to Work. Once implementation has
+started, changing the default mode does not return the issue to planning. Both
+runtimes retain this stage across restart and recover older implementation receipts
+in place; existing lifecycle and native execution checks still apply.
 
 Discovery retains bounded observations independently of reply eligibility.
 Feedback observed while disabled stays in GitHub history and is not queued for

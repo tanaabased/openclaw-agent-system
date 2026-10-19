@@ -2615,8 +2615,7 @@ describe('agent/codex-dispatch', () => {
       connect: async () => fixture.client,
     });
     const current = await selectCodexIntake(pluginData, deps);
-    // this fixture represents a fresh admission in the requested mode. Changing
-    // the default after a plan admission must never grant implementation.
+    // retain the admission mode as historical evidence; live policy governs progression.
     await current.store.exclusive(async (state, save) => {
       for (const record of state!.records) record.evidence.mode = mode;
       await save(state!);
@@ -2748,19 +2747,12 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  for (const stop of ['wait', 'cancel', 'changed-selection', 'denial'] as const) {
+  for (const stop of ['cancel', 'changed-selection', 'denial'] as const) {
     it(`should preserve auto ${stop} through invalid and corrected assessments`, async () => {
       const work = await autoIssue();
       const child = { threadId: native!.id };
-      let previousResultDigest = automationHash(autoResult);
-      if (stop === 'wait') {
-        const waiting = {
-          ...autoResult,
-          decision: { action: 'wait', reasons: ['Operator direction is needed.'] },
-        };
-        await request('result', { id: work.id, result: waiting, previousResultDigest }, child);
-        previousResultDigest = automationHash(waiting);
-      } else if (stop === 'cancel') {
+      const previousResultDigest = automationHash(autoResult);
+      if (stop === 'cancel') {
         await work.run('cancel', {}, true);
       } else if (stop === 'changed-selection') {
         const original = work.continuation.native!.assessmentSkill;
@@ -2835,6 +2827,40 @@ describe('agent/codex-dispatch', () => {
     assert.equal(((await request('inspect')).records as unknown[]).length, 1);
   });
 
+  for (const legacy of [false, true]) {
+    it(`should preserve ${legacy ? 'legacy' : 'recorded'} implementation after changing work mode to plan or auto`, async () => {
+      const work = await workIssue();
+      assert.equal((await work.run('next')).status, 'prepared');
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      const before = (await store.read()).records[0]!;
+      assert.equal(before.progression?.via, 'work');
+      if (legacy)
+        await store.exclusive(async (state, save) => {
+          delete state.records[0]!.progression;
+          await save();
+        });
+      const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+      configured.github.notifications['issue-assignment'].mode = 'plan';
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+      assert.equal((await work.run('next')).status, 'pending');
+      work.receive();
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+      configured.github.notifications['issue-assignment'].mode = 'auto';
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+      const after = (await store.read()).records[0]!;
+      assert.equal(after.progression?.via, legacy ? 'legacy' : 'work');
+      assert.equal(after.threadId, before.threadId);
+      assert.equal(after.worktree, before.worktree);
+      assert.deepEqual(after.result, before.result);
+      assert.deepEqual(after.continuation!.attempt!.request, before.continuation!.attempt!.request);
+    });
+  }
+
   it('should apply live work mode to a plan admission without reinstalling', async () => {
     const configured = structuredClone(manifest);
     Object.assign(configured.github.notifications['issue-assignment'], { mode: 'work' });
@@ -2875,7 +2901,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(record.continuation!.attempt!.turnId, 'implementation-turn');
   });
 
-  it('should retain auto wait, release its slot, and never promote it on a later result or poll', async () => {
+  it('should hold auto wait until a revised assessment explicitly chooses proceed', async () => {
     const waiting = {
       ...autoResult,
       decision: { action: 'wait', reasons: ['Operator direction is needed.'] },
@@ -2891,9 +2917,9 @@ describe('agent/codex-dispatch', () => {
       { id: work.id, result: autoResult, previousResultDigest: automationHash(waiting) },
       { threadId: native!.id },
     );
-    assert.equal((await work.run('next')).status, 'idle');
-    const stopped = await work.run('context', {}, true);
-    assert.equal(stopped.status, 'blocked');
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
   });
 
   for (const decision of [
@@ -2961,7 +2987,8 @@ describe('agent/codex-dispatch', () => {
     );
     assert.equal((await work.run('next')).status, 'idle');
     const stopped = await work.run('context', {}, true);
-    assert.equal('code' in stopped && stopped.code, 'continuation-auto-wait');
+    assert.equal(stopped.status, 'policy-held');
+    assert.equal('reason' in stopped && stopped.reason, 'auto-wait');
   });
 
   it('should reject changes to an adopted auto assessment without another native send', async () => {
@@ -3597,10 +3624,26 @@ describe('agent/codex-dispatch', () => {
     });
     assert.equal((await work.run('next')).status, 'idle');
     const records = (await request('inspect')).records as Array<{
-      continuation: { phase: string; attempt?: unknown };
+      continuation: { phase: string; policyHeld?: string; attempt?: unknown };
     }>;
-    assert.equal(records[0]!.continuation.phase, 'blocked');
+    assert.equal(records[0]!.continuation.phase, 'waiting');
+    assert.equal(records[0]!.continuation.policyHeld, 'assessment-not-actionable');
     assert.equal(records[0]!.continuation.attempt, undefined);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation!.phase = 'blocked';
+      state.records[0]!.continuation!.code = 'continuation-assessment-not-actionable';
+      delete state.records[0]!.continuation!.policyHeld;
+      await save();
+    });
+    const previous = ((await request('inspect')).records as { result: unknown }[])[0]!.result;
+    await request(
+      'result',
+      { id: work.id, result, previousResultDigest: automationHash(previous) },
+      { threadId: native!.id },
+    );
+    assert.equal((await work.run('next')).status, 'prepared');
   });
 
   it('should stop when the selected implementation skill is unavailable instead of substituting', async () => {

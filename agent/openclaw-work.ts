@@ -2,6 +2,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
 
 import { automationHash } from './automation-hash.ts';
+import issueProgression from './issue-progression.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { operatorInputEvent } from './openclaw-session-input.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
@@ -86,7 +87,12 @@ export default async function openClawWorkAction(input: {
       };
     if (action.digest !== digest) throw new Error('dispatch-handoff-stale');
     record.work ??= { assessmentDigest };
-    if (action.permission !== 'publication') record.work.implementation = source;
+    if (action.permission !== 'publication') {
+      const transition = issueProgression(record, { mode: 'plan', operator: true, now: input.now });
+      if (transition.status !== 'ready') throw new Error(transition.reason);
+      record.progression = transition.progression;
+      record.work.implementation = source;
+    }
     if (action.permission !== 'implementation') record.work.publication = source;
     record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
     await input.save();
@@ -105,6 +111,7 @@ export default async function openClawWorkAction(input: {
     return {
       status: 'verified',
       runtime: 'openclaw',
+      issueStage: record.progression?.stage ?? 'planning',
       id: record.id,
       project: { path: record.worktree },
       assessment: record.result,

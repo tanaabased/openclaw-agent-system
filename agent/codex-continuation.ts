@@ -22,7 +22,8 @@ import dispatchContext, { dispatchEvidence } from './dispatch-context.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, validateWorkflowResult } from './workflow-result.ts';
-import { nextIssueStage, selectWorkflowStage } from './workflow-stage.ts';
+import { selectWorkflowStage } from './workflow-stage.ts';
+import issueProgression, { retainedIssueProgression } from './issue-progression.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 
 const requestSchema = Type.Object(
@@ -163,7 +164,9 @@ export default async function runCodexContinuation(
                 !record.feedbackReactivation &&
                 !record.reset &&
                 (!['complete', 'blocked', 'cancelled'].includes(record.continuation.phase) ||
-                  record.continuation.code === 'continuation-auto-wait'),
+                  ['continuation-auto-wait', 'continuation-assessment-not-actionable'].includes(
+                    record.continuation.code ?? '',
+                  )),
             )
           : state.records.filter((record) => record.id === input.id);
       if (!candidates.length && input.action !== 'next')
@@ -171,7 +174,13 @@ export default async function runCodexContinuation(
       for (const record of candidates) {
         try {
           const work = record.continuation;
-          if (work?.code === 'continuation-auto-wait' && liveMode === 'work') {
+          if (
+            work?.phase === 'blocked' &&
+            ['continuation-auto-wait', 'continuation-assessment-not-actionable'].includes(
+              work.code ?? '',
+            ) &&
+            !retainedIssueProgression(record)
+          ) {
             work.phase = 'waiting';
             delete work.code;
             delete work.retryAfter;
@@ -223,11 +232,20 @@ export default async function runCodexContinuation(
           if (!record.result) continue;
           const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
           if (!admitted) throw new Error('continuation-admission-missing');
+          const enteringImplementation = !retainedIssueProgression(record);
           const authorizeLive = async () => {
             const live = await selectCodexIntake(pluginData, deps);
-            const held = liveWorkflowPolicy(live.manifest, 'codex', admitted, 'implementation');
+            const held = liveWorkflowPolicy(
+              live.manifest,
+              'codex',
+              admitted,
+              enteringImplementation ? 'implementation' : 'assignment',
+            );
             if (held) throw new WorkflowPolicyHeld(held);
-            if (live.manifest.github?.notifications?.issueAssignment?.mode !== liveMode)
+            if (
+              enteringImplementation &&
+              live.manifest.github?.notifications?.issueAssignment?.mode !== liveMode
+            )
               throw new WorkflowPolicyHeld('workflow-mode-updated');
             return live;
           };
@@ -248,7 +266,7 @@ export default async function runCodexContinuation(
             work.selection = selected.selection;
           }
           delete work.policyHeld;
-          if (liveMode === 'auto') {
+          if (enteringImplementation && liveMode === 'auto') {
             if (!record.result.decision) throw new WorkflowPolicyHeld('auto-decision-required');
             if (
               !record.stageReceipt ||
@@ -264,24 +282,21 @@ export default async function runCodexContinuation(
             )
               throw new Error('continuation-assessment-changed');
             if (
-              nextIssueStage('auto', record.result.outcome, record.result.decision.action) !==
-              'implementation'
-            ) {
-              throw new WorkflowPolicyHeld('auto-wait');
-            }
-            if (
               !record.assessment ||
               (work.assessmentSelectionDigest &&
                 work.assessmentSelectionDigest !== automationHash(record.assessment))
             )
               throw new Error('continuation-assessment-selection-changed');
           }
-          if (record.result.outcome !== 'plan-ready') {
-            work.phase = 'blocked';
-            work.code = 'continuation-assessment-not-actionable';
-            await save();
-            continue;
-          }
+          const transition = issueProgression(record, {
+            mode: liveMode ?? 'plan',
+            now: (deps.now ?? Date.now)(),
+          });
+          if (
+            !['reconcile', 'cancel', 'result'].includes(input.action) &&
+            transition.status !== 'ready'
+          )
+            throw new WorkflowPolicyHeld(transition.reason);
           if (work.assessmentDigest && work.assessmentDigest !== automationHash(record.result))
             throw new Error('continuation-assessment-changed');
           const { client, repo } = await revalidateDispatchAssignment(
@@ -291,7 +306,7 @@ export default async function runCodexContinuation(
             signal,
             true,
           );
-          if (liveMode === 'auto' && !work.binding) {
+          if (enteringImplementation && liveMode === 'auto' && !work.binding) {
             const retained = JSON.parse(record.context!);
             const latest = dispatchContext(
               await client.getItemContext(
@@ -357,7 +372,7 @@ export default async function runCodexContinuation(
           });
           selection.selection = { ...work.selection, skill: selection.selection.skill };
           const selections = [{ expected: work.selection, actual: selection.selection }];
-          if (liveMode === 'auto') {
+          if (enteringImplementation && liveMode === 'auto') {
             const assessment = await selectWorkflowStage({
               stage: 'assessment',
               configuration: {
@@ -418,6 +433,8 @@ export default async function runCodexContinuation(
                 record.resultTurnId)
             )
               throw new Error('continuation-user-intervened');
+            if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
+            record.progression = transition.progression;
             work.assessmentDigest = automationHash(record.result);
             if (liveMode === 'auto')
               work.assessmentSelectionDigest = automationHash(record.assessment);
@@ -603,6 +620,7 @@ export default async function runCodexContinuation(
             return {
               status: 'verified',
               id: record.id,
+              issueStage: record.progression?.stage ?? 'planning',
               assessment: record.result,
               assessmentSelection: record.assessment,
               implementation: selection.selection,
@@ -612,7 +630,7 @@ export default async function runCodexContinuation(
               previousResult: work.result,
               deliveryOnly: Boolean(work.result?.outcome === 'done'),
               instructions:
-                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto also requires its verified retained proceed recommendation. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|compose|candidate|announce|present,...}; reuse the managed operation and returned digest, never create a replacement PR. For new PR delivery, compose a concise public title and body from the verified implementation outcome, validation, and limitations. Include issue-required evidence and a closing reference; do not copy private context or the full private report. Pass title/body to delivery prepare and retain them unchanged with its digest on publish. Use native attach_artifact. After PR linkage use delivery compose, invoke the selected reply skill for the delivery event, submit candidate, and execute announce with its preview digest through native approval. Preserve the delivered PR if the announcement fails. Then present and reproduce the complete private PR card and announcement outcome. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
+                'The verified installed workflow authorizes implementation and PR publication without further stage approval while this context remains valid. Auto requires its verified proceed recommendation when entering implementation; later mode edits preserve the recorded stage. If previousResult is done, resume only delivery and never repeat implementation. Otherwise invoke the selected implementation skill and retained guidance with the complete assessment, its assessmentSelection, existing files, and repository instructions. Resolve ordinary implementation choices autonomously; stop for consequential missing requirements or actual native denial. Preserve the selected model/effort. Use a task branch, implement, run the required checks, and commit the finished work. Do not bypass denied commands. Retain complete substantive output, including validation and limitations, in fullResult. Submit continuationRuntime action:result with this id and result {outcome:done|blocked,summary,fullResult}. Only a recorded done result permits continuationRuntime action:delivery with nested delivery {action:prepare|publish|reconcile|compose|candidate|announce|present,...}; reuse the managed operation and returned digest, never create a replacement PR. For new PR delivery, compose a concise public title and body from the verified implementation outcome, validation, and limitations. Include issue-required evidence and a closing reference; do not copy private context or the full private report. Pass title/body to delivery prepare and retain them unchanged with its digest on publish. Use native attach_artifact. After PR linkage use delivery compose, invoke the selected reply skill for the delivery event, submit candidate, and execute announce with its preview digest through native approval. Preserve the delivered PR if the announcement fails. Then present and reproduce the complete private PR card and announcement outcome. On resume refresh this context; reconcile existing files and delivery instead of replaying implementation. Do not use manual assessment handoff for this automatic continuation.',
             };
           if (input.action === 'result') {
             if (work.publicationAttempt)
@@ -758,7 +776,12 @@ export default async function runCodexContinuation(
             (entry) => entry.id === record?.intakeId,
           );
           if (!admitted) throw new Error('continuation-admission-missing');
-          const held = liveWorkflowPolicy(live.manifest, 'codex', admitted, 'implementation');
+          const held = liveWorkflowPolicy(
+            live.manifest,
+            'codex',
+            admitted,
+            record && retainedIssueProgression(record) ? 'assignment' : 'implementation',
+          );
           if (held) throw new WorkflowPolicyHeld(held);
           const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
             pluginData,

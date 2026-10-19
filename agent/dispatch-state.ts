@@ -17,6 +17,7 @@ import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
 import recoverTaskBlockers from './recover-task-blockers.ts';
+import { issueProgressionSchema, retainedIssueProgression } from './issue-progression.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
@@ -40,6 +41,7 @@ export const dispatchRecordProperties = {
     Type.Literal('retrying'),
   ]),
   createdAt: Type.Integer({ minimum: 0 }),
+  progression: Type.Optional(issueProgressionSchema),
   manifestDigest: text,
   assessment: Type.Optional(assessmentSelectionSchema),
   context: Type.Optional(Type.String({ maxLength: 96000 })),
@@ -303,6 +305,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     for (let index = 0; index < state.records.length; index++) {
       const candidate = structuredClone(state.records[index]!);
       recoverTaskBlockers(candidate);
+      const progression = retainedIssueProgression(candidate);
+      if (progression) candidate.progression = progression;
       // incomplete native custody remains for its owning reconciliation route.
       if (this.contract.validRecord(candidate)) state.records[index] = candidate;
     }

@@ -3073,6 +3073,39 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
+  it('should recover an existing implementation stage without replacing the openclaw issue', async () => {
+    const { id, who } = await operatorFollowup();
+    const request = { action: 'handoff' as const, id, permission: 'implementation' as const };
+    const preview = await service.run(manifest, root, who, request, true);
+    assert.ok('digest' in preview && typeof preview.digest === 'string');
+    await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
+    const before = await record();
+    assert.equal(before.progression?.via, 'operator');
+    const journal = (await service.scope(manifest, root)).journal;
+    await journal.exclusive(async (state, save) => {
+      delete state.records[0]!.progression;
+      await save();
+    });
+    for (const mode of ['work', 'auto', 'plan'] as const) {
+      manifest.github!.notifications!.issueAssignment!.mode = mode;
+      const context = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'implementation-context', id },
+        true,
+      );
+      assert.equal(context.status, 'verified');
+      assert.ok('issueStage' in context && context.issueStage === 'implementation');
+    }
+    const after = await record();
+    assert.equal(after.progression?.via, 'legacy');
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.work!.implementation, before.work!.implementation);
+  });
+
   it('should verify the retained owner input after it leaves the recent history page', async () => {
     const { id, who } = await operatorFollowup();
     const request = { action: 'handoff' as const, id, permission: 'implementation' as const };

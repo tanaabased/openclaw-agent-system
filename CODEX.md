@@ -254,7 +254,9 @@ feedback cannot promote it; explicitly direct further work in the same chat thro
 the [manual handoff](#issue-assessment). Missing or invalid decisions, changed issue
 evidence before implementation, changed selected skill content, lost task identity, and native
 denials stop continuation. Fix the stated obstacle and give explicit direction;
-never recreate the issue chat to bypass its retained stop. Live mode changes apply to existing issues at their next decision. Auto requires
+never recreate the issue chat to bypass its retained stop. Live mode changes govern
+entry into implementation for existing planning issues. Once implementation has
+started, later mode changes preserve that stage. Auto requires
 a verified proceed decision before implementation. Native OpenClaw Auto is not supported.
 
 ### Work Mode
@@ -272,7 +274,9 @@ and native receipts without renewed stage approval. Policy-only edits take effec
 without Install. Disabled effects and currently ineligible authors are held and
 reconsidered automatically. Preserve completed work, explicit cancellations, native
 denials, and uncertain submissions. Choose current implementation instructions
-before preparing a new send; never rewrite a submitted request.
+before preparing a new send; never rewrite a submitted request. Older issues recover
+their implementation stage from retained execution receipts without recreating
+the chat, repeating the handoff, or requiring Install.
 Implementation and delivery count against workflow capacity;
 intake reports stay limited to admission and capacity.
 
