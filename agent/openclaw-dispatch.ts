@@ -381,8 +381,8 @@ export default class OpenClawDispatch {
           },
           save,
         };
-        await authorizeFeedback(common);
         if (!action || action.operation === 'reconcile') {
+          await authorizeFeedback(common);
           const result = await advanceFeedbackTurn(common);
           if (event.turn?.status === 'completed') {
             record.feedback!.lastServedAt = now;

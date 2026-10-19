@@ -50,7 +50,7 @@ export async function inspectAssignment(
   return { repo, item, latest };
 }
 
-export default async function revalidateAssignment(
+export async function inspectAssignedIssue(
   policy: NonNullable<ReturnType<typeof assignmentIntakePolicy>>,
   record: IntakeRecord,
   client: GitHubNotificationIntakeClient,
@@ -77,5 +77,11 @@ export default async function revalidateAssignment(
   }
   if (!githubIdentityMatches(latest.actor, record.assignment.actor))
     throw new Error('dispatch-assignment-actor-changed');
-  return repo;
+  return { repo, item, latest };
+}
+
+export default async function revalidateAssignment(
+  ...input: Parameters<typeof inspectAssignedIssue>
+) {
+  return (await inspectAssignedIssue(...input)).repo;
 }

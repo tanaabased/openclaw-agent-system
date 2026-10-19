@@ -603,6 +603,29 @@ describe('agent/codex-feedback', () => {
       assert.ok(!published!.includes('custom:latin'));
       assert.ok(!published!.includes('Private English'));
     });
+  it('should reuse one issue observation per authorization and refresh it on the next call', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const provider = await deps.feedbackConnect!('', new AbortController().signal);
+    const read = provider.client.getItem;
+    let reads = 0;
+    let closed = false;
+    provider.client.getItem = async (...args) => {
+      reads++;
+      const item = await read(...args);
+      return closed ? { ...item, state: 'closed' } : item;
+    };
+    deps.feedbackConnect = async () => provider;
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    assert.equal(reads, 1);
+    closed = true;
+    const result = await call('context', ref, true);
+    assert.equal(result.status, 'blocked');
+    assert.equal('code' in result && result.code, 'dispatch-issue-closed');
+    assert.equal(reads, 2);
+    assert.equal(creates, 0);
+  });
   it('should withhold publication when the admitted source changes', async () => {
     const ref = await prepare();
     sent = true;

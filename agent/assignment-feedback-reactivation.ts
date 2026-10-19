@@ -10,7 +10,7 @@ import { reconcileAnnouncement } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import redactFeedback from './feedback-redaction.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
-import revalidateAssignment, { inspectAssignment } from './dispatch-assignment.ts';
+import { inspectAssignedIssue, inspectAssignment } from './dispatch-assignment.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { discoverFeedback } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
@@ -23,20 +23,27 @@ import type {
 type Policy = NonNullable<ReturnType<typeof assignmentIntakePolicy>>;
 
 /** feedback custody never grants assessment or implementation authority. */
-export async function revalidateFeedbackAssignment(
+export async function inspectFeedbackAssignment(
   policy: Policy,
   intake: IntakeRecord,
   client: GitHubNotificationIntakeClient,
   record: SharedDispatchRecord,
 ) {
-  if (!record.feedbackReactivation) return revalidateAssignment(policy, intake, client);
-  const { repo, latest } = await inspectAssignment(policy, intake, client);
+  if (!record.feedbackReactivation) return inspectAssignedIssue(policy, intake, client);
+  const observation = await inspectAssignment(policy, intake, client);
+  const { latest } = observation;
   if (
     latest?.nodeId !== record.feedbackReactivation.assignmentEventId ||
     !matchesNotificationAuthority(record.feedbackReactivation.policyDigest, policy.policy)
   )
     throw new Error('feedback-reactivation-superseded');
-  return repo;
+  return observation;
+}
+
+export async function revalidateFeedbackAssignment(
+  ...input: Parameters<typeof inspectFeedbackAssignment>
+) {
+  return (await inspectFeedbackAssignment(...input)).repo;
 }
 
 /** run before reclamation so an admitted comment can retain the existing conversation. */
