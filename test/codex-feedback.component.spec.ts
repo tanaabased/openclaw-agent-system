@@ -1,3 +1,4 @@
+import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import type { CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import assert from 'node:assert/strict';
@@ -227,6 +228,35 @@ describe('agent/codex-feedback', () => {
     };
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
+  it('should continue scanning after an owner changes during its first checkpoint', async () => {
+    const state = await store.read();
+    const first = state.records[0]!;
+    state.records.push({
+      ...structuredClone(first),
+      id: 'e'.repeat(64),
+      sourceThreadId: 'changed-owner',
+    });
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const visits: string[] = [];
+    const scans = await scanCodexFeedback({
+      state,
+      current,
+      provider: await deps.feedbackConnect!(current.workspace, AbortSignal.timeout(1000)),
+      occurrence: 'checkpoint-test',
+      sourceThreadId: 'intake',
+      now: baseline + 70000,
+      checkpoint: async (scan) => {
+        visits.push(scan.id);
+        if (scan.id === first.id) throw new Error('discovery-checkpoint-changed');
+      },
+    });
+    assert.ok(visits.includes('e'.repeat(64)));
+    assert.equal(first.feedback, undefined);
+    assert.deepEqual(
+      scans.map((scan) => [scan.id, scan.feedback.code]),
+      [['e'.repeat(64), 'feedback-schedule-owner-changed']],
+    );
+  });
   async function prepare(author = commenter) {
     await call('next');
     comments.push({
