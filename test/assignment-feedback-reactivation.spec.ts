@@ -138,6 +138,20 @@ describe('assignment feedback reactivation', () => {
     assert.equal(reactivation()?.eventId, eventId);
   });
 
+  it('should exclude feedback from the disabled period when reactivating an unassigned owner', async () => {
+    const h = fixture();
+    h.provider.policy.issueAssignment!.feedback = false;
+    assert.equal(await h.run(), false);
+    h.provider.policy.issueAssignment!.feedback = true;
+    assert.equal(await h.run(), false);
+    assert.equal(h.record.feedback!.events.length, 0);
+    h.comment.body = '@receiver a new question';
+    h.comment.updatedAt = new Date(h.input.now + 1000).toISOString();
+    h.input.now += 2000;
+    assert.equal(await h.run(), true);
+    assert.equal(h.record.feedback!.events.length, 1);
+  });
+
   it('should retain comment reactivation after unrelated workflow changes', async () => {
     const h = fixture();
     assert.equal(await h.run(), true);

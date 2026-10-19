@@ -53,6 +53,15 @@ export const feedbackSourceEventSchema = Type.Object(
 export const feedbackSourceStateSchema = Type.Object(
   {
     evaluatedPolicyDigests: Type.Optional(Type.Record(text, hash)),
+    admission: Type.Optional(
+      Type.Object(
+        {
+          enabled: Type.Boolean(),
+          after: Type.Optional(Type.Integer({ minimum: 0 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     startedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     scannedAt: Type.Optional(Type.String()),
     scannedTime: Type.Optional(Type.Integer({ minimum: 0 })),

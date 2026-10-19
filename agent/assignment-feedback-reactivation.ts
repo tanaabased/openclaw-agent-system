@@ -1,13 +1,13 @@
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { feedbackAuthorityDigest } from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectActiveIssue } from './dispatch-assignment.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import { admitFeedback, discoverFeedback } from './feedback-source.ts';
+import { admitFeedback, discoverFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
@@ -66,15 +66,13 @@ export default async function reactivateAssignmentFeedback(input: {
   pullRequest?: { number: number; nodeId: string };
 }) {
   const { record, intake, policy, client } = input;
-  if (
-    !feedbackIdentities(
-      policy.policy.issueAssignment?.allowed ?? [],
-      policy.policy.issueAssignment?.feedback,
-    ).length
-  ) {
+  if (!workflowFeedbackEnabled(policy.policy, 'issue-assignment')) {
+    const feedback = (record.feedback ??= { startedAt: input.now, baseline: {}, events: [] });
+    observeFeedbackPolicy(feedback, policy.policy, input.now);
     delete record.feedbackReactivation;
     return false;
   }
+  if (record.feedback) observeFeedbackPolicy(record.feedback, policy.policy, input.now);
   await inspectActiveIssue(intake, client, true);
   if (
     !policy.policy.allowedRepositoryOwners.some(

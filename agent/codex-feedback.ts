@@ -1,5 +1,5 @@
 import retainedIntakePolicy from './retained-intake-policy.ts';
-import { admitFeedback } from './feedback-source.ts';
+import { admitFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
@@ -161,6 +161,16 @@ export default async function runCodexFeedback(
     }
     return await store.exclusive(async (state, save, signal) => {
       if (applyFeedbackScans(state.records, scans)) await save();
+      if (input.action === 'next') {
+        let policyObserved = false;
+        for (const record of state.records) {
+          if (record.retired || record.reset || !record.feedback) continue;
+          const enabled = record.feedback.admission?.enabled;
+          observeFeedbackPolicy(record.feedback, current.manifest.github?.notifications, scanTime);
+          policyObserved ||= enabled !== record.feedback.admission?.enabled;
+        }
+        if (policyObserved) await save();
+      }
       if (snapshot && occurrence) {
         const cycleAt = state.discoveryCycleAt ?? scanTime;
         const owners = state.records.filter(

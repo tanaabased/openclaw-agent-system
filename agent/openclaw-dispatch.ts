@@ -1,3 +1,5 @@
+import { observeFeedbackPolicy } from './feedback-source.ts';
+import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
@@ -823,6 +825,14 @@ export default class OpenClawDispatch {
           };
         const now = (this.dependencies.now ?? Date.now)();
         if (input.action === 'next') {
+          let policyObserved = false;
+          for (const record of state.records) {
+            if (record.retired || record.reset || !record.feedback) continue;
+            const enabled = record.feedback.admission?.enabled;
+            observeFeedbackPolicy(record.feedback, manifest.github?.notifications, now);
+            policyObserved ||= enabled !== record.feedback.admission?.enabled;
+          }
+          if (policyObserved) await save();
           for (const record of state.records) {
             if (
               record.retired ||
@@ -1071,7 +1081,17 @@ export default class OpenClawDispatch {
             phase: 'routing',
             createdAt: now,
             manifestDigest: current.manifestDigest,
-            feedback: { startedAt: now, baseline: {}, events: [] },
+            feedback: {
+              startedAt: now,
+              admission: {
+                enabled: workflowFeedbackEnabled(
+                  manifest.github?.notifications,
+                  'issue-assignment',
+                ),
+              },
+              baseline: {},
+              events: [],
+            },
           };
           if (!pending.record) state.records.push(record);
           pass.selected.push(record.id);

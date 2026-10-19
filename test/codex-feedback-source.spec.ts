@@ -1,8 +1,10 @@
+import { Value } from 'typebox/value';
+import { codexFeedbackSchema, type CodexFeedback } from '../agent/codex-feedback-state.ts';
+import { openclawFeedbackSchema } from '../agent/openclaw-feedback-state.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
 import assert from 'node:assert/strict';
 
 import { admitCodexFeedback, discoverCodexFeedback } from '../agent/codex-feedback-source.ts';
-import type { CodexFeedback } from '../agent/codex-feedback-state.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
   reviewFixture,
@@ -38,52 +40,90 @@ describe('agent/codex-feedback-source', () => {
     policy.issueAssignment!.feedback = false;
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
-  it('should observe feedback while disabled and reevaluate it without source edits or queue resets', async () => {
+  it('should baseline disabled-period feedback and admit only later feedback after reenabling', async () => {
     const startedAt = Date.parse('2026-10-12T00:00:00Z');
-    const state: CodexFeedback = { startedAt, baseline: {}, events: [] };
+    let state: CodexFeedback = { startedAt, baseline: {}, events: [] };
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = false;
     const comments: ReturnType<typeof comment>[] = [];
-    const input = {
-      state,
-      policy,
-      owner: 'owner',
-      name: 'repo',
-      number: 3,
-      nodeId: 'I',
-      itemType: 'issue' as const,
-      now: startedAt + 172800000,
-      client: {
-        identity: account,
-        listIssueComments: async () => ({ comments, truncated: false }),
-        getIssueComment: async () => comments[0]!,
-      },
-    };
-    await discoverCodexFeedback(input);
-    comments.push(comment('pending'));
-    await discoverCodexFeedback(input);
-    assert.equal(state.events.length, 1);
-    const source = state.events[0]!.source;
-    const id = state.events[0]!.id;
-    assert.equal(state.events[0]!.policyHeld, 'feedback-not-approved');
-    // incremental provider reads can omit unchanged history; retained observations still reevaluate.
-    comments.length = 0;
+    const at = (id: string, offset: number) => ({
+      ...comment(id),
+      createdAt: new Date(startedAt + offset).toISOString(),
+      updatedAt: new Date(startedAt + offset).toISOString(),
+    });
+    const run = (offset: number, nodeId = 'I') =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: nodeId === 'I' ? 3 : 4,
+        nodeId,
+        itemType: nodeId === 'I' ? 'issue' : 'pull-request',
+        now: startedAt + offset,
+        client: {
+          identity: account,
+          listIssueComments: async () => ({
+            comments:
+              nodeId === 'I'
+                ? comments
+                : comments.map((source) => ({ ...source, nodeId: source.nodeId + '-pr' })),
+            truncated: false,
+          }),
+          getIssueComment: async () => comments[0]!,
+          reviews: reviewClientFixture(reviewFixture({ body: '' }), []),
+        },
+      });
+    await run(0);
+    comments.push(at('disabled', 1000));
+    await run(2000);
+    assert.equal(state.events.length, 0);
+    assert.ok(state.baseline.I?.disabled);
     policy.issueAssignment!.feedback = true;
-    await discoverCodexFeedback(input);
+    await run(3000);
+    assert.equal(state.admission?.after, startedAt + 3000);
+    assert.equal(state.events.length, 0);
+    // Include disabled-period history first discovered after reenabling and the exact boundary.
+    comments.push(at('late-history', 2500), at('boundary', 3000), at('fresh', 4000));
+    await run(5000);
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['fresh'],
+    );
+    const admitted = state.events[0]!.id;
+    state = JSON.parse(JSON.stringify(state));
+    await run(6000);
+    assert.equal(state.admission?.after, startedAt + 3000);
+    assert.equal(Value.Check(codexFeedbackSchema, state), true);
+    assert.equal(Value.Check(openclawFeedbackSchema, state), true);
     assert.equal(state.events.length, 1);
-    assert.equal(state.events[0]!.id, id);
-    assert.equal(state.events[0]!.source, source);
-    assert.equal(state.events[0]!.policyHeld, undefined);
+    // A new resource in the same issue workflow uses the same enablement cutoff.
+    await run(7000, 'linked-pr');
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['fresh', 'fresh-pr'],
+    );
     policy.issueAssignment!.feedback = false;
-    await discoverCodexFeedback(input);
-    assert.equal(state.events[0]!.phase, 'queued');
+    comments.push(at('second-disabled-period', 8000));
+    await run(9000);
     assert.equal(state.events[0]!.policyHeld, 'feedback-not-approved');
     policy.issueAssignment!.feedback = true;
-    state.events[0]!.phase = 'published';
-    state.events[0]!.receipt = { nodeId: 'reply', databaseId: 99 };
-    await discoverCodexFeedback(input);
-    assert.equal(state.events.length, 1);
-    assert.equal(state.events[0]!.phase, 'published');
+    await run(10000);
+    assert.equal(state.admission?.after, startedAt + 10000);
+    assert.equal(state.events[0]!.id, admitted);
+    assert.equal(state.events[0]!.policyHeld, undefined);
+    assert.equal(state.events.length, 2);
+    comments[0] = {
+      ...comments[0]!,
+      body: '@receiver a new revision',
+      updatedAt: new Date(startedAt + 11000).toISOString(),
+    };
+    await run(12000);
+    assert.equal(state.events.at(-1)?.sourceId, 'disabled');
+    state.events.at(-1)!.phase = 'published';
+    state.events.at(-1)!.receipt = { nodeId: 'reply', databaseId: 99 };
+    await run(13000);
+    assert.equal(state.events.length, 3);
   });
 
   it('should baseline once, queue exact edits once and suppress confirmed own replies', async () => {
@@ -395,6 +435,49 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(state.events.length, 1);
     assert.equal(state.events[0]!.sourceId, review.nodeId);
   });
+  it('should baseline disabled review edits and admit a subsequent review edit in the enabled window', async () => {
+    const startedAt = Date.parse('2026-10-12T00:00:00Z');
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = true;
+    const state: CodexFeedback = { startedAt, baseline: {}, events: [] };
+    const review = reviewFixture({ author: account, body: '@receiver old question' });
+    const reviews = reviewClientFixture(review, []);
+    let now = startedAt + 1000;
+    const run = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'PR',
+        itemType: 'pull-request',
+        now,
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments: [], truncated: false }),
+          getIssueComment: async () => comment('unused'),
+          reviews,
+        },
+        discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+      });
+    await run();
+    policy.issueAssignment!.feedback = false;
+    review.body = '@receiver changed while disabled';
+    now += 1000;
+    await run();
+    assert.equal(state.events.length, 0);
+    policy.issueAssignment!.feedback = true;
+    now += 1000;
+    await run();
+    assert.equal(state.events.length, 0);
+    review.body = '@receiver changed after enabling';
+    now += 1000;
+    await run();
+    assert.equal(state.events.length, 1);
+    assert.equal(state.events[0]!.sourceId, review.nodeId);
+  });
+
   it('should restart a shifted page boundary without treating unseen comments as deleted', async () => {
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = true;

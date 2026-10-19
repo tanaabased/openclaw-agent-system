@@ -22,6 +22,20 @@ export function feedbackIdentities(
   }
 }
 
+/** current workflow enablement and configured authors control new feedback admission. */
+export function workflowFeedbackEnabled(
+  policy: GitHubNotificationPolicy | undefined,
+  workflow: 'issue-assignment' | 'review-request',
+) {
+  const selected =
+    workflow === 'issue-assignment' ? policy?.issueAssignment : policy?.reviewRequest;
+  return Boolean(
+    selected &&
+    selected.enabled !== false &&
+    feedbackIdentities(selected.allowed, selected.feedback).length,
+  );
+}
+
 /** the admitted owner selects the scope, including an issue's verified delivery pr. */
 export function allowsWorkflowFeedback(
   policy: GitHubNotificationPolicy,

@@ -4,7 +4,7 @@ import type DiscoveryBudget from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import type { FeedbackSourceState, FeedbackSourceEvent } from './feedback-state.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { feedbackIdentities, workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import {
   admitGitHubComment,
   githubCommentRevision,
@@ -56,18 +56,19 @@ export function admitFeedback(
     : admitGitHubComment({ ...input, comment: source });
 }
 
-/** inspect source eligibility separately from the current author approval policy. */
-export function inspectFeedbackSource(account: GitHubIdentity, source: GitHubCanonicalFeedback) {
-  const input = {
-    account,
-    allowSelf: true,
-    configuration: {
-      approvedFeedbackAuthors: source.author ? [source.author] : [],
-    },
-  };
-  return isReviewFeedback(source)
-    ? admitReviewFeedback({ ...input, comment: source })
-    : admitGitHubComment({ ...input, comment: source });
+/** persist observed enablement independently of provider pages and effect receipts. */
+export function observeFeedbackPolicy(
+  state: FeedbackSourceState,
+  policy: GitHubNotificationPolicy | undefined,
+  now: number,
+) {
+  const accepting = workflowFeedbackEnabled(policy, 'issue-assignment');
+  if (accepting && state.admission?.enabled === false) {
+    state.admission = { enabled: true, after: now };
+    // fresh reads baseline the new window instead of resuming disabled-period pages.
+    delete state.discovery;
+  } else state.admission = { ...state.admission, enabled: accepting };
+  return accepting;
 }
 
 /** commit a complete provider read atomically; incomplete pages never advance the baseline. */
@@ -85,6 +86,7 @@ export async function discoverFeedback(input: {
   discovery?: { budget: DiscoveryBudget; save(): Promise<void> };
 }) {
   const { state, owner, name, number } = input;
+  const accepting = observeFeedbackPolicy(state, input.policy, input.now);
   const discovery = input.discovery
     ? await feedbackDiscovery({ ...input, ...input.discovery })
     : undefined;
@@ -103,7 +105,7 @@ export async function discoverFeedback(input: {
     if (event.phase === 'published' || event.receipt) continue;
     const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
     event.policyHeld =
-      admitFeedback(input.policy, client.identity, source).disposition === 'approved'
+      accepting && admitFeedback(input.policy, client.identity, source).disposition === 'approved'
         ? undefined
         : 'feedback-not-approved';
   }
@@ -200,7 +202,15 @@ export async function discoverFeedback(input: {
       state.events.some((event) => event.receipt?.nodeId === source.nodeId)
     )
       continue;
-    if (inspectFeedbackSource(client.identity, source).disposition !== 'approved') continue;
+    if (!accepting) continue;
+    const after = state.admission?.after;
+    if (after !== undefined) {
+      const updatedAt = Date.parse(source.updatedAt);
+      const observedReviewEdit =
+        changedReviewBodies.has(source.nodeId) && (state.watermarks?.[input.nodeId] ?? -1) >= after;
+      if (!observedReviewEdit && (!Number.isFinite(updatedAt) || updatedAt <= after)) continue;
+    }
+    if (admitFeedback(input.policy, client.identity, source).disposition !== 'approved') continue;
     const id = automationHash([input.nodeId, source.nodeId, revision]);
     if (state.events.some((event) => event.id === id) || pending.some((event) => event.id === id))
       continue;
@@ -217,9 +227,6 @@ export async function discoverFeedback(input: {
           ? Math.max(0, Math.min(input.now, Date.parse(source.updatedAt)))
           : input.now,
       policyDigest,
-      ...(admitFeedback(input.policy, client.identity, source).disposition !== 'approved'
-        ? { policyHeld: 'feedback-not-approved' }
-        : {}),
       phase: 'queued',
     });
   }

@@ -1,3 +1,4 @@
+import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
@@ -783,7 +784,17 @@ export async function runCodexDispatch(
             sourceThreadId: activation.sourceThreadId,
             phase: 'routing',
             createdAt: now,
-            feedback: { startedAt: now, baseline: {}, events: [] },
+            feedback: {
+              startedAt: now,
+              admission: {
+                enabled: workflowFeedbackEnabled(
+                  current.manifest.github?.notifications,
+                  'issue-assignment',
+                ),
+              },
+              baseline: {},
+              events: [],
+            },
             manifestDigest: current.digest,
           };
           state.records.push(record);

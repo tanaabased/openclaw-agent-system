@@ -22,10 +22,13 @@ Install. Plan holds future implementation; Work permits an actionable plan to
 continue; Auto additionally requires proceed. Existing Plan issues can become
 eligible when the operator changes the mode to Work.
 
-Discovery retains bounded observations independently of reply eligibility. Disabled
-feedback or an unapproved author produces a reversible policy hold; changing the
-setting reevaluates pending observations without resetting the queue. Existing
-publication receipts suppress duplicates, and historical baselines are preserved.
+Discovery retains bounded observations independently of reply eligibility.
+Feedback observed while disabled stays in GitHub history and is not queued for
+later dispatch. When the runtime observes feedback reenabled, it saves an admission
+cutoff for the issue and its PR; only subsequent approved comments or revisions
+become new feedback. The cutoff records runtime observation, not the exact file-edit
+time. Work already admitted before a pause remains recoverable, and publication
+receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
 
 Install reconciles changes to installed scheduling machinery. Policy-only edits do
 not change the orchestration definition. Native execution facts, explicit task

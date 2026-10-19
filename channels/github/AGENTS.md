@@ -16,9 +16,12 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   comment activity within configured repository/issue scope even when its author,
   feedback setting, or mode does not currently permit dispatch. Retain observations
   independently of the queue of eligible effects.
-- Reevaluate observed, unprocessed activity after policy changes without rebuilding
-  the queue, resetting discovery, replaying completed effects, or requiring Install.
-  Keep historical baselines so enabling a workflow does not publish old history.
+- Reevaluate already admitted, unprocessed work after policy changes without
+  rebuilding its queue, replaying completed effects, or requiring Install.
+- Feedback observed while disabled remains history and never becomes an automatic
+  backlog. When the runtime observes reenabling, save a cutoff shared by the issue
+  and its PR; admit only subsequent approved comments or revisions. Preserve work
+  admitted before the pause. Do not send a retrospective assessment automatically.
 - Use reversible policy holds for disabled effects and ineligible actors. Turning
   the setting back on resumes eligible pending work automatically. A hold is not
   cancellation, lost identity, native denial, or a request for renewed consent.
