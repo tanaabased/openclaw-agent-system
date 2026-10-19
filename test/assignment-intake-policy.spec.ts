@@ -5,11 +5,14 @@ import {
   notificationAuthorityDigest,
   matchesNotificationAuthority,
 } from '../agent/notification-authority.ts';
-import assignmentIntakePolicy, { matchesIntakePolicy } from '../agent/assignment-intake-policy.ts';
+import assignmentIntakePolicy, {
+  matchesIntakePolicy,
+  originalIntakePolicyDigest,
+} from '../agent/assignment-intake-policy.ts';
 import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { intakeFixture } from './github-intake-fixture.ts';
+import { intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 function fixture(): AgentManifest {
   return {
@@ -31,6 +34,72 @@ function fixture(): AgentManifest {
 }
 
 describe('assignment intake authority', () => {
+  it('should reproduce the original ordered format without granting intake activation', () => {
+    for (const host of [undefined, 'github.com'] as const) {
+      const manifest = fixture();
+      manifest.github!.host = host;
+      const original = originalIntakeDigest(manifest);
+      assert.equal(originalIntakePolicyDigest(manifest), original);
+      const current = assignmentIntakePolicy(manifest, 'openclaw')!;
+      assert.notEqual(original, current.digest);
+      assert.notEqual(original, current.legacyDigest);
+      assert.equal(matchesIntakePolicy(original, current), false);
+    }
+  });
+  const originalChanges: Record<string, (value: AgentManifest) => void> = {
+    identity: (value) => {
+      value.github!.username = 'foreign';
+    },
+    host: (value) => {
+      value.github!.host = undefined;
+    },
+    runtimes: (value) => {
+      value.github!.notifications!.runtimes = ['openclaw'];
+    },
+    order: (value) => {
+      value.github!.notifications!.runtimes.reverse();
+    },
+    cadence: (value) => {
+      value.github!.notifications!.intervalMinutes++;
+    },
+    capacity: (value) => {
+      value.github!.notifications!.maxConcurrentItems++;
+    },
+    owner: (value) => {
+      value.github!.notifications!.allowedRepositoryOwners[0]!.nodeId = 'foreign';
+    },
+    actor: (value) => {
+      value.github!.notifications!.issueAssignment!.allowed[0]!.nodeId = 'foreign';
+    },
+    'operator-owner': (value) => {
+      value.github!.notifications!.issueAssignment!.allowed[0]!.operatorOwner = true;
+    },
+    mode: (value) => {
+      value.github!.notifications!.issueAssignment!.mode = 'work';
+    },
+    assessment: (value) => {
+      value.github!.notifications!.issueAssignment!.assessment = { skill: 'other' };
+    },
+    implementation: (value) => {
+      value.github!.notifications!.issueAssignment!.implementation = { guidance: 'different' };
+    },
+    feedback: (value) => {
+      value.github!.notifications!.issueAssignment!.feedback = true;
+    },
+    recipients: (value) => {
+      value.github!.notifications!.issueAssignment!.pullRequest = {
+        recipients: [{ source: 'assignment-actor', roles: ['assignee'] }],
+      };
+    },
+  };
+  for (const [name, change] of Object.entries(originalChanges)) {
+    it(`should reject an original receipt after changed ${name}`, () => {
+      const manifest = fixture();
+      const before = originalIntakeDigest(manifest);
+      change(manifest);
+      assert.notEqual(originalIntakePolicyDigest(manifest), before);
+    });
+  }
   it('should recognize only unchanged legacy intake authority', () => {
     const manifest = fixture();
     manifest.github!.notifications!.runtimes = ['openclaw', 'codex'];

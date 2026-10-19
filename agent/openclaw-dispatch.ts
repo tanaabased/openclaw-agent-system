@@ -1,4 +1,4 @@
-import { matchesIntakePolicy } from './assignment-intake-policy.ts';
+import { matchesIntakePolicy, originalIntakePolicyDigest } from './assignment-intake-policy.ts';
 import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import workflowStatus from './workflow-status.ts';
@@ -209,6 +209,14 @@ export default class OpenClawDispatch {
         policy: current.selected.legacyDigest,
         models: manifest.models,
       }),
+      // the original format cannot prove a non-default cleanup grant.
+      originalManifestDigest:
+        (current.selected.policy.cleanup?.enabled ?? true)
+          ? automationHash({
+              policy: originalIntakePolicyDigest(manifest),
+              models: manifest.models,
+            })
+          : undefined,
       journal: new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope),
     };
   }
@@ -233,7 +241,8 @@ export default class OpenClawDispatch {
         current.manifestDigest ||
       (!feedback &&
         current.manifestDigest !== record.manifestDigest &&
-        current.legacyManifestDigest !== record.manifestDigest) ||
+        current.legacyManifestDigest !== record.manifestDigest &&
+        current.originalManifestDigest !== record.manifestDigest) ||
       record.retired ||
       record.retirement ||
       record.reset ||

@@ -24,7 +24,7 @@ import {
 } from '../agent/codex-intake.ts';
 import { codexIntakeJobs, codexIntakePolicy } from '../agent/codex-intake-policy.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
-import { baseline, intakeFixture } from './github-intake-fixture.ts';
+import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 const models = {
   default: { model: 'openai/gpt-6-astra', effort: 'high' },
@@ -96,6 +96,36 @@ describe('agent/codex-intake', () => {
     assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
     const { store } = await selectCodexIntake(pluginData, deps);
     assert.equal((await store.read())!.records.length, 1);
+  });
+  it('should reject original retained-work digests as codex intake activation', async () => {
+    const { client } = intakeFixture();
+    let connects = 0;
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => baseline,
+      connect: async () => {
+        connects++;
+        return client;
+      },
+    };
+    await runCodexIntake(pluginData, true, deps);
+    const selected = await selectCodexIntake(pluginData, deps);
+    const original = originalIntakeDigest(selected.manifest);
+    await selected.store.exclusive(async (state, save) => {
+      state!.policyDigest = original;
+      await save(state!);
+    });
+    assert.equal(
+      (await inspectCodexIntake(pluginData, deps)).code,
+      'intake-policy-reconciliation-required',
+    );
+    const before = connects;
+    const rejected = await runCodexIntake(pluginData, false, deps);
+    assert.equal(rejected.status, 'blocked');
+    assert.ok('code' in rejected && rejected.code === 'intake-policy-reconciliation-required');
+    assert.equal((await selected.store.read())!.policyDigest, original);
+    assert.equal(connects, before);
   });
   it('should reactivate despite obsolete full notification queues', async () => {
     const { client } = intakeFixture();
@@ -476,6 +506,15 @@ describe('agent/codex-intake', () => {
     if (legacy) {
       const selected = await selectCodexIntake(pluginData, deps);
       assert.notEqual(selected.policy!.digest, selected.policy!.legacyDigest);
+      const originalPrompt = prepared.request.prompt.replace(
+        selected.policy!.digest,
+        originalIntakeDigest(selected.manifest),
+      );
+      await saveNative({ ...prepared.request, prompt: originalPrompt });
+      await assert.rejects(
+        inspectCodexDispatchActivation(pluginData, deps),
+        /dispatch-activation-required/,
+      );
       const oldPrompt = prepared.request.prompt.replace(
         selected.policy!.digest,
         selected.policy!.legacyDigest,
