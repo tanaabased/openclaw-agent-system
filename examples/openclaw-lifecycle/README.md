@@ -130,7 +130,7 @@ openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" 
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 
 # should continue an unchanged original receipt in its existing issue conversation after restart
-cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
 openclaw-gateway stop --timeout 340
 node --import tsx --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
@@ -160,7 +160,7 @@ conversation=$(jq -er .threadId "$TMPDIR/notification-historical-before.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-historical-before.json")
 receipt=$(jq -er .id "$TMPDIR/notification-historical-before.json")
 leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
-params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:("Refresh retained assessment for managed issue " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-historical-context"}')"
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"lifecycle-tanaabot",sessionId:$session,message:("Refresh retained assessment for managed issue " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-historical-context"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-historical-context"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-historical-context 300000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one original owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"

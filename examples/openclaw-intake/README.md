@@ -100,7 +100,6 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
 for slot in 1 2 3; do
   number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
   openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed"'
-
 done
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
