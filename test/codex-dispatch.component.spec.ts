@@ -1212,12 +1212,18 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should retire a closed issue with a pending launch while preserving its evidence', async () => {
+  it('should queue manual retirement without losing evidence or restarting its grace period', async () => {
     const first = await prepare();
     const operator = {
       threadId: 'operator',
-      activation: async (_data: unknown, _options: unknown, paused?: boolean) => {
-        assert.equal(paused, true);
+      activation: async (
+        _data: unknown,
+        _options: unknown,
+        paused?: boolean,
+        retained?: boolean,
+      ) => {
+        assert.equal(paused, false);
+        assert.equal(retained, true);
         return { sourceThreadId: 'intake-thread' };
       },
     };
@@ -1235,28 +1241,40 @@ describe('agent/codex-dispatch', () => {
       request('retire', { id: first.id, digest: 'stale' }, operator),
       /dispatch-recovery-stale/,
     );
-    assert.equal(
-      (await request('retire', { id: first.id, digest: preview.digest }, operator)).status,
-      'retired',
-    );
+    const applied = await request('retire', { id: first.id, digest: preview.digest }, operator);
+    assert.equal(applied.status, 'retirement-pending');
     const after = (await request('inspect')).records as Record<string, unknown>[];
+    assert.equal(after[0]!.retired, undefined);
     assert.deepEqual(after[0], {
       ...before[0],
-      retired: { at: now, by: 'operator' },
-      workflowStatus: 'obsolete',
+      retirement: {
+        reason: 'issue-closed',
+        at: now,
+        intakeId: before[0]!.intakeId,
+        checkedAt: now,
+        reactivationAfter: now,
+        eligibleAt: now + 60 * 60_000,
+      },
+      workflowStatus: 'retirement-pending',
     });
-    assert.deepEqual(await next(), { status: 'idle', changed: false });
+    now += 60_001;
+    const repeated = await request('retire', { id: first.id }, operator);
+    await request('retire', { id: first.id, digest: repeated.digest }, operator);
+    const retirement = ((await request('inspect')).records as Record<string, unknown>[])[0]!
+      .retirement as { eligibleAt: number };
+    assert.equal(retirement.eligibleAt, (applied.retirement as { eligibleAt: number }).eligibleAt);
+    await next();
+    const reconciled = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    assert.equal(reconciled.lifecycleCheckedAt, now);
+    assert.equal(reconciled.retired, undefined);
+    assert.equal(
+      (reconciled.retirement as { code: string }).code,
+      'retirement-native-creation-unresolved',
+    );
     await assert.rejects(
       request('context', { id: first.id }, { threadId: 'issue-thread' }),
       /dispatch-assessment-retired/,
     );
-    fixture.item.state = 'open';
-    assert.deepEqual(await next(), { status: 'idle', changed: false });
-    deps.native!.unsubmittedCreation = async () => ({ turnId: 'retired-preparation' });
-    await request('reconcile', { id: first.id });
-    await reassign();
-    const second = await prepare();
-    assert.notEqual(second.id, first.id);
   });
 
   it('should allow retirement from a handed-off operator chat but not an active issue chat', async () => {
@@ -1290,7 +1308,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(preview.status, 'retire-available');
     assert.equal(
       (await request('retire', { id: first.id, digest: preview.digest }, operator)).status,
-      'retired',
+      'retirement-pending',
     );
   });
 
@@ -1943,9 +1961,15 @@ describe('agent/codex-dispatch', () => {
         const first = await prepare();
         await request('reconcile', { id: first.id, receipt: { [key]: 'old-native-receipt' } });
         fixture.item.state = 'closed';
-        const operator = { threadId: 'operator' };
-        const preview = await request('retire', { id: first.id }, operator);
-        await request('retire', { id: first.id, digest: preview.digest }, operator);
+        const selected = await selectCodexIntake(pluginData, deps);
+        const store = new CodexDispatchStore(
+          selected.store.location.root,
+          selected.store.location.scope,
+        );
+        await store.exclusive(async (state, save) => {
+          state.records[0]!.retired = { at: now, by: 'intake-thread' };
+          await save();
+        });
         created();
         native!.id = 'old-native-receipt';
         native!.status = 'idle';

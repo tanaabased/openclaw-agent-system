@@ -93,6 +93,14 @@ if output=$(printf '%s\n' '{"action":"reconcile","id":"aaaaaaaaaaaaaaaaaaaaaaaaa
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .operation == "dispatch:reconcile"'
 test ! -d "$CODEX_HOME/automations"
 
+# should require a reconciled intake before operator retirement can queue cleanup
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(printf '%s\n' '{"action":"retire","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .operation == "dispatch:retire"'
+test ! -d "$CODEX_HOME/automations"
+
 # should keep explicit denial recovery behind reconciled intake activation
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

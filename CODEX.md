@@ -399,8 +399,11 @@ intake check. See the [assignment lifecycle](channels/github/ADVANCED.md#assignm
 for grace periods, reactivation, and cleanup protections. Intake prepares eligible
 Codex chats for native archival; the desktop owns worktree snapshots and reclamation.
 Retirement completes after archival and checkout removal are observed. The explicit
-`retire` action remains available for operator recovery; its preview and digest
-preserve launch and assessment evidence.
+`retire` action previews a closed issue and, after its digest is applied, queues
+the same retirement lifecycle while preserving launch and assessment evidence and
+any existing grace deadline. It accepts active or paused intake; cleanup waits for
+an eligible active intake run. It does not mark resources reclaimed before native
+verification.
 
 After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
 with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.

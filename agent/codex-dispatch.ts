@@ -524,8 +524,8 @@ export async function runCodexDispatch(
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-    operatorRecovery || operatorRetire,
-    retainedWork,
+    operatorRecovery,
+    retainedWork || operatorRetire,
   );
   if (operatorAction && caller === activation.sourceThreadId)
     throw new Error('dispatch-operator-caller-required');
@@ -558,8 +558,8 @@ export async function runCodexDispatch(
         const allowed = await (deps.activation ?? inspectCodexDispatchActivation)(
           pluginData,
           { codexHome: selected.codexHome, inspectBinding: deps.inspectBinding },
-          operatorRecovery || operatorRetire,
-          retainedWork,
+          operatorRecovery,
+          retainedWork || operatorRetire,
         );
         if (
           selected.digest !== current.digest ||
@@ -947,7 +947,8 @@ export async function runCodexDispatch(
           nextAction: 'next',
         };
       }
-      if (record.retired || record.retirement) throw new Error('dispatch-assessment-retired');
+      if (record.retired || (record.retirement && !operatorRetire))
+        throw new Error('dispatch-assessment-retired');
       if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
       if (action === 'retire' || action === 'reset' || action === 'retry-denied')
         return recoverDispatch(input, {
@@ -960,6 +961,7 @@ export async function runCodexDispatch(
           issueUrl: issueUrl(intake),
           caller,
           now,
+          graceMinutes: current.policy?.policy.cleanup?.graceMinutes ?? 60,
           save,
           fresh,
           revalidate: () =>
