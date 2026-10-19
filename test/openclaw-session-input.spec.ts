@@ -62,9 +62,11 @@ describe('agent/openclaw-session-input', () => {
       receipts?: unknown[];
       retained?: Array<{ runId: string; inputEventId: string }>;
       sessionId?: string;
+      senderIsOwner?: boolean;
     } = {},
   ) {
     return operatorInputEvent({
+      senderIsOwner: options.senderIsOwner ?? true,
       sessionKey: 'issue-chat',
       sessionId: 'original-session',
       runId: turn.runId,
@@ -107,6 +109,14 @@ describe('agent/openclaw-session-input', () => {
       }),
       await verify(),
     );
+  });
+  it('should use trusted owner authority when native history omits owner metadata', async () => {
+    const native = { ...owner, __openclaw: { ...entry.__openclaw, runId: turn.runId } };
+    assert.deepEqual(await verify({ recent: [native], exact: [native] }), {
+      runId: turn.runId,
+      inputEventId: 'input-event',
+    });
+    await assert.rejects(verify({ senderIsOwner: false }), /dispatch-operator-input-unverified/);
   });
   it('should reject missing conflicting cancelled and replaced owner evidence', async () => {
     for (const options of [

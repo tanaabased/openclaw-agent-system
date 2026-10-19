@@ -39,6 +39,7 @@ export async function verifyOpenClawOperator(input: {
   await describeIssueSession(input.request, record, input.config);
   return operatorInputEvent({
     request: input.request,
+    senderIsOwner: input.operator,
     sessionKey: caller.sessionKey,
     sessionId: caller.sessionId,
     runId: caller.runId,

@@ -2,9 +2,10 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
-/** retained anchors locate evidence; only native owner metadata establishes custody. */
+/** native tool context establishes owner authority; history establishes exact input custody. */
 export async function operatorInputEvent(input: {
   request: DispatchRequest;
+  senderIsOwner: boolean;
   sessionKey: string;
   sessionId: string;
   runId: string;
@@ -14,6 +15,7 @@ export async function operatorInputEvent(input: {
   const fail = (): never => {
     throw new Error('dispatch-operator-input-unverified');
   };
+  if (input.senderIsOwner !== true) fail();
   const history = sessionObject(
     await request('chat.history', {
       sessionKey,
@@ -52,7 +54,7 @@ export async function operatorInputEvent(input: {
   if (candidates.length > 1) fail();
   if (candidates.length) {
     const id = issueInputEventId(candidates[0]!, runId);
-    if (!id || sessionObject(candidates[0]!.__openclaw).senderIsOwner !== true) fail();
+    if (!id || sessionObject(candidates[0]!.__openclaw).senderIsOwner === false) fail();
     anchors.push(id!);
   }
   if (!anchors.length || anchors.some((id) => !id || id !== anchors[0])) fail();
@@ -82,7 +84,7 @@ export async function operatorInputEvent(input: {
   const entry = matches[0]!;
   if (
     issueInputEventId(entry, runId) !== inputEventId ||
-    sessionObject(entry.__openclaw).senderIsOwner !== true
+    sessionObject(entry.__openclaw).senderIsOwner === false
   )
     fail();
   return { runId, inputEventId };

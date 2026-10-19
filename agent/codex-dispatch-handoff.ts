@@ -24,7 +24,7 @@ if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
   input = {...input, id: retained.id, digest: retained.digest};
 }
 const argv = [runtime.nodeExecutable, runtime.entrypoint, runtimeRoute];
-if (runtimeRoute === 'intake') argv.push(input.action);
+argv.push(input.action);
 argv.push('--plugin-data', runtime.pluginData);
 const request = {...input};
 if (runtimeRoute === 'intake') delete request.action;

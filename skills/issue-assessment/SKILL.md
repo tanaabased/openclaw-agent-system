@@ -66,7 +66,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
    previousResultDigest; preserve currentTurnId and previousResultTurnId. If they
    match and a result exists, reproduce previousPresentation after an uncertain
    submission instead of claiming it failed or submitting a duplicate.
-   In Codex, call dispatchRuntime using its exact argvPrefix followed by --plugin-data and
+   In Codex, call dispatchRuntime using its exact argvPrefix followed by the action, --plugin-data and
    its pluginData. Send {"action":"context","id":<receipt>} through standard input
    using native stdin support or a quoted heredoc, never a printf pipeline or JSON
    command arguments. If native approval is required, request only the full fixed

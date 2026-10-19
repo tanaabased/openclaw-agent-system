@@ -275,6 +275,20 @@ intake reports stay limited to admission and capacity.
 Automatic PR publication requires an explicit public description of the change,
 verified checks, and limitations. Private reports are not copied into GitHub.
 
+Work and Auto activation already authorize the workflow's branch push, PR creation
+and updates, and its originating-issue announcement. Configured assessment summaries
+and feedback replies use their own activated authority. These effects do not require
+a second conversational permission request. Native execution review and provider
+permissions still apply; syncing the plugin does not grant host permissions or
+override an earlier denial.
+
+Workflow commands expose their action before `--plugin-data`: for example,
+`delivery prepare`, `delivery publish`, `dispatch summary compose`, or
+`continuation delivery publish`. Keep request data on stdin; an action repeated
+there must match argv. Preparation validates and returns the exact draft and digest
+without publication. Only the explicit publication operation may perform its
+authorized external write. Saved action-on-stdin commands remain compatible.
+
 Native continuation intent is retained before sending. An uncertain send is
 reconciled, never repeated blindly. A recorded implementation can resume delivery
 without reimplementing or creating another PR. A stopped implementation remains

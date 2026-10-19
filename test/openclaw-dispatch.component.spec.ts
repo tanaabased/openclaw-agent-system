@@ -2470,7 +2470,11 @@ describe('agent/openclaw issue dispatch', () => {
       role: 'user',
       content: 'Implement this plan and open a PR.',
       idempotencyKey: 'operator:user',
-      __openclaw: { id: 'operator-event', idempotencyKey: 'operator:user', senderIsOwner: owner },
+      __openclaw: {
+        id: 'operator-event',
+        idempotencyKey: 'operator:user',
+        ...(owner ? {} : { senderIsOwner: false }),
+      },
     });
     return { id: input.id, who: assessor(input.id, 'operator') };
   }

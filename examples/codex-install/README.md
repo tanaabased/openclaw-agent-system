@@ -55,6 +55,16 @@ node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_W
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 
+# should expose the workflow operation and reject hidden publication substitution
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(node "$runtime" delivery prepare --plugin-data "$root/plugin-data" 2>&1 <<'JSON'
+{"action":"publish","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+JSON
+); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.message == "workflow-command-action-mismatch"'
+
 # should keep standalone setup diagnostics quiet without runner debug
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

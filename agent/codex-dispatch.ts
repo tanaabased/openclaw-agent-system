@@ -361,7 +361,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
     'Creation attempt: ' +
       ((record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1) +
       '.',
-    'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by --plugin-data and dispatchRuntime.pluginData. Send ' +
+    'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by context --plugin-data and dispatchRuntime.pluginData. Send ' +
       JSON.stringify({ action: 'context', id: record.id }) +
       ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and result submission.',
     codexRuntimeInstructions,
