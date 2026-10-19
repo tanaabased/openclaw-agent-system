@@ -3009,6 +3009,109 @@ describe('agent/openclaw issue dispatch', () => {
     return { id, who, journal, present, effects };
   }
 
+  for (const outcome of ['plan-ready', 'clarification-needed'] as const)
+    it(`should preserve feedback-created pr state after an original ${outcome} assessment across restart`, async () => {
+      const { journal } = await publishedFollowup();
+      const before = await record();
+      const original: AssessmentResult =
+        outcome === 'plan-ready'
+          ? plan
+          : {
+              version: 1,
+              outcome,
+              summary: 'Need the expected return value.',
+              assessment: 'The expected value is not specified.',
+              questions: ['Which value should be returned?'],
+              evidence: [],
+              progress: { completed: [], remaining: [] },
+            };
+      await journal.exclusive(async (state, save) => {
+        const current = state.records[0]!;
+        current.result = original;
+        current.stageReceipt!.resultDigest = automationHash(original);
+        delete current.handoff;
+        current.progression = { stage: 'implementation', via: 'work', enteredAt: 2 };
+        current.work = {
+          assessmentDigest: automationHash(original),
+          delivery: before.work!.delivery,
+        };
+        current.feedback = {
+          baseline: {},
+          events: [
+            {
+              id: 'e'.repeat(64),
+              sourceId: 'answer',
+              nodeId: fixture.item.nodeId,
+              number: 3,
+              itemType: 'issue',
+              source: '{}',
+              revision: 'f'.repeat(64),
+              createdAt: 2,
+              policyDigest: before.manifestDigest,
+              phase: 'running',
+              work: {
+                selection: current.assessment!,
+                decision: {
+                  mode: 'work',
+                  reasons: ['The answer resolves scope.'],
+                  plan: 'Return the agreed value.',
+                },
+                result: {
+                  outcome: 'done',
+                  summary: 'Fixed.',
+                  fullResult: 'Changed and tested the return value.',
+                },
+                head: before.work!.delivery!.pushedHead,
+              },
+              workDelivery: before.work!.delivery,
+            },
+          ],
+        };
+        await save();
+      });
+      service = new OpenClawDispatch(service.dependencies);
+      const restored = await record();
+      assert.deepEqual(restored.result, original);
+      assert.equal(restored.handoff, undefined);
+      assert.equal(restored.progression?.stage, 'implementation');
+      assert.deepEqual(restored.work!.delivery, before.work!.delivery);
+      assert.equal(restored.work!.result, undefined);
+      assert.equal(restored.feedback!.events[0]!.work!.result!.outcome, 'done');
+      assert.equal(restored.threadId, before.threadId);
+      assert.equal(restored.worktree, before.worktree);
+      assert.equal(creates().length, 1);
+      await assert.rejects(
+        journal.exclusive(async (state, save) => {
+          delete state.records[0]!.progression;
+          await save();
+        }),
+        /dispatch-state-invalid/,
+      );
+    });
+
+  it('should recover an older openclaw policy blocker without replacing work or pr receipts', async () => {
+    const { journal } = await publishedFollowup();
+    await journal.exclusive(async (state, save) => {
+      const current = state.records[0]!;
+      current.blocker = 'dispatch-policy-changed';
+      current.phase = 'blocked';
+      current.work!.implementation = { runId: 'implementation', inputEventId: 'answer' };
+      delete current.progression;
+      await save();
+    });
+    const before = await journal.file.read();
+    service = new OpenClawDispatch(service.dependencies);
+    const restored = await record();
+    assert.equal(restored.blocker, undefined);
+    assert.equal(restored.phase, 'complete');
+    assert.deepEqual(restored.progression, { stage: 'implementation', via: 'legacy' });
+    assert.deepEqual(restored.compatibilityRecovery?.codes, ['dispatch-policy-changed']);
+    assert.deepEqual(restored.work, JSON.parse(before!).records[0].work);
+    await journal.exclusive(async (_state, save) => save());
+    assert.deepEqual((await record()).work, restored.work);
+    assert.equal(creates().length, 1);
+  });
+
   it('should release the presentation lock during native reads and recover the same complete card', async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();

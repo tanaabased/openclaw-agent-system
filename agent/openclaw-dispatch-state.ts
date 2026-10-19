@@ -172,8 +172,8 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
                     !event.turn || validIssueTurn(event.turn, `${record.id}:feedback:${event.id}`),
                 ))) &&
             (!record.work ||
-              (record.handoff &&
-                record.result?.outcome === 'plan-ready' &&
+              ((record.progression?.stage === 'implementation' ||
+                (record.handoff && record.result?.outcome === 'plan-ready')) &&
                 record.work.assessmentDigest === record.stageReceipt?.resultDigest &&
                 (!record.work.turn ||
                   validIssueTurn(record.work.turn, `${record.id}:implementation`)) &&
