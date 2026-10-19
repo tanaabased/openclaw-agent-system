@@ -492,6 +492,8 @@ export default async function runCodexDelivery(
           delivery.pushedHead = head;
           await save();
           await deps.authorizeSchedule?.();
+          // only the exact pre-push observation may lag behind a verified fast-forward.
+          if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
           await provider.publish(publication);
           delete delivery.contentUpdate;
           delivery.reconciled = true;

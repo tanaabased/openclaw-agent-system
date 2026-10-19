@@ -1,3 +1,4 @@
+import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import workflowStatus from './workflow-status.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -138,6 +139,7 @@ export function openClawDispatchFailureCode(error: unknown): string {
     return `dispatch-tool-${error.code.replaceAll('_', '-')}`;
   }
   if (
+    error instanceof GitHubIssueDeliveryError ||
     error instanceof GitHubAccountClientError ||
     error instanceof GitHubWorkEventClientError ||
     error instanceof GitHubNotificationCommentPublisherError ||

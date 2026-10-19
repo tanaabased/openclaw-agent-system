@@ -263,6 +263,8 @@ export default async function openClawDelivery(input: {
       throw new Error('delivery-push-unverified');
     delivery.pushedHead = head;
     await save();
+    // only the exact pre-push observation may lag behind a verified fast-forward.
+    if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
     await provider.publish(publication);
     delete delivery.contentUpdate;
     delivery.reconciled = true;

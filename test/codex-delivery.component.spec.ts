@@ -768,7 +768,13 @@ describe('agent/codex-delivery', () => {
       { state: 'closed' },
     ]) {
       bindingOverride = mismatch;
-      await assert.rejects(publish(), /does not match/);
+      await assert.rejects(
+        publish(),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          String(error.code).startsWith('github-delivery-binding-'),
+      );
       assert.equal((await store.read()).records[0]!.delivery!.pullRequest, undefined);
       assert.equal(pr!.body, 'Authored body.');
     }
@@ -822,7 +828,13 @@ describe('agent/codex-delivery', () => {
       { state: 'closed' },
     ]) {
       bindingOverride = mismatch;
-      await assert.rejects(publish(), /does not match/);
+      await assert.rejects(
+        publish(),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          String(error.code).startsWith('github-delivery-binding-'),
+      );
       assert.equal(remote, firstHead);
       assert.equal(pr!.body, body);
     }
@@ -925,6 +937,42 @@ describe('agent/codex-delivery', () => {
       assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
       assert.equal(announcement.posts, 1);
     });
+  it('should wait for the verified followup head without repeating the push', async () => {
+    await publish();
+    const previous = head;
+    head = 'b'.repeat(40);
+    const connect = deps.connect!;
+    let lagged = false;
+    deps.connect = async (...args) => {
+      const connection = await connect(...args);
+      const execute = connection.account.execute;
+      return {
+        ...connection,
+        account: {
+          ...connection.account,
+          execute: async (...parameters) => {
+            const result = await execute(...parameters);
+            if (
+              !lagged &&
+              remote === head &&
+              parameters[0].some((value) => value.includes('headSha:'))
+            ) {
+              lagged = true;
+              return {
+                ...result,
+                stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: previous }),
+              };
+            }
+            return result;
+          },
+        },
+      };
+    };
+    assert.equal((await publish()).status, 'published');
+    assert.ok(lagged);
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
+  });
 });
 
 describe('agent/codex-delivery native attachment', () => {

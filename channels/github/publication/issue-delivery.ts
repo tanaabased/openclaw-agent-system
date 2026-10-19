@@ -25,6 +25,7 @@ export class GitHubIssueDeliveryError extends Error {
     readonly category: GitHubIssueDeliveryFailureCategory,
     message: string,
     readonly providerDiagnostic?: ProviderDiagnostic,
+    readonly code = `github-delivery-${category}`,
   ) {
     super(withProviderDiagnostic(message, providerDiagnostic));
   }
@@ -48,6 +49,7 @@ export interface IssueDeliveryInput {
   recipients?: GitHubPullRequestRecipient[];
   expectedPullRequest?: GitHubNotificationIssueDeliveryReceipt;
   headSha?: string;
+  previousHeadSha?: string;
   repositoryNodeId?: string;
   linkIssue?: boolean;
   contentUpdate?: { title?: string; body?: string };
@@ -294,34 +296,51 @@ export default class IssueDeliveryProvider {
     }
 
     if (input.headSha !== undefined) {
-      const observed = record(
-        await this.#github(
-          github,
-          [
-            'api',
-            `repos/${repository}/pulls/${pullRequest.number}`,
-            '--jq',
-            '{nodeId:.node_id,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,headSha:.head.sha,authorId:.user.node_id,baseRef:.base.ref,headRef:.head.ref,state,number}',
-          ],
-          input.signal,
-        ),
-        'pull request binding',
-      );
-      if (
-        observed.nodeId !== pullRequest.itemNodeId ||
-        observed.repositoryId !== input.repositoryNodeId ||
-        observed.headRepositoryId !== input.repositoryNodeId ||
-        observed.headSha !== input.headSha ||
-        observed.authorId !== github.identity.nodeId ||
-        observed.baseRef !== input.item.repositoryDefaultBranch ||
-        observed.headRef !== branch ||
-        observed.state !== 'open' ||
-        observed.number !== pullRequest.number
-      )
-        throw new GitHubIssueDeliveryError(
-          'identity-mismatch',
-          'The pull request does not match the verified repository, author and head.',
+      const delays = [250, 500, 1000];
+      for (let attempt = 0; ; attempt++) {
+        const observed = record(
+          await this.#github(
+            github,
+            [
+              'api',
+              `repos/${repository}/pulls/${pullRequest.number}`,
+              '--jq',
+              '{nodeId:.node_id,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,headSha:.head.sha,authorId:.user.node_id,baseRef:.base.ref,headRef:.head.ref,state,number}',
+            ],
+            input.signal,
+          ),
+          'pull request binding',
         );
+        const expected = {
+          nodeId: pullRequest.itemNodeId,
+          repositoryId: input.repositoryNodeId,
+          headRepositoryId: input.repositoryNodeId,
+          authorId: github.identity.nodeId,
+          baseRef: input.item.repositoryDefaultBranch,
+          headRef: branch,
+          state: 'open',
+          number: pullRequest.number,
+        };
+        for (const [field, value] of Object.entries(expected))
+          if (observed[field] !== value)
+            throw new GitHubIssueDeliveryError(
+              'identity-mismatch',
+              'The pull request binding changed.',
+              undefined,
+              `github-delivery-binding-${field.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}-changed`,
+            );
+        if (observed.headSha === input.headSha) break;
+        const pending =
+          Boolean(input.previousHeadSha) && observed.headSha === input.previousHeadSha;
+        if (!pending || attempt === delays.length)
+          throw new GitHubIssueDeliveryError(
+            'identity-mismatch',
+            'The pull request head does not match the verified push.',
+            undefined,
+            pending ? 'github-delivery-head-not-observed' : 'github-delivery-binding-head-changed',
+          );
+        await this.delay(delays[attempt]!, input.signal);
+      }
     }
     if (!normalize && pullRequest.baseRef !== input.item.repositoryDefaultBranch) {
       throw new Error('The task pull request targets a different base branch.');

@@ -515,4 +515,48 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 0);
     assert.equal(pushes, 0);
   });
+  it('should tolerate the previously verified head briefly lagging after a followup push', async () => {
+    let preview = await request('prepare', { title: 'Initial', body: 'Initial body.' });
+    assert.ok('digest' in preview);
+    await request('publish', { digest: preview.digest, title: 'Initial', body: 'Initial body.' });
+    head = 'b'.repeat(40);
+    const connect = input.connect;
+    let lagged = false;
+    input.connect = async () => {
+      const connection = await connect();
+      const execute = connection.account.execute;
+      return {
+        ...connection,
+        account: {
+          ...connection.account,
+          execute: async (...args) => {
+            const result = await execute(...args);
+            if (
+              !lagged &&
+              remote === head &&
+              args[0].some((value) => value.includes('headSha:.head.sha'))
+            ) {
+              lagged = true;
+              return {
+                ...result,
+                stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: 'a'.repeat(40) }),
+              };
+            }
+            return result;
+          },
+        },
+      };
+    };
+    preview = await request('prepare', { title: 'Updated', body: 'Updated body.' });
+    assert.ok('digest' in preview);
+    const recovered = await request('publish', {
+      digest: preview.digest,
+      title: 'Updated',
+      body: 'Updated body.',
+    });
+    assert.equal(recovered.status, 'published');
+    assert.equal(creates, 1);
+    assert.equal(pushes, 2);
+    assert.equal(patches, 1);
+  });
 });
