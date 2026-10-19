@@ -26,6 +26,7 @@ export interface AssignmentScanInput {
   agentId: string;
   policy: GitHubNotificationPolicy;
   policyDigest: string;
+  legacyPolicyDigest?: string;
   now: number;
   activate?: boolean;
   budget?: DiscoveryBudget;
@@ -64,7 +65,11 @@ export default async function scanAssignments(
       }
     };
     if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
-    if (!input.activate && previous?.policyDigest !== input.policyDigest)
+    if (
+      !input.activate &&
+      previous?.policyDigest !== input.policyDigest &&
+      previous?.policyDigest !== input.legacyPolicyDigest
+    )
       throw new IntakeError('intake-policy-reconciliation-required');
     if (!input.activate && previous?.blocker && previous.blocker.retryAfter > input.now) {
       const result = { status: 'blocked' as const, changed: false, code: previous.blocker.code };

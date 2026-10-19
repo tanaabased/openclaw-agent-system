@@ -1,3 +1,4 @@
+import { matchesIntakePolicy } from './assignment-intake-policy.ts';
 import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import workflowStatus from './workflow-status.ts';
@@ -191,7 +192,11 @@ export default class OpenClawDispatch {
   async scope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
     const admitted = await current.store.read();
-    if (!current.selected || !admitted || admitted.policyDigest !== current.selected.digest)
+    if (
+      !current.selected ||
+      !admitted ||
+      !matchesIntakePolicy(admitted.policyDigest, current.selected)
+    )
       throw new Error('dispatch-intake-activation-required');
     if (current.selected.policy.issueAssignment?.mode !== 'plan')
       throw new Error('dispatch-plan-mode-required');
@@ -200,6 +205,10 @@ export default class OpenClawDispatch {
       admitted,
       policy: current.selected,
       manifestDigest: automationHash({ policy: current.selected.digest, models: manifest.models }),
+      legacyManifestDigest: automationHash({
+        policy: current.selected.legacyDigest,
+        models: manifest.models,
+      }),
       journal: new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope),
     };
   }
@@ -222,7 +231,9 @@ export default class OpenClawDispatch {
       fresh.scope.workspaceDir !== current.workspace ||
       (await this.scope(fresh.manifest, fresh.scope.workspaceDir)).manifestDigest !==
         current.manifestDigest ||
-      (!feedback && current.manifestDigest !== record.manifestDigest) ||
+      (!feedback &&
+        current.manifestDigest !== record.manifestDigest &&
+        current.legacyManifestDigest !== record.manifestDigest) ||
       record.retired ||
       record.retirement ||
       record.reset ||

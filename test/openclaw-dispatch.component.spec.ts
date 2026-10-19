@@ -351,6 +351,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(result.status, 'reported');
   }
 
+  it('should retain legacy dispatch custody without accepting changed permissions', async () => {
+    manifest.github!.notifications!.runtimes = ['openclaw', 'codex'];
+    await service.dependencies.intake.run(manifest, root, 'activate');
+    const routed = await next();
+    await prepare(routed);
+    await assess(routed.id);
+    const current = await service.scope(manifest, root);
+    assert.notEqual(current.manifestDigest, current.legacyManifestDigest);
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.manifestDigest = current.legacyManifestDigest;
+      await save();
+    });
+    assert.equal((await context(routed.id)).status, 'verified');
+    const workflow = manifest.github!.notifications!.issueAssignment!;
+    workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
+    await assert.rejects(
+      context(routed.id),
+      /dispatch-intake-activation-required|dispatch-policy-changed/,
+    );
+  });
   it('should retry a transient worktree failure on a later occurrence without creating twice', async () => {
     const input = await next();
     const original = service.dependencies.worktrees.prepareGitHub;

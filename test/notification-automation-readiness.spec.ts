@@ -14,14 +14,14 @@ import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
-function fixture() {
+function fixture(legacyPolicy = false) {
   const manifest: AgentManifest = {
     schemaVersion: 1,
     agent: { id: 'receiver' },
     models: { default: { model: 'openai/gpt-6-luna', effort: 'medium' } },
     github: {
       username: 'receiver',
-      notifications: { ...intakeFixture().policy, runtimes: ['openclaw'] },
+      notifications: { ...intakeFixture().policy, runtimes: ['openclaw', 'codex'] },
     },
   };
   const context = {
@@ -37,7 +37,7 @@ function fixture() {
     agentId: 'receiver',
     workspaceDir: '/workspace',
   });
-  const job = openclawIntakeJobs(manifest)[0]!;
+  const job = openclawIntakeJobs(manifest, legacyPolicy)[0]!;
   const record: AutomationRecord = {
     id: job.id,
     marker: store.marker(job.id),
@@ -86,6 +86,16 @@ function fixture() {
 }
 
 describe('notification automation readiness', () => {
+  it('should retain an unchanged legacy schedule but reject changed authority and native drift', async () => {
+    const f = fixture(true);
+    assert.equal(await f.read(), undefined);
+    const workflow = f.manifest.github!.notifications!.issueAssignment!;
+    workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
+    assert.equal(await f.read(), 'automation-sync-required');
+    workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'U_receiver' };
+    f.native.payload = { ...f.native.payload, text: 'changed consent' };
+    assert.equal(await f.read(), 'automation-sync-required');
+  });
   it('should reject malformed scheduler observations instead of inventing an empty scan', async () => {
     const f = fixture();
     for (const jobs of [undefined, {}, [null], [{ agentId: 'receiver' }]]) {

@@ -1,3 +1,4 @@
+import { matchesIntakePolicy } from './assignment-intake-policy.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import codexRetirementCleanup, {
@@ -51,7 +52,7 @@ export default async function reconcileCodexLifecycle(
   try {
     const occurrence = await native.occurrence(caller);
     const admitted = await current.store.read();
-    if (!admitted || admitted.policyDigest !== current.policy.digest)
+    if (!admitted || !matchesIntakePolicy(admitted.policyDigest, current.policy))
       throw new Error('dispatch-policy-reconciliation-required');
     return await store.exclusive(async (state, save, signal) => {
       let prepared: { id: string; request: RetirementArchiveRequest } | undefined;

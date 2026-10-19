@@ -405,6 +405,20 @@ export async function inspectCodexDispatchActivation(
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
   const record = selected.ledger.records.find((entry) => entry.id === intakeAutomationId);
+  const matchesPrompt = (prompt: string) => {
+    const marker = '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId);
+    if (job?.payload.kind === 'prompt' && prompt === job.payload.prompt + marker) return true;
+    const legacy = codexIntakeJobs(
+      selected.loaded.manifest,
+      {
+        nodeExecutable: process.execPath,
+        entrypoint: resolve(process.argv[1]!),
+        pluginData: selected.root,
+      },
+      true,
+    ).find((entry) => entry.id === intakeAutomationId);
+    return legacy?.payload.kind === 'prompt' && prompt === legacy.payload.prompt + marker;
+  };
   if (
     selected.cleanupOnly ||
     selected.ledger.pending ||
@@ -415,8 +429,7 @@ export async function inspectCodexDispatchActivation(
         job.payload.kind !== 'prompt' ||
         record.removed ||
         record.definition.status !== 'ACTIVE' ||
-        record.definition.prompt !==
-          job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId)))
+        !matchesPrompt(record.definition.prompt)))
   )
     throw new Error('dispatch-activation-required');
   const saved = await readCodexAutomations(selected.codexHome);
@@ -454,8 +467,7 @@ export async function inspectCodexDispatchActivation(
     job.payload.kind !== 'prompt' ||
     record.removed ||
     record.definition.status !== 'ACTIVE' ||
-    record.definition.prompt !==
-      job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId)
+    !matchesPrompt(record.definition.prompt)
   )
     throw new Error('workflow-schedule-reconciliation-required');
   const authority = {

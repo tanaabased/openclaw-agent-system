@@ -103,7 +103,7 @@ describe('agent/dispatch-assignment', () => {
       change(f);
       await assert.rejects(
         revalidateAssignment(
-          { policy: f.policy, username: 'receiver', digest: '' },
+          { policy: f.policy, username: 'receiver', digest: '', legacyDigest: 'legacy' },
           record,
           f.client,
         ),

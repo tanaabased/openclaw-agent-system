@@ -20,6 +20,7 @@ export function codexIntakePolicy(manifest: AgentManifest, retainedWork = false)
 export function codexIntakeJobs(
   manifest: AgentManifest,
   runtime?: { nodeExecutable: string; entrypoint: string; pluginData: string },
+  legacyPolicy = false,
 ): ResolvedAutomation[] {
   const jobs = manifest.automations ?? [];
   if (jobs.some((job) => job.id === intakeAutomationId))
@@ -102,7 +103,7 @@ export function codexIntakeJobs(
           codexQuietHeartbeatInstructions +
             ' On dispatch-scan-required, perform the scan and retry. On busy, retry the same report up to three times with two-second pauses, then use failure-response. Use one final heartbeat, including nothing-new checks; never append separate cards or assessment commentary. The runtime records reporting attempts, not delivery guarantees.',
           'After a failed runtime call, first follow the bounded native host-access retry above when applicable. If it still fails, use intakeRuntime failure-response with automationId from this trigger and the returned stable code (codex-runtime-failed if none). It is a pure error formatter, not a quiet-success formatter, and does not need host state access. Copy its response verbatim once as the whole final answer. For a native approval rejection, submit only {automationId,code:"native-approval-denied"}, then include the actual rejection reason once inside the returned heartbeat message. Do not put prose in code, add unsupported request fields, or reuse an earlier failure code. Never duplicate a card outside the envelope. Stop on rejection; leave pending work intact. Do not claim a failed operation succeeded.',
-          `Policy revision: ${selected.digest}.`,
+          `Policy revision: ${legacyPolicy ? selected.legacyDigest : selected.digest}.`,
           `Repository preparation revision: ${automationHash(manifest.git?.worktrees ?? {})}.`,
         ].join('\n\n'),
       },

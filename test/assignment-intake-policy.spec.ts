@@ -5,7 +5,7 @@ import {
   notificationAuthorityDigest,
   matchesNotificationAuthority,
 } from '../agent/notification-authority.ts';
-import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
+import assignmentIntakePolicy, { matchesIntakePolicy } from '../agent/assignment-intake-policy.ts';
 import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -31,6 +31,19 @@ function fixture(): AgentManifest {
 }
 
 describe('assignment intake authority', () => {
+  it('should recognize only unchanged legacy intake authority', () => {
+    const manifest = fixture();
+    manifest.github!.notifications!.runtimes = ['openclaw', 'codex'];
+    const original = assignmentIntakePolicy(manifest, 'codex')!;
+    assert.notEqual(original.legacyDigest, original.digest);
+    assert.ok(matchesIntakePolicy(original.legacyDigest, original));
+    assert.ok(matchesIntakePolicy(original.digest, original));
+    assert.equal(matchesIntakePolicy(undefined, original), false);
+    manifest.github!.notifications!.issueAssignment!.allowed[0]!.nodeId = 'foreign';
+    const changed = assignmentIntakePolicy(manifest, 'codex')!;
+    assert.equal(matchesIntakePolicy(original.legacyDigest, changed), false);
+    assert.equal(matchesIntakePolicy(original.digest, changed), false);
+  });
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should keep ${runtime} authority stable while operational settings still take effect`, () => {
       const manifest = fixture();

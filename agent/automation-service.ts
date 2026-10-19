@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises';
 
-import openclawIntakeJobs from './openclaw-intake-policy.ts';
+import openclawIntakeJobs, { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
 
 import {
   AutomationError,
@@ -194,11 +194,18 @@ export default class AutomationService {
   }
 
   async run(manifest: AgentManifest, workspaceDir: string, id: string) {
-    const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
+    let job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
     if (!job) throw new AutomationError('automation-id-missing');
     if (!job.runtimes.includes('openclaw'))
       throw new AutomationError('automation-runtime-unsupported');
     const { context, record, native } = await this.resolveOwned(manifest, workspaceDir, id);
+    if (
+      id === openclawIntakeAutomationId &&
+      record.hash !== effectiveAutomation(job, context).hash
+    ) {
+      const legacy = openclawIntakeJobs(manifest, true).find((entry) => entry.id === id);
+      if (legacy && record.hash === effectiveAutomation(legacy, context).hash) job = legacy;
+    }
     if (automationThreadSelection(job, 'openclaw')) {
       const { store } = await this.scope(manifest, workspaceDir);
       context.threads = await this.threads(context, store).resolve([job]);

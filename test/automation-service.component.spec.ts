@@ -11,6 +11,7 @@ import {
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import {
   automationPatch,
+  projectAutomation,
   nativeAutomationHash,
   effectiveAutomation,
 } from '../agent/automation-projection.ts';
@@ -414,7 +415,7 @@ describe('agent/automation-service', () => {
       }
       throw Error('unexpected session operation');
     };
-    const policy = { ...intakeFixture().policy, runtimes: ['openclaw' as const] };
+    const policy = { ...intakeFixture().policy, runtimes: ['openclaw' as const, 'codex' as const] };
     manifest.automations = [];
     manifest.models = {
       default: { model: 'openai/gpt-6-luna', effort: 'medium' },
@@ -432,6 +433,25 @@ describe('agent/automation-service', () => {
     const coordinator = native[0]!.sessionTarget;
     const { store, context } = await service.scope(manifest, root);
     const ledger = await store.read();
+    const canonical = structuredClone(native[0]!);
+    const canonicalRecord = structuredClone(ledger.records[0]!);
+    const legacy = openclawIntakeJobs(manifest, true)[0]!;
+    const legacyHash = effectiveAutomation(legacy, context).hash;
+    assert.notEqual(legacyHash, canonicalRecord.hash);
+    const projected = projectAutomation(legacy, ledger.records[0]!, context);
+    Object.assign(native[0]!, { payload: projected.payload, trigger: projected.trigger });
+    ledger.records[0]!.hash = legacyHash;
+    ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(ledger);
+    calls = [];
+    assert.equal((await service.run(manifest, root, legacy.id)).status, 'queued');
+    assert.equal(
+      calls.some(({ method }) => ['cron.update', 'cron.add'].includes(method)),
+      false,
+    );
+    Object.assign(native[0]!, canonical);
+    Object.assign(ledger.records[0]!, canonicalRecord);
+    await store.write(ledger);
     const oldJob = structuredClone(openclawIntakeJobs(manifest)[0]!);
     oldJob.payload = { kind: 'prompt', prompt: 'Advance at most one issue per run.' };
     native[0]!.payload.message = oldJob.payload.prompt;

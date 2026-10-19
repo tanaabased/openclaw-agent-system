@@ -92,6 +92,25 @@ describe('openclaw v2 intake slice', () => {
       },
     };
   }
+  it('should inspect and upgrade a legacy intake baseline without activation', async () => {
+    const f = fixture();
+    f.value.github.notifications.runtimes = ['openclaw', 'codex'];
+    await f.service.run(f.value, root, 'activate');
+    const { selected, store } = await f.service.select(f.value, root);
+    assert.notEqual(selected!.digest, selected!.legacyDigest);
+    await store.exclusive(async (state, save) => {
+      state!.policyDigest = selected!.legacyDigest;
+      await save(state!);
+    });
+    assert.equal((await f.service.inspect(f.value, root)).status, 'ready');
+    assert.equal((await store.read())!.policyDigest, selected!.legacyDigest);
+    f.setNow(baseline + 120000);
+    assert.equal(
+      (await f.service.run(f.value, root, 'scan', selected!.legacyDigest)).status,
+      'ready',
+    );
+    assert.equal((await store.read())!.policyDigest, selected!.digest);
+  });
   it('should keep activated intake after cadence, capacity and grace changes', async () => {
     const f = fixture();
     const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;

@@ -52,7 +52,12 @@ function fixture() {
     updatedAt: new Date(baseline + 150_000).toISOString(),
   };
   const comments = [comment];
-  const policy = { policy: provider.policy, username: 'receiver', digest: 'digest' };
+  const policy = {
+    policy: provider.policy,
+    username: 'receiver',
+    digest: 'digest',
+    legacyDigest: 'legacy',
+  };
   const input = {
     record,
     intake,

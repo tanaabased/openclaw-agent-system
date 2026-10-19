@@ -41,6 +41,31 @@ describe('channels/github/intake/records', () => {
       },
     };
   }
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should upgrade unchanged ${runtime} legacy policy during normal intake without duplicating admissions`, async () => {
+      const { input, store } = setup(runtime);
+      await scanAssignments({ ...input, activate: true, now: baseline + 120000 });
+      const before = (await store.read())!;
+      const next = {
+        ...input,
+        policyDigest: 'canonical',
+        legacyPolicyDigest: input.policyDigest,
+        now: baseline + 180000,
+      };
+      await scanAssignments(next);
+      const after = (await store.read())!;
+      assert.equal(after.policyDigest, 'canonical');
+      assert.equal(after.baselineAt, before.baselineAt);
+      assert.deepEqual(
+        after.records.map(({ id }) => id),
+        before.records.map(({ id }) => id),
+      );
+      await assert.rejects(
+        scanAssignments({ ...next, policyDigest: 'changed', legacyPolicyDigest: 'changed-legacy' }),
+        /intake-policy-reconciliation-required/,
+      );
+    });
+  }
   it('should admit only the selected issue without searching or advancing the global checkpoint', async () => {
     const { input, store, client, item, events } = setup('openclaw');
     const assigned = events.splice(0);

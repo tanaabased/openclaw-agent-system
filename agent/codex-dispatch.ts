@@ -1,3 +1,4 @@
+import { matchesIntakePolicy } from './assignment-intake-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import type codexRetirementNative from './codex-retirement-native.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
@@ -532,7 +533,7 @@ export async function runCodexDispatch(
   if (!operatorAction && !childAction && caller !== activation.sourceThreadId)
     throw new Error('dispatch-intake-caller-required');
   const admitted = await current.store.read();
-  if (!admitted || (!retainedWork && admitted.policyDigest !== current.policy?.digest))
+  if (!admitted || (!retainedWork && !matchesIntakePolicy(admitted.policyDigest, current.policy)))
     throw new Error('dispatch-policy-reconciliation-required');
   const now = (deps.now ?? Date.now)();
   const waitForLock = childAction || action === 'report';

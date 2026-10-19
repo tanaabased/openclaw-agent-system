@@ -3,7 +3,7 @@ import { automationHash } from './automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 
 /** scheduling controls do not change the effects granted by an activated workflow. */
-function legacyAuthority(policy: GitHubNotificationPolicy) {
+export function legacyNotificationAuthority(policy: GitHubNotificationPolicy) {
   return {
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
@@ -24,7 +24,7 @@ function ordered<T>(values: readonly T[]): T[] {
 }
 
 export function notificationAuthority(policy: GitHubNotificationPolicy) {
-  const value = structuredClone(legacyAuthority(policy));
+  const value = structuredClone(legacyNotificationAuthority(policy));
   value.runtimes = ordered(value.runtimes);
   value.allowedRepositoryOwners = ordered(value.allowedRepositoryOwners);
   for (const workflow of [value.issueAssignment, value.reviewRequest]) {
@@ -49,7 +49,7 @@ export function notificationAuthorityDigest(policy: GitHubNotificationPolicy | u
 export function matchesNotificationAuthority(digest: string, policy: GitHubNotificationPolicy) {
   return (
     digest === notificationAuthorityDigest(policy) ||
-    digest === automationHash(legacyAuthority(policy)) ||
+    digest === automationHash(legacyNotificationAuthority(policy)) ||
     digest === automationHash(policy)
   );
 }

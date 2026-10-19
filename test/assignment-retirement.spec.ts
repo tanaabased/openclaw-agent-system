@@ -38,7 +38,12 @@ function setup() {
     reconcile({
       records,
       admitted: admissions,
-      policy: { policy: fixture.policy, username: 'receiver', digest: 'digest' },
+      policy: {
+        policy: fixture.policy,
+        username: 'receiver',
+        digest: 'digest',
+        legacyDigest: 'legacy',
+      },
       client: fixture.client,
       owner: 'intake',
       now,
@@ -259,7 +264,12 @@ describe('assignment retirement', () => {
       reconcile({
         records: h.records,
         admitted: h.admissions,
-        policy: { policy: h.fixture.policy, username: 'receiver', digest: 'digest' },
+        policy: {
+          policy: h.fixture.policy,
+          username: 'receiver',
+          digest: 'digest',
+          legacyDigest: 'legacy',
+        },
         client: h.fixture.client,
         owner: 'intake',
         now,
@@ -300,7 +310,12 @@ describe('assignment retirement', () => {
       await reconcile({
         records: h.records,
         admitted: h.admissions,
-        policy: { policy: h.fixture.policy, username: 'receiver', digest: 'digest' },
+        policy: {
+          policy: h.fixture.policy,
+          username: 'receiver',
+          digest: 'digest',
+          legacyDigest: 'legacy',
+        },
         client: h.fixture.client,
         owner: 'intake',
         now: baseline + 3_600_000,
