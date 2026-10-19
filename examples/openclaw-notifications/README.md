@@ -35,13 +35,25 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # should boot with retained legacy channel configuration
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
 openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
-OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
-# should activate native intake with explicit dispatch enrollment
+# should install emori in its fixture workspace
+set -o pipefail
+registration_diagnostics() {
+  registration_status=$?
+  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+  exit "$registration_status"
+}
+trap registration_diagnostics EXIT
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
+openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
+
+# should install tanaabot and activate native intake with explicit dispatch enrollment
 set -o pipefail
 activation_diagnostics() {
   activation_status=$?
+  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
   if test "$activation_status" -ne 0; then
     gateway_log=$(openclaw-gateway log-path) || true
     gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
@@ -53,8 +65,6 @@ activation_diagnostics() {
   exit "$activation_status"
 }
 trap activation_diagnostics EXIT
-cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/emori"
-openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications/tanaabot"
 openclaw agent-system install --yes --json | tee "$TMPDIR/notification-install.json" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and ([.warnings[] | select(.code == "github-notification-runtime-unsupported")] | length) == 1'
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
@@ -107,7 +117,12 @@ for slot in 1 2 3; do
   receipt=$(jq -er --arg source "https://github.com/tanaabased/big-test-bucket/issues/$number" '.[] | select((.context | fromjson).source == $source) | .id' "$TMPDIR/notification-started.json")
   touch "$TMPDIR/notification-assessment-released-$receipt"
   openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --timeout 600 --json | jq -e '.status == "completed" and .observation.items[0].workflow.phase == "plan-ready"'
+  assessment_run=$(jq -er --arg id "$receipt" '.[] | select(.id == $id) | .assessmentTurn.runId' "$TMPDIR/notification-started.json")
+  node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 300000
 done
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es '[.[].records[]] | length == 3 and all(.[]; .assessmentTurn.status == "completed" and .result.outcome == "plan-ready")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should retain native bindings for the issue selected for feedback
 test -f "$TMPDIR/notification-activation-ready"

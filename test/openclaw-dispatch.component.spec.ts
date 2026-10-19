@@ -1962,6 +1962,8 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(recorded.status, 'recorded');
     const saved = await record();
     assert.deepEqual(saved.result, plan);
+    assert.equal(saved.phase, 'complete');
+    assert.equal(saved.assessmentTurn?.status, 'consumed');
     assert.equal(saved.resultTurnId, `${input.id}:assessment`);
     assert.equal(saved.stageReceipt?.binding.threadId, assessor(input.id).sessionKey);
     assert.equal(saved.stageReceipt?.binding.worktree, join(root, 'worktree'));
@@ -3009,6 +3011,42 @@ describe('agent/openclaw issue dispatch', () => {
     service.validate = validate;
     await service.check(manifest, root);
     assert.equal((await record()).feedback!.discoveryPending, false);
+  });
+  it('should discover new feedback on a scoped refresh despite a recent empty discovery', async () => {
+    const { comments } = await feedbackOwner();
+    const comment = comments.pop()!;
+    await service.check(manifest, root);
+    comments.push(comment);
+    // reproduces the old selected-refresh path: next consumes the cached empty discovery.
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'idle',
+    );
+    assert.equal((await record()).feedback!.events.length, 0);
+    const intake = service.dependencies.intake;
+    const observation = await intake.run(
+      manifest,
+      root,
+      'scan',
+      (await intake.select(manifest, root)).selected!.digest,
+      undefined,
+      { repository: 'owner/repo', itemType: 'issue', number: 3 },
+    );
+    const run = intake.run.bind(intake);
+    intake.run = async () => {
+      throw new Error('scoped feedback discovery must not scan other assignments');
+    };
+    try {
+      await service.check(manifest, root, undefined, observation);
+    } finally {
+      intake.run = run;
+    }
+    coordinator.runId = 'fresh-feedback-run';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const events = (await record()).feedback!.events;
+    assert.equal(events.length, 1);
+    assert.equal(events[0]!.sourceId, comment.nodeId);
+    assert.ok(events[0]!.turn);
   });
   it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
     const { id } = await feedbackOwner();

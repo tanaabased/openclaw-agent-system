@@ -22,7 +22,13 @@ openclaw() {
   esac
 }
 openclaw-gateway() { printf '%s\\n' "$TMPDIR/gateway.log"; }
-node() { cat; return "$DIAGNOSTIC_STATUS"; }
+node() {
+  case "$*" in
+    *registration-evidence.ts*) printf '%s\\n' 'fixture-registration-evidence' ;;
+    *) cat ;;
+  esac
+  return "$DIAGNOSTIC_STATUS"
+}
 jq() { cat; }
 `;
 
@@ -37,7 +43,7 @@ for (const scenario of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications
       it(`should preserve exit ${expected} for install ${install} automation ${automation} and diagnostic ${diagnostic}`, async () => {
         const source = await readFile(`examples/${scenario}/README.md`, 'utf8');
         const activation = source.match(
-          /# should activate native intake with explicit dispatch enrollment\n([\s\S]*?)\n```/u,
+          /# should install tanaabot and activate native intake with explicit dispatch enrollment\n([\s\S]*?)\n```/u,
         )?.[1];
         assert.ok(activation);
         const root = await mkdtemp(join(tmpdir(), 'notification-activation-'));
@@ -58,6 +64,7 @@ for (const scenario of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications
             timeout: 5000,
           });
           assert.equal(result.status, expected, result.stderr);
+          assert.ok(result.stdout.includes('fixture-registration-evidence'));
           const calls = (await readFile(join(root, 'commands'), 'utf8')).trim().split('\n');
           assert.equal(calls.filter((call) => call.includes('install --yes')).length, 1);
           assert.ok(!calls.some((call) => /sync|restart/u.test(call)));
