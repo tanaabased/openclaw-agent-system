@@ -109,7 +109,6 @@ export function dispatchFailurePhase(record: RetryState, code: string, error?: u
       'continuation-native-binding-mismatch',
       'continuation-assessment-changed',
       'continuation-assessment-selection-changed',
-      'continuation-assessment-evidence-changed',
       'continuation-skill-identity-changed',
       'continuation-turn-changed',
       'continuation-denial-context-changed',

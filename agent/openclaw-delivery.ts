@@ -285,6 +285,7 @@ export default async function openClawDelivery(input: {
     await provider.publish(publication);
     delete delivery.contentUpdate;
     delivery.reconciled = true;
+    if (work.code === 'implementation-delivery-incomplete') delete work.code;
     await save();
   } else {
     if (!previous?.pullRequest || !previous.reconciled)

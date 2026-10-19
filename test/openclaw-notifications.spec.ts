@@ -144,6 +144,24 @@ function record(): OpenClawDispatchRecord {
 }
 
 describe('agent/openclaw-notifications', () => {
+  it('should report the same disabled policy across status refresh and wait without starting work', async () => {
+    const f = fixture();
+    f.manifest.github!.notifications!.issueAssignment!.enabled = false;
+    f.readiness = 'intake-policy-disabled';
+    const status = await f.service.inspect(f.manifest, '/workspace');
+    const refresh = await f.service.refresh(f.manifest, '/workspace', {
+      signal: AbortSignal.timeout(1000),
+    });
+    const waited = await f.service.wait(f.manifest, '/workspace', {
+      target: 'baseline-ready',
+      timeoutMs: 1000,
+      refresh: true,
+    });
+    for (const result of [status, refresh, waited])
+      assert.equal(result.code, 'github-notification-disabled');
+    assert.equal(f.requests, 0);
+  });
+
   it('should expose required automation updates without losing retained admission evidence', async () => {
     const f = fixture();
     const before = structuredClone(f.state);

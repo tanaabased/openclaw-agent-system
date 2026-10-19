@@ -160,6 +160,7 @@ export default async function openClawWorkAction(input: {
   )
     throw new Error('implementation-answer-required');
   record.work.result = action.implementationResult;
+  if (record.work.code === 'implementation-result-missing') delete record.work.code;
   if (action.implementationResult.outcome === 'clarification-needed')
     record.work.clarificationInput = source;
   else delete record.work.clarificationInput;

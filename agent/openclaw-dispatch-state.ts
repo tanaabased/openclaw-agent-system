@@ -156,6 +156,24 @@ function validIssueTurn(turn: Static<typeof issueTurnSchema>, runId: string) {
   );
 }
 
+function validWorkTurns(record: OpenClawDispatchRecord) {
+  const work = record.work;
+  if (!work) return true;
+  for (const slot of ['turn', 'deliveryTurn'] as const) {
+    const prefix = `${record.id}:${slot === 'turn' ? 'implementation' : 'delivery'}`;
+    const previous = (work.previousTurns ?? []).filter((entry) => entry.slot === slot);
+    const expected = (index: number) => prefix + (index ? `:resume:${index}` : '');
+    if (
+      previous.some(
+        ({ turn }, index) => turn.status !== 'completed' || !validIssueTurn(turn, expected(index)),
+      )
+    )
+      return false;
+    if (work[slot] && !validIssueTurn(work[slot], expected(previous.length))) return false;
+  }
+  return true;
+}
+
 export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatchRecord> {
   constructor(root: string, scope: string) {
     super(root, scope, {
@@ -175,10 +193,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
               ((record.progression?.stage === 'implementation' ||
                 (record.handoff && record.result?.outcome === 'plan-ready')) &&
                 record.work.assessmentDigest === record.stageReceipt?.resultDigest &&
-                (!record.work.turn ||
-                  validIssueTurn(record.work.turn, `${record.id}:implementation`)) &&
-                (!record.work.deliveryTurn ||
-                  validIssueTurn(record.work.deliveryTurn, `${record.id}:delivery`)))) &&
+                validWorkTurns(record))) &&
             record.sessionCreation &&
             record.worktree === record.request.cwd &&
             !record.native &&

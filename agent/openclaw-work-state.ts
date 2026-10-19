@@ -12,6 +12,17 @@ export const openclawWorkStateSchema = Type.Object(
   {
     assessmentDigest: hash,
     turn: Type.Optional(issueTurnSchema),
+    previousTurns: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            slot: Type.Union([Type.Literal('turn'), Type.Literal('deliveryTurn')]),
+            turn: issueTurnSchema,
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     deliveryTurn: Type.Optional(issueTurnSchema),
     code: Type.Optional(text),
     selection: Type.Optional(assessmentSelectionSchema),

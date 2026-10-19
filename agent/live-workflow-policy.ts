@@ -7,8 +7,10 @@ export default function liveWorkflowPolicy(
   manifest: AgentManifest,
   runtime: 'codex' | 'openclaw',
   intake: IntakeRecord,
-  effect: 'assignment' | 'implementation' | 'feedback' = 'assignment',
+  effect: 'assignment' | 'implementation' | 'continued-work' | 'feedback' = 'assignment',
 ) {
+  // Intake eligibility cannot revoke an active issue's recorded implementation stage.
+  if (effect === 'continued-work') return;
   const policy = manifest.github?.notifications;
   if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment || policy.issueAssignment.enabled === false)

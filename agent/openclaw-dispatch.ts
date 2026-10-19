@@ -238,9 +238,12 @@ export default class OpenClawDispatch {
     if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
     if (!intake) throw new Error('dispatch-admission-missing');
-    const held =
-      !work &&
-      liveWorkflowPolicy(fresh.manifest, 'openclaw', intake, feedback ? 'feedback' : 'assignment');
+    const held = liveWorkflowPolicy(
+      fresh.manifest,
+      'openclaw',
+      intake,
+      work ? 'continued-work' : feedback ? 'feedback' : 'assignment',
+    );
     if (held) throw new WorkflowPolicyHeld(held);
     return { current, intake, manifest: fresh.manifest };
   }
@@ -345,6 +348,7 @@ export default class OpenClawDispatch {
     record: OpenClawDispatchRecord,
     save: () => Promise<void>,
     authority: DispatchAuthority,
+    reconcileOnly = false,
   ) {
     const now = (this.dependencies.now ?? Date.now)();
     const assertCurrent = async () => {
@@ -383,6 +387,7 @@ export default class OpenClawDispatch {
             : undefined);
         return advanceOpenClawWork({
           record,
+          reconcileOnly,
           mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
           selection,
           now,
@@ -1075,6 +1080,35 @@ export default class OpenClawDispatch {
               }
           }
           await save();
+          // Resolve finished native turns before freezing this pass's available slots.
+          for (const record of state.records
+            .filter(
+              (entry) =>
+                !entry.retired &&
+                !entry.retirement &&
+                !entry.reset &&
+                !entry.work?.code &&
+                [entry.work?.turn, entry.work?.deliveryTurn].some(
+                  (turn) => turn && turn.status !== 'completed',
+                ),
+            )
+            .slice(0, 12)) {
+            const reconciled = await this.continueWork(
+              manifest,
+              current.workspace,
+              record,
+              save,
+              { ...authority, signal },
+              true,
+            );
+            if (
+              record.work?.code &&
+              !['implementation-result-missing', 'implementation-delivery-incomplete'].includes(
+                record.work.code,
+              )
+            )
+              return reconciled;
+          }
           const capacity = dispatchCapacity(
             state.records,
             current.policy.policy.maxConcurrentItems,
@@ -1121,7 +1155,9 @@ export default class OpenClawDispatch {
                       record,
                       slot,
                       candidateId: automationHash({ implementation: record.id }),
-                      recovering: Boolean(record.work?.[slot]),
+                      recovering: Boolean(
+                        record.work?.[slot] && record.work[slot].status !== 'completed',
+                      ),
                     },
                   ]
                 : [];

@@ -261,7 +261,10 @@ export default class OpenClawNotifications {
       return fail('github-notification-refresh-selector-unsupported');
     const observation = await this.inspect(manifest, workspace);
     const readiness = await this.dependencies.intake.readiness(manifest, workspace);
-    if (readiness) return fail(readiness);
+    if (readiness)
+      return fail(
+        readiness === 'intake-policy-disabled' ? 'github-notification-disabled' : readiness,
+      );
     if (observation.baseline.status !== 'ready' && observation.diagnosticCode)
       return fail(observation.diagnosticCode);
     if (options.signal.aborted) return fail('github-notification-refresh-cancelled');
@@ -336,7 +339,11 @@ export default class OpenClawNotifications {
         if (input.target === 'assignment-rejected' || input.target === 'retired')
           return result('failed', 'github-notification-wait-target-unsupported');
         const readiness = await this.dependencies.intake.readiness(manifest, workspace);
-        if (readiness) return result('failed', readiness);
+        if (readiness)
+          return result(
+            'failed',
+            readiness === 'intake-policy-disabled' ? 'github-notification-disabled' : readiness,
+          );
         const retryPreviousFailure = input.refresh && observation.baseline.status === 'ready';
         const reached = evaluateGitHubNotificationWait(
           retryPreviousFailure ? { ...observation, diagnosticCode: undefined } : observation,

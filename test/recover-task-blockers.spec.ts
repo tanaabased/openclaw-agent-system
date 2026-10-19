@@ -40,6 +40,8 @@ describe('agent/recover-task-blockers', () => {
       'feedback-work-authority-denied',
       'continuation-user-intervened',
       'continuation-selection-changed',
+      'continuation-assessment-evidence-changed',
+      'continuation-assessment-evidence-incomplete',
     ]) {
       const value = {
         ...record(),

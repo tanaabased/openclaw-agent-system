@@ -86,6 +86,16 @@ export default function prepareDispatchReport(input: {
           text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number),
       };
     }),
+    ...state.records
+      .filter(
+        (record) => !record.continuation && record.result?.outcome === 'plan-ready' && record.retry,
+      )
+      .map((record) => ({
+        id: record.id,
+        code: record.retry!.code,
+        operation: 'implementation preparation',
+        providerDiagnostic: record.providerDiagnostic,
+      })),
     ...feedbackProblems.map((record) => ({
       id: record.id,
       code: record.feedback!.code!,

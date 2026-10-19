@@ -2045,7 +2045,7 @@ describe('agent/openclaw issue dispatch', () => {
         __openclaw: { id: 'work-reply', runId: `${id}:implementation`, runTerminal: true },
       });
       const finished = await workPass('finish-pass');
-      assert.equal(finished.status, 'implementation-completed', JSON.stringify(finished));
+      assert.equal(finished.status, 'implementation-pending', JSON.stringify(finished));
       assert.equal((await record()).work?.turn?.status, 'completed');
       assert.equal((await workPass('delivery-pass')).status, 'implementation-pending');
       assert.equal((await record()).work?.deliveryTurn?.runId, `${id}:delivery`);
@@ -2097,12 +2097,80 @@ describe('agent/openclaw issue dispatch', () => {
         content: [{ type: 'text', text: 'Need input.' }],
         __openclaw: { id: 'work-reply', runId: `${id}:implementation`, runTerminal: true },
       });
-      assert.equal((await workPass('finish-work')).status, 'implementation-completed');
+      assert.equal((await workPass('finish-work')).status, 'idle');
+      assert.equal((await record()).work?.turn?.status, 'completed');
       assert.equal((await workPass('leave-waiting')).status, 'idle');
       assert.equal((await record()).progression?.stage, 'implementation');
       assert.equal(sends().length, 2);
     });
   }
+
+  for (const stage of ['implementation', 'delivery'] as const) {
+    it(`should resume incomplete ${stage} with retained receipts and no renewed approval`, async () => {
+      const id = await readyWork('work');
+      consumeSend = true;
+      await workPass('start-work');
+      const who = assessor(id, `${id}:implementation`);
+      await service.run(manifest, root, who, { action: 'implementation-context', id });
+      if (stage === 'delivery')
+        await service.run(manifest, root, who, {
+          action: 'implementation-result',
+          id,
+          implementationResult: {
+            outcome: 'done',
+            summary: 'Done.',
+            fullResult: 'Committed and checked.',
+          },
+        });
+      const end = (runId: string) => {
+        active = false;
+        inputReceipts = [];
+        messages.push({
+          role: 'assistant',
+          stopReason: 'stop',
+          content: [{ type: 'text', text: 'Turn ended.' }],
+          __openclaw: { id: runId + ':reply', runId, runTerminal: true },
+        });
+      };
+      end(`${id}:implementation`);
+      const resumed = await workPass('finish-implementation');
+      assert.equal(resumed.status, 'implementation-pending', JSON.stringify(resumed));
+      if (stage === 'delivery') {
+        end(`${id}:delivery`);
+        assert.equal((await workPass('finish-delivery')).status, 'implementation-pending');
+      }
+      const saved = await record();
+      const slot = stage === 'delivery' ? 'deliveryTurn' : 'turn';
+      assert.equal(saved.work!.previousTurns!.length, 1);
+      assert.equal(saved.work!.previousTurns![0]!.turn.status, 'completed');
+      assert.equal(saved.work![slot]!.runId, `${id}:${stage}:resume:1`);
+      assert.equal(saved.progression!.stage, 'implementation');
+      if (stage === 'delivery') assert.equal(saved.work!.result!.outcome, 'done');
+      const sent = sends().length;
+      await workPass('reconcile-resume');
+      assert.equal(sends().length, sent);
+      assert.equal(creates().length, 1);
+    });
+  }
+
+  it('should retain implementation after intake disablement and still stop unassigned work', async () => {
+    const id = await readyWork('work');
+    consumeSend = true;
+    await workPass('start-work');
+    manifest.github!.notifications!.issueAssignment!.enabled = false;
+    manifest.github!.notifications!.issueAssignment!.allowed = [];
+    manifest.github!.notifications!.issueAssignment!.mode = 'plan';
+    const who = assessor(id, `${id}:implementation`);
+    assert.equal(
+      (await service.run(manifest, root, who, { action: 'implementation-context', id })).status,
+      'verified',
+    );
+    fixture.item.assignees = [];
+    await assert.rejects(
+      service.run(manifest, root, who, { action: 'implementation-context', id }),
+      /assignment-removed/,
+    );
+  });
 
   it('should share the fixed intake capacity between automatic implementation owners', async () => {
     await assignments(2, 2);
@@ -3984,6 +4052,54 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.events[0]!.phase, 'published');
     assert.equal(creates().length, 1);
   });
+  it('should dispatch queued feedback in the pass that reconciles a finished implementation turn', async () => {
+    const { id } = await feedbackOwner();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.assessmentTurn!.status = 'completed';
+      record.assessmentTurn!.replyEventId = 'assessment-reply';
+      record.work!.turn = {
+        runId: `${id}:implementation`,
+        message: 'Continue work.',
+        status: 'accepted',
+      };
+      record.work!.result = {
+        outcome: 'clarification-needed',
+        summary: 'Need input.',
+        fullResult: 'Partial work.',
+        questions: ['Which behavior?'],
+      };
+      await save();
+    });
+    active = false;
+    inputReceipts = [];
+    messages.push(
+      {
+        role: 'user',
+        content: 'Continue work.',
+        idempotencyKey: `${id}:implementation:user`,
+        __openclaw: { id: 'old-work-input', idempotencyKey: `${id}:implementation:user` },
+      },
+      {
+        role: 'assistant',
+        stopReason: 'stop',
+        content: [{ type: 'text', text: 'Which behavior?' }],
+        __openclaw: { id: 'old-work-reply', runId: `${id}:implementation`, runTerminal: true },
+      },
+    );
+    const before = sends().length;
+    const next = await workPass('feedback-after-work');
+    assert.equal(next.status, 'feedback-pending', JSON.stringify(next));
+    const saved = await record();
+    assert.equal(saved.id, id);
+    assert.equal(saved.work!.turn!.status, 'completed');
+    assert.equal(saved.feedback!.events[0]!.phase, 'running');
+    assert.equal(sends().length, before + 1);
+    await workPass('feedback-after-work');
+    assert.equal(sends().length, before + 1);
+  });
+
   it('should queue feedback during operator work and revoke an edited or removed source before sending', async () => {
     const { comments } = await feedbackOwner();
     active = true;

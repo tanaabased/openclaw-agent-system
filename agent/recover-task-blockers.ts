@@ -5,6 +5,8 @@ const obsolete = new Set([
   'dispatch-activation-required',
   'workflow-schedule-reconciliation-required',
   'continuation-authority-changed',
+  'continuation-assessment-evidence-changed',
+  'continuation-assessment-evidence-incomplete',
   'feedback-authority-changed',
   'feedback-authority-revoked',
   'delivery-schedule-stale',

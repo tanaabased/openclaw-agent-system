@@ -85,7 +85,6 @@ export const codexContinuationStateSchema = Type.Object(
           },
           { additionalProperties: false },
         ),
-        { maxItems: 8 },
       ),
     ),
     publicationAttempt: Type.Optional(attemptSchema),

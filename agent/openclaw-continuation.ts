@@ -17,7 +17,10 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
     record.retirement ||
     record.reset ||
     record.feedbackReactivation ||
-    record.work?.code ||
+    (record.work?.code &&
+      !['implementation-result-missing', 'implementation-delivery-incomplete'].includes(
+        record.work.code,
+      )) ||
     !record.sessionCreation?.verified ||
     record.assessmentTurn?.status !== 'completed'
   )
@@ -27,9 +30,10 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
   if (work?.deliveryTurn && work.deliveryTurn.status !== 'completed')
     return 'deliveryTurn' as const;
   if (feedbackWorkStarted(record)) return;
+  if (work?.turn?.status === 'completed' && !work.result) return 'turn' as const;
   if (
     work?.result?.outcome === 'done' &&
-    !work.deliveryTurn &&
+    (!work.deliveryTurn || work.deliveryTurn.status === 'completed') &&
     !(work.delivery?.reconciled && work.delivery.announcement?.receipt)
   )
     return 'deliveryTurn' as const;
@@ -41,6 +45,7 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
 export default async function advanceOpenClawWork(input: {
   record: OpenClawDispatchRecord;
   mode: Mode;
+  reconcileOnly?: boolean;
   selection?: NonNullable<OpenClawDispatchRecord['work']>['selection'];
   now: number;
   request: DispatchRequest;
@@ -53,7 +58,9 @@ export default async function advanceOpenClawWork(input: {
   const expected = record.request;
   if (!slot || !expected || !('key' in expected))
     return { status: 'implementation-idle', id: record.id };
-  if (!record.work?.[slot]) {
+  if (input.reconcileOnly && (!record.work?.[slot] || record.work[slot]!.status === 'completed'))
+    return { status: 'implementation-idle', id: record.id };
+  if (!record.work?.[slot] || record.work[slot]!.status === 'completed') {
     const session = await feedbackSession(request, record, input.config);
     if (session.busy) return { status: 'implementation-queued', id: record.id };
     if (typeof session.leaf !== 'string' || !session.leaf)
@@ -61,12 +68,22 @@ export default async function advanceOpenClawWork(input: {
     const transition = issueProgression(record, { mode: input.mode, now: input.now });
     if (transition.status !== 'ready')
       return { status: 'policy-held', id: record.id, reason: transition.reason };
-    const runId = `${record.id}:${slot === 'turn' ? 'implementation' : 'delivery'}`;
+    const previous = record.work?.[slot];
+    if (previous) {
+      record.work!.previousTurns = [
+        ...(record.work!.previousTurns ?? []),
+        { slot, turn: previous },
+      ];
+      delete record.work![slot];
+    }
+    const resumed = record.work?.previousTurns?.filter((entry) => entry.slot === slot).length ?? 0;
+    const runId = `${record.id}:${slot === 'turn' ? 'implementation' : 'delivery'}${resumed ? ':resume:' + resumed : ''}`;
     const message = [
       slot === 'turn'
         ? 'Continue this issue through implementation and managed PR delivery.'
         : 'Resume only managed PR delivery; implementation is already recorded. Do not repeat implementation.',
       `Call agent_system_dispatch action implementation-context with id ${record.id}. Follow only verified context in this existing issue chat and worktree.`,
+      'Reuse retained results, commits and partial work. Complete only the unfinished step; never replay completed implementation or create a replacement PR.',
       'Reconcile the latest conversation and retained work first. Honor current user restrictions, cancellation and native denial. Work is already authorized; do not ask for routine stage approval. Keep the selected model and effort.',
       'After implementation submit implementation-result with done, blocked, or clarification-needed and its questions. Show clarification questions in this chat and wait for an answer. For done, use delivery prepare and publish with the returned digest, then compose, candidate, announce, and present. Preserve uncertain operations and use their existing receipts; never recreate a PR or resend a continuation.',
     ].join('\n\n');
@@ -86,6 +103,7 @@ export default async function advanceOpenClawWork(input: {
     record.handoff ??= { at: input.now, by: record.sourceThreadId, turnId: runId };
     record.work ??= { assessmentDigest: automationHash(record.result) };
     record.work.selection ??= input.selection;
+    delete record.work.code;
     record.work[slot] = { runId, message, status: 'attempted' };
     await save();
     await input.assertCurrent();
@@ -106,6 +124,12 @@ export default async function advanceOpenClawWork(input: {
     save,
   });
   if (turn.status === 'completed') {
+    if (
+      ['implementation-result-missing', 'implementation-delivery-incomplete'].includes(
+        record.work!.code ?? '',
+      )
+    )
+      delete record.work!.code;
     if (slot === 'turn' && !record.work!.result)
       record.work!.code = 'implementation-result-missing';
     if (
