@@ -33,6 +33,7 @@ const dispatchStages = [
   'delivery-announce',
   'delivery-repeat',
   'delivery-present',
+  'assessment-present',
   'feedback-context',
   'feedback-result',
   'feedback-compose',
@@ -285,9 +286,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const update = prompt.includes(
       'Add a follow-up commit and update the existing PR title and body.',
     );
-    const retry = prompt.includes(
-      'Reconcile the existing PR announcement and show its card again.',
-    );
+    const retry = prompt.includes('Show the saved plan and existing PR card again.');
     const title = update
       ? 'Document disposable notification fixture cleanup and verification'
       : 'Document disposable notification fixture cleanup';
@@ -435,14 +434,20 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         content: 'Publication retained. Presentation intentionally deferred for recovery coverage.',
       };
     }
-    const repeated = result('delivery-repeat');
-    if (!repeated)
-      return dispatch('delivery-repeat', {
-        action: 'delivery',
-        operation: 'announce',
-        id: operatorId,
-      });
-    if (repeated.status !== 'announced') return;
+    if (retry) {
+      const plan = result('assessment-present');
+      if (!plan) return dispatch('assessment-present', { action: 'present', id: operatorId });
+      if (plan.status !== 'presented' || typeof plan.presentation !== 'string') return;
+    } else {
+      const repeated = result('delivery-repeat');
+      if (!repeated)
+        return dispatch('delivery-repeat', {
+          action: 'delivery',
+          operation: 'announce',
+          id: operatorId,
+        });
+      if (repeated.status !== 'announced') return;
+    }
     const presented = result('delivery-present');
     if (!presented)
       return dispatch('delivery-present', {
@@ -451,7 +456,14 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         id: operatorId,
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
-    return { content: presented.presentation };
+    return {
+      content: [
+        retry ? result('assessment-present')?.presentation : undefined,
+        presented.presentation,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    };
   }
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,

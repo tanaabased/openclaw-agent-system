@@ -985,6 +985,31 @@ describe('agent/codex-dispatch', () => {
     assert.match(String(revised.presentation), /Guidance.*guidance.md/);
   });
 
+  it('should show the saved plan after authority and checkout changes without refreshing assessment', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    await request('context', { id: prepared.id }, child);
+    const recorded = await request('result', { id: prepared.id, result }, child);
+    fixture.item.assignees = [];
+    deps.activation = async () => {
+      throw new Error('schedule disabled');
+    };
+    deps.git = async () => {
+      throw new Error('checkout changed');
+    };
+    deps.connect = async () => {
+      throw new Error('provider unavailable');
+    };
+    const shown = await request('present', { id: prepared.id }, child);
+    assert.equal(shown.status, 'presented');
+    assert.equal(shown.presentation, recorded.presentation);
+    await assert.rejects(
+      request('present', { id: prepared.id }, { threadId: 'foreign' }),
+      /caller-mismatch/,
+    );
+  });
+
   it('should retain ordinary skill output through clarification and a same-chat revision', async () => {
     await configureAssessment({ skill: 'company:assess' });
     const prepared = await prepare();
@@ -3572,6 +3597,8 @@ describe('agent/codex-dispatch', () => {
       });
       return {
         status: 'linked',
+        retained: true,
+        workflowStatus: 'partially-delivered',
         instruction: 'Present the card.',
         notices: [],
         url: 'https://github.com/owner/repo/pull/7',

@@ -461,16 +461,13 @@ describe('agent/openclaw-delivery', () => {
       assert.equal(pushes, 2);
       assert.equal(announcement.posts, 1);
     });
-  it('should rebuild the complete card after interrupted presentation without republishing', async () => {
+  it('should rebuild the retained card without git provider or publication permission', async () => {
     await publish();
     const persisted = structuredClone(record);
-    const save = input.save;
-    input.save = async () => {
-      throw new Error('presentation-interrupted');
+    delete record.work!.publication;
+    input.connect = async () => {
+      throw new Error('must not connect for presentation');
     };
-    await assert.rejects(request('present'), /presentation-interrupted/);
-    input.record = record = structuredClone(persisted);
-    input.save = save;
     const result = await request('present');
     assert.ok('presentation' in result && typeof result.presentation === 'string');
     assert.match(result.presentation, /^> ## 🔀 Pull request opened/m);

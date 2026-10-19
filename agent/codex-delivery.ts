@@ -163,9 +163,8 @@ export default async function runCodexDelivery(
         !record.worktree ||
         !record.threadId ||
         record.threadId !== caller ||
-        record.reset ||
-        record.retired ||
-        record.retirement
+        (!['present', 'reconcile'].includes(input.action) &&
+          (record.reset || record.retired || record.retirement))
       )
         throw new Error('delivery-managed-issue-required');
       const found = await native.find({
@@ -181,6 +180,126 @@ export default async function runCodexDelivery(
         (await realpath(found.cwd)) !== (await realpath(record.worktree))
       )
         throw new Error('delivery-native-binding-mismatch');
+      const intake = (await current.store.read())?.records.find(
+        (entry) => entry.id === record.intakeId,
+      );
+      if (!intake) throw new Error('delivery-admission-missing');
+      const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
+      const previous = record.delivery;
+      const notices = (attached: boolean) =>
+        [
+          ...new Set([
+            ...(record.delivery?.notices ?? []),
+            ...(!attached ? ['delivery-attachment-pending'] : []),
+          ]),
+        ]
+          .filter((code) => code !== 'delivery-ssh-transport')
+          .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
+      const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
+      if (input.action === 'present' || input.action === 'reconcile') {
+        if (!previous?.pullRequest) throw new Error('delivery-reconciliation-required');
+        const pullRequestUrl = url(previous.pullRequest.pullRequestNumber);
+        if (input.action === 'reconcile') {
+          let attached = false;
+          try {
+            attached = deps.attachment
+              ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
+              : await codexDeliveryAttachment(
+                  connection!.request,
+                  record.threadId,
+                  found.turnId,
+                  pullRequestUrl,
+                );
+          } catch {
+            signal.throwIfAborted();
+          }
+          previous.attached = attached;
+          await save();
+          return {
+            status: previous.reconciled ? 'ready' : 'publication-incomplete',
+            notices: notices(attached),
+            url: pullRequestUrl,
+            pullRequest: previous.pullRequest,
+          };
+        }
+        let commentFlow: 'codex' | 'unavailable' | 'unverified' = 'unavailable';
+        const policy = current.manifest.github?.notifications;
+        if (
+          policy?.schemaVersion === 2 &&
+          feedbackIdentities(
+            policy.issueAssignment?.allowed ?? [],
+            policy.issueAssignment?.feedback,
+          ).length
+        ) {
+          commentFlow = 'unverified';
+          try {
+            const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'feedback',
+            );
+            if (activation.schedule && activation.sourceThreadId === record.sourceThreadId) {
+              requireWorkflowSchedule(
+                activation.schedule.saved,
+                activation.schedule.current,
+                'feedback',
+              );
+              if (
+                current.manifest.github?.notifications &&
+                matchesNotificationAuthority(
+                  activation.schedule.current.policyDigest,
+                  current.manifest.github.notifications,
+                )
+              )
+                commentFlow = 'codex';
+            }
+          } catch {
+            // presentation cannot claim active feedback when schedule readback fails.
+          }
+        }
+        const implementationInstructions = workflowInstructions(
+          'Implementation',
+          record.continuation?.selection,
+          current.workspace,
+          {
+            debug: current.manifest.debug,
+            manifestPath:
+              current.manifestSources?.[
+                '/github/notifications/issue-assignment/implementation/guidance'
+              ]?.path ?? current.manifestPath,
+          },
+        );
+        const presentationNotices = notices(previous.attached);
+        previous.cardAttempts++;
+        await save();
+        return {
+          status: 'linked',
+          retained: true,
+          workflowStatus: workflowStatus(record),
+          instruction:
+            'Reproduce the complete presentation Markdown below in your final reply, including the PR card and all notices, without a code fence. Do not replace it with a summary or a claim that the card was verified. This result establishes card generation, not visible delivery. Put any additional verification notes after the cards.',
+          notices: presentationNotices,
+          url: pullRequestUrl,
+          pullRequest: previous.pullRequest,
+          presentation: [
+            githubNotificationPullRequestOpenedCard({
+              issueNumber: intake.issue.number,
+              pullRequestNumber: previous.pullRequest.pullRequestNumber,
+              repositoryOwner: intake.repository.owner.login,
+              repositoryName: intake.repository.name,
+              commentFlow,
+            }),
+            ...(implementationInstructions ? [implementationInstructions] : []),
+            announcementPresentation(
+              previous.announcement,
+              `https://github.com/${repository}/issues/${intake.issue.number}`,
+            ),
+            ...presentationNotices.map((notice) => notice.message),
+          ].join('\n\n'),
+        };
+      }
       if (deps.schedule) {
         await deps.authorizeSchedule?.();
         if (
@@ -197,10 +316,6 @@ export default async function runCodexDelivery(
         requireWorkflowSchedule(deps.schedule.saved, deps.schedule.current, 'publication');
       } else if (!record.handoff || !found.followUpUserTurn)
         throw new Error('delivery-human-publication-required');
-      const intake = (await current.store.read())?.records.find(
-        (entry) => entry.id === record.intakeId,
-      );
-      if (!intake) throw new Error('delivery-admission-missing');
       const connected = await (deps.connect ?? connectCodexGitHubAccount)(
         current.workspace,
         signal,
@@ -223,7 +338,6 @@ export default async function runCodexDelivery(
           ))
       )
         throw new Error('delivery-schedule-stale');
-      const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
       await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
       const branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
       if (!branch || branch === checked.repo.defaultBranch)
@@ -261,7 +375,6 @@ export default async function runCodexDelivery(
         authorId: connected.account.identity.nodeId,
         policyDigest,
       };
-      const previous = record.delivery;
       if (
         deps.schedule &&
         !previous?.creationAttempted &&
@@ -313,16 +426,7 @@ export default async function runCodexDelivery(
       };
       if (Object.keys(contentUpdate).length) delivery.contentUpdate = contentUpdate;
       const digest = automationHash({ delivery, turnId: found.turnId, previous });
-      const notices = (attached: boolean) =>
-        [
-          ...new Set([
-            ...(record.delivery?.notices ?? []),
-            ...(!attached ? ['delivery-attachment-pending'] : []),
-          ]),
-        ]
-          .filter((code) => code !== 'delivery-ssh-transport')
-          .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
-      const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
+
       if (
         input.action === 'compose' ||
         input.action === 'candidate' ||
@@ -540,107 +644,7 @@ export default async function runCodexDelivery(
           );
         }
       }
-      if (!previous?.pullRequest || automationHash(previous.binding) !== automationHash(binding))
-        throw new Error('delivery-reconciliation-required');
-      const pullRequestUrl = url(previous.pullRequest.pullRequestNumber);
-      if (input.action === 'reconcile') {
-        let attached = false;
-        try {
-          attached = deps.attachment
-            ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
-            : await codexDeliveryAttachment(
-                connection!.request,
-                record.threadId,
-                found.turnId,
-                pullRequestUrl,
-              );
-        } catch {
-          signal.throwIfAborted();
-        }
-        previous.attached = attached;
-        await save();
-        return {
-          status: previous.reconciled ? 'ready' : 'publication-incomplete',
-          notices: notices(attached),
-          url: pullRequestUrl,
-          pullRequest: previous.pullRequest,
-        };
-      }
-      if (!previous.reconciled) throw new Error('delivery-reconciliation-required');
-      let commentFlow: 'codex' | 'unavailable' | 'unverified' = 'unavailable';
-      const policy = current.manifest.github?.notifications;
-      if (
-        policy?.schemaVersion === 2 &&
-        feedbackIdentities(policy.issueAssignment?.allowed ?? [], policy.issueAssignment?.feedback)
-          .length
-      ) {
-        commentFlow = 'unverified';
-        try {
-          const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
-            pluginData,
-            { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-            false,
-            false,
-            'feedback',
-          );
-          if (activation.schedule && activation.sourceThreadId === record.sourceThreadId) {
-            requireWorkflowSchedule(
-              activation.schedule.saved,
-              activation.schedule.current,
-              'feedback',
-            );
-            if (
-              current.manifest.github?.notifications &&
-              matchesNotificationAuthority(
-                activation.schedule.current.policyDigest,
-                current.manifest.github.notifications,
-              )
-            )
-              commentFlow = 'codex';
-          }
-        } catch (error) {
-          if (codexHostAccess(error)) throw error;
-          // presentation cannot claim active feedback when schedule readback fails.
-        }
-      }
-      const implementationInstructions = workflowInstructions(
-        'Implementation',
-        record.continuation?.selection,
-        current.workspace,
-        {
-          debug: current.manifest.debug,
-          manifestPath:
-            current.manifestSources?.[
-              '/github/notifications/issue-assignment/implementation/guidance'
-            ]?.path ?? current.manifestPath,
-        },
-      );
-      const presentationNotices = notices(previous.attached);
-      previous.cardAttempts++;
-      await save();
-      return {
-        status: 'linked',
-        instruction:
-          'Reproduce the complete presentation Markdown below in your final reply, including the PR card and all notices, without a code fence. Do not replace it with a summary or a claim that the card was verified. This result establishes card generation, not visible delivery. Put any additional verification notes after the cards.',
-        notices: presentationNotices,
-        url: pullRequestUrl,
-        pullRequest: previous.pullRequest,
-        presentation: [
-          githubNotificationPullRequestOpenedCard({
-            issueNumber: intake.issue.number,
-            pullRequestNumber: previous.pullRequest.pullRequestNumber,
-            repositoryOwner: intake.repository.owner.login,
-            repositoryName: intake.repository.name,
-            commentFlow,
-          }),
-          ...(implementationInstructions ? [implementationInstructions] : []),
-          announcementPresentation(
-            previous.announcement,
-            `https://github.com/${repository}/issues/${intake.issue.number}`,
-          ),
-          ...presentationNotices.map((notice) => notice.message),
-        ].join('\n\n'),
-      };
+      throw new Error('delivery-action-invalid');
     }, true);
   } finally {
     await connection?.close();

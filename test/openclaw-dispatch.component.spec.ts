@@ -2454,61 +2454,17 @@ describe('agent/openclaw issue dispatch', () => {
       await save();
     });
     const effects: string[][] = [];
-    service.dependencies.delivery = async () => ({
-      async git(argv) {
-        effects.push(argv);
-        if (argv[0] === 'branch') return 'issue-3';
-        if (argv.includes('--show-toplevel')) return retained.worktree!;
-        if (argv[0] === 'rev-parse') return head;
-        if (argv[0] === 'status' || argv[0] === 'check-ref-format') return '';
-        if (argv[0] === 'rev-list') return '1';
-        if (argv[0] === 'remote') return `git@github.com:${repository}.git`;
-        assert.fail(`unexpected git operation: ${argv[0]}`);
-      },
-      account: {
-        identity: { login: 'agent', nodeId: 'U_agent' },
-        async execute(argv) {
-          effects.push(argv);
-          let value: unknown;
-          if (argv.includes(`repos/${repository}/pulls`)) {
-            assert.ok(argv.includes('GET'));
-            await onInspect();
-            value = [
-              {
-                itemNodeId: 'PR_7',
-                number: 7,
-                state: 'open',
-                baseRef: 'main',
-                headRef: 'issue-3',
-                headRepository: repository,
-                title: 'Fix the result',
-                body: 'Closes #3',
-              },
-            ];
-          } else {
-            assert.ok(argv.includes(`repos/${repository}/pulls/7`));
-            value = {
-              nodeId: 'PR_7',
-              number: 7,
-              state: 'open',
-              baseRef: 'main',
-              headRef: 'issue-3',
-              repositoryId: intake.repository.nodeId,
-              headRepositoryId: intake.repository.nodeId,
-              headSha: head,
-              authorId: 'U_agent',
-            };
-          }
-          return {
-            exitCode: 0,
-            stdout: JSON.stringify(value),
-            stderr: '',
-            timedOut: false,
-            truncated: false,
-          };
-        },
-      },
-    });
+    service.dependencies.delivery = async () => {
+      throw new Error('presentation must not connect to github or git');
+    };
+    const use = service.dependencies.credential.use;
+    service.dependencies.credential.use = async (authority, callback) =>
+      use(authority, async (request) =>
+        callback(async (...args) => {
+          if (args[0] === 'sessions.describe') await onInspect();
+          return request(...args);
+        }),
+      );
     const present = (authority = {}) =>
       service.run(
         manifest,
@@ -2521,7 +2477,7 @@ describe('agent/openclaw issue dispatch', () => {
     return { id, who, journal, present, effects };
   }
 
-  it('should release the presentation lock during provider reads and recover the same complete card', async () => {
+  it('should release the presentation lock during native reads and recover the same complete card', async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const { journal, present, effects } = await publishedFollowup(async () => {
@@ -2654,10 +2610,7 @@ describe('agent/openclaw issue dispatch', () => {
     service = new OpenClawDispatch(service.dependencies);
     assert.equal((await setup.present()).status, 'presented');
     const retained = await record();
-    assert.deepEqual(retained.work!.operatorInput, {
-      runId: 'later-owner',
-      inputEventId: 'later-event',
-    });
+    assert.deepEqual(retained.work!.operatorInput, before.work!.operatorInput);
     assert.deepEqual(retained.work!.publication, before.work!.publication);
     assert.equal(retained.work!.caller, undefined);
   });
@@ -2683,17 +2636,40 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
-  it('should reject revoked assignment authority during presentation and preserve the receipt', async () => {
-    const setup = await publishedFollowup(async () => {
-      fixture.item.assignees = [];
+  it('should display retained cards after assignment removal without renewed publication permission', async () => {
+    const setup = await publishedFollowup();
+    fixture.item.assignees = [];
+    await setup.journal.exclusive(async (state, save) => {
+      delete state.records[0]!.work!.publication;
+      state.records[0]!.work!.delivery!.reconciled = false;
+      await save();
     });
-    const before = await record();
-    const result = await setup.present();
-    assert.ok('code' in result && result.code === 'dispatch-assignment-removed');
-    assert.deepEqual(
-      { ...(await record()), lifecycleCheckedAt: 0 },
-      { ...before, lifecycleCheckedAt: 0 },
+    const result = await service.run(
+      manifest,
+      root,
+      setup.who,
+      { action: 'delivery', operation: 'present', id: setup.id },
+      false,
     );
+    assert.equal(result.status, 'presented');
+    assert.ok('presentation' in result);
+    assert.equal((await record()).work!.delivery!.reconciled, false);
+    const plan = await service.run(
+      manifest,
+      root,
+      setup.who,
+      { action: 'present', id: setup.id },
+      false,
+    );
+    assert.equal(plan.status, 'presented');
+    assert.ok('presentation' in plan);
+    const foreign = await service.run(
+      manifest,
+      root,
+      { ...setup.who, sessionId: 'foreign' },
+      { action: 'present', id: setup.id },
+    );
+    assert.equal(foreign.status, 'blocked');
   });
 
   it('should retain explicit implementation and publication permission without replacing the assessment', async () => {

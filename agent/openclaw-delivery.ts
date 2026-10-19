@@ -43,6 +43,8 @@ export default async function openClawDelivery(input: {
   signal: AbortSignal;
 }) {
   const { record, intake, action, assertCurrent, save } = input;
+  if (action.operation === 'present')
+    return presentOpenClawDelivery(record, intake, input.feedbackEnabled);
   const work = record.work;
   if (!record.handoff || !work?.publication) throw new Error('delivery-human-publication-required');
   if (
@@ -276,30 +278,7 @@ export default async function openClawDelivery(input: {
   }
   const receipt = delivery.pullRequest!;
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
-  if (action.operation === 'present') {
-    delivery.presentation =
-      githubNotificationPullRequestOpenedCard({
-        issueNumber: intake.issue.number,
-        pullRequestNumber: receipt.pullRequestNumber,
-        repositoryOwner: intake.repository.owner.login,
-        repositoryName: intake.repository.name,
-        commentFlow: input.feedbackEnabled ? 'openclaw' : 'unavailable',
-      }) +
-      '\n\n' +
-      announcementPresentation(
-        delivery.announcement,
-        `https://github.com/${repository}/issues/${intake.issue.number}`,
-      );
-    await save();
-    return {
-      status: 'presented',
-      id: record.id,
-      url,
-      presentation: delivery.presentation,
-      instructions:
-        'Reproduce the complete quoted PR card in this issue chat. Card generation does not establish visible delivery. Never recreate the PR for a presentation failure.',
-    };
-  }
+
   return {
     status: action.operation === 'publish' ? 'published' : 'ready',
     id: record.id,
@@ -308,5 +287,42 @@ export default async function openClawDelivery(input: {
     url,
     instructions:
       'Call delivery compose, invoke the selected reply skill for the delivery event, submit candidate and execute announce with its preview digest. Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
+  };
+}
+
+/** Display a retained receipt without reacquiring publication permission or contacting GitHub. */
+export function presentOpenClawDelivery(
+  record: OpenClawDispatchRecord,
+  intake: IntakeRecord,
+  feedbackEnabled: boolean,
+) {
+  const delivery = record.work?.delivery;
+  if (!delivery?.pullRequest) throw new Error('delivery-reconciliation-required');
+  const receipt = delivery.pullRequest;
+  const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
+  const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
+
+  delivery.presentation =
+    githubNotificationPullRequestOpenedCard({
+      issueNumber: intake.issue.number,
+      pullRequestNumber: receipt.pullRequestNumber,
+      repositoryOwner: intake.repository.owner.login,
+      repositoryName: intake.repository.name,
+      commentFlow: feedbackEnabled ? 'openclaw' : 'unavailable',
+    }) +
+    '\n\n' +
+    announcementPresentation(
+      delivery.announcement,
+      `https://github.com/${repository}/issues/${intake.issue.number}`,
+    );
+  return {
+    status: 'presented',
+    retained: true,
+    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
+    id: record.id,
+    url,
+    presentation: delivery.presentation,
+    instructions:
+      'Reproduce the complete quoted PR card in this issue chat. Card generation does not establish visible delivery. Never recreate the PR for a presentation failure.',
   };
 }

@@ -329,6 +329,32 @@ describe('agent/codex-delivery', () => {
       assert.equal(creates, 1);
     });
 
+  it('should display the retained pr and reconcile only attachment after head and authority change', async () => {
+    await publish();
+    head = 'b'.repeat(40);
+    fixture.item.assignees = [];
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.handoff;
+      state.records[0]!.delivery!.reconciled = false;
+      await save();
+    });
+    deps.connect = async () => {
+      throw new Error('presentation must not connect to github');
+    };
+    deps.git = async () => {
+      throw new Error('presentation must not inspect git');
+    };
+    const shown = await request('present');
+    assert.equal(shown.status, 'linked');
+    assert.match(String(shown.presentation), /pull\/7/);
+    attached = true;
+    assert.equal((await request('reconcile')).status, 'publication-incomplete');
+    assert.equal((await store.read()).records[0]!.delivery!.attached, true);
+    assert.equal((await store.read()).records[0]!.delivery!.reconciled, false);
+    assert.equal(creates, 1);
+    assert.equal(announcement.posts, 0);
+  });
+
   for (const draft of [false, true])
     it(`should reconcile announce and present a delivered ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
@@ -598,7 +624,9 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(publish(), /linkage-unverified/);
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 5);
-    await assert.rejects(request('present'), /reconciliation-required/);
+    const retained = await request('present');
+    assert.equal(retained.workflowStatus, 'partially-delivered');
+    assert.match(String(retained.presentation), /pull\/7/);
     wrongIssueLink = false;
     await publish();
     assert.equal(creates, 1);

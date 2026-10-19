@@ -75,7 +75,11 @@ import type { AgentManifest } from '../manifest/types.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import openClawWorkAction, { verifyOpenClawOperator } from './openclaw-work.ts';
-import openClawDelivery, { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
+import { describeIssueSession } from './openclaw-session-create.ts';
+import openClawDelivery, {
+  presentOpenClawDelivery,
+  type OpenClawDeliveryConnection,
+} from './openclaw-delivery.ts';
 
 export interface OpenClawDispatchDependencies {
   root: string;
@@ -655,6 +659,19 @@ export default class OpenClawDispatch {
           return { status: 'busy' as const, code: privateStateFileLockBusyErrorCode };
         throw error;
       });
+    if (
+      input.action === 'present' ||
+      (input.action === 'delivery' && input.operation === 'present')
+    ) {
+      const selected = await this.dependencies.intake.select(manifest, workspace);
+      const admitted = await selected.store.read();
+      if (!admitted) throw new Error('dispatch-intake-record-missing');
+      const journal = new OpenClawDispatchStore(
+        this.dependencies.root,
+        selected.store.location.scope,
+      );
+      return this.present(manifest, workspace, caller, input, authority, { admitted, journal });
+    }
     const workAction =
       input.action === 'handoff' ||
       input.action === 'implementation-context' ||
@@ -669,8 +686,6 @@ export default class OpenClawDispatch {
       feedbackChild;
     if (workAction && !operator) throw new Error('dispatch-operator-required');
     const current = await this.scope(manifest, workspace);
-    if (input.action === 'delivery' && input.operation === 'present')
-      return this.present(manifest, workspace, caller, input, operator, authority, current);
     const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
     let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
     let enteredTransaction = false;
@@ -1502,10 +1517,9 @@ export default class OpenClawDispatch {
     manifest: AgentManifest,
     workspace: string,
     caller: DispatchCaller,
-    action: Extract<Static<typeof dispatchParameters>, { action: 'delivery' }>,
-    operator: boolean,
+    action: Extract<Static<typeof dispatchParameters>, { action: 'delivery' | 'present' }>,
     authority: DispatchAuthority,
-    current: Awaited<ReturnType<OpenClawDispatch['scope']>>,
+    current: Pick<Awaited<ReturnType<OpenClawDispatch['scope']>>, 'admitted' | 'journal'>,
   ) {
     let stage: 'snapshot' | 'verification' | 'commit' = 'snapshot';
     let enteredJournal = false;
@@ -1530,61 +1544,30 @@ export default class OpenClawDispatch {
       const assertCurrent = async () => {
         signal.throwIfAborted();
         await authority.assertCurrent?.();
-        await this.validateLocal(manifest, workspace, record, true);
-        signal.throwIfAborted();
       };
       await assertCurrent();
-      const { intake, repo, client } = await this.validate(
-        manifest,
-        workspace,
-        record,
-        true,
-        false,
-        undefined,
-        signal,
-      );
-      const verified = await this.dependencies.credential.use(
-        { signal, assertCurrent },
-        async (request) => {
-          const source = await verifyOpenClawOperator({
-            record,
-            caller,
-            operator,
-            request,
-            config: this.dependencies.config(),
-          });
-          const result = await openClawDelivery({
-            record,
-            intake,
-            action,
-            source,
-            base: repo.defaultBranch,
-            recipients: current.policy.policy.issueAssignment?.pullRequest?.recipients,
-            feedbackEnabled: openClawFeedbackEnabled(manifest),
-            signal,
-            assertCurrent,
-            reauthorize: async () => {
-              await this.validate(manifest, workspace, record, true, false, client, signal);
-            },
-            // presentation changes only this snapshot until the journal comparison succeeds.
-            save: assertCurrent,
-            connect: async () => {
-              if (!this.dependencies.delivery) throw new Error('delivery-runtime-unavailable');
-              return this.dependencies.delivery({
-                manifest,
-                workspaceDir: current.workspace,
-                worktree: record.worktree!,
-                caller,
-                signal,
-                connection: client,
-              });
-            },
-          });
-          return { result, source };
-        },
-      );
+      const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
+      if (!intake) throw new Error('dispatch-intake-record-missing');
+      await this.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
+        await describeIssueSession(request, record, this.dependencies.config(), true);
+      });
       await assertCurrent();
-      await this.validate(manifest, workspace, record, true, false, client, signal);
+      const result =
+        action.action === 'present'
+          ? (() => {
+              if (!record.result) throw new Error('dispatch-result-missing');
+              return {
+                status: 'presented',
+                retained: true,
+                id: record.id,
+                presentation: assessmentPresentation(record.result, record, intake, workspace, {
+                  debug: manifest.debug,
+                }),
+                instructions:
+                  'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',
+              };
+            })()
+          : presentOpenClawDelivery(record, intake, openClawFeedbackEnabled(manifest));
       stage = 'commit';
       enteredJournal = false;
       return await current.journal.exclusive(async (state, save, lockSignal) => {
@@ -1595,12 +1578,11 @@ export default class OpenClawDispatch {
         const retained = state.records.find((entry) => entry.id === action.id);
         if (!retained || automationHash(retained) !== snapshot)
           throw new Error('delivery-presentation-state-changed');
-        retained.work!.delivery!.presentation = record.work!.delivery!.presentation;
-        // lookup custody is not implementation-context or publication permission.
-        retained.work!.operatorInput = verified.source;
+        if (action.action === 'delivery')
+          retained.work!.delivery!.presentation = record.work!.delivery!.presentation;
         signal.throwIfAborted();
         await save();
-        return verified.result;
+        return result;
       });
     } catch (error) {
       signal.throwIfAborted();
@@ -1614,14 +1596,18 @@ export default class OpenClawDispatch {
           retryable: true,
           stage,
           instructions:
-            'Retry delivery present in this issue chat to show the existing PR. Publication state is unchanged. Do not publish or create a replacement PR.',
+            action.action === 'present'
+              ? 'Retry present in this issue chat to show the saved assessment. This read grants no workflow authority.'
+              : 'Retry delivery present in this issue chat to show the existing PR. Publication state is unchanged. Do not publish or create a replacement PR.',
         };
       return {
         status: 'blocked' as const,
         id: action.id,
         code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
         instructions:
-          'Preserve the existing PR and receipt. Stop on denial or lost authority. After an interrupted presentation, retry delivery present in this issue chat; never create a replacement PR.',
+          action.action === 'present'
+            ? 'Preserve the saved assessment. Retry present in its owning issue chat after resolving this read failure.'
+            : 'Preserve the existing PR and receipt. After an interrupted presentation, retry delivery present in this issue chat; never create a replacement PR.',
       };
     }
   }

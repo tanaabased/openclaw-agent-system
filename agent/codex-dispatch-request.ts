@@ -28,6 +28,7 @@ const schemas = {
   }),
   reconcile: object({ id, receipt: Type.Optional(Type.Unknown()) }),
   context: object({ id }),
+  present: object({ id }),
   summary: object({ id, ...assessmentSummaryRequestProperties }),
   result: object({
     id,

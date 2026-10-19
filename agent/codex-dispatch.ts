@@ -395,6 +395,39 @@ export async function runCodexDispatch(
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
+  if (action === 'present') {
+    const record = (await store.read()).records.find((entry) => entry.id === input.id);
+    const intake = (await current.store.read())?.records.find(
+      (entry) => entry.id === record?.intakeId,
+    );
+    if (
+      !record?.request ||
+      !record.result ||
+      !record.threadId ||
+      record.threadId !== caller ||
+      !intake
+    )
+      throw new Error('dispatch-assessment-caller-mismatch');
+    return withNative(current, deps, async (native) => {
+      const found = await native.find({
+        sourceThreadId: record.sourceThreadId,
+        prompt: record.request!.prompt,
+        createdAfter: record.createdAt,
+        threadId: record.threadId,
+      });
+      if (!found || found.id !== caller) throw new Error('dispatch-native-binding-mismatch');
+      return {
+        status: 'presented',
+        retained: true,
+        id: record.id,
+        presentation: assessmentPresentation(record.result!, record, intake, current.workspace, {
+          debug: current.manifest.debug,
+        }),
+        instruction:
+          'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',
+      };
+    });
+  }
   if (action === 'handoff') {
     return store.exclusive(async (state, save) => {
       const record = state.records.find((entry) => entry.id === input.id);
