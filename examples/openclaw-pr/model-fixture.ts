@@ -55,10 +55,12 @@ function currentTurn(request: ChatCompletionRequest) {
 
 function isContention(result: Record<string, unknown> | undefined) {
   return (
-    ['busy', 'blocked'].includes(String(result?.status)) &&
-    ['private-state-file-lock-busy', 'private-state-snapshot-conflict'].includes(
-      String(result?.code),
-    )
+    ['busy', 'blocked', 'waiting'].includes(String(result?.status)) &&
+    [
+      'private-state-file-lock-busy',
+      'private-state-snapshot-conflict',
+      'discovery-checkpoint-changed',
+    ].includes(String(result?.code))
   );
 }
 
@@ -503,7 +505,7 @@ function response(request: ChatCompletionRequest) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^notification-retry-exhausted: private-state-(?:file-lock-busy|snapshot-conflict)$/u.test(
+      /^notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)$/u.test(
         error.message,
       )
     )

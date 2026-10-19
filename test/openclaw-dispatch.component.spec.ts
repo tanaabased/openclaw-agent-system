@@ -15,6 +15,8 @@ import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lo
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import { scanOpenClawFeedback } from '../agent/openclaw-feedback-scan.ts';
+import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
@@ -476,6 +478,27 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).retirement?.code, 'retirement-native-resource-protected');
     assert.equal(session!.archived, undefined);
     assert.equal((await record()).retired, undefined);
+  });
+
+  it('should report scheduler drift and its recovery without creating issue sessions', async () => {
+    const intake = service.dependencies.intake;
+    const readiness = intake.readiness.bind(intake);
+    intake.readiness = async () => 'automation-sync-required';
+    const warning = await service.run(manifest, root, coordinator, { action: 'report' });
+    assert.ok('response' in warning && typeof warning.response === 'string');
+    assert.match(warning.response, /automation-sync-required/);
+    assert.match(warning.response, /Agent System Install/);
+    intake.readiness = readiness;
+    const recovered = await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'resumed' },
+      { action: 'report' },
+    );
+    assert.ok('response' in recovered && typeof recovered.response === 'string');
+    assert.match(recovered.response, /Intake resumed/);
+    assert.match(recovered.response, /condition has cleared/);
+    assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 0);
   });
 
   it('should prepare the same intake report on retry and suppress its blocker after restart', async () => {
@@ -2926,6 +2949,31 @@ describe('agent/openclaw issue dispatch', () => {
       (await record()).feedback!.events.map((event) => event.sourceId),
       ['C_feedback'],
     );
+  });
+  it('should preserve a concurrently advanced owner at the first feedback checkpoint and resume later', async () => {
+    await feedbackOwner();
+    const current = await service.scope(manifest, root);
+    const snapshot = await current.journal.read();
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.result = { ...state.records[0]!.result!, summary: 'A newer assessment.' };
+      await save();
+    });
+    const newer = await current.journal.read();
+    const scans = await scanOpenClawFeedback({
+      service,
+      state: snapshot,
+      manifest,
+      workspace: root,
+      sourceThreadId: coordinator.sessionKey,
+      authority: {},
+      now: service.dependencies.now!(),
+      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
+    });
+    assert.deepEqual(scans, []);
+    assert.deepEqual(await current.journal.read(), newer);
+    await service.check(manifest, root);
+    assert.equal((await record()).result?.summary, 'A newer assessment.');
+    assert.equal((await record()).feedback!.events.length, 1);
   });
   it('should validate each feedback owner once during discovery and consume the saved result', async () => {
     await feedbackOwner();

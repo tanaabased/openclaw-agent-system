@@ -75,8 +75,8 @@ export async function scanOpenClawFeedback(input: {
     };
     feedback.scannedTime = now;
     feedback.discoveryPending = true;
-    await save();
     try {
+      await save();
       if (!enabled) {
         for (const event of feedback.events)
           if (!['published', 'blocked'].includes(event.phase)) {

@@ -240,6 +240,32 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       }
     });
 
+    for (const code of ['private-state-file-lock-busy', 'discovery-checkpoint-changed']) {
+      it(`should retry waiting ${code} with the same arguments and a bounded budget`, async () => {
+        const input = request('Advance previously admitted issue or feedback work.');
+        await action(input, 'next');
+        append(input, 'next', {
+          status: 'waiting',
+          code,
+          runtime: 'openclaw',
+          operation: 'dispatch:next',
+        });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const retry = await response(input);
+          assert.ok('toolCalls' in retry && retry.toolCalls?.length === 1);
+          assert.equal(retry.toolCalls[0]!.id, `call_notifications_next-0_retry_${attempt}`);
+          assert.deepEqual(JSON.parse(retry.toolCalls[0]!.arguments), { action: 'next' });
+          const recovered = structuredClone(input);
+          append(recovered, `next-0_retry_${attempt}`, { status: 'idle' });
+          await action(recovered, 'report');
+          append(input, `next-0_retry_${attempt}`, { status: 'waiting', code });
+        }
+        assert.deepEqual(await response(input), {
+          content: `notification-retry-exhausted: ${code}`,
+        });
+      });
+    }
+
     it('should retry known coordinator contention three times before reporting the blocker', async () => {
       const routing = {
         status: 'routing-required',
