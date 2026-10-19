@@ -20,7 +20,10 @@ describe('agent/codex-runtime', () => {
       assert.ifError(result.error);
       assert.equal(result.status, 1);
       assert.equal(result.stdout, '');
-      assert.equal(JSON.parse(result.stderr).code, 'intake-binding-unavailable');
+      const failure = JSON.parse(result.stderr);
+      assert.equal(failure.code, 'intake-binding-unavailable');
+      assert.equal(failure.operation, 'dispatch:summary:compose');
+      assert.equal(failure.id, 'a'.repeat(64));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

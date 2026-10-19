@@ -37,3 +37,18 @@ export default function dispatchContext(
       context.comments.some((comment) => comment.body.length > 1200),
   };
 }
+
+/** presentation order and receipted output do not change the assessed requirements. */
+export function dispatchEvidence(
+  context: ReturnType<typeof dispatchContext>,
+  ownCommentUrls: ReadonlySet<string> = new Set(),
+) {
+  return {
+    ...context,
+    observedAt: undefined,
+    labels: [...context.labels].sort(),
+    comments: context.comments.filter(
+      (comment) => !comment.url || !ownCommentUrls.has(comment.url),
+    ),
+  };
+}

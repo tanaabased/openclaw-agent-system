@@ -94,8 +94,14 @@ export default async function assessmentSummary(input: {
       )
         throw new Error('assessment-summary-authority-changed');
       const selection = await input.select(summary?.selection);
-      if (summary && automationHash(selection) !== automationHash(summary.selection))
-        throw new Error('assessment-summary-composition-changed');
+      if (summary && automationHash(selection) !== automationHash(summary.selection)) {
+        if (action.operation !== 'compose')
+          throw new Error('assessment-summary-composition-changed');
+        summary.selection = selection;
+        delete summary.publicText;
+        delete summary.code;
+        await input.save();
+      }
       if (!summary) {
         if (action.operation !== 'compose')
           throw new Error('assessment-summary-composition-required');
@@ -130,7 +136,7 @@ export default async function assessmentSummary(input: {
           verifiedOutcome: { assessment: record.result },
           maximumPublicCharacters: maximumGitHubNotificationReplyLength,
           instruction:
-            'The complete private assessment must already be presented here. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing or changed skills stop composition; no fallback.',
+            'The complete private assessment must already be presented here. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
         };
       if (action.operation === 'candidate') {
         if (action.digest !== digest) throw new Error('assessment-summary-composition-stale');

@@ -1,3 +1,6 @@
+import { matchesNotificationAuthority } from './notification-authority.ts';
+import workflowFailure from './workflow-failure.ts';
+import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 
@@ -14,7 +17,7 @@ import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit, verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
-import dispatchContext from './dispatch-context.ts';
+import dispatchContext, { dispatchEvidence } from './dispatch-context.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, validateWorkflowResult } from './workflow-result.ts';
@@ -122,6 +125,8 @@ export default async function runCodexContinuation(
                 record.worktree &&
                 !record.handoff &&
                 !record.retired &&
+                !record.retirement &&
+                !record.feedbackReactivation &&
                 !record.reset &&
                 !['complete', 'blocked', 'cancelled'].includes(record.continuation.phase),
             )
@@ -139,14 +144,26 @@ export default async function runCodexContinuation(
             !record.request ||
             record.handoff ||
             record.retired ||
+            record.retirement ||
+            record.feedbackReactivation ||
             record.reset
           )
             throw new Error('continuation-managed-issue-required');
+          if (
+            input.action === 'next' &&
+            ((work.retry && !dispatchRetryDue(work, (deps.now ?? Date.now)())) ||
+              (work.code && (work.retryAfter ?? 0) > (deps.now ?? Date.now)()))
+          )
+            continue;
           if (!occurrence && !retry && caller !== record.threadId)
             throw new Error('continuation-issue-caller-required');
           if (
             record.sourceThreadId !== activation.sourceThreadId ||
-            work.policyDigest !== schedule.current.policyDigest ||
+            !current.manifest.github?.notifications ||
+            !matchesNotificationAuthority(
+              work.policyDigest,
+              current.manifest.github.notifications,
+            ) ||
             current.manifest.github?.notifications?.schemaVersion !== 2 ||
             !['work', 'auto'].includes(
               current.manifest.github.notifications.issueAssignment?.mode ?? '',
@@ -172,8 +189,10 @@ export default async function runCodexContinuation(
               (work.retries?.length ?? 0) >= 8)
           )
             throw new Error('continuation-retry-unavailable');
-          if (!retry && ['blocked', 'cancelled', 'complete'].includes(work.phase))
+          if (!retry && ['blocked', 'cancelled', 'complete'].includes(work.phase)) {
+            if (input.action === 'next') continue;
             return { status: work.phase, id: record.id, code: work.code };
+          }
           if (!record.result) continue;
           if (record.issueMode === 'auto') {
             if (!record.result.decision) throw new Error('assessment-decision-required');
@@ -185,7 +204,10 @@ export default async function runCodexContinuation(
                 automationHash({ routing: record.routing, effective: record.effective }) ||
               record.stageReceipt.binding.evidenceDigest !==
                 automationHash(JSON.parse(record.context!)) ||
-              record.stageReceipt.binding.policyDigest !== work.policyDigest ||
+              !matchesNotificationAuthority(
+                record.stageReceipt.binding.policyDigest,
+                current.manifest.github.notifications,
+              ) ||
               record.stageReceipt.binding.turnId !== record.resultTurnId ||
               record.stageReceipt.binding.threadId !== record.threadId ||
               record.stageReceipt.binding.worktree !== record.worktree
@@ -241,7 +263,17 @@ export default async function runCodexContinuation(
             );
             if (latest.truncated || retained.truncated)
               throw new Error('continuation-assessment-evidence-incomplete');
-            if (automationHash(latest) !== automationHash(retained))
+            const ownCommentUrls = new Set(
+              (record.assessmentSummaries ?? []).flatMap((summary) =>
+                summary.receipt
+                  ? [`${retained.source}#issuecomment-${summary.receipt.databaseId}`]
+                  : [],
+              ),
+            );
+            if (
+              automationHash(dispatchEvidence(latest, ownCommentUrls)) !==
+              automationHash(dispatchEvidence(retained, ownCommentUrls))
+            )
               throw new Error('continuation-assessment-evidence-changed');
           }
           const found = await native.find({
@@ -361,12 +393,17 @@ export default async function runCodexContinuation(
                   '.',
               },
             };
+            delete record.nativeInactive;
             work.phase = 'prepared';
+            delete work.retry;
+            delete work.retryAfter;
             await save();
             return { status: 'prepared', id: record.id, request: work.attempt.request };
           }
           const activeAttempt = work.publicationAttempt ?? work.attempt;
           const receipt = await continuationNative(record.sourceThreadId, activeAttempt);
+          delete work.retry;
+          delete work.retryAfter;
           if (retryDenied) {
             if (
               receipt.status !== 'blocked' ||
@@ -613,14 +650,29 @@ export default async function runCodexContinuation(
           if (codexHostAccess(error) || (input.action !== 'next' && input.action !== 'reconcile'))
             throw error;
           if (record.continuation) {
-            record.continuation.phase = 'blocked';
-            record.continuation.code =
-              error instanceof Error && /^[a-z][a-z0-9-]{0,127}$/u.test(error.message)
-                ? error.message
-                : 'continuation-host-unavailable';
+            record.continuation.code = workflowFailure(error, 'continuation-operation-failed').code;
+            record.continuation.retryAfter = (deps.now ?? Date.now)() + 300000;
+            scheduleDispatchRetry(
+              record.continuation,
+              record.continuation.code,
+              error,
+              (deps.now ?? Date.now)(),
+            );
+            if (
+              dispatchFailurePhase(record.continuation, record.continuation.code, error) ===
+              'blocked'
+            )
+              record.continuation.phase = 'blocked';
             await save();
           }
-          return { status: 'blocked', id: record.id, code: record.continuation?.code };
+          return {
+            status: record.continuation
+              ? dispatchFailurePhase(record.continuation, record.continuation.code!, error)
+              : 'waiting',
+            id: record.id,
+            ...workflowFailure(error, 'continuation-operation-failed'),
+            nextAction: 'next',
+          };
         }
       }
       return { status: 'idle' };

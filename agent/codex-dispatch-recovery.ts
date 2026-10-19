@@ -1,4 +1,5 @@
 import { automationHash } from './automation-hash.ts';
+import assignmentRetirement from './assignment-retirement.ts';
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
 import type { DispatchState, DispatchRecord } from './codex-dispatch-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -19,6 +20,7 @@ export default async function recoverDispatch(
     issueUrl: string;
     caller: string;
     now: number;
+    graceMinutes: number;
     save(): Promise<void>;
     fresh(): Promise<void>;
     revalidate(): Promise<unknown>;
@@ -75,12 +77,19 @@ export default async function recoverDispatch(
         issue: issueUrl,
         threadId: record.threadId ?? record.receiptThreadId,
         instruction:
-          'Retire this closed issue from the queue, preserving its evidence. This does not stop or archive a native chat or remove its worktree; clean those up through native controls. Only a new assignment event can admit it again.',
+          'Queue this closed issue for retirement, preserving its evidence and any existing grace deadline. The owning intake performs configured cleanup after verifying native inactivity and preservation. A paused intake must resume before cleanup can proceed.',
       };
     if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-    record.retired = { at: now, by: caller };
+    record.reservationVersion = 1;
+    record.retirement = assignmentRetirement({
+      previous: record.retirement,
+      reason: 'issue-closed',
+      intakeId: record.intakeId,
+      now,
+      graceMinutes: context.graceMinutes,
+    });
     await save();
-    return { status: 'retired', id: record.id, retired: record.retired };
+    return { status: 'retirement-pending', id: record.id, retirement: record.retirement };
   }
   if (action === 'reset') {
     if (
@@ -140,11 +149,13 @@ export default async function recoverDispatch(
     if (
       record.sourceThreadId !== sourceThreadId ||
       !record.request ||
-      !['creating', 'blocked'].includes(record.phase) ||
+      !['creating', 'blocked', 'waiting', 'retrying'].includes(record.phase) ||
       record.clientThreadId ||
       record.receiptThreadId ||
       record.threadId ||
       record.worktree ||
+      record.continuation?.attempt ||
+      record.continuation?.publicationAttempt ||
       (record.deniedCreations?.length ?? 0) >= 8
     )
       throw new Error('dispatch-denial-unverified');
@@ -153,6 +164,7 @@ export default async function recoverDispatch(
       const evidence = await native.deniedCreation(
         record.sourceThreadId,
         record.request!,
+        { createdAt: record.createdAt, turnId: record.preparationTurnId },
         input.approvedCallId as string | undefined,
       );
       const found = await native.find({
@@ -179,10 +191,13 @@ export default async function recoverDispatch(
         request: record.request,
         createdAt: record.createdAt,
         recoveredAt: now,
+        ...(record.continuation ? { continuation: record.continuation } : {}),
         ...denial,
         ...(input.approvedCallId ? { approvedBy: caller } : {}),
       },
     ];
+    delete record.continuation;
+    delete record.preparationTurnId;
     delete record.request;
     delete record.result;
     delete record.stageReceipt;

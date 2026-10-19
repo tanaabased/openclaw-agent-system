@@ -1,3 +1,5 @@
+import workflowRecovery from './workflow-recovery.ts';
+import workflowStatus from './workflow-status.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import pendingAssignments from './dispatch-pending.ts';
@@ -22,9 +24,14 @@ export default function openclawIntakeReport(input: {
   slots: number;
 }) {
   const { state, intake, observation } = input;
-  const active = state.records.filter((record) => !record.retired && !record.reset);
+  const active = state.records.filter(
+    (record) => !record.retired && !record.retirement && !record.reset,
+  );
+  const retirementPending = state.records.filter(
+    (record) => record.retirement && !record.retired,
+  ).length;
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
-  const capacity = dispatchCapacity(active, input.slots);
+  const capacity = dispatchCapacity(state.records, input.slots);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
@@ -64,7 +71,9 @@ export default function openclawIntakeReport(input: {
     (fingerprint !== state.intakeReport?.fingerprint &&
       (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
   const title = failures.length
-    ? '⚠️ Intake needs attention'
+    ? observation.status === 'blocked'
+      ? '⚠️ Intake needs attention'
+      : '⚠️ Intake checked — some items need attention'
     : started.length
       ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
       : recovered.length
@@ -84,14 +93,27 @@ export default function openclawIntakeReport(input: {
   if (started.length) lines.push('');
   for (const failure of failures.slice(0, 12)) {
     const automation = failure.code.startsWith('automation-');
+    const record = active.find((record) => record.id === failure.id);
+    const retry = record?.retry ? record.retryAfter : undefined;
     lines.push(
+      ...(record
+        ? [
+            `- **Issue:** ${text(label(record))}`,
+            `  **Operation:** ${text(record.failureStage ?? 'assignment preparation')}`,
+            `  **Status:** ${workflowStatus(record)}`,
+          ]
+        : ['- **Operation:** assignment scan']),
       `- **Diagnostic:** \`${text(failure.code)}\``,
       '  **Action:** ' +
-        (automation
-          ? /sync|required|disabled|ownership/.test(failure.code)
-            ? 'Run Agent System Install to reconcile the owned intake automation. Nothing was repaired automatically.'
-            : 'Inspect the intake automation execution and delivery health with supported Agent System Doctor. Preserve its receipts; retry observation when service access is available.'
-          : intakeRemediation(failure.code)),
+        (retry
+          ? 'Automatic recovery will retry at or after ' +
+            new Date(retry).toISOString() +
+            '. Preserve the retained request; no new stage approval is needed.'
+          : automation
+            ? /sync|required|disabled|ownership/.test(failure.code)
+              ? 'Run Agent System Install to reconcile the owned intake automation. Nothing was repaired automatically.'
+              : 'Inspect the intake automation execution and delivery health with supported Agent System Doctor. Preserve its receipts; retry observation when service access is available.'
+            : (workflowRecovery(failure.code)?.next ?? intakeRemediation(failure.code))),
     );
   }
   if (failures.length) lines.push('');
@@ -103,7 +125,8 @@ export default function openclawIntakeReport(input: {
       '',
     );
   lines.push(
-    `**Managing:** ${managing.length} issues${pending === undefined ? '' : ` · **Pending:** ${pending}`}`,
+    `**Active:** ${managing.length} issues${pending === undefined ? '' : ` · **Pending:** ${pending}`}`,
+    `**Retirement pending:** ${retirementPending}`,
     `**Slots:** ${capacity.occupied}/${input.slots} occupied · ${capacity.available} available`,
   );
   if (pending && !capacity.available)

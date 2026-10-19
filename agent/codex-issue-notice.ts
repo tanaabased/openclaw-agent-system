@@ -1,3 +1,5 @@
+import workflowRecovery from './workflow-recovery.ts';
+import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import githubNotificationCard, {
   githubNotificationMarkdownText as text,
 } from '../channels/github/presentation/card.ts';
@@ -20,7 +22,10 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
   },
 };
 
-function failure(code: string): NoticeCopy {
+function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  const recovery = workflowRecovery(code, diagnostic);
+  if (recovery)
+    return { severity: 'warning', title: 'This operation needs attention', ...recovery };
   if (code === 'dispatch-native-occurrence-unavailable')
     return {
       severity: 'warning',
@@ -246,12 +251,16 @@ export default function codexIssueNotice(input: {
   event: IssueNoticeEvent;
   changed: boolean;
   code?: string;
+  providerDiagnostic?: ProviderDiagnostic;
   issue?: { label: string; url: string };
   actionMarkdown?: string;
   facts?: { label: string; value: string }[];
 }) {
   const code = input.code && /^[a-z][a-z0-9-]{0,127}$/u.test(input.code) ? input.code : undefined;
-  const copy = input.event === 'failure' ? failure(code ?? 'unknown') : events[input.event];
+  const copy =
+    input.event === 'failure'
+      ? failure(code ?? 'unknown', input.providerDiagnostic)
+      : events[input.event];
   const facts = [
     ...(input.issue
       ? [{ label: 'Issue', value: `[${text(input.issue.label)}](${input.issue.url})` }]

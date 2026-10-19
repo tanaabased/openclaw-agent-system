@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import waitForAssessmentRelease from '../examples/openclaw-issue/assessment-barrier.ts';
+import waitForAssessmentRelease from '../examples/openclaw-notifications/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -9,11 +9,12 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
+import { notificationsExampleScenario } from '../examples/openclaw-notifications/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
-for (const scenario of [issueExampleScenario, prExampleScenario]) {
+for (const scenario of [issueExampleScenario, prExampleScenario, notificationsExampleScenario]) {
   const id = 'a'.repeat(64);
   const job = openclawIntakeJobs({
     schemaVersion: 1,
@@ -89,36 +90,37 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
-    it('should release only the assessment explicitly unblocked by the native scenario', async () => {
-      const directory = '/tmp/notification-barrier-fixture';
-      const files = new Set<string>();
-      const listeners = new Set<() => void>();
-      const boundary = {
-        exists: (path: string) => files.has(path),
-        observe: (_directory: string, changed: () => void) => {
-          listeners.add(changed);
-          return () => {
-            listeners.delete(changed);
-          };
-        },
-      };
-      await waitForAssessmentRelease('no-hold', directory, boundary);
-      files.add(join(directory, 'notification-assessments-held'));
-      const first = waitForAssessmentRelease('first', directory, boundary);
-      let secondReleased = false;
-      const second = waitForAssessmentRelease('second', directory, boundary).then(() => {
-        secondReleased = true;
+    if (scenario.id === 'openclaw-notifications')
+      it('should release only the assessment explicitly unblocked by the native scenario', async () => {
+        const directory = '/tmp/notification-barrier-fixture';
+        const files = new Set<string>();
+        const listeners = new Set<() => void>();
+        const boundary = {
+          exists: (path: string) => files.has(path),
+          observe: (_directory: string, changed: () => void) => {
+            listeners.add(changed);
+            return () => {
+              listeners.delete(changed);
+            };
+          },
+        };
+        await waitForAssessmentRelease('no-hold', directory, boundary);
+        files.add(join(directory, 'notification-assessments-held'));
+        const first = waitForAssessmentRelease('first', directory, boundary);
+        let secondReleased = false;
+        const second = waitForAssessmentRelease('second', directory, boundary).then(() => {
+          secondReleased = true;
+        });
+        files.add(join(directory, 'notification-assessment-released-first'));
+        for (const listener of listeners) listener();
+        await first;
+        assert.equal(secondReleased, false);
+        files.add(join(directory, 'notification-assessment-released-second'));
+        for (const listener of listeners) listener();
+        await second;
+        assert.equal(listeners.size, 0);
+        await waitForAssessmentRelease('first', directory, boundary);
       });
-      files.add(join(directory, 'notification-assessment-released-first'));
-      for (const listener of listeners) listener();
-      await first;
-      assert.equal(secondReleased, false);
-      files.add(join(directory, 'notification-assessment-released-second'));
-      for (const listener of listeners) listener();
-      await second;
-      assert.equal(listeners.size, 0);
-      await waitForAssessmentRelease('first', directory, boundary);
-    });
 
     it('should advance three distinct pending assessments using indexed string-wrapped native results', async () => {
       const input = request(intakePrompt);
@@ -171,6 +173,17 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         await action(input, 'report');
         append(input, 'report', { status: 'reported', response: 'at capacity' });
         assert.deepEqual(await response(input), { content: 'at capacity' });
+      }
+    });
+
+    it('should continue unrelated work after an item failure explicitly selects next', async () => {
+      for (const status of ['blocked', 'waiting', 'retrying']) {
+        const input = request(intakePrompt);
+        append(input, 'scan', { status: 'ready' });
+        append(input, 'next', { status, id, nextAction: 'next' });
+        await action(input, 'next');
+        append(input, 'next-1', { status: 'idle' });
+        await action(input, 'report');
       }
     });
 
@@ -228,6 +241,32 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         assert.deepEqual(await response(input), { content: 'notification-intake-unchanged' });
       }
     });
+
+    for (const code of ['private-state-file-lock-busy', 'discovery-checkpoint-changed']) {
+      it(`should retry waiting ${code} with the same arguments and a bounded budget`, async () => {
+        const input = request('Advance previously admitted issue or feedback work.');
+        await action(input, 'next');
+        append(input, 'next', {
+          status: 'waiting',
+          code,
+          runtime: 'openclaw',
+          operation: 'dispatch:next',
+        });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const retry = await response(input);
+          assert.ok('toolCalls' in retry && retry.toolCalls?.length === 1);
+          assert.equal(retry.toolCalls[0]!.id, `call_notifications_next-0_retry_${attempt}`);
+          assert.deepEqual(JSON.parse(retry.toolCalls[0]!.arguments), { action: 'next' });
+          const recovered = structuredClone(input);
+          append(recovered, `next-0_retry_${attempt}`, { status: 'idle' });
+          await action(recovered, 'report');
+          append(input, `next-0_retry_${attempt}`, { status: 'waiting', code });
+        }
+        assert.deepEqual(await response(input), {
+          content: `notification-retry-exhausted: ${code}`,
+        });
+      });
+    }
 
     it('should retry known coordinator contention three times before reporting the blocker', async () => {
       const routing = {
@@ -320,7 +359,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
       const nextResponse = await response(later);
       assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.equal((await action(later, 'summary')).operation, 'compose');
     });
 
@@ -386,7 +425,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         'content' in nextResponse && nextResponse.content,
         'The complete retained presentation.',
       );
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.equal((await action(input, 'summary')).operation, 'compose');
       for (const value of [
         { ...context, runtime: 'codex' },
@@ -465,7 +504,10 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         assert.equal((await action(input, 'delivery')).operation, 'prepare');
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).digest, digest);
-        append(input, 'delivery-publish', { status: 'published' });
+        append(input, 'delivery-publish', {
+          status: 'published',
+          workflowStatus: 'partially-delivered',
+        });
         assert.equal((await action(input, 'delivery')).operation, 'compose');
         append(input, 'delivery-compose', {
           status: 'composition-ready',
@@ -481,13 +523,65 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
         append(input, 'delivery-announce', { status: 'announced' });
         assert.ok('content' in (await response(input)));
         const retry = request(
-          `Operator request for managed issue ${id}: Reconcile the existing PR announcement and show its card again.`,
+          `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
         );
-        assert.equal((await action(retry, 'delivery')).operation, 'announce');
-        append(retry, 'delivery-repeat', { status: 'announced' });
+        await action(retry, 'present');
+        append(retry, 'assessment-present', { status: 'presented', presentation: '> Saved plan' });
         assert.equal((await action(retry, 'delivery')).operation, 'present');
         append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-        assert.deepEqual(await response(retry), { content: '> PR card' });
+        assert.deepEqual(await response(retry), { content: '> Saved plan\n\n> PR card' });
+      });
+
+      it('should commit a follow-up and reuse the existing announcement after updating the pr', async () => {
+        const input = request(
+          `Operator request for managed issue ${id}: Add a follow-up commit and update the existing PR title and body.`,
+        );
+        append(input, 'handoff-preview', { status: 'handoff-available', digest });
+        append(input, 'handoff', { status: 'handed-off' });
+        append(input, 'work-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          publicationAuthorized: true,
+          project: { path: '/tmp/owned' },
+        });
+        const patch = await response(input);
+        assert.ok('toolCalls' in patch && patch.toolCalls?.[0]?.name === 'agent_system_git');
+        const args = JSON.parse(patch.toolCalls[0].arguments);
+        assert.match(args.stdin, /Verify the same PR and announcement/);
+        assert.doesNotMatch(args.stdin, /new file mode/);
+        for (const stage of ['apply', 'add', 'commit'])
+          append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
+        append(input, 'work-result', { status: 'recorded' });
+        const prepared = await action(input, 'delivery');
+        assert.equal(prepared.operation, 'prepare');
+        assert.match(prepared.title!, /cleanup and verification/);
+        append(input, 'delivery-prepare', { status: 'prepared', digest });
+        assert.equal((await action(input, 'delivery')).operation, 'publish');
+        const refreshedDigest = 'f'.repeat(64);
+        append(input, 'delivery-publish', {
+          status: 'prepared',
+          code: 'delivery-preview-stale',
+          digest: refreshedDigest,
+        });
+        const refreshed = await action(input, 'delivery');
+        assert.equal(refreshed.operation, 'publish');
+        assert.equal(refreshed.digest, refreshedDigest);
+        assert.equal(refreshed.title, prepared.title);
+        assert.equal(refreshed.body, prepared.body);
+        const stopped = structuredClone(input);
+        append(stopped, 'delivery-publish-refreshed', {
+          status: 'prepared',
+          code: 'delivery-preview-stale',
+          digest,
+        });
+        assert.equal(matchFixture([...scenario.fixtures], stopped), null);
+        append(input, 'delivery-publish-refreshed', {
+          status: 'published',
+          workflowStatus: 'partially-delivered',
+        });
+        assert.equal((await action(input, 'delivery')).operation, 'announce');
+        append(input, 'delivery-repeat', { status: 'announced' });
+        assert.equal((await action(input, 'delivery')).operation, 'present');
       });
 
       it('should stop when native authority rejects the operator handoff', async () => {
@@ -523,7 +617,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       });
       const retained = await action(input, 'feedback');
       assert.equal(retained.operation, 'result');
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.match(retained.privateText!, /implementation remains unstarted/);
       append(input, 'feedback-result', {
         status: 'recorded',
@@ -541,7 +635,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario]) {
       append(input, 'feedback-skill', { text: 'Selected reply method' });
       const candidate = await action(input, 'feedback');
       assert.equal(candidate.operation, 'candidate');
-      if (scenario.id === 'openclaw-issue')
+      if (scenario.id !== 'openclaw-pr')
         assert.match(candidate.publicText!, /Implementation has not started/);
       append(input, 'feedback-candidate', { status: 'candidate-recorded' });
       assert.equal((await action(input, 'feedback')).digest, undefined);

@@ -1,3 +1,12 @@
+import { matchesIntakePolicy } from './assignment-intake-policy.ts';
+import { notificationAuthorityDigest } from './notification-authority.ts';
+import type codexRetirementNative from './codex-retirement-native.ts';
+import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
+import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
+import workflowRecovery from './workflow-recovery.ts';
+import workflowStatus from './workflow-status.ts';
+import workflowFailure from './workflow-failure.ts';
+import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
 import assessmentSummary from './assessment-summary.ts';
 import {
@@ -10,7 +19,7 @@ import redactCodexFeedback from './codex-feedback-redaction.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import runCodexFeedback from './codex-feedback.ts';
-import codexCapacity from './codex-capacity.ts';
+import codexCapacity, { codexUnresolvedRetirement } from './codex-capacity.ts';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -86,6 +95,7 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   feedbackConnect?: typeof connectCodexFeedback;
   summaryAuthority?: (threadId: string, turnId: string) => Promise<void>;
   prepareRepository?: typeof prepareDispatchRepository;
+  retirementNative?: ReturnType<typeof codexRetirementNative>;
   threadId?: string;
 }
 
@@ -97,15 +107,11 @@ function issueUrl(record: IntakeRecord) {
 }
 function code(error: unknown) {
   if (codexHostAccess(error)) return 'codex-host-access-required';
-  const value =
-    nativeObject(error) && typeof error.code === 'string'
-      ? error.code
-      : error instanceof Error
-        ? error.message
-        : '';
-  return /^[a-z][a-z0-9-]{0,127}$/u.test(value) ? value : 'dispatch-host-unavailable';
+  return workflowFailure(error, 'dispatch-operation-failed').code;
 }
 function remediation(value: string) {
+  const recovery = workflowRecovery(value);
+  if (recovery) return recovery.next;
   if (value === 'dispatch-native-receipt-reused')
     return "This native receipt belongs to another assessment, including a retired attempt. Reconcile only the receipt returned by this prepared request's create_thread call, or omit receipt to recover its actual creation. Do not create again or reuse history.";
   if (value.startsWith('dispatch-assessment-skill-'))
@@ -126,7 +132,7 @@ function remediation(value: string) {
     return 'Restore current issue assignment, repository access, and configured authority before retrying. Retain the existing chat and evidence.';
   if (value.includes('result'))
     return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat to finish the assessment and submit its structured result; do not launch a replacement.';
-  return 'Inspect the retained native creation receipt, chat, and worktree. Restore host access or reconcile the existing creation; never repeat an uncertain create.';
+  return 'Inspect this operation and the retained native creation receipt, chat, and worktree. Resolve the reported condition, then reconcile the existing creation; never repeat an uncertain create or change credentials without evidence of an authentication failure.';
 }
 function blocker(
   record: DispatchRecord,
@@ -170,7 +176,9 @@ function blocker(
     outcome: 'operator-setup-blocker',
     code: value,
     summary: 'The issue assessment needs setup or recovery.',
-    remediation: action + detail,
+    remediation:
+      (workflowRecovery(value, workflowFailure(error, value).providerDiagnostic)?.next ?? action) +
+      detail,
     evidence: [{ source: 'Agent System dispatch', status: 'observed', detail: value }],
     progress: record.result?.progress ?? {
       completed: record.threadId ? ['Retained native issue chat ' + record.threadId + '.'] : [],
@@ -186,6 +194,7 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
   return {
     id: record.id,
     status: record.handoff ? 'handed-off' : record.phase,
+    workflowStatus: workflowStatus(record),
     changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
     threadId: record.threadId,
     ...(failure
@@ -223,9 +232,9 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
           }),
         }
       : {}),
-    nextAction: failure ? 'report' : 'next',
+    nextAction: 'next',
     instruction: failure
-      ? 'Report this intake obstacle with any issues already started. Do not repeat an uncertain creation.'
+      ? 'Continue next for unrelated eligible assignments, then report this intake obstacle with any issues already started. Do not repeat an uncertain creation.'
       : 'Continue checking pending assignments while this run has capacity. Assessment progress belongs only in the issue.',
   };
 }
@@ -292,6 +301,7 @@ async function recover(
   deps: CodexDispatchDependencies,
   save: () => Promise<void>,
   threadId = record.threadId ?? record.receiptThreadId,
+  readOnly = false,
 ) {
   if (!record.request || !record.project) throw new Error('dispatch-creation-not-prepared');
   const found = await withNative(current, deps, (native) =>
@@ -314,7 +324,7 @@ async function recover(
   )
     throw new Error('dispatch-native-model-diverged');
   // titles are presentation, not identity; normalize only after native authority checks.
-  if (found.name !== record.request.title)
+  if (!readOnly && found.name !== record.request.title)
     await withNative(current, deps, (native) => native.rename(found.id, record.request!.title));
   if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
   record.effective = {
@@ -367,16 +377,58 @@ export async function runCodexDispatch(
 ) {
   validateDispatchRequest(action, input);
   if (action === 'next') {
+    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
+    if (retirement) return retirement;
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
   }
   const current = await selectCodexIntake(pluginData, deps);
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
-    return store.read();
+    const state = await store.read();
+    return {
+      ...state,
+      records: state.records.map((record) => ({
+        ...record,
+        workflowStatus: workflowStatus(record),
+      })),
+    };
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
+  if (action === 'present') {
+    const record = (await store.read()).records.find((entry) => entry.id === input.id);
+    const intake = (await current.store.read())?.records.find(
+      (entry) => entry.id === record?.intakeId,
+    );
+    if (
+      !record?.request ||
+      !record.result ||
+      !record.threadId ||
+      record.threadId !== caller ||
+      !intake
+    )
+      throw new Error('dispatch-assessment-caller-mismatch');
+    return withNative(current, deps, async (native) => {
+      const found = await native.find({
+        sourceThreadId: record.sourceThreadId,
+        prompt: record.request!.prompt,
+        createdAfter: record.createdAt,
+        threadId: record.threadId,
+      });
+      if (!found || found.id !== caller) throw new Error('dispatch-native-binding-mismatch');
+      return {
+        status: 'presented',
+        retained: true,
+        id: record.id,
+        presentation: assessmentPresentation(record.result!, record, intake, current.workspace, {
+          debug: current.manifest.debug,
+        }),
+        instruction:
+          'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',
+      };
+    });
+  }
   if (action === 'handoff') {
     return store.exclusive(async (state, save) => {
       const record = state.records.find((entry) => entry.id === input.id);
@@ -386,7 +438,8 @@ export async function runCodexDispatch(
         !record.threadId ||
         !record.worktree ||
         record.reset ||
-        record.retired
+        record.retired ||
+        record.retirement
       )
         throw new Error('dispatch-handoff-unavailable');
       if (
@@ -472,15 +525,15 @@ export async function runCodexDispatch(
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-    operatorRecovery || operatorRetire,
-    retainedWork,
+    operatorRecovery,
+    retainedWork || operatorRetire,
   );
   if (operatorAction && caller === activation.sourceThreadId)
     throw new Error('dispatch-operator-caller-required');
   if (!operatorAction && !childAction && caller !== activation.sourceThreadId)
     throw new Error('dispatch-intake-caller-required');
   const admitted = await current.store.read();
-  if (!admitted || (!retainedWork && admitted.policyDigest !== current.policy?.digest))
+  if (!admitted || (!retainedWork && !matchesIntakePolicy(admitted.policyDigest, current.policy)))
     throw new Error('dispatch-policy-reconciliation-required');
   const now = (deps.now ?? Date.now)();
   const waitForLock = childAction || action === 'report';
@@ -506,8 +559,8 @@ export async function runCodexDispatch(
         const allowed = await (deps.activation ?? inspectCodexDispatchActivation)(
           pluginData,
           { codexHome: selected.codexHome, inspectBinding: deps.inspectBinding },
-          operatorRecovery || operatorRetire,
-          retainedWork,
+          operatorRecovery,
+          retainedWork || operatorRetire,
         );
         if (
           selected.digest !== current.digest ||
@@ -541,7 +594,6 @@ export async function runCodexDispatch(
           await save();
           return { id: record.id, status: 'creating', changed: false };
         }
-        record.phase = 'blocked';
         record.result = blocker(
           record,
           code(error),
@@ -549,11 +601,24 @@ export async function runCodexDispatch(
           admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
         );
         record.retryAfter = now + 300000;
-        if (state.run) state.run.stopped = 'blocked';
+        scheduleDispatchRetry(record, code(error), error, now);
+        record.phase = dispatchFailurePhase(record, code(error), error);
+        if (
+          record.phase === 'retrying' &&
+          record.retryAfter &&
+          record.result.outcome === 'operator-setup-blocker'
+        )
+          record.result.remediation =
+            'Automatic recovery will retry at or after ' +
+            new Date(record.retryAfter).toISOString() +
+            '. Preserve the retained request; no new stage approval is needed.';
+        // an item failure does not end the shared intake occurrence.
+        if (state.run) delete state.run.stopped;
         const result = notice(
           record,
           admitted.records.find((entry) => entry.id === record.intakeId),
         );
+        Object.assign(result, workflowFailure(error, 'dispatch-operation-failed'));
         result.changed = previousCode !== code(error);
         if ('notify' in result) result.notify = result.changed;
         await save();
@@ -576,13 +641,59 @@ export async function runCodexDispatch(
           await save();
           return { status, changed: false };
         };
+        // historical custody is observed independently of provider authorization and checkout availability.
+        const observations = state.records
+          .filter(
+            (entry) =>
+              entry.request &&
+              !entry.handoff &&
+              (codexUnresolvedRetirement(entry) ||
+                ((entry.threadId || entry.receiptThreadId) &&
+                  (['blocked', 'waiting', 'retrying'].includes(entry.phase) ||
+                    (entry.continuation &&
+                      ['blocked', 'cancelled'].includes(entry.continuation.phase)) ||
+                    entry.feedback?.events.some(
+                      (event) => event.phase === 'blocked' && event.attempt,
+                    )))),
+          )
+          .sort((a, b) => (a.capacityObservation?.at ?? 0) - (b.capacityObservation?.at ?? 0))
+          .filter(
+            (entry) =>
+              (!entry.retired && !entry.retirement) ||
+              !entry.capacityObservation ||
+              entry.capacityObservation.at + 300000 <= now,
+          )
+          .slice(0, 12);
+        for (const record of observations) {
+          try {
+            await withNative(current, deps, (native) =>
+              reconcileCodexCapacity(record, native, state.run!.id, now),
+            );
+          } catch (error) {
+            // failure to open the native reader neither proves inactivity nor stops unrelated work.
+            delete record.nativeInactive;
+            record.capacityObservation = {
+              ...record.capacityObservation,
+              at: now,
+              code: workflowFailure(error, 'dispatch-capacity-observation-unavailable').code,
+            };
+          }
+        }
+        if (observations.length) await save();
         for (const pending of state.records.filter(
           (record) =>
             !record.retired &&
+            !record.retirement &&
             !record.handoff &&
             record.request &&
             !record.effective &&
             record.phase !== 'complete' &&
+            (record.phase !== 'blocked' ||
+              (record.result?.outcome === 'operator-setup-blocker' &&
+                [
+                  'dispatch-assignment-superseded',
+                  'dispatch-assignment-authority-revoked',
+                ].includes(record.result.code))) &&
             (record.retryAfter ?? 0) <= now,
         )) {
           const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
@@ -590,25 +701,42 @@ export async function runCodexDispatch(
           try {
             await revalidateDispatchAssignment(current, intake, deps, signal);
             await recover(current, pending, intake, deps, save);
+            delete pending.retry;
             pending.retryAfter = now + 300000;
             await fresh();
             const result = notice(pending, intake);
             await save();
             if (result.changed || result.status !== 'assessing') return result;
           } catch (error) {
+            if (code(error) === 'dispatch-assignment-superseded') {
+              try {
+                await recover(current, pending, intake, deps, save, undefined, true);
+              } catch (recoveryError) {
+                if (code(recoveryError) !== 'dispatch-creation-unresolved')
+                  return fail(pending, recoveryError);
+              }
+            }
             if (
-              code(error) === 'dispatch-creation-unresolved' &&
+              ['dispatch-creation-unresolved', 'dispatch-assignment-superseded'].includes(
+                code(error),
+              ) &&
               !pending.threadId &&
               !pending.receiptThreadId &&
               !pending.clientThreadId &&
               !pending.worktree &&
+              !pending.continuation?.attempt &&
+              !pending.continuation?.publicationAttempt &&
               (pending.unsubmittedCreations?.length ?? 0) < 8
             ) {
               try {
                 const proof = await withNative(current, deps, (native) =>
                   native.unsubmittedCreation(
                     pending.sourceThreadId,
-                    { createdAt: pending.createdAt, turnId: pending.preparationTurnId },
+                    {
+                      createdAt: pending.createdAt,
+                      turnId: pending.preparationTurnId,
+                      prompt: pending.request!.prompt,
+                    },
                     state.run!.id,
                   ),
                 );
@@ -618,8 +746,10 @@ export async function runCodexDispatch(
                     request: pending.request!,
                     createdAt: pending.createdAt,
                     recoveredAt: now,
+                    ...(pending.continuation ? { continuation: pending.continuation } : {}),
                     turnId: proof.turnId,
                   });
+                  delete pending.continuation;
                   delete pending.request;
                   delete pending.result;
                   delete pending.stageReceipt;
@@ -639,12 +769,19 @@ export async function runCodexDispatch(
         }
         if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
           return checked('at-capacity');
-        const intake = pendingDispatchAssignments(state, admitted).find(
-          ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
+        const intake = pendingDispatchAssignments(state, admitted, codexUnresolvedRetirement).find(
+          ({ record, intake }) =>
+            !record?.request &&
+            (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
+            (record?.retryAfter ?? 0) <= now,
         )?.intake;
         if (!intake) return checked('idle');
         let record = state.records.find(
-          (entry) => !entry.reset && !entry.retired && entry.issueKey === issueKey(intake),
+          (entry) =>
+            !entry.reset &&
+            !entry.retired &&
+            !entry.retirement &&
+            entry.issueKey === issueKey(intake),
         );
         if (!record) {
           record = {
@@ -799,7 +936,20 @@ export async function runCodexDispatch(
       const intake = record && admitted.records.find((entry) => entry.id === record.intakeId);
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
       if (record.reset) throw new Error('dispatch-assessment-reset');
-      if (record.retired) throw new Error('dispatch-assessment-retired');
+      if (record.retired && action === 'reconcile') {
+        const observation = await withNative(current, deps, (native) =>
+          reconcileCodexCapacity(record, native, state.run!.id, now, true),
+        );
+        await save();
+        return {
+          id: record.id,
+          status: record.nativeInactive ? 'inactive' : 'waiting',
+          capacityObservation: observation,
+          nextAction: 'next',
+        };
+      }
+      if (record.retired || (record.retirement && !operatorRetire))
+        throw new Error('dispatch-assessment-retired');
       if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
       if (action === 'retire' || action === 'reset' || action === 'retry-denied')
         return recoverDispatch(input, {
@@ -812,9 +962,19 @@ export async function runCodexDispatch(
           issueUrl: issueUrl(intake),
           caller,
           now,
+          graceMinutes: current.policy?.policy.cleanup?.graceMinutes ?? 60,
           save,
           fresh,
-          revalidate: () => revalidateDispatchAssignment(current, intake, deps, signal),
+          revalidate: () =>
+            revalidateDispatchAssignment(
+              current,
+              action === 'retry-denied'
+                ? (admitted.records.findLast((entry) => issueKey(entry) === record.issueKey) ??
+                    intake)
+                : intake,
+              deps,
+              signal,
+            ),
           connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
           withNative: (operation) => withNative(current, deps, operation),
         });
@@ -887,7 +1047,7 @@ export async function runCodexDispatch(
             });
             record.continuation = {
               phase: 'waiting',
-              policyDigest: automationHash(current.manifest.github?.notifications),
+              policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
               selection: implementation.selection,
             };
           }
@@ -907,6 +1067,11 @@ export async function runCodexDispatch(
           );
           record.createdAt = now;
           record.preparationTurnId = state.run!.id;
+          delete record.retry;
+          delete record.retryAfter;
+          record.reservationVersion = 1;
+          delete record.capacityObservation;
+          delete record.nativeInactive;
           record.request = {
             title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
             prompt: launchPrompt(record, intake),

@@ -1,9 +1,16 @@
+import codexFeedbackProblem from './codex-feedback-problem.ts';
+import workflowStatus from './workflow-status.ts';
 import discoveryNotice from './discovery-notice.ts';
-import codexCapacity from './codex-capacity.ts';
+import codexCapacity, {
+  legacyRetiredReservation,
+  codexItemOccupied,
+  codexUnresolvedRetirement,
+} from './codex-capacity.ts';
+import workflowRecovery from './workflow-recovery.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
-import pendingDispatchAssignments from './dispatch-pending.ts';
+import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import {
@@ -21,23 +28,31 @@ export default function prepareDispatchReport(input: {
 }) {
   const { state, intake } = input;
   const discovery = discoveryNotice(state.discoveryProgress);
-  const active = state.records.filter((record) => !record.retired && !record.reset);
+  const active = state.records.filter(
+    (record) => !record.retired && !record.retirement && !record.reset,
+  );
+  const retirementPending = state.records.filter(
+    (record) => record.retirement && !record.retired,
+  ).length;
   const managing = active.filter((record) => record.effective && record.threadId);
-  const occupied = codexCapacity(active, input.slots).occupied;
-  const pending = pendingDispatchAssignments(state, intake).length;
+  const waitingIssues = new Set(
+    pendingDispatchAssignments(state, intake)
+      .filter(({ record }) => !record?.request)
+      .map(({ intake: item }) => issueKey(item)),
+  );
+  const historical = state.records.filter(
+    (record) =>
+      codexUnresolvedRetirement(record) &&
+      (codexItemOccupied(record) || waitingIssues.has(record.issueKey)),
+  );
+  const occupied = codexCapacity(state.records, input.slots).occupied;
+  const pending = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).length;
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
   );
   const sent = feedback.filter(({ event }) => event.attempt?.turnId && !event.reported);
   const queuedFeedback = feedback.filter(({ event }) => event.phase === 'queued');
-  const feedbackProblems = active.filter(
-    (record) =>
-      record.feedback?.code &&
-      (record.feedback.code !== 'dispatch-assignment-authority-revoked' ||
-        record.feedback.events.some((event) =>
-          ['queued', 'prepared', 'running', 'responded'].includes(event.phase),
-        )),
-  );
+  const feedbackProblems = active.filter(codexFeedbackProblem);
 
   const started = managing
     .filter((record) => record.dispatchedAt !== undefined && record.intakeReportedAt === undefined)
@@ -45,18 +60,29 @@ export default function prepareDispatchReport(input: {
   const problems = active.filter(
     (record) =>
       !record.effective &&
-      record.phase === 'blocked' &&
+      ['blocked', 'waiting', 'retrying'].includes(record.phase) &&
       record.result?.outcome === 'operator-setup-blocker',
   );
   const failures = [
-    ...(intake.blocker ? [{ id: 'scan', code: intake.blocker.code }] : []),
-    ...feedbackProblems.map((record) => ({ id: record.id, code: record.feedback!.code! })),
+    ...(intake.blocker
+      ? [{ id: 'scan', code: intake.blocker.code, operation: 'assignment scan' }]
+      : []),
+    ...feedbackProblems.map((record) => ({
+      id: record.id,
+      code: record.feedback!.code!,
+      operation: 'feedback',
+    })),
     ...problems.map((record) => ({
       id: record.id,
+      operation: 'assignment preparation',
       code: record.result!.outcome === 'operator-setup-blocker' ? record.result!.code : '',
     })),
   ];
-  const health = failures.length ? automationHash(failures) : '';
+  const history = historical.map((record) => ({
+    id: record.id,
+    code: record.capacityObservation?.code ?? 'dispatch-capacity-observation-required',
+  }));
+  const health = failures.length || history.length ? automationHash({ failures, history }) : '';
   const recovered = !health && Boolean(state.intakeHealth);
   const notices = failures.map((failure) => ({
     ...failure,
@@ -85,9 +111,11 @@ export default function prepareDispatchReport(input: {
   });
   if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
   const title = notices.length
-    ? severity === 'error'
-      ? '❌ Intake could not finish'
-      : '⚠️ Intake needs attention'
+    ? !intake.blocker
+      ? '⚠️ Intake checked — some items need attention'
+      : severity === 'error'
+        ? '❌ Intake could not finish'
+        : '⚠️ Intake needs attention'
     : started.length
       ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
       : sent.length
@@ -119,7 +147,9 @@ export default function prepareDispatchReport(input: {
     const record = active.find((entry) => entry.id === notice.id);
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
-      `  **Action:** ${record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
+      `  **Operation:** ${notice.operation}`,
+      `  **Action:** ${notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
+      ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
       `  **Diagnostic:** \`${notice.code}\``,
     );
     if (
@@ -134,12 +164,29 @@ export default function prepareDispatchReport(input: {
     }
   }
   if (notices.length) lines.push('');
-  if (!started.length && !sent.length && !notices.length && !recovered)
+  if (historical.length) {
+    lines.push(
+      `**Historical reservations:** ${historical.length} unresolved; ${historical.filter(legacyRetiredReservation).length} unknown reservations excluded from active slots under the earlier retirement contract.`,
+      'Unknown reservations are not evidence of running agents; verified active work consumes slots. Another creation for the same issue remains fenced until native evidence resolves its reservation.',
+      '',
+    );
+    for (const record of historical.slice(0, 12)) {
+      const code = record.capacityObservation?.code ?? 'dispatch-capacity-observation-required';
+      lines.push(
+        `- **Issue:** ${issueLabel(record.intakeId)}`,
+        `  **Diagnostic:** \`${code}\``,
+        `  **Action:** ${workflowRecovery(code)?.next ?? 'Inspect the native creation receipt and source history. Missing or unreadable evidence does not establish inactivity. The owning intake can retry action:reconcile with this retained id.'}`,
+      );
+    }
+    lines.push('');
+  }
+  if (!started.length && !sent.length && !notices.length && !historical.length && !recovered)
     lines.push(pending ? 'Accepted assignments are waiting to start.' : quiet.message, '');
   const queuedOwners = new Set(queuedFeedback.map(({ record }) => record.id)).size;
   lines.push(
-    `**Managing:** ${managing.length} issues · **Pending:** ${pending}`,
+    `**Active:** ${managing.length} issues · **Pending:** ${pending}`,
     `**Queued feedback:** ${queuedFeedback.length} item${queuedFeedback.length === 1 ? '' : 's'} across ${queuedOwners} issue${queuedOwners === 1 ? '' : 's'}`,
+    `**Retirement pending:** ${retirementPending}`,
     `**Slots:** ${occupied}/${input.slots} occupied`,
   );
   if (pending && !notices.length)

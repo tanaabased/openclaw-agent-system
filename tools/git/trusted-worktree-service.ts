@@ -34,6 +34,7 @@ export interface TrustedGitHubWorktreePrepareInput extends TrustedGitHubWorktree
 }
 
 export interface TrustedGitHubWorktreeCleanupInput extends TrustedGitHubWorktreeInput {
+  verifyOnly?: boolean;
   worktree: { branch: string; path: string };
 }
 
@@ -211,7 +212,14 @@ export default class TrustedGitWorktreeService {
         workId,
       };
     }
-    return this.#executeCleanup(input.agentId, repositoryId, workId, observed.branch, input.signal);
+    return this.#executeCleanup(
+      input.agentId,
+      repositoryId,
+      workId,
+      observed.branch,
+      input.signal,
+      input.verifyOnly,
+    );
   }
 
   async #executeCleanup(
@@ -220,6 +228,7 @@ export default class TrustedGitWorktreeService {
     workId: string,
     expectedBranch: string,
     signal?: AbortSignal,
+    verifyOnly = false,
   ): Promise<GitWorktreeCleanupResult> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
@@ -286,6 +295,7 @@ export default class TrustedGitWorktreeService {
         workspaceDir: loaded.scope.workspaceDir,
       },
       expectedBranch,
+      verifyOnly,
     );
   }
 

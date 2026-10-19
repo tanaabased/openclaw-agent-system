@@ -364,12 +364,12 @@ explicit authorization from the conversation. Keep the existing work rather than
 resetting and reassigning it.
 
 Each scheduled check produces one intake report: newly started **Issue** links,
-**Managing** and **Pending** counts, occupied **Slots**, and intake warnings or errors.
-Managing means retained issue destinations, not currently running work. Pending means
-accepted assignments waiting to start. Slots currently limit unfinished assessments;
-saving a plan, question, or setup outcome releases the reservation. Later work does
-not consume that assessment slot. An interrupted assessment without an outcome can
-retain its reservation until resolved.
+**Active**, **Retirement pending**, and **Pending** counts, occupied **Slots**, and intake warnings or errors.
+Active means retained issue destinations eligible for intake, not currently running work. Pending means
+accepted assignments waiting to start. Slots count conversations with unfinished
+assessments, automatic continuation or delivery, or dispatched feedback awaiting its
+outcome. A saved assessment alone does not occupy a slot; unresolved native attempts
+can retain their reservation until inactivity is verified.
 
 After verified creation, intake does not inspect or announce assessment progress.
 Plans, questions, assessment failures, and implementation updates stay in the issue.
@@ -394,12 +394,16 @@ result while preserving its chat and worktree; only a
 new assignment event after reset permits a fresh dispatch. Reassignment alone does
 not create another chat, and reset never authorizes implementation.
 
-To remove a closed test issue from the queue, pause its schedule and send
-`{"action":"retire","id":"<assessment-receipt>"}` from an operator chat. Repeat
-with the returned `digest` to confirm. This preserves the launch and assessment
-evidence, including failed launches. Archive the native chat and clean up its
-worktree separately; retirement does neither. A fresh assessment requires a new
-assignment event after retirement.
+Closed issues, unassigned work, and manually archived chats leave Active on the next
+intake check. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
+for grace periods, reactivation, and cleanup protections. Intake prepares eligible
+Codex chats for native archival; the desktop owns worktree snapshots and reclamation.
+Retirement completes after archival and checkout removal are observed. The explicit
+`retire` action previews a closed issue and, after its digest is applied, queues
+the same retirement lifecycle while preserving launch and assessment evidence and
+any existing grace deadline. It accepts active or paused intake; cleanup waits for
+an eligible active intake run. It does not mark resources reclaimed before native
+verification.
 
 After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`
 with `{"action":"retry-denied","id":"<assessment-receipt>"}` from the operator chat.

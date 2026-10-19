@@ -183,7 +183,15 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
             !record.setupComplete &&
             !record.continuation &&
             !record.execution &&
-            ['creating', 'created', 'assessing', 'complete', 'blocked'].includes(record.phase) &&
+            [
+              'creating',
+              'created',
+              'assessing',
+              'complete',
+              'blocked',
+              'waiting',
+              'retrying',
+            ].includes(record.phase) &&
             (!record.sessionCreation.sessionId || record.sessionCreation.attempted) &&
             (!record.sessionCreation.verified ||
               (record.sessionCreation.sessionId &&

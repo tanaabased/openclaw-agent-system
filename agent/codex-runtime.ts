@@ -1,3 +1,4 @@
+import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
@@ -226,22 +227,26 @@ async function runSetup(args: string[]): Promise<void> {
   }
 }
 
+let failureScope: ReturnType<typeof workflowFailureScope> | undefined;
+async function readWorkflowInput(route: string) {
+  const request: unknown = JSON.parse(await readStandardInput());
+  failureScope = workflowFailureScope('codex', route, request);
+  return request;
+}
+
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'feedback') {
     writeJson(
-      await runCodexFeedback(parsePluginData(args.slice(1)), JSON.parse(await readStandardInput())),
+      await runCodexFeedback(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
     );
     return;
   }
   if (command === 'continuation') {
     writeJson(
-      await runCodexContinuation(
-        parsePluginData(args.slice(1)),
-        JSON.parse(await readStandardInput()),
-      ),
+      await runCodexContinuation(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
     );
     return;
   }
@@ -253,19 +258,19 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       return;
     }
     writeJson(
-      await runCodexDelivery(parsePluginData(args.slice(1)), JSON.parse(await readStandardInput())),
+      await runCodexDelivery(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
     );
     return;
   }
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, result, handoff, report, retry-denied, reset, or retire. Handoff previews a digest-bound end to assessment monitoring after a user follow-up; it never authorizes implementation. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a paused schedule and a closed issue; it preserves evidence but does not archive chats or remove worktrees. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews a digest-bound end to assessment monitoring after a user follow-up; it never authorizes implementation. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a closed issue and queues the shared retirement lifecycle while preserving evidence and the existing grace deadline. It accepts active or paused intake; configured cleanup proceeds on the next eligible active intake run. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }
     const pluginData = parsePluginData(args.slice(1));
-    const request: unknown = JSON.parse(await readStandardInput());
+    const request = await readWorkflowInput(command);
     if (!request || typeof request !== 'object' || Array.isArray(request))
       throw new Error('dispatch-action-invalid');
     const { action, ...input } = request as Record<string, unknown>;
@@ -277,6 +282,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         'prepare',
         'reconcile',
         'context',
+        'present',
         'result',
         'summary',
         'handoff',
@@ -403,10 +409,16 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
 
 runCodexRuntime().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'unknown Agent System Codex failure';
+  const evidence = workflowFailure(error, 'workflow-operation-failed');
   const details = codexHostAccess(error)
     ? { code: 'codex-host-access-required' }
     : error instanceof CodexDeliveryFailure
-      ? { code: error.code }
+      ? {
+          code: error.code,
+          ...(error.pullRequest
+            ? { workflowStatus: 'partially-delivered', pullRequest: error.pullRequest }
+            : {}),
+        }
       : error instanceof AgentSystemLifecycleError
         ? {
             component: error.component,
@@ -422,7 +434,7 @@ runCodexRuntime().catch((error: unknown) => {
                 message,
               )
             ? { code: message }
-            : {};
+            : { code: evidence.code };
   const notice = ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
     process.argv[2] ?? '',
   )
@@ -430,10 +442,11 @@ runCodexRuntime().catch((error: unknown) => {
         event: 'failure',
         changed: true,
         code: 'code' in details ? details.code : undefined,
+        providerDiagnostic: evidence.providerDiagnostic,
       })
     : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

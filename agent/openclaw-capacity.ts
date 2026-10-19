@@ -2,18 +2,23 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 
 /** a busy native owner counts once, including a handed-off operator implementation. */
 export function openClawItemOccupied(record: OpenClawDispatchRecord) {
-  if (record.retired || record.reset || !record.request) return false;
+  if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
+  if (record.reset || !record.request) return false;
   return Boolean(
     (!record.handoff &&
       record.phase !== 'complete' &&
-      (record.phase !== 'blocked' ||
+      (!['blocked', 'waiting', 'retrying'].includes(record.phase) ||
         !record.sessionCreation?.verified ||
         ((record.assessmentTurn ?? record.firstTurn)?.status !== 'completed' &&
           Boolean(record.assessmentTurn ?? record.firstTurn) &&
-          !/cancelled|failed|revoked|policy-changed/.test(record.blocker ?? '')))) ||
+          !(record.assessmentTurn ?? record.firstTurn)?.inactive))) ||
     record.feedback?.activity?.busy ||
     record.feedback?.events.some(
-      (event) => event.phase !== 'blocked' && event.turn && event.turn.status !== 'completed',
+      (event) =>
+        event.turn &&
+        event.turn.status !== 'completed' &&
+        !event.turn.inactive &&
+        (event.phase !== 'blocked' || record.feedback?.activity?.busy !== false),
     ),
   );
 }

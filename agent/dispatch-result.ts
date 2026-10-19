@@ -1,4 +1,6 @@
+import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 import { parseAssessmentResult } from './assessment-result.ts';
+import { notificationAuthorityDigest } from './notification-authority.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { validateWorkflowResult } from './workflow-result.ts';
@@ -12,7 +14,7 @@ export default function recordDispatchResult(input: {
   threadId: string;
   turnId: string;
   worktree: string;
-  policy: unknown;
+  policy: GitHubNotificationPolicy | undefined;
   result: unknown;
   previousResultDigest?: string;
 }) {
@@ -27,7 +29,7 @@ export default function recordDispatchResult(input: {
     turnId: input.turnId,
     worktree: input.worktree,
     dispatchDigest: automationHash(record.request),
-    policyDigest: automationHash(input.policy ?? null),
+    policyDigest: notificationAuthorityDigest(input.policy),
     selectionDigest: automationHash(record.assessment ?? { skill: defaultAssessmentSkill }),
     routingDigest: automationHash({ routing: record.routing, effective: record.effective }),
     evidenceDigest: automationHash(JSON.parse(record.context!)),

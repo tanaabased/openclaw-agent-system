@@ -1,4 +1,9 @@
-import deliveryAnnouncement, { announcementPresentation } from './delivery-announcement.ts';
+import workflowStatus from './workflow-status.ts';
+import deliveryBindingChange from './delivery-binding-change.ts';
+import deliveryAnnouncement, {
+  announcementPresentation,
+  announcementRecoveryInstructions,
+} from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
@@ -41,6 +46,8 @@ export default async function openClawDelivery(input: {
   signal: AbortSignal;
 }) {
   const { record, intake, action, assertCurrent, save } = input;
+  if (action.operation === 'present')
+    return presentOpenClawDelivery(record, intake, input.feedbackEnabled);
   const work = record.work;
   if (!record.handoff || !work?.publication) throw new Error('delivery-human-publication-required');
   if (
@@ -58,33 +65,43 @@ export default async function openClawDelivery(input: {
     return (await connection.git(argv)).trim();
   };
   const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
-  const branch = await git(['branch', '--show-current']);
-  if (!branch || branch === input.base) throw new Error('delivery-branch-required');
-  await git(['check-ref-format', `refs/heads/${branch}`]);
-  if (
-    (await realpath(await git(['rev-parse', '--show-toplevel']))) !==
-    (await realpath(record.worktree!))
-  )
-    throw new Error('delivery-worktree-diverged');
-  if (
-    ['prepare', 'publish'].includes(action.operation) &&
-    (await git(['status', '--porcelain=v1']))
-  )
-    throw new Error('delivery-uncommitted-work');
-  const head = await git(['rev-parse', '--verify', 'HEAD']);
-  if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-  const count = Number(
-    await git(['rev-list', '--count', `refs/remotes/origin/${input.base}..HEAD`]),
-  );
-  if (!Number.isSafeInteger(count) || count < 1)
-    throw new Error('delivery-committed-work-required');
-  const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
-  if (
-    !remotes.length ||
-    remotes.some((remote) => gitRemoteIdentity(remote) !== `github.com/${repository.toLowerCase()}`)
-  )
-    throw new Error('delivery-push-destination-mismatch');
-  resolvePullRequestRecipients(input.recipients, intake.assignment.actor);
+  const previous = work.delivery;
+  const announcementOnly = ['compose', 'candidate', 'announce'].includes(action.operation);
+  if (announcementOnly && (!previous?.pullRequest || !previous.reconciled))
+    throw new Error('delivery-reconciliation-required');
+  let branch = previous?.binding.branch ?? '';
+  let head = previous?.binding.head ?? '';
+  if (!announcementOnly) {
+    branch = await git(['branch', '--show-current']);
+    if (!branch || branch === input.base) throw new Error('delivery-branch-required');
+    await git(['check-ref-format', `refs/heads/${branch}`]);
+    if (
+      (await realpath(await git(['rev-parse', '--show-toplevel']))) !==
+      (await realpath(record.worktree!))
+    )
+      throw new Error('delivery-worktree-diverged');
+    if (
+      ['prepare', 'publish'].includes(action.operation) &&
+      (await git(['status', '--porcelain=v1']))
+    )
+      throw new Error('delivery-uncommitted-work');
+    head = await git(['rev-parse', '--verify', 'HEAD']);
+    if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
+    const count = Number(
+      await git(['rev-list', '--count', `refs/remotes/origin/${input.base}..HEAD`]),
+    );
+    if (!Number.isSafeInteger(count) || count < 1)
+      throw new Error('delivery-committed-work-required');
+    const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
+    if (
+      !remotes.length ||
+      remotes.some(
+        (remote) => gitRemoteIdentity(remote) !== `github.com/${repository.toLowerCase()}`,
+      )
+    )
+      throw new Error('delivery-push-destination-mismatch');
+    resolvePullRequestRecipients(input.recipients, intake.assignment.actor);
+  }
   const binding = {
     repositoryId: intake.repository.nodeId,
     issueId: intake.issue.nodeId,
@@ -97,14 +114,30 @@ export default async function openClawDelivery(input: {
     authorId: connection.account.identity.nodeId,
     policyDigest: record.manifestDigest,
   };
-  const previous = work.delivery;
-  if (previous && automationHash(previous.binding) !== automationHash(binding))
-    throw new Error('delivery-binding-changed');
+  // the commit belongs to this attempt; the issue, session and branch own the delivery.
+  const bindingChange =
+    previous &&
+    deliveryBindingChange(previous.binding, binding, [
+      'repositoryId',
+      'issueId',
+      'sessionId',
+      'threadId',
+      'worktree',
+      'branch',
+      'base',
+      'authorId',
+      'policyDigest',
+    ]);
+  if (bindingChange) throw new Error(bindingChange);
   const title = action.title ?? previous?.title;
   const body = action.body ?? previous?.body;
   if (!title?.trim() || !body?.trim() || title.includes('\0') || body.includes('\0'))
     throw new Error('delivery-authored-content-required');
-  if (previous?.creationAttempted && (title !== previous.title || body !== previous.body))
+  if (
+    previous?.creationAttempted &&
+    !previous.pullRequest &&
+    (title !== previous.title || body !== previous.body)
+  )
     throw new Error('delivery-content-changed');
   const delivery = previous ?? {
     id: automationHash({ admission: intake.id, session: binding.sessionId }),
@@ -114,6 +147,11 @@ export default async function openClawDelivery(input: {
     creationAttempted: false,
     reconciled: false,
   };
+  const contentUpdate = {
+    ...previous?.contentUpdate,
+    ...(previous?.pullRequest && title !== previous.title ? { title } : {}),
+    ...(previous?.pullRequest && body !== previous.body ? { body } : {}),
+  };
   const digest = automationHash({
     binding,
     title,
@@ -122,14 +160,23 @@ export default async function openClawDelivery(input: {
     authorization: work.publication,
     previous: previous ?? null,
   });
-  if (action.operation === 'prepare')
+  if (
+    action.operation === 'prepare' ||
+    (action.operation === 'publish' && action.digest !== digest)
+  )
     return {
       status: 'prepared',
+      ...(action.operation === 'publish'
+        ? { code: 'delivery-preview-stale', refreshed: true }
+        : {}),
       id: record.id,
       digest,
-      operation: { ...delivery, title, body },
+      operation: { ...delivery, binding, title, body, contentUpdate },
       instructions:
-        'Publish only under the retained explicit operator request, using this digest and the same title/body. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
+        (action.operation === 'publish'
+          ? 'This stale preview made no publication write. Inspect the refreshed operation and retry once with its digest only within the retained authorization; investigate repeated staleness. '
+          : '') +
+        'Publish only under the retained explicit operator request, including authorized follow-up commits, using this digest and the same title/body. No new stage approval is needed within that request; native denials still stop the operation. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
     };
   const provider = new IssueDeliveryProvider({
     identity: connection.account.identity,
@@ -160,6 +207,7 @@ export default async function openClawDelivery(input: {
     headSha: head,
     repositoryNodeId: intake.repository.nodeId,
     linkIssue: true,
+    contentUpdate: Object.keys(contentUpdate).length ? contentUpdate : undefined,
     signal: input.signal,
     expectedPullRequest: delivery.pullRequest,
     async beforeCreate() {
@@ -206,14 +254,20 @@ export default async function openClawDelivery(input: {
     };
   }
   if (action.operation === 'publish') {
-    if (action.digest !== digest) throw new Error('delivery-preview-stale');
+    delivery.binding = binding;
     delivery.title = title;
     delivery.body = body;
+    if (Object.keys(contentUpdate).length) delivery.contentUpdate = contentUpdate;
+    delivery.reconciled = false;
     work.delivery = delivery;
     await save();
     const ref = `refs/heads/${branch}`;
     const remoteHead = (await git(['ls-remote', '--heads', 'origin', ref])).split(/\s/u)[0] ?? '';
-    if (remoteHead && remoteHead !== head) throw new Error('delivery-remote-head-diverged');
+    if (remoteHead && remoteHead !== head) {
+      if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
+        throw new Error('delivery-remote-head-diverged');
+      await git(['merge-base', '--is-ancestor', remoteHead, head]);
+    }
     publication.expectedPullRequest = await provider.inspect({
       ...publication,
       headSha: remoteHead,
@@ -223,7 +277,10 @@ export default async function openClawDelivery(input: {
       throw new Error('delivery-push-unverified');
     delivery.pushedHead = head;
     await save();
+    // only the exact pre-push observation may lag behind a verified fast-forward.
+    if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
     await provider.publish(publication);
+    delete delivery.contentUpdate;
     delivery.reconciled = true;
     await save();
   } else {
@@ -233,36 +290,52 @@ export default async function openClawDelivery(input: {
   }
   const receipt = delivery.pullRequest!;
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
-  if (action.operation === 'present') {
-    delivery.presentation =
-      githubNotificationPullRequestOpenedCard({
-        issueNumber: intake.issue.number,
-        pullRequestNumber: receipt.pullRequestNumber,
-        repositoryOwner: intake.repository.owner.login,
-        repositoryName: intake.repository.name,
-        commentFlow: input.feedbackEnabled ? 'openclaw' : 'unavailable',
-      }) +
-      '\n\n' +
-      announcementPresentation(
-        delivery.announcement,
-        `https://github.com/${repository}/issues/${intake.issue.number}`,
-      );
-    await save();
-    return {
-      status: 'presented',
-      id: record.id,
-      url,
-      presentation: delivery.presentation,
-      instructions:
-        'Reproduce the complete quoted PR card in this issue chat. Card generation does not establish visible delivery. Never recreate the PR for a presentation failure.',
-    };
-  }
+
   return {
     status: action.operation === 'publish' ? 'published' : 'ready',
     id: record.id,
     pullRequest: receipt,
+    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
     url,
     instructions:
-      'Call delivery compose, invoke the selected reply skill for the delivery event, submit candidate and execute announce with its preview digest. Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
+      announcementRecoveryInstructions(delivery.announcement) +
+      ' Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
+  };
+}
+
+/** Display a retained receipt without reacquiring publication permission or contacting GitHub. */
+export function presentOpenClawDelivery(
+  record: OpenClawDispatchRecord,
+  intake: IntakeRecord,
+  feedbackEnabled: boolean,
+) {
+  const delivery = record.work?.delivery;
+  if (!delivery?.pullRequest) throw new Error('delivery-reconciliation-required');
+  const receipt = delivery.pullRequest;
+  const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
+  const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
+
+  delivery.presentation =
+    githubNotificationPullRequestOpenedCard({
+      issueNumber: intake.issue.number,
+      pullRequestNumber: receipt.pullRequestNumber,
+      repositoryOwner: intake.repository.owner.login,
+      repositoryName: intake.repository.name,
+      commentFlow: feedbackEnabled ? 'openclaw' : 'unavailable',
+    }) +
+    '\n\n' +
+    announcementPresentation(
+      delivery.announcement,
+      `https://github.com/${repository}/issues/${intake.issue.number}`,
+    );
+  return {
+    status: 'presented',
+    retained: true,
+    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
+    id: record.id,
+    url,
+    presentation: delivery.presentation,
+    instructions:
+      'Reproduce the complete quoted PR card in this issue chat. Card generation does not establish visible delivery. Never recreate the PR for a presentation failure.',
   };
 }

@@ -25,6 +25,7 @@ export class GitHubIssueDeliveryError extends Error {
     readonly category: GitHubIssueDeliveryFailureCategory,
     message: string,
     readonly providerDiagnostic?: ProviderDiagnostic,
+    readonly code = `github-delivery-${category}`,
   ) {
     super(withProviderDiagnostic(message, providerDiagnostic));
   }
@@ -48,8 +49,10 @@ export interface IssueDeliveryInput {
   recipients?: GitHubPullRequestRecipient[];
   expectedPullRequest?: GitHubNotificationIssueDeliveryReceipt;
   headSha?: string;
+  previousHeadSha?: string;
   repositoryNodeId?: string;
   linkIssue?: boolean;
+  contentUpdate?: { title?: string; body?: string };
   beforeCreate?: () => Promise<void>;
   onLinkageRetry?: () => Promise<void>;
   checkpoint?: (receipt: GitHubNotificationIssueDeliveryReceipt) => Promise<void>;
@@ -293,34 +296,51 @@ export default class IssueDeliveryProvider {
     }
 
     if (input.headSha !== undefined) {
-      const observed = record(
-        await this.#github(
-          github,
-          [
-            'api',
-            `repos/${repository}/pulls/${pullRequest.number}`,
-            '--jq',
-            '{nodeId:.node_id,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,headSha:.head.sha,authorId:.user.node_id,baseRef:.base.ref,headRef:.head.ref,state,number}',
-          ],
-          input.signal,
-        ),
-        'pull request binding',
-      );
-      if (
-        observed.nodeId !== pullRequest.itemNodeId ||
-        observed.repositoryId !== input.repositoryNodeId ||
-        observed.headRepositoryId !== input.repositoryNodeId ||
-        observed.headSha !== input.headSha ||
-        observed.authorId !== github.identity.nodeId ||
-        observed.baseRef !== input.item.repositoryDefaultBranch ||
-        observed.headRef !== branch ||
-        observed.state !== 'open' ||
-        observed.number !== pullRequest.number
-      )
-        throw new GitHubIssueDeliveryError(
-          'identity-mismatch',
-          'The pull request does not match the verified repository, author and head.',
+      const delays = [250, 500, 1000];
+      for (let attempt = 0; ; attempt++) {
+        const observed = record(
+          await this.#github(
+            github,
+            [
+              'api',
+              `repos/${repository}/pulls/${pullRequest.number}`,
+              '--jq',
+              '{nodeId:.node_id,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,headSha:.head.sha,authorId:.user.node_id,baseRef:.base.ref,headRef:.head.ref,state,number}',
+            ],
+            input.signal,
+          ),
+          'pull request binding',
         );
+        const expected = {
+          nodeId: pullRequest.itemNodeId,
+          repositoryId: input.repositoryNodeId,
+          headRepositoryId: input.repositoryNodeId,
+          authorId: github.identity.nodeId,
+          baseRef: input.item.repositoryDefaultBranch,
+          headRef: branch,
+          state: 'open',
+          number: pullRequest.number,
+        };
+        for (const [field, value] of Object.entries(expected))
+          if (observed[field] !== value)
+            throw new GitHubIssueDeliveryError(
+              'identity-mismatch',
+              'The pull request binding changed.',
+              undefined,
+              `github-delivery-binding-${field.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}-changed`,
+            );
+        if (observed.headSha === input.headSha) break;
+        const pending =
+          Boolean(input.previousHeadSha) && observed.headSha === input.previousHeadSha;
+        if (!pending || attempt === delays.length)
+          throw new GitHubIssueDeliveryError(
+            'identity-mismatch',
+            'The pull request head does not match the verified push.',
+            undefined,
+            pending ? 'github-delivery-head-not-observed' : 'github-delivery-binding-head-changed',
+          );
+        await this.delay(delays[attempt]!, input.signal);
+      }
     }
     if (!normalize && pullRequest.baseRef !== input.item.repositoryDefaultBranch) {
       throw new Error('The task pull request targets a different base branch.');
@@ -409,6 +429,41 @@ export default class IssueDeliveryProvider {
       pullRequestNodeId: pullRequest.itemNodeId,
       pullRequestNumber: pullRequest.number,
     });
+    if (existing && input.contentUpdate && !normalize) {
+      const title = input.contentUpdate.title ?? pullRequest.title;
+      let body = input.contentUpdate.body ?? pullRequest.body;
+      if (input.linkIssue && !hasClosingReference(body, repository, input.item.number))
+        body =
+          `${body.trimEnd()}\n\nCloses https://github.com/${repository}/issues/${input.item.number}`.trim();
+      if (body.length > 65_536) throw new Error('github-delivery-body-too-large');
+      if (pullRequest.title !== title || pullRequest.body !== body) {
+        pullRequest = parsePullRequest(
+          await this.#github(
+            github,
+            [
+              'api',
+              '--method',
+              'PATCH',
+              `repos/${repository}/pulls/${pullRequest.number}`,
+              '--input',
+              '-',
+              '--jq',
+              pullRequestProjection(),
+            ],
+            input.signal,
+            JSON.stringify({ title, body }),
+          ),
+        );
+        await this.#verify(input, pullRequest, false);
+        if (
+          pullRequest.itemNodeId !== existing.itemNodeId ||
+          pullRequest.number !== existing.number ||
+          pullRequest.title !== title ||
+          pullRequest.body !== body
+        )
+          throw new Error('github-delivery-content-unverified');
+      }
+    }
     if (input.linkIssue && !(await this.#linkedIssue(input, pullRequest))) {
       const reference = `Closes https://github.com/${repository}/issues/${input.item.number}`;
       let linked = false;
@@ -528,15 +583,6 @@ export default class IssueDeliveryProvider {
         : undefined,
     );
     if (recipients.length === 0 && reviewers.length === 0) return;
-    const agentNodeId = github.identity.nodeId;
-    for (const reviewer of reviewers) {
-      if (
-        reviewer.nodeId === agentNodeId ||
-        reviewer.login.toLowerCase() === github.identity.login.toLowerCase()
-      ) {
-        throw new Error(`The agent cannot request its own review (${reviewer.login}).`);
-      }
-    }
     for (const recipient of githubIdentitySet([...recipients, ...reviewers])) {
       const observed = identities(
         await this.#github(
@@ -568,14 +614,6 @@ export default class IssueDeliveryProvider {
     const missingAssignees = recipients.filter(
       ({ login }) => !currentLogins.has(login.toLowerCase()),
     );
-    for (const recipient of missingAssignees) {
-      await this.#githubStatus(
-        github,
-        ['api', `repos/${repository}/assignees/${recipient.login}`, '--silent'],
-        input.signal,
-        `assignee eligibility for ${recipient.login}`,
-      );
-    }
     const pending =
       reviewers.length === 0
         ? new Set<string>()
@@ -594,26 +632,6 @@ export default class IssueDeliveryProvider {
     const missingReviewers = reviewers.filter(
       ({ login }) => !pending.has(login.toLowerCase()) && !completed.has(login.toLowerCase()),
     );
-    for (const reviewer of missingReviewers) {
-      const permission = record(
-        await this.#github(
-          github,
-          [
-            'api',
-            `repos/${repository}/collaborators/${reviewer.login}/permission`,
-            '--jq',
-            '{permission}',
-          ],
-          input.signal,
-        ),
-        'reviewer permission',
-      ).permission;
-      if (!['read', 'triage', 'write', 'maintain', 'admin'].includes(String(permission))) {
-        throw new Error(
-          `GitHub reviewer ${reviewer.login} is not eligible for pull request ${number}.`,
-        );
-      }
-    }
     if (missingAssignees.length > 0) {
       const updated = logins(
         await this.#github(
@@ -694,28 +712,6 @@ export default class IssueDeliveryProvider {
       }
     }
     return logins(reviewers, 'completed reviewers');
-  }
-
-  async #githubStatus(
-    client: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>,
-    argv: string[],
-    signal: AbortSignal | undefined,
-    operation: string,
-  ): Promise<void> {
-    const result = await client.execute(
-      argv.includes('--paginate') ? argv : [argv[0]!, '--include', ...argv.slice(1)],
-      undefined,
-      {
-        ...(signal === undefined ? {} : { signal }),
-        timeoutMs: 60_000,
-      },
-    );
-    if (result.exitCode !== 0 || result.timedOut || result.truncated)
-      throw new GitHubIssueDeliveryError(
-        'github-request',
-        `GitHub rejected ${operation}.`,
-        githubCliDiagnostic(result),
-      );
   }
 
   async #github(

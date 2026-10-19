@@ -531,6 +531,8 @@ See [Codex intake](./CODEX.md#github-notification-policy) for inspection and rec
 | Field                       | Required | Default             | Contract                                                                                                                            |
 | --------------------------- | -------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `allowed-repository-owners` | yes      | none                | Nonempty list of pinned repository owners; omission never means unrestricted access.                                                |
+| `cleanup.enabled`           | no       | `true`              | Automatically reclaim retired notification resources through the owning runtime when supported.                                     |
+| `cleanup.grace-minutes`     | no       | `60`                | Integer from `0` through `43200`; delay resource cleanup after retirement begins or new native activity is observed.                |
 | `interval-minutes`          | no       | `5`                 | Shared monitoring cadence, integer from `1` through `1440`.                                                                         |
 | `issue-assignment`          | no       | absent              | Issue intake and the assessment, planning, and implementation journey selected by its mode.                                         |
 | `max-concurrent-items`      | no       | `3`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |

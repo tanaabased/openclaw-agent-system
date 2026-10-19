@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
 import type { DispatchState, DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import { issueKey } from '../agent/dispatch-pending.ts';
+import type { IntakeState, IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const state: DispatchState = { version: 1, scope: 'scope', records: [] };
 const intake: IntakeState = {
@@ -37,7 +38,7 @@ describe('agent/codex-dispatch-report', () => {
   it('should render quiet counts using the existing message rotation', () => {
     const report = prepareDispatchReport(input);
     assert.match(report.response, /DONT_NOTIFY/);
-    assert.match(report.response, /Managing:\*\* 0 issues/);
+    assert.match(report.response, /Active:\*\* 0 issues/);
     assert.match(report.response, /Pending:\*\* 0/);
     assert.match(report.response, /Slots:\*\* 0\/2 occupied/);
     assert.deepEqual(report.started, []);
@@ -131,5 +132,114 @@ describe('agent/codex-dispatch-report', () => {
     const pending = prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
     assert.match(pending.response, /authority-revoked/);
     assert.notEqual(pending.health, '');
+  });
+  it('should scope an item failure while preserving a successful start', () => {
+    const started = {
+      id: 'good',
+      intakeId: 'good',
+      phase: 'assessing',
+      effective: { status: 'verified' },
+      threadId: 'good-chat',
+      dispatchedAt: 1,
+    } as DispatchRecord;
+    const failed = {
+      id: 'bad',
+      intakeId: 'bad',
+      phase: 'waiting',
+      result: {
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-operation-failed',
+        remediation: 'Inspect the retained request.',
+      },
+    } as DispatchRecord;
+    const report = prepareDispatchReport({
+      ...input,
+      state: { ...state, records: [started, failed] },
+    });
+    assert.deepEqual(report.started, ['good']);
+    assert.match(report.response, /codex:\/\/threads\/good-chat/);
+    assert.match(report.response, /Operation:\*\* assignment preparation/);
+    assert.match(report.response, /Status:\*\* waiting/);
+    assert.doesNotMatch(report.response, /Intake could not finish/);
+  });
+  it('should keep closed historical feedback quiet but retain unresolved execution and publication diagnostics', () => {
+    const record = {
+      id: 'owner',
+      phase: 'complete',
+      feedback: { baseline: {}, code: 'dispatch-issue-closed', events: [] },
+    } as unknown as DispatchRecord;
+    const report = () =>
+      prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
+    assert.match(report().response, /DONT_NOTIFY/);
+    record.feedback!.events.push({ phase: 'blocked', publicationAttempted: true } as never);
+    assert.match(report().response, /dispatch-issue-closed/);
+    record.feedback!.events = [
+      { phase: 'blocked', reported: true, attempt: { turnId: 'run' } } as never,
+    ];
+    assert.match(report().response, /dispatch-issue-closed/);
+    record.nativeInactive = true;
+    assert.match(report().response, /DONT_NOTIFY/);
+    record.feedback!.events = [{ phase: 'queued' } as never];
+    assert.match(report().response, /dispatch-issue-closed/);
+  });
+  it('should keep obsolete reservations quiet unless they obstruct new work or occupy capacity', () => {
+    const record = {
+      id: 'legacy',
+      intakeId: 'old',
+      phase: 'blocked',
+      request: {},
+      retired: { at: 1 },
+      capacityObservation: { at: 2, code: 'dispatch-capacity-creation-unresolved' },
+    } as DispatchRecord;
+    const successor = {
+      id: 'new',
+      scope: 'scope',
+      receiving: { nodeId: 'user' },
+      repository: { nodeId: 'repo', owner: { login: 'owner' }, name: 'repo' },
+      issue: { nodeId: 'issue', number: 1 },
+      assignment: { createdAt: new Date(3).toISOString() },
+    } as IntakeRecord;
+    record.issueKey = issueKey(successor);
+    const currentIntake = { ...intake, records: [] as IntakeRecord[] };
+    const report = () =>
+      prepareDispatchReport({
+        ...input,
+        intake: currentIntake,
+        state: { ...state, records: [structuredClone(record)] },
+      });
+    assert.match(report().response, /DONT_NOTIFY/);
+    assert.doesNotMatch(report().response, /Historical reservations/);
+    assert.ok(record.request);
+    currentIntake.records = [successor];
+    const first = report();
+    assert.match(first.response, /Slots:\*\* 0\/2/);
+    assert.match(first.response, /Historical reservations:\*\* 1 unresolved/);
+    assert.match(first.response, /preparation turn/);
+    assert.match(
+      prepareDispatchReport({
+        ...input,
+        intake: currentIntake,
+        state: { ...state, intakeHealth: first.health, records: [record] },
+      }).response,
+      /DONT_NOTIFY/,
+    );
+    const laterRetired = {
+      ...record,
+      id: 'later',
+      intakeId: successor.id,
+      retired: { at: 4, by: 'operator' },
+    };
+    const finished = prepareDispatchReport({
+      ...input,
+      intake: currentIntake,
+      state: { ...state, records: [record, laterRetired] },
+    });
+    assert.match(finished.response, /DONT_NOTIFY/);
+    assert.doesNotMatch(finished.response, /Historical reservations/);
+    currentIntake.records = [];
+    record.reservationVersion = 1;
+    record.capacityObservation = { at: 3, code: 'dispatch-capacity-native-active' };
+    assert.match(report().response, /dispatch-capacity-native-active/);
+    assert.match(report().response, /Slots:\*\* 1\/2/);
   });
 });

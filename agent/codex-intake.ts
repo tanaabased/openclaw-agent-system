@@ -1,3 +1,4 @@
+import { matchesIntakePolicy } from './assignment-intake-policy.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -178,6 +179,7 @@ export async function runCodexIntake(
       agentId: current.agentId,
       policy,
       policyDigest: digest,
+      legacyPolicyDigest: current.policy.legacyDigest,
       now: (deps.now ?? Date.now)(),
       activate,
       async connect(signal) {
@@ -262,7 +264,7 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
       ? 'intake-policy-disabled'
       : !state
         ? 'intake-activation-required'
-        : state.policyDigest !== current.policy.digest
+        : !matchesIntakePolicy(state.policyDigest, current.policy)
           ? 'intake-policy-reconciliation-required'
           : state.blocker?.code;
   } catch (error) {

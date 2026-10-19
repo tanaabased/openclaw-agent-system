@@ -55,6 +55,7 @@ describe('agent/codex-delivery', () => {
   let bindingOverride: Record<string, unknown>;
   let gitCalls: string[][];
   let linkReads: number, delayedLinkReads: number, bodyWrites: number;
+  let failPatch: 'before' | 'after' | false;
   async function request(
     action: string,
     input: object = {},
@@ -62,13 +63,16 @@ describe('agent/codex-delivery', () => {
   ) {
     return runCodexDelivery(pluginData, { action, id, ...input }, { ...deps, ...overrides });
   }
-  async function publish() {
-    const preview = await request('prepare', { title: 'Authored title', body: 'Authored body.' });
+  function requiredDigest(result: object) {
+    assert.ok('digest' in result && typeof result.digest === 'string');
+    return result.digest;
+  }
+  async function publish(content = { title: 'Authored title', body: 'Authored body.' }) {
+    const preview = await request('prepare', content);
     assert.equal(preview.status, 'prepared');
     return request('publish', {
-      digest: preview.digest,
-      title: 'Authored title',
-      body: 'Authored body.',
+      digest: requiredDigest(preview),
+      ...content,
     });
   }
   beforeEach(async () => {
@@ -151,6 +155,7 @@ describe('agent/codex-delivery', () => {
     bindingOverride = {};
     gitCalls = [];
     linkReads = delayedLinkReads = bodyWrites = 0;
+    failPatch = false;
     deps = {
       delay: async () => {},
       codexHome,
@@ -244,7 +249,9 @@ describe('agent/codex-delivery', () => {
               if (argv.includes('PATCH')) {
                 bodyWrites++;
                 if (failLink) throw new Error('link unavailable');
+                if (failPatch === 'before') throw new Error('update interrupted');
                 pr = { ...pr, ...(JSON.parse(stdin!) as object) };
+                if (failPatch === 'after') throw new Error('update interrupted');
               }
               if (argv.some((arg) => arg.includes('headSha:')))
                 return result({
@@ -273,6 +280,81 @@ describe('agent/codex-delivery', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  for (const deny of [false, true])
+    it(`should let github ${deny ? 'reject' : 'accept'} recipient changes without permission preflights`, async () => {
+      const configured = structuredClone(manifest);
+      Object.assign(configured.github.notifications['issue-assignment']['pull-request'], {
+        recipients: [
+          { login: account.login, 'node-id': account.nodeId, roles: ['assignee', 'reviewer'] },
+        ],
+      });
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+      const connect = deps.connect!;
+      let assigned = false,
+        requested = false;
+      deps.connect = async (...args) => {
+        const connection = await connect(...args);
+        const execute = connection.account.execute;
+        return {
+          ...connection,
+          account: {
+            ...connection.account,
+            execute: async (argv, ...rest) => {
+              const endpoint = argv.find(
+                (arg) => arg.startsWith('repos/') || arg.startsWith('users/'),
+              );
+              if (endpoint === `users/${account.login}`) return result([account]);
+              if (endpoint === 'repos/owner/repo/issues/7') return result([]);
+              if (endpoint === 'repos/owner/repo/issues/7/assignees') {
+                assigned = true;
+                return result([account.login]);
+              }
+              if (endpoint === 'repos/owner/repo/pulls/7/reviews') return result([[]]);
+              if (endpoint === 'repos/owner/repo/pulls/7/requested_reviewers') {
+                if (argv.includes('POST')) {
+                  requested = true;
+                  if (deny)
+                    return { ...result({ message: 'Forbidden' }), exitCode: 1, stderr: 'HTTP 403' };
+                }
+                return result(requested ? [account.login] : []);
+              }
+              return execute(argv, ...rest);
+            },
+          },
+        };
+      };
+      if (deny) await assert.rejects(publish(), /GitHub/);
+      else assert.equal((await publish()).status, 'published');
+      assert.ok(assigned && requested);
+      assert.equal(creates, 1);
+    });
+
+  it('should display the retained pr and reconcile only attachment after head and authority change', async () => {
+    await publish();
+    head = 'b'.repeat(40);
+    fixture.item.assignees = [];
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.handoff;
+      state.records[0]!.delivery!.reconciled = false;
+      await save();
+    });
+    deps.connect = async () => {
+      throw new Error('presentation must not connect to github');
+    };
+    deps.git = async () => {
+      throw new Error('presentation must not inspect git');
+    };
+    const shown = await request('present');
+    assert.equal(shown.status, 'linked');
+    assert.match(String(shown.presentation), /pull\/7/);
+    attached = true;
+    assert.equal((await request('reconcile')).status, 'publication-incomplete');
+    assert.equal((await store.read()).records[0]!.delivery!.attached, true);
+    assert.equal((await store.read()).records[0]!.delivery!.reconciled, false);
+    assert.equal(creates, 1);
+    assert.equal(announcement.posts, 0);
+  });
+
   for (const draft of [false, true])
     it(`should reconcile announce and present a delivered ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
@@ -282,11 +364,14 @@ describe('agent/codex-delivery', () => {
       const context = await request('compose');
       assert.equal(context.status, 'composition-ready');
       const preview = await request('candidate', {
-        digest: context.digest,
+        digest: requiredDigest(context),
         publicText: 'Delivers the requested change.',
       });
       assert.equal(preview.status, 'announcement-prepared');
-      assert.equal((await request('announce', { digest: preview.digest })).status, 'announced');
+      assert.equal(
+        (await request('announce', { digest: requiredDigest(preview) })).status,
+        'announced',
+      );
       await request('announce');
       const shown = await request('present');
       assert.match(String(shown.presentation), /Pull request opened/);
@@ -297,16 +382,20 @@ describe('agent/codex-delivery', () => {
       assert.equal(creates, 1);
       assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 1);
     });
-  it('should recover a lost announcement response from durable state without republishing the pr', async () => {
+  it('should recover only the lost announcement despite newer local work without republishing the pr', async () => {
     await publish();
+    head = 'b'.repeat(40);
+    deps.git = async () => {
+      throw new Error('announcement recovery must not inspect newer local work');
+    };
     const context = await request('compose');
     const preview = await request('candidate', {
-      digest: context.digest,
+      digest: requiredDigest(context),
       publicText: 'Delivers the requested change.',
     });
     announcement.lost = true;
     assert.equal(
-      (await request('announce', { digest: preview.digest })).status,
+      (await request('announce', { digest: requiredDigest(preview) })).status,
       'announcement-blocked',
     );
     const saved = (await store.read())!.records[0]!.delivery!;
@@ -416,6 +505,7 @@ describe('agent/codex-delivery', () => {
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     const published = await publish();
     assert.equal(published.status, 'published');
+    assert.equal(published.workflowStatus, 'partially-delivered');
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(
@@ -451,7 +541,8 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(publish(), (error: unknown) => {
       assert.ok(error instanceof CodexDeliveryFailure);
       assert.match(error.message, /link unavailable/);
-      const failure = error.notices.find((notice) => notice.severity === 'error');
+      assert.equal(error.pullRequest?.pullRequestNumber, 7);
+      const failure = error.notices.find((notice) => notice.message.includes(url));
       assert.ok(failure?.message.includes(url));
       return true;
     });
@@ -515,13 +606,21 @@ describe('agent/codex-delivery', () => {
   it('should serialize competing publications and invalidate the consumed preview', async () => {
     const preview = await request('prepare');
     const outcomes = await Promise.allSettled([
-      request('publish', { digest: preview.digest }),
-      request('publish', { digest: preview.digest }),
+      request('publish', { digest: requiredDigest(preview) }),
+      request('publish', { digest: requiredDigest(preview) }),
     ]);
-    assert.equal(outcomes.filter((outcome) => outcome.status === 'fulfilled').length, 1);
-    const failure = outcomes.find((outcome) => outcome.status === 'rejected');
-    assert.ok(failure?.status === 'rejected');
-    assert.match(String(failure.reason), /preview-stale/);
+    assert.equal(
+      outcomes.filter(
+        (outcome) => outcome.status === 'fulfilled' && outcome.value.status === 'published',
+      ).length,
+      1,
+    );
+    assert.equal(
+      outcomes.filter(
+        (outcome) => outcome.status === 'fulfilled' && outcome.value.status === 'prepared',
+      ).length,
+      1,
+    );
     assert.equal(creates, 1);
   });
   it('should verify the provider issue link instead of trusting closing prose', async () => {
@@ -529,7 +628,9 @@ describe('agent/codex-delivery', () => {
     await assert.rejects(publish(), /linkage-unverified/);
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 5);
-    await assert.rejects(request('present'), /reconciliation-required/);
+    const retained = await request('present');
+    assert.equal(retained.workflowStatus, 'partially-delivered');
+    assert.match(String(retained.presentation), /pull\/7/);
     wrongIssueLink = false;
     await publish();
     assert.equal(creates, 1);
@@ -538,7 +639,7 @@ describe('agent/codex-delivery', () => {
     delayedLinkReads = 2;
     const body = 'Authored body.\n\nCloses #3.';
     const preview = await request('prepare', { body });
-    const published = await request('publish', { body, digest: preview.digest });
+    const published = await request('publish', { body, digest: requiredDigest(preview) });
     assert.equal(published.status, 'published');
     assert.equal(pr!.body, body);
     assert.equal(bodyWrites, 0);
@@ -670,7 +771,7 @@ describe('agent/codex-delivery', () => {
     const body =
       'Added the marker. Exact bytes and final newline verified; git diff --check passed. Closes #3.';
     const preview = await request('prepare', { body });
-    await request('publish', { body, digest: preview.digest });
+    await request('publish', { body, digest: requiredDigest(preview) });
     assert.equal(pr!.body, body);
     // recovery must not require inventing a body for an already attempted publication.
     await store.exclusive(async (state, save) => {
@@ -724,16 +825,18 @@ describe('agent/codex-delivery', () => {
         boundary === 'create',
       );
     });
-  it('should reject stale previews, changed assignments, foreign chats and dirty work before writes', async () => {
+  it('should refresh stale previews and reject changed assignments foreign chats and dirty work before writes', async () => {
     const preview = await request('prepare');
     head = 'b'.repeat(40);
-    await assert.rejects(request('publish', { digest: preview.digest }), /preview-stale/);
+    const refreshed = await request('publish', { digest: requiredDigest(preview) });
+    assert.equal(refreshed.status, 'prepared');
+    assert.ok('digest' in refreshed && requiredDigest(refreshed) !== requiredDigest(preview));
     await assert.rejects(request('prepare', {}, { threadId: 'other' }), /managed-issue-required/);
     dirty = true;
     await assert.rejects(request('prepare'), /uncommitted-work/);
     dirty = false;
     fixture.item.assignees = [];
-    await assert.rejects(request('prepare'), /authority-revoked/);
+    await assert.rejects(request('prepare'), /dispatch-assignment-removed/);
     assert.equal(creates, 0);
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
   });
@@ -746,7 +849,13 @@ describe('agent/codex-delivery', () => {
       { state: 'closed' },
     ]) {
       bindingOverride = mismatch;
-      await assert.rejects(publish(), /does not match/);
+      await assert.rejects(
+        publish(),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          String(error.code).startsWith('github-delivery-binding-'),
+      );
       assert.equal((await store.read()).records[0]!.delivery!.pullRequest, undefined);
       assert.equal(pr!.body, 'Authored body.');
     }
@@ -800,7 +909,13 @@ describe('agent/codex-delivery', () => {
       { state: 'closed' },
     ]) {
       bindingOverride = mismatch;
-      await assert.rejects(publish(), /does not match/);
+      await assert.rejects(
+        publish(),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          String(error.code).startsWith('github-delivery-binding-'),
+      );
       assert.equal(remote, firstHead);
       assert.equal(pr!.body, body);
     }
@@ -831,6 +946,113 @@ describe('agent/codex-delivery', () => {
     );
     remote = 'c'.repeat(40);
     await assert.rejects(publish(), /remote-head-diverged/);
+  });
+  for (const interruption of ['before', 'after'] as const)
+    it(`should recover metadata updates interrupted ${interruption} the provider write`, async () => {
+      await publish();
+      bodyWrites = 0;
+      const content = { title: 'Updated title', body: 'Includes the follow-up change.' };
+      failPatch = interruption;
+      await assert.rejects(publish(content), /update interrupted/);
+      assert.equal((await store.read()).records[0]!.delivery!.reconciled, false);
+      failPatch = false;
+      await publish(content);
+      assert.equal(pr!.title, content.title);
+      assert.equal(pr!.body, content.body + '\n\nCloses https://github.com/owner/repo/issues/3');
+      assert.equal(bodyWrites, interruption === 'before' ? 2 : 1);
+      assert.equal(creates, 1);
+      assert.equal((await store.read()).records[0]!.delivery!.reconciled, true);
+    });
+  it('should freeze authored content while creation remains uncertain', async () => {
+    failCreate = true;
+    await assert.rejects(publish(), /transport lost/);
+    await assert.rejects(
+      publish({ title: 'Changed title', body: 'Changed body.' }),
+      /delivery-content-changed/,
+    );
+    assert.equal(creates, 1);
+    assert.equal(bodyWrites, 0);
+  });
+  it('should preserve github body edits when explicitly updating only the title', async () => {
+    await publish();
+    pr!.body = 'Operator clarification. Closes #3';
+    head = 'b'.repeat(40);
+    await publish();
+    assert.equal(pr!.body, 'Operator clarification. Closes #3');
+    await publish({ title: 'Revised title', body: 'Authored body.' });
+    assert.equal(pr!.title, 'Revised title');
+    assert.equal(pr!.body, 'Operator clarification. Closes #3');
+  });
+  for (const lostAnnouncement of [false, true])
+    it(`should recover an interrupted follow-up push with a ${lostAnnouncement ? 'pending' : 'confirmed'} announcement`, async () => {
+      await publish();
+      const context = await request('compose');
+      const preview = await request('candidate', {
+        digest: requiredDigest(context),
+        publicText: 'Delivers the requested change.',
+      });
+      announcement.lost = lostAnnouncement;
+      await request('announce', { digest: requiredDigest(preview) });
+      const retained = (await store.read()).records[0]!.delivery!;
+      head = 'b'.repeat(40);
+      const git = deps.git!;
+      deps.git = async (...args) => {
+        const output = await git(...args);
+        if (args[1].includes('push')) throw new Error('push response lost');
+        return output;
+      };
+      await assert.rejects(publish(), /push response lost/);
+      assert.equal(remote, head);
+      assert.equal((await store.read()).records[0]!.delivery!.pushedHead, retained.pushedHead);
+      deps.git = git;
+      await publish();
+      const recovered = (await store.read()).records[0]!.delivery!;
+      assert.equal(recovered.id, retained.id);
+      assert.deepEqual(recovered.pullRequest, retained.pullRequest);
+      assert.deepEqual(recovered.announcement, retained.announcement);
+      announcement.lost = false;
+      assert.equal((await request('announce')).status, 'announced');
+      const shown = await request('present');
+      assert.match(String(shown.presentation), /#issuecomment-91/);
+      assert.equal(creates, 1);
+      assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
+      assert.equal(announcement.posts, 1);
+    });
+  it('should wait for the verified followup head without repeating the push', async () => {
+    await publish();
+    const previous = head;
+    head = 'b'.repeat(40);
+    const connect = deps.connect!;
+    let lagged = false;
+    deps.connect = async (...args) => {
+      const connection = await connect(...args);
+      const execute = connection.account.execute;
+      return {
+        ...connection,
+        account: {
+          ...connection.account,
+          execute: async (...parameters) => {
+            const result = await execute(...parameters);
+            if (
+              !lagged &&
+              remote === head &&
+              parameters[0].some((value) => value.includes('headSha:'))
+            ) {
+              lagged = true;
+              return {
+                ...result,
+                stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: previous }),
+              };
+            }
+            return result;
+          },
+        },
+      };
+    };
+    assert.equal((await publish()).status, 'published');
+    assert.ok(lagged);
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
   });
 });
 

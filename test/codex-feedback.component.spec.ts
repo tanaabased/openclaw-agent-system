@@ -1,3 +1,6 @@
+import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
+import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
+import type { CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -225,6 +228,35 @@ describe('agent/codex-feedback', () => {
     };
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
+  it('should continue scanning after an owner changes during its first checkpoint', async () => {
+    const state = await store.read();
+    const first = state.records[0]!;
+    state.records.push({
+      ...structuredClone(first),
+      id: 'e'.repeat(64),
+      sourceThreadId: 'changed-owner',
+    });
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const visits: string[] = [];
+    const scans = await scanCodexFeedback({
+      state,
+      current,
+      provider: await deps.feedbackConnect!(current.workspace, AbortSignal.timeout(1000)),
+      occurrence: 'checkpoint-test',
+      sourceThreadId: 'intake',
+      now: baseline + 70000,
+      checkpoint: async (scan) => {
+        visits.push(scan.id);
+        if (scan.id === first.id) throw new Error('discovery-checkpoint-changed');
+      },
+    });
+    assert.ok(visits.includes('e'.repeat(64)));
+    assert.equal(first.feedback, undefined);
+    assert.deepEqual(
+      scans.map((scan) => [scan.id, scan.feedback.code]),
+      [['e'.repeat(64), 'feedback-schedule-owner-changed']],
+    );
+  });
   async function prepare(author = commenter) {
     await call('next');
     comments.push({
@@ -242,6 +274,48 @@ describe('agent/codex-feedback', () => {
     assert.ok('eventId' in result && result.eventId);
     return { id, eventId: result.eventId };
   }
+  it('should reactivate unassigned codex feedback in the original chat and retire again on closure', async () => {
+    const provider = await deps.feedbackConnect!('', new AbortController().signal);
+    const item = await provider.client.getItem('owner', 'repo', 3);
+    item.assignees = [];
+    const history = await provider.client.listAssignmentEvents('owner', 'repo', 3);
+    history.events.push({
+      ...history.events[0]!,
+      nodeId: 'removed',
+      databaseId: 31,
+      event: 'unassigned',
+      createdAt: new Date(baseline + 65_000).toISOString(),
+    });
+    comments.push({
+      nodeId: 'comment',
+      databaseId: 42,
+      author: commenter,
+      body: '@receiver explain this',
+      bodyTruncated: false,
+      createdAt: new Date(baseline + 68_000).toISOString(),
+      updatedAt: new Date(baseline + 68_000).toISOString(),
+    });
+    const lifecycle = () =>
+      reconcileCodexLifecycle(pluginData, {
+        ...deps,
+        threadId: 'intake',
+        connect: async () => provider.client,
+      } as CodexDispatchDependencies);
+    await lifecycle();
+    const active = (await store.read()).records[0]!;
+    assert.equal(active.retirement, undefined);
+    assert.equal(active.feedbackReactivation?.assignmentEventId, 'removed');
+    assert.equal((await call('next')).status, 'feedback-prepared');
+    assert.equal((await store.read()).records[0]!.threadId, 'child');
+    occurrence += 60_000;
+    await lifecycle();
+    assert.equal((await store.read()).records[0]!.retirement, undefined);
+    item.state = 'closed';
+    occurrence += 60_000;
+    await lifecycle();
+    assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
+    assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
+  });
   async function recordReply(
     ref: { id: string; eventId: string },
     privateText: string,
@@ -366,11 +440,11 @@ describe('agent/codex-feedback', () => {
     assert.match(('body' in preview ? preview.body : '') ?? '', /@contributor/);
     assert.doesNotMatch(JSON.stringify(preview), /Detailed private answer/);
     assert.equal(creates, 0);
-    assert.equal((await call('publish', { ...ref, digest: 'stale' }, true)).status, 'blocked');
+    assert.equal((await call('publish', { ...ref, digest: 'stale' }, true)).status, 'waiting');
     assert.equal(creates, 0);
     lost = true;
     const apply = { ...ref, digest: preview.digest };
-    assert.equal((await call('publish', apply, true)).status, 'blocked');
+    assert.equal((await call('publish', apply, true)).status, 'waiting');
     const completed = await call('publish', apply, true);
     assert.equal(completed.status, 'published');
     assert.ok('presentation' in completed && completed.presentation);
@@ -559,6 +633,61 @@ describe('agent/codex-feedback', () => {
       assert.ok(!published!.includes('custom:latin'));
       assert.ok(!published!.includes('Private English'));
     });
+  it('should preserve a pending reply after unrelated workflow settings change', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await recordReply(ref, 'Private answer.', 'Public answer.');
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].mode = 'work';
+    manifest.github.notifications['issue-assignment'].implementation = {
+      skill: 'custom:implementation',
+    };
+    manifest.github.notifications.cleanup = { enabled: false, 'grace-minutes': 5 };
+    await writeFile(path, JSON.stringify(manifest));
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const activation = deps.activation!;
+    deps.activation = async (...args) => {
+      const result = await activation(...args);
+      result.schedule!.current.policyDigest = automationHash(
+        current.manifest.github!.notifications,
+      );
+      result.schedule!.saved.policyDigest = result.schedule!.current.policyDigest;
+      return result;
+    };
+    const preview = await call('publish', ref, true);
+    assert.equal(preview.status, 'publication-ready');
+    assert.ok('digest' in preview && preview.digest);
+    assert.equal(
+      (await call('publish', { ...ref, digest: preview.digest }, true)).status,
+      'published',
+    );
+    assert.equal(creates, 1);
+  });
+  it('should reuse one issue observation per authorization and refresh it on the next call', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const provider = await deps.feedbackConnect!('', new AbortController().signal);
+    const read = provider.client.getItem;
+    let reads = 0;
+    let closed = false;
+    provider.client.getItem = async (...args) => {
+      reads++;
+      const item = await read(...args);
+      return closed ? { ...item, state: 'closed' } : item;
+    };
+    deps.feedbackConnect = async () => provider;
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    assert.equal(reads, 1);
+    closed = true;
+    const result = await call('context', ref, true);
+    assert.equal(result.status, 'blocked');
+    assert.equal('code' in result && result.code, 'dispatch-issue-closed');
+    assert.equal(reads, 2);
+    assert.equal(creates, 0);
+  });
   it('should withhold publication when the admitted source changes', async () => {
     const ref = await prepare();
     sent = true;
@@ -577,7 +706,7 @@ describe('agent/codex-feedback', () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
-    assert.equal((await call('compose', ref, true)).status, 'blocked');
+    assert.equal((await call('compose', ref, true)).status, 'waiting');
     const bypass = await call(
       'result',
       {
@@ -598,7 +727,7 @@ describe('agent/codex-feedback', () => {
     assert.ok('verifiedOutcome' in composition && composition.verifiedOutcome?.assessment);
     assert.equal(
       (await call('candidate', { ...ref, digest: 'stale', publicText: 'Reply.' }, true)).status,
-      'blocked',
+      'waiting',
     );
     deps.native!.assessmentSkill = async (_cwd, name) => ({
       name,
@@ -612,6 +741,20 @@ describe('agent/codex-feedback', () => {
       true,
     );
     assert.equal('code' in changed && changed.code, 'feedback-composition-changed');
+    const refreshed = await call('compose', ref, true);
+    assert.equal(refreshed.status, 'composition-ready');
+    assert.ok('digest' in refreshed && refreshed.digest !== composition.digest);
+    assert.equal(
+      (
+        await call(
+          'candidate',
+          { ...ref, digest: refreshed.digest, publicText: 'Updated reply.' },
+          true,
+        )
+      ).status,
+      'candidate-recorded',
+    );
+
     assert.equal(creates, 0);
     assert.equal(
       (await store.read()).records[0]!.feedback!.events[0]!.result!.privateText,

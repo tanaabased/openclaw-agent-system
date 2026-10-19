@@ -7,6 +7,7 @@ import { join } from 'node:path';
 for (const [scenario, itemType] of [
   ['openclaw-issue', 'issue'],
   ['openclaw-pr', 'pull-request'],
+  ['openclaw-notifications', 'issue'],
 ]) {
   describe(`examples/${scenario} feedback evidence`, () => {
     it('should inspect only its requested run while rejecting real duplicate responses', async () => {
@@ -30,7 +31,12 @@ for (const [scenario, itemType] of [
           encoding: 'utf8',
         });
       try {
+        const summaries =
+          itemType === 'issue'
+            ? ['summary', ...(scenario === 'openclaw-notifications' ? ['refreshed-summary'] : [])]
+            : [];
         await write('feedback', {
+          assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
               {
@@ -44,10 +50,12 @@ for (const [scenario, itemType] of [
           },
         });
         await write('feedback-source', { node_id: 'source' });
-        await write('feedback-replies', [
-          ...(itemType === 'issue'
-            ? [{ node_id: 'summary', user: { login: 'tanaabot' }, body: 'Proposed plan.' }]
-            : []),
+        const replies = [
+          ...summaries.map((node_id) => ({
+            node_id,
+            user: { login: 'tanaabot' },
+            body: 'Proposed plan.',
+          })),
           {
             node_id: 'source',
             user: { login: 'emoriwan' },
@@ -58,7 +66,8 @@ for (const [scenario, itemType] of [
             user: { login: 'tanaabot' },
             body: 'Public answer.',
           },
-        ]);
+        ];
+        await write('feedback-replies', replies);
         const prior = { ...answer, __openclaw: { runId: 'earlier' } };
         await write('feedback-history', {
           requestedRunId: 'current',
@@ -66,6 +75,12 @@ for (const [scenario, itemType] of [
         });
         const valid = execute();
         assert.equal(valid.status, 0, valid.stderr);
+        await write('feedback-replies', [
+          ...replies,
+          { node_id: 'unexpected-reply', user: { login: 'tanaabot' }, body: 'Public answer.' },
+        ]);
+        assert.notEqual(execute().status, 0);
+        await write('feedback-replies', replies);
         await write('feedback-history', { requestedRunId: 'current', messages: [answer, answer] });
         assert.notEqual(execute().status, 0);
         await write('feedback-history', { requestedRunId: 'wrong-run', messages: [answer] });

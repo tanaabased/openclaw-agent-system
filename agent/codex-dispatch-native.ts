@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
 import dispatchHistory from './codex-dispatch-history.ts';
+import creationHistory from './codex-dispatch-creation-history.ts';
 import unsubmittedCreation from './codex-dispatch-unsubmitted.ts';
 
 import { nativeObject } from './automation-gateway.ts';
@@ -15,6 +16,7 @@ export interface DispatchNativeThread {
   model?: string;
   effort?: string;
   status: string;
+  archived?: boolean;
   turnStatus?: string;
   turnEnded?: boolean;
   turnId?: string;
@@ -78,7 +80,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
   }
   async function verify(
     thread: Record<string, unknown>,
-    input: { sourceThreadId: string; prompt: string },
+    input: { sourceThreadId: string; prompt: string; observationOnly?: boolean },
   ): Promise<DispatchNativeThread> {
     if (
       !matchesDispatchCreation(thread, input.sourceThreadId, input.prompt) ||
@@ -87,15 +89,21 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       !nativeObject(thread.status) ||
       typeof thread.status.type !== 'string' ||
       thread.ephemeral === true ||
-      thread.canAcceptDirectInput === false ||
-      (typeof thread.path === 'string' && thread.path.split(/[\\/]/u).includes('archived_sessions'))
+      (!input.observationOnly &&
+        (thread.canAcceptDirectInput === false ||
+          (typeof thread.path === 'string' &&
+            thread.path.split(/[\\/]/u).includes('archived_sessions'))))
     )
       throw new Error('dispatch-native-readback-diverged');
     const latestTurn = Array.isArray(thread.turns) ? thread.turns.at(-1) : undefined;
     return {
       id: thread.id,
-      cwd: await realpath(thread.cwd),
+      cwd: input.observationOnly ? thread.cwd : await realpath(thread.cwd),
       status: thread.status.type,
+      archived:
+        thread.archived === true ||
+        (typeof thread.path === 'string' &&
+          thread.path.split(/[\\/]/u).includes('archived_sessions')),
       // a separate app-server can report a live desktop turn as interrupted/notLoaded.
       turnEnded:
         nativeObject(latestTurn) &&
@@ -123,7 +131,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
   return {
     unsubmittedCreation: (
       threadId: string,
-      prepared: { createdAt: number; turnId?: string },
+      prepared: { createdAt: number; turnId?: string; prompt?: string },
       currentTurnId: string,
     ) => unsubmittedCreation(request, threadId, prepared, currentTurnId),
     async occurrence(threadId: string) {
@@ -165,17 +173,19 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     async deniedCreation(
       sourceThreadId: string,
       expected: Record<string, unknown>,
+      prepared: { createdAt: number; turnId?: string },
       approvedCallId?: string,
     ) {
-      const source = await read(sourceThreadId, 'all');
+      const source = await read(sourceThreadId, 'none');
+      const history = await creationHistory(request, sourceThreadId, prepared);
       if (
         !source ||
         !nativeObject(source.status) ||
         !['idle', 'notLoaded'].includes(String(source.status.type)) ||
-        !Array.isArray(source.turns)
+        !history
       )
         throw new Error('dispatch-denial-unverified');
-      const matches = source.turns.flatMap((turn) =>
+      const matches = history.turns.flatMap((turn) =>
         nativeObject(turn) && Array.isArray(turn.items)
           ? turn.items.flatMap((item) =>
               nativeObject(item) &&
@@ -220,61 +230,73 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       prompt: string;
       createdAfter: number;
       threadId?: string;
+      observationOnly?: boolean;
     }): Promise<DispatchNativeThread | undefined> {
       if (input.threadId) {
         const thread = await read(input.threadId);
         return thread ? verify(thread, input) : undefined;
       }
       const matches: DispatchNativeThread[] = [];
-      let cursor: string | undefined;
-      let newestAllowed = Infinity;
-      const cursors = new Set<string>();
-      for (let page = 0; page < 10; page++) {
-        const result = await request('thread/list', {
-          limit: 100,
-          sortKey: 'created_at',
-          sortDirection: 'desc',
-          // the ambient provider default can exclude native desktop-created chats.
-          modelProviders: [],
-          sourceKinds: [
-            'cli',
-            'vscode',
-            'exec',
-            'appServer',
-            'subAgent',
-            'subAgentReview',
-            'subAgentCompact',
-            'subAgentThreadSpawn',
-            'subAgentOther',
-            'unknown',
-          ],
-          ...(cursor ? { cursor } : {}),
-        });
-        if (!Array.isArray(result.data)) throw new Error('dispatch-native-response-invalid');
-        for (const candidate of result.data) {
-          if (
-            !nativeObject(candidate) ||
-            typeof candidate.id !== 'string' ||
-            typeof candidate.createdAt !== 'number'
-          )
-            throw new Error('dispatch-native-response-invalid');
-          if (candidate.createdAt > newestAllowed)
-            throw new Error('dispatch-native-response-invalid');
-          newestAllowed = candidate.createdAt;
-          if (candidate.createdAt * 1000 < input.createdAfter - 2000) return matches[0];
-          const thread = await read(candidate.id);
-          if (thread && matchesDispatchCreation(thread, input.sourceThreadId, input.prompt)) {
-            matches.push(await verify(thread, input));
-            if (matches.length > 1) throw new Error('dispatch-native-identity-ambiguous');
+      for (const archived of input.observationOnly ? [false, true] : [false]) {
+        let cursor: string | undefined;
+        let newestAllowed = Infinity;
+        const cursors = new Set<string>();
+        let complete = false;
+        pages: for (let page = 0; page < 10; page++) {
+          const result = await request('thread/list', {
+            limit: 100,
+            ...(input.observationOnly ? { archived } : {}),
+            sortKey: 'created_at',
+            sortDirection: 'desc',
+            // the ambient provider default can exclude native desktop-created chats.
+            modelProviders: [],
+            sourceKinds: [
+              'cli',
+              'vscode',
+              'exec',
+              'appServer',
+              'subAgent',
+              'subAgentReview',
+              'subAgentCompact',
+              'subAgentThreadSpawn',
+              'subAgentOther',
+              'unknown',
+            ],
+            ...(cursor ? { cursor } : {}),
+          });
+          if (!Array.isArray(result.data)) throw new Error('dispatch-native-response-invalid');
+          for (const candidate of result.data) {
+            if (
+              !nativeObject(candidate) ||
+              typeof candidate.id !== 'string' ||
+              typeof candidate.createdAt !== 'number'
+            )
+              throw new Error('dispatch-native-response-invalid');
+            if (candidate.createdAt > newestAllowed)
+              throw new Error('dispatch-native-response-invalid');
+            newestAllowed = candidate.createdAt;
+            if (candidate.createdAt * 1000 < input.createdAfter - 2000) {
+              complete = true;
+              break pages;
+            }
+            const thread = await read(candidate.id);
+            if (thread && matchesDispatchCreation(thread, input.sourceThreadId, input.prompt)) {
+              matches.push(await verify(thread, input));
+              if (matches.length > 1) throw new Error('dispatch-native-identity-ambiguous');
+            }
           }
+          if (!result.nextCursor) {
+            complete = true;
+            break;
+          }
+          if (typeof result.nextCursor !== 'string' || cursors.has(result.nextCursor))
+            throw new Error('dispatch-native-response-invalid');
+          cursor = result.nextCursor;
+          cursors.add(cursor);
         }
-        if (!result.nextCursor) return matches[0];
-        if (typeof result.nextCursor !== 'string' || cursors.has(result.nextCursor))
-          throw new Error('dispatch-native-response-invalid');
-        cursor = result.nextCursor;
-        cursors.add(cursor);
+        if (!complete) throw new Error('dispatch-native-search-incomplete');
       }
-      throw new Error('dispatch-native-search-incomplete');
+      return matches[0];
     },
   };
 }

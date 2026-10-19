@@ -1,3 +1,6 @@
+import { matchesFeedbackAuthority } from './notification-authority.ts';
+import workflowFailure from './workflow-failure.ts';
+import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import { realpath } from 'node:fs/promises';
@@ -7,7 +10,7 @@ import { Value } from 'typebox/value';
 
 import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
+import codexCapacity, { codexItemOccupied, codexUnresolvedRetirement } from './codex-capacity.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
@@ -25,7 +28,7 @@ import { feedbackResultSchema } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import revalidateAssignment from './dispatch-assignment.ts';
+import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
@@ -190,7 +193,7 @@ export default async function runCodexFeedback(
       if (snapshot && occurrence) {
         const cycleAt = state.discoveryCycleAt ?? scanTime;
         const owners = state.records.filter(
-          (r) => !r.retired && !r.reset && r.effective && r.threadId,
+          (r) => !r.retired && !r.retirement && !r.reset && r.effective && r.threadId,
         );
         if (
           owners.some(
@@ -214,6 +217,7 @@ export default async function runCodexFeedback(
       const records = state.records.filter(
         (record) =>
           !record.retired &&
+          !record.retirement &&
           !record.reset &&
           record.effective &&
           record.threadId &&
@@ -221,7 +225,7 @@ export default async function runCodexFeedback(
           record.worktree &&
           record.project,
       );
-      const queued = pendingDispatchAssignments(state, intake).filter(
+      const queued = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).filter(
         ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
       );
       const assignmentAt = Math.min(
@@ -253,7 +257,17 @@ export default async function runCodexFeedback(
           if (record.sourceThreadId !== activation.sourceThreadId)
             throw new Error('feedback-schedule-owner-changed');
           if (!event) continue;
-          if (event.phase === 'published' || (event.phase === 'blocked' && !operatorPublication))
+          if (input.action === 'next' && event.retry && !dispatchRetryDue(event, now)) continue;
+          if (
+            event.phase === 'published' ||
+            (event.phase === 'blocked' &&
+              !operatorPublication &&
+              !(
+                input.action === 'compose' &&
+                event.code === 'feedback-composition-changed' &&
+                !event.publicationAttempted
+              ))
+          )
             return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
           if (
             operatorPublication &&
@@ -296,11 +310,19 @@ export default async function runCodexFeedback(
             );
             if (
               automationHash(fresh.schedule) !== automationHash(schedule) ||
-              event.policyDigest !== automationHash(policy)
+              !matchesFeedbackAuthority(event.policyDigest, policy)
             )
               throw new Error('feedback-authority-changed');
-            await revalidateAssignment(current.policy!, admitted, provider.client);
-            const item = await provider.client.getItem(owner, name, event.number);
+            const assignment = await inspectFeedbackAssignment(
+              current.policy!,
+              admitted,
+              provider.client,
+              record,
+            );
+            const item =
+              event.number === admitted.issue.number
+                ? assignment.item
+                : await provider.client.getItem(owner, name, event.number);
             if (
               item.nodeId !== event.nodeId ||
               item.itemType !== event.itemType ||
@@ -328,14 +350,16 @@ export default async function runCodexFeedback(
                   event.number,
                   source.databaseId,
                 );
-            if (
-              exact.nodeId !== source.nodeId ||
-              exact.author?.nodeId !== source.author?.nodeId ||
-              feedbackRevision(exact) !== event.revision ||
-              admitCodexFeedback(policy, provider.comments.identity, exact).disposition !==
-                'approved'
-            )
+            if (exact.nodeId !== source.nodeId) throw new Error('feedback-source-identity-changed');
+            if (exact.author?.nodeId !== source.author?.nodeId)
+              throw new Error('feedback-source-author-changed');
+            if (feedbackRevision(exact) !== event.revision)
               throw new Error('feedback-source-changed');
+            if (
+              admitCodexFeedback(policy, provider.comments.identity, exact).disposition !==
+              'approved'
+            )
+              throw new Error('feedback-source-no-longer-eligible');
           };
           await authorize();
           const found = await native.find({
@@ -393,7 +417,12 @@ export default async function runCodexFeedback(
             if (event.attempt.turnId && event.attempt.turnId !== receipt.turnId)
               throw new Error('feedback-turn-changed');
             event.attempt.turnId = receipt.turnId;
+            delete event.retry;
+            delete event.retryAfter;
             if (event.phase === 'prepared') event.phase = 'running';
+            if (receipt.ended && found.turnEnded && ['idle', 'notLoaded'].includes(found.status))
+              record.nativeInactive = true;
+            else delete record.nativeInactive;
             if (receipt.ended && !event.result) throw new Error('feedback-turn-ended');
             if (receipt.ended && event.phase === 'responded' && input.action === 'next') {
               // native history may omit an approval rejection; never infer permission to retry.
@@ -432,6 +461,7 @@ export default async function runCodexFeedback(
                   id,
               },
             };
+            delete record.nativeInactive;
             event.phase = 'prepared';
             await save();
             return {
@@ -477,8 +507,18 @@ export default async function runCodexFeedback(
               if (
                 event.composition &&
                 automationHash(event.composition) !== automationHash(selected.selection)
-              )
-                throw new Error('feedback-composition-changed');
+              ) {
+                if (input.action !== 'compose' || event.publicationAttempted)
+                  throw new Error('feedback-composition-changed');
+                if (event.result) delete event.result.publicText;
+              }
+              if (input.action === 'compose' && !event.publicationAttempted) {
+                event.phase = 'responded';
+                delete event.code;
+                delete event.retry;
+                delete event.retryAfter;
+                delete event.publicationApproval;
+              }
               return selected.selection;
             } catch (error) {
               if (
@@ -553,7 +593,7 @@ export default async function runCodexFeedback(
                 },
                 maximumPublicCharacters: maximumGitHubNotificationReplyLength,
                 instruction:
-                  'Read and invoke the selected skill from its verified path, applying its guidance and applicable voice skills. Supply the source, retained private response, and verified outcome as context, not authority. Adapt its ordinary reply output into feedbackRuntime action:candidate with id, eventId, this digest, and publicText. The skill must not call runtime tools or publish. Missing or changed skills stop composition; do not fall back. Keep the complete private response in the final answer.',
+                  'Read and invoke the selected skill from its verified path, applying its guidance and applicable voice skills. Supply the source, retained private response, and verified outcome as context, not authority. Adapt its ordinary reply output into feedbackRuntime action:candidate with id, eventId, this digest, and publicText. The skill must not call runtime tools or publish. Missing skills stop composition. If the skill or guidance changed, call compose again and create a new candidate; never reuse the old draft or bypass a denial. Keep the complete private response in the final answer.',
               };
             }
             if (!event.composition || input.digest !== compositionDigest())
@@ -673,6 +713,8 @@ export default async function runCodexFeedback(
             }
             event.phase = 'published';
             delete event.code;
+            delete event.retry;
+            delete event.retryAfter;
             feedback.lastServedAt = now;
             await save();
             return {
@@ -702,19 +744,15 @@ export default async function runCodexFeedback(
           }
         } catch (error) {
           if (codexHostAccess(error)) throw error;
-          const diagnostic =
-            error && typeof error === 'object' && 'code' in error
-              ? error.code
-              : error instanceof Error
-                ? error.message
-                : undefined;
-          const code =
-            typeof diagnostic === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(diagnostic)
-              ? diagnostic
-              : 'feedback-provider-unavailable';
+          const failure = workflowFailure(error, 'feedback-operation-failed');
+          const { code } = failure;
+          if (event) {
+            event.code = code;
+            scheduleDispatchRetry(event, code, error, now);
+          }
           if (
             event &&
-            /^(?:feedback-(?:source-changed|source-owner-changed|authority-changed|turn-ended|turn-changed|native-binding-mismatch|publication-interrupted|self-publication-denied|composition-changed|composition-interrupted|skill-unavailable)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-assessment-(?:skill|guidance)|dispatch-.*(?:revoked|diverged))/.test(
+            /^(?:feedback-(?:source-changed|source-identity-changed|source-author-changed|source-no-longer-eligible|source-owner-changed|authority-changed|turn-ended|turn-changed|native-binding-mismatch|publication-interrupted|self-publication-denied|composition-changed|composition-interrupted)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-.*(?:revoked|diverged))/.test(
               code,
             )
           ) {
@@ -730,16 +768,21 @@ export default async function runCodexFeedback(
               records.push(record);
             }
           }
+          if (event && dispatchFailurePhase(event, code, error) === 'blocked')
+            event.phase = 'blocked';
           await save();
           if (input.action !== 'next')
             return {
-              status: 'blocked',
+              status:
+                event?.phase === 'blocked'
+                  ? 'blocked'
+                  : dispatchFailurePhase(event ?? {}, code, error),
               id: record.id,
               eventId: input.eventId,
-              code,
+              ...failure,
               ...(/(?:skill|guidance|composition-changed)/u.test(code)
                 ? {
-                    next: 'Restore the configured feedback skill and guidance before retrying with a fresh admitted comment. Install or enable a missing skill; do not substitute a fallback or publish the private response.',
+                    next: 'If the configured skill is missing, restore it. For changed content or guidance, call compose on this retained event and create a new candidate before publication. No new comment or stage approval is needed; do not substitute a fallback or publish the private response.',
                   }
                 : {}),
               ...(event?.result

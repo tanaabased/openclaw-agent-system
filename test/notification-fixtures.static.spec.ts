@@ -3,9 +3,9 @@ import { readFile } from 'node:fs/promises';
 
 import parseAgentManifest from '../manifest/parse.ts';
 
-for (const id of ['openclaw-issue', 'openclaw-pr']) {
+for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-notifications']) {
   const scenario = { id };
-  const issueOnly = id === 'openclaw-issue';
+  const issueOnly = id !== 'openclaw-pr';
   const owner = 'tanaabot';
   const ownerLogin = 'tanaabot';
   const actorFolder = 'emori';
@@ -28,7 +28,12 @@ for (const id of ['openclaw-issue', 'openclaw-pr']) {
         parsed.manifest?.github?.notifications?.issueAssignment?.allowed?.map(
           ({ login, nodeId }) => ({ login, nodeId }),
         ),
-        [{ login: actorLogin, nodeId: '__ACTOR_NODE_ID__' }],
+        [
+          { login: actorLogin, nodeId: '__ACTOR_NODE_ID__' },
+          ...(id === 'openclaw-notifications'
+            ? [{ login: ownerLogin, nodeId: '__RECEIVER_NODE_ID__' }]
+            : []),
+        ],
       );
       const actor = parseAgentManifest(
         await readFile(`examples/${scenario.id}/${actorFolder}/agent.yaml`, 'utf8'),

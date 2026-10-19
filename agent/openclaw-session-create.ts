@@ -31,6 +31,7 @@ export async function describeIssueSession(
   request: DispatchRequest,
   record: OpenClawDispatchRecord,
   config: OpenClawConfig,
+  retained = false,
 ) {
   const expected = record.request;
   if (!expected || !('key' in expected) || !record.sessionCreation)
@@ -58,6 +59,8 @@ export async function describeIssueSession(
       (!record.sessionCreation.sessionId || row.sessionId === record.sessionCreation.sessionId),
     'sessionId',
   );
+  // Retained presentation proves session custody only; it grants no new workflow authority.
+  if (retained) return row.sessionId;
   match(typeof cwd === 'string' && (await realpath(cwd)) === (await realpath(expected.cwd)), 'cwd');
   match(model === expected.model, 'model');
   match(row.thinkingLevel === expected.thinkingLevel, 'thinkingLevel');

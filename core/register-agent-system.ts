@@ -764,7 +764,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         intake: operatorIntake,
         scanSelected: async (manifest, workspace, selector, signal) => {
           const { selected } = await operatorIntake.select(manifest, workspace);
-          return operatorIntake.run(
+          const observation = await operatorIntake.run(
             manifest,
             workspace,
             'scan',
@@ -772,6 +772,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
             signal,
             selector,
           );
+          if (observation.status === 'ready')
+            await dispatchV2.service.check(manifest, workspace, signal, observation);
+          return observation;
         },
         inspectRun: async (manifest, workspace, runId, signal) => {
           signal.throwIfAborted();

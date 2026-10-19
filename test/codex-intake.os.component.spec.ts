@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -64,6 +64,38 @@ describe('agent/codex-intake', () => {
   });
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
+  });
+  it('should preserve the activated baseline across operational policy changes', async () => {
+    const provider = intakeFixture();
+    provider.events.length = 0;
+    let now = baseline;
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => now,
+      connect: async () => provider.client,
+    };
+    await runCodexIntake(pluginData, true, deps);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: {
+          ...manifest.github,
+          notifications: {
+            ...manifest.github.notifications,
+            'interval-minutes': 15,
+            'max-concurrent-items': 8,
+            cleanup: { enabled: true, 'grace-minutes': 30 },
+          },
+        },
+      }),
+    );
+    provider.events.push(...intakeFixture().events);
+    now += 120000;
+    assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
+    const { store } = await selectCodexIntake(pluginData, deps);
+    assert.equal((await store.read())!.records.length, 1);
   });
   it('should reactivate despite obsolete full notification queues', async () => {
     const { client } = intakeFixture();
@@ -348,7 +380,13 @@ describe('agent/codex-intake', () => {
     assert.equal(retained.records?.length, 1);
   });
 
-  async function checkReconciliation(disable: 'manifest corruption' | 'workflow disable') {
+  async function checkReconciliation(
+    disable: 'manifest corruption' | 'workflow disable',
+    value = manifest,
+    legacy = false,
+  ) {
+    const manifest = value;
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     const fixture = intakeFixture();
     fixture.events[0]!.createdAt = new Date(baseline - 1000).toISOString();
     const conversations = new Map<
@@ -435,6 +473,57 @@ describe('agent/codex-intake', () => {
     await acknowledgeCodexAutomation(pluginData, desired.digest, undefined, deps);
     assert.equal((await plan()).status, 'aligned');
     assert.equal((await plan()).actions.length, 0);
+    if (legacy) {
+      const selected = await selectCodexIntake(pluginData, deps);
+      assert.notEqual(selected.policy!.digest, selected.policy!.legacyDigest);
+      const oldPrompt = prepared.request.prompt.replace(
+        selected.policy!.digest,
+        selected.policy!.legacyDigest,
+      );
+      const file = (await readdir(pluginData)).find(
+        (name) => name.startsWith('codex-automations-') && name.endsWith('.json'),
+      )!;
+      const path = join(pluginData, file);
+      const ledger = JSON.parse(await readFile(path, 'utf8'));
+      ledger.records[0].definition.prompt = oldPrompt;
+      await writeFile(path, JSON.stringify(ledger));
+      await saveNative({ ...prepared.request, prompt: oldPrompt });
+      assert.deepEqual(await inspectCodexDispatchActivation(pluginData, deps), {
+        sourceThreadId: 'intake-thread',
+      });
+      assert.deepEqual(
+        (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'assessment-summary'))
+          .schedule?.saved.capabilities,
+        ['assessment-summary'],
+      );
+      await selected.store.exclusive(async (state, save) => {
+        state!.policyDigest = selected.policy!.legacyDigest;
+        await save(state!);
+      });
+      assert.equal((await inspectCodexIntake(pluginData, deps)).status, 'ready');
+      assert.equal((await selected.store.read())!.policyDigest, selected.policy!.legacyDigest);
+      await runCodexIntake(pluginData, false, {
+        ...deps,
+        ...deps.intake,
+        now: () => baseline + 120000,
+      });
+      assert.equal((await selected.store.read())!.policyDigest, selected.policy!.digest);
+      await writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({ ...manifest, github: { ...manifest.github, username: 'foreign' } }),
+      );
+      await assert.rejects(
+        inspectCodexDispatchActivation(pluginData, deps),
+        /dispatch-activation-required/,
+      );
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+      await saveNative({ ...prepared.request, prompt: oldPrompt + '\nchanged consent' });
+      await assert.rejects(
+        inspectCodexDispatchActivation(pluginData, deps),
+        /dispatch-activation-required/,
+      );
+      return;
+    }
     assert.deepEqual(await inspectCodexDispatchActivation(pluginData, deps), {
       sourceThreadId: 'intake-thread',
     });
@@ -630,6 +719,11 @@ describe('agent/codex-intake', () => {
     assert.equal((await plan()).actions[0]!.expected.status, 'PAUSED');
     assert.equal(creates, 1);
   }
+  it('should retain legacy codex schedule consent and upgrade intake without reactivation', async () => {
+    const value = structuredClone(manifest);
+    value.github.notifications.runtimes = ['openclaw', 'codex'];
+    await checkReconciliation('workflow disable', value, true);
+  });
   for (const disable of ['manifest corruption', 'workflow disable'] as const)
     it(`should retain and resume the owned schedule and chat after ${disable}`, () =>
       checkReconciliation(disable));

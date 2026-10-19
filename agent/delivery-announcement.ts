@@ -67,6 +67,15 @@ export function announcementPresentation(
   return [quote, githubNotificationQuote(outcome)].filter(Boolean).join('\n\n');
 }
 
+/** Recovery resumes only the announcement phase that has not finished. */
+export function announcementRecoveryInstructions(state?: DeliveryAnnouncementState) {
+  if (state?.receipt && !state.code)
+    return 'The originating-issue announcement is confirmed. Keep its receipt; no announcement operation remains.';
+  if (state?.attempted || state?.receipt)
+    return 'Call delivery announce to reconcile the retained announcement attempt. Do not compose or post a replacement.';
+  return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce with its preview digest.';
+}
+
 /** the native delivery owner supplies authority and serializes state with the PR receipt. */
 export default async function deliveryAnnouncement(input: {
   operation: 'compose' | 'candidate' | 'announce';
@@ -142,7 +151,7 @@ export default async function deliveryAnnouncement(input: {
         },
         maximumPublicCharacters: 500,
         instruction:
-          'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing or changed skills stop composition. Keep the full private PR card even if announcing fails.',
+          'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
       };
     }
     const state = delivery.announcement;

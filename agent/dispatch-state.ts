@@ -8,6 +8,8 @@ import mergeStateSnapshot, {
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { retirementSchema } from './assignment-retirement.ts';
+
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSummarySchema } from './assessment-summary-state.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
@@ -33,6 +35,8 @@ export const dispatchRecordProperties = {
     Type.Literal('assessing'),
     Type.Literal('complete'),
     Type.Literal('blocked'),
+    Type.Literal('waiting'),
+    Type.Literal('retrying'),
   ]),
   createdAt: Type.Integer({ minimum: 0 }),
   manifestDigest: text,
@@ -68,6 +72,19 @@ export const dispatchRecordProperties = {
   reset: Type.Optional(
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
+  lifecycleCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  retirement: Type.Optional(retirementSchema),
+  feedbackReactivation: Type.Optional(
+    Type.Object(
+      {
+        eventId: hash,
+        assignmentEventId: text,
+        policyDigest: hash,
+        at: Type.Integer({ minimum: 0 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   retired: Type.Optional(
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
@@ -80,6 +97,13 @@ export const dispatchRecordProperties = {
   notice: Type.Optional(hash), // legacy presentation metadata; never used for intake decisions.
   dispatchedAt: Type.Optional(Type.Integer({ minimum: 0 })),
   intakeReportedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  retry: Type.Optional(
+    Type.Object(
+      { code: text, attempts: Type.Integer({ minimum: 1, maximum: 5 }) },
+      { additionalProperties: false },
+    ),
+  ),
+  nativeInactive: Type.Optional(Type.Boolean()),
   retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
 };
 export type SharedDispatchRecord = Static<TObject<typeof dispatchRecordProperties>> & {
@@ -224,7 +248,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             (pass) =>
               pass.allowance > pass.limit ||
               pass.recovery.length > pass.limit ||
-              pass.candidates.length > pass.allowance ||
+              pass.candidates.length > 12 ||
+              (pass.allowance === 0 && pass.selected.some((id) => !pass.recovery.includes(id))) ||
               pass.selected.filter((id) => !pass.recovery.includes(id)).length >
                 pass.candidates.length ||
               pass.recovery.some((id) => !state.records.some((record) => record.id === id)) ||
@@ -236,8 +261,9 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               ),
           ))) ||
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
-      new Set(state.records.filter((r) => !r.reset && !r.retired).map((r) => r.issueKey)).size !==
-        state.records.filter((r) => !r.reset && !r.retired).length ||
+      new Set(
+        state.records.filter((r) => !r.reset && !r.retired && !r.retirement).map((r) => r.issueKey),
+      ).size !== state.records.filter((r) => !r.reset && !r.retired && !r.retirement).length ||
       state.records.some(
         (r) =>
           (r.request && (!r.context || !r.routing || !r.routingNote)) ||
@@ -301,6 +327,9 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               [
                 'reset',
                 'retired',
+                'retirement',
+                'feedbackReactivation',
+                'intakeId',
                 'handoff',
                 'manifestDigest',
                 'request',

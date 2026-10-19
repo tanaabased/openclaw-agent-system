@@ -20,13 +20,14 @@ openclaw-setup \
   --yolo
 openclaw-aimock prepare --scenario openclaw-agent
 
-# should install the scenario-owned data workspace through agent system
-cd "$GITHUB_WORKSPACE/examples/openclaw-agent/data"
-openclaw agent-system install
-
 # should start the default gateway as a supervised background process
 openclaw config set logging.file "$TMPDIR/agent-file.jsonl"
 openclaw-gateway start --debug
+
+# should install the scenario-owned data workspace into the running gateway
+cd "$GITHUB_WORKSPACE/examples/openclaw-agent/data"
+openclaw agent-system install
+openclaw gateway call agents.list --params '{}' --json | jq -e 'any(.agents[]; .id == "data")'
 ```
 
 ## Testing

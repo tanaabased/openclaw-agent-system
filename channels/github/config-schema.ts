@@ -85,6 +85,15 @@ const externalGitHubNotificationPolicySchema = Type.Object(
     ),
     'interval-minutes': Type.Optional(Type.Integer({ minimum: 1, maximum: 1_440 })),
     'max-concurrent-items': Type.Optional(Type.Integer({ minimum: 1 })),
+    cleanup: Type.Optional(
+      Type.Object(
+        {
+          enabled: Type.Optional(Type.Boolean()),
+          'grace-minutes': Type.Optional(Type.Integer({ minimum: 0, maximum: 43_200 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     'allowed-repository-owners': Type.Array(externalGitHubIdentitySchema, {
       minItems: 1,
       uniqueItems: true,
@@ -144,6 +153,7 @@ export interface GitHubNotificationPolicy {
   runtimes: Array<'openclaw' | 'codex'>;
   intervalMinutes: number;
   maxConcurrentItems: number;
+  cleanup?: { enabled: boolean; graceMinutes: number };
   allowedRepositoryOwners: GitHubIdentityPin[];
   issueAssignment?: {
     enabled?: boolean;
@@ -198,6 +208,10 @@ export function decodeGitHubNotifications(
     runtimes: value.runtimes ?? ['openclaw', 'codex'],
     intervalMinutes: value['interval-minutes'] ?? 5,
     maxConcurrentItems: value['max-concurrent-items'] ?? 3,
+    cleanup: {
+      enabled: value.cleanup?.enabled ?? true,
+      graceMinutes: value.cleanup?.['grace-minutes'] ?? 60,
+    },
     allowedRepositoryOwners: value['allowed-repository-owners'].map(decodeIdentity),
     ...(value['issue-assignment'] === undefined
       ? {}

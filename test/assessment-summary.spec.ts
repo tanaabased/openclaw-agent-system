@@ -68,7 +68,7 @@ function fixture() {
       threadId: 'issue',
       turnId: 'turn',
       worktree: '/worktree',
-      policy: {},
+      policy: github.policy,
       result: value,
       previousResultDigest: record.result && automationHash(record.result),
     });
@@ -255,6 +255,21 @@ describe('agent/assessment-summary', () => {
     f.changeSkill();
     const blocked = await f.run({ operation: 'publish', digest });
     assert.ok('code' in blocked && blocked.code === 'assessment-summary-composition-changed');
+    const refreshed = await f.run({ operation: 'compose' });
+    assert.equal(refreshed.status, 'composition-ready');
+    assert.ok('digest' in refreshed && refreshed.digest !== digest);
+    assert.equal(f.record.assessmentSummaries?.[0]?.publicText, undefined);
+    assert.equal(
+      (
+        await f.run({
+          operation: 'candidate',
+          digest: refreshed.digest,
+          publicText: 'Updated summary.',
+        })
+      ).status,
+      'candidate-recorded',
+    );
+
     assert.equal(f.writes, 0);
   });
   it('rejects lost authority and a different assessment turn without changing readiness', async () => {

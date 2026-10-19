@@ -2,7 +2,7 @@ import DiscoveryBudget from './discovery-budget.ts';
 import { realpath } from 'node:fs/promises';
 
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
-import assignmentIntakePolicy from './assignment-intake-policy.ts';
+import assignmentIntakePolicy, { matchesIntakePolicy } from './assignment-intake-policy.ts';
 import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
@@ -72,7 +72,7 @@ export default class OpenClawIntake {
       ? 'intake-policy-disabled'
       : !state
         ? 'intake-activation-required'
-        : state.policyDigest !== selected.digest
+        : !matchesIntakePolicy(state.policyDigest, selected)
           ? 'intake-policy-reconciliation-required'
           : state.blocker?.code;
     return {
@@ -98,7 +98,7 @@ export default class OpenClawIntake {
     const deadline = AbortSignal.timeout(action === 'check' ? 25000 : 120000);
     const { selected, store, workspace } = await this.select(manifest, workspaceDir);
     if (!selected) throw new IntakeError('intake-policy-disabled');
-    if (action !== 'activate' && expectedDigest !== selected.digest)
+    if (action !== 'activate' && !matchesIntakePolicy(expectedDigest, selected))
       throw new IntakeError('intake-policy-changed');
     const assertCurrent = async () => {
       signal?.throwIfAborted();
@@ -128,6 +128,7 @@ export default class OpenClawIntake {
       agentId: manifest.agent.id,
       policy: selected.policy,
       policyDigest: selected.digest,
+      legacyPolicyDigest: selected.legacyDigest,
       now: (this.dependencies.now ?? Date.now)(),
       activate: action === 'activate',
       selector,

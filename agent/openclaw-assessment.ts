@@ -1,3 +1,4 @@
+import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 import { assessmentSummaryInstructions } from './assessment-summary-state.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
@@ -95,7 +96,7 @@ export async function issueAssessmentAction(input: {
   caller: DispatchCaller;
   intake: IntakeRecord;
   workspace: string;
-  policy: unknown;
+  policy: GitHubNotificationPolicy | undefined;
   config: OpenClawConfig;
   debug?: boolean;
   action: 'context' | 'result';

@@ -168,7 +168,12 @@ describe('scripts/aimock-tool-search', () => {
     await step('work-result', 'agent_system_dispatch', { status: 'recorded' });
     await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
     assert.equal(
-      (await step('delivery-publish', 'agent_system_dispatch', { status: 'published' })).digest,
+      (
+        await step('delivery-publish', 'agent_system_dispatch', {
+          status: 'published',
+          workflowStatus: 'partially-delivered',
+        })
+      ).digest,
       digest,
     );
     await step('delivery-compose', 'agent_system_dispatch', {
@@ -188,11 +193,14 @@ describe('scripts/aimock-tool-search', () => {
       { role: 'assistant', content: paused.content },
       {
         role: 'user',
-        content: `Operator request for managed issue ${id}: Reconcile the existing PR announcement and show its card again.`,
+        content: `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
       },
     );
     await discover();
-    await step('delivery-repeat', 'agent_system_dispatch', { status: 'announced' });
+    await step('assessment-present', 'agent_system_dispatch', {
+      status: 'presented',
+      presentation: '> Saved plan',
+    });
     assert.equal(
       (
         await step('delivery-present', 'agent_system_dispatch', {
@@ -202,7 +210,9 @@ describe('scripts/aimock-tool-search', () => {
       ).operation,
       'present',
     );
-    assert.deepEqual((await reply(scenario, input)).response, { content: '> PR card' });
+    assert.deepEqual((await reply(scenario, input)).response, {
+      content: '> Saved plan\n\n> PR card',
+    });
   });
 
   it('should identify a rejected notification tool envelope without exposing call arguments', async () => {

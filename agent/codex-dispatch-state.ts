@@ -50,6 +50,18 @@ const creationSchema = Type.Object(
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    reservationVersion: Type.Optional(Type.Literal(1)),
+    capacityObservation: Type.Optional(
+      Type.Object(
+        {
+          at: Type.Integer({ minimum: 0 }),
+          code: text,
+          threadId: Type.Optional(text),
+          turnId: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     issueMode: Type.Optional(
       Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
     ),
@@ -74,6 +86,7 @@ export const dispatchRecordSchema = Type.Object(
             request: creationSchema,
             createdAt: Type.Integer({ minimum: 0 }),
             recoveredAt: Type.Integer({ minimum: 0 }),
+            continuation: Type.Optional(codexContinuationStateSchema),
             turnId: text,
           },
           { additionalProperties: false },
@@ -90,6 +103,7 @@ export const dispatchRecordSchema = Type.Object(
             recoveredAt: Type.Integer({ minimum: 0 }),
             turnId: text,
             callId: text,
+            continuation: Type.Optional(codexContinuationStateSchema),
             approvedBy: Type.Optional(text),
           },
           { additionalProperties: false },

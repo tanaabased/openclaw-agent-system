@@ -16,6 +16,57 @@ OpenClaw keeps discovery inside one condition budget and wakes the coordinator f
 saved actionable work or a one-time progress/recovery card. After upgrading, run
 Install to reconcile the changed condition before relying on scheduled intake.
 
+Polling cadence, concurrent-item limits, and cleanup grace periods control execution;
+they do not revoke intake or feedback authority. Schedule changes still need Install
+to update the native timer. Runtime enablement, identities, repository scope, allowed
+actors, workflow mode, and cleanup enablement remain permission-bearing settings.
+A retained feedback reply is narrower: it checks runtime and workflow enablement,
+repository scope, and approved feedback actors. Assessment, implementation, cleanup,
+and review settings do not revoke that reply or grant it permission to change code.
+Changed reply skill content or guidance can be loaded again with `compose`; the
+private answer is retained and the unattempted public draft is replaced. An attempted
+write must be reconciled before further publication.
+Older receipts retain their original authority check until replaced; changed older policies
+can still require reconciliation.
+
+## Assignment lifecycle
+
+The existing intake run checks retained assignments in both runtimes. Verified issue
+closure, removal of the receiving assignee, or manual chat archival moves work from
+**Active** to **Retirement pending** immediately. This stops new assessment,
+continuation, and feedback dispatch for that record. Native work already running
+still occupies a slot until inactivity is verified.
+
+Automatic cleanup defaults to enabled, with a 60-minute grace period under
+`github.notifications.cleanup`. The deadline starts when intake first observes the
+change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
+verified reassignment before archival reactivates the existing conversation. A fresh
+assignment after archival or retirement can start another attempt without erasing
+prior receipts. An admitted new comment from a configured feedback author can also
+reactivate an unarchived conversation before cleanup starts. This resumes feedback,
+not implementation or a mode change. Reopening alone, incidental comments, and the
+agent's own published replies do not reactivate work.
+
+OpenClaw archives the exact idle session and removes its managed worktree after
+verifying a clean checkout and retained branch or tag. It protects pinned sessions,
+automation owners, shared worktrees, unresolved activity, and unpreserved changes.
+Each successful cleanup step is retained so interrupted cleanup can reconcile on a
+later poll. Branches, issue content, and assessment history are preserved.
+
+Codex prepares archival through the desktop's native tools after checking pins,
+automation ownership, shared use, and preserved work. The desktop owns worktree
+snapshotting and reclamation; intake marks work retired only after observing both
+archival and removal. If desktop settings retain the checkout, cleanup stays pending
+without blocking other intake. Disabling cleanup preserves resources and marks
+inactive work retired.
+Run Install after upgrading to reconcile the changed notification policy.
+
+`retirement-native-archive-denied` means the exact native archive call was rejected;
+inspect the intake chat's native approval result before taking operator action.
+`retirement-native-archive-unverified` means submission or outcome is uncertain;
+intake keeps reconciling native evidence. Neither result repeats the archive. A
+fresh preparation is automatic only when native history proves no call was submitted.
+
 ## CLI
 
 Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
@@ -57,7 +108,43 @@ stale, or unreconciled workflows fail without enabling jobs.
 Each scheduled or explicitly requested intake run can start several assessments,
 bounded by the slots available when it begins. Already-started assessments keep
 running; quick completions do not refill that run’s allowance. Excess assignments
-wait for a later run.
+wait for a later run. Item-specific failures do not stop unrelated eligible work.
+
+Codex and OpenClaw retain uncertain creation and send attempts for reconciliation;
+a newer assignment never authorizes a duplicate conversation. Capacity is released
+when native evidence proves inactivity, not merely because an error occurred or a
+record was retired. Dispatch reports use `waiting` for unresolved receipts or setup
+requirements, `retrying` for scheduled transient recovery, and `blocked` for explicit
+stops such as denial, cancellation, or lost authority. Recognized transport and
+rate-limit failures back off across scheduled runs, from five minutes up to an hour,
+honoring longer provider cooldowns. A prolonged outage needs no fresh stage approval;
+it does not discard the request or replay an uncertain write. Inspection also exposes
+`workflowStatus`: `retirement-pending` identifies work awaiting cleanup, `retired`
+identifies completed lifecycle retirement, `obsolete` identifies other superseded intent, and
+`partially-delivered` preserves a published PR while linkage, attachment, or its
+announcement remains incomplete. These descriptions do not release capacity or grant
+authority. Diagnostics identify the affected operation and issue, retaining successful
+starts alongside failures. Provider errors keep their bounded structured evidence;
+unclassified failures do not establish a credential problem.
+
+Codex preserves the earlier retirement contract for historical records created before
+reservation tracking: unresolved retired creations remain in inspectable history,
+while any verified active native chat still occupies a slot. Their evidence remains
+intact, and another creation for the same issue stays fenced until native inactivity
+or non-submission is proved. New retirement never releases an uncertain reservation. Retired history appears in
+routine reports only when it consumes capacity or prevents a newer assignment from
+starting. Closed, retired fixtures do not need repeated operator cleanup.
+The owning intake observes at most twelve recovery candidates per check and can use
+`dispatch` action `reconcile` with a retired record's `id` to retry observation and
+search native creation history when its receipt is missing. Ordinary polling avoids
+repeating that broad search for retired records without a child ID. Native
+terminal history remains readable for this purpose even when the chat is archived or
+its worktree is gone. Missing resources alone prove nothing; inspection retains the
+specific missing evidence in `capacityObservation`. Denial recovery reads native history from the retained preparation turn forward and
+validates the latest admitted assignment. An automatic approval denial still needs
+explicit operator recovery for its exact call; reassignment does not erase it.
+Closed historical feedback with
+no outstanding work stays quiet. Uncertain sends and publications remain visible.
 
 With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one
 immediate intake scan of that issue and reports `completed` when admission checking
@@ -154,8 +241,8 @@ Supported targets:
 
 V2 waits use the same native observation as `status`. `prepared` requires a
 verified conversation binding and worktree; `plan-ready` requires the retained
-assessment result. Native OpenClaw notifications do not retain rejected assignments
-or support assignment retirement. `assignment-rejected` and `retired` return
+assessment result. The wait command does not expose rejected assignments or lifecycle
+retirement as targets. `assignment-rejected` and `retired` return
 `github-notification-wait-target-unsupported` immediately without requesting a refresh.
 With `--refresh` and an issue selector, each intake refresh is limited to that
 issue. These one-off scans do not run dispatch; waits observe progress made by the
@@ -184,11 +271,27 @@ chat to reconcile the existing PR. A retained attempt with no verifiable PR rema
 blocked rather than risking a second creation. Native denial, reassignment, or a
 changed session/worktree stops the operation without discarding the work.
 
+In Codex and OpenClaw, authorized follow-up commits can fast-forward the same PR
+branch from its last verified push. The PR receipt and original announcement stay
+with the delivery. Explicit title/body changes update that PR; commit-only pushes
+preserve text edited on GitHub. Interrupted updates reconcile the same operation.
+If initial PR creation is still uncertain, reconcile it before changing its text.
+A stale publication preview returns a refreshed operation without writing. Inspect
+it and retry once within the existing authorization; repeated staleness needs
+investigation. Workflow activation or an operator request already covering that
+effect needs no additional stage approval. Native approval denials remain terminal.
+
 If showing an already-created PR is interrupted or temporarily busy, ask the same
-issue chat to show its card again. Presentation reuses the saved PR; it does not
-push or create another one, or post an announcement. If announcing fails, the PR
+issue chat to show its card again. Saved plans and PR cards remain readable in
+the owning chat without fresh publication permission, a matching working commit,
+or GitHub access. They show retained evidence, not a fresh provider verification.
+Native chat identity is still checked. Presentation does not push, create a PR, or
+post an announcement. In Codex, attachment reconciliation retries only attachment
+inspection. Recipient identities remain pinned; GitHub authorizes recipient changes. If announcing fails, the PR
 remains delivered. Ask the same chat to recover its announcement; uncertain writes
-reconcile the saved text and receipt without posting a duplicate.
+reconcile the saved text and receipt without posting a duplicate. Announcement
+recovery uses the saved published commit, so newer local work does not require
+another push. Recovery instructions skip confirmed attachments and announcements.
 
 ## V1 Retirement
 

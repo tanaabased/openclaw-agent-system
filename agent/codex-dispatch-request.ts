@@ -10,7 +10,7 @@ const object = (properties: Parameters<typeof Type.Object>[0]) =>
 const recovery = { id, digest };
 const schemas = {
   inspect: object({}),
-  next: object({ projects: Type.Optional(Type.Unknown()) }),
+  next: object({ projects: Type.Optional(Type.Unknown()), threads: Type.Optional(Type.Unknown()) }),
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
   handoff: object(recovery),
   reset: object(recovery),
@@ -28,6 +28,7 @@ const schemas = {
   }),
   reconcile: object({ id, receipt: Type.Optional(Type.Unknown()) }),
   context: object({ id }),
+  present: object({ id }),
   summary: object({ id, ...assessmentSummaryRequestProperties }),
   result: object({
     id,

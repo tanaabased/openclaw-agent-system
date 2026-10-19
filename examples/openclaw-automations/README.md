@@ -1,6 +1,6 @@
 # OpenClaw Automations Example
 
-Verify the installed scheduler's critical paths through `openclaw agent-system automations`: sync without duplication, execute a command under the owning agent, and retain native identity and persistent prompt routing through a Gateway restart. Strict AIMock verifies one completed prompt in the owning agent's context. Runtime tests run this example on Ubuntu without provider credentials or remote SSH.
+Verify the installed scheduler's critical paths through `openclaw agent-system automations`: sync without duplication, diagnose native drift without mutating it, reconcile through Install, execute a command under the owning agent, and retain native identity and persistent prompt routing through a Gateway restart. Strict AIMock verifies one completed prompt in the owning agent's context. Runtime tests run this example on Ubuntu without provider credentials or remote SSH.
 
 Command execution writes receipts in the checked-in workspace on the disposable runner. Both jobs recur hourly; explicit `run` requests exercise them immediately, and exact run IDs distinguish admission from completion. Source tests cover option variants, offline failures, one-shot retention, unmanaged jobs, stale authority, containment, timeouts, cancellation cleanup, and thread-selection permutations.
 
@@ -39,6 +39,19 @@ openclaw agent-system automations list --json | tee "$TMPDIR/automation-before.j
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-identities.json"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
+
+# should diagnose native drift without repair and reinstall the same jobs
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+openclaw cron edit "$native" --thinking high --json | jq -e '.payload.thinking == "high"'
+status=0
+openclaw agent-system doctor --json > "$TMPDIR/automation-drift.json" || status=$?
+test "$status" -eq 1
+jq -e 'any(.findings[]; .component == "automations" and .code == "automation-drift" and .status == "drift")' "$TMPDIR/automation-drift.json"
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.thinking == "high"'
+openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component == "automations" and .status == "updated")'
+openclaw agent-system automations list --json | tee "$TMPDIR/automation-reconciled.json" | jq -e '.status == "aligned"'
+jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-reconciled.json" | diff - "$TMPDIR/automation-identities.json"
 
 # should present each job under a stable category with unquoted names on install and doctor
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"

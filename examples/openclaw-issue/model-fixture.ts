@@ -7,7 +7,6 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import waitForAssessmentRelease from './assessment-barrier.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -50,10 +49,12 @@ function currentTurn(request: ChatCompletionRequest) {
 
 function isContention(result: Record<string, unknown> | undefined) {
   return (
-    ['busy', 'blocked'].includes(String(result?.status)) &&
-    ['private-state-file-lock-busy', 'private-state-snapshot-conflict'].includes(
-      String(result?.code),
-    )
+    ['busy', 'blocked', 'waiting'].includes(String(result?.status)) &&
+    [
+      'private-state-file-lock-busy',
+      'private-state-snapshot-conflict',
+      'discovery-checkpoint-changed',
+    ].includes(String(result?.code))
   );
 }
 
@@ -165,6 +166,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       const next = result(stage('next'));
       if (!next) return dispatch(stage('next'), { action: 'next' });
       if (next.status === 'discovery-progress') continue;
+      if (next.nextAction === 'next') continue;
       const stopped = terminal(next);
       if (stopped) return stopped;
       if (
@@ -199,6 +201,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
         advanced = reconciled;
       }
+      if (advanced.nextAction === 'next') continue;
       const stoppedAdvance = terminal(advanced);
       if (stoppedAdvance) return stoppedAdvance;
       if (
@@ -210,6 +213,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
         advanced = assessed;
       }
+      if (advanced.nextAction === 'next') continue;
       const stoppedAssessment = terminal(advanced);
       if (stoppedAssessment) return stoppedAssessment;
       if (
@@ -381,7 +385,7 @@ function response(request: ChatCompletionRequest) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^notification-retry-exhausted: private-state-(?:file-lock-busy|snapshot-conflict)$/u.test(
+      /^notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)$/u.test(
         error.message,
       )
     )
@@ -434,11 +438,9 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
         systemMessage: [identity],
         predicate: (request) => 'toolCalls' in (response(request) ?? {}),
       },
-      response: async (request) => {
+      response: (request) => {
         const value = response(request);
         assert.ok(value && 'toolCalls' in value);
-        const context = value.toolCalls?.find((tool) => tool.id === prefix + 'context');
-        if (context) await waitForAssessmentRelease(JSON.parse(context.arguments).id);
         return value;
       },
     },

@@ -8,26 +8,51 @@ import {
 } from 'openclaw/plugin-sdk/gateway-runtime';
 
 import gatewayUnavailable from './automation-gateway-unavailable.ts';
+import gatewayAgentReapply from './gateway-agent-reapply.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { Logger } from '../core/logger.ts';
 
+type Dependencies = {
+  request(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<unknown>;
+  now(): number;
+  sleep(ms: number): Promise<unknown>;
+};
+
+const nativeDependencies: Dependencies = {
+  request: (method, params, timeoutMs) =>
+    callGatewayFromCli(method, { timeout: String(timeoutMs) }, params, {
+      progress: false,
+      scopes: [method === 'config.apply' ? 'operator.admin' : 'operator.read'],
+      ...(method === 'config.apply' ? {} : { sharedStateMode: 'read-only' as const }),
+    }),
+  now: () => performance.now(),
+  sleep: setTimeout,
+};
+
+/** Installation may reapply one saved revision; success still requires native agent visibility. */
 export default async function waitForGatewayAgent(
   agentId: string,
   logger?: Pick<Logger, 'debug' | 'info'>,
+  dependencies: Dependencies = nativeDependencies,
 ): Promise<void> {
-  const started = performance.now();
+  const { request, now, sleep } = dependencies;
+  const started = now();
   const deadline = started + 30_000;
   let observedGateway = false;
   let target: 'unverified' | 'absent' | 'visible' = 'unverified';
   let attempts = 0;
   let requestMs = 0;
+  let reapply = 'not-needed';
+  let method = 'agents.list';
   const evidence = () => ({
     agentId,
     config: 'verified',
     lastGatewayObservation: observedGateway ? 'reachable' : 'unverified',
     target,
     attempts,
-    elapsedMs: Math.round(performance.now() - started),
+    reapply,
+    method,
+    elapsedMs: Math.round(now() - started),
     lastRequestMs: requestMs,
   });
   const finish = (outcome: string, failure?: Record<string, unknown>) => {
@@ -36,29 +61,44 @@ export default async function waitForGatewayAgent(
     return details;
   };
   logger?.debug?.(`agent registration visibility started: ${JSON.stringify(evidence())}`);
-  while (performance.now() < deadline) {
-    const requestBudget = deadline - performance.now();
+  while (now() < deadline) {
+    const requestBudget = deadline - now();
     // do not start a gateway request with only the deadline's fractional tail left.
     if (requestBudget < 1000) {
-      if (requestBudget > 0) await setTimeout(requestBudget);
+      if (requestBudget > 0) await sleep(requestBudget);
       break;
     }
     const timeoutMs = Math.min(10_000, Math.floor(requestBudget));
-    const requestStarted = performance.now();
+    const requestStarted = now();
+    method = target === 'absent' && reapply === 'not-needed' ? 'config.get' : 'agents.list';
     attempts += 1;
     logger?.debug?.(
       `agent registration gateway request: ${JSON.stringify({ ...evidence(), timeoutMs })}`,
     );
     let response: unknown;
     try {
-      response = await callGatewayFromCli(
-        'agents.list',
-        { timeout: String(timeoutMs) },
-        {},
-        { progress: false, scopes: ['operator.read'], sharedStateMode: 'read-only' },
-      );
+      if (method === 'config.get') {
+        const prepared = gatewayAgentReapply(agentId, await request(method, {}, timeoutMs));
+        reapply = prepared.status;
+        if (prepared.status === 'prepared') {
+          const applyBudget = Math.floor(deadline - now());
+          if (applyBudget < 1000) {
+            reapply = 'deadline-exhausted';
+            continue;
+          }
+          method = 'config.apply';
+          reapply = 'requested';
+          const applied = await request(method, prepared.params, applyBudget);
+          if ((applied as { ok?: unknown } | null)?.ok !== true)
+            throw new Error('invalid configuration application response');
+          reapply = 'acknowledged';
+        }
+        requestMs = Math.round(now() - requestStarted);
+        continue;
+      }
+      response = await request(method, {}, timeoutMs);
     } catch (error) {
-      requestMs = Math.round(performance.now() - requestStarted);
+      requestMs = Math.round(now() - requestStarted);
       // retain safe sdk facts, never raw errors, connection URLs, reasons, or response bodies.
       const failure = isGatewayTransportError(error)
         ? {
@@ -87,7 +127,7 @@ export default async function waitForGatewayAgent(
         { cause: error },
       );
     }
-    requestMs = Math.round(performance.now() - requestStarted);
+    requestMs = Math.round(now() - requestStarted);
     observedGateway = true;
     const agents = (response as { agents?: unknown } | null)?.agents;
     if (!Array.isArray(agents) || agents.some((agent) => !agent || typeof agent.id !== 'string')) {
@@ -104,8 +144,8 @@ export default async function waitForGatewayAgent(
       finish('visible');
       return;
     }
-    const remaining = deadline - performance.now();
-    if (remaining > 0) await setTimeout(Math.min(1000, remaining));
+    const remaining = deadline - now();
+    if (remaining > 0) await sleep(Math.min(1000, remaining));
   }
   const details = finish('registration-pending');
   throw new AgentSystemLifecycleError(

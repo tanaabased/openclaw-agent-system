@@ -226,11 +226,24 @@ describe('channels/github/notification-policy', () => {
       runtimes: ['openclaw', 'codex'],
       intervalMinutes: 5,
       maxConcurrentItems: 3,
+      cleanup: { enabled: true, graceMinutes: 60 },
       allowedRepositoryOwners: [{ login: owner.login, nodeId: owner['node-id'] }],
     });
     const declaration = parsed({ ...policy, 'issue-assignment': {} });
     assert.deepEqual(declaration.issueAssignment, { allowed: [], mode: 'plan' });
     assert.equal(declaration.reviewRequest, undefined);
+  });
+
+  it('should configure cleanup separately from admission and reject invalid grace periods', () => {
+    assert.deepEqual(
+      parsed({ ...policy, cleanup: { enabled: false, 'grace-minutes': 30 } }).cleanup,
+      {
+        enabled: false,
+        graceMinutes: 30,
+      },
+    );
+    for (const minutes of [-1, 1.5, 43201])
+      assert.equal(parse({ ...policy, cleanup: { 'grace-minutes': minutes } }).status, 'invalid');
   });
 
   it('should preserve independent trigger grants and explicit operator flags in each mode', () => {

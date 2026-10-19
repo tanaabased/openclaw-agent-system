@@ -1,6 +1,4 @@
-import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
-import redactFeedback from './feedback-redaction.ts';
-import { reconcileAnnouncement } from './delivery-announcement.ts';
+import feedbackOwnPublications from './feedback-own-publications.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
@@ -50,7 +48,11 @@ export async function scanOpenClawFeedback(input: {
   const records = input.state.records
     .filter(
       (record) =>
-        !record.retired && !record.reset && record.sessionCreation?.verified && record.threadId,
+        !record.retired &&
+        !record.retirement &&
+        !record.reset &&
+        record.sessionCreation?.verified &&
+        record.threadId,
     )
     .sort((a, b) => (a.feedback?.scannedTime ?? 0) - (b.feedback?.scannedTime ?? 0))
     .slice(0, 12);
@@ -71,8 +73,8 @@ export async function scanOpenClawFeedback(input: {
     };
     feedback.scannedTime = now;
     feedback.discoveryPending = true;
-    await save();
     try {
+      await save();
       if (!enabled) {
         for (const event of feedback.events)
           if (!['published', 'blocked'].includes(event.phase)) {
@@ -123,35 +125,16 @@ export async function scanOpenClawFeedback(input: {
           connection,
         );
         if (!provider) throw new Error('feedback-provider-unavailable');
-        const announcement = record.work?.delivery?.announcement;
-        const ownCommentIds: string[] = [];
-        if (announcement?.receipt) ownCommentIds.push(announcement.receipt.nodeId);
-        else if (announcement?.attempted) {
-          const receipt = await reconcileAnnouncement({
-            state: announcement,
-            client: provider,
-            authorId: provider.identity.nodeId,
-            item: {
-              lifecycleId: 'issue',
-              number: intake.issue.number,
-              repositoryOwner: intake.repository.owner.login,
-              repositoryName: intake.repository.name,
-              repositoryNodeId: intake.repository.nodeId,
-            },
-          });
-          ownCommentIds.push(receipt.nodeId);
-        }
+        let publications: Promise<string[]> | undefined;
         const common = {
           state: feedback,
-          ownCommentIds: async () => [
-            ...ownCommentIds,
-            ...(await assessmentSummaryOwnPublications(
+          ownCommentIds: () =>
+            (publications ??= feedbackOwnPublications({
               record,
               intake,
-              { client: provider! },
-              redactFeedback,
-            )),
-          ],
+              client: provider!,
+              announcement: record.work?.delivery?.announcement,
+            })),
           client: provider,
           policy: manifest.github!.notifications!,
           now,

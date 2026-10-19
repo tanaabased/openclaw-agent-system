@@ -27,11 +27,13 @@ const dispatchStages = [
   'work-result',
   'delivery-prepare',
   'delivery-publish',
+  'delivery-publish-refreshed',
   'delivery-compose',
   'delivery-candidate',
   'delivery-announce',
   'delivery-repeat',
   'delivery-present',
+  'assessment-present',
   'feedback-context',
   'feedback-result',
   'feedback-compose',
@@ -55,10 +57,12 @@ function currentTurn(request: ChatCompletionRequest) {
 
 function isContention(result: Record<string, unknown> | undefined) {
   return (
-    ['busy', 'blocked'].includes(String(result?.status)) &&
-    ['private-state-file-lock-busy', 'private-state-snapshot-conflict'].includes(
-      String(result?.code),
-    )
+    ['busy', 'blocked', 'waiting'].includes(String(result?.status)) &&
+    [
+      'private-state-file-lock-busy',
+      'private-state-snapshot-conflict',
+      'discovery-checkpoint-changed',
+    ].includes(String(result?.code))
   );
 }
 
@@ -125,6 +129,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       const next = result(stage('next'));
       if (!next) return dispatch(stage('next'), { action: 'next' });
       if (next.status === 'discovery-progress') continue;
+      if (next.nextAction === 'next') continue;
       const stopped = terminal(next);
       if (stopped) return stopped;
       if (
@@ -159,6 +164,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
         advanced = reconciled;
       }
+      if (advanced.nextAction === 'next') continue;
       const stoppedAdvance = terminal(advanced);
       if (stoppedAdvance) return stoppedAdvance;
       if (
@@ -170,6 +176,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
         advanced = assessed;
       }
+      if (advanced.nextAction === 'next') continue;
       const stoppedAssessment = terminal(advanced);
       if (stoppedAssessment) return stoppedAssessment;
       if (
@@ -237,7 +244,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         ...args,
         operation: 'result',
         privateText:
-          'The retained plan was implemented as a one-line cleanup note. The linked PR contains that committed change. This feedback turn only explains the existing result; no additional repository changes were made.',
+          'The retained plan was implemented as a cleanup note. The linked PR contains the initial commit and its follow-up. This feedback turn only explains the existing result; no additional repository changes were made.',
       });
     if (saved.status !== 'recorded') return;
     const composition = result('feedback-compose');
@@ -276,11 +283,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   }
   const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
-    const retry = prompt.includes(
-      'Reconcile the existing PR announcement and show its card again.',
+    const update = prompt.includes(
+      'Add a follow-up commit and update the existing PR title and body.',
     );
-    const title = 'Document disposable notification fixture cleanup';
-    const body = 'Document closing disposable test issues after their evidence is captured.';
+    const retry = prompt.includes('Show the saved plan and existing PR card again.');
+    const title = update
+      ? 'Document disposable notification fixture cleanup and verification'
+      : 'Document disposable notification fixture cleanup';
+    const body = update
+      ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
+      : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
       const preview = result('handoff-preview');
       if (!preview)
@@ -311,7 +323,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       )
         return;
       const file = `notification-fixture-${operatorId}.md`;
-      const patch = `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`;
+      const patch = update
+        ? `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1,2 @@\n Close disposable test issues after capturing their evidence.\n+Verify the same PR and announcement after follow-up commits.\n`
+        : `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`;
       const steps = [
         { stage: 'apply', argv: ['apply', '-'], stdin: patch },
         { stage: 'add', argv: ['add', '--', file] },
@@ -339,7 +353,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             outcome: 'done',
             summary: 'Committed the disposable cleanup note.',
             fullResult:
-              'Added and committed the one-line cleanup note through managed Git in the verified issue worktree.',
+              'Committed the requested cleanup note change through managed Git in the verified issue worktree.',
           },
         });
       if (saved.status !== 'recorded') return;
@@ -355,7 +369,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           body,
         });
       if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-      const published = result('delivery-publish');
+      let published = result('delivery-publish');
       if (!published)
         return dispatch('delivery-publish', {
           action: 'delivery',
@@ -365,7 +379,25 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           title,
           body,
         });
+      if (published.status === 'prepared' && published.code === 'delivery-preview-stale') {
+        if (typeof published.digest !== 'string') return;
+        const refreshed = result('delivery-publish-refreshed');
+        if (!refreshed)
+          return dispatch('delivery-publish-refreshed', {
+            action: 'delivery',
+            operation: 'publish',
+            id: operatorId,
+            digest: published.digest,
+            title,
+            body,
+          });
+        published = refreshed;
+      }
       if (published.status !== 'published') return;
+      if (!update && published.workflowStatus !== 'partially-delivered')
+        throw new Error('published pr must retain pending announcement as partial delivery');
+    }
+    if (!retry && !update) {
       const composed = result('delivery-compose');
       if (!composed)
         return dispatch('delivery-compose', {
@@ -402,14 +434,20 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         content: 'Publication retained. Presentation intentionally deferred for recovery coverage.',
       };
     }
-    const repeated = result('delivery-repeat');
-    if (!repeated)
-      return dispatch('delivery-repeat', {
-        action: 'delivery',
-        operation: 'announce',
-        id: operatorId,
-      });
-    if (repeated.status !== 'announced') return;
+    if (retry) {
+      const plan = result('assessment-present');
+      if (!plan) return dispatch('assessment-present', { action: 'present', id: operatorId });
+      if (plan.status !== 'presented' || typeof plan.presentation !== 'string') return;
+    } else {
+      const repeated = result('delivery-repeat');
+      if (!repeated)
+        return dispatch('delivery-repeat', {
+          action: 'delivery',
+          operation: 'announce',
+          id: operatorId,
+        });
+      if (repeated.status !== 'announced') return;
+    }
     const presented = result('delivery-present');
     if (!presented)
       return dispatch('delivery-present', {
@@ -418,7 +456,14 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         id: operatorId,
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
-    return { content: presented.presentation };
+    return {
+      content: [
+        retry ? result('assessment-present')?.presentation : undefined,
+        presented.presentation,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    };
   }
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
@@ -487,7 +532,7 @@ function response(request: ChatCompletionRequest) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^notification-retry-exhausted: private-state-(?:file-lock-busy|snapshot-conflict)$/u.test(
+      /^notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)$/u.test(
         error.message,
       )
     )

@@ -1,4 +1,7 @@
-import type assignmentIntakePolicy from './assignment-intake-policy.ts';
+import {
+  type default as assignmentIntakePolicy,
+  matchesIntakePolicy,
+} from './assignment-intake-policy.ts';
 import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
@@ -122,7 +125,7 @@ export default class OpenClawNotifications {
       const { selected, store } = await this.dependencies.intake.select(manifest, workspace);
       const state = await store.read();
       if (!selected || !state) return blocked('intake-activation-required');
-      if (selected.digest !== state.policyDigest)
+      if (!matchesIntakePolicy(state.policyDigest, selected))
         return blocked('intake-policy-reconciliation-required');
       const journal = await (this.dependencies.readDispatch?.(store.location.scope) ??
         new OpenClawDispatchStore(this.dependencies.root, store.location.scope).read());
@@ -172,7 +175,7 @@ export default class OpenClawNotifications {
             ? {}
             : {
                 scheduling:
-                  record?.phase === 'blocked'
+                  record && ['blocked', 'waiting', 'retrying'].includes(record.phase)
                     ? ('waiting' as const)
                     : record?.request
                       ? ('active' as const)

@@ -10,7 +10,6 @@ import openClawDelivery from '../agent/openclaw-delivery.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
-const head = 'a'.repeat(40);
 const response = (value: unknown) => ({
   exitCode: 0,
   stdout: JSON.stringify(value),
@@ -23,6 +22,9 @@ describe('agent/openclaw-delivery', () => {
   let announcement: ReturnType<typeof announcementFixture>;
   let root: string, record: OpenClawDispatchRecord;
   let creates: number, pushes: number, saves: number;
+  let head: string;
+  let ancestor: boolean;
+  let patches: number, failPatch: 'before' | 'after' | false;
   let remote: string,
     dirty: boolean,
     lost: boolean,
@@ -35,6 +37,10 @@ describe('agent/openclaw-delivery', () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'openclaw-delivery-')));
     announcement = announcementFixture({ login: 'agent', nodeId: 'U_agent', type: 'User' });
     creates = pushes = saves = 0;
+    head = 'a'.repeat(40);
+    ancestor = true;
+    patches = 0;
+    failPatch = false;
     remote = '';
     dirty = lost = missing = failLink = revoked = false;
     pr = undefined;
@@ -115,6 +121,10 @@ describe('agent/openclaw-delivery', () => {
             if (argv[0] === 'rev-list') return '1';
             if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
             if (argv[0] === 'ls-remote') return remote ? `${remote}\trefs/heads/task-branch` : '';
+            if (argv[0] === 'merge-base') {
+              assert.deepEqual(argv, ['merge-base', '--is-ancestor', remote, head]);
+              if (!ancestor) throw new Error('not an ancestor');
+            }
             if (argv[0] === 'push') {
               pushes++;
               remote = head;
@@ -166,6 +176,13 @@ describe('agent/openclaw-delivery', () => {
                   title: pr?.title,
                   body: pr?.body,
                 });
+              if (endpoint === 'repos/owner/repo/pulls/7' && argv.includes('PATCH')) {
+                patches++;
+                if (failPatch === 'before') throw new Error('update interrupted');
+                pr = { ...pr, ...JSON.parse(stdin!) };
+                if (failPatch === 'after') throw new Error('update interrupted');
+                return response(pr);
+              }
               if (endpoint === 'repos/owner/repo/pulls/7')
                 return response({
                   nodeId: 'PR_7',
@@ -197,10 +214,10 @@ describe('agent/openclaw-delivery', () => {
       ...input,
       action: { action: 'delivery', id: record.id, operation, ...extra },
     });
-  async function publish() {
-    const prepared = await request('prepare', { title: 'Fix issue', body: 'Closes #3' });
+  async function publish(content = { title: 'Fix issue', body: 'Closes #3' }) {
+    const prepared = await request('prepare', content);
     assert.ok('digest' in prepared);
-    return request('publish', { digest: prepared.digest, title: 'Fix issue', body: 'Closes #3' });
+    return request('publish', { digest: prepared.digest, ...content });
   }
   for (const draft of [false, true])
     it(`should reconcile announce and present a ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
@@ -226,8 +243,16 @@ describe('agent/openclaw-delivery', () => {
       assert.equal(creates, 1);
       assert.equal(pushes, 1);
     });
-  it('should reconcile a lost announcement response after restart without recreating the pr', async () => {
+  it('should reconcile only the lost announcement after restart despite newer local work', async () => {
     await publish();
+    head = 'b'.repeat(40);
+    const connect = input.connect;
+    input.connect = async () => ({
+      ...(await connect()),
+      git: async () => {
+        throw new Error('announcement recovery must not inspect newer local work');
+      },
+    });
     const context = await request('compose');
     assert.ok('digest' in context);
     const preview = await request('candidate', {
@@ -283,16 +308,174 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
   });
-  it('should rebuild the complete card after interrupted presentation without republishing', async () => {
+  it('should prepare a new commit on the retained delivery without changing its receipt', async () => {
+    await publish();
+    const retained = structuredClone(record.work!.delivery!);
+    head = 'b'.repeat(40);
+    const prepared = await request('prepare');
+    assert.ok('operation' in prepared && prepared.operation);
+    assert.equal(prepared.operation.id, retained.id);
+    assert.equal(prepared.operation.binding.head, head);
+    assert.deepEqual(prepared.operation.pullRequest, retained.pullRequest);
+    assert.deepEqual(record.work!.delivery, retained);
+    head = 'c'.repeat(40);
+    const refreshed = await request('publish', { digest: prepared.digest });
+    assert.equal(refreshed.status, 'prepared');
+    assert.ok('digest' in refreshed && refreshed.digest !== prepared.digest);
+    assert.deepEqual(record.work!.delivery, retained);
+    assert.equal(pushes, 1);
+  });
+  it('should still reject a changed session or policy on an existing delivery', async () => {
+    await publish();
+    record.sessionCreation!.sessionId = 'other-session';
+    await assert.rejects(request('prepare'), /delivery-session-changed/);
+    record.sessionCreation!.sessionId = 'issue-session';
+    record.manifestDigest = 'c'.repeat(64);
+    await assert.rejects(request('prepare'), /delivery-policy-changed/);
+    assert.equal(pushes, 1);
+  });
+  it('should fast forward the verified branch while retaining the same pr', async () => {
+    await publish();
+    const receipt = structuredClone(record.work!.delivery!.pullRequest);
+    head = 'b'.repeat(40);
+    await publish();
+    assert.equal(remote, head);
+    assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.equal(record.work!.delivery!.binding.head, head);
+    assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
+    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 2);
+  });
+  it('should reject a rewritten commit or unexpected remote head before pushing', async () => {
+    await publish();
+    head = 'b'.repeat(40);
+    ancestor = false;
+    await assert.rejects(publish(), /not an ancestor/);
+    ancestor = true;
+    remote = 'c'.repeat(40);
+    await assert.rejects(publish(), /delivery-remote-head-diverged/);
+    assert.equal(pushes, 1);
+    assert.equal(creates, 1);
+  });
+  it('should reject a replacement pr before advancing the remote branch', async () => {
+    await publish();
+    head = 'b'.repeat(40);
+    pr!.itemNodeId = 'PR_other';
+    await assert.rejects(publish(), /no longer matches/);
+    assert.equal(pushes, 1);
+    assert.equal(creates, 1);
+  });
+  for (const interruption of ['before', 'after'] as const)
+    it(`should recover metadata updates interrupted ${interruption} the provider write`, async () => {
+      await publish();
+      const content = { title: 'Updated fix', body: 'Includes the follow-up change.' };
+      failPatch = interruption;
+      await assert.rejects(publish(content), /update interrupted/);
+      assert.equal(record.work!.delivery!.reconciled, false);
+      input.record = record = structuredClone(record);
+      failPatch = false;
+      await publish(content);
+      assert.equal(pr!.title, content.title);
+      assert.equal(pr!.body, content.body + '\n\nCloses https://github.com/owner/repo/issues/3');
+      assert.equal(patches, interruption === 'before' ? 2 : 1);
+      assert.equal(creates, 1);
+      assert.equal(pushes, 1);
+      assert.equal(record.work!.delivery!.reconciled, true);
+    });
+  it('should freeze content only until uncertain creation has been reconciled', async () => {
+    lost = true;
+    await assert.rejects(publish(), /response lost/);
+    const content = { title: 'Updated fix', body: 'Closes #3 with more detail.' };
+    await assert.rejects(publish(content), /delivery-content-changed/);
+    assert.equal(patches, 0);
+    lost = false;
+    await publish();
+    await publish(content);
+    assert.equal(pr!.title, content.title);
+    assert.equal(pr!.body, content.body);
+    assert.equal(creates, 1);
+  });
+  it('should preserve github body edits when explicitly updating only the title', async () => {
+    await publish();
+    pr!.body = 'Operator clarification. Closes #3';
+    head = 'b'.repeat(40);
+    await publish();
+    assert.equal(pr!.body, 'Operator clarification. Closes #3');
+    await publish({ title: 'Revised title', body: 'Closes #3' });
+    assert.equal(pr!.title, 'Revised title');
+    assert.equal(pr!.body, 'Operator clarification. Closes #3');
+  });
+  it('should retain the requested update when the provider does not confirm its content', async () => {
+    await publish();
+    const connect = input.connect;
+    input.connect = async () => {
+      const connection = await connect();
+      const execute = connection.account.execute;
+      connection.account.execute = async (...args) =>
+        args[0].includes('PATCH') ? response(pr) : execute(...args);
+      return connection;
+    };
+    const content = { title: 'Revised title', body: 'Closes #3' };
+    await assert.rejects(publish(content), /github-delivery-content-unverified/);
+    assert.equal(record.work!.delivery!.reconciled, false);
+    assert.deepEqual(record.work!.delivery!.contentUpdate, { title: content.title });
+    input.connect = connect;
+    await publish(content);
+    assert.equal(pr!.title, content.title);
+    assert.equal(record.work!.delivery!.contentUpdate, undefined);
+    assert.equal(creates, 1);
+  });
+  for (const lostAnnouncement of [false, true])
+    it(`should recover an interrupted follow-up push with a ${lostAnnouncement ? 'pending' : 'confirmed'} announcement`, async () => {
+      await publish();
+      const context = await request('compose');
+      assert.ok('digest' in context);
+      const preview = await request('candidate', {
+        digest: context.digest,
+        publicText: 'Delivers the requested change.',
+      });
+      assert.ok('digest' in preview);
+      announcement.lost = lostAnnouncement;
+      await request('announce', { digest: preview.digest });
+      const retained = structuredClone(record.work!.delivery!);
+      head = 'b'.repeat(40);
+      const connect = input.connect;
+      input.connect = async () => {
+        const connection = await connect();
+        const git = connection.git;
+        connection.git = async (argv) => {
+          const output = await git(argv);
+          if (argv[0] === 'push') throw new Error('push response lost');
+          return output;
+        };
+        return connection;
+      };
+      await assert.rejects(publish(), /push response lost/);
+      assert.equal(remote, head);
+      assert.equal(record.work!.delivery!.pushedHead, retained.pushedHead);
+      input.record = record = structuredClone(record);
+      input.connect = connect;
+      await publish();
+      assert.equal(record.work!.delivery!.id, retained.id);
+      assert.deepEqual(record.work!.delivery!.pullRequest, retained.pullRequest);
+      assert.deepEqual(record.work!.delivery!.announcement, retained.announcement);
+      announcement.lost = false;
+      assert.equal((await request('announce')).status, 'announced');
+      const shown = await request('present');
+      assert.ok('presentation' in shown);
+      assert.match(shown.presentation!, /#issuecomment-91/);
+      assert.equal(creates, 1);
+      assert.equal(pushes, 2);
+      assert.equal(announcement.posts, 1);
+    });
+  it('should rebuild the retained card without git provider or publication permission', async () => {
     await publish();
     const persisted = structuredClone(record);
-    const save = input.save;
-    input.save = async () => {
-      throw new Error('presentation-interrupted');
+    delete record.work!.publication;
+    input.connect = async () => {
+      throw new Error('must not connect for presentation');
     };
-    await assert.rejects(request('present'), /presentation-interrupted/);
-    input.record = record = structuredClone(persisted);
-    input.save = save;
     const result = await request('present');
     assert.ok('presentation' in result && typeof result.presentation === 'string');
     assert.match(result.presentation, /^> ## 🔀 Pull request opened/m);
@@ -318,7 +501,7 @@ describe('agent/openclaw-delivery', () => {
     await publish();
     assert.equal(creates, 1);
   });
-  it('should reject unauthorized stale dirty divergent and revoked publication before writes', async () => {
+  it('should refresh stale previews and reject unauthorized dirty divergent and revoked publication before writes', async () => {
     const permission = record.work!.publication;
     delete record.work!.publication;
     await assert.rejects(publish(), /delivery-human-publication-required/);
@@ -326,9 +509,9 @@ describe('agent/openclaw-delivery', () => {
     dirty = true;
     await assert.rejects(publish(), /delivery-uncommitted-work/);
     dirty = false;
-    await assert.rejects(
-      request('publish', { title: 'Fix', body: 'Fix', digest: '0'.repeat(64) }),
-      /delivery-preview-stale/,
+    assert.equal(
+      (await request('publish', { title: 'Fix', body: 'Fix', digest: '0'.repeat(64) })).status,
+      'prepared',
     );
     remote = 'b'.repeat(40);
     await assert.rejects(publish(), /delivery-remote-head-diverged/);
@@ -336,5 +519,49 @@ describe('agent/openclaw-delivery', () => {
     await assert.rejects(publish(), /dispatch-policy-changed/);
     assert.equal(creates, 0);
     assert.equal(pushes, 0);
+  });
+  it('should tolerate the previously verified head briefly lagging after a followup push', async () => {
+    let preview = await request('prepare', { title: 'Initial', body: 'Initial body.' });
+    assert.ok('digest' in preview);
+    await request('publish', { digest: preview.digest, title: 'Initial', body: 'Initial body.' });
+    head = 'b'.repeat(40);
+    const connect = input.connect;
+    let lagged = false;
+    input.connect = async () => {
+      const connection = await connect();
+      const execute = connection.account.execute;
+      return {
+        ...connection,
+        account: {
+          ...connection.account,
+          execute: async (...args) => {
+            const result = await execute(...args);
+            if (
+              !lagged &&
+              remote === head &&
+              args[0].some((value) => value.includes('headSha:.head.sha'))
+            ) {
+              lagged = true;
+              return {
+                ...result,
+                stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: 'a'.repeat(40) }),
+              };
+            }
+            return result;
+          },
+        },
+      };
+    };
+    preview = await request('prepare', { title: 'Updated', body: 'Updated body.' });
+    assert.ok('digest' in preview);
+    const recovered = await request('publish', {
+      digest: preview.digest,
+      title: 'Updated',
+      body: 'Updated body.',
+    });
+    assert.equal(recovered.status, 'published');
+    assert.equal(creates, 1);
+    assert.equal(pushes, 2);
+    assert.equal(patches, 1);
   });
 });
