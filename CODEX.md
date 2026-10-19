@@ -366,10 +366,10 @@ resetting and reassigning it.
 Each scheduled check produces one intake report: newly started **Issue** links,
 **Active**, **Retirement pending**, and **Pending** counts, occupied **Slots**, and intake warnings or errors.
 Active means retained issue destinations eligible for intake, not currently running work. Pending means
-accepted assignments waiting to start. Slots currently limit unfinished assessments;
-saving a plan, question, or setup outcome releases the reservation. Later work does
-not consume that assessment slot. An interrupted assessment without an outcome can
-retain its reservation until resolved.
+accepted assignments waiting to start. Slots count conversations with unfinished
+assessments, automatic continuation or delivery, or dispatched feedback awaiting its
+outcome. A saved assessment alone does not occupy a slot; unresolved native attempts
+can retain their reservation until inactivity is verified.
 
 After verified creation, intake does not inspect or announce assessment progress.
 Plans, questions, assessment failures, and implementation updates stay in the issue.

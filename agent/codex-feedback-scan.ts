@@ -1,6 +1,4 @@
-import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
-import redactFeedback from './feedback-redaction.ts';
-import { reconcileAnnouncement } from './delivery-announcement.ts';
+import feedbackOwnPublications from './feedback-own-publications.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
@@ -73,35 +71,16 @@ export async function scanCodexFeedback(input: {
       if (record.sourceThreadId !== input.sourceThreadId)
         throw new Error('feedback-schedule-owner-changed');
       await revalidateFeedbackAssignment(current.policy, admitted, provider.client, record);
-      const announcement = record.delivery?.announcement;
-      const ownCommentIds: string[] = [];
-      if (announcement?.receipt) ownCommentIds.push(announcement.receipt.nodeId);
-      else if (announcement?.attempted) {
-        const receipt = await reconcileAnnouncement({
-          state: announcement,
-          client: provider.comments,
-          authorId: provider.comments.identity.nodeId,
-          item: {
-            lifecycleId: 'issue',
-            number: admitted.issue.number,
-            repositoryOwner: admitted.repository.owner.login,
-            repositoryName: admitted.repository.name,
-            repositoryNodeId: admitted.repository.nodeId,
-          },
-        });
-        ownCommentIds.push(receipt.nodeId);
-      }
+      let publications: Promise<string[]> | undefined;
       const source = {
         state: feedback,
-        ownCommentIds: async () => [
-          ...ownCommentIds,
-          ...(await assessmentSummaryOwnPublications(
+        ownCommentIds: () =>
+          (publications ??= feedbackOwnPublications({
             record,
-            admitted,
-            { client: provider.comments },
-            redactFeedback,
-          )),
-        ],
+            intake: admitted,
+            client: provider.comments,
+            announcement: record.delivery?.announcement,
+          })),
         client: provider.comments,
         policy,
         now,

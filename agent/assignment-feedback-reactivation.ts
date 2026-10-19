@@ -1,11 +1,9 @@
+import feedbackOwnPublications from './feedback-own-publications.ts';
 import { feedbackAuthorityDigest, matchesFeedbackAuthority } from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
-import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
-import { reconcileAnnouncement } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
-import redactFeedback from './feedback-redaction.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectAssignedIssue, inspectAssignment } from './dispatch-assignment.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -95,6 +93,7 @@ export default async function reactivateAssignmentFeedback(input: {
     { number: intake.issue.number, nodeId: intake.issue.nodeId, itemType: 'issue' as const },
     ...(input.pullRequest ? [{ ...input.pullRequest, itemType: 'pull-request' as const }] : []),
   ];
+  let publications: Promise<string[]> | undefined;
   for (const target of targets) {
     if (target.itemType === 'pull-request') {
       const item = await client.getItem(
@@ -115,31 +114,13 @@ export default async function reactivateAssignmentFeedback(input: {
       ...target,
       now: input.now,
       ...(input.budget ? { discovery: { budget: input.budget, save: input.save } } : {}),
-      ownCommentIds: async () => {
-        const ids = await assessmentSummaryOwnPublications(
+      ownCommentIds: () =>
+        (publications ??= feedbackOwnPublications({
           record,
           intake,
-          { client: comments },
-          redactFeedback,
-        );
-        if (input.announcement?.receipt) ids.push(input.announcement.receipt.nodeId);
-        else if (input.announcement?.attempted) {
-          const receipt = await reconcileAnnouncement({
-            state: input.announcement,
-            client: comments,
-            authorId: comments.identity.nodeId,
-            item: {
-              lifecycleId: 'issue',
-              number: intake.issue.number,
-              repositoryOwner: intake.repository.owner.login,
-              repositoryName: intake.repository.name,
-              repositoryNodeId: intake.repository.nodeId,
-            },
-          });
-          ids.push(receipt.nodeId);
-        }
-        return ids;
-      },
+          client: comments,
+          announcement: input.announcement,
+        })),
     });
     const event = feedback.events.find(
       (event) =>

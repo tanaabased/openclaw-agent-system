@@ -98,7 +98,6 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
             error,
             'retirement-native-observation-unavailable',
           ).code;
-        await input.save();
         continue;
       }
       if (record.retirement && record.nativeInactive === false && native?.idle)
