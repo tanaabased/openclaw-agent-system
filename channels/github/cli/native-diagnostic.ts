@@ -18,6 +18,6 @@ export default function nativeNotificationDiagnostic(code: string): string | und
     'intake-automation-update-required':
       'run openclaw agent-system install to apply the intake automation update and resume intake; existing chats and work are retained',
     'intake-policy-reconciliation-required':
-      'run openclaw agent-system install to reconcile the changed native workflow policy',
+      'retry with the current agent.yaml; policy-only edits do not require install',
   }[code];
 }

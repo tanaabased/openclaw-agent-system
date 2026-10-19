@@ -695,7 +695,7 @@ describe('openclaw v2 intake slice', () => {
         },
       });
       assert.equal(output!.fire, true);
-      assert.equal(output!.state.status, 'blocked');
+      assert.equal(output!.state.status, 'failed');
       assert.equal(output!.state.stage, sample.stage);
       assert.equal(output!.state.code, sample.code);
       assert.ok(output!.message.includes(sample.code));

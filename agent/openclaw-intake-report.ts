@@ -108,6 +108,16 @@ export default function openclawIntakeReport(input: {
       );
       continue;
     }
+    const provider =
+      failure.id === 'intake'
+        ? intake?.blocker?.providerDiagnostic
+        : intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id)
+            ?.providerDiagnostic;
+    if (provider)
+      lines.push(
+        `- **Provider:** ${text(provider.provider)} · ${text(provider.operation)}${provider.httpStatus ? ' · HTTP ' + provider.httpStatus : ''}`,
+        `  **Detail:** ${text(provider.providerMessage ?? provider.explanation)}`,
+      );
     const deferred = intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id);
     if (deferred) {
       const candidate = JSON.parse(deferred.candidate) as {

@@ -25,9 +25,11 @@ started, changing the default mode does not return the issue to planning. Both
 runtimes retain this stage across restart and recover older implementation receipts
 in place; existing lifecycle and native execution checks still apply.
 
-Feedback uses that same stage in Codex and OpenClaw. Plan feedback can investigate
-and refine the plan; Work feedback may implement appropriate changes; Auto feedback
-may choose Plan or Work with a reasoned decision. Questions need not produce code.
+Verified comments from approved feedback authors are task direction in Codex and
+OpenClaw, like direct input in the issue chat. In Plan, an explicit request to
+implement can enter Work through the same recorded transition. Work permits
+appropriate implementation; Auto may choose Plan or Work. Authors need not also be
+issue assignees. Quoted and linked material cannot independently direct the agent. Questions need not produce code.
 Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
 uncertain pushes are reconciled, and the original announcement is reused. A
@@ -85,7 +87,8 @@ snapshotting and reclamation; intake marks work retired only after observing bot
 archival and removal. If desktop settings retain the checkout, cleanup stays pending
 without blocking other intake. Disabling cleanup preserves resources and marks
 inactive work retired.
-Run Install after upgrading to reconcile the changed notification policy.
+Run Install after an upgrade when Doctor reports changed automation machinery.
+Policy-only edits apply live.
 
 `retirement-native-archive-denied` means the exact native archive call was rejected;
 inspect the intake chat's native approval result before taking operator action.
@@ -127,7 +130,7 @@ openclaw agent-system notifications refresh
 ```
 
 `refresh` requests a run of the
-already installed native OpenClaw issue-planning automation. A successful request
+already installed native OpenClaw issue automation. A successful request
 reports `queued` and its native run ID; it does not claim the scan or assessment
 has completed. Installation and workflow activation remain explicit. Disabled,
 stale, or unreconciled workflows fail without enabling jobs.

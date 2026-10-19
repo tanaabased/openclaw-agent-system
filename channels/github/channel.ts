@@ -88,11 +88,9 @@ export default function createGitHubStatusChannel(
       );
       if (blocker) return result('blocked', blocker.code);
       const intake = await dependencies.intake.inspect(loaded.manifest, loaded.scope.workspaceDir);
-      if (intake.code)
+      if (intake.code && intake.code !== 'intake-policy-reconciliation-required')
         return result(
-          ['intake-policy-reconciliation-required', 'intake-automation-update-required'].includes(
-            intake.code,
-          )
+          intake.code === 'intake-automation-update-required'
             ? 'sync-required'
             : intake.code === 'intake-activation-required'
               ? 'setup-required'

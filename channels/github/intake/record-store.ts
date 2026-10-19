@@ -1,3 +1,4 @@
+import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { join, resolve } from 'node:path';
 
 import { Type, type Static } from 'typebox';
@@ -95,6 +96,7 @@ const stateSchema = Type.Object(
             key: text,
             candidate: Type.String({ maxLength: 16000 }),
             code: text,
+            providerDiagnostic: Type.Optional(providerDiagnosticSchema),
           },
           { additionalProperties: false },
         ),
@@ -102,7 +104,15 @@ const stateSchema = Type.Object(
     ),
     lastAttemptAt: Type.Optional(time),
     blocker: Type.Optional(
-      Type.Object({ code: text, since: time, retryAfter: time }, { additionalProperties: false }),
+      Type.Object(
+        {
+          code: text,
+          since: time,
+          retryAfter: time,
+          providerDiagnostic: Type.Optional(providerDiagnosticSchema),
+        },
+        { additionalProperties: false },
+      ),
     ),
     observedAssignments: Type.Optional(
       Type.Array(
@@ -124,6 +134,8 @@ export class IntakeError extends Error {
 }
 
 export function intakeRemediation(code: string): string {
+  if (code === 'intake-manifest-unavailable')
+    return 'Restore a readable, valid agent.yaml in the bound workspace, then retry. No rebind or Install is required for a policy-only repair.';
   if (code === 'intake-automation-update-required')
     return 'Run Agent System Install to apply the update and resume intake. Existing chats and work are retained.';
   if (code === 'intake-activation-required') return 'Run Agent System Install to activate intake.';
@@ -139,19 +151,19 @@ export function intakeRemediation(code: string): string {
     return 'Inspect the bounded provider diagnostic; this failure was not classified. Preserve the checkpoint and do not change credentials without evidence of an authentication failure.';
   }
   if (code.includes('permission'))
-    return 'Review the exact operation in the native approval prompt. Approval does not prove successful or unattended execution; verify the next run.';
+    return 'Inspect the denial for the affected operation. Correct provider access if GitHub denied it; a native approval denial remains a stop.';
   if (code.includes('profile') || code.includes('model'))
-    return 'Configure a supported low model and effort profile, then retry authorized Install; no substitute is selected.';
+    return 'Correct the indicated model or effort profile, then retry the affected operation; no substitute is selected.';
   if (code.includes('state'))
     return 'Preserve the private evidence. Inspect its size, ownership, or schema and restore a verified copy; do not reset the baseline.';
   if (code.includes('identity') || code.includes('account') || code.includes('auth'))
-    return 'Check the native gh account against the configured login and identity pins, then retry authorized Install.';
+    return 'Check the GitHub account against the configured login and identity pins, then retry the affected operation.';
   if (code.includes('incomplete'))
     return 'Provider evidence exceeded the bounded scan. Review repository scope or assignment history; the checkpoint has not advanced.';
   if (code.includes('disabled') || code.includes('binding'))
-    return 'Restore the trusted binding and policy, or authorize Install to pause the retained intake job.';
+    return 'Check the current workspace binding and live policy. Use Install only if the saved automation must be paused or changed.';
   if (code.includes('policy') || code.includes('activation') || code.includes('reserved'))
-    return 'Review the current issue-assignment policy and authorize Install reconciliation before scanning.';
+    return 'Review the current issue-assignment policy in agent.yaml, then retry the scan. Policy-only changes apply without Install.';
   return 'Inspect the diagnostic for the affected operation before retrying. Retained evidence and the last successful checkpoint remain available; no credential failure has been established.';
 }
 

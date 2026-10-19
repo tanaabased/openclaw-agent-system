@@ -1,3 +1,4 @@
+import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import mergeStateSnapshot, {
@@ -26,6 +27,7 @@ import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const dispatchRecordProperties = {
+  providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   id: hash,
   intakeId: hash,
   issueKey: hash,

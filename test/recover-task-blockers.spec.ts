@@ -102,6 +102,35 @@ describe('agent/recover-task-blockers', () => {
       assert.deepEqual(value.continuation.binding, previous.binding);
     }
   });
+  it('should recover old interrupted feedback without discarding results or replaying writes', () => {
+    for (const code of [
+      'feedback-composition-interrupted',
+      'feedback-publication-interrupted',
+      'feedback-turn-ended',
+      'github-notification-request-failed',
+      'github-account-credential-unavailable',
+    ]) {
+      const event = {
+        phase: 'blocked',
+        code,
+        attempt: { turnId: 'old-turn' },
+        result: { privateText: 'Retained answer' },
+        publicationAttempted: true,
+      };
+      const value = { ...record(), feedback: { events: [event] } };
+      recoverTaskBlockers(value);
+      assert.equal(event.phase, 'responded');
+      assert.equal(event.publicationAttempted, true);
+      assert.equal(event.attempt.turnId, 'old-turn');
+      assert.equal(event.result.privateText, 'Retained answer');
+    }
+    const denied = {
+      ...record(),
+      feedback: { events: [{ phase: 'blocked', code: 'continuation-native-approval-denied' }] },
+    };
+    recoverTaskBlockers(denied);
+    assert.equal(denied.feedback.events[0]!.phase, 'blocked');
+  });
   it('should retain uncertain feedback publication for reconciliation instead of sending again', () => {
     const value = {
       ...record(),

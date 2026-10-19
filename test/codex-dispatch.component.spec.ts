@@ -1617,7 +1617,8 @@ describe('agent/codex-dispatch', () => {
     assert.equal(blocked.code, 'repository-preparation-changed');
     assert.ok(String(blocked.message).includes('git.worktrees.repositories.local.github-10'));
     assert.ok(String(blocked.message).includes(githubNotificationMarkdownText(source)));
-    assert.match(String(blocked.message), /Reconcile through Install/u);
+    assert.match(String(blocked.message), /Verify the retained checkout/u);
+    assert.doesNotMatch(String(blocked.message), /Reconcile through Install/u);
     assert.match(String(blocked.message), /do not delete/u);
     assert.equal(gitCalls.length, 0);
   });

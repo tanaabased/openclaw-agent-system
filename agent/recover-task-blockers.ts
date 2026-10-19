@@ -13,6 +13,9 @@ const obsolete = new Set([
   'dispatch-implementation-authorization-required',
   'delivery-human-publication-required',
   'feedback-work-authority-denied',
+  'feedback-composition-interrupted',
+  'feedback-publication-interrupted',
+  'feedback-turn-ended',
   'continuation-user-intervened',
   'continuation-selection-changed',
 ]);
@@ -103,7 +106,14 @@ export default function recoverTaskBlockers(record: {
               : 'waiting';
   }
   for (const event of record.feedback?.events ?? [])
-    if (event.phase === 'blocked' && event.code && obsolete.has(event.code)) {
+    if (
+      event.phase === 'blocked' &&
+      event.code &&
+      (obsolete.has(event.code) ||
+        ['github-notification-request-failed', 'github-account-credential-unavailable'].includes(
+          event.code,
+        ))
+    ) {
       clear(event);
       // submitted operations must be reconciled by their existing receipt, never queued again.
       event.phase = event.publicationAttempted

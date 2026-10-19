@@ -61,7 +61,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'dispatch-repository-owner-not-allowed': [
       'The repository owner is outside the configured intake scope.',
-      'Restore the intended owner scope through Install or leave this assignment stopped.',
+      'Review the repository owner scope in agent.yaml, then retry the retained assignment. Live policy changes apply without Install.',
     ],
     'dispatch-repository-archived': [
       'The repository is archived.',
@@ -97,7 +97,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'dispatch-assignment-actor-not-allowed': [
       'The assignment actor is outside the configured assigners.',
-      'Review the assigner policy or await an eligible assignment. Reconcile intentional policy changes through Install.',
+      'Review the assigner policy in agent.yaml or await an eligible assignment, then retry. Live policy changes apply without Install.',
     ],
     'dispatch-assignment-actor-changed': [
       'The retained assignment actor no longer matches GitHub.',

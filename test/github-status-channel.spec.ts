@@ -183,7 +183,7 @@ describe('github readiness channel', () => {
     checkpoint = baseline - 20 * 60_000;
     assert.equal((await snapshot()).stateReason, 'intake-scan-overdue');
     code = 'intake-policy-reconciliation-required';
-    assert.equal((await snapshot()).statusState, 'sync-required');
+    assert.notEqual((await snapshot()).statusState, 'sync-required');
     code = 'intake-automation-update-required';
     assert.equal((await snapshot()).statusState, 'sync-required');
     code = 'intake-activation-required';
@@ -219,8 +219,6 @@ describe('github readiness channel', () => {
     assert.equal((await snapshot()).stateReason, 'github-notification-capabilities-degraded');
     checkpoint = baseline - 20 * 60_000;
     assert.equal((await snapshot()).stateReason, 'intake-scan-overdue');
-    code = 'intake-policy-reconciliation-required';
-    assert.equal((await snapshot()).statusState, 'sync-required');
     code = undefined;
     checkpoint = baseline;
     value.github!.notifications!.issueAssignment!.mode = 'work';

@@ -19,6 +19,8 @@ export const feedbackResultSchema = Type.Object(
 export const feedbackSourceEventSchema = Type.Object(
   {
     ...dispatchRetryProperties,
+    resumed: Type.Optional(Type.Integer({ minimum: 0 })),
+    previousTurnIds: Type.Optional(Type.Array(text)),
     id: hash,
     sourceId: text,
     number: Type.Integer({ minimum: 1 }),

@@ -222,7 +222,14 @@ export default class OpenClawNotifications {
               item.number === selector.number),
         ),
         status:
-          code || warnings.length || items.some((item) => item.failureCode)
+          code ||
+          items.some(
+            (item) =>
+              (!selector ||
+                (item.repository.toLowerCase() === selector.repository.toLowerCase() &&
+                  item.number === selector.number)) &&
+              item.failureCode,
+          )
             ? 'degraded'
             : state.checkpoint === undefined
               ? 'pending'
@@ -231,9 +238,7 @@ export default class OpenClawNotifications {
           code ??
           (state.checkpoint === undefined
             ? 'github-notification-scan-pending'
-            : warnings.length
-              ? 'github-notification-capabilities-degraded'
-              : 'github-notification-status-ready'),
+            : 'github-notification-status-ready'),
         ...(code ? { diagnosticCode: code } : {}),
       };
     } catch (error) {
@@ -255,7 +260,10 @@ export default class OpenClawNotifications {
     if (options.selector?.itemType === 'pull-request')
       return fail('github-notification-refresh-selector-unsupported');
     const observation = await this.inspect(manifest, workspace);
-    if (observation.diagnosticCode) return fail(observation.diagnosticCode);
+    const readiness = await this.dependencies.intake.readiness(manifest, workspace);
+    if (readiness) return fail(readiness);
+    if (observation.baseline.status !== 'ready' && observation.diagnosticCode)
+      return fail(observation.diagnosticCode);
     if (options.signal.aborted) return fail('github-notification-refresh-cancelled');
     try {
       if (options.selector) {
@@ -327,8 +335,16 @@ export default class OpenClawNotifications {
         });
         if (input.target === 'assignment-rejected' || input.target === 'retired')
           return result('failed', 'github-notification-wait-target-unsupported');
-        const reached = evaluateGitHubNotificationWait(observation, input.target, input.selector);
-        if (observation.diagnosticCode) return result('failed', observation.diagnosticCode);
+        const readiness = await this.dependencies.intake.readiness(manifest, workspace);
+        if (readiness) return result('failed', readiness);
+        const retryPreviousFailure = input.refresh && observation.baseline.status === 'ready';
+        const reached = evaluateGitHubNotificationWait(
+          retryPreviousFailure ? { ...observation, diagnosticCode: undefined } : observation,
+          input.target,
+          input.selector,
+        );
+        if (observation.diagnosticCode && !retryPreviousFailure)
+          return result('failed', observation.diagnosticCode);
         if (reached.status === 'reached') return result('completed', reached.code);
         if (reached.status === 'failed') return result('failed', reached.code);
         if (controller.signal.aborted || now() >= deadline)

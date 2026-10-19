@@ -66,13 +66,21 @@ export default function prepareDispatchReport(input: {
   );
   const failures = [
     ...(intake.blocker
-      ? [{ id: 'scan', code: intake.blocker.code, operation: 'assignment scan' }]
+      ? [
+          {
+            id: 'scan',
+            code: intake.blocker.code,
+            operation: 'assignment scan',
+            providerDiagnostic: intake.blocker.providerDiagnostic,
+          },
+        ]
       : []),
     ...(intake.deferred ?? []).map((entry) => {
       const candidate = JSON.parse(entry.candidate) as { repositoryPath: string; number: number };
       return {
         id: 'deferred-' + entry.key,
         code: entry.code,
+        providerDiagnostic: entry.providerDiagnostic,
         operation:
           'assignment scan for ' +
           text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number),
@@ -100,6 +108,7 @@ export default function prepareDispatchReport(input: {
     ...codexIssueNotice({
       event: 'failure',
       code: failure.code,
+      providerDiagnostic: 'providerDiagnostic' in failure ? failure.providerDiagnostic : undefined,
       changed: health !== state.intakeHealth,
     }),
     ...(failure.id.startsWith('deferred-')

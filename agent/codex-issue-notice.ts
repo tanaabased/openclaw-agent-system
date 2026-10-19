@@ -28,6 +28,13 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  if (code === 'intake-manifest-unavailable')
+    return {
+      severity: 'error',
+      title: 'Cannot read the automation policy',
+      summary: 'The bound workspace manifest is missing, unreadable, or invalid.',
+      next: 'Restore a readable, valid agent.yaml, then retry. Policy-only repairs do not require Install or a new workspace binding.',
+    };
   if (code === 'workflow-policy-held')
     return {
       severity: 'info',
@@ -57,10 +64,10 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
   if (code === 'dispatch-issue-inactive' || code === 'dispatch-assessment-retired')
     return {
       severity: 'warning',
-      title: 'Issue pending retirement',
+      title: code === 'dispatch-assessment-retired' ? 'Issue retired' : 'Issue inactive',
       summary:
         'This issue is no longer active, so automated work is paused. Existing work is retained subject to its cleanup state.',
-      next: 'Have an approved assigner reassign the issue to resume it. Verify the retained chat and checkout before continuing; do not create replacements.',
+      next: 'Check whether the issue was closed, unassigned, or retired. Restore its active assignment when appropriate, then verify the retained chat and checkout before resuming; cleanup may already have completed.',
     };
   if (code === 'dispatch-assessment-handed-off')
     return {
@@ -238,7 +245,13 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       summary: 'The repository is ready, but Codex needs it registered as a local project.',
       next: 'Add the specified folder as the primary folder of a local Codex project. The next scheduled check will verify it and resume this assignment.',
     };
-  if (/activation|reconciliation/u.test(code))
+  if (
+    [
+      'intake-activation-required',
+      'dispatch-activation-required',
+      'intake-automation-update-required',
+    ].includes(code)
+  )
     return {
       severity: 'warning',
       title: 'Refresh the intake configuration',
@@ -250,7 +263,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       severity: 'info',
       title: 'Issue intake is disabled',
       summary: 'No new automated issue work will start. Existing chats and progress are retained.',
-      next: 'If the old schedule is still active, run Agent System Install to pause it. Re-enabling also requires Install.',
+      next: 'The live policy holds new intake. Use Install to pause the saved schedule if desired; re-enabling requires Install only if that schedule was paused or removed.',
     };
   if (
     /authority|access|binding|authentication|identity|auth-unavailable|permission|forbidden/u.test(
@@ -273,7 +286,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       severity: 'warning',
       title: 'Update the setup to continue',
       summary: 'A required project, assessment instruction, or model setting is unavailable.',
-      next: 'Correct the indicated setting and reconcile configuration changes through Agent System Install.',
+      next: 'Correct the indicated project, instruction, or model setting, then retry the retained operation. Live policy changes do not require Install.',
     };
   if (/model|routing/u.test(code))
     return {

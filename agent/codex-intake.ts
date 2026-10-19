@@ -37,12 +37,9 @@ export async function connectCodexGitHub(
 
 export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDependencies) {
   const inspection = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
-  if (
-    inspection.status !== 'bound' ||
-    inspection.preview.status !== 'ready' ||
-    inspection.preview.manifest.status !== 'loaded'
-  )
-    throw new IntakeError('intake-binding-unavailable');
+  if (inspection.status !== 'bound') throw new IntakeError('intake-binding-unavailable');
+  if (inspection.preview.status !== 'ready' || inspection.preview.manifest.status !== 'loaded')
+    throw new IntakeError('intake-manifest-unavailable');
   const loaded = inspection.preview.manifest;
   const workspace = inspection.preview.workspaceDir;
   const policy = codexIntakePolicy(loaded.manifest);

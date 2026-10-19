@@ -1,3 +1,4 @@
+import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { Type, type Static } from 'typebox';
 
 import { implementationResultSchema } from './implementation-result.ts';
@@ -36,6 +37,7 @@ export const codexContinuationStateSchema = Type.Object(
       Type.Literal('blocked'),
       Type.Literal('cancelled'),
     ]),
+    providerDiagnostic: Type.Optional(providerDiagnosticSchema),
     retry: Type.Optional(
       Type.Object(
         { code: text, attempts: Type.Integer({ minimum: 1, maximum: 5 }) },

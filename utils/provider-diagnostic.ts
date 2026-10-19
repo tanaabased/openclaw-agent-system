@@ -1,3 +1,5 @@
+import { Type } from 'typebox';
+
 import providerErrorMessage from './provider-error-message.ts';
 
 /** Public provider evidence is bounded and redacted before retention or formatting. */
@@ -112,3 +114,51 @@ export function formatProviderDiagnostic(value: ProviderDiagnostic): string {
 export function withProviderDiagnostic(message: string, value?: ProviderDiagnostic): string {
   return value ? `${message} ${formatProviderDiagnostic(value)}` : message;
 }
+
+/** bounded provider evidence retained with workflow failures. */
+export const providerDiagnosticSchema = Type.Object(
+  {
+    provider: Type.Union([Type.Literal('github'), Type.Literal('git'), Type.Literal('1password')]),
+    operation: Type.Union([
+      Type.Literal('credential-resolve'),
+      Type.Literal('client-create'),
+      Type.Literal('secret-resolve'),
+      Type.Literal('environment-read'),
+      Type.Literal('identity-check'),
+      Type.Literal('api-request'),
+      Type.Literal('git-command'),
+    ]),
+    classification: Type.Union([
+      Type.Literal('missing-credential'),
+      Type.Literal('authentication'),
+      Type.Literal('permission'),
+      Type.Literal('rate-limit'),
+      Type.Literal('transport'),
+      Type.Literal('unknown'),
+    ]),
+    explanation: Type.String({ maxLength: 4096 }),
+    httpStatus: Type.Union([Type.Integer({ minimum: 100, maximum: 599 }), Type.Null()]),
+    httpStatusSource: Type.Optional(
+      Type.Union([Type.Literal('structured'), Type.Literal('message')]),
+    ),
+    providerMessage: Type.Optional(Type.String({ maxLength: 4096 })),
+    providerCode: Type.Union([
+      Type.Literal('RateLimitExceededError'),
+      Type.Literal('AuthExpiredError'),
+      Type.Literal('DesktopSessionExpiredError'),
+      Type.Null(),
+    ]),
+    retryAfterMs: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    resetAt: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    quotaScope: Type.Union([
+      Type.Literal('token'),
+      Type.Literal('account'),
+      Type.Literal('core'),
+      Type.Literal('search'),
+      Type.Literal('graphql'),
+      Type.Null(),
+    ]),
+    localBackoffMs: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);

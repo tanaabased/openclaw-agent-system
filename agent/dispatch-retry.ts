@@ -1,8 +1,10 @@
+import { providerDiagnosticSchema, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import { Type } from 'typebox';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import workflowFailure from './workflow-failure.ts';
 
 export const dispatchRetryProperties = {
+  providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   retry: Type.Optional(
     Type.Object(
       {
@@ -15,7 +17,9 @@ export const dispatchRetryProperties = {
   retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
 };
 
-type RetryState = Pick<SharedDispatchRecord, 'retry' | 'retryAfter'>;
+type RetryState = Pick<SharedDispatchRecord, 'retry' | 'retryAfter'> & {
+  providerDiagnostic?: ProviderDiagnostic;
+};
 
 const transient = new Set([
   'continuation-host-unavailable',
@@ -30,6 +34,13 @@ const transient = new Set([
   'intake-provider-unavailable',
 ]);
 
+function explicitStop(code: string) {
+  return (
+    /-(?:cancelled|authority-revoked)$/.test(code) ||
+    (code.endsWith('-denied') && !/^(?:github|git)-/.test(code))
+  );
+}
+
 /** retry reads and preparation; retained native intents still require reconciliation. */
 export function scheduleDispatchRetry(
   record: RetryState,
@@ -38,9 +49,14 @@ export function scheduleDispatchRetry(
   now: number,
 ) {
   const diagnostic = workflowFailure(error, code).providerDiagnostic;
-  const retryable = diagnostic
-    ? ['transport', 'rate-limit'].includes(diagnostic.classification)
-    : transient.has(code) || /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code);
+  record.providerDiagnostic = diagnostic;
+  const retryable =
+    !explicitStop(code) &&
+    (diagnostic
+      ? ['transport', 'rate-limit', 'authentication', 'permission'].includes(
+          diagnostic.classification,
+        )
+      : transient.has(code) || /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code));
   if (!retryable) {
     delete record.retry;
     return false;
@@ -61,9 +77,10 @@ export function dispatchRetryDue(record: RetryState, now: number) {
 
 /** durable stops name an actual authority or task decision; uncertainty is waiting. */
 export function dispatchFailurePhase(record: RetryState, code: string, error?: unknown) {
+  if (explicitStop(code)) return 'blocked' as const;
   const diagnostic = workflowFailure(error, code).providerDiagnostic;
   if (diagnostic && ['permission', 'authentication'].includes(diagnostic.classification))
-    return 'blocked' as const;
+    return record.retry ? ('retrying' as const) : ('waiting' as const);
   if (
     /-(?:denied|cancelled|authority-revoked)$/.test(code) ||
     /^delivery-(?:repository|issue|session|thread|worktree|branch|base|account|policy)-changed$/.test(
@@ -87,7 +104,6 @@ export function dispatchFailurePhase(record: RetryState, code: string, error?: u
       'dispatch-native-model-diverged',
       'dispatch-native-receipt-reused',
       'authority-revoked',
-      'continuation-authority-changed',
       'continuation-schedule-binding-mismatch',
       'feedback-schedule-owner-changed',
       'continuation-native-binding-mismatch',

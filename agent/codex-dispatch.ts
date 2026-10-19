@@ -120,7 +120,7 @@ function remediation(value: string) {
   if (value.startsWith('dispatch-assessment-skill-'))
     return 'Check issue-assignment.assessment.skill against the enabled Codex skills. Use a qualified plugin:skill id to resolve ambiguity, and restore the selected skill if it changed. Retry this retained assignment or resume its existing chat; do not create a replacement chat.';
   if (value.startsWith('dispatch-assessment-guidance-'))
-    return 'Correct issue-assignment.assessment.guidance: use nonempty text or a readable UTF-8 file within the bound agent workspace, without symlinks, up to 32 KiB. Reconcile manifest changes through Install, then retry the retained assignment.';
+    return 'Correct issue-assignment.assessment.guidance: use nonempty text or a readable UTF-8 file within the bound agent workspace, without symlinks, up to 32 KiB. Retry the retained assignment after restoring the guidance; live edits apply without Install.';
   if (value === 'dispatch-configured-project-missing')
     return 'The explicitly configured local repository path is missing. Correct or remove its git.worktrees.repositories.local override, keep the repository registered as a saved Codex project, and let the next scheduled occurrence retry this retained assignment.';
   if (value.includes('project'))
@@ -128,7 +128,7 @@ function remediation(value: string) {
   if (value.includes('activation'))
     return 'Authorize Install to reconcile the updated assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
   if (value === 'dispatch-mode-unsupported')
-    return 'Set issue-assignment mode to plan, work, or auto and reconcile it through authorized Install. Other modes cannot dispatch issue assessments.';
+    return 'Set issue-assignment mode to plan, work, or auto, then retry with the live manifest. Other modes cannot dispatch issue assessments.';
   if (value.includes('routing') || value.includes('model'))
     return 'Inspect the retained routing evidence and configured profiles. Repair the selection or native model access; do not substitute a model or recreate the chat.';
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
@@ -168,7 +168,7 @@ function blocker(
             : 'github-' + repositoryId) +
           ' to ' +
           githubNotificationMarkdownText(JSON.stringify(preparation?.path ?? path)) +
-          '. If the base checkout location changed, restore the previous worktree root too. Reconcile through Install, then let the next scheduled occurrence resume this assignment. New assignments may use a different configured location; do not delete the retained journal or checkout.'
+          '. If the base checkout location changed, restore the previous worktree root too. Verify the retained checkout, then let the next scheduled occurrence resume this assignment. New assignments may use a different configured location; do not delete the retained journal or checkout.'
         : value === 'repository-clone-interrupted'
           ? 'Inspect this retained temporary clone. Repair it, or remove only this confirmed preparation-owned temporary directory, then retry; the runtime will not clone over it.'
           : value.startsWith('repository-')

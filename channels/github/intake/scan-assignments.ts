@@ -313,7 +313,12 @@ export default async function scanAssignments(
             throw error;
           state.deferred = [
             ...(state.deferred ?? []).filter((entry) => entry.key !== key),
-            { key, candidate: JSON.stringify(candidate), code: localCode },
+            {
+              key,
+              candidate: JSON.stringify(candidate),
+              code: localCode,
+              providerDiagnostic: diagnostic,
+            },
           ];
         }
         state.records.push(...records.splice(0));
@@ -384,6 +389,7 @@ export default async function scanAssignments(
             code,
             since: changed ? input.now : previous.blocker!.since,
             retryAfter,
+            providerDiagnostic: diagnostic,
           },
         };
         result = { status: 'blocked' as const, code, changed };

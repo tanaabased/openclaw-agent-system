@@ -537,7 +537,8 @@ export default class OpenClawDispatch {
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
         event.phase !== 'published' &&
-        /revoked|authority-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
+        !event.retry &&
+        /revoked|authority-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-changed|resource-missing|denied|turn-(?:failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {
@@ -700,7 +701,7 @@ export default class OpenClawDispatch {
           (event) =>
             ((!event.retry || dispatchRetryDue(event, (this.dependencies.now ?? Date.now)())) &&
               event.phase !== 'blocked' &&
-              ((event.turn && event.turn.status !== 'completed') ||
+              ((event.turn && (event.phase !== 'published' || event.turn.status !== 'completed')) ||
                 (event.publicationAttempted && !event.receipt))) ||
             (event.phase === 'queued' &&
               !event.policyHeld &&
@@ -1043,8 +1044,7 @@ export default class OpenClawDispatch {
                 (event) =>
                   event.phase !== 'blocked' &&
                   event.turn &&
-                  (event.turn.status !== 'completed' ||
-                    (event.publicationAttempted && !event.receipt)),
+                  (event.phase !== 'published' || event.turn.status !== 'completed'),
               )
               .map((event) => ({ record, event })),
           );

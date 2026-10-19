@@ -398,6 +398,10 @@ describe('channels/github/intake/records', () => {
       assert.equal(result.code, `intake-github-${classification}`);
       assert.equal((await store.read())!.deferred, undefined);
       assert.equal((await store.read())!.blocker?.retryAfter, baseline + 310000);
+      assert.equal(
+        (await store.read())!.blocker?.providerDiagnostic?.classification,
+        classification,
+      );
     });
   }
 

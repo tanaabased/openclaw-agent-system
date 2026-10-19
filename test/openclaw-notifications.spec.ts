@@ -159,6 +159,24 @@ describe('agent/openclaw-notifications', () => {
     assert.equal((await f.service.inspect(f.manifest, '/workspace')).status, 'ready');
   });
 
+  it('should refresh after a previous scan failure without ignoring current readiness', async () => {
+    const f = fixture();
+    f.state!.blocker = { code: 'intake-github-transport', since: baseline, retryAfter: baseline };
+    assert.equal(
+      (await f.service.inspect(f.manifest, '/workspace')).diagnosticCode,
+      'intake-github-transport',
+    );
+    const signal = new AbortController().signal;
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal, selector })).status,
+      'completed',
+    );
+    f.readiness = 'intake-automation-update-required';
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal, selector })).code,
+      'intake-automation-update-required',
+    );
+  });
   it('should inspect native admission and capacity without running intake or exposing provider prose', async () => {
     const f = fixture();
     const result = await f.service.inspect(f.manifest, '/workspace', selector);
@@ -228,8 +246,8 @@ describe('agent/openclaw-notifications', () => {
     };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
     const observed = await f.service.inspect(f.manifest, '/workspace');
-    assert.equal(observed.status, 'degraded');
-    assert.equal(observed.code, 'github-notification-capabilities-degraded');
+    assert.equal(observed.status, 'ready');
+    assert.equal(observed.code, 'github-notification-status-ready');
     assert.equal(observed.diagnosticCode, undefined);
     assert.equal(observed.warnings?.length, 1);
     assert.equal(observed.baseline.status, 'ready');
@@ -286,7 +304,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(
       (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
         .status,
-      'failed',
+      'queued',
     );
   });
 
@@ -329,10 +347,10 @@ describe('agent/openclaw-notifications', () => {
         ['stdout', 'stderr'],
       );
       assert.match(events[1]!.text, /review requests/);
-      assert.deepEqual(exits, [1]);
+      assert.deepEqual(exits, []);
       if (json) {
         const result = JSON.parse(events[0]!.text);
-        assert.equal(result.status, 'degraded');
+        assert.equal(result.status, 'ready');
         assert.equal(result.warnings[0].fieldPath, '/github/notifications/review-request');
         assert.equal(result.diagnosticCode, undefined);
       } else {

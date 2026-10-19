@@ -47,6 +47,37 @@ describe('agent/feedback-work', () => {
     assert.equal(event.work, undefined);
     assert.deepEqual(record, { createdAt: 1, result: { outcome: 'plan-ready' } });
   });
+  it('should use approved feedback direction to enter work from plan without changing defaults', async () => {
+    const record: Parameters<typeof beginFeedbackWork>[0]['record'] = {
+      createdAt: 1,
+      result: { outcome: 'plan-ready' },
+    };
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.mode = 'plan';
+    const event = eventFixture();
+    const input = {
+      record,
+      policy,
+      event,
+      workspace: '/unused',
+      now: 20,
+      resolveSkill: async () => skill,
+    };
+    await assert.rejects(beginFeedbackWork(input), { reason: 'implementation-direction-required' });
+    await beginFeedbackWork({
+      ...input,
+      decision: {
+        mode: 'work',
+        reasons: ['The approved author explicitly requests implementation.'],
+        plan: 'Implement the agreed change.',
+      },
+    });
+    assert.equal(record.progression?.via, 'operator');
+    assert.equal(record.progression?.stage, 'implementation');
+    assert.equal(policy.issueAssignment!.mode, 'plan');
+    assert.equal(record.result?.outcome, 'plan-ready');
+    assert.ok(Value.Check(feedbackSourceEventSchema, event));
+  });
   it('should retain the first stage and original results while new feedback carries its own plan', async () => {
     const record: Parameters<typeof beginFeedbackWork>[0]['record'] = {
       createdAt: 1,

@@ -2,6 +2,30 @@ import assert from 'node:assert/strict';
 import workflowStatus from '../agent/workflow-status.ts';
 
 describe('agent/workflow-status', () => {
+  it('should distinguish cancellation policy holds and unfinished delivery from authorization failures', () => {
+    assert.equal(
+      workflowStatus({ phase: 'complete', continuation: { phase: 'cancelled' } }),
+      'cancelled',
+    );
+    assert.equal(
+      workflowStatus({
+        phase: 'complete',
+        continuation: { phase: 'waiting', policyHeld: 'implementation-disabled' },
+      }),
+      'policy-held',
+    );
+    assert.equal(
+      workflowStatus({ phase: 'complete', work: { code: 'implementation-result-missing' } }),
+      'result-missing',
+    );
+    assert.equal(
+      workflowStatus({
+        phase: 'complete',
+        work: { code: 'implementation-delivery-incomplete', result: { outcome: 'done' } },
+      }),
+      'delivery',
+    );
+  });
   it('should report feedback progress without reviving the original continuation status', () => {
     const event = {
       phase: 'running',

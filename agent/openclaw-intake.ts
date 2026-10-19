@@ -101,8 +101,8 @@ export default class OpenClawIntake {
         manifest.agent.id,
         'service',
       );
+      if (fresh.status !== 'loaded') throw new IntakeError('intake-manifest-unavailable');
       if (
-        fresh.status !== 'loaded' ||
         fresh.manifest.agent.id !== manifest.agent.id ||
         (await realpath(fresh.scope.workspaceDir)) !== workspace
       )

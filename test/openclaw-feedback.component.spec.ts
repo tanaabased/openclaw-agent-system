@@ -230,7 +230,9 @@ describe('agent/openclaw-feedback', () => {
   it('should keep plan feedback in planning and preserve legacy implementation authority', async () => {
     input.policy.issueAssignment!.mode = 'plan';
     await start();
-    await assert.rejects(action('implementation-context'), { reason: 'implementation-disabled' });
+    await assert.rejects(action('implementation-context'), {
+      reason: 'implementation-direction-required',
+    });
     record.work = {
       assessmentDigest: 'a'.repeat(64),
       implementation: { runId: 'original', inputEventId: 'original' },
@@ -239,6 +241,20 @@ describe('agent/openclaw-feedback', () => {
     const context = await action('implementation-context');
     assert.equal(context.status, 'verified');
     assert.equal(record.progression?.stage, 'implementation');
+  });
+  it('should accept approved feedback direction through the shared plan to work transition', async () => {
+    input.policy.issueAssignment!.mode = 'plan';
+    await start();
+    const context = await action('implementation-context', {
+      decision: {
+        mode: 'work',
+        reasons: ['The approved author requests implementation.'],
+        plan: 'Implement the requested change.',
+      },
+    });
+    assert.equal(context.status, 'verified');
+    assert.equal(record.progression?.via, 'operator');
+    assert.equal(input.policy.issueAssignment!.mode, 'plan');
   });
   it('should use live work policy and retain feedback clarification independently', async () => {
     input.policy.issueAssignment!.mode = 'work';
@@ -493,6 +509,23 @@ describe('agent/openclaw-feedback', () => {
     assert.ok('digest' in preview);
     return preview.digest;
   }
+  it('should resume interrupted composition with saved work and a distinct native request', async () => {
+    await start();
+    await action('result', { privateText: 'Retained answer.' });
+    const oldRun = event.turn!.runId;
+    event.turn!.status = 'completed';
+    busy = false;
+    const resumed = await advanceFeedbackTurn(input);
+    assert.equal(resumed.status, 'feedback-queued');
+    assert.equal(event.result!.privateText, 'Retained answer.');
+    assert.deepEqual(event.previousTurnIds, [oldRun]);
+    assert.equal(sends, 1);
+    await advanceFeedbackTurn(input);
+    assert.notEqual(event.turn!.runId, oldRun);
+    assert.equal(sends, 2);
+    assert.equal(writes, 0);
+    assert.ok(Value.Check(openclawFeedbackSchema, record.feedback));
+  });
   it('should queue on a busy owner and recover a lost send without another input or session', async () => {
     busy = true;
     assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-queued');

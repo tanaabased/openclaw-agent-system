@@ -25,7 +25,6 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
     'Use only the invoking agent’s bound tools. Never choose another workspace, account, executable or credentials. A failed or incomplete scan is not an empty successful scan.',
   ].join('\n\n');
   const script = [
-    'const diagnostics=["intake-condition-invalid","dispatch-condition-invalid","dispatch-native-caller-unavailable","dispatch-agent-required","dispatch-manifest-unavailable","dispatch-intake-activation-required","dispatch-plan-mode-required"];',
     'function unwrap(v){if(typeof v === "string")return unwrap(JSON.parse(v));if(v.output)return unwrap(v.output);if(v.content)return unwrap(v.content.filter(x=>x.type==="text").map(x=>x.text).join("\\n"));return v;}',
     'let stage="intake";',
     'try {',
@@ -33,7 +32,7 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
     'const d=unwrap(await agent_system_dispatch({action:"check"}));',
     'if (!d || d.status!=="ready" || typeof d.changed!=="boolean") throw new Error("dispatch-condition-invalid");',
     `json({fire:d.changed===true,message:${JSON.stringify(message)},state:{status:d.status,outcome:d.outcome,more:d.more,code:d.code}});`,
-    '} catch (error) { const code=[error?.code,error?.message].find(value=>diagnostics.includes(value))??stage+"-condition-failed"; json({fire:true,message:"The "+stage+" condition failed ("+code+"). Do not dispatch work. Inspect agent_system_intake and agent_system_dispatch with discovery checks and report the bounded blocker; never treat a failed check as an empty successful scan.",state:{status:"blocked",stage,code}}); }',
+    '} catch (error) { const code=[error?.code,error?.message].find(value=>typeof value==="string" && /^(?:intake|dispatch|feedback|continuation|github|automation|private-state)-[a-z0-9-]{1,100}$/.test(value))??stage+"-condition-failed"; json({fire:true,message:"The "+stage+" condition failed ("+code+"). This pass could not complete. Inspect agent_system_intake and agent_system_dispatch with discovery checks and report the bounded blocker; never treat a failed check as an empty successful scan.",state:{status:code.endsWith("-busy")?"busy":"failed",stage,code}}); }',
   ].join('\n');
   return [
     ...jobs,

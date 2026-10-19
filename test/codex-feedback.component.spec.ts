@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import type { CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
@@ -250,7 +251,7 @@ describe('agent/codex-feedback', () => {
     const context = await call('context', ref, true);
     assert.equal('mode' in context && context.mode, 'plan');
     const held = await call('implementation-context', ref, true);
-    assert.equal('reason' in held && held.reason, 'implementation-disabled');
+    assert.equal('reason' in held && held.reason, 'implementation-direction-required');
     await feedbackMode('work');
     const active = await call('implementation-context', ref, true);
     assert.equal(active.status, 'verified');
@@ -258,6 +259,49 @@ describe('agent/codex-feedback', () => {
     const retained = await call('context', ref, true);
     assert.equal('mode' in retained && retained.mode, 'work');
     assert.equal((await store.read()).records[0]!.result!.outcome, 'plan-ready');
+  });
+  it('should resume the retained feedback after provider access is repaired', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const connect = deps.feedbackConnect!;
+    deps.feedbackConnect = async (...args) => {
+      const provider = await connect(...args);
+      provider.comments.getIssueComment = async () => {
+        throw Object.assign(new Error('github-notification-request-failed'), {
+          providerDiagnostic: providerDiagnostic('github', 'api-request', 'authentication'),
+        });
+      };
+      return provider;
+    };
+    await call('context', ref, true);
+    const failed = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.notEqual(failed.phase, 'blocked');
+    assert.equal(failed.providerDiagnostic?.classification, 'authentication');
+    deps.feedbackConnect = connect;
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
+    assert.equal(creates, 0);
+  });
+  it('should accept explicit implementation direction from approved feedback in plan', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const result = await call(
+      'implementation-context',
+      {
+        ...ref,
+        decision: {
+          mode: 'work',
+          reasons: ['Approved author asks to implement.'],
+          plan: 'Implement the requested change.',
+        },
+      },
+      true,
+    );
+    assert.equal(result.status, 'verified');
+    assert.equal((await store.read()).records[0]!.progression?.via, 'operator');
   });
   it('should retain feedback clarification and completed work without overwriting the initial result', async () => {
     await feedbackMode('work');
@@ -587,7 +631,9 @@ describe('agent/codex-feedback', () => {
     lost = true;
     const apply = { ...ref, digest: preview.digest };
     assert.equal((await call('publish', apply, true)).status, 'waiting');
-    const completed = await call('publish', apply, true);
+    ended = true;
+    occurrence++;
+    const completed = await call('next');
     assert.equal(completed.status, 'published');
     assert.ok('presentation' in completed && completed.presentation);
     assert.match(completed.presentation, /^> ## 💬 From /u);
@@ -1087,7 +1133,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(feedback.events[0]!.receipt!.nodeId, 'reply');
     assert.equal(creates, 1);
   });
-  it('should stop after a private response when its composition turn ends unfinished', async () => {
+  it('should resume an interrupted composition while retaining its private response', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
@@ -1096,8 +1142,11 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     await call('next');
     const event = (await store.read()).records[0]!.feedback!.events[0]!;
-    assert.equal(event.phase, 'blocked');
-    assert.equal(event.code, 'feedback-composition-interrupted');
+    assert.equal(event.phase, 'queued');
+    assert.equal(event.code, undefined);
+    assert.deepEqual(event.previousTurnIds, ['feedback']);
+    const resumed = await call('next');
+    assert.equal(resumed.status, 'feedback-prepared');
     assert.equal(event.result!.privateText, 'Saved before interruption.');
     assert.equal(creates, 0);
   });
@@ -1128,16 +1177,16 @@ describe('agent/codex-feedback', () => {
       const events = (await store.read()).records[0]!.feedback!.events;
       assert.equal(events.length, 2);
       if (outcome === 'ended') {
-        assert.equal(next.status, 'feedback-prepared');
-        assert.ok('eventId' in next && next.eventId !== first.eventId);
-        assert.equal(events[0]!.code, 'feedback-turn-ended');
-        assert.equal(events[1]!.phase, 'prepared');
+        assert.equal(next.status, 'idle');
+        assert.equal(events[0]!.phase, 'queued');
+        assert.equal(events[1]!.phase, 'queued');
         const repeated = await call('next');
-        assert.notEqual(repeated.status, 'feedback-prepared');
+        assert.equal(repeated.status, 'feedback-prepared');
+        assert.equal('eventId' in repeated && repeated.eventId, first.eventId);
       } else {
         assert.equal(next.status, 'idle');
         assert.equal(events[1]!.phase, 'queued');
-        assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'blocked');
+        assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'queued');
       }
       assert.equal(creates, 0);
     });
@@ -1262,16 +1311,17 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
   });
-  it('should stop unfinished publication and require an operator approval bound to the exact draft', async () => {
+  it('should preserve native publication denial and bind explicit recovery to the exact draft', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
     await recordReply(ref, 'Private.', 'Approved reply.');
     ended = true;
+    receiptStatus = 'blocked';
     await call('next');
     assert.equal(
       (await store.read())!.records[0]!.feedback!.events[0]!.code,
-      'feedback-publication-interrupted',
+      'continuation-native-approval-denied',
     );
     occurrence++;
     assert.equal((await call('next')).status, 'idle');

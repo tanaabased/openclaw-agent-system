@@ -116,7 +116,12 @@ export default async function advanceOpenClawWork(input: {
     await save();
   }
   return {
-    status: turn.status === 'completed' ? 'implementation-completed' : 'implementation-pending',
+    status: record.work!.code
+      ? 'implementation-incomplete'
+      : turn.status === 'completed'
+        ? 'implementation-completed'
+        : 'implementation-pending',
+    ...(record.work!.code ? { nextAction: 'next' as const } : {}),
     id: record.id,
     code: record.work!.code,
   };

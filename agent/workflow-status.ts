@@ -13,7 +13,13 @@ interface State {
   blocker?: string;
   retry?: unknown;
   result?: { code?: string; outcome?: string };
-  continuation?: { phase?: string; code?: string; retry?: unknown; message?: string };
+  continuation?: {
+    phase?: string;
+    code?: string;
+    retry?: unknown;
+    message?: string;
+    policyHeld?: string;
+  };
   progression?: { stage: string };
   delivery?: Delivery;
   feedback?: {
@@ -61,9 +67,13 @@ export default function workflowStatus(record: State) {
   )
     return 'partially-delivered';
   if (feedback) return 'complete';
+  if (record.work?.code === 'implementation-delivery-incomplete') return 'delivery';
+  if (record.work?.code === 'implementation-result-missing') return 'result-missing';
   if (record.work?.code || record.work?.result?.outcome === 'blocked') return 'blocked';
   const failure = record.continuation ?? record;
-  if (failure.phase === 'blocked' || failure.phase === 'cancelled') return 'blocked';
+  if (failure.phase === 'cancelled') return 'cancelled';
+  if (failure.phase === 'blocked') return 'blocked';
+  if (record.continuation?.policyHeld) return 'policy-held';
   if (failure.retry) return 'retrying';
   if (record.continuation) return record.continuation.phase ?? record.phase;
   const work = record.work;
