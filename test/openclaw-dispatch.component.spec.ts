@@ -351,25 +351,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(result.status, 'reported');
   }
 
-  it('should retain legacy dispatch custody without accepting changed permissions', async () => {
+  it('should retain legacy dispatch custody when assigner defaults change', async () => {
     manifest.github!.notifications!.runtimes = ['openclaw', 'codex'];
     await service.dependencies.intake.run(manifest, root, 'activate');
     const routed = await next();
     await prepare(routed);
     await assess(routed.id);
     const current = await service.scope(manifest, root);
-    assert.notEqual(current.manifestDigest, current.legacyManifestDigest);
+    const legacyManifestDigest = automationHash({
+      policy: current.policy.legacyDigest,
+      models: manifest.models,
+    });
+    assert.notEqual(current.manifestDigest, legacyManifestDigest);
     await current.journal.exclusive(async (state, save) => {
-      state.records[0]!.manifestDigest = current.legacyManifestDigest;
+      state.records[0]!.manifestDigest = legacyManifestDigest;
       await save();
     });
     assert.equal((await context(routed.id)).status, 'verified');
     const workflow = manifest.github!.notifications!.issueAssignment!;
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
-    await assert.rejects(
-      context(routed.id),
-      /dispatch-intake-activation-required|dispatch-policy-changed/,
-    );
+    assert.equal((await context(routed.id)).status, 'verified');
   });
   it('should retry a transient worktree failure on a later occurrence without creating twice', async () => {
     const input = await next();
@@ -1326,18 +1327,27 @@ describe('agent/openclaw issue dispatch', () => {
       throw Object.assign(new AgentSystemToolError('execution_failed', 'SECRET'), {
         cause: new GitCommandError('fetch', {
           exitCode: 128,
-          stderr: 'Could not resolve host: private-host SECRET',
+          stderr: 'Could not resolve host: private-host token=SECRET',
         }),
       });
     };
     const input = await next();
-    assert.deepEqual(await prepare(input), {
-      status: 'retrying',
-      nextAction: 'next',
-      id: input.id,
-      code: 'git-fetch-dns-exit-128',
-      stage: 'worktree',
-    });
+    const failure = await prepare(input);
+    assert.equal(
+      'providerDiagnostic' in failure && failure.providerDiagnostic?.classification,
+      'transport',
+    );
+    assert.deepEqual(
+      { ...failure, providerDiagnostic: undefined },
+      {
+        providerDiagnostic: undefined,
+        status: 'retrying',
+        nextAction: 'next',
+        id: input.id,
+        code: 'git-fetch-dns-exit-128',
+        stage: 'worktree',
+      },
+    );
     assert.equal(JSON.stringify(await record()).includes('SECRET'), false);
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);
@@ -2599,11 +2609,18 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
-  for (const change of ['policy', 'models', 'cleanup', 'stale-readback'] as const) {
-    it(`should reject original custody after changed ${change} before provider or native credentials`, async () => {
+  for (const change of [
+    'policy',
+    'models',
+    'cleanup',
+    'stale-readback',
+    'notifications-removed',
+  ] as const) {
+    it(`should retain original custody after changed ${change} without renewed authorization`, async () => {
       const { id, who } = await originalAssignment();
       if (change === 'policy') manifest.github!.notifications!.issueAssignment!.feedback = true;
       if (change === 'models') manifest.models!.medium!.effort = 'medium';
+      if (change === 'notifications-removed') delete manifest.github!.notifications;
       if (change === 'cleanup')
         manifest.github!.notifications!.cleanup = { enabled: false, graceMinutes: 60 };
       if (change === 'stale-readback') {
@@ -2615,24 +2632,29 @@ describe('agent/openclaw issue dispatch', () => {
           ...(await load(...args)),
           manifest: fresh,
         });
-      } else await service.dependencies.intake.run(manifest, root, 'activate');
-      service.dependencies.connect = async () => {
-        throw new Error('provider must not connect');
-      };
-      service.dependencies.credential.use = async () => {
-        throw new Error('native credentials must not resolve');
-      };
-      await assert.rejects(context(id, who), /dispatch-policy-changed/);
-      await assert.rejects(
-        service.run(
-          manifest,
-          root,
-          who,
-          { action: 'handoff', id, permission: 'implementation' },
-          true,
-        ),
-        /dispatch-policy-changed/,
+      } else if (change !== 'notifications-removed')
+        await service.dependencies.intake.run(manifest, root, 'activate');
+      const before = await record();
+      assert.equal((await context(id, who)).status, 'verified');
+      const handoff = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'handoff', id, permission: 'implementation' },
+        true,
       );
+      assert.equal(handoff.status, 'handoff-available');
+      const after = await record();
+      for (const key of [
+        'id',
+        'threadId',
+        'worktree',
+        'manifestDigest',
+        'result',
+        'stageReceipt',
+      ] as const)
+        assert.deepEqual(after[key], before[key], key);
+      assert.equal(creates().length, 1);
     });
   }
   for (const change of ['account', 'repository', 'assignment'] as const) {
@@ -2674,8 +2696,7 @@ describe('agent/openclaw issue dispatch', () => {
           idempotencyKey: 'foreign:user',
           senderIsOwner: true,
         };
-      if (change === 'worktree')
-        service.dependencies.worktrees.inspectGitHub = async () => undefined;
+      if (change === 'worktree') await rm(join(root, 'worktree'), { recursive: true });
       await assert.rejects(
         service.run(
           manifest,
@@ -2684,7 +2705,7 @@ describe('agent/openclaw issue dispatch', () => {
           { action: 'handoff', id, permission: 'implementation' },
           true,
         ),
-        /dispatch-(assessment-caller-mismatch|operator-input-unverified|worktree-diverged)/,
+        /dispatch-(assessment-caller-mismatch|operator-input-unverified|worktree-diverged|worktree-unavailable)/,
       );
       assert.equal((await record()).work, undefined);
       assert.equal(creates().length, 1);
@@ -2983,7 +3004,7 @@ describe('agent/openclaw issue dispatch', () => {
       true,
     );
     assert.deepEqual((await record()).work?.result, result);
-    await assert.rejects(context(id, who), /dispatch-policy-changed/);
+    await assert.rejects(context(id, who), /dispatch-assessment-handed-off/);
     await assert.rejects(
       service.run(manifest, root, who, { ...request, digest: preview.digest }, true),
       /dispatch-handoff-stale/,
@@ -3383,7 +3404,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.events[0]!.turn?.status, 'accepted');
     assert.equal(sends().length, before + 1);
   });
-  it('should release an idle feedback owner after its admitted policy changes without resending', async () => {
+  it('should retain admitted feedback after its policy defaults change without resending', async () => {
     await feedbackOwner();
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.phase, 'running');
@@ -3400,13 +3421,13 @@ describe('agent/openclaw issue dispatch', () => {
     await service.dependencies.intake.run(manifest, root, 'activate');
     await service.run(manifest, root, coordinator, { action: 'next' });
     const saved = await record();
-    assert.equal(saved.feedback!.events[0]!.code, 'feedback-authority-changed');
-    assert.equal(saved.feedback!.events[0]!.phase, 'blocked');
+    assert.equal(saved.feedback!.events[0]!.code, undefined);
+    assert.equal(saved.feedback!.events[0]!.phase, 'running');
     assert.equal(openClawCapacity([saved], 1).available, 0);
     active = false;
     inputReceipts = [];
     await service.run(manifest, root, coordinator, { action: 'next' });
-    assert.equal(openClawCapacity([await record()], 1).available, 1);
+    assert.equal((await record()).feedback!.events[0]!.phase, 'running');
     assert.equal(sends().length, before);
   });
   for (const limit of [1, 3])

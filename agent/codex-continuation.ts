@@ -1,4 +1,3 @@
-import { matchesNotificationAuthority } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { realpath } from 'node:fs/promises';
@@ -67,7 +66,7 @@ export default async function runCodexContinuation(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
     false,
-    false,
+    true,
     input.action === 'delivery' ? 'publication' : 'implementation',
   );
   const schedule = activation.schedule;
@@ -159,19 +158,9 @@ export default async function runCodexContinuation(
             throw new Error('continuation-issue-caller-required');
           if (
             record.sourceThreadId !== activation.sourceThreadId ||
-            !current.manifest.github?.notifications ||
-            !matchesNotificationAuthority(
-              work.policyDigest,
-              current.manifest.github.notifications,
-            ) ||
-            current.manifest.github?.notifications?.schemaVersion !== 2 ||
-            !['work', 'auto'].includes(
-              current.manifest.github.notifications.issueAssignment?.mode ?? '',
-            ) ||
-            (record.issueMode ?? 'work') !==
-              current.manifest.github.notifications.issueAssignment?.mode
+            !['work', 'auto'].includes(record.issueMode ?? 'work')
           )
-            throw new Error('continuation-authority-changed');
+            throw new Error('continuation-schedule-binding-mismatch');
           if (
             retry &&
             (!(
@@ -204,10 +193,6 @@ export default async function runCodexContinuation(
                 automationHash({ routing: record.routing, effective: record.effective }) ||
               record.stageReceipt.binding.evidenceDigest !==
                 automationHash(JSON.parse(record.context!)) ||
-              !matchesNotificationAuthority(
-                record.stageReceipt.binding.policyDigest,
-                current.manifest.github.notifications,
-              ) ||
               record.stageReceipt.binding.turnId !== record.resultTurnId ||
               record.stageReceipt.binding.threadId !== record.threadId ||
               record.stageReceipt.binding.worktree !== record.worktree
@@ -246,7 +231,7 @@ export default async function runCodexContinuation(
             admitted,
             deps,
             signal,
-            false,
+            true,
           );
           if (record.issueMode === 'auto' && !work.binding) {
             const retained = JSON.parse(record.context!);
@@ -304,16 +289,23 @@ export default async function runCodexContinuation(
           }
           const selection = await selectWorkflowStage({
             stage: 'implementation',
-            configuration: current.manifest.github.notifications.issueAssignment.implementation,
+            configuration: {
+              skill: work.selection.requestedSkill,
+              guidance: work.selection.guidance?.content,
+            },
             workspace: current.workspace,
             observedAt: work.selection.observedAt,
             resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
           });
+          selection.selection = { ...work.selection, skill: selection.selection.skill };
           const selections = [{ expected: work.selection, actual: selection.selection }];
           if (record.issueMode === 'auto') {
             const assessment = await selectWorkflowStage({
               stage: 'assessment',
-              configuration: current.manifest.github.notifications.issueAssignment.assessment,
+              configuration: {
+                skill: record.assessment!.requestedSkill,
+                guidance: record.assessment!.guidance?.content,
+              },
               workspace: current.workspace,
               observedAt: record.assessment!.observedAt,
               resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
@@ -336,7 +328,7 @@ export default async function runCodexContinuation(
               expectedSkill.name !== actualSkill.name ||
               expectedSkill.scope !== actualSkill.scope ||
               expectedSkill.digest !== actualSkill.digest ||
-              automationHash(expected.guidance ?? null) !== automationHash(actual.guidance ?? null)
+              expected.guidance?.content !== actual.guidance?.content
             )
               throw new Error('continuation-selection-changed');
           }
@@ -345,11 +337,11 @@ export default async function runCodexContinuation(
             pluginData,
             { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
             false,
-            false,
+            true,
             input.action === 'delivery' ? 'publication' : 'implementation',
           );
-          if (automationHash(fresh.schedule) !== automationHash(schedule))
-            throw new Error('continuation-authority-changed');
+          if (fresh.sourceThreadId !== activation.sourceThreadId)
+            throw new Error('continuation-schedule-binding-mismatch');
           if (!work.attempt) {
             if (
               input.action !== 'next' ||
@@ -699,11 +691,11 @@ export default async function runCodexContinuation(
             pluginData,
             { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
             false,
-            false,
+            true,
             'publication',
           );
-          if (automationHash(fresh.schedule) !== automationHash(schedule))
-            throw new Error('continuation-authority-changed');
+          if (fresh.sourceThreadId !== activation.sourceThreadId)
+            throw new Error('continuation-schedule-binding-mismatch');
         },
       },
     );

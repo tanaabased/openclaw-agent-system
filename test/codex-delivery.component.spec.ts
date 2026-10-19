@@ -487,7 +487,7 @@ describe('agent/codex-delivery', () => {
     activation.schedule.saved.policyDigest = 'stale';
     assert.match(
       String((await request('present')).presentation),
-      /active intake could not be verified/u,
+      /Approved feedback.*original issue chat/u,
     );
     deps.activation = async () => {
       throw new Error('dispatch-activation-required');
@@ -730,7 +730,7 @@ describe('agent/codex-delivery', () => {
         {},
         { schedule: { current, saved: { ...current, version: 1, capabilities: ['publication'] } } },
       ),
-      /schedule-stale/,
+      /delivery-body-required/,
     );
     await assert.rejects(request('prepare', { schedule: current }), /request-invalid/);
     assert.equal(creates, 0);

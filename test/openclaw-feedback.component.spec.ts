@@ -306,7 +306,7 @@ describe('agent/openclaw-feedback', () => {
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
   });
-  it('should block changed source author mention policy and assignment before publishing', async () => {
+  it('should block changed source and explicit revocation while retaining an admitted reply after default changes', async () => {
     await start();
     const digest = await compose();
     const original = structuredClone(source);
@@ -326,8 +326,8 @@ describe('agent/openclaw-feedback', () => {
     await assert.rejects(action('publish', { digest }), /feedback-authority-revoked/);
     revoked = false;
     input.policy.issueAssignment!.feedback = false;
-    await assert.rejects(action('publish', { digest }), /feedback-authority-changed/);
-    assert.equal(writes, 0);
+    assert.equal((await action('publish', { digest })).status, 'published');
+    assert.equal(writes, 1);
     assert.match(event.result!.privateText, /Full private/);
   });
   it('should require the selected skill and reject changed content or stale composition', async () => {

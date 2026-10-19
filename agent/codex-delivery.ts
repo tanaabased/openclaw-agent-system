@@ -329,18 +329,10 @@ export default async function runCodexDelivery(
         { connect: async () => connected.client },
         signal,
         true,
-        false,
       );
-      const policyDigest = notificationAuthorityDigest(current.manifest.github?.notifications);
-      if (
-        deps.schedule &&
-        (!current.manifest.github?.notifications ||
-          !matchesNotificationAuthority(
-            deps.schedule.current.policyDigest,
-            current.manifest.github.notifications,
-          ))
-      )
-        throw new Error('delivery-schedule-stale');
+      const policyDigest =
+        previous?.binding.policyDigest ??
+        notificationAuthorityDigest(current.manifest.github?.notifications);
       const announcementOnly = ['compose', 'candidate', 'announce'].includes(input.action);
       if (announcementOnly && (!previous?.pullRequest || !previous.reconciled))
         throw new Error('delivery-reconciliation-required');
@@ -491,7 +483,6 @@ export default async function runCodexDelivery(
               { connect: async () => connected.client },
               signal,
               true,
-              false,
             );
           },
           save,

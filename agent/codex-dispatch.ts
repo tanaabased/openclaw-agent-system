@@ -1,4 +1,4 @@
-import { matchesIntakePolicy } from './assignment-intake-policy.ts';
+import retainedIntakePolicy from './retained-intake-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import type codexRetirementNative from './codex-retirement-native.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
@@ -24,7 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
-import revalidateAssignment from './dispatch-assignment.ts';
+import { inspectActiveIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import dispatchContext from './dispatch-context.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
@@ -245,17 +245,11 @@ export async function revalidateDispatchAssignment(
   deps: CodexDispatchDependencies,
   signal: AbortSignal,
   retainedWork = false,
-  requireSupportedMode = true,
 ) {
-  const policy = retainedWork ? codexIntakePolicy(current.manifest, true) : current.policy;
-  if (
-    !policy ||
-    (requireSupportedMode &&
-      !['plan', 'work', 'auto'].includes(policy.policy.issueAssignment?.mode ?? ''))
-  )
-    throw new Error('dispatch-mode-unsupported');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-  const repo = await revalidateAssignment(policy, record, client);
+  const repo = retainedWork
+    ? (await inspectActiveIssue(record, client)).repo
+    : (await inspectAdmittedIssue(record, client)).repo;
   return { client, repo };
 }
 
@@ -383,6 +377,9 @@ export async function runCodexDispatch(
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
   }
   const current = await selectCodexIntake(pluginData, deps);
+  const retainedAdmission = await current.store.read();
+  if (retainedAdmission?.records.length)
+    current.policy = retainedIntakePolicy(current.manifest, retainedAdmission, 'codex');
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
     const state = await store.read();
@@ -494,7 +491,6 @@ export async function runCodexDispatch(
           intakeReportedAt: undefined,
           renameRequested: undefined,
         },
-        manifest: current.digest,
         turnId: native.turnId,
       });
       if (input.digest === undefined)
@@ -526,15 +522,14 @@ export async function runCodexDispatch(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
     operatorRecovery,
-    retainedWork || operatorRetire,
+    true,
   );
   if (operatorAction && caller === activation.sourceThreadId)
     throw new Error('dispatch-operator-caller-required');
   if (!operatorAction && !childAction && caller !== activation.sourceThreadId)
     throw new Error('dispatch-intake-caller-required');
   const admitted = await current.store.read();
-  if (!admitted || (!retainedWork && !matchesIntakePolicy(admitted.policyDigest, current.policy)))
-    throw new Error('dispatch-policy-reconciliation-required');
+  if (!admitted) throw new Error('dispatch-policy-reconciliation-required');
   const now = (deps.now ?? Date.now)();
   const waitForLock = childAction || action === 'report';
   return store
@@ -560,23 +555,16 @@ export async function runCodexDispatch(
           pluginData,
           { codexHome: selected.codexHome, inspectBinding: deps.inspectBinding },
           operatorRecovery,
-          retainedWork || operatorRetire,
+          true,
         );
         if (
-          selected.digest !== current.digest ||
           selected.store.location.scope !== current.store.location.scope ||
           allowed.sourceThreadId !== activation.sourceThreadId
         )
-          throw new Error('dispatch-policy-changed');
+          throw new Error('dispatch-workspace-binding-changed');
       };
       const fail = async (record: DispatchRecord, error: unknown) => {
-        if (
-          [
-            'dispatch-policy-changed',
-            'dispatch-policy-disabled',
-            'dispatch-activation-required',
-          ].includes(code(error))
-        )
+        if (['dispatch-policy-disabled', 'dispatch-activation-required'].includes(code(error)))
           throw error;
         const previousCode =
           record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined;
@@ -984,7 +972,6 @@ export async function runCodexDispatch(
           record.phase !== 'routing' ||
           !record.project ||
           !record.context ||
-          record.manifestDigest !== current.digest ||
           input.digest !==
             automationHash({
               context: record.context,
@@ -1028,13 +1015,13 @@ export async function runCodexDispatch(
               ),
           });
           record.assessment = selected.selection;
-          record.issueMode = current.policy!.policy.issueAssignment!.mode;
+          record.issueMode = intake.evidence.mode;
           if (record.issueMode === 'work' || record.issueMode === 'auto') {
             await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
               { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
               false,
-              false,
+              true,
               'implementation',
             );
             const implementation = await selectWorkflowStage({
@@ -1177,7 +1164,7 @@ export async function runCodexDispatch(
                 pluginData,
                 { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
                 false,
-                false,
+                true,
                 'assessment-summary',
               );
             const summaryAuthority = await activate();
@@ -1220,14 +1207,14 @@ export async function runCodexDispatch(
                     }
                   }
                 }
-                if (automationHash((await activate()).schedule) !== authorityDigest)
+                if ((await activate()).sourceThreadId !== record.sourceThreadId)
                   throw new Error('assessment-summary-authority-changed');
                 await revalidateDispatchAssignment(current, intake, deps, signal, true);
               },
               select: async (previous) =>
                 (
                   await selectFeedbackStage({
-                    policy: current.manifest.github!.notifications!,
+                    policy: current.policy!.policy,
                     workflow: 'issue-assignment',
                     workspace: current.workspace,
                     observedAt: previous?.observedAt ?? now,

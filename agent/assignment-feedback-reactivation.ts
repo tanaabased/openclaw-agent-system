@@ -5,7 +5,7 @@ import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { inspectAssignedIssue, inspectAssignment } from './dispatch-assignment.ts';
+import { inspectActiveIssue, inspectAssignment } from './dispatch-assignment.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { discoverFeedback } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
@@ -24,15 +24,23 @@ export async function inspectFeedbackAssignment(
   client: GitHubNotificationIntakeClient,
   record: SharedDispatchRecord,
 ) {
-  if (!record.feedbackReactivation) return inspectAssignedIssue(policy, intake, client);
-  const observation = await inspectAssignment(policy, intake, client);
-  const { latest } = observation;
-  if (
-    latest?.nodeId !== record.feedbackReactivation.assignmentEventId ||
-    !matchesFeedbackAuthority(record.feedbackReactivation.policyDigest, policy.policy)
-  )
-    throw new Error('feedback-reactivation-superseded');
-  return observation;
+  const current = await inspectActiveIssue(intake, client, Boolean(record.feedbackReactivation));
+  if (record.feedbackReactivation) {
+    const history = await client.listAssignmentEvents(
+      intake.repository.owner.login,
+      intake.repository.name,
+      intake.issue.number,
+    );
+    if (history.truncated) throw new Error('dispatch-authority-history-incomplete');
+    const latest = history.events
+      .filter((event) => event.assignee.nodeId === intake.receiving.nodeId)
+      .sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
+      )[0];
+    if (latest?.nodeId !== record.feedbackReactivation.assignmentEventId)
+      throw new Error('feedback-reactivation-superseded');
+  }
+  return current;
 }
 
 export async function revalidateFeedbackAssignment(

@@ -636,9 +636,9 @@ describe('agent/codex-intake', () => {
       inspectCodexDispatchActivation(pluginData, deps),
       /dispatch-activation-required/,
     );
-    await assert.rejects(
-      inspectCodexDispatchActivation(pluginData, deps, false, true),
-      /dispatch-activation-required/,
+    assert.equal(
+      (await inspectCodexDispatchActivation(pluginData, deps, false, true)).sourceThreadId,
+      'intake-thread',
     );
     await saveNative(prepared.request);
     await writeFile(
@@ -703,6 +703,11 @@ describe('agent/codex-intake', () => {
           /schedule-reconciliation-required/,
         );
         await saveNative({ ...workPrepared.request, status: 'PAUSED' });
+        assert.equal(
+          (await inspectCodexDispatchActivation(pluginData, deps, false, true, 'publication'))
+            .sourceThreadId,
+          'intake-thread',
+        );
         await assert.rejects(
           inspectCodexDispatchActivation(pluginData, deps, false, false, 'publication'),
           /activation-required/,
@@ -712,6 +717,11 @@ describe('agent/codex-intake', () => {
         const planAgain = await plan();
         const preparedAgain = await prepareCodexAutomation(pluginData, planAgain.digest, {}, deps);
         await saveNative(preparedAgain.request);
+        assert.equal(
+          (await inspectCodexDispatchActivation(pluginData, deps, false, true, 'implementation'))
+            .sourceThreadId,
+          'intake-thread',
+        );
         await acknowledgeCodexAutomation(pluginData, planAgain.digest, undefined, deps);
         await assert.rejects(
           inspectCodexDispatchActivation(pluginData, deps, false, false, 'implementation'),

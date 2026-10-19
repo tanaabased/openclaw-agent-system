@@ -1,0 +1,106 @@
+import type { AssessmentResult } from './assessment-result.ts';
+
+const obsolete = new Set([
+  'dispatch-policy-changed',
+  'dispatch-activation-required',
+  'workflow-schedule-reconciliation-required',
+  'continuation-authority-changed',
+  'feedback-authority-changed',
+  'feedback-authority-revoked',
+  'delivery-schedule-stale',
+]);
+
+/** normalize supported active records without granting new work or replaying any effect. */
+export default function recoverTaskBlockers(record: {
+  request?: unknown;
+  threadId?: string;
+  worktree?: string;
+  effective?: { status: string };
+  retired?: unknown;
+  retirement?: unknown;
+  reset?: unknown;
+  phase: string;
+  result?: AssessmentResult;
+  blocker?: string;
+  retryAfter?: number;
+  retry?: unknown;
+  compatibilityRecovery?: { version: 1; codes: string[]; previousResult?: AssessmentResult };
+  continuation?: {
+    phase: string;
+    code?: string;
+    attempt?: unknown;
+    binding?: unknown;
+    result?: { outcome: string };
+    publicationAttempt?: unknown;
+    retry?: unknown;
+    retryAfter?: number;
+  };
+  feedback?: {
+    events: Array<{
+      phase: string;
+      code?: string;
+      retry?: unknown;
+      retryAfter?: number;
+      turn?: unknown;
+      attempt?: unknown;
+      publicationAttempted?: boolean;
+    }>;
+  };
+}) {
+  if (
+    !record.request ||
+    !record.threadId ||
+    !record.worktree ||
+    record.effective?.status !== 'verified' ||
+    record.retired ||
+    record.retirement ||
+    record.reset
+  )
+    return;
+  const retain = (code: string) => {
+    record.compatibilityRecovery ??= { version: 1, codes: [] };
+    if (!record.compatibilityRecovery.codes.includes(code))
+      record.compatibilityRecovery.codes.push(code);
+  };
+  const clear = (entry: { code?: string; retry?: unknown; retryAfter?: number }) => {
+    retain(entry.code!);
+    delete entry.code;
+    delete entry.retry;
+    delete entry.retryAfter;
+  };
+  if (record.result?.outcome === 'operator-setup-blocker' && obsolete.has(record.result.code)) {
+    retain(record.result.code);
+    record.compatibilityRecovery!.previousResult = record.result;
+    delete record.result;
+    record.phase = 'assessing';
+  }
+  if (record.blocker && obsolete.has(record.blocker)) {
+    retain(record.blocker);
+    delete record.blocker;
+    delete record.retry;
+    delete record.retryAfter;
+    if (record.phase === 'blocked') record.phase = record.result ? 'complete' : 'assessing';
+  }
+  const work = record.continuation;
+  if (work?.phase === 'blocked' && work.code && obsolete.has(work.code)) {
+    clear(work);
+    work.phase =
+      work.publicationAttempt || work.result?.outcome === 'done'
+        ? 'delivery'
+        : work.binding
+          ? 'running'
+          : work.attempt
+            ? 'prepared'
+            : 'waiting';
+  }
+  for (const event of record.feedback?.events ?? [])
+    if (event.phase === 'blocked' && event.code && obsolete.has(event.code)) {
+      clear(event);
+      // submitted operations must be reconciled by their existing receipt, never queued again.
+      event.phase = event.publicationAttempted
+        ? 'responded'
+        : event.turn || event.attempt
+          ? 'running'
+          : 'queued';
+    }
+}

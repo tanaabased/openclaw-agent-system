@@ -56,6 +56,20 @@ export function admitFeedback(
     : admitGitHubComment({ ...input, comment: source });
 }
 
+/** revalidate an already admitted exact source without applying today's author defaults. */
+export function admitRetainedFeedback(account: GitHubIdentity, source: GitHubCanonicalFeedback) {
+  const input = {
+    account,
+    allowSelf: true,
+    configuration: {
+      approvedFeedbackAuthors: source.author ? [source.author] : [],
+    },
+  };
+  return isReviewFeedback(source)
+    ? admitReviewFeedback({ ...input, comment: source })
+    : admitGitHubComment({ ...input, comment: source });
+}
+
 /** commit a complete provider read atomically; incomplete pages never advance the baseline. */
 export async function discoverFeedback(input: {
   state: FeedbackSourceState;

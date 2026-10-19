@@ -16,6 +16,7 @@ import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
+import recoverTaskBlockers from './recover-task-blockers.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
@@ -57,6 +58,16 @@ export const dispatchRecordProperties = {
     ),
   ),
   result: Type.Optional(assessmentResultSchema),
+  compatibilityRecovery: Type.Optional(
+    Type.Object(
+      {
+        version: Type.Literal(1),
+        codes: Type.Array(text, { maxItems: 16 }),
+        previousResult: Type.Optional(assessmentResultSchema),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
   assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema, { maxItems: 32 })),
   stageReceipt: Type.Optional(
@@ -287,6 +298,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       } catch {
         throw new Error('dispatch-state-invalid');
       }
+    }
+    this.validate(state);
+    for (let index = 0; index < state.records.length; index++) {
+      const candidate = structuredClone(state.records[index]!);
+      recoverTaskBlockers(candidate);
+      // incomplete native custody remains for its owning reconciliation route.
+      if (this.contract.validRecord(candidate)) state.records[index] = candidate;
     }
     this.validate(state);
     // discard obsolete presentation queues, preserving all assignment and assessment records.

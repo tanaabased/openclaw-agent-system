@@ -112,7 +112,7 @@ export default async function openClawDelivery(input: {
     base: input.base,
     head,
     authorId: connection.account.identity.nodeId,
-    policyDigest: record.manifestDigest,
+    policyDigest: previous?.binding.policyDigest ?? record.manifestDigest,
   };
   // the commit belongs to this attempt; the issue, session and branch own the delivery.
   const bindingChange =
@@ -126,7 +126,6 @@ export default async function openClawDelivery(input: {
       'branch',
       'base',
       'authorId',
-      'policyDigest',
     ]);
   if (bindingChange) throw new Error(bindingChange);
   const title = action.title ?? previous?.title;

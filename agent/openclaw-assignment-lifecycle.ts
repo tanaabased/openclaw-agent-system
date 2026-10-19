@@ -78,7 +78,7 @@ export default async function reconcileOpenClawLifecycle(input: {
     await authority.assertCurrent?.();
     const selected = await service.scope(manifest, workspace);
     if (
-      selected.manifestDigest !== current.manifestDigest ||
+      selected.workspace !== current.workspace ||
       (await service.dependencies.coordinator(manifest, workspace)) !== owner
     )
       throw new Error('retirement-workflow-changed');

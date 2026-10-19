@@ -2,14 +2,15 @@ import providerErrorMessage from './provider-error-message.ts';
 
 /** Public provider evidence is bounded and redacted before retention or formatting. */
 export interface ProviderDiagnostic {
-  provider: '1password' | 'github';
+  provider: '1password' | 'github' | 'git';
   operation:
     | 'credential-resolve'
     | 'client-create'
     | 'secret-resolve'
     | 'environment-read'
     | 'identity-check'
-    | 'api-request';
+    | 'api-request'
+    | 'git-command';
   classification:
     'missing-credential' | 'authentication' | 'permission' | 'rate-limit' | 'transport' | 'unknown';
   explanation: string;
@@ -57,7 +58,7 @@ export function providerDiagnostic(
       ? evidence.httpStatus
       : null;
   return {
-    provider: provider === 'github' ? 'github' : '1password',
+    provider: provider === 'github' || provider === 'git' ? provider : '1password',
     operation: [
       'credential-resolve',
       'client-create',
@@ -65,6 +66,7 @@ export function providerDiagnostic(
       'environment-read',
       'identity-check',
       'api-request',
+      'git-command',
     ].includes(operation)
       ? operation
       : 'api-request',

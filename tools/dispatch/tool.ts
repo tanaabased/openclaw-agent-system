@@ -1,9 +1,9 @@
 import workflowFailure, { workflowFailureScope } from '../../agent/workflow-failure.ts';
+import codexIssueNotice from '../../agent/codex-issue-notice.ts';
 import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
 
-import { automationHash } from '../../agent/automation-hash.ts';
 import { effectiveAutomation } from '../../agent/automation-projection.ts';
 import AutomationThreads, { automationThreadSelection } from '../../agent/automation-threads.ts';
 import type AutomationService from '../../agent/automation-service.ts';
@@ -212,10 +212,10 @@ export default function createDispatchTool(input: {
                       throw new Error('dispatch-native-session-diverged');
                     const fresh = await loaded(context);
                     if (
-                      automationHash(fresh.manifest) !== automationHash(binding.manifest) ||
+                      fresh.manifest.agent.id !== binding.manifest.agent.id ||
                       fresh.scope.workspaceDir !== binding.scope.workspaceDir
                     )
-                      throw new Error('dispatch-policy-changed');
+                      throw new Error('dispatch-workspace-binding-changed');
                   },
                 },
               )
@@ -230,6 +230,15 @@ export default function createDispatchTool(input: {
                   ...workflowFailureScope('openclaw', 'dispatch', params),
                 };
               });
+          }
+          if (result && 'providerDiagnostic' in result && result.providerDiagnostic) {
+            const failure = workflowFailure(result, openClawDispatchFailureCode(result));
+            result = {
+              ...result,
+              notice: codexIssueNotice({ event: 'failure', changed: true, ...failure }),
+              presentationInstructions:
+                'Show notice.message as the operation failure card. Preserve all retained work and reconcile uncertain writes before retrying.',
+            };
           }
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],

@@ -90,13 +90,17 @@ function fixture() {
     forbidden = false,
     changed = false;
   let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
-  const run = (action: AssessmentSummaryRequest, turnId = 'turn') =>
+  const run = (
+    action: AssessmentSummaryRequest,
+    turnId = 'turn',
+    authorityDigest = 'e'.repeat(64),
+  ) =>
     assessmentSummary({
       record,
       intake,
       action,
       turnId,
-      authorityDigest: 'e'.repeat(64),
+      authorityDigest,
       presentation: result.fullAssessment,
       authorize: async () => {
         if (forbidden) throw new Error('native-approval-denied');
@@ -271,6 +275,16 @@ describe('agent/assessment-summary', () => {
     );
 
     assert.equal(f.writes, 0);
+  });
+  it('should retain a prepared assessment summary when configuration provenance changes', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    assert.equal(
+      (await f.run({ operation: 'publish', digest }, 'turn', 'f'.repeat(64))).status,
+      'published',
+    );
+    assert.equal(f.writes, 1);
   });
   it('rejects lost authority and a different assessment turn without changing readiness', async () => {
     const f = fixture();

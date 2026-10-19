@@ -1,6 +1,9 @@
 import workflowRecovery from './workflow-recovery.ts';
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
-import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import {
+  providerDiagnostic as sanitizeProviderDiagnostic,
+  type ProviderDiagnostic,
+} from '../utils/provider-diagnostic.ts';
 import githubNotificationCard, {
   githubNotificationMarkdownText as text,
 } from '../channels/github/presentation/card.ts';
@@ -29,7 +32,43 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
   if (automation) return automation;
   const recovery = workflowRecovery(code, diagnostic);
   if (recovery)
-    return { severity: 'warning', title: 'This operation needs attention', ...recovery };
+    return {
+      severity:
+        diagnostic &&
+        ['authentication', 'permission', 'missing-credential'].includes(diagnostic.classification)
+          ? 'error'
+          : 'warning',
+      title:
+        diagnostic?.provider === 'git'
+          ? 'Git could not complete the operation'
+          : diagnostic?.provider === 'github'
+            ? 'GitHub could not complete the operation'
+            : 'This operation needs attention',
+      ...recovery,
+    };
+  if (code === 'dispatch-issue-inactive' || code === 'dispatch-assessment-retired')
+    return {
+      severity: 'warning',
+      title: 'Issue pending retirement',
+      summary:
+        'This issue is no longer active, so automated work is paused. Existing work is retained subject to its cleanup state.',
+      next: 'Have an approved assigner reassign the issue to resume it. Verify the retained chat and checkout before continuing; do not create replacements.',
+    };
+  if (code === 'dispatch-assessment-handed-off')
+    return {
+      severity: 'info',
+      title: 'Assessment handed off',
+      summary:
+        'This issue has moved beyond assessment. Its existing work and permissions are retained.',
+      next: 'Use the owning implementation or delivery context in this chat to continue the requested work.',
+    };
+  if (code === 'dispatch-reset-pending')
+    return {
+      severity: 'warning',
+      title: 'Issue reset pending',
+      summary: 'A retained reset must be reconciled before this operation can continue.',
+      next: 'Reconcile the existing reset and native receipt; preserve the chat and worktree.',
+    };
   if (code === 'dispatch-native-occurrence-unavailable')
     return {
       severity: 'warning',
@@ -191,7 +230,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       summary: 'The repository is ready, but Codex needs it registered as a local project.',
       next: 'Add the specified folder as the primary folder of a local Codex project. The next scheduled check will verify it and resume this assignment.',
     };
-  if (/activation|reconciliation|policy-changed/u.test(code))
+  if (/activation|reconciliation/u.test(code))
     return {
       severity: 'warning',
       title: 'Refresh the intake configuration',
@@ -261,11 +300,17 @@ export default function codexIssueNotice(input: {
   actionMarkdown?: string;
   facts?: { label: string; value: string }[];
 }) {
+  const diagnostic = input.providerDiagnostic
+    ? sanitizeProviderDiagnostic(
+        input.providerDiagnostic.provider,
+        input.providerDiagnostic.operation,
+        input.providerDiagnostic.classification,
+        input.providerDiagnostic,
+      )
+    : undefined;
   const code = input.code && /^[a-z][a-z0-9-]{0,127}$/u.test(input.code) ? input.code : undefined;
   const copy =
-    input.event === 'failure'
-      ? failure(code ?? 'unknown', input.providerDiagnostic)
-      : events[input.event];
+    input.event === 'failure' ? failure(code ?? 'unknown', diagnostic) : events[input.event];
   const facts = [
     ...(input.issue
       ? [{ label: 'Issue', value: `[${text(input.issue.label)}](${input.issue.url})` }]
@@ -273,6 +318,12 @@ export default function codexIssueNotice(input: {
     { label: 'What happened', value: copy.summary },
     { label: 'Next step', value: input.actionMarkdown ?? copy.next },
     ...(input.facts ?? []),
+    ...(diagnostic?.httpStatus
+      ? [{ label: 'HTTP status', value: String(diagnostic.httpStatus) }]
+      : []),
+    ...(diagnostic?.providerMessage
+      ? [{ label: 'Provider detail', value: text(diagnostic.providerMessage) }]
+      : []),
     ...(code ? [{ label: 'Technical detail', value: '`' + code + '`' }] : []),
   ];
   return {

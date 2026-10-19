@@ -16,20 +16,29 @@ OpenClaw keeps discovery inside one condition budget and wakes the coordinator f
 saved actionable work or a one-time progress/recovery card. After upgrading, run
 Install to reconcile the changed condition before relying on scheduled intake.
 
-Polling cadence, concurrent-item limits, and cleanup grace periods control execution;
-they do not revoke intake or feedback authority. Schedule changes still need Install
-to update the native timer. Runtime enablement, identities, repository scope, allowed
-actors, workflow mode, and cleanup enablement remain permission-bearing settings.
-A retained feedback reply is narrower: it checks runtime and workflow enablement,
-repository scope, and approved feedback actors. Assessment, implementation, cleanup,
-and review settings do not revoke that reply or grant it permission to change code.
+Intake settings govern new admissions. Disabling intake, changing allowlists, or
+changing default mode, models, skills, guidance, timing, or capacity does not revoke
+an active task. Existing Plan tasks stay assessment-only; Work and Auto retain their
+recorded scope and selections. Native execution still needs its owning chat and
+verified receipts. Pausing or removing a scheduler can stop future scheduled turns;
+it does not require renewed permission for an existing task.
+
+Continued work checks the receiving account, issue and repository identities,
+active lifecycle, native chat, and recorded checkout. Git and GitHub enforce access
+and write permissions. Managed failures expose bounded, redacted provider details
+and an HTTP status when supplied; native shell output remains native output.
+Explicit cancellation, native denial, changed source content, and uncertain writes
+retain their own stops and reconciliation requirements.
+
+Known configuration-only blockers in supported active records recover on read and
+persist through the next normal owner save, preserving chat, worktree, results, PRs,
+and submission receipts. Unsupported or corrupt schemas remain untouched and report
+a specific state error. Recovery never changes an old Plan grant to the current
+Work default or repeats an uncertain send or publication.
+
 Changed reply skill content or guidance can be loaded again with `compose`; the
 private answer is retained and the unattempted public draft is replaced. An attempted
 write must be reconciled before further publication.
-After current activation is reconciled through Install, supported unchanged original
-OpenClaw assignments can refresh their assessment in the existing chat and accept
-fresh authorization to continue, preserving the saved work. Changed or unprovable
-historical settings can still block continuation.
 
 ## Assignment lifecycle
 

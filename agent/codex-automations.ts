@@ -427,8 +427,8 @@ export async function inspectCodexDispatchActivation(
     return legacy?.payload.kind === 'prompt' && prompt === legacy.payload.prompt + marker;
   };
   if (
-    selected.cleanupOnly ||
-    selected.ledger.pending ||
+    (selected.cleanupOnly && (!retainedWork || !selected.policyBlocker)) ||
+    (!retainedWork && selected.ledger.pending) ||
     !record ||
     record.definition.kind !== 'heartbeat' ||
     (!retainedWork &&
@@ -442,47 +442,44 @@ export async function inspectCodexDispatchActivation(
   const saved = await readCodexAutomations(selected.codexHome);
   const actual = saved.find((entry) => entry.id === record.nativeId);
   if (
-    !actual ||
-    !savedMatches(
-      actual,
-      retainedWork
-        ? { ...record.definition, status: actual.definition.status }
-        : pausedRecovery
-          ? { ...record.definition, status: 'PAUSED' }
-          : record.definition,
-      selected.workspace,
-    )
+    !retainedWork &&
+    (!actual ||
+      !savedMatches(
+        actual,
+        pausedRecovery ? { ...record.definition, status: 'PAUSED' } : record.definition,
+        selected.workspace,
+      ))
   )
     throw new CodexAutomationError(activationCode);
   if (capability === 'intake' || capability === 'assessment')
     return { sourceThreadId: record.definition.targetThreadId };
-  // work activation is read back against the current definition; old consent never widens.
+  // New workflows require current activation; retained tasks keep their recorded scope.
   if (
     capability === 'review' ||
-    pausedRecovery ||
-    retainedWork ||
-    selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
-    (capability === 'feedback'
-      ? feedbackIdentities(
-          selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
-          selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
-        ).length === 0
-      : capability !== 'assessment-summary' &&
-        !['work', 'auto'].includes(
-          selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
-        )) ||
-    !job ||
-    job.payload.kind !== 'prompt' ||
-    record.removed ||
-    record.definition.status !== 'ACTIVE' ||
-    !matchesPrompt(record.definition.prompt)
+    (!retainedWork &&
+      (pausedRecovery ||
+        selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
+        (capability === 'feedback'
+          ? feedbackIdentities(
+              selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
+              selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
+            ).length === 0
+          : capability !== 'assessment-summary' &&
+            !['work', 'auto'].includes(
+              selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
+            )) ||
+        !job ||
+        job.payload.kind !== 'prompt' ||
+        record.removed ||
+        record.definition.status !== 'ACTIVE' ||
+        !matchesPrompt(record.definition.prompt)))
   )
     throw new Error('workflow-schedule-reconciliation-required');
   const authority = {
     workflow: 'issue-assignment' as const,
     automationId: record.nativeId,
     sourceThreadId: record.definition.targetThreadId,
-    policyDigest: notificationAuthorityDigest(selected.loaded.manifest.github.notifications),
+    policyDigest: notificationAuthorityDigest(selected.loaded.manifest.github?.notifications),
     definitionDigest: automationHash(record.definition),
   };
   return {

@@ -1,9 +1,8 @@
-import { matchesFeedbackAuthority } from './notification-authority.ts';
 import { Type, type Static } from 'typebox';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
 import { automationHash } from './automation-hash.ts';
-import { admitFeedback, feedbackRevision } from './feedback-source.ts';
+import { admitRetainedFeedback, feedbackRevision } from './feedback-source.ts';
 import { feedbackResultSchema } from './feedback-state.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
@@ -155,10 +154,8 @@ export async function authorizeFeedback(input: {
   assertCurrent(): Promise<void>;
   reauthorize?(): Promise<void>;
 }) {
-  const { record, event, policy, provider, intake } = input;
+  const { record, event, provider, intake } = input;
   await input.assertCurrent();
-  if (!matchesFeedbackAuthority(event.policyDigest, policy))
-    throw new Error('feedback-authority-changed');
   const owner = intake.repository.owner.login,
     name = intake.repository.name;
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
@@ -190,7 +187,7 @@ export async function authorizeFeedback(input: {
   if (exact.author?.nodeId !== source.author?.nodeId)
     throw new Error('feedback-source-author-changed');
   if (feedbackRevision(exact) !== event.revision) throw new Error('feedback-source-changed');
-  if (admitFeedback(policy, provider.identity, exact).disposition !== 'approved')
+  if (admitRetainedFeedback(provider.identity, exact).disposition !== 'approved')
     throw new Error('feedback-source-no-longer-eligible');
   return source;
 }

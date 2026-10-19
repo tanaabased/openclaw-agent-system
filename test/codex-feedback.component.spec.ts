@@ -1088,7 +1088,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(saved.publicationAttempted, undefined);
     assert.equal(saved.phase, 'blocked');
   });
-  it('should release retained feedback when its configured authority is removed', async () => {
+  it('should retain admitted feedback when discovery configuration is removed', async () => {
     await prepare();
     const manifestPath = join(root, 'workspace', 'agent.yaml');
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
@@ -1109,8 +1109,8 @@ describe('agent/codex-feedback', () => {
       }),
     );
     assert.ok(current.policy);
-    assert.equal((await call('next')).status, 'disabled');
-    assert.equal((await store.read())!.records[0]!.feedback!.events[0]!.phase, 'blocked');
+    assert.equal((await call('next')).status, 'idle');
+    assert.notEqual((await store.read())!.records[0]!.feedback!.events[0]!.phase, 'blocked');
   });
   it('should retain a denied native send without another prepared request', async () => {
     await prepare();

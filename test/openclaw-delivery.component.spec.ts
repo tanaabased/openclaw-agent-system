@@ -325,13 +325,13 @@ describe('agent/openclaw-delivery', () => {
     assert.deepEqual(record.work!.delivery, retained);
     assert.equal(pushes, 1);
   });
-  it('should still reject a changed session or policy on an existing delivery', async () => {
+  it('should reject a changed session while retaining delivery across configuration changes', async () => {
     await publish();
     record.sessionCreation!.sessionId = 'other-session';
     await assert.rejects(request('prepare'), /delivery-session-changed/);
     record.sessionCreation!.sessionId = 'issue-session';
     record.manifestDigest = 'c'.repeat(64);
-    await assert.rejects(request('prepare'), /delivery-policy-changed/);
+    assert.equal((await request('prepare')).status, 'prepared');
     assert.equal(pushes, 1);
   });
   it('should fast forward the verified branch while retaining the same pr', async () => {

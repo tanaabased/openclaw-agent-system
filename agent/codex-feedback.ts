@@ -1,4 +1,5 @@
-import { matchesFeedbackAuthority } from './notification-authority.ts';
+import retainedIntakePolicy from './retained-intake-policy.ts';
+import { admitRetainedFeedback } from './feedback-source.ts';
 import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -23,7 +24,7 @@ import feedbackResponse, {
   feedbackReplyPresentation,
 } from '../channels/github/presentation/feedback-response.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
-import { admitCodexFeedback, feedbackRevision } from './codex-feedback-source.ts';
+import { feedbackRevision } from './codex-feedback-source.ts';
 import { feedbackResultSchema } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake } from './codex-intake.ts';
@@ -83,46 +84,36 @@ export default async function runCodexFeedback(
     throw new Error('feedback-request-invalid');
   const current = await selectCodexIntake(pluginData, deps);
   const operatorPublication = input.action === 'publish-approved';
-  const policy = current.manifest.github?.notifications;
+  const admittedState = await current.store.read();
+  const selected =
+    current.policy ??
+    (admittedState ? retainedIntakePolicy(current.manifest, admittedState, 'codex') : undefined);
+  const policy = selected?.policy;
+  const acceptingFeedback = Boolean(
+    current.policy &&
+    policy &&
+    feedbackIdentities(policy.issueAssignment?.allowed ?? [], policy.issueAssignment?.feedback)
+      .length,
+  );
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  if (!policy || !selected) return { status: 'disabled' };
   if (
-    policy?.schemaVersion !== 2 ||
-    !feedbackIdentities(policy.issueAssignment?.allowed ?? [], policy.issueAssignment?.feedback)
-      .length
-  ) {
-    if (input.action === 'next') {
-      const previous = await store.read();
-      if (
-        !previous.records.some((record) =>
-          record.feedback?.events.some((event) =>
-            ['queued', 'prepared', 'running', 'responded'].includes(event.phase),
-          ),
-        )
-      )
-        return { status: 'disabled' };
-      await store.exclusive(async (state, save) => {
-        let changed = false;
-        for (const record of state.records)
-          for (const event of record.feedback?.events ?? []) {
-            if (['queued', 'prepared', 'running', 'responded'].includes(event.phase)) {
-              event.phase = 'blocked';
-              event.code = 'feedback-authority-revoked';
-              changed = true;
-            }
-          }
-        if (changed) await save();
-      });
-      return { status: 'disabled' };
-    }
-    throw new Error('feedback-authority-revoked');
-  }
+    !acceptingFeedback &&
+    input.action === 'next' &&
+    !(await store.read()).records.some((record) =>
+      record.feedback?.events.some((event) =>
+        ['queued', 'prepared', 'running', 'responded'].includes(event.phase),
+      ),
+    )
+  )
+    return { status: 'disabled' };
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('feedback-caller-required');
   const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
     false,
-    false,
+    true,
     'feedback',
   );
   const schedule = activation.schedule;
@@ -153,7 +144,7 @@ export default async function runCodexFeedback(
     const budget = new DiscoveryBudget();
     const scanTime = (deps.now ?? Date.now)();
     const scans =
-      snapshot && occurrence
+      snapshot && occurrence && acceptingFeedback
         ? await scanCodexFeedback({
             state: snapshot,
             budget,
@@ -173,11 +164,11 @@ export default async function runCodexFeedback(
         pluginData,
         { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
         false,
-        false,
+        true,
         'feedback',
       );
-      if (automationHash(fresh.schedule) !== automationHash(schedule))
-        throw new Error('feedback-authority-changed');
+      if (fresh.sourceThreadId !== activation.sourceThreadId)
+        throw new Error('feedback-schedule-owner-changed');
     }
     return await store.exclusive(async (state, save, signal) => {
       if (occurrence) {
@@ -208,7 +199,7 @@ export default async function runCodexFeedback(
         await save();
       }
       const intake = await current.store.read();
-      if (!intake || !current.policy) throw new Error('feedback-intake-missing');
+      if (!intake) throw new Error('feedback-intake-missing');
       const now = (deps.now ?? Date.now)();
       const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
         current.workspace,
@@ -305,16 +296,13 @@ export default async function runCodexFeedback(
               pluginData,
               { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
               false,
-              false,
+              true,
               'feedback',
             );
-            if (
-              automationHash(fresh.schedule) !== automationHash(schedule) ||
-              !matchesFeedbackAuthority(event.policyDigest, policy)
-            )
-              throw new Error('feedback-authority-changed');
+            if (fresh.sourceThreadId !== activation.sourceThreadId)
+              throw new Error('feedback-schedule-owner-changed');
             const assignment = await inspectFeedbackAssignment(
-              current.policy!,
+              selected,
               admitted,
               provider.client,
               record,
@@ -355,10 +343,7 @@ export default async function runCodexFeedback(
               throw new Error('feedback-source-author-changed');
             if (feedbackRevision(exact) !== event.revision)
               throw new Error('feedback-source-changed');
-            if (
-              admitCodexFeedback(policy, provider.comments.identity, exact).disposition !==
-              'approved'
-            )
+            if (admitRetainedFeedback(provider.comments.identity, exact).disposition !== 'approved')
               throw new Error('feedback-source-no-longer-eligible');
           };
           await authorize();
@@ -472,7 +457,7 @@ export default async function runCodexFeedback(
             };
           }
           if (input.action === 'context') {
-            const admission = admitCodexFeedback(policy, provider.comments.identity, source);
+            const admission = admitRetainedFeedback(provider.comments.identity, source);
             if (admission.disposition !== 'approved') throw new Error('feedback-source-changed');
             return {
               status: 'verified',

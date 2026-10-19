@@ -215,7 +215,7 @@ export async function scanOpenClawFeedback(input: {
         break;
       }
       feedback.code = openClawDispatchFailureCode(error);
-      if (/revoked|policy-changed|owner-changed/.test(feedback.code)) {
+      if (/revoked|owner-changed/.test(feedback.code)) {
         for (const event of feedback.events)
           if (!['published', 'blocked'].includes(event.phase)) {
             event.phase = 'blocked';

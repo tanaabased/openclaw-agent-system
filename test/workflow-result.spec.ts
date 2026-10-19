@@ -115,7 +115,12 @@ describe('agent/workflow-result', () => {
       capabilities: ['implementation', 'publication'],
     };
     requireWorkflowSchedule(fresh, current, 'publication');
-    for (const key of Object.keys(current))
+    requireWorkflowSchedule(
+      fresh,
+      { ...current, policyDigest: 'changed', definitionDigest: 'changed' },
+      'publication',
+    );
+    for (const key of ['workflow', 'automationId', 'sourceThreadId'])
       assert.throws(
         () => requireWorkflowSchedule(fresh, { ...current, [key]: 'changed' }, 'publication'),
         /workflow-schedule-reconciliation-required/,

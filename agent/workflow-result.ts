@@ -122,16 +122,12 @@ export function requireWorkflowSchedule(
     !saved.capabilities.includes(capability) ||
     !current.automationId ||
     !current.sourceThreadId ||
-    !current.policyDigest ||
-    !current.definitionDigest ||
     saved.automationId !== current.automationId ||
     saved.workflow !== current.workflow ||
     (capability !== 'publication' &&
       capability !== 'feedback' &&
       (capability === 'review') !== (current.workflow === 'review-request')) ||
-    saved.sourceThreadId !== current.sourceThreadId ||
-    saved.policyDigest !== current.policyDigest ||
-    saved.definitionDigest !== current.definitionDigest
+    saved.sourceThreadId !== current.sourceThreadId
   )
     throw new Error('workflow-schedule-reconciliation-required');
 }

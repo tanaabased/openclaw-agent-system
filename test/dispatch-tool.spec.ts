@@ -11,6 +11,7 @@ import {
   privateStateFileLockBusyErrorCode,
   privateStateFileLockLostErrorCode,
 } from '../core/private-state-file-lock.ts';
+import GitCommandError from '../tools/git/command-error.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 
 interface HookContext {
@@ -187,6 +188,24 @@ describe('tools/dispatch/tool', () => {
       });
       assert.ok(!JSON.stringify(result).includes('private fixture'));
     }
+  });
+
+  it('should return a redacted git provider failure card from the native dispatch boundary', async () => {
+    const f = fixture();
+    f.adapter.service.run = async () => {
+      throw new GitCommandError('fetch', {
+        exitCode: 128,
+        stderr: 'remote: Permission to owner/repo denied. token=ghp_private',
+      });
+    };
+    const call = { ...event, params: { action: 'next' } };
+    await f.hook(call, coordinator);
+    const result = await f.build().execute(call.toolCallId, call.params);
+    const details = result.details as { notice: { message: string; severity: string } };
+    assert.equal(details.notice.severity, 'error');
+    assert.match(details.notice.message, /❌|Git could not/);
+    assert.match(details.notice.message, /Permission to owner/);
+    assert.doesNotMatch(JSON.stringify(result), /ghp_private/);
   });
 
   it('should allow the read-only predicate without a conversation session id', async () => {

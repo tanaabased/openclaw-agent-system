@@ -78,7 +78,9 @@ changed blocker once, suppress identical repeats, and show verified recovery onc
 Use native conversation destinations for OpenClaw issue links. Omit unknown counts rather than showing zero.
 Warnings and errors explain the affected item or intake operation and its next action;
 include the exact project folder when registration is needed and a bounded diagnostic
-when useful. Preserve successful starts in a report that also contains an obstacle.
+when useful. Provider failures name Git or GitHub, include its safe bounded detail
+and supplied HTTP status, and distinguish access failures from temporary delays.
+Preserve successful starts in a report that also contains an obstacle.
 
 ```markdown
 > ## 💡 Intake complete — 2 issues started

@@ -717,37 +717,9 @@ describe('agent/codex-dispatch', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
   }
 
-  it('should stop queued dispatch before credentials and resume the retained assignment', async () => {
+  it('should preserve admitted dispatch after intake is disabled and still stop a closed issue', async () => {
     const selected = await next();
     await workflow(false);
-    const blocked = {
-      connect: async () => {
-        throw new Error('must not authenticate');
-      },
-    };
-    await assert.rejects(request('next', { projects }, blocked), /dispatch-policy-disabled/);
-    await assert.rejects(
-      request(
-        'prepare',
-        {
-          id: selected.id,
-          digest: selected.digest,
-          title: 'repair contained behavior',
-          assessment: { complexity: 'medium', reason: 'Retained selection.' },
-        },
-        blocked,
-      ),
-      /dispatch-policy-disabled/,
-    );
-    const stopped = await request('inspect');
-    assert.equal((stopped.records as { id: string }[])[0]!.id, selected.id);
-    await workflow(true);
-    await assert.rejects(next(), /dispatch-policy-reconciliation-required/);
-    await runCodexIntake(pluginData, true, {
-      codexHome,
-      now: () => now,
-      connect: async () => fixture.client,
-    });
     const resumed = await next();
     assert.equal(resumed.status, 'routing-required');
     assert.equal(resumed.id, selected.id);
@@ -782,7 +754,7 @@ describe('agent/codex-dispatch', () => {
       now += 60000;
       const scan = await runCodexIntake(pluginData, false, disabled);
       assert.equal('code' in scan && scan.code, 'intake-policy-disabled');
-      await assert.rejects(next(), /dispatch-policy-disabled/);
+      assert.equal((await next()).status, 'idle');
       const reported = await report();
       assert.equal(reported.status, 'report');
       assert.match(String(reported.response), /intake-policy-disabled/);
@@ -800,33 +772,30 @@ describe('agent/codex-dispatch', () => {
     assert.equal(records[0]!.phase, 'assessing');
   });
 
-  it('should discard a creation request when policy changes during preparation', async () => {
+  it('should retain an admitted creation when intake is disabled during preparation', async () => {
     const selected = await next();
     const connect = deps.connect!;
-    await assert.rejects(
-      request(
-        'prepare',
-        {
-          id: selected.id,
-          digest: selected.digest,
-          title: 'repair contained behavior',
-          assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    const prepared = await request(
+      'prepare',
+      {
+        id: selected.id,
+        digest: selected.digest,
+        title: 'repair contained behavior',
+        assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+      },
+      {
+        connect: async (workspace, signal) => {
+          await workflow(false);
+          return connect(workspace, signal);
         },
-        {
-          connect: async (workspace, signal) => {
-            await workflow(false);
-            return connect(workspace, signal);
-          },
-        },
-      ),
-      /dispatch-policy-changed/,
+      },
     );
-    const retained = (await request('inspect')).records as { phase: string; request?: unknown }[];
-    assert.equal(retained[0]!.phase, 'routing');
-    assert.equal(retained[0]!.request, undefined);
+    assert.equal(prepared.status, 'prepared');
+    const retained = (await request('inspect')).records as { request?: unknown }[];
+    assert.ok(retained[0]!.request);
   });
 
-  it('should still enforce current authority when a disabled workflow retains a child', async () => {
+  it('should retain a child task when intake and assigner defaults change', async () => {
     const prepared = await prepare();
     created();
     const child = { threadId: 'issue-thread' };
@@ -837,13 +806,10 @@ describe('agent/codex-dispatch', () => {
       allowed: [{ login: 'other', 'node-id': 'U_other' }],
     });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-    await assert.rejects(
-      request('result', { id: prepared.id, result }, child),
-      /dispatch-assignment-actor-not-allowed/,
-    );
+    assert.equal((await request('result', { id: prepared.id, result }, child)).status, 'recorded');
     const records = (await request('inspect')).records as { phase: string; result?: unknown }[];
-    assert.equal(records[0]!.phase, 'assessing');
-    assert.equal(records[0]!.result, undefined);
+    assert.equal(records[0]!.phase, 'complete');
+    assert.deepEqual(records[0]!.result, result);
   });
 
   for (const phase of ['creating', 'assessing', 'complete'] as const)
@@ -2628,6 +2594,12 @@ describe('agent/codex-dispatch', () => {
       connect: async () => fixture.client,
     });
     const current = await selectCodexIntake(pluginData, deps);
+    // this fixture represents a fresh admission in the requested mode. Changing
+    // the default after a plan admission must never grant implementation.
+    await current.store.exclusive(async (state, save) => {
+      for (const record of state!.records) record.evidence.mode = mode;
+      await save(state!);
+    });
     const authority = {
       workflow: 'issue-assignment' as const,
       automationId: 'native-intake',
@@ -2812,6 +2784,30 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
+  it('should retain active work when notifications and model defaults are removed', async () => {
+    const work = await workIssue();
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    delete configured.github.notifications;
+    delete configured.models;
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+  });
+
+  it('should keep a plan admission assessment-only when the default becomes work', async () => {
+    const configured = structuredClone(manifest);
+    Object.assign(configured.github.notifications['issue-assignment'], { mode: 'work' });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const context = await request('context', { id: prepared.id }, { threadId: native!.id });
+    assert.equal(context.mode, 'plan');
+    const saved = (await request('inspect')).records as { continuation?: unknown }[];
+    assert.equal(saved[0]!.continuation, undefined);
+  });
+
   it('should adopt auto proceed once and retain its complete source, selection, and routing across restart', async () => {
     const work = await autoIssue();
     const assessment = await request('context', { id: work.id }, { threadId: native!.id });
@@ -2958,13 +2954,13 @@ describe('agent/codex-dispatch', () => {
     assert.equal('code' in stopped && stopped.code, 'continuation-assessment-changed');
   });
 
-  it('should stop auto when assessment guidance changes without silently readopting it', async () => {
+  it('should retain auto assessment guidance when the default file changes', async () => {
     await writeFile(join(workspace, 'assessment.md'), 'Bounded original guidance.');
     const work = await autoIssue(autoResult, { file: 'assessment.md' });
     await writeFile(join(workspace, 'assessment.md'), 'Different decision guidance.');
-    const stopped = await work.run('next');
-    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
-    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
   });
 
   it('should stop auto when the assessment skill changes', async () => {
@@ -3062,8 +3058,9 @@ describe('agent/codex-dispatch', () => {
     const changed = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     changed.github.notifications['issue-assignment'].mode = 'work';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(changed));
-    const stopped = await work.run('next');
-    assert.equal('code' in stopped && stopped.code, 'continuation-authority-changed');
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
   });
 
   it('should preserve auto native denial without another continuation', async () => {
@@ -3434,19 +3431,21 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'idle');
   });
 
-  it('should retain an occupied slot until work completes and stop when guidance changes', async () => {
+  it('should retain an occupied slot and original guidance when its file changes', async () => {
     await writeFile(join(workspace, 'implementation.md'), 'Original implementation guidance.');
     const work = await workIssue(result, { file: 'implementation.md' });
     await next();
     assert.match(String((await report()).response), /Slots:\*\* 1\/2/);
     await writeFile(join(workspace, 'implementation.md'), 'Changed implementation guidance.');
-    const stopped = await work.run('next');
-    assert.equal(stopped.status, 'blocked');
-    assert.equal('code' in stopped && stopped.code, 'continuation-selection-changed');
-    now += 300001;
-    await runCodexIntake(pluginData, false, deps);
-    await next();
-    assert.match(String((await report()).response), /Slots:\*\* 0\/2/);
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    const retained = await work.run('context', {}, true);
+    assert.equal(retained.status, 'verified');
+    assert.equal(
+      'implementation' in retained && retained.implementation?.guidance?.content,
+      'Original implementation guidance.',
+    );
+    assert.match(String((await report()).response), /Slots:\*\* 1\/2/);
   });
 
   it('should stop on native denial and never resend the denied continuation', async () => {

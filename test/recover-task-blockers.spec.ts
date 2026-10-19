@@ -1,0 +1,72 @@
+import assert from 'node:assert/strict';
+
+import recoverTaskBlockers from '../agent/recover-task-blockers.ts';
+
+describe('agent/recover-task-blockers', () => {
+  const record = () => ({
+    request: { exact: 'original native request' },
+    threadId: 'issue-chat',
+    worktree: '/retained',
+    effective: { status: 'verified' },
+    phase: 'blocked',
+    blocker: 'dispatch-policy-changed',
+    continuation: {
+      phase: 'blocked',
+      code: 'continuation-authority-changed',
+      attempt: { id: 'original-send' },
+    },
+  });
+  it('should recover supported configuration blockers without replacing native identities or attempts', () => {
+    const original = record();
+    const expected = structuredClone(original);
+    recoverTaskBlockers(original);
+    assert.equal(original.phase, 'assessing');
+    assert.equal(original.blocker, undefined);
+    assert.equal(original.continuation.phase, 'prepared');
+    assert.deepEqual(original.request, expected.request);
+    assert.deepEqual(original.continuation.attempt, expected.continuation.attempt);
+    assert.equal(original.threadId, expected.threadId);
+    assert.equal(original.worktree, expected.worktree);
+    const once = structuredClone(original);
+    recoverTaskBlockers(original);
+    assert.deepEqual(original, once);
+  });
+  it('should preserve inactive tasks, explicit cancellation and native denial', () => {
+    for (const inactive of [
+      { retirement: { reason: 'assignment-removed' } },
+      { retired: { at: 1 } },
+      { reset: { at: 1 } },
+    ]) {
+      const value = { ...record(), ...inactive };
+      const before = structuredClone(value);
+      recoverTaskBlockers(value);
+      assert.deepEqual(value, before);
+    }
+    for (const [phase, code] of [
+      ['cancelled', 'continuation-authority-changed'],
+      ['blocked', 'continuation-native-send-failed'],
+    ] as const) {
+      const value = {
+        ...record(),
+        blocker: 'native-approval-denied',
+        continuation: { phase, code },
+      };
+      const before = structuredClone(value);
+      recoverTaskBlockers(value);
+      assert.deepEqual(value, before);
+    }
+  });
+  it('should retain uncertain feedback publication for reconciliation instead of sending again', () => {
+    const value = {
+      ...record(),
+      feedback: {
+        events: [
+          { phase: 'blocked', code: 'feedback-authority-changed', publicationAttempted: true },
+        ],
+      },
+    };
+    recoverTaskBlockers(value);
+    assert.equal(value.feedback.events[0]!.phase, 'responded');
+    assert.equal(value.feedback.events[0]!.publicationAttempted, true);
+  });
+});

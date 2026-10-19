@@ -1,4 +1,3 @@
-import { matchesIntakePolicy, originalIntakePolicyDigest } from './assignment-intake-policy.ts';
 import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import workflowStatus from './workflow-status.ts';
@@ -15,6 +14,7 @@ import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import { randomUUID } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 
 import type { Static } from 'typebox';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -50,7 +50,8 @@ import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
 import feedbackResponse from '../channels/github/presentation/feedback-response.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingAssignments, { issueKey } from './dispatch-pending.ts';
-import revalidateAssignment from './dispatch-assignment.ts';
+import { inspectActiveIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import retainedIntakePolicy from './retained-intake-policy.ts';
 import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
@@ -192,31 +193,13 @@ export default class OpenClawDispatch {
   async scope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
     const admitted = await current.store.read();
-    if (
-      !current.selected ||
-      !admitted ||
-      !matchesIntakePolicy(admitted.policyDigest, current.selected)
-    )
-      throw new Error('dispatch-intake-activation-required');
-    if (current.selected.policy.issueAssignment?.mode !== 'plan')
-      throw new Error('dispatch-plan-mode-required');
+    if (!admitted) throw new Error('dispatch-intake-activation-required');
+    const selected = current.selected ?? retainedIntakePolicy(manifest, admitted, 'openclaw');
     return {
       ...current,
       admitted,
-      policy: current.selected,
-      manifestDigest: automationHash({ policy: current.selected.digest, models: manifest.models }),
-      legacyManifestDigest: automationHash({
-        policy: current.selected.legacyDigest,
-        models: manifest.models,
-      }),
-      // the original format cannot prove a non-default cleanup grant.
-      originalManifestDigest:
-        (current.selected.policy.cleanup?.enabled ?? true)
-          ? automationHash({
-              policy: originalIntakePolicyDigest(manifest),
-              models: manifest.models,
-            })
-          : undefined,
+      policy: selected,
+      manifestDigest: automationHash({ policy: selected.digest, models: manifest.models }),
       journal: new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope),
     };
   }
@@ -234,21 +217,15 @@ export default class OpenClawDispatch {
       manifest.agent.id,
       'service',
     );
+    if (fresh.status !== 'loaded') throw new Error('dispatch-manifest-unavailable');
     if (
-      fresh.status !== 'loaded' ||
       fresh.scope.workspaceDir !== current.workspace ||
-      (await this.scope(fresh.manifest, fresh.scope.workspaceDir)).manifestDigest !==
-        current.manifestDigest ||
-      (!feedback &&
-        current.manifestDigest !== record.manifestDigest &&
-        current.legacyManifestDigest !== record.manifestDigest &&
-        current.originalManifestDigest !== record.manifestDigest) ||
-      record.retired ||
-      record.retirement ||
-      record.reset ||
-      (record.handoff && !work && !feedback)
+      fresh.manifest.agent.id !== manifest.agent.id
     )
-      throw new Error('dispatch-policy-changed');
+      throw new Error('dispatch-workspace-binding-changed');
+    if (record.retired || record.retirement) throw new Error('dispatch-issue-inactive');
+    if (record.reset) throw new Error('dispatch-reset-pending');
+    if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
     if (!intake) throw new Error('dispatch-admission-missing');
     return { current, intake };
@@ -291,9 +268,12 @@ export default class OpenClawDispatch {
         { manifest, workspaceDir: current.workspace },
         signal ?? AbortSignal.timeout(25000),
       ));
-    const repo = feedback
-      ? await revalidateFeedbackAssignment(current.policy, intake, client, record)
-      : await revalidateAssignment(current.policy, intake, client);
+    const repo =
+      (record.sessionCreation?.verified || record.effective?.status === 'verified') && !feedback
+        ? (await inspectActiveIssue(intake, client)).repo
+        : feedback
+          ? await revalidateFeedbackAssignment(current.policy, intake, client, record)
+          : (await inspectAdmittedIssue(intake, client)).repo;
     const worktreeInput = {
       agentId: manifest.agent.id,
       cloneUrl: repo.cloneUrl,
@@ -304,8 +284,10 @@ export default class OpenClawDispatch {
       repositoryDatabaseId: repo.databaseId,
     };
     if (record.worktree) {
-      const verified = await this.dependencies.worktrees.inspectGitHub(worktreeInput);
-      if (verified?.path !== record.worktree) throw new Error('dispatch-worktree-diverged');
+      const path = await realpath(record.worktree).catch((cause) => {
+        throw new Error('dispatch-worktree-unavailable', { cause });
+      });
+      if (path !== record.worktree) throw new Error('dispatch-worktree-diverged');
     }
     return { client, repo, intake, worktreeInput };
   }
@@ -324,10 +306,11 @@ export default class OpenClawDispatch {
 
   private async reportScope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
-    if (!current.selected) throw new Error('dispatch-plan-mode-required');
+    const state = await current.store.read();
+    if (!state) throw new Error('dispatch-intake-record-missing');
     return {
       ...current,
-      selected: current.selected,
+      selected: current.selected ?? retainedIntakePolicy(manifest, state, 'openclaw'),
       journal: new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope),
     };
   }
@@ -365,9 +348,6 @@ export default class OpenClawDispatch {
       const assertCurrent = async () => {
         authority.signal?.throwIfAborted();
         await authority.assertCurrent?.();
-        if (!openClawFeedbackEnabled(manifest)) throw new Error('feedback-authority-revoked');
-        if ((await this.dependencies.coordinator(manifest, workspace)) !== record.sourceThreadId)
-          throw new Error('feedback-schedule-owner-changed');
         await this.validateLocal(manifest, workspace, record, false, true);
       };
       await assertCurrent();
@@ -396,7 +376,7 @@ export default class OpenClawDispatch {
           request,
           config: this.dependencies.config(),
           provider,
-          policy: manifest.github!.notifications!,
+          policy: (await this.scope(manifest, workspace)).policy.policy,
           intake,
           workspace,
           now,
@@ -437,7 +417,7 @@ export default class OpenClawDispatch {
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
         event.phase !== 'published' &&
-        /revoked|authority-changed|policy-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
+        /revoked|authority-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-(?:changed|interrupted)|resource-missing|denied|turn-(?:ended|failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {
@@ -706,7 +686,13 @@ export default class OpenClawDispatch {
       feedbackChild;
     if (workAction && !operator) throw new Error('dispatch-operator-required');
     const current = await this.scope(manifest, workspace);
-    const sourceThreadId = await this.dependencies.coordinator(manifest, current.workspace);
+    const retained =
+      childAction && 'id' in input
+        ? (await current.journal.read()).records.find((record) => record.id === input.id)
+        : undefined;
+    const sourceThreadId =
+      retained?.sourceThreadId ??
+      (await this.dependencies.coordinator(manifest, current.workspace));
     let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
     let enteredTransaction = false;
     if (input.action === 'retry' && !operator) throw new Error('dispatch-operator-required');
@@ -776,11 +762,8 @@ export default class OpenClawDispatch {
         }
         if (scans.length) {
           await authority.assertCurrent?.();
-          if (
-            (await this.scope(manifest, workspace)).manifestDigest !== current.manifestDigest ||
-            (await this.dependencies.coordinator(manifest, current.workspace)) !== sourceThreadId
-          )
-            throw new Error('feedback-authority-changed');
+          if ((await this.dependencies.coordinator(manifest, current.workspace)) !== sourceThreadId)
+            throw new Error('feedback-schedule-owner-changed');
           if (applyOpenClawFeedbackScans(state.records, scans)) await save();
         }
         if (input.action === 'inspect')
@@ -1305,17 +1288,12 @@ export default class OpenClawDispatch {
                 redact: redactFeedback,
                 authorize: async () => {
                   await childAuthority.assertCurrent();
-                  if (
-                    (await this.dependencies.coordinator(manifest, current.workspace)) !==
-                    record.sourceThreadId
-                  )
-                    throw new Error('assessment-summary-authority-changed');
                   await this.validate(manifest, workspace, record, false, false, undefined, signal);
                 },
                 select: async (previous) =>
                   (
                     await selectFeedbackStage({
-                      policy: manifest.github!.notifications!,
+                      policy: current.policy.policy,
                       workflow: 'issue-assignment',
                       workspace: current.workspace,
                       observedAt: previous?.observedAt ?? now,

@@ -88,11 +88,8 @@ export default async function assessmentSummary(input: {
     if (action.operation !== 'reconcile') {
       if (record.resultTurnId !== input.turnId)
         throw new Error('assessment-summary-assessment-turn-required');
-      if (
-        summary &&
-        (summary.turnId !== input.turnId || summary.authorityDigest !== input.authorityDigest)
-      )
-        throw new Error('assessment-summary-authority-changed');
+      if (summary && summary.turnId !== input.turnId)
+        throw new Error('assessment-summary-assessment-turn-required');
       const selection = await input.select(summary?.selection);
       if (summary && automationHash(selection) !== automationHash(summary.selection)) {
         if (action.operation !== 'compose')

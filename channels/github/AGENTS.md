@@ -58,6 +58,10 @@ conform.
   verifying retained resources before use. Do not silently self-assign to undo a
   stop, infer active status from a chat's existence, or promise resources survived
   because retirement is still pending.
+- Prefer the issue worktree for changes, while permitting task work in the bound
+  workspace, approved local repositories, and temporary attempt directories. Verify
+  the actual repository, branch, and destination before commits or publication;
+  changing default worktree roots must not invalidate an existing checkout.
 - Confine an issue-specific failure to that issue or operation. Stop a whole pass
   only when the observed condition actually applies to the whole pass.
 
