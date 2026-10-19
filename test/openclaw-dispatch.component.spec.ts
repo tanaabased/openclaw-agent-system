@@ -2824,16 +2824,22 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).work, undefined);
     assert.deepEqual((await record()).result, plan);
   });
-  async function feedbackOwner() {
+  async function feedbackOwner(implementation = true) {
+    if (!implementation) {
+      manifest.github!.notifications!.issueAssignment!.feedback = true;
+      await service.dependencies.intake.run(manifest, root, 'activate');
+    }
     const { id, who } = await operatorFollowup();
-    const handoff = {
-      action: 'handoff' as const,
-      id,
-      permission: 'implementation-and-publication' as const,
-    };
-    const preview = await service.run(manifest, root, who, handoff, true);
-    assert.ok('digest' in preview);
-    await service.run(manifest, root, who, { ...handoff, digest: preview.digest }, true);
+    if (implementation) {
+      const handoff = {
+        action: 'handoff' as const,
+        id,
+        permission: 'implementation-and-publication' as const,
+      };
+      const preview = await service.run(manifest, root, who, handoff, true);
+      assert.ok('digest' in preview);
+      await service.run(manifest, root, who, { ...handoff, digest: preview.digest }, true);
+    }
     const oldDigest = (await record()).manifestDigest;
     manifest.github!.notifications!.issueAssignment!.feedback = true;
     await service.dependencies.intake.run(manifest, root, 'activate');
@@ -2864,7 +2870,7 @@ describe('agent/openclaw issue dispatch', () => {
         find: async () => undefined,
       },
     });
-    await service.run(manifest, root, coordinator, { action: 'next' });
+    if (implementation) await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).manifestDigest, oldDigest);
     comments.push({
       nodeId: 'C_feedback',
@@ -2879,6 +2885,28 @@ describe('agent/openclaw issue dispatch', () => {
     coordinator.runId = 'feedback-run';
     return { id, who, comments };
   }
+  it('should dispatch assessment-only feedback on the next pass after completion reconciliation', async () => {
+    const { id } = await feedbackOwner(false);
+    assert.equal((await record()).handoff, undefined);
+    assert.equal((await record()).assessmentTurn?.status, 'consumed');
+    await service.check(manifest, root);
+    assert.equal((await record()).feedback?.events.length, 1);
+    const recovery = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(recovery.status, 'reconcile-required');
+    const reconciled = await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    assert.equal(reconciled.status, 'assessment-completed', JSON.stringify(reconciled));
+    assert.equal((await record()).assessmentTurn?.status, 'completed');
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'pass-completed',
+    );
+    assert.equal((await record()).feedback?.events[0]?.turn, undefined);
+    coordinator.runId = 'after-assessment-reconciliation';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.ok((await record()).feedback?.events[0]?.turn);
+    assert.equal(creates().length, 1);
+    assert.deepEqual((await record()).result, plan);
+  });
   it('should reactivate unassigned openclaw feedback through ordinary intake without replacing the session', async () => {
     const { comments } = await feedbackOwner();
     fixture.item.assignees = [];
