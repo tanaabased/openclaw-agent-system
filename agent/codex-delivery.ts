@@ -617,6 +617,10 @@ export default async function runCodexDelivery(
               delivery.creationAttempted = true;
               await save();
             },
+            onCreateRejected: async () => {
+              delivery.creationAttempted = false;
+              await save();
+            },
             checkpoint: async (receipt) => {
               delivery.pullRequest = receipt;
               await save();

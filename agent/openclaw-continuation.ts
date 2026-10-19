@@ -19,9 +19,11 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
     record.feedbackReactivation ||
     (record.decisionTurn && record.decisionTurn.status !== 'completed') ||
     (record.work?.code &&
-      !['implementation-result-missing', 'implementation-delivery-incomplete'].includes(
-        record.work.code,
-      )) ||
+      ![
+        'implementation-result-missing',
+        'implementation-delivery-incomplete',
+        'dispatch-turn-failed',
+      ].includes(record.work.code)) ||
     !record.sessionCreation?.verified ||
     record.assessmentTurn?.status !== 'completed'
   )

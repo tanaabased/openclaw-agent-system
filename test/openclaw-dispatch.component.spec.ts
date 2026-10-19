@@ -410,7 +410,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await context(routed.id)).status, 'verified');
     const workflow = manifest.github!.notifications!.issueAssignment!;
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
-    assert.equal((await context(routed.id)).status, 'policy-held');
+    assert.equal((await context(routed.id)).status, 'verified');
   });
   it('should resume the same prepared owner after a live policy hold without a retry grant', async () => {
     const routed = await next();
@@ -1690,7 +1690,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await service.check(manifest, root)).changed, false);
   });
 
-  it('should not override explicit cancellation or run failure with matching transcript evidence', async () => {
+  it('should preserve explicit cancellation after its pending receipt disappears', async () => {
     const input = await next();
     await prepare(input);
     await start(input.id);
@@ -1704,7 +1704,7 @@ describe('agent/openclaw issue dispatch', () => {
     active = false;
     inputReceipts = [];
     const failed = await finish(input.id);
-    assert.ok('code' in failed && failed.code === 'dispatch-turn-failed');
+    assert.ok('code' in failed && failed.code === 'dispatch-turn-cancelled');
     await service.check(manifest, root);
     assert.equal(openClawCapacity([await record()], 1).occupied, 0);
     assert.equal((await record()).firstTurn?.replyEventId, undefined);
@@ -1884,13 +1884,10 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 0);
   });
 
-  it('should block cancelled input and mismatched terminal evidence without claiming completion', async () => {
+  it('should reject mismatched terminal evidence without claiming completion', async () => {
     const input = await next();
     await prepare(input);
     await start(input.id);
-    inputReceipts[0]!.cancelled = true;
-    const cancelled = await start(input.id);
-    assert.ok('code' in cancelled && cancelled.code === 'dispatch-turn-cancelled');
     waitResult = {
       status: 'ok',
       terminalReceipt: {
@@ -2045,6 +2042,50 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(Boolean((await record()).work), decision === 'work');
       assert.equal((await record()).threadId, original.threadId);
     });
+
+  it('should resume an auto decision that ended without a result', async () => {
+    const id = await readyWork('auto');
+    await workPass('decision-pass');
+    active = false;
+    inputReceipts = [];
+    messages.push({
+      role: 'assistant',
+      stopReason: 'stop',
+      content: [{ type: 'text', text: 'Interrupted before recording.' }],
+      __openclaw: { id: 'unfinished-decision', runId: `${id}:auto-decision`, runTerminal: true },
+    });
+    await workPass('reconcile-decision');
+    await workPass('resume-decision');
+    const saved = await record();
+    assert.equal(saved.previousDecisionTurns?.length, 1);
+    assert.equal(saved.previousDecisionTurns?.[0]?.runId, `${id}:auto-decision`);
+    assert.equal(saved.decisionTurn?.runId, `${id}:auto-decision:resume:1`);
+    assert.equal(saved.progression, undefined);
+    assert.equal(saved.work, undefined);
+    assert.equal(creates().length, 1);
+  });
+
+  it('should recover legacy failed implementation without a new authorization', async () => {
+    const id = await readyWork('work');
+    await workPass('start-work');
+    active = false;
+    inputReceipts = [];
+    waitResult = { status: 'error' };
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.work!.code = 'dispatch-turn-failed';
+      state.records[0]!.work!.turn!.inactive = true;
+      await save();
+    });
+    await workPass('failed-work');
+    waitResult = { status: 'timeout' };
+    await workPass('resume-work');
+    const saved = await record();
+    assert.equal(saved.work?.previousTurns?.[0]?.turn.failed, true);
+    assert.equal(saved.work?.turn?.runId, `${id}:implementation:resume:1`);
+    assert.equal(saved.progression?.stage, 'implementation');
+    assert.equal(creates().length, 1);
+  });
 
   it('should preserve cancellation of an auto decision request across a live work edit', async () => {
     const id = await readyWork('auto');

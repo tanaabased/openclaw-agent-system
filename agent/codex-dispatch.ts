@@ -739,8 +739,7 @@ export async function runCodexDispatch(
               !pending.clientThreadId &&
               !pending.worktree &&
               !pending.continuation?.attempt &&
-              !pending.continuation?.publicationAttempt &&
-              (pending.unsubmittedCreations?.length ?? 0) < 8
+              !pending.continuation?.publicationAttempt
             ) {
               try {
                 const proof = await withNative(current, deps, (native) =>
@@ -1236,9 +1235,6 @@ export async function runCodexDispatch(
               redact: redactCodexFeedback,
               authorize: async () => {
                 await fresh();
-                const live = await selectCodexIntake(pluginData, deps);
-                const held = liveWorkflowPolicy(live.manifest, 'codex', intake);
-                if (held && input.operation !== 'reconcile') throw new WorkflowPolicyHeld(held);
                 if (input.operation !== 'reconcile') {
                   if (deps.summaryAuthority) await deps.summaryAuthority(native.id, native.turnId!);
                   else {

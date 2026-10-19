@@ -17,9 +17,11 @@ export function openClawDecisionPending(record: OpenClawDispatchRecord, mode: st
     record.assessmentTurn?.status !== 'completed'
   )
     return false;
-  return record.decisionTurn
-    ? record.decisionTurn.status !== 'completed' && !record.decisionTurn.inactive
-    : needsAutoDecision(record, mode);
+  if (record.decisionTurn?.inactive) return false;
+  return (
+    (record.decisionTurn && record.decisionTurn.status !== 'completed') ||
+    needsAutoDecision(record, mode)
+  );
 }
 
 /** use the assessment's existing context/result contract and preserve its original receipt. */
@@ -33,13 +35,19 @@ export default async function advanceOpenClawDecision(input: {
   const { record, request, save } = input;
   const expected = record.request;
   if (!expected || !('key' in expected)) throw new Error('dispatch-session-intent-missing');
-  if (!record.decisionTurn) {
+  if (!record.decisionTurn || record.decisionTurn.status === 'completed') {
     const session = await feedbackSession(request, record, input.config);
     if (session.busy) return { status: 'assessment-pending', id: record.id, nextAction: 'next' };
     if (typeof session.leaf !== 'string' || !session.leaf)
       throw new Error('dispatch-assessment-history-unverified');
-    const runId = `${record.id}:auto-decision`;
+    if (record.decisionTurn) {
+      (record.previousDecisionTurns ??= []).push(record.decisionTurn);
+      delete record.decisionTurn;
+    }
+    const resumed = record.previousDecisionTurns?.length ?? 0;
+    const runId = `${record.id}:auto-decision${resumed ? ':resume:' + resumed : ''}`;
     const message =
+      (resumed ? 'Resume the unfinished Auto decision. ' : '') +
       autoDecisionInstructions +
       ` Refresh agent_system_dispatch action context with id ${record.id}, then submit action result in this same session.`;
     const params = {
@@ -74,8 +82,9 @@ export default async function advanceOpenClawDecision(input: {
   });
   await save();
   return {
-    status:
-      record.decisionTurn.status === 'completed' ? 'assessment-completed' : 'assessment-pending',
+    status: ['completed'].includes(record.decisionTurn.status)
+      ? 'assessment-completed'
+      : 'assessment-pending',
     id: record.id,
     nextAction: 'next',
   };

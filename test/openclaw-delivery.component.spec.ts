@@ -33,7 +33,9 @@ describe('agent/openclaw-delivery', () => {
     revoked: boolean;
   let pr: Record<string, unknown> | undefined;
   let input: Omit<Parameters<typeof openClawDelivery>[0], 'action'>;
+  let rejectCreation = false;
   beforeEach(async () => {
+    rejectCreation = false;
     root = await realpath(await mkdtemp(join(tmpdir(), 'openclaw-delivery-')));
     announcement = announcementFixture({ login: 'agent', nodeId: 'U_agent', type: 'User' });
     creates = pushes = saves = 0;
@@ -150,6 +152,12 @@ describe('agent/openclaw-delivery', () => {
                 return response(pr ? [pr] : []);
               if (endpoint === 'repos/owner/repo/pulls' && argv.includes('POST')) {
                 creates++;
+                if (rejectCreation)
+                  return {
+                    ...response(null),
+                    exitCode: 1,
+                    stderr: 'gh: Resource not accessible by integration (HTTP 403)',
+                  };
                 assert.ok(record.work?.delivery?.creationAttempted);
                 if (!missing)
                   pr = {
@@ -219,6 +227,14 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, ...content });
   }
+  it('should retry pr creation after a definite provider rejection', async () => {
+    rejectCreation = true;
+    await assert.rejects(publish(), /403/);
+    rejectCreation = false;
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 2);
+  });
+
   for (const draft of [false, true])
     it(`should reconcile announce and present a ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();

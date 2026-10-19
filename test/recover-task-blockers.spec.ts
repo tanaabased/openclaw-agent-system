@@ -60,6 +60,31 @@ describe('agent/recover-task-blockers', () => {
       assert.deepEqual(value.continuation.binding, { turnId: 'original' });
     }
   });
+  it('should resume stale unattempted feedback drafts without discarding completed work', () => {
+    for (const attempted of [false, true]) {
+      const value = {
+        ...record(),
+        feedback: {
+          events: [
+            {
+              phase: 'blocked',
+              code: 'feedback-composition-changed',
+              publicationAttempted: attempted,
+              attempt: { id: 'original-turn' },
+              result: { privateText: 'Complete retained response.', publicText: 'Obsolete draft.' },
+            },
+          ],
+        },
+      };
+      recoverTaskBlockers(value);
+      const event = value.feedback.events[0]!;
+      assert.equal(event.phase, attempted ? 'blocked' : 'running');
+      assert.equal(event.result.privateText, 'Complete retained response.');
+      assert.equal(event.result.publicText, attempted ? 'Obsolete draft.' : undefined);
+      assert.equal(event.attempt.id, 'original-turn');
+    }
+  });
+
   it('should preserve inactive tasks, explicit cancellation and native denial', () => {
     for (const inactive of [
       { retirement: { reason: 'assignment-removed' } },

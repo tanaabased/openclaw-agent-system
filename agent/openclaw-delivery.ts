@@ -219,6 +219,10 @@ export default async function openClawDelivery(input: {
       delivery.creationAttempted = true;
       await save();
     },
+    async onCreateRejected() {
+      delivery.creationAttempted = false;
+      await save();
+    },
     async checkpoint(receipt) {
       delivery.pullRequest = receipt;
       await save();

@@ -243,7 +243,11 @@ export default class OpenClawDispatch {
       fresh.manifest,
       'openclaw',
       intake,
-      work ? 'continued-work' : feedback ? 'feedback' : 'assignment',
+      work || record.sessionCreation?.verified
+        ? 'continued-work'
+        : feedback
+          ? 'feedback'
+          : 'assignment',
     );
     if (held) throw new WorkflowPolicyHeld(held);
     return { current, intake, manifest: fresh.manifest };
@@ -580,13 +584,15 @@ export default class OpenClawDispatch {
       const code = openClawDispatchFailureCode(error);
       if (event.phase !== 'published') {
         event.code = code;
+        if (code === 'feedback-composition-changed' && !event.publicationAttempted && event.result)
+          delete event.result.publicText;
         scheduleDispatchRetry(event, code, error, now);
       }
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
         event.phase !== 'published' &&
         !event.retry &&
-        /revoked|authority-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|composition-changed|resource-missing|denied|turn-(?:failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
+        /revoked|authority-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|resource-missing|denied|turn-(?:failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {
@@ -1137,7 +1143,7 @@ export default class OpenClawDispatch {
                 !entry.retired &&
                 !entry.retirement &&
                 !entry.reset &&
-                !entry.work?.code &&
+                (!entry.work?.code || entry.work.code === 'dispatch-turn-failed') &&
                 [
                   entry.decisionTurn?.inactive ? undefined : entry.decisionTurn,
                   entry.work?.turn,
@@ -1156,9 +1162,11 @@ export default class OpenClawDispatch {
             if (
               record.decisionTurn?.inactive ||
               (record.work?.code &&
-                !['implementation-result-missing', 'implementation-delivery-incomplete'].includes(
-                  record.work.code,
-                ))
+                ![
+                  'implementation-result-missing',
+                  'implementation-delivery-incomplete',
+                  'dispatch-turn-failed',
+                ].includes(record.work.code))
             )
               return reconciled;
           }

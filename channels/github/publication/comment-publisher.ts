@@ -1,3 +1,5 @@
+import providerWriteRejected from '../../../utils/provider-write-rejected.ts';
+
 import type {
   GitHubIssueCommentReceipt,
   GitHubNotificationPublicationClient,
@@ -45,6 +47,7 @@ export interface GitHubNotificationCommentPublicationConnection {
 
 export interface GitHubNotificationCommentPublisherDependencies {
   beforeCreate?(): Promise<void>;
+  onCreateRejected?(): Promise<void>;
   redactText(text: string): string;
   authorize(
     input:
@@ -180,12 +183,17 @@ export default class GitHubNotificationCommentPublisher {
       }
       if (!create) return undefined;
       await this.#dependencies.beforeCreate?.();
-      const receipt = await connection.client.createIssueComment(
-        input.item.repositoryOwner,
-        input.item.repositoryName,
-        input.item.number,
-        expectedBody,
-      );
+      const receipt = await connection.client
+        .createIssueComment(
+          input.item.repositoryOwner,
+          input.item.repositoryName,
+          input.item.number,
+          expectedBody,
+        )
+        .catch(async (error: unknown) => {
+          if (providerWriteRejected(error)) await this.#dependencies.onCreateRejected?.();
+          throw error;
+        });
       return { receipt, status: 'published', target };
     });
   }

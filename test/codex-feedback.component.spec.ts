@@ -500,6 +500,21 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
     assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
   });
+  it('should keep approved feedback usable when new assignment intake is disabled', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].enabled = false;
+    manifest.github.notifications['allowed-repository-owners'] = [
+      { login: 'elsewhere', 'node-id': 'O_elsewhere' },
+    ];
+    await writeFile(path, JSON.stringify(manifest));
+    const context = await call('context', ref, true);
+    assert.equal(context.status, 'verified', JSON.stringify(context));
+  });
+
   async function recordReply(
     ref: { id: string; eventId: string },
     privateText: string,

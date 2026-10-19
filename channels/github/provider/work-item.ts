@@ -80,9 +80,6 @@ export interface GitHubAssignmentEvent {
   nodeId: string;
 }
 
-export type GitHubRepositoryPermission =
-  'admin' | 'maintain' | 'none' | 'read' | 'triage' | 'write';
-
 export function githubWorkItemKey(repositoryNodeId: string, itemNumber: number): string {
   if (!repositoryNodeId.trim()) throw new Error('GitHub repository node ids must not be empty.');
   if (!Number.isSafeInteger(itemNumber) || itemNumber < 1) {

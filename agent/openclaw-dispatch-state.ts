@@ -68,6 +68,7 @@ export const openclawDispatchRecordSchema = Type.Object(
     firstTurn: Type.Optional(issueTurnSchema),
     assessmentTurn: Type.Optional(issueTurnSchema),
     decisionTurn: Type.Optional(issueTurnSchema),
+    previousDecisionTurns: Type.Optional(Type.Array(issueTurnSchema)),
     assessmentCaller: Type.Optional(
       Type.Object({ runId: text, inputEventId: text }, { additionalProperties: false }),
     ),
@@ -153,7 +154,8 @@ function validIssueTurn(turn: Static<typeof issueTurnSchema>, runId: string) {
     ['consumed', 'completed'].includes(turn.status) === Boolean(turn.consumedByEventId) &&
     (!turn.executionModel || turn.status === 'completed') &&
     (!turn.replyEventId || turn.status === 'completed') &&
-    (turn.status !== 'completed' || Boolean(turn.replyEventId))
+    (!turn.failed || turn.status === 'completed') &&
+    (turn.status !== 'completed' || turn.failed || Boolean(turn.replyEventId))
   );
 }
 
@@ -234,9 +236,20 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
                 record.assessment &&
                 (!record.firstTurn || record.firstTurn.status === 'completed') &&
                 validIssueTurn(record.assessmentTurn, `${record.id}:assessment`))) &&
+            (record.previousDecisionTurns ?? []).every(
+              (turn, index) =>
+                turn.status === 'completed' &&
+                validIssueTurn(
+                  turn,
+                  `${record.id}:auto-decision${index ? ':resume:' + index : ''}`,
+                ),
+            ) &&
             (!record.decisionTurn ||
               (record.assessmentTurn?.status === 'completed' &&
-                validIssueTurn(record.decisionTurn, `${record.id}:auto-decision`))) &&
+                validIssueTurn(
+                  record.decisionTurn,
+                  `${record.id}:auto-decision${record.previousDecisionTurns?.length ? ':resume:' + record.previousDecisionTurns.length : ''}`,
+                ))) &&
             (!record.assessmentCaller || record.assessmentTurn) &&
             (!record.result ||
               (record.assessmentTurn &&

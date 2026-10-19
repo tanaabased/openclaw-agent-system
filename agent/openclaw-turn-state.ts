@@ -11,6 +11,8 @@ export const issueTurnSchema = Type.Object(
       Type.Literal('completed'),
     ]),
     inactive: Type.Optional(Type.Boolean()),
+    failed: Type.Optional(Type.Literal(true)),
+    cancelled: Type.Optional(Type.Literal(true)),
     consumedByEventId: Type.Optional(text),
     replyEventId: Type.Optional(text),
     executionModel: Type.Optional(text),

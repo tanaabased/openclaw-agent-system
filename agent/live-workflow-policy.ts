@@ -10,7 +10,7 @@ export default function liveWorkflowPolicy(
   effect: 'assignment' | 'implementation' | 'continued-work' | 'feedback' = 'assignment',
 ) {
   // Intake eligibility cannot revoke an active issue's recorded implementation stage.
-  if (effect === 'continued-work') return;
+  if (['continued-work', 'feedback'].includes(effect)) return;
   const policy = manifest.github?.notifications;
   if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment || policy.issueAssignment.enabled === false)
@@ -22,7 +22,6 @@ export default function liveWorkflowPolicy(
   )
     return 'repository-outside-workflow';
   if (
-    effect !== 'feedback' &&
     !policy.issueAssignment.allowed.some((actor) =>
       githubIdentityMatches(actor, intake.assignment.actor),
     )

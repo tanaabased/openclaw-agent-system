@@ -66,14 +66,14 @@ export const dispatchRecordProperties = {
     Type.Object(
       {
         version: Type.Literal(1),
-        codes: Type.Array(text, { maxItems: 16 }),
+        codes: Type.Array(text),
         previousResult: Type.Optional(assessmentResultSchema),
       },
       { additionalProperties: false },
     ),
   ),
   assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
-  assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema, { maxItems: 32 })),
+  assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema)),
   stageReceipt: Type.Optional(
     Type.Object(
       {

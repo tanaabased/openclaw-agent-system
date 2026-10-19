@@ -90,9 +90,6 @@ export function intakeFixture() {
     async getItem() {
       return item;
     },
-    async getPermission() {
-      throw new Error('read-only intake must not require write permission');
-    },
     async listAssignmentEvents() {
       return { events, truncated: false };
     },

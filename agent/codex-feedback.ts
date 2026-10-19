@@ -735,6 +735,14 @@ export default async function runCodexFeedback(
               await save();
             }
             const publisher = new GitHubNotificationCommentPublisher({
+              beforeCreate: async () => {
+                event.publicationAttempted = true;
+                await save();
+              },
+              onCreateRejected: async () => {
+                event.publicationAttempted = false;
+                await save();
+              },
               redactText: redactCodexFeedback,
               authorize: async () => {
                 await authorize();
@@ -780,8 +788,6 @@ export default async function runCodexFeedback(
                 databaseId: existing.receipt.databaseId,
               };
             } else {
-              event.publicationAttempted = true;
-              await save();
               const receipt = (await publisher.publish(publication)).receipt;
               event.receipt = { nodeId: receipt.nodeId, databaseId: receipt.databaseId };
             }
@@ -833,12 +839,18 @@ export default async function runCodexFeedback(
           const { code } = failure;
           if (event) {
             event.code = code;
+            if (
+              code === 'feedback-composition-changed' &&
+              !event.publicationAttempted &&
+              event.result
+            )
+              delete event.result.publicText;
             scheduleDispatchRetry(event, code, error, now);
           }
           if (
             event &&
             !event.retry &&
-            /^(?:feedback-(?:source-changed|source-identity-changed|source-author-changed|source-no-longer-eligible|source-owner-changed|authority-changed|turn-changed|native-binding-mismatch|self-publication-denied|composition-changed)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-.*(?:revoked|diverged))/.test(
+            /^(?:feedback-(?:source-changed|source-identity-changed|source-author-changed|source-no-longer-eligible|source-owner-changed|authority-changed|turn-changed|native-binding-mismatch|self-publication-denied)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-.*(?:revoked|diverged))/.test(
               code,
             )
           ) {

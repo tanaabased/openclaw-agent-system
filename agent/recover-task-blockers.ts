@@ -56,6 +56,7 @@ export default function recoverTaskBlockers(record: {
       turn?: unknown;
       attempt?: unknown;
       publicationAttempted?: boolean;
+      result?: { privateText?: string; publicText?: string };
     }>;
   };
 }) {
@@ -107,7 +108,12 @@ export default function recoverTaskBlockers(record: {
               ? 'prepared'
               : 'waiting';
   }
-  for (const event of record.feedback?.events ?? [])
+  for (const event of record.feedback?.events ?? []) {
+    if (event.code === 'feedback-composition-changed' && !event.publicationAttempted) {
+      if (event.result) delete event.result.publicText;
+      delete event.code;
+      event.phase = event.turn || event.attempt ? 'running' : 'queued';
+    }
     if (
       event.phase === 'blocked' &&
       event.code &&
@@ -124,4 +130,5 @@ export default function recoverTaskBlockers(record: {
           ? 'running'
           : 'queued';
     }
+  }
 }

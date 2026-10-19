@@ -1,6 +1,7 @@
+import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { admitFeedback, feedbackRevision } from './feedback-source.ts';
-import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import type { selectCodexIntake } from './codex-intake.ts';
@@ -21,17 +22,11 @@ export default async function authorizeCodexFeedback(input: {
   provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
 }) {
   const { current, record, event, intake, provider } = input;
-  const held = liveWorkflowPolicy(current.manifest, 'codex', intake, 'feedback');
-  if (held) throw new WorkflowPolicyHeld(held);
-  if (!current.policy) throw new WorkflowPolicyHeld('feedback-disabled');
+  const policy = assignmentIntakePolicy(current.manifest, 'codex', true);
+  if (!policy) throw new WorkflowPolicyHeld('feedback-disabled');
   const owner = intake.repository.owner.login,
     name = intake.repository.name;
-  const assignment = await inspectFeedbackAssignment(
-    current.policy,
-    intake,
-    provider.client,
-    record,
-  );
+  const assignment = await inspectFeedbackAssignment(policy, intake, provider.client, record);
   const item =
     event.number === intake.issue.number
       ? assignment.item

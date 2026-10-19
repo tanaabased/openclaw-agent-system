@@ -30,10 +30,7 @@ describe('agent/live-workflow-policy', () => {
     // feedback uses its own current source-author rule, independently of the original assigner.
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'feedback'), undefined);
     f.policy.issueAssignment!.enabled = false;
-    assert.equal(
-      liveWorkflowPolicy(manifest, 'codex', intake, 'feedback'),
-      'issue-workflow-disabled',
-    );
+    assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'feedback'), undefined);
     assert.deepEqual(intake, before);
   });
 });

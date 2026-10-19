@@ -162,6 +162,14 @@ describe('agent/codex-delivery', () => {
     });
     return { eventId, source };
   }
+  it('should retry pr creation after a definite provider rejection', async () => {
+    rejectCreation = true;
+    await assert.rejects(publish(), /403/);
+    rejectCreation = false;
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 2);
+  });
+
   it('should publish a source-bound feedback work to the same pr without a new operator turn', async () => {
     const { eventId } = await feedbackWorkFixture();
     deps.native!.find = async () => ({
@@ -254,7 +262,9 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
   });
+  let rejectCreation = false;
   beforeEach(async () => {
+    rejectCreation = false;
     root = await realpath(await mkdtemp(join(tmpdir(), 'codex_delivery-')));
     workspace = join(root, 'workspace');
     pluginData = join(root, 'plugin');
@@ -403,6 +413,12 @@ describe('agent/codex-delivery', () => {
               return result(pr ? [pr] : []);
             if (endpoint === 'repos/owner/repo/pulls' && argv.includes('POST')) {
               creates++;
+              if (rejectCreation)
+                return {
+                  ...result(null),
+                  exitCode: 1,
+                  stderr: 'gh: Resource not accessible by integration (HTTP 403)',
+                };
               if (failCreate) throw new Error('transport lost');
               pr = {
                 itemNodeId: 'PR_7',

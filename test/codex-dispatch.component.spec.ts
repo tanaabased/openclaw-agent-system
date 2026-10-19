@@ -1931,20 +1931,18 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await next()).code, 'dispatch-creation-unresolved');
   });
 
-  it('should bound automatic recovery of repeatedly unsubmitted creations', async () => {
+  it('should recover proven unsubmitted creations beyond the former lifetime limit', async () => {
     let prepared = await prepare();
     deps.native!.unsubmittedCreation = async () => ({ turnId: 'completed-turn' });
-    for (let count = 0; count < 8; count++) {
+    for (let count = 0; count < 9; count++) {
       await request('reconcile', { id: prepared.id });
       now += 300001;
       prepared = await prepare();
+      assert.equal(prepared.status, 'prepared');
     }
-    await request('reconcile', { id: prepared.id });
-    now += 300001;
-    deps.native!.unsubmittedCreation = async () => {
-      assert.fail('the recovery limit must stop further automatic attempts');
-    };
-    assert.equal((await next()).code, 'dispatch-creation-unresolved');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    assert.equal((await store.read()).records[0]!.unsubmittedCreations?.length, 9);
   });
 
   for (const key of ['threadId', 'clientThreadId'] as const) {
@@ -2982,6 +2980,88 @@ describe('agent/codex-dispatch', () => {
       assert.equal(Boolean(retained.continuation?.attempt), decision === 'work');
       assert.equal(retained.threadId, before.threadId);
     });
+
+  it('should continue another issue while an auto decision receipt remains uncertain', async () => {
+    const work = await workIssue(
+      { ...result, decision: { mode: 'work', reasons: ['Ready.'] } },
+      'Follow the plan.',
+      undefined,
+      'auto',
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const admission = structuredClone((await current.store.read())!.records[0]!);
+    admission.issue = { ...admission.issue, number: 4, nodeId: 'I_second', databaseId: 21 };
+    const pendingId = automationHash([
+      admission.scope,
+      admission.repository.nodeId,
+      admission.issue.nodeId,
+      admission.assignment.nodeId,
+    ]);
+    admission.id = pendingId;
+    await current.store.exclusive(async (state, save) => {
+      state!.records.push(admission);
+      await save(state!);
+    });
+    const connect = work.continuation.connect!;
+    work.continuation.connect = async (...args) => {
+      const client = await connect(...args);
+      return {
+        ...client,
+        getItem: async (owner, name, number) =>
+          number === 4
+            ? { ...fixture.item, ...admission.issue }
+            : client.getItem(owner, name, number),
+      };
+    };
+    await store.exclusive(async (state, save) => {
+      const pending = structuredClone(state.records[0]!);
+      pending.id = pending.intakeId = pending.issueKey = pendingId;
+      pending.threadId = 'pending-decision-chat';
+      pending.result = { ...pending.result!, decision: undefined };
+      delete pending.continuation;
+      pending.autoDecision = {
+        attempt: {
+          id: '3'.repeat(64),
+          sourceTurnId: 'decision-trigger',
+          beforeTurnId: 'assessment',
+          request: {
+            threadId: 'pending-decision-chat',
+            prompt: 'Choose a mode.',
+            model: pending.request!.model,
+            thinking: pending.request!.thinking,
+          },
+        },
+      };
+      state.records.unshift(pending);
+      await save();
+    });
+    const next = await work.run('next');
+    assert.equal(next.status, 'prepared', JSON.stringify(next));
+    assert.equal('id' in next && next.id, work.id);
+    assert.equal((await store.read()).records[0]!.autoDecision?.attempt.turnId, undefined);
+  });
+
+  it('should resume an ended auto decision without a result in the existing issue', async () => {
+    const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    configured.github.notifications['issue-assignment'].mode = 'auto';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    native!.turnId = 'unfinished-decision';
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    const resumed = await work.run('next');
+    assert.equal(resumed.status, 'prepared', JSON.stringify(resumed));
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.autoDecision?.previousAttempts?.[0]?.turnId, 'unfinished-decision');
+    assert.equal(saved.autoDecision?.attempt.beforeTurnId, 'unfinished-decision');
+    assert.equal(saved.continuation?.attempt, undefined);
+    assert.equal(saved.progression, undefined);
+  });
 
   it('should retain an auto decision denial without sending implementation after a mode edit', async () => {
     const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');

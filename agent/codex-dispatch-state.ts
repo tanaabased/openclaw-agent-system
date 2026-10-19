@@ -55,6 +55,7 @@ export const dispatchRecordSchema = Type.Object(
         {
           attempt: attemptSchema,
           ended: Type.Optional(Type.Literal(true)),
+          previousAttempts: Type.Optional(Type.Array(attemptSchema)),
           code: Type.Optional(text),
         },
         { additionalProperties: false },
@@ -101,7 +102,6 @@ export const dispatchRecordSchema = Type.Object(
           },
           { additionalProperties: false },
         ),
-        { maxItems: 8 },
       ),
     ),
     deniedCreations: Type.Optional(

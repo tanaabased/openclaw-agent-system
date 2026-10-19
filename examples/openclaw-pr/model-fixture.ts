@@ -211,6 +211,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     prompt,
   )?.[1];
   if (decisionId) {
+    if (!prompt.includes('Resume the unfinished Auto decision.'))
+      return { content: 'The decision was interrupted before its result was recorded.' };
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
     if (fresh.status !== 'verified' || fresh.mode !== 'auto' || !fresh.previousResult) return;

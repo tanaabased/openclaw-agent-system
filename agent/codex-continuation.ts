@@ -121,6 +121,7 @@ export default async function runCodexContinuation(
         await save();
       }
       const admissions = await current.store.read();
+      let decisionPending: { status: 'pending' | 'blocked'; id: string; code?: string } | undefined;
       const liveMode = current.manifest.github?.notifications?.issueAssignment?.mode;
       if (occurrence) {
         for (const record of state.records) {
@@ -128,7 +129,6 @@ export default async function runCodexContinuation(
           const pending = record.autoDecision && !record.autoDecision.ended;
           if (!pending && !needsAutoDecision(record, liveMode)) continue;
           if (
-            record.autoDecision?.ended ||
             record.continuation?.phase === 'cancelled' ||
             record.handoff ||
             record.retired ||
@@ -153,11 +153,17 @@ export default async function runCodexContinuation(
                   .available))
           )
             continue;
+          if (
+            input.action === 'next' &&
+            record.retry &&
+            !dispatchRetryDue(record, (deps.now ?? Date.now)())
+          )
+            continue;
           try {
             if (record.sourceThreadId !== activation.sourceThreadId)
               throw new Error('continuation-schedule-binding-mismatch');
             await revalidateDispatchAssignment(current, admitted, deps, signal, true);
-            if (record.autoDecision) {
+            if (record.autoDecision && !record.autoDecision.ended) {
               const decision = record.autoDecision;
               if (decision.code) {
                 if (input.action === 'next') continue;
@@ -167,17 +173,27 @@ export default async function runCodexContinuation(
               if (receipt.status === 'blocked' || receipt.status === 'mismatch') {
                 decision.code = receipt.code;
                 await save();
-                return { status: 'blocked', id: record.id, code: decision.code };
+                decisionPending = { status: 'blocked', id: record.id, code: decision.code };
+                continue;
               }
-              if (receipt.status !== 'verified')
-                return { status: 'pending', id: record.id, code: 'continuation-send-unverified' };
+              if (receipt.status !== 'verified') {
+                decisionPending = {
+                  status: 'pending',
+                  id: record.id,
+                  code: 'continuation-send-unverified',
+                };
+                continue;
+              }
               if (decision.attempt.turnId && decision.attempt.turnId !== receipt.turnId)
                 throw new Error('continuation-turn-changed');
               decision.attempt.turnId = receipt.turnId;
               if (receipt.ended) decision.ended = true;
               await save();
-              if (!decision.ended) return { status: 'pending', id: record.id };
-              continue;
+              if (!decision.ended) {
+                decisionPending = { status: 'pending', id: record.id };
+                continue;
+              }
+              if (!needsAutoDecision(record, liveMode)) continue;
             }
             const found = await native.find({
               sourceThreadId: record.sourceThreadId,
@@ -207,9 +223,10 @@ export default async function runCodexContinuation(
               !needsAutoDecision(record, live.manifest.github?.notifications?.issueAssignment?.mode)
             )
               continue;
-            const held = liveWorkflowPolicy(live.manifest, 'codex', admitted, 'assignment');
-            if (held) continue;
             record.autoDecision = {
+              previousAttempts: record.autoDecision
+                ? [...(record.autoDecision.previousAttempts ?? []), record.autoDecision.attempt]
+                : [],
               attempt: {
                 id: automationHash({
                   id: record.id,
@@ -239,14 +256,15 @@ export default async function runCodexContinuation(
             };
           } catch (error) {
             if (codexHostAccess(error)) throw error;
-            return {
-              status: 'pending',
-              id: record.id,
-              ...workflowFailure(error, 'auto-decision-pending'),
-            };
+            const failure = workflowFailure(error, 'auto-decision-pending');
+            scheduleDispatchRetry(record, failure.code, error, (deps.now ?? Date.now)());
+            await save();
+            decisionPending = { status: 'pending', id: record.id, ...failure };
+            continue;
           }
         }
       }
+      if (input.action !== 'next' && decisionPending) return decisionPending;
       if (input.action === 'next' && (liveMode === 'work' || liveMode === 'auto'))
         for (const record of state.records) {
           const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
@@ -977,7 +995,7 @@ export default async function runCodexContinuation(
           };
         }
       }
-      return { status: 'idle' };
+      return decisionPending ?? { status: 'idle' };
     }, input.action !== 'next');
     if (response.status !== 'deliver') return response;
     if (

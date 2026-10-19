@@ -633,6 +633,14 @@ export default async function openClawFeedback(input: {
   if (action.operation === 'reconcile' && !event.publicationAttempted)
     throw new Error('feedback-publication-unattempted');
   const publisher = new GitHubNotificationCommentPublisher({
+    beforeCreate: async () => {
+      event.publicationAttempted = true;
+      await save();
+    },
+    onCreateRejected: async () => {
+      event.publicationAttempted = false;
+      await save();
+    },
     redactText: redactFeedback,
     authorize: async () => {
       await input.reauthorize?.();
@@ -675,8 +683,6 @@ export default async function openClawFeedback(input: {
       };
     event.receipt = { nodeId: found.receipt.nodeId, databaseId: found.receipt.databaseId };
   } else {
-    event.publicationAttempted = true;
-    await save();
     const receipt = (await publisher.publish(publication)).receipt;
     event.receipt = { nodeId: receipt.nodeId, databaseId: receipt.databaseId };
   }
