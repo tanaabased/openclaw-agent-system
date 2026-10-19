@@ -37,6 +37,63 @@ describe('agent/feedback reply authority', () => {
       if (change === 'feedback') policy.issueAssignment!.feedback = false;
       assert.equal(matchesFeedbackAuthority(digest, policy), false);
     });
+  it('should preserve grants when schema-owned sets are reordered without mutating configuration', () => {
+    const policy = intakeFixture().policy;
+    policy.runtimes = ['codex', 'openclaw'];
+    policy.allowedRepositoryOwners.push({ login: 'second', nodeId: 'O_second' });
+    policy.issueAssignment!.allowed.push({
+      login: 'other',
+      nodeId: 'U_other',
+      operatorOwner: true,
+    });
+    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.pullRequest = {
+      recipients: [
+        { login: 'receiver', nodeId: 'U_receiver', roles: ['assignee', 'reviewer'] },
+        { source: 'assignment-actor', roles: ['assignee'] },
+      ],
+    };
+    const original = structuredClone(policy);
+    const workflow = notificationAuthorityDigest(policy),
+      reply = feedbackAuthorityDigest(policy);
+    assert.deepEqual(policy, original);
+    policy.runtimes.reverse();
+    policy.allowedRepositoryOwners.reverse();
+    policy.issueAssignment!.allowed.reverse();
+    policy.issueAssignment!.pullRequest.recipients!.reverse();
+    for (const recipient of policy.issueAssignment!.pullRequest.recipients!)
+      recipient.roles.reverse();
+    assert.ok(matchesNotificationAuthority(workflow, policy));
+    assert.ok(matchesFeedbackAuthority(reply, policy));
+    policy.issueAssignment!.allowed[0]!.operatorOwner = false;
+    assert.equal(matchesNotificationAuthority(workflow, policy), false);
+  });
+  it('should accept unchanged order-sensitive receipts but reject changed grants', () => {
+    const policy = intakeFixture().policy;
+    policy.runtimes = ['openclaw', 'codex'];
+    policy.issueAssignment!.feedback = true;
+    const oldWorkflow = automationHash({
+      schemaVersion: policy.schemaVersion,
+      runtimes: policy.runtimes,
+      cleanup: { enabled: true },
+      allowedRepositoryOwners: policy.allowedRepositoryOwners,
+      issueAssignment: policy.issueAssignment,
+      reviewRequest: policy.reviewRequest,
+    });
+    const oldReply = automationHash({
+      effect: 'feedback-reply',
+      schemaVersion: policy.schemaVersion,
+      runtimes: policy.runtimes,
+      allowedRepositoryOwners: policy.allowedRepositoryOwners,
+      enabled: true,
+      authors: policy.issueAssignment!.allowed.map(({ login, nodeId }) => ({ login, nodeId })),
+    });
+    assert.ok(matchesNotificationAuthority(oldWorkflow, policy));
+    assert.ok(matchesFeedbackAuthority(oldReply, policy));
+    policy.allowedRepositoryOwners = [];
+    assert.equal(matchesNotificationAuthority(oldWorkflow, policy), false);
+    assert.equal(matchesFeedbackAuthority(oldReply, policy), false);
+  });
   it('should accept unchanged legacy grants without broadening them after a policy change', () => {
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = true;
