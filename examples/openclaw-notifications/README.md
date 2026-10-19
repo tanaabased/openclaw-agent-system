@@ -35,14 +35,16 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # should boot with retained legacy channel configuration
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
 openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
-OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
 # should install emori in its fixture workspace
 set -o pipefail
 registration_diagnostics() {
   registration_status=$?
-  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+  if test "$registration_status" -ne 0; then
+    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+  fi
   exit "$registration_status"
 }
 trap registration_diagnostics EXIT
@@ -53,8 +55,8 @@ openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "ag
 set -o pipefail
 activation_diagnostics() {
   activation_status=$?
-  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
   if test "$activation_status" -ne 0; then
+    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
     gateway_log=$(openclaw-gateway log-path) || true
     gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
     openclaw config get gateway --json | jq -c '{reloadMode: (.reload.mode // "hybrid")}' || true

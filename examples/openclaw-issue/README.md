@@ -32,13 +32,15 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway
-OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 
 # should install emori in its fixture workspace
 set -o pipefail
 registration_diagnostics() {
   registration_status=$?
-  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+  if test "$registration_status" -ne 0; then
+    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+  fi
   exit "$registration_status"
 }
 trap registration_diagnostics EXIT
@@ -49,8 +51,8 @@ openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "ag
 set -o pipefail
 activation_diagnostics() {
   activation_status=$?
-  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
   if test "$activation_status" -ne 0; then
+    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
     gateway_log=$(openclaw-gateway log-path) || true
     gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
     openclaw config get gateway --json | jq -c '{reloadMode: (.reload.mode // "hybrid")}' || true
@@ -109,7 +111,7 @@ run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-entry-history.json"
 jq -e --arg run "$run_id" '([.messages[] | select(.role == "user" and .idempotencyKey == ($run + ":user"))] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | contains("Issue assigned") and contains("Assess this issue and prepare a plan") and (contains("Model routing") | not) and (contains("Assessment instructions") | not) and (contains("Effective settings") | not) else error("one opening user message required") end) and ([.messages[] | select(.role == "user" or .role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | join("\n") | (contains("notification-hidden-initial-fact") | not))' "$TMPDIR/notification-entry-history.json"
 
-# should publish one assessment summary after the private plan and preserve its receipt on retry
+# should publish one assessment summary after the private plan
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-summary-comments.json"

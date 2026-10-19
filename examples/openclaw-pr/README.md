@@ -8,7 +8,7 @@ Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, m
 
 The first implementation follow-up stops after PR publication and its issue announcement. A second operator follow-up adds a commit and updates the existing PR title and body while retaining its announcement. A final operator follow-up recovers the complete PR card from its retained receipt despite later uncommitted edits, without publishing again, before the PR comment test runs.
 
-Each agent install reports allowlisted saved configuration, Gateway configuration revisions, and the running agent list for comparison across these scenarios. Gateway debug logging captures reload activity. These observations do not retry installation or change reload behavior.
+Failed agent installation or intake activation reports allowlisted saved configuration, Gateway configuration revisions, and the running agent list. Successful steps make no extra diagnostic requests. These observations do not retry installation or change reload behavior.
 
 A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
@@ -41,13 +41,15 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway
-OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 
 # should install emori in its fixture workspace
 set -o pipefail
 registration_diagnostics() {
   registration_status=$?
-  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+  if test "$registration_status" -ne 0; then
+    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+  fi
   exit "$registration_status"
 }
 trap registration_diagnostics EXIT
@@ -58,8 +60,8 @@ openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "ag
 set -o pipefail
 activation_diagnostics() {
   activation_status=$?
-  node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
   if test "$activation_status" -ne 0; then
+    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
     gateway_log=$(openclaw-gateway log-path) || true
     gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
     openclaw config get gateway --json | jq -c '{reloadMode: (.reload.mode // "hybrid")}' || true
