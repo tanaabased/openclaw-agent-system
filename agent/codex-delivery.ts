@@ -571,7 +571,7 @@ export default async function runCodexDelivery(
               : '') +
             (deps.schedule
               ? 'The activated workflow and verified continuation authorize publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
-              : 'Use the existing explicit human publication authorization for this issue, including authorized follow-up commits; ask only if the requested effect is outside that authorization. Execute delivery publish with this id and digest through native approval, retaining title/body if supplied. Preparation does not grant permission and a native denial stops the operation.'),
+              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish with this id and digest through native approval, retaining title/body if supplied. Preparation does not grant permission and a native denial stops the operation.'),
         };
       if (input.action === 'publish') {
         await authorizePublication();

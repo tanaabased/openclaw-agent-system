@@ -119,7 +119,7 @@ export default async function openClawWorkAction(input: {
       status: 'handed-off',
       id: record.id,
       instructions:
-        'Call implementation-context before changing files, or delivery prepare for already implemented work. Preserve the complete assessment, worktree, and selected model/effort. Only the explicitly requested scope is authorized.',
+        'Call implementation-context before changing files, or delivery prepare for already implemented work. Preserve the complete assessment, worktree, and selected model/effort. Continue within the verified task scope; implementation includes ordinary PR delivery. Honor explicit user restrictions without requiring another stage approval.',
     };
   }
   if (action.action === 'implementation-context') {
