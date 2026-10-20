@@ -12,6 +12,7 @@ import githubNotificationCard, {
 } from './card.ts';
 
 interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
+  includeDetails?: boolean;
   issue: { label: string; url: string };
   routing: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
     model: string;
@@ -55,9 +56,14 @@ export default function renderAssessmentResult(
         : []),
     ].join('\n\n'),
   );
+  // omit only verbatim duplicates; never infer dispensable content from prose or skill identity.
+  const source = result.fullAssessment ?? (result.outcome === 'plan-ready' ? result.plan : '');
+  const needsSection = (value: string) => value !== result.summary && !source.includes(value);
   const content = [
     outcomeCard,
-    ...('assessment' in result ? ['## Assessment', result.assessment] : []),
+    ...('assessment' in result && needsSection(result.assessment)
+      ? ['## Assessment', result.assessment]
+      : []),
     routingCard,
     ...(instructionsCard ? [instructionsCard] : []),
     ...(result.decision
@@ -87,14 +93,20 @@ export default function renderAssessmentResult(
       : []),
     ...(result.outcome === 'plan-ready'
       ? [
-          ...(result.planSummary ? ['## Plan summary', result.planSummary] : []),
+          ...(result.planSummary && needsSection(result.planSummary)
+            ? ['## Plan summary', result.planSummary]
+            : []),
           ...(!result.fullAssessment ? ['## Full plan', result.plan] : []),
         ]
       : result.outcome === 'clarification-needed'
         ? ['## Question', result.questions.map(item).join('\n\n')]
         : []),
     ...(result.fullAssessment ? ['## Full assessment', result.fullAssessment] : []),
+    ...(result.outcome === 'plan-ready' && result.fullAssessment && !source.includes(result.plan)
+      ? ['## Full plan', result.plan]
+      : []),
   ];
+  if (!context.includeDetails) return content.join('\n\n');
   const hasInvestigation = result.progress.completed.length || result.progress.remaining.length;
   if (result.evidence.length || hasInvestigation) {
     content.push(

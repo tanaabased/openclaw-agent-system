@@ -18,6 +18,7 @@ const dispatchStages = [
   ).flat(),
   'context',
   'result',
+  'detail-readback',
   'report',
   'refresh-context',
   'refresh-result',
@@ -98,13 +99,20 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   };
   const summary = (id: string, saved: Record<string, unknown>): FixtureResponse | undefined => {
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    const args = { action: 'summary', id };
-    const composed = result('summary-compose');
-    if (!composed)
+    const details = result('detail-readback');
+    if (!details)
       return {
-        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
+        ...dispatch('detail-readback', { action: 'present', id, includeDetails: true }),
         content: saved.presentation,
       };
+    assert.equal(details.status, 'presented');
+    assert.ok(String(details.presentation).includes('Managed Git confirmed this worktree.'));
+    assert.ok(String(details.presentation).includes('Verified the managed worktree.'));
+    assert.ok(!saved.presentation.includes('Managed Git confirmed this worktree.'));
+    assert.ok(!saved.presentation.includes('Verified the managed worktree.'));
+    const args = { action: 'summary', id };
+    const composed = result('summary-compose');
+    if (!composed) return dispatch('summary-compose', { ...args, operation: 'compose' });
     const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
     if (
       composed.status !== 'composition-ready' ||
@@ -362,12 +370,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       result: {
         version: 1,
         outcome: 'plan-ready',
-        summary: 'Document disposable issue cleanup.',
-        assessment: 'The admitted issue requests a small documentation change.',
-        planSummary: 'Describe closing disposable test issues after capturing evidence.',
+        summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
+        assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
         plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
         fullAssessment:
-          'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation was performed.',
+          'Add the cleanup rule to the repository documentation and review the resulting diff.',
         evidence: [
           {
             source: project.path,

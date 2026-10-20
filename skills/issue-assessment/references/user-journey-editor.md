@@ -1,8 +1,8 @@
 # User Journey Editor
 
 The assessor has finished investigating and planning. A separate editor now explains
-the proposed experience to the person deciding whether to approve it. The full plan
-keeps its engineering detail; this pass only supplies the opening.
+the proposed experience to the person deciding whether to approve it. The concise, complete plan
+keeps decision-bearing detail; this pass supplies one recommendation, not another plan.
 
 ## Assessor handoff
 
@@ -52,12 +52,13 @@ to make the story easier to tell. Preserve uncertainty and conditional behavior.
 
 Return only these fields as text for the assessor:
 
-- **summary:** one sentence explaining the useful change or the blocked decision.
-- **assessment:** a short explanation of the person's goal and current difficulty.
-- **planSummary:** for a plan, the proposed sequence of user actions and observable
-  results, plus the choices and limits needed to approve it. Omit this field for a
-  clarification or setup-blocker outcome; keep the blocked decision visible in the
-  other fields.
+- **summary:** one concise recommendation explaining the useful change and why,
+  or the blocked decision. Keep consequential limits and uncertainty visible.
+- **assessment:** the same recommendation, unchanged, to satisfy the version 1
+  result contract without asking for another overlapping explanation.
+
+Do not supply `planSummary`. The complete plan already describes the proposed work,
+validation, and decisions. If the brief cannot support a recommendation, flag the gap.
 
 Tell one concrete before-and-after story, not a condensed specification or instruction
 manual. Follow the main sequence instead of enumerating every option combination and

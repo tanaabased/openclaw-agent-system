@@ -4,6 +4,7 @@ import type { AssessmentResult } from '../agent/assessment-result.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 
 const context = {
+  includeDetails: true,
   issue: { label: 'owner/repo#7', url: 'https://github.com/owner/repo/issues/7' },
   routing: {
     model: 'gpt-6-astra',
@@ -28,6 +29,54 @@ const common = {
 };
 
 describe('channels/github/presentation/assessment-result', () => {
+  it('should show one recommendation and the complete plan without supporting notes by default', () => {
+    const recommendation = 'Keep the result so the operator can resume safely.';
+    const plan =
+      '1. Preserve the owner.\n2. Verify retention.\n\nDecision: confirm the retention period before deletion.';
+    const result: AssessmentResult = {
+      ...common,
+      outcome: 'plan-ready',
+      summary: recommendation,
+      assessment: recommendation,
+      plan,
+      fullAssessment: plan,
+    };
+    const before = structuredClone(result);
+    const output = renderAssessmentResult(result, { ...context, includeDetails: false });
+    assert.ok(output.includes(recommendation));
+    assert.equal(output.indexOf(recommendation), output.lastIndexOf(recommendation));
+    assert.ok(output.includes(plan));
+    assert.ok(!output.includes(common.evidence[0]!.detail));
+    assert.ok(!output.includes(common.progress.completed[0]!));
+    const details = renderAssessmentResult(result, { ...context, includeDetails: true });
+    for (const retained of [
+      plan,
+      common.evidence[0]!.detail.split('\n')[0]!,
+      common.progress.completed[0]!,
+    ])
+      assert.ok(details.includes(retained));
+    assert.deepEqual(result, before);
+  });
+
+  it('should preserve distinct older and custom fields regardless of their size or headings', () => {
+    const result: AssessmentResult = {
+      ...common,
+      outcome: 'plan-ready',
+      assessment: 'A distinct approval constraint.',
+      planSummary: 'A distinct operational limit.',
+      plan: 'A separate consequential step.',
+      fullAssessment: '## Custom source\n\n' + 'Keep all substantive context. '.repeat(500),
+    };
+    const output = renderAssessmentResult(result, { ...context, includeDetails: false });
+    for (const retained of [
+      result.assessment,
+      result.planSummary!,
+      result.plan,
+      result.fullAssessment!,
+    ])
+      assert.ok(output.includes(retained));
+  });
+
   it('should show auto decisions regardless of debug without claiming authority or leaking credentials', () => {
     for (const { action, debug } of (['proceed', 'wait'] as const).flatMap((action) =>
       [false, true].map((debug) => ({ action, debug })),

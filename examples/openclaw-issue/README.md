@@ -6,6 +6,9 @@ Notification installation compatibility and concurrent admission belong to `open
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and receipts remain real. Scoped refreshes admit only this run’s issue, and the 24-hour schedule avoids unrelated recurring scans. Only Tanaabot receives assignments. Failed activation preserves its status and redacted diagnostics; cleanup stops the Gateway before closing fixtures or revoking the disposable key.
 
+The assessment fixture also requests retained evidence through the bound presentation
+route. Its default reply keeps the complete plan but omits investigation notes.
+
 ## Setup
 
 ```bash
@@ -100,7 +103,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 jq -e '.assessmentTurn.status == "completed" and .result.outcome == "plan-ready"' "$TMPDIR/notification-dispatch-before.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-assessment-history.json"
-jq -e --arg run "$run_id" --slurpfile record "$TMPDIR/notification-dispatch-before.json" '($record[0].result.fullAssessment | type == "string" and length > 0) and ([.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop")] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | contains("## Assessment") and contains("Model routing") and contains("Plan summary") and contains("Full assessment") and contains($record[0].result.fullAssessment) else error("one stopped assessment response required") end)' "$TMPDIR/notification-assessment-history.json"
+jq -e --arg run "$run_id" --slurpfile record "$TMPDIR/notification-dispatch-before.json" '($record[0].result.fullAssessment | type == "string" and length > 0) and ([.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop")] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | contains("Model routing") and contains($record[0].result.summary) and contains($record[0].result.fullAssessment) and (contains($record[0].result.evidence[0].detail) | not) else error("one stopped assessment response required") end)' "$TMPDIR/notification-assessment-history.json"
 jq -e --arg conversation "$conversation" --arg issue "$(jq -er .node_id "$TMPDIR/notification-issue.json")" --arg repository "$(jq -er .node_id "$TMPDIR/notification-repository.json")" '.result.outcome == "plan-ready" and (.result.fullAssessment | length > 0) and (.result.plan | length > 0) and .stageReceipt.binding.threadId == $conversation and .stageReceipt.binding.subjectId == $issue and .stageReceipt.binding.repositoryId == $repository and .stageReceipt.binding.worktree == .worktree and .stageReceipt.binding.turnId == .assessmentTurn.runId and .resultTurnId == .assessmentTurn.runId and .sessionCreation.verified == true' "$TMPDIR/notification-dispatch-before.json"
 openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e --arg path "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")" 'length == 1 and any(.[]; .path == $path)'
 jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-started.json"

@@ -989,6 +989,13 @@ describe('agent/codex-dispatch', () => {
     const shown = await request('present', { id: prepared.id }, child);
     assert.equal(shown.status, 'presented');
     assert.equal(shown.presentation, recorded.presentation);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = await store.read();
+    const detailed = await request('present', { id: prepared.id, includeDetails: true }, child);
+    assert.equal(detailed.status, 'presented');
+    assert.ok(String(detailed.presentation).includes(result.progress.completed[0]!));
+    assert.deepEqual(await store.read(), before);
     await assert.rejects(
       request('present', { id: prepared.id }, { threadId: 'foreign' }),
       /caller-mismatch/,
