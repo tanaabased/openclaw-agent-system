@@ -11,21 +11,28 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   realpath,
   rm,
   symlink,
   writeFile,
+  type FileHandle,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { mock } from 'node:test';
 
 import WorkspaceBackupService from '../agent/backup-service.ts';
 import { BackupError, type LegacyWorkspaceBackupManifest } from '../agent/backup-types.ts';
 import { planWorkspaceBackup } from '../agent/backup-selection.ts';
-import { verifyWorkspaceArchive, writeWorkspaceArchive } from '../agent/backup-archive.ts';
+import {
+  readWorkspaceArchiveMetadata,
+  verifyWorkspaceArchive,
+  writeWorkspaceArchive,
+} from '../agent/backup-archive.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 import backupCreate from '../cli/backup-create.ts';
@@ -63,6 +70,7 @@ describe('workspace backup', () => {
     await writeFile(join(workspace, 'memory', 'daily.md'), 'daily memory\n');
   });
   afterEach(async () => {
+    mock.restoreAll();
     await rm(root, { recursive: true, force: true });
   });
 
@@ -890,6 +898,34 @@ describe('workspace backup', () => {
     await writeFile(bad, (await readFile(result.archive)).subarray(0, 40));
     await assert.rejects(service.verify(bad), /valid gzip/u);
     assert.equal(await readFile(join(workspace, 'MEMORY.md'), 'utf8'), 'private memory\n');
+  });
+
+  it('should reject corrupt archives when stream failure precedes the file metadata check', async () => {
+    const archive = join(root, 'truncated.tar.gz');
+    await writeFile(archive, Buffer.from('1f8b0800000000000003', 'hex'));
+    const handle = await open(archive);
+    const prototype = Object.getPrototypeOf(handle);
+    const createReadStream: FileHandle['createReadStream'] = prototype.createReadStream;
+    const stat: FileHandle['stat'] = prototype.stat;
+    await handle.close();
+    let closed: Promise<void>;
+    const streamMock = mock.method(prototype, 'createReadStream', function (this: FileHandle) {
+      const stream = createReadStream.call(this);
+      closed = new Promise<void>((resolve) => stream.once('close', resolve));
+      return stream;
+    });
+    const statMock = mock.method(prototype, 'stat', async function (this: FileHandle) {
+      const metadata = await stat.call(this);
+      await closed;
+      return metadata;
+    });
+    try {
+      for (const read of [verifyWorkspaceArchive, readWorkspaceArchiveMetadata])
+        await assert.rejects(read(archive), { code: 'backup-archive-invalid' });
+    } finally {
+      statMock.mock.restore();
+      streamMock.mock.restore();
+    }
   });
 
   it('should reject mismatched checksums and unsafe inventory without publishing', async () => {

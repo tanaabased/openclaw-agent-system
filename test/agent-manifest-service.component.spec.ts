@@ -167,7 +167,7 @@ describe('manifest/service', () => {
             runtimes: ['openclaw'],
             'allowed-repository-owners': [{ login: 'example', 'node-id': 'O_example' }],
             'issue-assignment': {
-              enabled: true,
+              paused: false,
               mode: 'work',
               allowed: [{ login: 'operator', 'node-id': 'U_operator' }],
             },
