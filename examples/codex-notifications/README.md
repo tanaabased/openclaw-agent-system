@@ -183,12 +183,12 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(node "$runtime" dispatch --plugin-data "$root/notification-data" --input - 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and (.message | contains("--plugin-data")) and (.message | contains("stdin")) and (.message | contains("--input"))'
 
-# should accept retained-detail requests without bypassing native activation
+# should reject missing or unowned retained assessments
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"present","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","includeDetails":true}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-assessment-caller-mismatch"'
 
 # should reject packaged continuation without newly reconciled work authority
 root="$TMPDIR/agent-system-codex-notifications"
