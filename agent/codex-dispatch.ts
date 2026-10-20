@@ -1,4 +1,5 @@
 import issueProgression from './issue-progression.ts';
+import { feedbackWorkContext } from './feedback-work.ts';
 import assessmentHandoff from './assessment-handoff.ts';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -1284,6 +1285,7 @@ export async function runCodexDispatch(
               effective: record.effective,
               evidence: JSON.parse(record.context!),
               assessment,
+              feedbackWork: feedbackWorkContext(record),
               ...(native.turnId ? { currentTurnId: native.turnId } : {}),
               ...(record.result
                 ? {
@@ -1314,6 +1316,7 @@ export async function runCodexDispatch(
               resultSchema: assessmentResultContextSchema,
               mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
               instructions:
+                'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
                 codexAssessmentInstructions +
                 (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
             };

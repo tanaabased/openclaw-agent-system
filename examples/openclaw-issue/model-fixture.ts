@@ -32,6 +32,7 @@ const dispatchStages = [
   'feedback-candidate',
   'feedback-preview',
   'feedback-publish',
+  'direct-question-context',
 ];
 
 function currentTurn(request: ChatCompletionRequest) {
@@ -227,6 +228,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     }
     return;
   }
+  const questionId = /Explain retained plan for managed issue ([a-f0-9]{64})/u.exec(prompt)?.[1];
+  if (questionId) {
+    const context = result('direct-question-context');
+    if (!context) return dispatch('direct-question-context', { action: 'context', id: questionId });
+    if (context.status !== 'verified' || context.mode !== 'plan') return;
+    const history = context.feedbackWork as Array<{ privateText?: string }>;
+    assert.equal(history.length, 2);
+    assert.ok(history.every((entry) => entry.privateText?.includes('disposable issue cleanup')));
+    return { content: history[0]!.privateText! };
+  }
   const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,
   )?.[1];
@@ -277,6 +288,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       context.publication !== 'allowed'
     )
       return;
+    const history = context.previousFeedbackWork as Array<{ privateText?: string }>;
+    const source = context.source as { body: string };
+    if (source.body.includes('using the earlier explanation')) {
+      assert.equal(history.length, 1);
+      assert.ok(history[0]!.privateText?.includes('disposable issue cleanup'));
+    } else assert.deepEqual(history, []);
     const saved = result('feedback-result');
     if (!saved)
       return dispatch('feedback-result', {
