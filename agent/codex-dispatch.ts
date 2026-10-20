@@ -1252,11 +1252,13 @@ export async function runCodexDispatch(
                       withNative(current, deps, (host) => host.assessmentSkill(native.cwd, id)),
                   })
                 ).selection,
-              connect: async () => ({
-                client: (
-                  await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal)
-                ).comments,
-              }),
+              connect: async () => {
+                const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+                  current.workspace,
+                  signal,
+                );
+                return { client: provider.comments, authorLogin: provider.comments.identity.login };
+              },
             });
           }
           if (action === 'context') {

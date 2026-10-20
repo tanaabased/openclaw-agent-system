@@ -25,6 +25,7 @@ export const assessmentSummarySchema = Type.Object(
     turnId: text,
     authorityDigest: hash,
     selection: assessmentSelectionSchema,
+    authorLogin: Type.Optional(text),
     publicText: Type.Optional(
       Type.String({ minLength: 1, maxLength: maximumGitHubNotificationReplyLength }),
     ),

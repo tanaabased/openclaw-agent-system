@@ -270,7 +270,7 @@ export default async function openClawFeedback(input: {
       selection: event.composition,
       workspace: input.workspace,
       debug: input.debug,
-      ...(body ? { publicReply: { recipient: source.author!.login, text: body } } : {}),
+      ...(body ? { publicReply: { author: provider.identity.login, text: body } } : {}),
       publication,
     });
   if (action.operation !== 'reconcile') {
@@ -630,7 +630,7 @@ export default async function openClawFeedback(input: {
       body,
       destination,
       presentation:
-        feedbackReplyPresentation(source.author!.login, body) +
+        feedbackReplyPresentation(provider.identity.login, body) +
         `\n\n[Reply destination ↗](${destination})`,
       instruction:
         'Inspect this exact reply and destination. The activated feedback policy authorizes this routine reply; call operation publish with the digest through native approval. A denial stops publication. Never substitute another route.',

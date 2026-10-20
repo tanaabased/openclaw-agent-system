@@ -112,6 +112,7 @@ function fixture() {
         skill: { ...selection.skill, digest: (changed ? 'f' : 'd').repeat(64) },
       }),
       connect: async () => ({
+        authorLogin: 'posting-agent',
         client: {
           findOwnIssueComment: async () => receipt,
           createIssueComment: async (_owner, _repo, number, body) => {
@@ -234,10 +235,30 @@ describe('agent/assessment-summary', () => {
     assert.ok(
       'presentation' in published && published.presentation?.includes(f.result.fullAssessment),
     );
+    assert.ok(
+      'presentation' in published &&
+        published.presentation?.includes(
+          '[Plan assessment ↗](https://github.com/owner/repo/issues/3#issuecomment-1) by [@posting-agent]',
+        ),
+    );
+    assert.ok(
+      'presentation' in published && !published.presentation?.includes('Proposed plan on GitHub'),
+    );
     assert.equal(f.record.phase, 'complete');
     f.retain();
     assert.equal(f.record.assessmentRevision, 1);
     assert.equal((await f.run({ operation: 'publish', digest })).status, 'published');
+    assert.equal(f.writes, 1);
+  });
+  it('keeps older published receipts readable without guessing the author or connecting', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    await f.run({ operation: 'publish', digest });
+    delete f.record.assessmentSummaries![0]!.authorLogin;
+    const result = await f.run({ operation: 'publish', digest });
+    assert.equal(result.status, 'published');
+    assert.ok('presentation' in result && result.presentation?.includes('by author unavailable*'));
     assert.equal(f.writes, 1);
   });
   it('reconciles a lost response without repeating the write or losing the private plan', async () => {
