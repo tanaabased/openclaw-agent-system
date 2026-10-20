@@ -186,6 +186,15 @@ export interface AgentSystemCliToolDefinition<
     executable: string;
     maxOutputBytes?: number;
     credentialRejected?(result: AgentSystemCliResult): boolean;
+    /** inspect and snapshot request input using only the admitted, sanitized runner. */
+    prepareRequest?(
+      input: Static<TParameters>,
+      configuration: TResolvedConfiguration,
+      scope: {
+        cwd: string;
+        run(argv: string[], stdin?: string): Promise<AgentSystemCliResult>;
+      },
+    ): Promise<{ argv: string[]; stdin?: string }>;
     preflight?(configuration: TResolvedConfiguration):
       | {
           argv: string[];

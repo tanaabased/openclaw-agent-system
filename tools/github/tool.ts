@@ -1,10 +1,11 @@
-import { githubCliDiagnostic } from '../../credentials/github-diagnostic.ts';
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../api/error.ts';
 import githubCredentialRejected from '../../credentials/github-rejection.ts';
 import type { AgentSystemCliResult } from '../../api/types.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
+import prepareGitHubAssignmentRequest from './assignment-guard.ts';
+import { rejectObviousSelfRemoval } from './assignment-request.ts';
 import type GitHubConfigStore from './config-store.ts';
 import { resolveGitHubCliConfiguration, type GitHubCliConfiguration } from './config-schema.ts';
 import {
@@ -40,7 +41,11 @@ function toolError(
   throw new AgentSystemToolError(code, message, credentialRejected);
 }
 
-function validateInput(input: GitHubToolInput): void {
+function validateInput(input: GitHubToolInput, configuration: GitHubManifestConfiguration): void {
+  rejectObviousSelfRemoval(
+    input,
+    typeof configuration.username === 'string' ? configuration.username : undefined,
+  );
   if (
     input.argv.length === 0 ||
     input.argv.some((argument) => argument.includes('\0')) ||
@@ -147,31 +152,8 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
       },
       executable: 'gh',
       maxOutputBytes: 65_536,
-      preflight(configuration) {
-        if (!configuration.username) return undefined;
-        return {
-          argv: ['api', 'user', '--jq', '.login'],
-          validate(result) {
-            if (result.exitCode !== 0) {
-              throw new AgentSystemToolError(
-                'execution_failed',
-                'GitHub rejected the authenticated user check.',
-                githubCredentialRejected(result),
-                githubCliDiagnostic(result, 'identity-check'),
-              );
-            }
-            if (result.truncated) {
-              toolError('execution_failed', 'GitHub returned an invalid authenticated user check.');
-            }
-            const actual = result.stdout.trim();
-            if (actual.toLowerCase() !== configuration.username?.toLowerCase()) {
-              toolError(
-                'tool_identity_mismatch',
-                'GitHub returned an account that does not match the configured username.',
-              );
-            }
-          },
-        };
+      prepareRequest(input, configuration, scope) {
+        return prepareGitHubAssignmentRequest(input, configuration.username, scope);
       },
       async prepare(configuration, scope) {
         if (scope.configurationMode === 'inspect') {
