@@ -88,6 +88,18 @@ export const feedbackSourceStateSchema = Type.Object(
     scannedAt: Type.Optional(Type.String()),
     scannedTime: Type.Optional(Type.Integer({ minimum: 0 })),
     discoveryPending: Type.Optional(Type.Boolean()),
+    discoveryStalls: Type.Optional(
+      Type.Record(
+        text,
+        Type.Object(
+          {
+            operation: text,
+            attempts: Type.Integer({ minimum: 1 }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     lastSource: Type.Optional(text),
     lastServedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     discovery: Type.Optional(

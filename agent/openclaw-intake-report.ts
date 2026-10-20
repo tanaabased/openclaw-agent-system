@@ -41,6 +41,12 @@ export default function openclawIntakeReport(input: {
       ? [{ id: 'intake', code: observation.code ?? 'intake-check-incomplete' }]
       : []),
     ...(intake?.deferred ?? []).map((entry) => ({ id: 'deferred-' + entry.key, code: entry.code })),
+    ...managing
+      .filter((record) => record.feedback?.code)
+      .map((record) => ({
+        id: 'feedback-' + record.id,
+        code: record.feedback!.code!,
+      })),
     ...active
       .filter(
         (record) =>
@@ -60,6 +66,8 @@ export default function openclawIntakeReport(input: {
     const id = problem.slice(0, problem.indexOf(':'));
     if (id === 'intake') return observation.status === 'ready';
     if (id.startsWith('deferred-')) return true;
+    if (id.startsWith('feedback-'))
+      return Boolean(active.find((record) => record.id === id.slice(9) && !record.feedback?.code));
     const record = active.find((entry) => entry.id === id);
     return Boolean(record && !record.blocker);
   });
@@ -132,6 +140,32 @@ export default function openclawIntakeReport(input: {
       continue;
     }
     const automation = failure.code.startsWith('automation-');
+    if (failure.id.startsWith('feedback-')) {
+      const record = managing.find((record) => record.id === failure.id.slice(9))!;
+      const item = intake?.records.find((entry) => entry.id === record.intakeId);
+      const pr = record.work?.delivery?.pullRequest;
+      const stalls = Object.entries(record.feedback?.discoveryStalls ?? {}).filter(
+        ([, stall]) => stall.attempts >= 3,
+      );
+      lines.push(`- **Issue:** ${text(label(record))}`);
+      for (const [nodeId, stall] of stalls) {
+        const number = nodeId === pr?.pullRequestNodeId ? pr.pullRequestNumber : item?.issue.number;
+        const kind = nodeId === pr?.pullRequestNodeId ? 'pull' : 'issues';
+        const url =
+          item && number
+            ? `https://github.com/${item.repository.owner.login}/${item.repository.name}/${kind}/${number}`
+            : undefined;
+        lines.push(
+          `  **Source:** ${url ? `[${kind === 'pull' ? 'PR' : 'Issue'} #${number}](${url})` : text(label(record))}`,
+          `  **Operation:** \`${text(stall.operation)}\``,
+        );
+      }
+      lines.push(
+        `  **Diagnostic:** \`${text(failure.code)}\``,
+        '  **Action:** Later bounded checks retry automatically. If this persists, inspect the named operation and provider access or latency. Preserve the saved checkpoint; do not reset or replay.',
+      );
+      continue;
+    }
     const record = active.find((record) => record.id === failure.id);
     const retry = record?.retry ? record.retryAfter : undefined;
     lines.push(

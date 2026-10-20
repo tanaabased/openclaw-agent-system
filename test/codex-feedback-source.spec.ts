@@ -429,6 +429,85 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(state.events.length, 2);
   });
 
+  it('should retain a late pr comment across interrupted review reads and restart without advancing past it', async () => {
+    const start = Date.parse('2026-10-12T00:00:00Z');
+    let state: CodexFeedback = { startedAt: start, baseline: {}, events: [] };
+    let saved = structuredClone(state);
+    const policy = intakeFixture().policy;
+    const late = {
+      ...comment('late'),
+      updatedAt: new Date(start + 2000).toISOString(),
+      createdAt: new Date(start + 2000).toISOString(),
+    };
+    let arrived = false;
+    let pause: 'reviews' | 'review-comments' | undefined = 'reviews';
+    let now = start + 1000;
+    const reviews = reviewClientFixture(reviewFixture(), []);
+    reviews.listReviews = async () => {
+      if (pause === 'reviews') throw new DiscoveryPaused();
+      return { values: [], nextPage: 1 };
+    };
+    reviews.listComments = async () => {
+      if (pause === 'review-comments') throw new DiscoveryPaused();
+      return { values: [], nextPage: 1 };
+    };
+    const cutoffs: string[] = [];
+    const run = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 7,
+        nodeId: 'PR',
+        itemType: 'pull-request',
+        now,
+        client: {
+          identity: account,
+          reviews,
+          getIssueComment: async () => late,
+          listIssueComments: async () => {
+            throw new Error('unbounded read');
+          },
+          listIssueCommentPage: async (_o, _n, _id, page, since) => {
+            cutoffs.push(since);
+            return { comments: arrived && page === 1 ? [late] : [], truncated: page === 1 };
+          },
+        },
+        discovery: {
+          budget: new DiscoveryBudget(),
+          save: async () => {
+            saved = structuredClone(state);
+          },
+        },
+      });
+    await assert.rejects(run(), DiscoveryPaused);
+    assert.deepEqual(Object.keys(saved.discovery!.PR!.reads), ['comments:1', 'comments:2']);
+    assert.equal(saved.watermarks?.PR, undefined);
+    arrived = true;
+    state = JSON.parse(JSON.stringify(saved));
+    pause = 'review-comments';
+    now = start + 3000;
+    await assert.rejects(run(), DiscoveryPaused);
+    state = JSON.parse(JSON.stringify(saved));
+    assert.equal(state.watermarks?.PR, undefined);
+    pause = undefined;
+    now = start + 4000;
+    await run();
+    assert.equal(state.watermarks!.PR, start + 1000);
+    assert.equal(state.events.length, 0, 'the retained first page predates the late comment');
+    assert.ok(cutoffs.every((cutoff) => cutoff === new Date(start - 2000).toISOString()));
+    state = JSON.parse(JSON.stringify(saved));
+    now = start + 5000;
+    await run();
+    await run();
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['late'],
+    );
+    assert.deepEqual(JSON.parse(state.events[0]!.source), late);
+  });
+
   it('should detect an edited historical review without expanding unchanged review members', async () => {
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = true;
