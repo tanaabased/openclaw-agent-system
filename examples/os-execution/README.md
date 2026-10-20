@@ -6,6 +6,8 @@ The workspace is copied because the test requires a path containing spaces. The 
 
 On mock failure, cleanup fails after stopping the provider and reports bounded scenario-owned tool results so Leia retains the underlying probe failure or timeout. Each execution has a 120-second limit within a 180-second agent turn.
 
+The isolated Gateway disables cron so unrelated scheduled maintenance cannot add model requests to the two authored execution exchanges.
+
 ## Setup
 
 ```bash
@@ -15,6 +17,7 @@ openclaw-setup \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --yolo
 openclaw-aimock prepare --scenario os-execution
+openclaw config set cron.enabled false --strict-json
 
 # should install two isolated workspaces beneath a path containing spaces
 mkdir -p "$TMPDIR/os execution"
