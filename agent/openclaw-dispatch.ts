@@ -27,6 +27,7 @@ import OpenClawDispatchStore, {
 import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
 import { IssueSessionMismatchError, type DispatchCaller } from './openclaw-session-create.ts';
 import workflowFailure from './workflow-failure.ts';
+import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 
 export { openClawDispatchFailureCode } from './openclaw-dispatch-context.ts';
@@ -220,6 +221,9 @@ export default class OpenClawDispatch {
               intakeId: record.intakeId,
               phase: record.phase,
               workflowStatus: workflowStatus(record),
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               threadId: record.threadId,
               effective: record.effective,
               sessionCreation: record.sessionCreation,

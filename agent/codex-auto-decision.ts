@@ -63,7 +63,7 @@ export default async function advanceCodexAutoDecision(
       )
         continue;
       try {
-        await revalidateDispatchAssignment(current, admitted, deps, signal, true);
+        await revalidateDispatchAssignment(current, admitted, deps, signal, true, record);
         if (record.autoDecision && !record.autoDecision.ended) {
           const decision = record.autoDecision;
           if (decision.code) {

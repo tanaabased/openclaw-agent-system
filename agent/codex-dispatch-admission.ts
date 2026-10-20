@@ -465,7 +465,7 @@ export async function prepareDispatch(
         withNative(current, deps, (native) => native.assessmentSkill(record.project!.path, id)),
     });
     record.assessment = selected.selection;
-    record.issueMode = current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan';
+    record.issueMode = current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
     if (record.issueMode === 'work' || record.issueMode === 'auto') {
       await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,

@@ -36,6 +36,7 @@ import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import openclawIntakeReport, { type IntakeObservation } from './openclaw-intake-report.ts';
 import { verifyEmptyIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import workflowFailure from './workflow-failure.ts';
+import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 
 function source(intake: IntakeRecord) {
@@ -217,11 +218,11 @@ export default class OpenClawDispatchCoordinator {
       (record) =>
         (openClawDecisionPending(
           record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         ) ||
           openClawWorkSlot(
             record,
-            manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+            manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
           )) &&
         (openClawItemOccupied(record) || capacity.available > 0),
     );
@@ -495,11 +496,11 @@ export default class OpenClawDispatchCoordinator {
       .flatMap((record) => {
         const slot = openClawWorkSlot(
           record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         );
         const decision = openClawDecisionPending(
           record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         );
         return slot || decision
           ? [
@@ -718,6 +719,9 @@ export default class OpenClawDispatchCoordinator {
         id: record.id,
         ...workflowFailure(error, record.blocker),
         workflowStatus: workflowStatus(record),
+        assignmentObservation: record.assignmentObservation,
+        assignmentWarning:
+          record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
         nextAction: 'next',
       };
     }

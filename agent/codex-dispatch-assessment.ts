@@ -44,6 +44,7 @@ import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
+import workflowRecovery from './workflow-recovery.ts';
 
 export async function presentDispatch(
   input: Record<string, unknown>,
@@ -159,7 +160,7 @@ export async function handoffDispatch(
     )
       throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
     const transition = issueProgression(record, {
-      mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+      mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
       now: (deps.now ?? Date.now)(),
       operator: native.followUpUserTurn,
     });
@@ -207,7 +208,7 @@ export async function assessDispatch(
 ) {
   const { pluginData, current, deps, now, signal, save, fresh } = tx;
   if (action === 'context')
-    record.issueMode = current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan';
+    record.issueMode = current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
   if (action === 'summary') {
     if (!record.result || !native.turnId) throw new Error('assessment-summary-source-unavailable');
     const activate = () =>
@@ -251,7 +252,7 @@ export async function assessDispatch(
           }
         }
         await activate();
-        await revalidateDispatchAssignment(current, intake, deps, signal, true);
+        await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
       },
       select: async (previous) =>
         (
@@ -286,6 +287,9 @@ export async function assessDispatch(
     await save();
     return {
       status: 'verified' as const,
+      assignmentObservation: record.assignmentObservation,
+      assignmentWarning:
+        record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       id: record.id,
       project: record.project,
       routing: JSON.parse(record.routing!),
@@ -299,7 +303,7 @@ export async function assessDispatch(
             previousResult: record.result,
             handoff: assessmentHandoff(
               record,
-              current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+              current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
               'codex',
             ),
             previousResultDigest: automationHash(record.result),
@@ -321,7 +325,7 @@ export async function assessDispatch(
         : {}),
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+      mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
       instructions:
         codexAssessmentInstructions +
         (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
@@ -390,7 +394,7 @@ export async function assessDispatch(
       previousResultDigest: automationHash(result),
       handoff: assessmentHandoff(
         record,
-        current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         'codex',
       ),
       presentation,

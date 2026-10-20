@@ -7,7 +7,7 @@ import type { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { type DispatchGit } from './codex-dispatch-project.ts';
 import type prepareDispatchRepository from './codex-dispatch-repository.ts';
-import type { DispatchState } from './codex-dispatch-state.ts';
+import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import codexHostAccess from './codex-host-access.ts';
 import {
@@ -18,7 +18,7 @@ import {
 
 import type codexRetirementNative from './codex-retirement-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import { inspectActiveIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import workflowFailure from './workflow-failure.ts';
 
 type Client = GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
@@ -52,10 +52,19 @@ export async function revalidateDispatchAssignment(
   deps: CodexDispatchDependencies,
   signal: AbortSignal,
   retainedWork = false,
+  dispatchRecord?: DispatchRecord,
 ) {
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
   const repo = retainedWork
-    ? (await inspectActiveIssue(record, client)).repo
+    ? (
+        await inspectContinuedIssue(
+          record,
+          client,
+          current.manifest.github?.notifications?.issueAssignment?.allowed ?? [],
+          dispatchRecord,
+          (deps.now ?? Date.now)(),
+        )
+      ).repo
     : (await inspectAdmittedIssue(record, client)).repo;
   return { client, repo };
 }

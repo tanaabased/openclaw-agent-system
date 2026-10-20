@@ -20,6 +20,7 @@ import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
 import { issueKey } from './dispatch-pending.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
+import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 
 export { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
@@ -50,6 +51,9 @@ export async function runCodexDispatch(
       records: state.records.map((record) => ({
         ...record,
         workflowStatus: workflowStatus(record),
+        assignmentObservation: record.assignmentObservation,
+        assignmentWarning:
+          record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       })),
     };
   }
@@ -222,7 +226,7 @@ export async function runCodexDispatch(
           }
           if (childAction && record.threadId && record.threadId !== caller)
             throw new Error('dispatch-assessment-caller-mismatch');
-          await revalidateDispatchAssignment(current, intake, deps, signal, true);
+          await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
           const native = await recover(
             current,
             record,

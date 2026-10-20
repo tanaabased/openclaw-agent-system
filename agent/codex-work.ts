@@ -21,6 +21,7 @@ import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { validateWorkflowResult } from './workflow-result.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
+import workflowRecovery from './workflow-recovery.ts';
 
 export async function prepareCodexWork(state: DispatchState, context: CodexWorkContext) {
   const { input, deps, current, caller, native, admissions, save } = context;
@@ -227,7 +228,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         throw new Error('continuation-assessment-selection-changed');
     }
     const transition = issueProgression(record, {
-      mode: liveMode ?? 'plan',
+      mode: liveMode ?? 'auto',
       now: (deps.now ?? Date.now)(),
     });
     if (!['reconcile', 'cancel', 'result'].includes(input.action) && transition.status !== 'ready')
@@ -240,6 +241,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       deps,
       signal,
       true,
+      record,
     );
     const found = await native.find({
       sourceThreadId: record.sourceThreadId,
@@ -564,6 +566,9 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         status: 'verified' as const,
         id: record.id,
         issueStage: record.progression?.stage ?? 'planning',
+        assignmentObservation: record.assignmentObservation,
+        assignmentWarning:
+          record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
         assessment: record.result,
         currentIssue: dispatchContext(
           await client.getItemContext(

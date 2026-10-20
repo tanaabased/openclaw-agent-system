@@ -199,6 +199,9 @@ export function notice(record: DispatchRecord, intake?: IntakeRecord) {
     id: record.id,
     status: record.handoff ? 'handed-off' : record.phase,
     workflowStatus: workflowStatus(record),
+    assignmentObservation: record.assignmentObservation,
+    assignmentWarning:
+      record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
     changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
     threadId: record.threadId,
     ...(failure

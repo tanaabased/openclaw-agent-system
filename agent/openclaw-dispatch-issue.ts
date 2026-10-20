@@ -39,6 +39,7 @@ import openClawSkill from './openclaw-skill.ts';
 import openClawWorkAction, { verifyOpenClawWork } from './openclaw-work.ts';
 import workflowFailure from './workflow-failure.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
+import workflowRecovery from './workflow-recovery.ts';
 
 function source(intake: IntakeRecord) {
   return `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`;
@@ -56,7 +57,7 @@ export default class OpenClawDispatchIssue {
     if (
       openClawDecisionPending(
         record,
-        manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
       )
     ) {
       const assertDecision = async () => {
@@ -67,7 +68,7 @@ export default class OpenClawDispatchIssue {
           !record.decisionTurn &&
           !openClawDecisionPending(
             record,
-            live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+            live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
           )
         )
           throw new WorkflowPolicyHeld('workflow-mode-updated');
@@ -103,7 +104,7 @@ export default class OpenClawDispatchIssue {
       authority.signal?.throwIfAborted();
       const live = await this.context.validateLocal(manifest, workspace, record, true);
       const transition = issueProgression(record, {
-        mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         now,
       });
       if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
@@ -141,7 +142,7 @@ export default class OpenClawDispatchIssue {
           return advanceOpenClawWork({
             record,
             reconcileOnly,
-            mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+            mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
             selection,
             now,
             request,
@@ -461,7 +462,7 @@ export default class OpenClawDispatchIssue {
             operator,
             mode:
               (await this.context.validateLocal(manifest, workspace, record, true)).manifest.github
-                ?.notifications?.issueAssignment?.mode ?? 'plan',
+                ?.notifications?.issueAssignment?.mode ?? 'auto',
             now,
             request,
             config: this.context.dependencies.config(),
@@ -675,7 +676,7 @@ export default class OpenClawDispatchIssue {
               )
             : undefined;
         await childAuthority.assertCurrent();
-        return issueAssessmentAction({
+        const outcome = await issueAssessmentAction({
           selection,
           evidence,
           request,
@@ -690,6 +691,12 @@ export default class OpenClawDispatchIssue {
           save,
           assertCurrent: childAuthority.assertCurrent,
         });
+        return {
+          ...outcome,
+          assignmentObservation: record.assignmentObservation,
+          assignmentWarning:
+            record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
+        };
       });
     }
     throw new Error('dispatch-action-invalid');

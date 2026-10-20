@@ -28,7 +28,7 @@ import GitCommandError from '../tools/git/command-error.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
-import { inspectActiveIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import OpenClawDispatchStore, {
@@ -137,7 +137,8 @@ export default class OpenClawDispatchContext {
       fresh.manifest.agent.id !== manifest.agent.id
     )
       throw new Error('dispatch-workspace-binding-changed');
-    if (record.retired || record.retirement) throw new Error('dispatch-issue-inactive');
+    if (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
+      throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
     if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
@@ -178,13 +179,11 @@ export default class OpenClawDispatchContext {
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
     signal?: AbortSignal,
   ) {
-    const { current, intake } = await this.validateLocal(
-      manifest,
-      workspace,
-      record,
-      work,
-      feedback,
-    );
+    const {
+      current,
+      intake,
+      manifest: liveManifest,
+    } = await this.validateLocal(manifest, workspace, record, work, feedback);
     const client =
       connection ??
       (await this.dependencies.connect(
@@ -193,9 +192,31 @@ export default class OpenClawDispatchContext {
       ));
     const repo =
       (record.sessionCreation?.verified || record.effective?.status === 'verified') && !feedback
-        ? (await inspectActiveIssue(intake, client)).repo
+        ? (
+            await inspectContinuedIssue(
+              intake,
+              client,
+              liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+              record,
+              (this.dependencies.now ?? Date.now)(),
+            )
+          ).repo
         : feedback
-          ? await revalidateFeedbackAssignment(current.policy, intake, client, record)
+          ? await revalidateFeedbackAssignment(
+              {
+                ...current.policy,
+                policy: {
+                  ...current.policy.policy,
+                  issueAssignment: {
+                    ...current.policy.policy.issueAssignment!,
+                    allowed: liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+                  },
+                },
+              },
+              intake,
+              client,
+              record,
+            )
           : (await inspectAdmittedIssue(intake, client)).repo;
     const worktreeInput = {
       agentId: manifest.agent.id,

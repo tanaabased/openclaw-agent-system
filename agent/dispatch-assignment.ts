@@ -1,6 +1,121 @@
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
-import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
+import {
+  githubIdentityMatches,
+  type GitHubCanonicalWorkItem,
+  type GitHubIdentity,
+} from '../channels/github/provider/work-item.ts';
+import type { AssignmentObservation } from './assignment-retirement.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
+
+/** missing membership is not authority to cancel already admitted work. */
+export async function inspectAssignmentRemoval(
+  record: IntakeRecord,
+  client: GitHubNotificationIntakeClient,
+  item: GitHubCanonicalWorkItem,
+  allowed: readonly Pick<GitHubIdentity, 'login' | 'nodeId'>[],
+  now: number,
+): Promise<AssignmentObservation | undefined> {
+  if (item.assignees.some((identity) => githubIdentityMatches(identity, client.identity))) return;
+  const observation: AssignmentObservation = {
+    missing: true,
+    observedAt: now,
+    code: 'assignment-removal-evidence-unavailable',
+  };
+  try {
+    const history = await client.listAssignmentEvents(
+      record.repository.owner.login,
+      record.repository.name,
+      record.issue.number,
+    );
+    if (history.truncated) return observation;
+    const events = history.events.filter(
+      (event) =>
+        event.assignee.nodeId === client.identity.nodeId ||
+        event.assignee.login.toLowerCase() === client.identity.login.toLowerCase(),
+    );
+    if (
+      events.some(
+        (event) =>
+          !githubIdentityMatches(event.assignee, client.identity) ||
+          !Number.isFinite(Date.parse(event.createdAt)) ||
+          !Number.isSafeInteger(event.databaseId) ||
+          event.databaseId <= 0 ||
+          !event.nodeId ||
+          !event.actor.nodeId ||
+          !event.actor.login,
+      )
+    )
+      return observation;
+    const latest = events.sort(
+      (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
+    )[0];
+    if (!latest) return observation;
+    if (
+      latest.event !== 'unassigned' ||
+      Date.parse(latest.createdAt) < Date.parse(record.assignment.createdAt) ||
+      (Date.parse(latest.createdAt) === Date.parse(record.assignment.createdAt) &&
+        latest.databaseId <= record.assignment.databaseId) ||
+      !Number.isFinite(Date.parse(record.assignment.createdAt)) ||
+      events.some(
+        (event) =>
+          event !== latest &&
+          (event.nodeId === latest.nodeId || event.databaseId === latest.databaseId),
+      )
+    )
+      return { ...observation, code: 'assignment-removal-evidence-conflicting' };
+    return {
+      ...observation,
+      event: {
+        nodeId: latest.nodeId,
+        databaseId: latest.databaseId,
+        createdAt: latest.createdAt,
+        actor: { login: latest.actor.login, nodeId: latest.actor.nodeId },
+      },
+      code: allowed.some((actor) => githubIdentityMatches(actor, latest.actor))
+        ? 'assignment-removal-approved'
+        : 'assignment-removal-unapproved',
+    };
+  } catch {
+    return observation;
+  }
+}
+
+export async function inspectContinuedIssue(
+  intake: IntakeRecord,
+  client: GitHubNotificationIntakeClient,
+  allowed: readonly Pick<GitHubIdentity, 'login' | 'nodeId'>[],
+  record?: SharedDispatchRecord,
+  now = Date.now(),
+) {
+  const current = await inspectActiveIssue(intake, client, true);
+  const assignmentObservation = await inspectAssignmentRemoval(
+    intake,
+    client,
+    current.item,
+    allowed,
+    now,
+  );
+  if (record) {
+    if (assignmentObservation) record.assignmentObservation = assignmentObservation;
+    else delete record.assignmentObservation;
+  }
+  if (assignmentObservation?.code === 'assignment-removal-approved')
+    throw new Error('dispatch-assignment-removed');
+  if (record?.retirement?.reason === 'assignment-removed') {
+    const retirement = record.retirement;
+    if (
+      !assignmentObservation ||
+      retirement.archiveAttempt ||
+      retirement.archivedAt ||
+      retirement.worktreeRemovalAttemptedAt ||
+      retirement.worktreeRemovedAt
+    )
+      throw new Error('dispatch-issue-inactive');
+    delete record.retirement;
+  }
+  return { ...current, assignmentObservation };
+}
 
 /** existing task access is provider-owned; only identity and lifecycle are local. */
 export async function inspectActiveIssue(
