@@ -28,6 +28,20 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  if (code === 'retirement-native-archive-unverified')
+    return {
+      severity: 'info',
+      title: 'Retirement awaiting archive confirmation',
+      summary: 'Retirement is underway. Native archival has not yet been confirmed.',
+      next: 'No action is needed now. Intake will check the existing archive request automatically; it will not submit a duplicate.',
+    };
+  if (code === 'retirement-native-reclamation-pending')
+    return {
+      severity: 'info',
+      title: 'Retirement awaiting worktree cleanup',
+      summary: 'The chat is archived. Waiting for Codex to finish worktree cleanup.',
+      next: 'No action is needed now. Intake will verify worktree cleanup on the next scheduled check.',
+    };
   if (code.startsWith('retirement-'))
     return {
       severity: 'warning',
