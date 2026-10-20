@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
-import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { githubNotificationQuote } from '../channels/github/presentation/card.ts';
@@ -269,7 +269,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         startedAt: now,
         admission: {
           observedAt: now,
-          enabled: workflowFeedbackEnabled(
+          enabled: workflowFeedbackAccepting(
             current.manifest.github?.notifications,
             'issue-assignment',
           ),

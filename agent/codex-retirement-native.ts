@@ -77,7 +77,6 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
           nativeObject(row.source.subAgent),
       );
       // list metadata can omit guardian parentage; read each candidate before classifying ownership.
-      if (helpers.length > 12) return [...users.keys()];
       const parents = new Map<string, string>();
       for (const row of helpers) {
         const id = String(row.id);
@@ -100,16 +99,26 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
           itemsView: 'notLoaded',
         });
         const last = Array.isArray(turns.data) && turns.data.length === 1 ? turns.data[0] : null;
+        // guardian reviews can finish without a retained ordinary turn; parentage comes from read.
+        const emptyGuardian =
+          thread.threadSource === 'guardian_review' &&
+          nativeObject(thread.source) &&
+          nativeObject(thread.source.subAgent) &&
+          thread.source.subAgent.other === 'guardian' &&
+          Array.isArray(turns.data) &&
+          turns.data.length === 0 &&
+          turns.nextCursor == null;
         if (
-          !nativeObject(last) ||
-          last.status !== 'completed' ||
-          typeof last.completedAt !== 'number' ||
-          !Number.isFinite(last.completedAt)
+          !emptyGuardian &&
+          (!nativeObject(last) ||
+            last.status !== 'completed' ||
+            typeof last.completedAt !== 'number' ||
+            !Number.isFinite(last.completedAt))
         )
           continue;
         parents.set(id, parent);
       }
-      // only completed descendants of retiring owners can share their parent's cleanup.
+      // only settled descendants of retiring owners can share their parent's cleanup.
       let changed = true;
       while (changed) {
         changed = false;

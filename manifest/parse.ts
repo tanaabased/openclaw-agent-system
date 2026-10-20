@@ -18,7 +18,10 @@ import {
 } from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
-import { validateGitHubNotificationPolicy } from '../channels/github/notification-policy.ts';
+import {
+  githubFeedbackCompatibilityDiagnostics,
+  validateGitHubNotificationPolicy,
+} from '../channels/github/notification-policy.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import { decodeBackup, externalBackupSchema } from './backup-schema.ts';
@@ -473,8 +476,9 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
           setupFileFieldPath: `/${agentKey}` as '/setup' | '/setup-agent',
         }
       : {}),
-    diagnostics:
-      isRecord(value) && Object.hasOwn(value, 'setup')
+    diagnostics: [
+      ...githubFeedbackCompatibilityDiagnostics(value.github?.notifications),
+      ...(isRecord(value) && Object.hasOwn(value, 'setup')
         ? [
             {
               code: 'manifest-setup-deprecated',
@@ -483,9 +487,10 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
                 agentKey === 'setup'
                   ? 'Top-level setup is deprecated; use setup-agent instead.'
                   : 'Top-level setup is deprecated and ignored because setup-agent is declared.',
-              severity: 'warning',
+              severity: 'warning' as const,
             },
           ]
-        : [],
+        : []),
+    ],
   };
 }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
+import retainedIntakePolicy from '../agent/retained-intake-policy.ts';
+import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -27,6 +29,29 @@ function fixture(): AgentManifest {
 
 describe('assignment intake policy', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should not restore ${runtime} feedback grants from retained assignment actors`, () => {
+      const manifest = fixture();
+      const state = {
+        version: 1 as const,
+        scope: 'retained',
+        workspaceDir: '/workspace',
+        agentId: 'receiver',
+        account: { login: 'receiver', nodeId: 'U_receiver', type: 'User' },
+        policyDigest: 'original',
+        baselineAt: 0,
+        records: [],
+      };
+      const configured = retainedIntakePolicy(manifest, state, runtime).policy.issueAssignment!;
+      assert.deepEqual(feedbackIdentities(configured.allowed, configured.feedback), [
+        { login: 'receiver', nodeId: 'U_receiver' },
+      ]);
+      delete manifest.github!.notifications!.issueAssignment;
+      const removed = retainedIntakePolicy(manifest, state, runtime).policy.issueAssignment!;
+      assert.deepEqual(feedbackIdentities(removed.allowed, removed.feedback), []);
+      delete manifest.github!.notifications;
+      const absent = retainedIntakePolicy(manifest, state, runtime).policy.issueAssignment!;
+      assert.deepEqual(feedbackIdentities(absent.allowed, absent.feedback), []);
+    });
     it(`should keep ${runtime} installed orchestration stable across live policy edits`, () => {
       const manifest = fixture();
       const jobs = runtime === 'codex' ? codexIntakeJobs : openclawIntakeJobs;

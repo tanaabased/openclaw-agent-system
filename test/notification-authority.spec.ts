@@ -6,6 +6,23 @@ import {
 import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/notification policy provenance', () => {
+  it('should key default feedback by current parent actors and preserve equivalent legacy grants', () => {
+    const policy = intakeFixture().policy;
+    const inherited = feedbackAuthorityDigest(policy);
+    policy.issueAssignment!.feedback = true;
+    assert.equal(feedbackAuthorityDigest(policy), inherited);
+    delete policy.issueAssignment!.feedback;
+    policy.issueAssignment!.allowed = [{ login: 'other', nodeId: 'U_other' }];
+    assert.notEqual(feedbackAuthorityDigest(policy), inherited);
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
+    const replacement = feedbackAuthorityDigest(policy);
+    policy.issueAssignment!.allowed = [];
+    assert.equal(feedbackAuthorityDigest(policy), replacement);
+    policy.issueAssignment!.feedback = false;
+    assert.equal(feedbackAuthorityDigest(policy), replacement);
+    policy.issueAssignment!.enabled = false;
+    assert.notEqual(feedbackAuthorityDigest(policy), replacement);
+  });
   it('should canonicalize observation cache keys without mutating configuration', () => {
     const policy = intakeFixture().policy;
     policy.runtimes = ['codex', 'openclaw'];

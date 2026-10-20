@@ -1,4 +1,4 @@
-import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
@@ -15,7 +15,7 @@ import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-d
 import { feedbackSession } from './openclaw-feedback.ts';
 
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
-  return workflowFeedbackEnabled(manifest.github?.notifications, 'issue-assignment');
+  return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');
 }
 export interface OpenClawFeedbackScan {
   id: string;

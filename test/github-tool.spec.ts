@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type {
   OpenClawPluginToolFactory,
@@ -7,7 +10,7 @@ import type {
 
 import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolError from '../api/error.ts';
-import AgentSystemToolRuntime from '../api/runtime.ts';
+import AgentSystemToolRuntime, { type AgentSystemToolRuntimeDependencies } from '../api/runtime.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from '../api/types.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { createGitHubTool } from '../tools/github/tool.ts';
@@ -30,10 +33,10 @@ const manifest: AgentManifest = {
   },
 };
 
-function loadedManifest(inputManifest = manifest) {
+function loadedManifest(inputManifest = manifest, boundWorkspaceDir = workspaceDir) {
   return {
     status: 'loaded' as const,
-    scope: { agentId: inputManifest.agent.id, workspaceDir },
+    scope: { agentId: inputManifest.agent.id, workspaceDir: boundWorkspaceDir },
     path: `${workspaceDir}/agent.yaml`,
     digest: 'manifest-digest',
     manifest: inputManifest,
@@ -72,6 +75,8 @@ function createTool(reconciliations: string[] = []) {
 
 function createRuntime(
   options: {
+    boundWorkspaceDir?: string;
+    authorize?: AgentSystemToolRuntimeDependencies['authorize'];
     environmentCalls?: string[];
     environmentValues?: Record<string, string>;
     inputManifest?: AgentManifest;
@@ -84,6 +89,7 @@ function createRuntime(
   const logs = options.logs ?? [];
   const environmentCalls = options.environmentCalls ?? [];
   return new AgentSystemToolRuntime({
+    ...(options.authorize ? { authorize: options.authorize } : {}),
     resolveExecutable: async (name) => `/usr/bin/${name}`,
     baseEnvironment: {
       HOME: '/home/runner',
@@ -94,7 +100,13 @@ function createRuntime(
     environmentService: {
       async loadForAgentId(agentId) {
         environmentCalls.push(agentId);
-        return loadedEnvironment(inputManifest, options.environmentValues);
+        return {
+          ...loadedEnvironment(inputManifest, options.environmentValues),
+          scope: {
+            agentId: inputManifest.agent.id,
+            workspaceDir: options.boundWorkspaceDir ?? workspaceDir,
+          },
+        };
       },
     },
     excludedExecutableDirectories: options.excludedExecutableDirectories ?? ['/package/bin'],
@@ -104,10 +116,10 @@ function createRuntime(
     },
     manifestService: {
       async loadForAgentId() {
-        return loadedManifest(inputManifest);
+        return loadedManifest(inputManifest, options.boundWorkspaceDir);
       },
       async loadForCommandDirectory() {
-        return loadedManifest(inputManifest);
+        return loadedManifest(inputManifest, options.boundWorkspaceDir);
       },
     },
     runCli:
@@ -123,6 +135,191 @@ function createRuntime(
 }
 
 describe('tools/github/tool', () => {
+  it('should execute the inspected file bytes even when the file changes during preflight', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'github-input-'));
+    const path = join(directory, 'payload.json');
+    const inspected = '{"assignees":["tanaabot"]}';
+    const requests: AgentSystemCliRunRequest[] = [];
+    try {
+      await writeFile(path, inspected);
+      const runtime = createRuntime({
+        runCli: async (request) => {
+          requests.push(request);
+          if (request.argv[1] === 'user') await writeFile(path, '{"assignees":[]}');
+          return {
+            exitCode: 0,
+            stderr: '',
+            stdout: JSON.stringify({ login: 'tanaabot', node_id: 'SELF' }),
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      });
+      await createTool().invoke(
+        runtime,
+        ['api', 'repos/owner/repo/issues/1', '-XPATCH', '--input', path],
+        { source: 'command', workspaceDir },
+      );
+      assert.equal(requests.length, 2);
+      assert.deepEqual(requests[1]?.argv.slice(-2), ['--input', '-']);
+      assert.equal(requests[1]?.stdin, inspected);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('should reject obvious self-removal on every entrypoint before resolving credentials', async () => {
+    await assertValidationParity(createTool(), manifest, [
+      {
+        argv: ['issue', 'edit', '1', '--remove-assignee=@me'],
+        signals: [/self-unassignment/u, /another authorized user/u],
+      },
+    ]);
+    await assertValidationParity(
+      createTool(),
+      { ...manifest, github: { ...manifest.github, username: 'tanaabot' } },
+      [
+        {
+          argv: ['pr', 'edit', '1', '--remove-assignee', 'other,TANAABOT'],
+          signals: [/self-unassignment/u],
+        },
+      ],
+    );
+  });
+
+  it('should keep native approval ahead of authenticated assignment checks', async () => {
+    const environmentCalls: string[] = [];
+    await assert.rejects(
+      new AgentSystemToolRegistry([createTool()]).invoke(
+        'gh',
+        createRuntime({
+          environmentCalls,
+          authorize: async () => ({ status: 'denied', reason: 'native approval denied' }),
+          runCli: async () => assert.fail('denied calls must not execute'),
+        }),
+        ['api', 'repos/owner/repo/issues/1', '-XPATCH', '-Fassignees[]'],
+        { source: 'command', workspaceDir },
+      ),
+      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
+    );
+    assert.deepEqual(environmentCalls, []);
+  });
+
+  for (const source of ['command', 'agent-command', 'tool'] as const) {
+    it(`should never forward denied replacement through ${source}`, async () => {
+      const requests: AgentSystemCliRunRequest[] = [];
+      const inputManifest: AgentManifest = { ...manifest, github: { token: 'GH_TOKEN_TANAABOT' } };
+      const boundWorkspaceDir = source === 'agent-command' ? process.cwd() : workspaceDir;
+      const runtime = createRuntime({
+        boundWorkspaceDir,
+        inputManifest,
+        runCli: async (request) => {
+          requests.push(request);
+          return {
+            exitCode: 0,
+            stderr: '',
+            stdout: JSON.stringify(
+              request.argv[1] === 'user'
+                ? { login: 'tanaabot', node_id: 'SELF' }
+                : { assignees: [{ login: 'tanaabot' }] },
+            ),
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      });
+      const registered = createTool();
+      const argv = ['api', 'repos/owner/repo/issues/1', '-XPATCH', '--input', '-'];
+      const stdin = '{"assignees":[]}';
+      const rejected = (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'approval_denied';
+      if (source === 'tool') {
+        let factory: OpenClawPluginToolFactory | undefined;
+        registered.registerTools(
+          {
+            registerTool: (value: unknown) => {
+              factory = value as OpenClawPluginToolFactory;
+            },
+          } as never,
+          runtime,
+        );
+        const produced = factory?.({ agentId: 'data', workspaceDir } as never);
+        const tool = Array.isArray(produced) ? produced[0] : produced;
+        assert.ok(tool);
+        await assert.rejects(
+          tool.execute('replacement-call', { argv, stdin }, undefined, undefined),
+          rejected,
+        );
+      } else {
+        await assert.rejects(
+          registered.invoke(
+            runtime,
+            argv,
+            { source, workspaceDir: boundWorkspaceDir, agentId: 'data' },
+            stdin,
+          ),
+          rejected,
+        );
+      }
+      assert.deepEqual(
+        requests.map((request) => request.argv),
+        [
+          ['api', 'user'],
+          ['api', '/repos/owner/repo/issues/1'],
+        ],
+      );
+      assert.ok(
+        requests.every(
+          (request) =>
+            request.environment.GH_TOKEN === 'private-token' &&
+            request.environment.SHOULD_NOT_INHERIT === undefined,
+        ),
+      );
+    });
+  }
+
+  for (const argv of [
+    ['issue', 'edit', '1', '--remove-assignee', 'tanaabot'],
+    ['pr', 'edit', '1', '--remove-assignee=@me'],
+    ['api', 'repos/owner/repo/issues/1/assignees', '-X', 'DELETE', '-f', 'assignees[]=tanaabot'],
+    ['api', 'repos/owner/repo/issues/1', '-X', 'PATCH', '--input', '-'],
+  ]) {
+    it(`should reject self-unassignment via ${argv.slice(0, 2).join(' ').toLowerCase()}`, async () => {
+      const requests: AgentSystemCliRunRequest[] = [];
+      const runtime = createRuntime({
+        runCli: async (request) => {
+          requests.push(request);
+          return {
+            exitCode: 0,
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+            stdout: request.argv.includes('user')
+              ? request.argv.includes('--jq')
+                ? 'tanaabot\n'
+                : JSON.stringify({ login: 'tanaabot', node_id: 'SELF' })
+              : JSON.stringify({ assignees: [{ login: 'tanaabot' }] }),
+          };
+        },
+      });
+      await assert.rejects(
+        new AgentSystemToolRegistry([createTool()]).invoke(
+          'gh',
+          runtime,
+          argv,
+          { source: 'command', workspaceDir },
+          '{"assignees":[]}',
+        ),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && /self-unassignment/u.test(error.message),
+      );
+      assert.equal(
+        requests.some((request) => JSON.stringify(request.argv) === JSON.stringify(argv)),
+        false,
+      );
+    });
+  }
+
   it('should expose skill guidance only when github is configured', () => {
     const registry = new AgentSystemToolRegistry([createTool()]);
 

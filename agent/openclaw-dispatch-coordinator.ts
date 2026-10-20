@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import { type IntakeRecord } from '../channels/github/intake/record-store.ts';
 import {
   githubNotificationItemMatchesSelector,
@@ -671,7 +671,7 @@ export default class OpenClawDispatchCoordinator {
         startedAt: now,
         admission: {
           observedAt: now,
-          enabled: workflowFeedbackEnabled(manifest.github?.notifications, 'issue-assignment'),
+          enabled: workflowFeedbackAccepting(manifest.github?.notifications, 'issue-assignment'),
         },
         baseline: {},
         events: [],
