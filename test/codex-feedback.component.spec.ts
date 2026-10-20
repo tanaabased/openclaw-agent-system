@@ -243,35 +243,36 @@ describe('agent/codex-feedback', () => {
     manifest.github.notifications['issue-assignment'].mode = mode;
     await writeFile(path, JSON.stringify(manifest));
   }
-  for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
-    it(`should retain planning input without implementation for ${message.toLowerCase()}`, async () => {
-      const ref = await prepare(commenter, `@receiver ${message}`);
-      sent = true;
-      turn = 'feedback';
-      const context = await call('context', ref, true);
-      assert.equal(context.status, 'verified');
-      assert.equal('mode' in context && context.mode, 'plan');
-      const original = (await store.read()).records[0]!.result;
-      const saved = await call(
-        'result',
-        { ...ref, result: { privateText: 'Retained plan response.' }, reply: false },
-        true,
-      );
-      assert.equal(saved.status, 'recorded');
-      const record = (await store.read()).records[0]!;
-      assert.deepEqual(record.result, original);
-      assert.equal(record.progression, undefined);
-      assert.equal(record.feedback!.events[0]!.work, undefined);
-      assert.equal(creates, 0);
-    });
+  for (const mode of ['plan', 'auto'] as const)
+    for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
+      it(`should retain ${mode} input without implementation for ${message.toLowerCase()}`, async () => {
+        await feedbackMode(mode);
+        const ref = await prepare(commenter, `@receiver ${message}`);
+        sent = true;
+        turn = 'feedback';
+        const context = await call('context', ref, true);
+        assert.equal(context.status, 'verified');
+        assert.equal('mode' in context && context.mode, mode);
+        const original = (await store.read()).records[0]!.result;
+        const saved = await call(
+          'result',
+          { ...ref, result: { privateText: 'Retained plan response.' }, reply: false },
+          true,
+        );
+        assert.equal(saved.status, 'recorded');
+        const record = (await store.read()).records[0]!;
+        assert.deepEqual(record.result, original);
+        assert.equal(record.progression, undefined);
+        assert.equal(record.feedback!.events[0]!.work, undefined);
+        assert.equal(creates, 0);
+      });
   it('should keep plan feedback in planning and use live work policy without install', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
     const context = await call('context', ref, true);
     assert.equal('mode' in context && context.mode, 'plan');
-    const held = await call('implementation-context', ref, true);
-    assert.equal('reason' in held && held.reason, 'implementation-direction-required');
+    assert.equal((await store.read()).records[0]!.progression, undefined);
     await feedbackMode('work');
     const active = await call('implementation-context', ref, true);
     assert.equal(active.status, 'verified');
@@ -303,26 +304,29 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
     assert.equal(creates, 0);
   });
-  it('should accept explicit implementation direction from approved feedback in plan', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
-    const result = await call(
-      'implementation-context',
-      {
-        ...ref,
-        decision: {
-          mode: 'work',
-          reasons: ['Approved author asks to implement.'],
-          plan: 'Implement the requested change.',
-        },
-      },
-      true,
-    );
-    assert.equal(result.status, 'verified');
-    assert.equal((await store.read()).records[0]!.progression?.via, 'operator');
-  });
+  for (const mode of ['plan', 'auto'] as const)
+    it(`should enter work from approved direction in ${mode} without an extra decision`, async () => {
+      await feedbackMode(mode);
+      await store.exclusive(async (state, save) => {
+        state.records[0]!.result!.decision = { mode: 'plan', reasons: ['Wait for direction.'] };
+        await save();
+      });
+      const ref = await prepare(commenter, '@receiver Please implement the agreed plan.');
+      sent = true;
+      turn = 'feedback';
+      const context = await call('context', ref, true);
+      assert.equal('mode' in context && context.mode, mode);
+      const original = (await store.read()).records[0]!.result;
+      const result = await call('implementation-context', ref, true);
+      assert.equal(result.status, 'verified');
+      const record = (await store.read()).records[0]!;
+      assert.equal(record.progression?.via, 'operator');
+      assert.equal(record.progression?.stage, 'implementation');
+      assert.equal(record.feedback!.events[0]!.work!.decision, undefined);
+      assert.deepEqual(record.result, original);
+      assert.equal((await call('implementation-context', ref, true)).status, 'verified');
+      assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
+    });
   it('should retain feedback clarification and completed work without overwriting the initial result', async () => {
     await feedbackMode('work');
     const ref = await prepare();
@@ -387,8 +391,19 @@ describe('agent/codex-feedback', () => {
     sent = true;
     turn = 'feedback';
     await call('context', ref, true);
-    const held = await call('implementation-context', ref, true);
-    assert.equal('reason' in held && held.reason, 'auto-decision-required');
+    const held = await call(
+      'implementation-context',
+      {
+        ...ref,
+        decision: {
+          mode: 'plan',
+          reasons: ['Scope needs review.'],
+          plan: 'Review scope first.',
+        },
+      },
+      true,
+    );
+    assert.equal('reason' in held && held.reason, 'auto-wait');
     const selected = await call(
       'implementation-context',
       {

@@ -229,29 +229,29 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
-  for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
-    it(`should retain planning input without implementation for ${message.toLowerCase()}`, async () => {
-      input.policy.issueAssignment!.mode = 'plan';
-      source.body = `@receiver ${message}`;
-      event.source = JSON.stringify(source);
-      event.revision = feedbackRevision(source);
-      const context = await start();
-      assert.equal(context.status, 'verified');
-      const saved = await action('result', {
-        privateText: 'Retained plan response.',
-        reply: false,
+  for (const mode of ['plan', 'auto'] as const)
+    for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
+      it(`should retain ${mode} input without implementation for ${message.toLowerCase()}`, async () => {
+        input.policy.issueAssignment!.mode = mode;
+        source.body = `@receiver ${message}`;
+        event.source = JSON.stringify(source);
+        event.revision = feedbackRevision(source);
+        const context = await start();
+        assert.equal(context.status, 'verified');
+        const saved = await action('result', {
+          privateText: 'Retained plan response.',
+          reply: false,
+        });
+        assert.equal(saved.status, 'recorded');
+        assert.equal(record.progression, undefined);
+        assert.equal(event.work, undefined);
+        assert.equal(writes, 0);
       });
-      assert.equal(saved.status, 'recorded');
-      assert.equal(record.progression, undefined);
-      assert.equal(event.work, undefined);
-      assert.equal(writes, 0);
-    });
   it('should keep plan feedback in planning and preserve legacy implementation authority', async () => {
     input.policy.issueAssignment!.mode = 'plan';
     await start();
-    await assert.rejects(action('implementation-context'), {
-      reason: 'implementation-direction-required',
-    });
+    assert.equal(record.progression, undefined);
+    assert.equal(event.work, undefined);
     record.work = {
       assessmentDigest: 'a'.repeat(64),
       implementation: { runId: 'original', inputEventId: 'original' },
@@ -259,22 +259,37 @@ describe('agent/openclaw-feedback', () => {
     // legacy execution, not current defaults, establishes the existing stage.
     const context = await action('implementation-context');
     assert.equal(context.status, 'verified');
-    assert.equal(record.progression?.stage, 'implementation');
+    assert.equal((record as OpenClawDispatchRecord).progression?.stage, 'implementation');
   });
-  it('should accept approved feedback direction through the shared plan to work transition', async () => {
-    input.policy.issueAssignment!.mode = 'plan';
-    await start();
-    const context = await action('implementation-context', {
-      decision: {
-        mode: 'work',
-        reasons: ['The approved author requests implementation.'],
-        plan: 'Implement the requested change.',
-      },
+  for (const mode of ['plan', 'auto'] as const)
+    it(`should enter work from approved direction in ${mode} without an extra decision`, async () => {
+      input.policy.issueAssignment!.mode = mode;
+      record.result = {
+        version: 1,
+        outcome: 'plan-ready',
+        summary: 'Original',
+        assessment: 'Original assessment',
+        plan: 'Original plan',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+        decision: { mode: 'plan', reasons: ['Wait for direction.'] },
+      };
+      source.body = '@receiver Please implement the agreed plan.';
+      event.source = JSON.stringify(source);
+      event.revision = feedbackRevision(source);
+      const initial = await start();
+      assert.equal('mode' in initial && initial.mode, mode);
+      const original = structuredClone(record.result);
+      const context = await action('implementation-context');
+      assert.equal(context.status, 'verified');
+      assert.equal(record.progression?.via, 'operator');
+      assert.equal(record.progression?.stage, 'implementation');
+      assert.equal(event.work!.decision, undefined);
+      assert.deepEqual(record.result, original);
+      assert.equal((await action('implementation-context')).status, 'verified');
+      assert.equal(record.feedback!.events.length, 1);
+      assert.equal(input.policy.issueAssignment!.mode, mode);
     });
-    assert.equal(context.status, 'verified');
-    assert.equal(record.progression?.via, 'operator');
-    assert.equal(input.policy.issueAssignment!.mode, 'plan');
-  });
   it('should use live work policy and retain feedback clarification independently', async () => {
     input.policy.issueAssignment!.mode = 'work';
     const original: NonNullable<OpenClawDispatchRecord['result']> = {

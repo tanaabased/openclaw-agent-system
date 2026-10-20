@@ -39,6 +39,9 @@ for (const [scenario, itemType] of [
           assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
+              ...(scenario === 'openclaw-pr'
+                ? [{ itemType: 'issue', turn: { runId: 'earlier' } }]
+                : []),
               {
                 itemType,
                 source: JSON.stringify({ nodeId: 'source' }),

@@ -41,7 +41,9 @@ without repeating implementation or creating another PR.
 
 For message parity, compare a question, plan revision, clarification answer,
 implementation request, and repair sent directly and through approved issue/linked-PR
-comments in the same task state. Verify that both receive the retained plans and
+comments in the same task state. Compare explicit implementation in Plan and Auto
+without an extra decision object, including an older Auto Plan decision. Verify
+that both receive the retained plans and
 partial work before interpreting the message. Questions in Plan must not start
 implementation; an authorized repair must retain the conversation, checkout, and PR.
 Check the full private answer in the native chat and the public reply at its exact

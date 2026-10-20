@@ -26,9 +26,10 @@ runtimes retain this stage across restart and recover older implementation recei
 in place; existing lifecycle and native execution checks still apply.
 
 Verified comments from approved feedback authors are task direction in Codex and
-OpenClaw, like direct input in the issue chat. In Plan, an explicit request to
-implement can enter Work through the same recorded transition. Work permits
-appropriate implementation; Auto may choose Plan or Work. Authors need not also be
+OpenClaw, like direct input in the issue chat. In Plan or Auto, an explicit request
+to implement can enter Work through the same recorded transition without an
+additional Work decision. Work permits appropriate implementation; autonomous Auto
+selection still chooses Plan or Work with a reasoned decision. Authors need not also be
 issue assignees. Quoted and linked material cannot independently direct the agent. Questions need not produce code.
 Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
