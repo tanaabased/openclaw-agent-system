@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -18,13 +18,18 @@ import type { AgentSystemCliResult } from '../api/types.ts';
 // this hosted experiment uses the prepared package and never starts a native chat or gateway.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'the claim trial is github actions only');
 assert.ok(process.env.AGENT_SYSTEM_PACKAGE);
+assert.ok(process.env.GITHUB_WORKSPACE);
 assert.ok(process.env.GH_TOKEN_TANAABOT);
 assert.ok(process.env.GH_TOKEN_EMORI);
 const execute = promisify(execFile);
 const root = await mkdtemp(join(tmpdir(), 'github-claim-trial-'));
 await execute('tar', ['-xzf', resolve(process.env.AGENT_SYSTEM_PACKAGE), '-C', root]);
 const packageRoot = join(root, 'package');
-await symlink(resolve('node_modules'), join(packageRoot, 'node_modules'), 'dir');
+await symlink(
+  join(process.env.GITHUB_WORKSPACE, 'node_modules'),
+  join(packageRoot, 'node_modules'),
+  'dir',
+);
 const { default: Store } = (await import(
   pathToFileURL(join(packageRoot, 'agent/assignment-claim-store.ts')).href
 )) as typeof StoreModule;
@@ -317,11 +322,7 @@ try {
     evidence.cleanupErrors = cleanupErrors.map((error) =>
       error instanceof Error ? error.message : String(error),
     );
-    await mkdir(join(process.cwd(), 'reports'), { recursive: true });
-    await writeFile(
-      join(process.cwd(), 'reports', 'github-claim-trial.json'),
-      JSON.stringify(evidence, null, 2),
-    );
+    await writeFile(join(root, 'evidence.json'), JSON.stringify(evidence, null, 2));
     process.stdout.write(`${JSON.stringify(evidence)}\n`);
     if (cleanupErrors.length) process.exitCode = 1;
   }
