@@ -7,7 +7,8 @@ notification workflows. It describes their appearance and composition only. The
 
 ## Style
 
-- Use one meaningful emoji and a short descriptive title.
+- Use one meaningful emoji and a short descriptive title, except for the body-first
+  comment cards below.
 - Follow the title with compact facts or one plain-language sentence, whichever
   makes the component easier to scan.
 - Link canonical GitHub actors and items where they are named.
@@ -130,32 +131,44 @@ model-only provider facts never belong in them.
 
 ## Direct Message
 
-Codex and OpenClaw use the same quoted card for an admitted comment. The heading
-links the verified author, the body preserves the author's Markdown and mentions,
-and the footer links to the exact source comment rather than only its issue or
-pull request. Prefix every line, including blank lines, with the outer quote marker;
-keep lists, code blocks, and nested quotes inside the card. Preserve the raw source
-separately from this presentation.
+Codex and OpenClaw share one body-first comment-card renderer. Do not add an
+emoji heading or top padding. Preserve the complete body's Markdown and mentions,
+quote every line once (including blanks and fences), then put a visible gap and an
+italic attribution footer inside that same quote. Preserve raw provider text separately.
 
 ```markdown
-> ## 💬 From [@pirog](https://github.com/pirog)
->
 > @tanaabot can you confirm whether this also covers comments received while planning?
 >
-> [View comment on tanaabased/example#7 ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123)
+> <br>
+>
+> _[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
 ```
 
-A review feedback message uses the same quoted **💬 From @author** card, with
-its title, summary, selected findings, location metadata, and source links all
-inside the quote. It groups findings under the verified reviewer identity and review link. Each finding retains its own permalink,
-body, file path, reviewed commit, and available current or original location. Mark
-an unchanged summary as context. Later inline replies link to their exact source;
-parent text and full retained diff hunks belong in bounded structured context.
-Show each finding's available GitHub diff hunk in a fenced `diff` block inside
-the card, capped at its last 20 lines with long lines shortened. Label shortened
-previews as excerpts, preserve literal code fences, and keep the source permalink
-for full context. This is reviewed code, not the whole pull request or a fresh
-working-tree diff. Never label an original location as current code.
+Use these labels and connectors. The label links to the exact verified comment,
+not merely its issue or PR; the handle links to the verified author's profile.
+Normal HTTPS links do not promise a particular browser destination.
+
+| Variant                           | Label           | Connector |
+| --------------------------------- | --------------- | --------- |
+| Incoming comment                  | Comment         | from      |
+| Outgoing reply                    | Reply           | from      |
+| Inline or grouped review feedback | Review comment  | from      |
+| Public assessment summary         | Plan assessment | by        |
+| Public PR announcement            | PR announcement | by        |
+
+The quoted `<br>` separator has operator-confirmed Codex display support. Native
+OpenClaw spacing must also be observed: renderer output or an HTML preview is not
+native display evidence. Do not introduce `<small>` or HTML anchors, which Codex
+displays literally. Record any unsupported host limitation and missing native
+capture in acceptance evidence; do not claim cross-host rendering from strings alone.
+
+Review cards put each finding's prose before its file, reviewed commit, and available
+current/original location. Retain each finding's own permalink and the group's exact
+review permalink in the footer. Mark unchanged summaries as context and original
+locations as historical. Show available reviewed diff hunks in fenced `diff` blocks,
+capped at the last 20 lines with long lines shortened; label shortened previews as
+excerpts and keep warnings and links to full context. These are reviewed commits,
+not fresh working-tree diffs. Parent text and full retained hunks remain structured context.
 
 ## Pull Request Opened Card
 
@@ -374,52 +387,49 @@ the suggested name from the exact required primary folder; retain issue and diag
 ## Public Reply
 
 ```markdown
-> ## 📤 To [@pirog](https://github.com/pirog)
->
 > Thanks for flagging this, @pirog. The notification flow now preserves the link.
+>
+> <br>
+>
+> _Reply draft from [@smutlord](https://github.com/smutlord)_
 ```
 
-Use this component only when a lifecycle turn intentionally separates its
-private report from a typed public candidate. Render the complete GitHub-facing
-text as one Markdown blockquote headed **📤 To @recipient**, with the verified
-source commenter linked to their GitHub profile. Quote every line, including
-blank lines, lists, and code fences. Use the same card for the publication preview
-and final response. Address the verified source commenter where it reads
-naturally rather than imposing a fixed mention position.
+Quote the exact GitHub-facing text, not a paraphrase. Outgoing attribution names the
+verified posting agent, never the recipient. Before publication use an unlinked
+`Reply draft`, `Plan assessment draft`, or `PR announcement draft` footer. After
+confirmed publication, replace it with the corresponding linked label above: this
+footer is the publication receipt, so omit separate success cards. Older retained
+receipts without verified author metadata say `author unavailable`; never guess
+from the recipient or active chat, or resolve credentials just for presentation.
 
-For a PR delivery event with no source commenter, use **📤 To GitHub issue**
-as the heading, linked to the originating issue. Quote the exact public announcement,
-then show its verified comment link or a separate warning that the announcement remains pending. Keep the complete
-private PR card above these components.
+Assessment summaries retain the complete private assessment and plan separately.
+PR announcements use this same renderer with the exact public announcement, including
+its PR link, below the complete private **Pull request opened** card. Preserve native
+PR attachment. Keep failed, withheld, pending, or uncertain publication visible in
+separate warning callouts, with debug off too. Successful no-action recovery details,
+such as verified issue linkage after retry, appear only with debug enabled.
 
 ## Private and Public Composition
 
-Codex feedback and lifecycle turns with distinct private and public parts use
-this composition. Preserve the complete retained private response; do not replace
-it with the public candidate. After publication, link the verified reply. If
-publication is withheld or uncertain, report that outcome without claiming a post.
-Put the publication link or obstacle in a quoted information or warning callout:
-
-For feedback, include the complete incoming comment or review card at the top of
-the final response. Progress commentary alone is insufficient: clients may collapse
-it when the turn finishes. Keep the source card outside the public reply quote.
+Keep the complete incoming comment or review card at the top of the final response;
+commentary alone is insufficient because clients may collapse it. Preserve the full
+private response outside the public quote. Keep debug instruction cards private and
+after the reply/footer or publication obstacle.
 
 ```markdown
-> ## 💬 From [@author](https://github.com/author)
->
 > <complete incoming comment>
 >
-> [View comment on owner/repo#123 ↗](https://github.com/owner/repo/issues/123#issuecomment-456)
+> <br>
+>
+> _[Comment ↗](https://github.com/owner/repo/issues/123#issuecomment-456) from [@author](https://github.com/author)_
 
 ## Response
 
 <complete private response>
 
-> ## 📤 To [@pirog](https://github.com/pirog)
->
 > <complete GitHub-facing response>
-
-> ## 💡 Reply published
 >
-> [Published reply ↗](https://github.com/example/project/issues/7#issuecomment-123)
+> <br>
+>
+> _[Reply ↗](https://github.com/owner/repo/issues/123#issuecomment-789) from [@smutlord](https://github.com/smutlord)_
 ```

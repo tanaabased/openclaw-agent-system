@@ -26,6 +26,17 @@ results and the upstream destination in issue or PR context. These headless chec
 a model echo, and an HTML preview cannot prove native final-text preservation or
 desktop rendering; missing native captures leave that acceptance unverified.
 
+For comment-card display verification on both native Codex and OpenClaw, capture
+incoming comments, outgoing replies, inline reviews, public plan summaries, and PR
+announcements. Compare the exact returned/final text with the published prose;
+observe body first, no added heading/top padding, visible space before the italic
+footer, and no literal HTML. Open each label and author link to verify the exact
+comment and profile. Verify an unlinked draft before publication, a verified footer
+instead of a success card afterward, and visible publication obstacles with debug
+off. Preserve private plans, review code context, individual finding links, private
+PR cards and native attachments. Use the capture metadata and evidence limits above;
+this headless scenario does not prove either host's displayed spacing.
+
 For coordinator replacement verification, retain an active issue, reconcile the automation to a new intake chat, and continue that same issue. Verify its original creation source remains intact, new sends record the replacement coordinator, and both old and new send receipts reconcile without duplicate messages. Rename the issue chat and change its live assessment or implementation guidance before a subsequent context request; neither requires another issue admission or Install. Controlled tests cover these transitions; the desktop run remains the native transport proof.
 
 Native same-turn verification also requires the desktop: run one Work issue and one

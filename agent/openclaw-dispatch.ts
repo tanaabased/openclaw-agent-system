@@ -1758,7 +1758,7 @@ export default class OpenClawDispatch {
                     client,
                   );
                   if (!provider) throw new Error('assessment-summary-provider-unavailable');
-                  return { client: provider };
+                  return { client: provider, authorLogin: provider.identity.login };
                 },
               });
             }

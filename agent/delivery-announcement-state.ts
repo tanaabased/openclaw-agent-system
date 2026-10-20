@@ -19,6 +19,7 @@ export const deliveryAnnouncementStateSchema = Type.Object(
       { additionalProperties: false },
     ),
     composition: assessmentSelectionSchema,
+    authorLogin: Type.Optional(text),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 800 })),
     attempted: Type.Boolean(),
     receipt: Type.Optional(

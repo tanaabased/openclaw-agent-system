@@ -317,6 +317,7 @@ describe('agent/codex-dispatch', () => {
       deps.feedbackConnect = async () =>
         ({
           comments: {
+            identity: fixture.client.identity,
             createIssueComment: async (_o: string, _n: string, _i: number, body: string) => {
               writes++;
               receipt = { nodeId: 'SUMMARY', databaseId: 900, body };
@@ -357,7 +358,13 @@ describe('agent/codex-dispatch', () => {
         );
         assert.equal((await summary({ operation: 'reconcile' })).status, 'published');
       }
-      assert.equal((await summary({ operation: 'compose' })).status, 'published');
+      const retained = await summary({ operation: 'compose' });
+      assert.equal(retained.status, 'published');
+      assert.ok(
+        String(retained.presentation).includes(
+          `[Plan assessment ↗](https://github.com/owner/repo/issues/3#issuecomment-900) by [@${fixture.client.identity.login}]`,
+        ),
+      );
       assert.equal(writes, 1);
       assert.deepEqual(
         (await request('context', { id: prepared.id }, child)).previousResult,
