@@ -6,6 +6,26 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For report presentation verification, use an explicitly authorized disposable native
+desktop setup with updated installed instructions, or operator-provided captures.
+Observe one healthy status report and one warning report without manufacturing a
+production intake failure. For each, retain separately:
+
+1. The runtime's complete returned `response`.
+2. The actual final assistant text from native history or export, compared exactly
+   with that response.
+3. A screenshot or direct observation of the displayed card: heading, emphasis,
+   link or recovery text where present, one card only, and notification behavior.
+
+Record app/version, plugin revision, time, notification decision, and redacted source
+identifiers with each capture. Preserve `DONT_NOTIFY`; do not flip it to make a card
+visible. If generated and final text differ, retain the exact diff. If they match
+but display is literal, retain a minimal unchanged native-heartbeat reproduction
+with expected/actual display and captures for the identified upstream host. Keep
+results and the upstream destination in issue or PR context. These headless checks,
+a model echo, and an HTML preview cannot prove native final-text preservation or
+desktop rendering; missing native captures leave that acceptance unverified.
+
 For coordinator replacement verification, retain an active issue, reconcile the automation to a new intake chat, and continue that same issue. Verify its original creation source remains intact, new sends record the replacement coordinator, and both old and new send receipts reconcile without duplicate messages. Rename the issue chat and change its live assessment or implementation guidance before a subsequent context request; neither requires another issue admission or Install. Controlled tests cover these transitions; the desktop run remains the native transport proof.
 
 Native same-turn verification also requires the desktop: run one Work issue and one
