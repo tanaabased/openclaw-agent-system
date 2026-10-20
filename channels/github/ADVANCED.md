@@ -353,10 +353,13 @@ blocked rather than risking a second creation. Native denial, reassignment, or a
 changed session/worktree stops the operation without discarding the work.
 
 In Codex and OpenClaw, authorized follow-up commits can fast-forward the same PR
-branch from its last verified push. The PR receipt and original announcement stay
+branch when the observed remote commits are incorporated locally, including collaborator updates. The same open PR, destination and ancestry are verified before a non-force push. The PR receipt and original announcement stay
 with the delivery. Explicit title/body changes update that PR; commit-only pushes
 preserve text edited on GitHub. Interrupted updates reconcile the same operation.
+OpenClaw delivery reconciliation can finish incomplete provider checkpoints when the retained commit is already remote; a missing push requires the prepared publication path. Newer local or uncommitted work is not included by reconciliation.
 If initial PR creation is still uncertain, reconcile it before changing its text.
+Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. Implementation context also exposes pending summaries without moving work back to planning.
+
 A stale publication preview returns a refreshed operation without writing. Inspect
 it and retry once within the existing authorization; repeated staleness needs
 investigation. Workflow activation or an operator request already covering that

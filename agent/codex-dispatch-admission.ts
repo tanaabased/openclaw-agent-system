@@ -49,6 +49,7 @@ export async function recover(
   deps: CodexDispatchDependencies,
   save: () => Promise<void>,
   threadId = record.threadId ?? record.receiptThreadId,
+  purpose: 'assessment' | 'handoff' = 'assessment',
 ) {
   if (!record.request || !record.project) throw new Error('dispatch-creation-not-prepared');
   const found = await withNative(current, deps, (native) =>
@@ -64,7 +65,7 @@ export async function recover(
   record.threadId = found.id;
   record.worktree = found.cwd;
   await save();
-  await verifyDispatchWorktree(record.project, found.cwd, repository(intake), deps.git);
+  await verifyDispatchWorktree(record.project, found.cwd, repository(intake), deps.git, purpose);
   if (
     (found.model && found.model !== record.request.model) ||
     (found.effort && found.effort !== record.request.thinking)

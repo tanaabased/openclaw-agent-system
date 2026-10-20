@@ -236,9 +236,24 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') === undefined
     )
       return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
+    const branch = result('feedback-branch');
+    if (!branch)
+      return call('feedback-branch', 'agent_system_git', {
+        argv: ['branch', '--show-current'],
+        cwd: work.worktree,
+      });
+    if (
+      branch.exitCode !== 0 ||
+      branch.truncated !== false ||
+      typeof branch.stdout !== 'string' ||
+      !branch.stdout.trim()
+    )
+      return;
     const file = `notification-fixture-${id}.md`;
     const patch = `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep feedback changes on the original PR.\n`;
     const steps = [
+      { stage: 'feedback-fetch', argv: ['fetch', 'origin', branch.stdout.trim()] },
+      { stage: 'feedback-incorporate', argv: ['merge', '--ff-only', 'FETCH_HEAD'] },
       { stage: 'feedback-apply', argv: ['apply', '-'], stdin: patch },
       { stage: 'feedback-check', argv: ['diff', '--check'] },
       { stage: 'feedback-add', argv: ['add', '--', file] },
@@ -663,6 +678,9 @@ export const prExampleScenario: OpenClawAIMockScenario = {
       'apply',
       'add',
       'commit',
+      'feedback-branch',
+      'feedback-fetch',
+      'feedback-incorporate',
       'feedback-apply',
       'feedback-check',
       'feedback-add',

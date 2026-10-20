@@ -1,3 +1,4 @@
+import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 import assessmentHandoff from './assessment-handoff.ts';
 import { feedbackWorkContext } from './feedback-work.ts';
@@ -157,8 +158,10 @@ export async function issueAssessmentAction(input: {
       if (
         record.assessmentTurn.status !== 'completed' &&
         !issueTurnReply(history.messages, record.assessmentTurn.runId)
-      )
-        throw new Error('dispatch-assessment-continuation-not-ready');
+      ) {
+        if (!record.result) throw new Error('dispatch-assessment-continuation-not-ready');
+        await openClawResponseAuthority({ request, record, caller, config: input.config });
+      }
     }
     inputEventId = meta.id;
   }

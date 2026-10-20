@@ -26,6 +26,7 @@ const dispatchStages = [
   'report',
   'refresh-context',
   'refresh-result',
+  'recovery-present',
   'summary-compose',
   'summary-candidate',
   'summary-preview',
@@ -261,6 +262,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     assert.ok(history.every((entry) => entry.privateText?.includes('disposable issue cleanup')));
     return { content: history[0]!.privateText! };
   }
+  const recoveryId =
+    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
+      prompt,
+    )?.[1];
+  if (recoveryId) {
+    const shown = result('recovery-present');
+    if (!shown) return dispatch('recovery-present', { action: 'present', id: recoveryId });
+    if (shown.status !== 'presented') return;
+    return summary(recoveryId, { ...shown, status: 'recorded' }, {});
+  }
   const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,
   )?.[1];
@@ -297,6 +308,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         },
       });
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    if (prompt.includes('leave summary pending')) return { content: saved.presentation };
     return summary(refreshId, saved, fresh.previousResult as Record<string, unknown>);
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);

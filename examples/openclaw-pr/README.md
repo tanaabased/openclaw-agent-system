@@ -1,6 +1,6 @@
 # OpenClaw PR Delivery and Feedback Example
 
-Assign one disposable issue, retain its plan, and use an authenticated operator follow-up to implement it and deliver a linked PR in the same chat and worktree. Implement one approved PR conversation comment in the existing implementation stage, then verify the same PR head, exact publication, and no duplicate reply after another scan. Issue-comment coverage belongs to `openclaw-issue`; installed review-thread coverage is deferred to the OpenClaw review flow.
+Assign one disposable issue, retain its plan, and use an authenticated operator follow-up to implement it and deliver a linked PR in the same chat and worktree. Implement one approved PR conversation comment in the existing implementation stage, after incorporating a disposable collaborator commit, then verify the same PR head, exact publication, and no duplicate reply after another scan. Issue-comment coverage belongs to `openclaw-issue`; installed review-thread coverage is deferred to the OpenClaw review flow.
 
 Each manual refresh admits only this example’s issue, then asks the existing native coordinator to advance retained work. The 24-hour recurring interval keeps scheduled discovery outside the bounded CI run; the examples still run in parallel.
 
@@ -212,6 +212,8 @@ worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.argv[1]; const text=readFileSync(p,"utf8"); const suffix="Uncommitted follow-up work.\n"; if(!text.endsWith(suffix)) throw new Error("fixture line missing"); writeFileSync(p,text.slice(0,-suffix.length));' "$worktree/README.md"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/emori"
 number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-bucket/contents/collaborator-$number.txt" -f message="preserve disposable collaborator evidence" -f branch="$branch" -f content=Q29sbGFib3JhdG9yIHdvcmsuCg== > "$TMPDIR/notification-collaborator.json"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.endpoint="repos/tanaabased/big-test-bucket/issues/"+process.argv[1]+"/comments"; control.paused=true; writeFileSync(p,JSON.stringify(control));' "$number"
@@ -233,6 +235,8 @@ jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner r
 jq -e --slurp '.[1].progression.workOwner == .[1].feedback.events[0].id and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].work.result == .[1].work.result and .[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest and .[0].work.delivery.announcement == .[1].work.delivery.announcement and .[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .phase == "published" and .work.result.outcome == "done" and .work.head == .workDelivery.pushedHead and .itemType == "pull-request" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-recovered.json" "$TMPDIR/notification-feedback.json"
 openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .feedback.events[0].work.head "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
+git -C "$worktree" merge-base --is-ancestor "$(jq -er .commit.sha "$TMPDIR/notification-collaborator.json")" HEAD
+git -C "$worktree" show "HEAD:collaborator-$number.txt" | grep -F 'Collaborator work.'
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan

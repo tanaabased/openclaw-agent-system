@@ -234,6 +234,7 @@ export async function assessDispatch(
       intake,
       action: input as unknown as AssessmentSummaryRequest,
       turnId: native.turnId,
+      recovery: true,
       authorityDigest,
       presentation: assessmentPresentation(record.result, record, intake, current.workspace, {
         debug: current.manifest.debug,
@@ -247,7 +248,10 @@ export async function assessDispatch(
           else {
             const connection = await connectCodexThreads(current.workspace, current.codexHome);
             try {
-              await codexSummaryAuthority(connection.request, native.id, native.turnId!);
+              await codexSummaryAuthority(connection.request, native.id, native.turnId!, [
+                record.resultTurnId!,
+                ...(record.assessmentSummaries ?? []).map((summary) => summary.turnId),
+              ]);
             } finally {
               await connection.close();
             }
