@@ -18,6 +18,11 @@ const dispatchStages = [
   ).flat(),
   'context',
   'result',
+  'recovery-present',
+  'summary-compose',
+  'summary-candidate',
+  'summary-preview',
+  'summary-publish',
   'report',
   'handoff-preview',
   'handoff',
@@ -117,6 +122,53 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
+  const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
+    if (!presentation) {
+      const shown = result('recovery-present');
+      if (!shown) return dispatch('recovery-present', { action: 'present', id });
+      if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
+      presentation = shown.presentation;
+    }
+    const args = { action: 'summary', id };
+    const composed = result('summary-compose');
+    if (!composed)
+      return {
+        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
+        content: presentation,
+      };
+    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
+    if (
+      composed.status !== 'composition-ready' ||
+      typeof composed.digest !== 'string' ||
+      !skill?.path
+    )
+      return;
+    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
+      return call('summary-skill', 'read', { path: skill.path });
+    const candidate = result('summary-candidate');
+    if (!candidate)
+      return dispatch('summary-candidate', {
+        ...args,
+        operation: 'candidate',
+        digest: composed.digest,
+        publicText:
+          'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
+      });
+    if (candidate.status !== 'candidate-recorded') return;
+    const preview = result('summary-preview');
+    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
+    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
+    const published = result('summary-publish');
+    if (!published)
+      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
+    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
+    return { content: published.presentation };
+  };
+  const recoveryId =
+    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
+      prompt,
+    )?.[1];
+  if (recoveryId) return summary(recoveryId);
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
@@ -724,7 +776,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       },
     });
   if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  return { content: saved.presentation };
+  return summary(id, saved.presentation);
 }
 
 function response(request: ChatCompletionRequest) {
@@ -766,6 +818,7 @@ export const prExampleScenario: OpenClawAIMockScenario = {
     { id: prefix + 'feedback-skill', name: 'read' },
     { id: prefix + 'feedback-implementation-skill', name: 'read' },
     { id: prefix + 'delivery-skill', name: 'read' },
+    { id: prefix + 'summary-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + retryStage(stage, attempt),

@@ -468,7 +468,7 @@ for (const scenario of [
       append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
       assert.equal('content' in nextResponse && nextResponse.content, presentation);
-      if (scenario.id === 'openclaw-progression') {
+      if (['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       }
@@ -535,7 +535,7 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
-    if (scenario.id === 'openclaw-progression') {
+    if (['openclaw-pr', 'openclaw-progression'].includes(scenario.id))
       it('should finish response-only recovery without repeating assessment or implementation', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
         await action(input, 'present');
@@ -546,6 +546,7 @@ for (const scenario of [
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       });
+    if (scenario.id === 'openclaw-progression') {
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(
