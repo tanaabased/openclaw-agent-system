@@ -19,7 +19,7 @@ make status complete and the next scan idle without a separate completion transi
 Interrupt before the announcement or card and confirm recovery finishes those steps
 without repeating implementation or creating another PR.
 
-Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
+Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 ## Setup
 

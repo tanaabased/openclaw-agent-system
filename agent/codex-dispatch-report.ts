@@ -32,9 +32,17 @@ export default function prepareDispatchReport(input: {
   const active = state.records.filter(
     (record) => !record.retired && !record.retirement && !record.reset,
   );
-  const retirementPending = state.records.filter(
-    (record) => record.retirement && !record.retired,
-  ).length;
+  const retiring = state.records.filter((record) => record.retirement && !record.retired);
+  const retirementProblems = retiring.filter(
+    (record) =>
+      record.retirement!.code &&
+      (record.retirement!.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
+      ![
+        'retirement-awaiting-reactivation',
+        'retirement-native-inventory-required',
+        'retirement-native-archive-pending',
+      ].includes(record.retirement!.code),
+  );
   const managing = active.filter((record) => record.effective && record.threadId);
   const waitingIssues = new Set(
     pendingDispatchAssignments(state, intake)
@@ -100,6 +108,11 @@ export default function prepareDispatchReport(input: {
       id: record.id,
       code: record.feedback!.code!,
       operation: 'feedback',
+    })),
+    ...retirementProblems.map((record) => ({
+      id: record.id,
+      code: record.retirement!.code!,
+      operation: 'retirement cleanup',
     })),
     ...problems.map((record) => ({
       id: record.id,
@@ -185,7 +198,7 @@ export default function prepareDispatchReport(input: {
     );
   if (sent.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
-    const record = active.find((entry) => entry.id === notice.id);
+    const record = state.records.find((entry) => entry.id === notice.id);
     if (notice.id === 'scan' && intakeAutomationNotice(notice.code)) {
       lines.push(
         `- **What happened:** ${notice.summary}`,
@@ -235,7 +248,7 @@ export default function prepareDispatchReport(input: {
   lines.push(
     `**Active:** ${managing.length} issues · **Pending:** ${pending}`,
     `**Queued feedback:** ${queuedFeedback.length} item${queuedFeedback.length === 1 ? '' : 's'} across ${queuedOwners} issue${queuedOwners === 1 ? '' : 's'}`,
-    `**Retirement pending:** ${retirementPending}`,
+    `**Retirement pending:** ${retiring.length}`,
     `**Slots:** ${occupied}/${input.slots} occupied`,
   );
   if (pending && !notices.length)
