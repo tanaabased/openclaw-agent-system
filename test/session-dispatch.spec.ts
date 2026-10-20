@@ -307,7 +307,7 @@ describe('agent/session-dispatch-requirements', () => {
     policy.issueAssignment!.enabled = false;
     assert.deepEqual(
       sessionDispatchRequirements(value).map(({ id }) => id),
-      ['github-review-request'],
+      ['github-issue-assignment', 'github-review-request'],
     );
     policy.runtimes = ['codex'];
     assert.deepEqual(sessionDispatchRequirements(value), []);

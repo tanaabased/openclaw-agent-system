@@ -58,6 +58,7 @@ const externalNotificationTriggerSchema = Type.Object(
   {
     allowed: Type.Optional(Type.Array(externalGitHubApprovedActorSchema, { uniqueItems: true })),
     enabled: Type.Optional(Type.Boolean()),
+    paused: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -157,6 +158,7 @@ export interface GitHubNotificationPolicy {
   cleanup?: { enabled: boolean; graceMinutes: number };
   allowedRepositoryOwners: GitHubIdentityPin[];
   issueAssignment?: {
+    paused?: boolean;
     enabled?: boolean;
     allowed: GitHubApprovedActor[];
     mode: 'plan' | 'work' | 'auto';
@@ -166,6 +168,7 @@ export interface GitHubNotificationPolicy {
     feedback?: GitHubFeedbackPolicy;
   };
   reviewRequest?: {
+    paused?: boolean;
     allowed: GitHubApprovedActor[];
     enabled?: boolean;
     review?: AssessmentConfiguration;
@@ -218,9 +221,10 @@ export function decodeGitHubNotifications(
       ? {}
       : {
           issueAssignment: {
-            ...(value['issue-assignment'].enabled === undefined
+            ...(value['issue-assignment'].paused === undefined &&
+            value['issue-assignment'].enabled === undefined
               ? {}
-              : { enabled: value['issue-assignment'].enabled }),
+              : { paused: value['issue-assignment'].paused ?? !value['issue-assignment'].enabled }),
             allowed: actors(value['issue-assignment']),
             mode: value['issue-assignment'].mode ?? 'auto',
             ...feedback(value['issue-assignment'].feedback),
@@ -265,9 +269,10 @@ export function decodeGitHubNotifications(
             ...(value['review-request'].review === undefined
               ? {}
               : { review: decodeAssessmentConfiguration(value['review-request'].review) }),
-            ...(value['review-request'].enabled === undefined
+            ...(value['review-request'].paused === undefined &&
+            value['review-request'].enabled === undefined
               ? {}
-              : { enabled: value['review-request'].enabled }),
+              : { paused: value['review-request'].paused ?? !value['review-request'].enabled }),
           },
         }),
   };

@@ -1,4 +1,8 @@
 import connectCodexGitHubAccount from './codex-github-client.ts';
+import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
+import CodexDispatchStore from './codex-dispatch-state.ts';
+import { codexDispatchNative } from './codex-dispatch-native.ts';
+import { connectCodexThreads } from './codex-thread-client.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -21,6 +25,8 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 
 export interface CodexIntakeDependencies {
   assertActive?: () => Promise<void>;
+  threadId?: string;
+  intakeNative?: Pick<ReturnType<typeof codexDispatchNative>, 'occurrence'>;
   codexHome?: string;
   now?: () => number;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
@@ -167,11 +173,48 @@ export async function runCodexIntake(
     const current = await selectCodexIntake(pluginData, deps);
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const { policy, digest } = current.policy;
+    if (!activate) {
+      if (deps.assertActive) await deps.assertActive();
+      else if (!deps.threadId) await assertCodexIntakeActive(pluginData, current, deps);
+      else {
+        const caller = deps.threadId;
+        const activation = await inspectCodexDispatchActivation(
+          pluginData,
+          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+          false,
+          true,
+          'intake',
+        );
+        if (caller !== activation.sourceThreadId)
+          throw new IntakeError('dispatch-intake-caller-required');
+        const connection = deps.intakeNative
+          ? undefined
+          : await connectCodexThreads(current.workspace, current.codexHome);
+        try {
+          const occurrence = await (
+            deps.intakeNative ?? codexDispatchNative(connection!.request)
+          ).occurrence(caller);
+          const journal = new CodexDispatchStore(
+            current.store.location.root,
+            current.store.location.scope,
+          );
+          await journal.exclusive(async (state, save) =>
+            acceptCodexIntakeOccurrence(
+              state,
+              occurrence,
+              () => assertCodexIntakeActive(pluginData, current, deps),
+              save,
+            ),
+          );
+        } finally {
+          await connection?.close();
+        }
+      }
+    }
     const assertCurrent = async () => {
       const fresh = await selectCodexIntake(pluginData, deps);
       if (fresh.store.location.scope !== current.store.location.scope)
         throw new IntakeError('intake-workspace-binding-changed');
-      if (!activate) await assertCodexIntakeActive(pluginData, current, deps);
     };
     const result = await scanAssignments({
       store: current.store,
@@ -230,6 +273,9 @@ export async function runCodexIntake(
         'intake-manifest-unavailable',
         'intake-policy-disabled',
         'intake-policy-reconciliation-required',
+        'intake-automation-paused',
+        'intake-automation-update-required',
+        'intake-activation-required',
       ].includes(error.code)
     )
       throw error;

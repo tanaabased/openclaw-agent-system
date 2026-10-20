@@ -8,6 +8,29 @@ import type { GitHubManifestConfiguration } from '../../manifest/github-schema.t
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
 import { defaultAssessmentSkill } from '../../manifest/assessment-schema.ts';
 
+/** report compatibility at manifest entry points, never on each scheduled poll. */
+export function githubPauseCompatibilityDiagnostics(
+  declaration: ExternalGitHubNotifications | undefined,
+): ManifestDiagnostic[] {
+  return (['issue-assignment', 'review-request'] as const).flatMap((path) => {
+    const workflow = declaration?.[path];
+    if (workflow?.enabled === undefined) return [];
+    const conflict = workflow.paused !== undefined && workflow.paused === workflow.enabled;
+    return [
+      {
+        code: conflict
+          ? 'github-notification-pause-conflict'
+          : 'github-notification-enabled-deprecated',
+        fieldPath: `/github/notifications/${path}/enabled`,
+        severity: conflict ? ('error' as const) : ('warning' as const),
+        message: conflict
+          ? `enabled: ${workflow.enabled} conflicts with paused: ${workflow.paused}. Use paused: ${!workflow.enabled} or remove enabled.`
+          : `enabled: ${workflow.enabled} is deprecated. Replace it with paused: ${!workflow.enabled}; pause controls future scheduled occurrences only.`,
+      },
+    ];
+  });
+}
+
 /** preserve old author grants while explaining their explicit replacement. */
 export function githubFeedbackCompatibilityDiagnostics(
   declaration: ExternalGitHubNotifications | undefined,
@@ -119,17 +142,24 @@ export function githubNotificationRuntimeDiagnostics(
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
   const issue = declaration.issueAssignment;
   const review = declaration.reviewRequest;
-  if (review?.enabled ?? Boolean(review?.allowed.length))
+  if (
+    review &&
+    (review.paused !== undefined || review.enabled !== undefined || review.allowed.length)
+  )
     diagnostics.push({
       code: 'github-notification-runtime-unsupported',
       fieldPath: '/github/notifications/review-request',
       message: `${runtime === 'openclaw' ? 'OpenClaw' : 'Codex'} V2 does not support review requests. Issue assignment is independent.`,
       remediation:
-        'Disable review requests or wait for its execution adapter; supported issue assignment can continue.',
+        'Remove the review-request declaration or wait for its execution adapter; supported issue assignment can continue.',
       status: 'warning',
       workflow: 'review-request',
     });
-  if (runtime !== 'openclaw' || !issue || !(issue.enabled ?? Boolean(issue.allowed.length)))
+  if (
+    runtime !== 'openclaw' ||
+    !issue ||
+    (issue.paused === undefined && issue.enabled === undefined && !issue.allowed.length)
+  )
     return diagnostics;
   if (
     issue.assessment?.skill &&

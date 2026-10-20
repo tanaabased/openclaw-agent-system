@@ -132,6 +132,12 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       version: Type.Literal(1),
       scope: hash,
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
+      openclawOccurrence: Type.Optional(
+        Type.Object(
+          { sessionKey: text, sessionId: text, runId: text },
+          { additionalProperties: false },
+        ),
+      ),
       openclawPasses: Type.Optional(Type.Array(openclawIntakePassSchema)),
       continuationRun: Type.Optional(
         Type.Object(

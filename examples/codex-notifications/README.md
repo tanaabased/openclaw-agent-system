@@ -6,6 +6,15 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For pause parity, use that disposable native setup to compare UI Pause/Resume with
+`paused: true`/`paused: false` followed by Install. Record the same automation and
+intake chat IDs, baseline, pending event IDs, and delivery receipts before and
+after each path. Let an accepted occurrence and issue turn finish while paused;
+confirm the next occurrence does not start. Create one approved assignment and
+issue/PR comment during the pause, then verify discovery after resume with one
+chat and one reply per source. Retain the native occurrence receipts and actual UI
+observation separately from component results; headless planning is not UI proof.
+
 For report presentation verification, use an explicitly authorized disposable native
 desktop setup with updated installed instructions, or operator-provided captures.
 Observe one healthy status report and one warning report without manufacturing a
@@ -240,7 +249,7 @@ if output=$(printf '%s\n' '{"action":"announce","id":"missing"}' | node "$runtim
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid"'
 
 
-# should accept separate feedback and stage selections while leaving disabled workflows inactive
+# should retain a paused declaration and diagnose its inverse compatibility alias
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -248,9 +257,9 @@ plugin_data="$root/disabled-notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/disabled" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
-  | jq -e '.status == "aligned" and .actions == [] and (.conversations // []) == []'
+  | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-policy-disabled"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-automation-paused"'
 test ! -d "$CODEX_HOME/automations"
 
 # should plan intake conversation setup without a global scanner rule or reload acknowledgment
