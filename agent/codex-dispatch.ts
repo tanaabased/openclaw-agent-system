@@ -413,6 +413,7 @@ export async function runCodexDispatch(
         id: record.id,
         presentation: assessmentPresentation(record.result!, record, intake, current.workspace, {
           debug: current.manifest.debug,
+          includeDetails: input.includeDetails === true,
         }),
         instruction:
           'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',

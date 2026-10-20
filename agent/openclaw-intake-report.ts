@@ -1,3 +1,4 @@
+import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 import { automationHash } from './automation-hash.ts';
@@ -28,15 +29,27 @@ export default function openclawIntakeReport(input: {
   const active = state.records.filter(
     (record) => !record.retired && !record.retirement && !record.reset,
   );
-  const retirementPending = state.records.filter(
-    (record) => record.retirement && !record.retired,
-  ).length;
+  const retiring = state.records.filter(
+    (record) => record.retirement && !record.retired && !record.reset,
+  );
+  const retirementPending = retiring.length;
+  const retirementNotices = retiring
+    .filter((record) => record.retirement?.code)
+    .map((record) => ({
+      record,
+      notice:
+        retirementNotice(record.retirement!.code!) ??
+        retirementNotice('retirement-check-unavailable')!,
+    }));
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
   const capacity = dispatchCapacity(state.records, input.slots);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
   const failures = [
+    ...retirementNotices
+      .filter(({ notice }) => notice.severity !== 'info')
+      .map(({ record }) => ({ id: record.id, code: record.retirement!.code! })),
     ...(observation.status === 'blocked'
       ? [{ id: 'intake', code: observation.code ?? 'intake-check-incomplete' }]
       : []),
@@ -68,6 +81,15 @@ export default function openclawIntakeReport(input: {
     if (id.startsWith('deferred-')) return true;
     if (id.startsWith('feedback-'))
       return Boolean(active.find((record) => record.id === id.slice(9) && !record.feedback?.code));
+    const retired = state.records.find(
+      (entry) => entry.id === id && (entry.retirement || entry.retired),
+    );
+    if (retired)
+      return (
+        !retired.retirement?.code ||
+        Boolean(retired.retired) ||
+        retirementNotice(retired.retirement.code)?.severity === 'info'
+      );
     const record = active.find((entry) => entry.id === id);
     return Boolean(record && !record.blocker);
   });
@@ -92,8 +114,16 @@ export default function openclawIntakeReport(input: {
         : started.length
           ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
           : recovered.length
-            ? '💡 Intake resumed'
-            : '💡 Intake checked';
+            ? recovered.some((problem) =>
+                state.records.some(
+                  (record) => problem.startsWith(record.id + ':') && record.retirement,
+                ),
+              )
+              ? '💡 Retirement blocker cleared'
+              : '💡 Intake resumed'
+            : retirementNotices.length
+              ? '💡 Intake checked — retirement in progress'
+              : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   const label = (record: OpenClawDispatchRecord) => {
     const item = intake?.records.find((entry) => entry.id === record.intakeId);
@@ -113,6 +143,17 @@ export default function openclawIntakeReport(input: {
         `- **What happened:** ${notice.summary}`,
         `- **Next step:** ${notice.next}`,
         `- **Technical detail:** \`${failure.code}\``,
+      );
+      continue;
+    }
+    const retiring = retirementNotices.find(({ record }) => record.id === failure.id);
+    if (retiring) {
+      lines.push(
+        `- **Issue:** ${text(label(retiring.record))}`,
+        `  **Operation:** retirement cleanup`,
+        `  **What happened:** ${retiring.notice.summary}`,
+        `  **Action:** ${retiring.notice.next}`,
+        `  **Diagnostic:** \`${text(failure.code)}\``,
       );
       continue;
     }
@@ -189,6 +230,14 @@ export default function openclawIntakeReport(input: {
             : (workflowRecovery(failure.code)?.next ?? intakeRemediation(failure.code))),
     );
   }
+  for (const { record, notice } of retirementNotices
+    .filter(({ notice }) => notice.severity === 'info')
+    .slice(0, 12))
+    lines.push(
+      `- **Issue:** ${text(label(record))}`,
+      `  **What happened:** ${notice.summary}`,
+      `  **Next step:** ${notice.next}`,
+    );
   if (failures.length) lines.push('');
   if (recovered.length)
     lines.push(

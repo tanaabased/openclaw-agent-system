@@ -100,7 +100,11 @@ OpenClaw archives the exact idle session and removes its managed worktree after
 verifying a clean checkout and retained branch or tag. It protects pinned sessions,
 automation owners, shared worktrees, unresolved activity, and unpreserved changes.
 Each successful cleanup step is retained so interrupted cleanup can reconcile on a
-later poll. Branches, issue content, and assessment history are preserved.
+later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
+them. If the managed inventory and recorded path both confirm an already-removed
+worktree, retirement records observed external cleanup after its ownership checks;
+this does not claim to have removed or preserved the missing checkout. Ambiguous
+session identity remains a blocker.
 
 Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree
@@ -346,8 +350,12 @@ If showing an already-created PR is interrupted or temporarily busy, ask the sam
 issue chat to show its card again. Saved plans and PR cards remain readable in
 the owning chat without fresh publication permission, a matching working commit,
 or GitHub access. They show retained evidence, not a fresh provider verification.
-Native chat identity is still checked. Presentation does not push, create a PR, or
-post an announcement. In Codex, attachment reconciliation retries only attachment
+Native chat identity is still checked. New assessments show a concise user-journey
+review with documentation/test impact; the full assessment and engineering plan stay
+saved for the agent. Ask for the full assessment, evidence, or investigation in that
+same issue chat to inspect them. Older results without a separate review retain their
+complete display. The bound `present` request accepts `includeDetails: true` in both runtimes.
+Presentation does not push, create a PR, or post an announcement. In Codex, attachment reconciliation retries only attachment
 inspection. Recipient identities remain pinned; GitHub authorizes recipient changes. If announcing fails, the PR
 remains delivered. Ask the same chat to recover its announcement; uncertain writes
 reconcile the saved text and receipt without posting a duplicate. Announcement

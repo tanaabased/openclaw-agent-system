@@ -1,8 +1,9 @@
 # User Journey Editor
 
 The assessor has finished investigating and planning. A separate editor now explains
-the proposed experience to the person deciding whether to approve it. The full plan
-keeps its engineering detail; this pass only supplies the opening.
+the proposed experience to the person deciding whether to approve it. The full engineering
+assessment and plan stay unchanged for the implementing agent; this pass supplies the
+concise human review, not a replacement engineering plan.
 
 ## Assessor handoff
 
@@ -20,6 +21,8 @@ instructions** below verbatim and a brief containing only:
   could do next, where established by the plan.
 - Only choices, limits, and unresolved questions that change what the person would
   do, receive, or need to decide. State whether this is a plan or clarification.
+- Whether documentation and tests will change, why, and what behavior they cover.
+  Use the repository’s terminology; name a particular test framework only when relevant.
 
 Use factual notes, not a drafted summary. Keep requirements, observations, and
 proposals distinct. This is not a checklist of everything the plan guarantees.
@@ -29,7 +32,7 @@ byte limits, symlink rules, schema validation, and compatibility bookkeeping unl
 that constraint is itself the user's problem or changes a consequential choice.
 Keep those details in the full plan. Never conceal costs, data loss, access changes,
 blocking questions, or other consequences the person needs to approve knowingly.
-Omit code structure, file inventories, internal phase names, test matrices, routing
+Omit code structure, file inventories, internal phase names, exhaustive test matrices, routing
 metadata, raw provider prose, and the earlier opening. Never send the whole plan as
 a shortcut. This brief is working context, not a new persisted schema or visible section.
 
@@ -52,12 +55,19 @@ to make the story easier to tell. Preserve uncertainty and conditional behavior.
 
 Return only these fields as text for the assessor:
 
-- **summary:** one sentence explaining the useful change or the blocked decision.
-- **assessment:** a short explanation of the person's goal and current difficulty.
-- **planSummary:** for a plan, the proposed sequence of user actions and observable
-  results, plus the choices and limits needed to approve it. Omit this field for a
-  clarification or setup-blocker outcome; keep the blocked decision visible in the
-  other fields.
+- **summary:** one concise recommendation explaining the useful change and why,
+  or the blocked decision. Keep consequential limits and uncertainty visible.
+- **assessment:** the same recommendation, unchanged, to satisfy the version 1
+  result contract without asking for another overlapping explanation.
+
+- **reviewSummary:** a concise before-and-after user journey: the problem in what the
+  person does today, the proposed solution in what they would do and receive, and
+  material limits or decisions. Add a brief documentation and test impact note,
+  including when no changes are needed. Explain purpose, not test implementation.
+
+Do not supply `planSummary`, `plan`, or `fullAssessment`. The assessor retains the
+full engineering source separately. If the brief cannot support the recommendation,
+review, or documentation/test impact, flag the gap rather than inventing work.
 
 Tell one concrete before-and-after story, not a condensed specification or instruction
 manual. Follow the main sequence instead of enumerating every option combination and
