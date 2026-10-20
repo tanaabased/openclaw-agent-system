@@ -280,7 +280,7 @@ jq -e --slurp '{
   sameAnnouncement:(.[0].work.delivery.announcement == .[1].work.delivery.announcement),
   changedHead:(.[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead),
   exactEventCount:((.[1].feedback.events | length) == 2),
-  publishedFeedback:all(.[1].feedback.events[1:]; .phase == "published" and .work.result.outcome == "done" and .work.head == .workDelivery.pushedHead and .itemType == "pull-request" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)
+  publishedFeedback:all(.[1].feedback.events[1:][]; .phase == "published" and .work.result.outcome == "done" and .work.head == .workDelivery.pushedHead and .itemType == "pull-request" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)
 } | to_entries | map(select(.value == false)) | if length == 0 then true else error({code:"feedback-continuity-mismatch",failed:map(.key)} | tojson) end' "$TMPDIR/notification-recovered.json" "$TMPDIR/notification-feedback.json"
 openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .feedback.events[1].work.head "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
