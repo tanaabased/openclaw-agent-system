@@ -40,6 +40,7 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
 import selectFeedbackStage from './feedback-stage.ts';
+import { feedbackWorkContext } from './feedback-work.ts';
 import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
@@ -297,6 +298,7 @@ export async function assessDispatch(
       effective: record.effective,
       evidence: JSON.parse(record.context!),
       assessment,
+      feedbackWork: feedbackWorkContext(record),
       ...(native.turnId ? { currentTurnId: native.turnId } : {}),
       ...(record.result
         ? {
@@ -327,6 +329,7 @@ export async function assessDispatch(
       resultSchema: assessmentResultContextSchema,
       mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
       instructions:
+        'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
         codexAssessmentInstructions +
         (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
     };
