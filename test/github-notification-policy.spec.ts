@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { stringify } from 'yaml';
 
+import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
@@ -31,8 +32,80 @@ function parsed(notifications: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
+  it('should normalize omitted and explicit notification versions without authority drift', () => {
+    for (const runtimes of [['openclaw'], ['codex'], ['openclaw', 'codex']]) {
+      const unversioned = {
+        'allowed-repository-owners': [owner],
+        runtimes,
+        'issue-assignment': { allowed: [actor], mode: 'plan', feedback: true },
+      };
+      const omitted = parsed(unversioned);
+      const explicit = parsed({ ...unversioned, 'schema-version': 2 });
+      assert.equal(omitted.schemaVersion, 2);
+      assert.deepEqual(omitted, explicit);
+      assert.equal(notificationAuthorityDigest(omitted), notificationAuthorityDigest(explicit));
+    }
+    const absent = parse(undefined);
+    assert.ok(absent.status === 'valid');
+    assert.equal(absent.manifest.github?.notifications, undefined);
+  });
+
+  it('should reject every unsupported explicit notification version', () => {
+    for (const version of [1, 0, 3, 2.5, '2', null, false, [], {}]) {
+      const result = parse({ ...policy, 'schema-version': version });
+      assert.equal(result.status, 'invalid', JSON.stringify(version));
+      assert.ok(
+        result.diagnostics.some(
+          ({ code }) =>
+            code === (version === 1 ? 'github-notification-v1-retired' : 'manifest-schema'),
+        ),
+      );
+    }
+  });
+
+  it('should diagnose missing current policy fields without classifying omission as v1', () => {
+    for (const current of [{}, { 'issue-assignment': { allowed: [actor] } }]) {
+      const result = parse(current);
+      assert.equal(result.status, 'invalid');
+      assert.ok(
+        result.diagnostics.some(
+          ({ code, fieldPath }) =>
+            code === 'manifest-required-key' &&
+            fieldPath === '/github/notifications/allowed-repository-owners',
+        ),
+      );
+      assert.ok(result.diagnostics.every(({ code }) => code !== 'github-notification-v1-retired'));
+    }
+  });
+
+  it('should diagnose removed global feedback only for current-format notification policies', () => {
+    for (const version of [undefined, 2]) {
+      const result = parse({ ...policy, 'schema-version': version, feedback: false });
+      assert.equal(result.status, 'invalid');
+      assert.ok(
+        result.diagnostics.some(
+          ({ code }) => code === 'github-notification-global-feedback-removed',
+        ),
+      );
+    }
+    for (const invalid of [
+      { ...policy, 'schema-version': 3 },
+      { ...policy, 'schema-version': 1 },
+      { 'approved-actors': [actor] },
+      {},
+    ]) {
+      const result = parse({ ...invalid, feedback: false });
+      assert.equal(result.status, 'invalid');
+      assert.ok(
+        result.diagnostics.every(
+          ({ code }) => code !== 'github-notification-global-feedback-removed',
+        ),
+      );
+    }
+  });
+
   it('should reject retired unversioned notifications with explicit migration guidance', () => {
-    for (const old of [{}, { 'approved-actors': [actor] }, { 'assignment-types': ['issue'] }]) {
+    for (const old of [{ 'approved-actors': [actor] }, { 'assignment-types': ['issue'] }]) {
       const result = parse(old);
       assert.equal(result.status, 'invalid');
       const diagnostic = result.diagnostics.find(

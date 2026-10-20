@@ -76,7 +76,7 @@ const externalFeedbackSchema = Type.Union([
 
 const externalGitHubNotificationPolicySchema = Type.Object(
   {
-    'schema-version': Type.Literal(2),
+    'schema-version': Type.Optional(Type.Literal(2)),
     runtimes: Type.Optional(
       Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
         minItems: 1,

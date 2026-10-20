@@ -2,7 +2,8 @@
 
 ## Configuration Reference
 
-GitHub notifications require `github.notifications.schema-version: 2`. See the
+`github.notifications.schema-version` is optional and defaults to `2`; only
+numeric `2` is supported when explicit. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
 authority, runtime selection, and current support. OpenClaw supports
 Plan, Work, and Auto issue assignment with configured feedback
@@ -350,8 +351,9 @@ another push. Recovery instructions skip confirmed attachments and announcements
 
 ## V1 Retirement
 
-Unversioned notification declarations are rejected with
-`github-notification-v1-retired`. The polling channel, its Work/guided engine,
+Explicit notification version `1` and recognizable retired keys in unversioned
+declarations are rejected with `github-notification-v1-retired`; current-format
+declarations may omit the version and default to `2`. The polling channel, its Work/guided engine,
 reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
 Retirement does not imply feature parity.
 
