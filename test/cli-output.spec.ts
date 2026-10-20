@@ -4,7 +4,9 @@ import ansis from 'ansis';
 import stringWidth from 'fast-string-width';
 
 import {
+  type CliNotice,
   createCliStyles,
+  defaultCliOutput,
   renderCliNotices,
   renderCliSummary,
   writeCliDiagnostics,
@@ -16,6 +18,62 @@ import {
 const plainStyles = createCliStyles({ NO_COLOR: '1' });
 
 describe('cli/output', () => {
+  it('should preserve raw stdout bytes including nul delimiters without appending newlines', () => {
+    const chunks: string[] = [];
+    const write = process.stdout.write;
+    process.stdout.write = ((value: string) => {
+      chunks.push(value);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      for (const value of ['path.ts\0', 'unterminated', 'complete\n', ''])
+        defaultCliOutput.writeStdout(value);
+    } finally {
+      process.stdout.write = write;
+    }
+    assert.deepEqual(chunks, ['path.ts\0', 'unterminated', 'complete\n', '']);
+  });
+
+  it('should render structured context evidence and recovery in one block at narrow widths', () => {
+    const notices: CliNotice[] = [
+      {
+        condition: {
+          key: 'configuration',
+          component: 'setup',
+          fieldPath: '/AgentX/Field',
+          stepId: 'StepX',
+          resource: 'ResourceX',
+          occurrence: 'AttemptX',
+        },
+        code: 'configuration-invalid',
+        severity: 'error',
+        message: 'Configuration unavailable.',
+        details: ['safe evidence: OP_NAME /Work/AgentX'],
+        remediation: ['run the documented recovery command'],
+      },
+    ];
+    for (const columns of [12, 80]) {
+      const plain = renderCliNotices(notices, plainStyles, columns).join('\n');
+      const color = renderCliNotices(notices, createCliStyles({ FORCE_COLOR: '3' }), columns).join(
+        '\n',
+      );
+      assert.equal(ansis.strip(color), plain);
+      assert.equal(plain.match(/✖ error/gu)?.length, 1);
+      assert.ok(plain.split('\n').every((line) => stringWidth(line) <= columns));
+      const compact = plain.replace(/\s/gu, '');
+      for (const value of [
+        'setup:',
+        'code=configuration-invalid',
+        'field=/AgentX/Field',
+        'step=StepX',
+        'resource=ResourceX',
+        'occurrence=AttemptX',
+        'safe evidence: OP_NAME /Work/AgentX',
+        'run the documented recovery command',
+      ])
+        assert.ok(compact.includes(value.replace(/\s/gu, '')));
+    }
+  });
   it('should retain severity on stderr without decorating machine output', () => {
     for (const json of [false, true]) {
       const stdout: string[] = [];
@@ -199,11 +257,11 @@ describe('cli/output', () => {
 
     writeCliSummary(
       { writeStderr() {}, writeStdout: (value) => written.push(value) },
-      [{ label: 'valid', style: 'status', value: 'Agent System manifest for data' }],
+      [{ label: 'valid', style: 'status', value: 'agent system manifest' }],
       plainStyles,
     );
 
-    assert.deepEqual(written, ['valid  Agent System manifest for data\n']);
+    assert.deepEqual(written, ['valid  agent system manifest\n']);
   });
 
   it('should keep json output undecorated', () => {

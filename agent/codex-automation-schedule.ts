@@ -6,7 +6,7 @@ export default function codexAutomationSchedule(schedule: AutomationSchedule): s
   if (schedule.kind === 'every') {
     const unit = schedule.seconds % 3600 === 0 ? 3600 : 60;
     const interval = schedule.seconds / unit;
-    if (!Number.isInteger(interval) || interval < 1 || interval > 999) {
+    if (!Number.isInteger(interval) || interval < 1 || interval > (unit === 60 ? 1440 : 999)) {
       throw new CodexAutomationError('automation-schedule-unsupported');
     }
     return `FREQ=${unit === 3600 ? 'HOURLY' : 'MINUTELY'};INTERVAL=${interval}`;

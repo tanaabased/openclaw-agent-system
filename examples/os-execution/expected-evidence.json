@@ -1,0 +1,21 @@
+{
+  "discoveryRequestCount": 2,
+  "finalResponseCount": 2,
+  "model": "aimock/gpt-5.5",
+  "promptRequestCount": 6,
+  "provider": "aimock",
+  "requestCount": 6,
+  "responsesApiRequestCount": 6,
+  "scenario": "os-execution",
+  "schemaVersion": 2,
+  "strictMissCount": 0,
+  "successfulFixtureResponseCount": 6,
+  "tools": [
+    {
+      "callResponseCount": 2,
+      "name": "exec",
+      "projectionRequestCount": 6,
+      "resultRequestCount": 2
+    }
+  ]
+}

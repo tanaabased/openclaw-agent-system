@@ -1,0 +1,30 @@
+schema-version: 1
+agent:
+  id: codex-example
+  name: Codex Example
+models:
+  default: { model: openai/gpt-6-astra, effort: high }
+  low: { model: openai/gpt-5.6-terra, effort: medium }
+  medium: { model: openai/gpt-5.6-sol, effort: high }
+  high: { model: openai/gpt-6-astra, effort: xhigh }
+setup-agent:
+  steps:
+    - id: codex-tools-debug
+      runtimes: [codex]
+      check: codex-tools status --repo-root "$TMPDIR/agent-system-codex-install/package/package" --absent-check neutral --json
+      apply: 'true'
+    - id: shared
+      check: test -f .codex-shared
+      apply: touch .codex-shared
+    - id: codex-only
+      runtimes: [codex]
+      apply: touch .codex-only
+    - id: openclaw-only
+      runtimes: [openclaw]
+      check: touch .openclaw-checked
+      apply: touch .openclaw-only
+git:
+  worktrees:
+    root: worktrees
+github:
+  username: codex-example

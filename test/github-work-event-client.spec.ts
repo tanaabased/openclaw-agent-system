@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 
 import type { AgentSystemCliResult } from '../api/types.ts';
-import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import GitHubWorkEventClient, {
+  GitHubWorkEventClientError,
+} from '../channels/github/provider/work-event-client.ts';
+import {
+  githubNotificationPublicationMarker,
+  githubNotificationPublicationTarget,
+} from '../channels/github/publication/publication-contract.ts';
 import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
-
-const publicationMarker =
-  '<!-- agent-system-github-publication:pull-request-handoff:0123456789abcdef0123456789abcdef -->';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
@@ -24,6 +27,28 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
 }
 
 describe('channels/github/provider/work-event-client', () => {
+  it('should preserve secondary throttling instead of reporting a permission denial', async () => {
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute() {
+        return {
+          ...response({}),
+          exitCode: 1,
+          stdout:
+            'HTTP/2 403 Forbidden\nx-ratelimit-remaining: 4500\nx-ratelimit-resource: core\n\n{}',
+          stderr: 'gh: You have exceeded a secondary rate limit. (HTTP 403)',
+        };
+      },
+    });
+    await assert.rejects(client.getRepository('owner', 'repo'), (error: unknown) => {
+      assert.ok(error instanceof GitHubWorkEventClientError);
+      assert.equal(error.providerDiagnostic?.classification, 'rate-limit');
+      assert.equal(error.providerDiagnostic?.quotaScope, 'core');
+      assert.equal(error.rateLimit.remaining, 4500);
+      return true;
+    });
+  });
+
   it('should read bounded native routing metadata only for opted-in issue assessments', async () => {
     const requests: string[][] = [];
     let unavailable = false;
@@ -66,6 +91,21 @@ describe('channels/github/provider/work-event-client', () => {
         ?.complexity.status,
       'unavailable',
     );
+  });
+
+  it('should skip provider discovery when assignment types are explicitly cleared', async () => {
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute() {
+        throw new Error('provider must not be called');
+      },
+    });
+    assert.deepEqual(await client.discoverAssigned('2026-08-11T11:55:00.000Z', []), {
+      candidates: [],
+      incomplete: false,
+      totalCount: 0,
+      truncated: false,
+    });
   });
 
   it('should paginate assigned-item discovery through fixed bounded api calls', async () => {
@@ -236,36 +276,67 @@ describe('channels/github/provider/work-event-client', () => {
     assert.ok(requests[1]?.some((value) => value.includes('sha:.head.sha')));
   });
 
-  it('should map assignment authority from the github assigner', async () => {
-    const requests: string[][] = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv) {
-        requests.push(argv);
-        return response([
-          {
-            actor: { login: 'pirog', nodeId: 'U_assigner', type: 'User' },
-            assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
-            createdAt: '2026-08-11T12:05:00Z',
-            databaseId: 8,
-            event: 'assigned',
-            nodeId: 'EV_assign',
-          },
-        ]);
-      },
-    });
+  for (const kind of ['assigned', 'unassigned'] as const) {
+    it(`should map ${kind} authority from the github assigner`, async () => {
+      const requests: string[][] = [];
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute(argv) {
+          requests.push(argv);
+          return response([
+            {
+              actor: { login: 'pirog', nodeId: 'U_assigner', type: 'User' },
+              assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+              createdAt: '2026-08-11T12:05:00Z',
+              databaseId: 8,
+              event: kind,
+              nodeId: 'EV_assign',
+            },
+          ]);
+        },
+      });
 
-    const page = await client.listAssignmentEvents('tanaabased', 'example', 7);
+      const page = await client.listAssignmentEvents('tanaabased', 'example', 7);
 
-    assert.deepEqual(page.events[0]?.actor, {
-      login: 'pirog',
-      nodeId: 'U_assigner',
-      type: 'User',
+      assert.deepEqual(page.events[0]?.actor, {
+        login: 'pirog',
+        nodeId: 'U_assigner',
+        type: 'User',
+      });
+      const projection =
+        requests[0]?.find((value) => value.includes('createdAt:.created_at')) ?? '';
+      assert.match(projection, /actor:\{login:\.assigner\.login/u);
+      assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
     });
-    const projection = requests[0]?.find((value) => value.includes('createdAt:.created_at')) ?? '';
-    assert.match(projection, /actor:\{login:\.assigner\.login/u);
-    assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
-  });
+  }
+
+  for (const actor of [
+    null,
+    { login: 'approved', type: 'User' },
+    { nodeId: 'U_approved', type: 'User' },
+  ]) {
+    it('should reject unassignment evidence without a complete responsible actor', async () => {
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute() {
+          return response([
+            {
+              actor,
+              assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+              createdAt: '2026-08-11T12:05:00Z',
+              databaseId: 8,
+              event: 'unassigned',
+              nodeId: 'EV_unassign',
+            },
+          ]);
+        },
+      });
+      await assert.rejects(
+        client.listAssignmentEvents('tanaabased', 'example', 7),
+        /assignment actor/,
+      );
+    });
+  }
 
   it('should fetch bounded issue context with the newest comment page', async () => {
     const requests: string[][] = [];
@@ -397,41 +468,64 @@ describe('channels/github/provider/work-event-client', () => {
     assert.ok(requests[1]?.some((value) => value.includes('[0:12001]')));
   });
 
-  it('should reconcile and publish pull request handoffs without putting bodies in argv', async () => {
-    const body = `On it.\n\n${publicationMarker}`;
-    const requests: Array<{ argv: string[]; stdin?: string }> = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv, stdin) {
-        requests.push({ argv, ...(stdin === undefined ? {} : { stdin }) });
-        if (argv.includes('POST')) {
-          return response({
-            body,
-            databaseId: 91,
-            nodeId: 'IC_published',
-            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
-          });
-        }
-        return response([
-          {
-            body,
-            databaseId: 90,
-            nodeId: 'IC_existing',
-            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+  for (const intent of ['pull-request-handoff', 'assessment-summary'] as const) {
+    it(`should reconcile and publish ${intent} without putting bodies in argv`, async () => {
+      const publicationMarker = githubNotificationPublicationMarker(
+        githubNotificationPublicationTarget({
+          intent,
+          publicationId: 'retained-publication',
+          item: {
+            lifecycleId: 'issue',
+            number: 7,
+            repositoryNodeId: 'R_example',
           },
-        ]);
-      },
-    });
+        }),
+      );
+      const body = `On it.\n\n${publicationMarker}`;
+      const requests: Array<{ argv: string[]; stdin?: string }> = [];
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute(argv, stdin) {
+          requests.push({ argv, ...(stdin === undefined ? {} : { stdin }) });
+          if (argv.includes('POST')) {
+            return response({
+              body,
+              databaseId: 91,
+              nodeId: 'IC_published',
+              user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+            });
+          }
+          return response([
+            {
+              body,
+              databaseId: 90,
+              nodeId: 'IC_existing',
+              user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+            },
+          ]);
+        },
+      });
 
-    assert.deepEqual(
-      await client.findOwnIssueComment('tanaabased', 'example', 7, publicationMarker),
-      { body, databaseId: 90, nodeId: 'IC_existing' },
-    );
-    assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
-      databaseId: 91,
-      nodeId: 'IC_published',
+      assert.deepEqual(
+        await client.findOwnIssueComment('tanaabased', 'example', 7, publicationMarker),
+        { body, databaseId: 90, nodeId: 'IC_existing' },
+      );
+      assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
+        databaseId: 91,
+        nodeId: 'IC_published',
+      });
+      assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
+      assert.equal(requests[1]?.argv.includes(body), false);
+      for (const marker of [
+        publicationMarker.replace(intent, 'unknown-intent'),
+        publicationMarker.replace(/:[a-f0-9]{32}/u, ':bad-digest'),
+      ]) {
+        await assert.rejects(
+          client.findOwnIssueComment('tanaabased', 'example', 7, marker),
+          /publication markers are invalid/u,
+        );
+      }
+      assert.equal(requests.length, 2);
     });
-    assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
-    assert.equal(requests[1]?.argv.includes(body), false);
-  });
+  }
 });

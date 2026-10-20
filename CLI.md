@@ -12,6 +12,7 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 - [`openclaw agent-system automations run`](#openclaw-agent-system-automations-run)
 - [`openclaw agent-system automations runs`](#openclaw-agent-system-automations-runs)
 - [`openclaw agent-system automations sync`](#openclaw-agent-system-automations-sync)
+- [`openclaw agent-system backup cleanup`](#openclaw-agent-system-backup-cleanup)
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
 - [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune)
 - [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
@@ -161,6 +162,47 @@ automations:
 Configure [backup selection](./MANIFEST.md#backup), then use the
 [backup commands](#openclaw-agent-system-backup-create) for verification and
 retention. For Codex automation support, see the [supported fields](./CODEX.md#repository-automations).
+
+## `openclaw agent-system backup cleanup`
+
+Preview abandoned temporary backup artifacts. Only an explicit operator apply removes
+attributable, inactive, demonstrably incomplete artifacts.
+
+### Options
+
+| Option or argument | Required | Default             | Description                                 |
+| ------------------ | -------- | ------------------- | ------------------------------------------- |
+| `--agent <id>`     | no       | workspace discovery | Select an installed agent (operators only). |
+| `--apply`          | no       | off                 | Apply eligible cleanup; operator-only.      |
+| `--json`           | no       | off                 | Write one structured result to stdout.      |
+
+### Usage
+
+```text
+openclaw agent-system backup cleanup [--agent <id>] [--apply] [--json]
+```
+
+```sh
+# inspect one agent without changing files or acquiring a lock.
+openclaw agent-system backup cleanup --agent emori --json
+
+# explicitly remove only that agent's eligible incomplete artifacts.
+openclaw agent-system backup cleanup --agent emori --apply --json
+```
+
+Results identify `wouldDelete`, `deleted`, and `preserved` paths with refusal reasons.
+Partial failures retain exact completed and remaining actions. Apply shares capture's
+exclusive lease and checks ownership and filesystem identity again before deletion.
+
+Completed or plausibly complete archives, unknown contents, active or uncertain writers,
+and legacy artifacts without ownership records are preserved. Snapshot-command failures
+may leave writer activity uncertain even after the parent exits; age alone never permits
+cleanup. Bound agent commands may preview only their own workspace, without `--agent`.
+
+Cleanup does not resume backups, reset wrapper locks or journals, inspect providers, or
+prune published archives. It is separate from running a backup and does not establish
+backup success. For failed automation execution, inspect its owned history with
+`openclaw agent-system automations runs <id> --agent <id> --json`.
 
 ## `openclaw agent-system backup create`
 
@@ -582,7 +624,7 @@ Reconcile the workspace agent's identity, models, memory, paths, capabilities, a
 | `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
 | `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
 | `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
-| `--yes`                | no       | off     | Consent to setup without prompting.                                                                  |
+| `--yes`                | no       | off     | Accept installation, including required session dispatch enrollment, without prompting.              |
 
 ### Usage
 
@@ -594,7 +636,7 @@ openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip
 # review and apply the current workspace configuration.
 openclaw agent-system install
 
-# explicitly consent to setup for an unattended installation.
+# explicitly consent to installation and required enrollment without prompts.
 openclaw agent-system install --yes --json
 ```
 
@@ -633,11 +675,30 @@ executable, credential, and identity checks.
 
 Interactive installation previews applicable commands, shells, and timeouts on
 stderr. Declining or cancelling stops before mutation. No applicable setup
-means no prompt.
+means no setup prompt; required session dispatch enrollment has its own consent preview.
 
-Unattended consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
+Unattended setup consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
 or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent;
 prompts and warning diagnostics stay on stderr. Consent is not persisted.
+
+When enabled OpenClaw issue-assignment or review-request policies require session
+dispatch, Install lists those consumers and discloses `operator.read` and
+`operator.write` before enrollment. These grants are broader than sessions-only
+access. Explicit `--yes` accepts enrollment; `--non-interactive`, CI, or missing
+stdin alone do not. The UI uses the existing Install Allow once approval and
+requires a verified owner. A missing or unusable credential blocks enrollment-
+dependent installation; unsupported review execution remains a separate finding.
+
+One Gateway-wide device identity is retained in macOS Keychain or Linux Secret
+Service; there is no file-store fallback. Enrollment currently supports a local
+non-TLS Gateway. Manual pairing policy still requires approval of the exact
+request in Devices or `openclaw devices approve <requestId>`, then another Install
+to resume. Repeated Install reuses the credential; disabling a consumer retains
+it for other agents. Doctor reports enrollment state without issuing credentials.
+For revoked credentials, remove the retained device and any pending request in
+Devices, then rerun Install with enrollment consent to replace the retained
+identity. There is no separate session-dispatch reset command. Credential
+readiness alone does not establish end-to-end issue or review dispatch.
 
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;
@@ -656,7 +717,6 @@ Installation:
 - Rejects an agent id already bound to another workspace.
 - Reconciles manifest-selected Git, worktree, GitHub, and Google tool grants while preserving unrelated grants.
 - Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
-- Grants and verifies [conversation-hook access](./channels/github/ADVANCED.md#required-conversation-hook) when notifications are configured.
 
 Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
 

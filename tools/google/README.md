@@ -181,8 +181,8 @@ do not add service scopes merely for recovery. After verification, remove only
 identified obsolete GoG files. Do not delete generic `config` or `data` directories
 or discard working credentials before the managed entrypoint succeeds.
 
-For repository CI authorization, follow the
-[Google Tasks example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/google/README.md#manual-authorization).
+For repository CI credential provisioning, see the
+[OpenClaw Google example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-google/README.md).
 
 ## `agent_system_google`
 

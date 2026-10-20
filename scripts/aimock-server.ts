@@ -3,8 +3,9 @@ import { parseArgs } from 'node:util';
 
 import { LLMock, type Mountable } from '@copilotkit/aimock';
 
+import openClawAIMockDiagnostics from './aimock-diagnostics.ts';
 import openClawAIMockEvidence from './aimock-evidence.ts';
-import resolveOpenClawAIMockScenario from './aimock-scenarios.ts';
+import resolveExampleModelScenario from './example-model-scenarios.ts';
 import withToolSearch from './aimock-tool-search.ts';
 
 const { values: options } = parseArgs({
@@ -17,7 +18,7 @@ const { values: options } = parseArgs({
 });
 const providerHost = options.host.trim();
 const providerPort = Number(options.port);
-const scenario = withToolSearch(resolveOpenClawAIMockScenario(options.scenario?.trim() ?? ''));
+const scenario = withToolSearch(resolveExampleModelScenario(options.scenario?.trim() ?? ''));
 if (
   !providerHost ||
   !Number.isSafeInteger(providerPort) ||
@@ -41,14 +42,50 @@ const mock = new LLMock({
 });
 mock.addFixtures([...scenario.fixtures]);
 
+let authenticatedEmbeddings = 0;
+let rejectedEmbeddings = 0;
+if (scenario.embeddingAuthorization) {
+  mock.mount('/v1', {
+    async handleRequest(req, res, pathname) {
+      if (pathname !== '/embeddings') return false;
+      if (req.headers.authorization !== scenario.embeddingAuthorization) {
+        rejectedEmbeddings += 1;
+        json(res, 401, { error: 'fixture credential required' });
+        return true;
+      }
+      authenticatedEmbeddings += 1;
+      return false;
+    },
+  });
+}
+
 const evidenceService: Mountable = {
   async handleRequest(req, res, pathname) {
-    if (pathname !== '/evidence') return false;
+    if (pathname !== '/evidence' && pathname !== '/diagnostics') return false;
     if (req.method !== 'GET') {
       json(res, 405, { error: 'method not allowed' });
       return true;
     }
-    json(res, 200, openClawAIMockEvidence(scenario, mock.getRequests()));
+    if (pathname === '/diagnostics') {
+      const diagnostics = openClawAIMockDiagnostics(scenario, mock.getRequests());
+      json(res, diagnostics.failed ? 500 : 200, diagnostics);
+      return true;
+    }
+    try {
+      json(res, 200, {
+        ...openClawAIMockEvidence(scenario, mock.getRequests()),
+        ...(scenario.embeddingAuthorization
+          ? {
+              embeddingAuthentication: {
+                accepted: authenticatedEmbeddings,
+                rejected: rejectedEmbeddings,
+              },
+            }
+          : {}),
+      });
+    } catch {
+      json(res, 500, openClawAIMockDiagnostics(scenario, mock.getRequests()));
+    }
     return true;
   },
 };

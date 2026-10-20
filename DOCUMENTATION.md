@@ -154,23 +154,23 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 ### Object Example
 
 Name the owning configuration path before listing fields, as in
-[`githubNotifications`](./CONFIG.md#githubnotifications):
+[`opCache`](./CONFIG.md#opcache):
 
 ````markdown
-## `githubNotifications`
+## `opCache`
 
 Set under `plugins.entries.agent-system.config` in OpenClaw configuration.
 
-| Field                  | Type    | Required | Default | Description                                       |
-| ---------------------- | ------- | -------- | ------- | ------------------------------------------------- |
-| `maxCommentCharacters` | integer | no       | `8000`  | Incoming comment limit, from `1` through `64000`. |
+| Field        | Type    | Required | Default | Description                                      |
+| ------------ | ------- | -------- | ------- | ------------------------------------------------ |
+| `maxEntries` | integer | no       | `128`   | Maximum cached entries, from `1` through `1024`. |
 
 ```sh
-# reject incoming comments longer than twelve thousand characters.
-openclaw config set plugins.entries.agent-system.config.githubNotifications.maxCommentCharacters 12000 --strict-json
+# set the maximum cached entry count.
+openclaw config set plugins.entries.agent-system.config.opCache.maxEntries 64 --strict-json
 ```
 
-Overlong comments are rejected without executing truncated prose.
+The limit bounds entries retained by the configured cache mode.
 ````
 
 ## Before Committing

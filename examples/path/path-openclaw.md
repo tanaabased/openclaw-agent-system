@@ -1,1 +1,0 @@
-Use the OpenClaw exec tool exactly once to run `git --agent-system > openclaw-path-result.txt` from your workspace. Do not create the result file any other way. Reply with `done` after the command succeeds.

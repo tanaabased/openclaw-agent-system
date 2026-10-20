@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import waitNotificationsAgentSystem from '../channels/github/cli/wait.ts';
-import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
+import type { GitHubNotificationWaitInput } from '../channels/github/cli/contracts.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 const manifest: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
@@ -36,14 +36,14 @@ describe('channels/github/cli/wait', () => {
         },
         refresh: false,
         setExitCode: (code) => exitCodes.push(code),
-        statusService: {
-          async wait(input) {
+        nativeService: {
+          async wait(manifest, _workspace, input) {
             calls.push(input);
             return {
-              agentId: input.agentId,
+              agentId: manifest.agent.id,
               code: 'github-notification-baseline-ready',
               observation: {
-                agentId: input.agentId,
+                agentId: manifest.agent.id,
                 baseline: { status: 'ready' },
                 capacity: { active: 0, limit: 2, queued: 0 },
                 code: 'github-notification-status-ready',

@@ -8,6 +8,7 @@ import nodeErrorCode from '../utils/node-error-code.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { BackupConfiguration } from '../manifest/backup-schema.ts';
 import backupDirectoryRelevant from './backup-directory-relevant.ts';
+import backupPayloadPaths from './backup-payload-paths.ts';
 import {
   BackupError,
   backupControlDirectory,
@@ -96,15 +97,15 @@ export function resolveBackupConfiguration(
   };
 }
 
-/** prune irrelevant trees while retaining explicitly included ignored descendants. */
-export async function planWorkspaceBackup(options: {
+/** validate backup locations without selecting or requiring source files. */
+export async function resolveBackupLocations(options: {
   manifest: AgentManifest;
   workspaceDir: string;
   overrides?: BackupConfiguration;
   bound?: boolean;
   protectedPaths?: string[];
   runtimeProtection?: BackupRuntimeProtection;
-}): Promise<BackupPlan> {
+}) {
   const workspaceDir = await realpath(options.workspaceDir);
   const configured = options.manifest.backup ?? {};
   const configuration = resolveBackupConfiguration(configured, options.overrides);
@@ -195,6 +196,20 @@ export async function planWorkspaceBackup(options: {
       'The backup destination must not be inside live OpenClaw state.',
     );
   }
+  return { workspaceDir, settings, protectedPaths, agentDir };
+}
+
+/** prune irrelevant trees while retaining explicitly included ignored descendants. */
+export async function planWorkspaceBackup(options: {
+  manifest: AgentManifest;
+  workspaceDir: string;
+  overrides?: BackupConfiguration;
+  bound?: boolean;
+  protectedPaths?: string[];
+  runtimeProtection?: BackupRuntimeProtection;
+}): Promise<BackupPlan> {
+  const { workspaceDir, settings, protectedPaths, agentDir } =
+    await resolveBackupLocations(options);
   const diagnostics: BackupPlan['diagnostics'] = [];
   const candidates: string[] = [];
   const prunedDirectories: string[] = [];
@@ -396,19 +411,7 @@ export async function planWorkspaceBackup(options: {
       }
     }
   }
-  // structural parent directories do not restore excluded file contents.
-  for (const path of [...selected]) {
-    let parent = dirname(path);
-    while (parent !== '.') {
-      selected.add(parent);
-      parent = dirname(parent);
-    }
-  }
-  if (selected.size > 100_000)
-    throw new BackupError(
-      'backup-inventory-too-large',
-      'A workspace backup supports at most 100000 entries.',
-    );
+  const files = backupPayloadPaths(selected);
   return {
     agentId: options.manifest.agent.id,
     workspaceDir,
@@ -419,7 +422,7 @@ export async function planWorkspaceBackup(options: {
       : {}),
     protectedPaths,
     selection,
-    files: [...selected].sort(),
+    files,
     diagnostics,
     coverage: {
       stage: 'workspace-only',

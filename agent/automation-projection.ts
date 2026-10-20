@@ -26,11 +26,21 @@ export function effectiveAutomation(job: ResolvedAutomation, context: Automation
     throw new AutomationError('automation-effort-unsupported');
   }
   const normalized = automationContent(job, 'openclaw');
-  const stableContext = { ...context };
-  delete stableContext.threads;
+  const stableContext = {
+    agentId: context.agentId,
+    workspaceDir: context.workspaceDir,
+    timezone: context.timezone,
+    ...(job.payload.kind === 'command'
+      ? { command: context.command, environment: context.environment }
+      : {}),
+  };
   return {
     ...normalized,
-    hash: automationHash({ content: normalized.content, context: stableContext }),
+    hash: automationHash({
+      content: normalized.content,
+      context: stableContext,
+      ...(job.internalOpenClaw ? { internal: job.internalOpenClaw } : {}),
+    }),
   };
 }
 
@@ -83,6 +93,7 @@ export function projectAutomation(
     wakeMode: 'now',
     delivery: { mode: 'none', bestEffort: false },
     failureAlert: false,
+    ...(job.internalOpenClaw ? { trigger: job.internalOpenClaw.trigger } : {}),
     payload:
       job.payload.kind === 'command'
         ? {
@@ -109,7 +120,7 @@ export function projectAutomation(
             timeoutSeconds,
             lightContext: false,
             allowUnsafeExternalContent: false,
-            toolsAllow: ['*'],
+            toolsAllow: job.internalOpenClaw?.toolsAllow ?? ['*'],
             ...(override?.model ? { model: override.model.trim() } : {}),
             ...(override?.effort ? { thinking: override.effort.trim() } : {}),
           },
@@ -184,6 +195,6 @@ export function automationPatch(
     };
   }
   for (const key of ['sessionKey', 'trigger', 'pacing'])
-    if (current[key] !== undefined) patch[key] = null;
+    if (current[key] !== undefined && desired[key] === undefined) patch[key] = null;
   return patch;
 }

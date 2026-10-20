@@ -1,3 +1,6 @@
+import nativeNotificationDiagnostic from './native-diagnostic.ts';
+import type { NotificationRefreshResult } from '../../../agent/openclaw-notifications.ts';
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
@@ -6,10 +9,11 @@ import {
   type CliStyles,
   writeCliError,
   writeCliJson,
-  writeCliSummary,
+  renderCliSummary,
+  writeCliDiagnosticNotices,
+  writeCliLines,
 } from '../../../cli/output.ts';
-import { formatErrorDiagnostic } from '../../../core/logger.ts';
-import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import {
   NotificationCliOptionError,
   notificationItemSelector,
@@ -17,20 +21,20 @@ import {
 } from './options.ts';
 
 const defaultRefreshSeconds = 300;
-const notificationRefreshLeaseWaitMs = 120_000;
 
 export interface RefreshNotificationsAgentSystemOptions {
+  nativeService?: Pick<OpenClawNotifications, 'refresh'>;
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
   json: boolean;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   output: CliOutput;
   repository?: unknown;
   setExitCode(code: number): void;
   styles?: CliStyles;
   timeoutSeconds?: unknown;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -48,7 +52,7 @@ function refreshOptions(options: RefreshNotificationsAgentSystemOptions) {
   };
 }
 
-/** Run one bounded notification intake cycle from a one-shot CLI process. */
+/** Request a bounded native notification workflow run from the CLI. */
 async function refreshNotificationsAgentSystem(
   options: RefreshNotificationsAgentSystemOptions,
 ): Promise<void> {
@@ -70,20 +74,21 @@ async function refreshNotificationsAgentSystem(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), parsed.timeoutMs);
   timeout.unref();
-  let result;
+  let result: NotificationRefreshResult | undefined;
   try {
-    [result] = await options.monitorService.runOnce({
-      agentId: manifest.manifest.agent.id,
-      bypassInterval: true,
-      executionSurface: 'cli-one-shot',
-      ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
+    if (!options.nativeService) throw new Error('native notification backend is unavailable');
+    result = await options.nativeService.refresh(manifest.manifest, manifest.scope.workspaceDir, {
+      selector: parsed.selector,
       signal: controller.signal,
-      waitForLeaseMs: Math.min(notificationRefreshLeaseWaitMs, parsed.timeoutMs),
     });
   } catch (error) {
     writeCliError(
       options.output,
-      formatErrorDiagnostic('github-notifications', error, 'github-notification-refresh-failed'),
+      formatRedactedErrorDiagnostic(
+        'github-notifications',
+        error,
+        'github-notification-refresh-failed',
+      ),
       options,
     );
     options.setExitCode(1);
@@ -104,83 +109,69 @@ async function refreshNotificationsAgentSystem(
   if (options.json) {
     writeCliJson(options.output, result);
   } else {
-    const counts = [
-      ['baseline', result.baseline],
-      ['approved', result.approved],
-      ['rejected', result.rejected],
-      ['duplicate', result.duplicates],
-      ['retired', result.retired],
-    ]
-      .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
-      .map(([label, value]) => `${label}=${value}`)
-      .join(' ');
     const baseline =
       result.baselineAt === undefined
         ? 'pending'
-        : result.baselineEstablished
-          ? `established at ${new Date(result.baselineAt).toISOString()} with ${result.baseline ?? 0} existing assignments`
-          : `ready since ${new Date(result.baselineAt).toISOString()}`;
-    writeCliSummary(
-      options.output,
+        : `ready since ${new Date(result.baselineAt).toISOString()}`;
+    const statusStyle =
+      result.status === 'failed'
+        ? ('error' as const)
+        : result.status === 'queued'
+          ? ('status' as const)
+          : ('field' as const);
+    const summary = renderCliSummary(
       [
         { label: 'agent', style: 'target', value: result.agentId },
         {
-          label: 'status',
-          style:
-            result.status === 'failed'
-              ? 'error'
-              : result.status === 'completed'
-                ? 'status'
-                : result.code === 'github-notification-disabled'
-                  ? 'notice'
-                  : 'warning',
-          value: result.status,
+          label: 'scope',
+          style: 'target',
+          value: parsed.selector
+            ? `${parsed.selector.itemType} ${parsed.selector.repository}#${parsed.selector.number}`
+            : 'all items',
         },
+        {
+          label: 'timeout',
+          style: 'field',
+          value: `${parsed.timeoutMs / 1000}s${options.timeoutSeconds === undefined ? ' (default)' : ''}`,
+        },
+        { label: 'status', style: statusStyle, valueStyle: statusStyle, value: result.status },
         { label: 'code', style: 'field', value: result.code },
         { label: 'baseline', style: 'field', value: baseline },
+        ...(result.runId ? [{ label: 'run', style: 'field' as const, value: result.runId }] : []),
         ...(result.diagnosticCode
           ? [{ label: 'diagnostic', style: 'field' as const, value: result.diagnosticCode }]
           : []),
-        ...(result.retryAt === undefined
-          ? []
-          : [
-              {
-                label: 'retry',
-                style: 'field' as const,
-                value: new Date(result.retryAt).toISOString(),
-              },
-            ]),
-        ...(result.nextPollAt === undefined || result.retryAt !== undefined
-          ? []
-          : [
-              {
-                label: 'next poll',
-                style: 'field' as const,
-                value: new Date(result.nextPollAt).toISOString(),
-              },
-            ]),
-        ...(counts ? [{ label: 'items', style: 'field' as const, value: counts }] : []),
-        ...(result.code === 'github-notification-provider-throttle-active' &&
-        result.retryAt !== undefined
-          ? [
-              {
-                label: 'reason',
-                style: 'field' as const,
-                value: `GitHub rate limit; retry after ${new Date(result.retryAt).toISOString()}`,
-              },
-            ]
-          : []),
-        ...(result.itemFailures ?? []).map((failure) => ({
-          component: `${failure.repository}#${failure.number}`,
-          label: 'failure',
-          style: 'error' as const,
-          value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause} check repository write access`,
-        })),
       ],
       options.styles,
+      { rowPadding: 0, terminalColumns: options.terminalColumns ?? process.stdout.columns },
     );
+    writeCliLines(options.output, ['', ...summary, '']);
   }
-  if (result.status !== 'completed') options.setExitCode(1);
+  const remediation = nativeNotificationDiagnostic(result.code);
+  if (result.status === 'failed' || remediation)
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'error',
+        component: 'github-notifications',
+        resource: parsed.selector
+          ? `${parsed.selector.itemType}:${parsed.selector.repository}#${parsed.selector.number}`
+          : manifest.manifest.agent.id,
+        occurrence: result.runId,
+        code: result.code,
+        message: `notification refresh ${result.status}.`,
+        details: result.diagnosticCode ? [`diagnostic=${result.diagnosticCode}`] : [],
+        remediation: [
+          remediation ??
+            'inspect the reported code and resolve the cause before requesting another refresh',
+        ],
+      },
+    ]);
+  if (
+    result.status !== 'queued' &&
+    result.status !== 'completed' &&
+    result.code !== 'github-notification-refresh-already-running'
+  )
+    options.setExitCode(1);
 }
 
 export default presentCliCommand(refreshNotificationsAgentSystem);

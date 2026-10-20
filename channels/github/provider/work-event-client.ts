@@ -1,6 +1,7 @@
+import GitHubReviewReplyClient from './review-reply-client.ts';
 import GitHubReviewClient from './review-client.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import type { GitHubRateLimit } from './api-response.ts';
 import GitHubIssueCommentClient from './issue-comment-client.ts';
 import readItemContext from './read-item-context.ts';
@@ -23,7 +24,6 @@ import type {
   GitHubCanonicalWorkItem,
   GitHubIdentity,
   GitHubRepositoryIdentity,
-  GitHubRepositoryPermission,
 } from './work-item.ts';
 
 export { GitHubWorkEventClientError } from './work-event-api-client.ts';
@@ -45,20 +45,26 @@ export type {
 /** Fixed-endpoint, bounded GitHub access for notification control facts and publication. */
 export default class GitHubWorkEventClient implements GitHubNotificationProviderClient {
   readonly reviews: GitHubReviewClient;
+  readonly replies: GitHubReviewReplyClient;
   readonly #api: GitHubWorkEventApiClient;
   readonly #comments: GitHubIssueCommentClient;
   readonly #items: GitHubWorkItemClient;
   readonly maximumCommentCharacters: number;
 
   constructor(
-    client: ConnectedGitHubAccountClient,
+    readonly account: ConnectedGitHubAccountClient,
     maximumCommentCharacters = defaultMaximumCommentCharacters,
   ) {
     this.maximumCommentCharacters = validateMaximumCommentCharacters(maximumCommentCharacters);
-    this.#api = new GitHubWorkEventApiClient(client);
+    this.#api = new GitHubWorkEventApiClient(account);
     this.reviews = new GitHubReviewClient(this.#api, this.maximumCommentCharacters);
+    this.replies = new GitHubReviewReplyClient(this.#api, this.reviews);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
     this.#items = new GitHubWorkItemClient(this.#api);
+  }
+
+  listIssueCommentPage(owner: string, name: string, number: number, page: number, since: string) {
+    return this.#comments.listIssueCommentPage(owner, name, number, page, since);
   }
 
   get identity(): GitHubIdentity {
@@ -72,16 +78,13 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   discoverAssigned(
     updatedSince: string,
     assignmentTypes: readonly ('issue' | 'pull-request')[],
+    page?: number,
   ): Promise<GitHubAssignedItemDiscovery> {
-    return this.#items.discoverAssigned(updatedSince, assignmentTypes);
+    return this.#items.discoverAssigned(updatedSince, assignmentTypes, page);
   }
 
   getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity> {
     return this.#items.getRepository(owner, name);
-  }
-
-  getPermission(owner: string, name: string, login: string): Promise<GitHubRepositoryPermission> {
-    return this.#items.getPermission(owner, name, login);
   }
 
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem> {

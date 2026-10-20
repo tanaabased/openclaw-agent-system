@@ -7,11 +7,13 @@ or current repository evidence contradicts it; name that evidence in the finding
 
 ## Audit Requirements
 
+- Audit GitHub permission and workflow gates against [GitHub Workflow Guidance](../channels/github/AGENTS.md), including their runtime owners outside the channel folder. Identify duplicated provider authorization, whole-manifest or retained-policy equality used as permission, historical grants that override live policy, runtime policy edits that require Install, and reversible holds turned into permanent stops, and issue-local failures that stop unrelated work. Recommend removal unless the gate protects a named local invariant or a concrete provider capability gap.
 - Audit every session-facing inbound and outbound path against the lifecycle and publication constraints in `AGENTS.md` and `channels/github/PRESENTATION.md` for visual component grammar. Keep current-behavior claims in `channels/github/README.md` and `channels/github/ADVANCED.md` aligned with the implementation.
 - Audit every machine-readable CLI path and its automation consumers. A successful `--json` command must write exactly one parseable result to standard output; lifecycle, diagnostic, warning, failure, and debug records belong in the appropriate OpenClaw file log, host logger, or standard-error path and must not corrupt the result at any log level.
 - Treat logger selection and propagation as an output contract. Long-lived lifecycle services used by both Gateway and CLI paths must not acquire a console logger merely because a machine-readable command invokes them.
 - Require focused unit coverage for logger routing and JSON writers plus an executable GitHub Actions example when output purity depends on the assembled plugin, OpenClaw logging level, or another installed-runtime boundary.
-- Preserve aligned surfaces and recommend changes only for evidenced presentation drift, context leakage, publication-boundary violations, ambiguous compatibility behavior, or machine-output contamination.
+- For presentation audits, preserve aligned surfaces and recommend changes only for evidenced presentation drift, context leakage, publication-boundary violations, ambiguous compatibility behavior, or machine-output contamination.
+- When auditing tests, apply [Verification Categories](../DEVELOPMENT.md#verification-categories) per assertion, including mixed specs. Name the executed unit or static invariant, the failure it detects, and any existing owner coverage. Recommend keep, tighten, split/move, or remove based on that evidence; flag static assertions that only duplicate current file contents as maintenance burdens. Preserve distinct safety and compatibility checks, and do not require a new static runner merely to classify them.
 
 ## Accepted Decisions
 
@@ -35,17 +37,13 @@ Keep release package inspection, npm publication, and ClawHub publication as sep
 
 Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.
 
-### Unsupported monitor-state schema 2
+### V1 notification retirement
 
-Treat GitHub notification monitor-state schema 2 as unsupported legacy state. The only known installation was manually upgraded before schema 3 became the active contract, so keep the decoder rejection test and do not recommend a schema 2 migration or retroactive activation unless the support policy changes or repository evidence shows additional persisted users.
-
-### Monitor-state schema projections
-
-Project monitor-state schema 3 into current schema 5 by retaining assignment,
-lifecycle, worktree, failure, and retirement facts while dropping its removed
-session, publication, mode, and comment-tracking fields. Project schema 4 into
-schema 5 without inventing provider-retirement proof or cleanup outcomes. Do
-not restore removed fields to the active intake schema for compatibility.
+V1 notification runtime and configuration support are retired by operator decision.
+Keep its historical on-disk records untouched; do not restore a decoder, scanner,
+channel, or compatibility engine to manufacture parity. Preserve shared provider,
+publication, presentation, and native V2 authority/receipt contracts. Missing V2
+features remain explicit limitations and separate implementation work.
 
 ### Lifecycle-neutral provider primitives
 
@@ -56,8 +54,18 @@ lifecycle session must own scheduling, continuation, and publication authority.
 
 ### Leia workflow and model boundaries
 
-Keep general Leia examples in `pr-examples-tests.yml` and manually dispatched GitHub notification acceptance scenarios in `notification-tests.yml`. Scope shared test credentials to each workflow's final Leia execution step even though every matrix entry receives that step environment. Use strict AIMock for the `agent` and `github` examples and the `credentials` cache checks; only `approval`, `containment`, `models`, and `path` select a live OpenAI model. The `codex` example uses direct assertions without a model. The assignment mock must match the created issue title and body so a passing fixture proves bounded provider context reached the installed model turn.
+Separate native OS coverage from runtime coverage and select contracts before runner counts. Keep `os-install`, `os-execution`, and `os-credentials` on macOS and Ubuntu: native enrollment and restart/revocation, shell/PATH/PTY execution, private filesystem state, and trusted signing. Keep portable Doctor presentation, aliases, and tool-grant variants in `openclaw-doctor` on Ubuntu. Preserve one basic Doctor inspection in native installation; do not duplicate portable permutations across both OSes.
+
+Keep the runtime examples on Ubuntu. Workspace coverage owns validation, environment-backed identity, setup ordering, shared Codex prerequisites, model configuration, convergence, and read-only inspection. Tools cover public commands and contextual shims plus bound setup/automation descendants, including stdin and uncontaminated machine output. GitHub coverage verifies two account identities and native profile consumption. Worktree coverage includes local reuse, dirty-removal refusal, disposable remote SSH enrollment, and an ordinary agent session retaining canonical guidance, identity, exact input custody, and working directory across restart. Credentials cover both 1Password Environments and a direct vault-secret consumer. Memory covers keyword retrieval and installed embedding-secret resolution across restart. Backup captures and restores workspace files and a real agent database with committed WAL content. Preserve source tests for parser permutations, provider failures, collaboration selection variants, archive safety, retention, and lock-loss guards; retire duplicated legacy Leia material and orphaned fixtures/helpers.
+
+Use strict AIMock where the real native agent/tool loop matters and fixed authenticated embedding fixtures for the memory handoff. Keep only hosted Codex native-tool turns on a live model. Standalone Codex install, automation, and notification examples verify packaged boundaries without a model. Keep the OpenClaw notification journeys separate and parallel: `openclaw-issue` owns one assignment, admission, a retained plan, and ordinary issue-comment feedback; `openclaw-intake` owns notification installation compatibility, concurrent intake, retained initial results, and repeat-scan duplicate prevention; `openclaw-lifecycle` normally admits one issue and owns restart recovery, reactivation, replay-safe replies, and retirement with native cleanup; `openclaw-pr` owns operator-requested implementation, linked PR delivery, card recovery, and PR conversation feedback. Each refresh admits only its own issue, and repeat scans prove no duplication. Installed inline-review coverage belongs to the deferred review flow. Diagnose observed activation failures before introducing retries or additional restart coverage.
+
+Use one Leia execution step after setup with one shared environment block per workflow; unused test credentials and model settings may be shared across entries. Keep credentials off setup steps. Follow Leia with the same generic `failure()` diagnostics block in each example workflow. The OS examples require no hosted secrets. Do not make OS and runtime axes an automatic cross-product. Keep runner batching and timing optimization separate from coverage selection.
 
 ### Shared synthetic SSH preparation
 
-Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path used by both matrices. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
+Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
+
+### Source test boundaries
+
+Keep source specs flat under `test/`. Select deterministic units with `test:unit` and repository invariants in `*.static.spec.ts` with `test:static`; both run on Ubuntu in the existing unit workflow. Apply the verification categories above per assertion, rather than treating a read-only check as a unit test. Select portable `*.component.spec.ts` with `test:component` on Ubuntu, and native `*.os.component.spec.ts` with `test:os` on both supported OSes. Keep mixed unit/component specs in the component selection until their unit-shaped cases are extracted. The built memory helper belongs to portable component coverage. Keep the 100,000-entry backup fixture opt-in under `test:stress`; preserve normal PR coverage with bounded filesystem pruning and pure payload/parent-limit checks. `bun run test` remains the fast unit alias; `bun run test:all` covers all ordinary selections and excludes stress. Never remove a retained check from CI merely by excluding it from the unit glob.

@@ -1,5 +1,6 @@
 import { delimiter } from 'node:path';
 
+import { inspectCodexIntake } from './codex-intake.ts';
 import { inspectCodexAutomations } from './codex-automations.ts';
 import type { CodexAutomationInputs } from './codex-automation-plan.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -9,7 +10,9 @@ import {
 } from './codex-workspace-binding.ts';
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
+import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
+import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';
 
 interface CodexSetupSnapshot {
   agentId: string;
@@ -155,12 +158,23 @@ export async function inspectCodexSetup(
   dependencies: CodexSetupDependencies = {},
 ) {
   const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
+    context.manifest.github?.notifications,
+    'codex',
+  );
   return {
     status: 'inspected' as const,
     agentId: selected.agentId,
     workspaceDir: selected.workspaceDir,
     manifestDigest: selected.manifestDigest,
-    findings: await lifecycle.inspect(context),
+    intake: await inspectCodexIntake(pluginData, dependencies),
+    findings: [
+      ...(await lifecycle.inspect(context)),
+      ...notificationDiagnostics.map<AgentSystemLifecycleFinding>((diagnostic) => ({
+        component: 'github-notifications',
+        ...diagnostic,
+      })),
+    ],
     automations: await inspectCodexAutomations(
       pluginData,
       dependencies.automationInputs,
@@ -176,6 +190,10 @@ export async function installCodexSetup(
   dependencies: CodexSetupDependencies = {},
 ) {
   const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
+    context.manifest.github?.notifications,
+    'codex',
+  );
   const result = await lifecycle.reconcile(context);
   const automations = await inspectCodexAutomations(
     pluginData,
@@ -191,6 +209,14 @@ export async function installCodexSetup(
     workspaceDir: selected.workspaceDir,
     manifestDigest: selected.manifestDigest,
     ...result,
+    warnings: [
+      ...result.warnings,
+      ...notificationDiagnostics.map(({ code, message }) => ({
+        component: 'github-notifications',
+        code,
+        message,
+      })),
+    ],
     automations,
   };
 }

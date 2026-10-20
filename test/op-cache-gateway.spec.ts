@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
+import ansis from 'ansis';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import registerOpCache from '../core/register-op-cache.ts';
@@ -93,6 +95,166 @@ function fixture(sharedScope?: string) {
 }
 
 describe('core/op-cache-gateway', () => {
+  it('should render illustrative targeted and all-agent flush previews with confirmed counts', async () => {
+    const previews = ['illustrative fixture data; no gateway operations\n'];
+    for (const [name, agentId, invalidated] of [
+      ['targeted', 'data', { entries: 1, clients: 1, pending: 0, values: 1 }],
+      ['all agents with zero counts', undefined, { entries: 0, clients: 0, pending: 0, values: 0 }],
+    ] as const) {
+      const output: string[] = [];
+      const errors: string[] = [];
+      let code = 0;
+      await credentialsCache({
+        action: 'flush',
+        agentId,
+        request: async () => ({
+          runtime: 'gateway',
+          process: { pid: 42, scope: 'process-local' },
+          policy: { mode: 'timed', durationSeconds: 300, maxEntries: 10 },
+          backoff: { retryInMs: 0 },
+          invalidated,
+        }),
+        output: {
+          writeStdout: (value) => output.push(value),
+          writeStderr: (value) => errors.push(value),
+        },
+        styles: createCliStyles({ NO_COLOR: '1' }),
+        terminalColumns: 100,
+        setExitCode: (value) => (code = value),
+      });
+      assert.equal(code, 0);
+      assert.deepEqual(errors, []);
+      previews.push(`## ${name}\n${output.join('')}`);
+    }
+    assert.equal(
+      previews.join('\n'),
+      await readFile(new URL('./op-cache-flush-previews.txt', import.meta.url), 'utf8'),
+    );
+  });
+
+  it('should preview illustrative cache states without exposing snapshot values', async () => {
+    const base = {
+      policy: { mode: 'timed', durationSeconds: 300, maxEntries: 32 },
+      process: { pid: 42, scope: 'process-local' },
+      counts: {
+        clientCreations: 1,
+        resourceReads: 2,
+        hits: 3,
+        misses: 4,
+        coalesced: 0,
+        failures: 1,
+        backoffSkips: 1,
+      },
+    };
+    const states = [
+      {
+        name: 'empty',
+        entries: [],
+        backoff: { active: 0, retryInMs: 0 },
+        expected: /entries.*0 retained/u,
+      },
+      {
+        name: 'cached',
+        entries: [
+          {
+            agentId: 'agent: exact/id',
+            client: true,
+            pending: false,
+            cached: true,
+            ageMs: 1200,
+            expiresInMs: 5000,
+            expired: false,
+          },
+        ],
+        backoff: { active: 0, retryInMs: 0 },
+        expected: /agent\s+agent: exact\/id.*cached.*1s old/u,
+      },
+      {
+        name: 'pending',
+        entries: [
+          {
+            agentId: 'pending-agent',
+            client: true,
+            pending: true,
+            cached: false,
+            ageMs: null,
+            expiresInMs: null,
+            expired: false,
+          },
+        ],
+        backoff: { active: 0, retryInMs: 0 },
+        expected: /pending.*not retrieved/u,
+      },
+      {
+        name: 'expired',
+        entries: [
+          {
+            agentId: 'expired-agent',
+            client: true,
+            pending: false,
+            cached: true,
+            ageMs: 9000,
+            expiresInMs: 0,
+            expired: true,
+          },
+        ],
+        backoff: { active: 0, retryInMs: 0 },
+        expected: /expired.*9s old/u,
+      },
+      {
+        name: 'active-backoff',
+        entries: [],
+        backoff: { active: 1, retryInMs: 1250 },
+        expected: /backoff.*active; retry in 2s/u,
+      },
+    ];
+    for (const state of states) {
+      const previews: string[] = [];
+      for (const environment of [{ NO_COLOR: '1' }, { FORCE_COLOR: '3' }]) {
+        const stdout: string[] = [];
+        const stderr: string[] = [];
+        await credentialsCache({
+          action: 'status',
+          styles: createCliStyles(environment),
+          request: async () => ({ ...base, entries: state.entries, backoff: state.backoff }),
+          output: {
+            writeStdout: (value) => stdout.push(value),
+            writeStderr: (value) => stderr.push(value),
+          },
+          setExitCode() {},
+        });
+        const preview = ansis.strip(stdout.join(''));
+        assert.match(preview, state.expected, state.name);
+        assert.equal(preview.includes('private-value'), false);
+        assert.deepEqual(stderr, []);
+        previews.push(preview);
+      }
+      assert.equal(previews[0], previews[1], state.name);
+    }
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    let code = 0;
+    await credentialsCache({
+      action: 'status',
+      styles: createCliStyles({ NO_COLOR: '1' }),
+      request: async () => {
+        throw new Error('private gateway detail');
+      },
+      output: {
+        writeStdout: (value) => stdout.push(value),
+        writeStderr: (value) => stderr.push(value),
+      },
+      setExitCode(value) {
+        code = value;
+      },
+    });
+    assert.equal(code, 1);
+    assert.deepEqual(stdout, []);
+    assert.match(stderr.join(''), /not confirmed/u);
+    assert.equal(stderr.join('').includes('private gateway detail'), false);
+  });
+
   it('should render gateway cache summaries and preserve undecorated json from the same result', async () => {
     for (const action of ['status', 'flush'] as const) {
       for (const json of [false, true]) {
@@ -133,10 +295,15 @@ describe('core/op-cache-gateway', () => {
           assert.match(text, /policy.*timed.*300s/);
           assert.match(text, /backoff.*none/);
           if (action === 'status') {
-            assert.match(text, /agent.*data:.*age.*expires in/);
+            assert.match(text, /agent\s+data.*cached.*age|agent\s+data.*cached.*s old/u);
             assert.match(text, /counts.*2 reads/);
           } else {
-            assert.match(text, /flushed.*data: 1 entries, 1 clients, 0 pending loads, 1 snapshots/);
+            assert.match(text, /scope.*data/);
+            assert.match(text, /entries.*1/);
+            assert.match(text, /clients.*1/);
+            assert.match(text, /pending loads.*0/);
+            assert.match(text, /snapshots.*1/);
+            assert.match(text, /result.*gateway confirmed cache invalidation/);
           }
         }
         assert.equal(f.reads(), 2);
@@ -260,5 +427,31 @@ describe('core/op-cache-gateway', () => {
     assert.equal(output.length, 0);
     assert.match(errors.join(''), /not confirmed/);
     assert.equal(errors.join('').includes('private-transport-error'), false);
+    assert.match(errors.join(''), /gateway cache request was not confirmed/);
+  });
+
+  it('should treat a missing gateway acknowledgment as failure without local invalidation', async () => {
+    const f = fixture();
+    await f.warm();
+    const output: string[] = [];
+    const errors: string[] = [];
+    let code = 0;
+    await credentialsCache({
+      action: 'flush',
+      agentId: 'data',
+      request: async () => {
+        throw new Error('missing acknowledgment');
+      },
+      output: {
+        writeStdout: (value) => output.push(value),
+        writeStderr: (value) => errors.push(value),
+      },
+      setExitCode: (value) => (code = value),
+    });
+    assert.equal(code, 1);
+    assert.deepEqual(output, []);
+    assert.match(errors.join(''), /not confirmed/);
+    assert.equal(f.service.status().entries.length, 1);
+    assert.equal(f.reads(), 2);
   });
 });

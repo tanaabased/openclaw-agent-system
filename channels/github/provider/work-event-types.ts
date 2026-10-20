@@ -1,5 +1,5 @@
 import type { GitHubPullRequestReviewClient } from './review-types.ts';
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import type { RoutingMetadata } from './routing-metadata.ts';
 import type {
   GitHubAssignedItemCandidate,
@@ -7,10 +7,10 @@ import type {
   GitHubCanonicalWorkItem,
   GitHubIdentity,
   GitHubRepositoryIdentity,
-  GitHubRepositoryPermission,
 } from './work-item.ts';
 
 export interface GitHubNotificationItemContextComment {
+  url?: string;
   authorLogin: string;
   body: string;
   createdAt: string;
@@ -26,6 +26,7 @@ export interface GitHubNotificationItemContextFile {
 }
 
 export interface GitHubNotificationItemContext {
+  nativeRoutingMetadata?: RoutingMetadata;
   routingMetadata?: RoutingMetadata;
   body: string;
   comments: GitHubNotificationItemContextComment[];
@@ -36,6 +37,7 @@ export interface GitHubNotificationItemContext {
 }
 
 export interface GitHubAssignedItemDiscovery {
+  nextPage?: number;
   candidates: GitHubAssignedItemCandidate[];
   incomplete: boolean;
   totalCount: number;
@@ -61,9 +63,9 @@ export interface GitHubNotificationIntakeClient {
   discoverAssigned(
     updatedSince: string,
     assignmentTypes: readonly ('issue' | 'pull-request')[],
+    page?: number,
   ): Promise<GitHubAssignedItemDiscovery>;
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem>;
-  getPermission(owner: string, name: string, login: string): Promise<GitHubRepositoryPermission>;
   getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity>;
   listAssignmentEvents(
     owner: string,
@@ -92,6 +94,13 @@ export interface GitHubNotificationCommentClient {
     number: number,
     commentDatabaseId: number,
   ): Promise<GitHubCanonicalIssueComment>;
+  listIssueCommentPage?(
+    owner: string,
+    name: string,
+    number: number,
+    page: number,
+    since: string,
+  ): Promise<GitHubIssueCommentPage>;
   listIssueComments(owner: string, name: string, number: number): Promise<GitHubIssueCommentPage>;
 }
 

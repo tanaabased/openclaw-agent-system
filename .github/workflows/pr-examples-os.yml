@@ -1,0 +1,96 @@
+name: OS tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: examples-os-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  NO_COLOR: '1'
+
+jobs:
+  examples:
+    name: ${{ matrix.example }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-26
+          - ubuntu-24.04
+        example:
+          - os-install
+          - os-execution
+          - os-credentials
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: PATH updates
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Brew updates
+        shell: bash
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
+          brew install coreutils
+      - name: Install OpenClaw
+        uses: tanaabased/actions/setup-openclaw@v1
+      - name: Install Node
+        uses: tanaabased/actions/setup-node@v1
+      - name: Install Bun
+        uses: tanaabased/actions/setup-bun@v1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped build
+        uses: tanaabased/actions/prepare-release@v1
+        with:
+          version: dev
+          commands: |
+            version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Check prepared plugin
+        run: |
+          bun run plugin:check
+          bun run format:check
+      - name: Pack prepared plugin
+        id: pack
+        uses: tanaabased/actions/npm-pack@v1
+      - name: Run Leia-backed example
+        shell: bash
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
+          DBUS_SESSION_BUS_ADDRESS: unix:path=${{ runner.temp }}/secret-service-bus
+          DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
+          OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
+          OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
+          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
+        # invoke leia directly to preserve the installed openclaw host's position on path.
+        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+      - name: RUNNING A LEVEL THREE DIAGNOSTICS
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -d "${OPENCLAW_WORKSPACE:-}" ]]; then
+            openclaw-diagnostics
+          else
+            echo "No OpenClaw workspace was created; see the scenario failure output above."
+          fi

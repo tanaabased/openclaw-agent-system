@@ -86,6 +86,110 @@ function createRuntime(options: {
 }
 
 describe('api/runtime', () => {
+  it('should preserve only typed validation messages without forwarding metadata or resolving credentials', async () => {
+    const safeReason = 'Use the managed tool instead.';
+    const genericReason = 'The agent_system_test_tool request is invalid.';
+    for (const [failure, reason] of [
+      [new AgentSystemToolError('invalid_arguments', safeReason, true), safeReason],
+      [new Error('private-sentinel', { cause: 'private-cause' }), genericReason],
+      [
+        { name: 'AgentSystemToolError', code: 'invalid_arguments', message: 'private-sentinel' },
+        genericReason,
+      ],
+      [new AgentSystemToolError('execution_failed', 'private-sentinel'), genericReason],
+    ] as const) {
+      const logs: string[] = [];
+      const environmentCalls: string[] = [];
+      const auditEvents: AgentSystemAuditEvent[] = [];
+      const runtime = createRuntime({
+        logs,
+        environmentCalls,
+        auditEvents,
+        resolveExecutable: async () => assert.fail('must not resolve an executable'),
+        runCli: async () => assert.fail('must not execute'),
+      });
+      await assert.rejects(
+        runtime.executeCli(
+          createToolTestDefinition({
+            validate() {
+              throw failure;
+            },
+            authorize() {
+              assert.fail('must not authorize');
+            },
+          }),
+          { argument: 'private-argument', stdin: 'private-stdin' },
+          { agentId: 'data', source: 'command' },
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof AgentSystemToolError);
+          assert.notEqual(error, failure);
+          assert.equal(error.code, 'invalid_arguments');
+          assert.equal(error.message, reason);
+          assert.equal(error.credentialRejected, false);
+          assert.equal(error.providerDiagnostic, undefined);
+          assert.equal(error.failureDiagnostic, undefined);
+          assert.equal(error.cause, undefined);
+          return true;
+        },
+      );
+      assert.deepEqual(environmentCalls, []);
+      assert.deepEqual(auditEvents, []);
+      assert.equal(logs.length, 1);
+      assert.match(logs[0]!, /stage="validation".*code="invalid_arguments"/u);
+      assert.doesNotMatch(logs.join(''), /private|Use the managed|AGENT_TOKEN/u);
+    }
+  });
+
+  it('should log bounded admission failures before credentials without logging input or upstream prose', async () => {
+    for (const stage of [
+      'configuration',
+      'validation',
+      'authorization',
+      'classification',
+    ] as const) {
+      const logs: string[] = [];
+      const environmentCalls: string[] = [];
+      const auditEvents: AgentSystemAuditEvent[] = [];
+      const runtime = createRuntime({ logs, environmentCalls, auditEvents });
+      const definition = createToolTestDefinition({
+        configured: stage !== 'configuration',
+        validate:
+          stage === 'validation'
+            ? () => {
+                throw new Error('private-token');
+              }
+            : undefined,
+        authorize: () => ({ status: 'denied', reason: 'private upstream prose' }),
+      });
+      if (stage === 'classification')
+        definition.tool.classify = () => {
+          throw new Error('private-token');
+        };
+      await assert.rejects(
+        runtime.executeCli(
+          definition,
+          { argument: 'private inspected command' },
+          { agentId: 'data', source: 'command' },
+        ),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && !error.message.includes('private-token'),
+      );
+      assert.deepEqual(environmentCalls, []);
+      assert.deepEqual(auditEvents, []);
+      assert.equal(logs.length, 1);
+      assert.match(logs[0]!, /tool_admission_failed/u);
+      assert.ok(logs[0]!.includes(`stage="${stage}"`));
+      assert.ok(
+        logs[0]!.includes(
+          `code="${{ configuration: 'capability_not_configured', validation: 'invalid_arguments', authorization: 'approval_denied', classification: 'execution_failed' }[stage]}"`,
+        ),
+      );
+      assert.match(logs[0]!, /agentId="data"/u);
+      assert.doesNotMatch(logs.join(''), /private|AGENT_TOKEN/u);
+    }
+  });
+
   it('should check declared executables after authorization and before credentials or resources', async () => {
     const events: string[] = [];
     const runtime = createRuntime({

@@ -14,14 +14,15 @@ describe('tools/git/command-error', () => {
     ['fatal: unable to create private.lock', 'lock'],
     ['private upstream failure', 'unknown'],
   ]) {
-    it(`should classify ${category} without retaining upstream text`, () => {
+    it(`should classify ${category} without copying upstream text into the error message`, () => {
       const error = new GitCommandError('clone', { exitCode: 128, stderr: stderr! });
       assert.equal(error.category, category);
       assert.equal(error.exitCode, 128);
       assert.equal(error.operation, 'clone');
       assert.equal(error.diagnosticCode, `git-clone-${category}-exit-128`);
       assert.equal(error.message.includes(stderr!), false);
-      assert.equal(JSON.stringify(error).includes(stderr!), false);
+      assert.ok(error.providerDiagnostic.providerMessage);
+      assert.equal(error.providerDiagnostic.provider, 'git');
     });
   }
 

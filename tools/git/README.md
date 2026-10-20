@@ -221,11 +221,12 @@ readiness.
 
 ### `git.worktrees`
 
-| Field                | Type                                        | Required | Default                      |
-| -------------------- | ------------------------------------------- | -------- | ---------------------------- |
-| `repositories.local` | repository-id-to-authoritative-path mapping | no       | none                         |
-| `repositories.root`  | path                                        | no       | `.agent-system/repositories` |
-| `root`               | path                                        | no       | `.agent-system/worktrees`    |
+| Field                            | Type                                        | Required | Default                      |
+| -------------------------------- | ------------------------------------------- | -------- | ---------------------------- |
+| `repositories.local`             | repository-id-to-authoritative-path mapping | no       | none                         |
+| `repositories.root`              | path                                        | no       | `.agent-system/repositories` |
+| `repositories.working-directory` | path                                        | no       | none                         |
+| `root`                           | path                                        | no       | `.agent-system/worktrees`    |
 
 An empty object enables workspace-local managed repositories and worktrees.
 Custom roots and local repository overrides are optional:
@@ -240,26 +241,46 @@ git:
         agent-system: ~/tanaab/openclaw-agent-system
 ```
 
-Managed repositories are bare clones selected by a stable repository id. Agent
-System accepts supported network remotes but rejects local or credential-bearing
-clone URLs. Ordinary worktree preparation pins a repository id to its first
-source. A declared local override is authoritative: `install` preserves a
+An explicit `repositories.local` mapping wins. Otherwise, setting
+`repositories.working-directory` selects a normal checkout at
+`<directory>/<repository-name>`: preparation verifies and reuses an existing checkout
+or clones it if missing. Relative paths resolve from the workspace, and `~/` resolves
+from the host home. The directory may contain the agent workspace; it cannot be
+inside either managed root. Same-name repositories from different owners require
+explicit local mappings to separate paths. Full remote host, owner, and repository
+identity must match; dirty files are preserved, and failures never fall back to a
+different location or overwrite an existing checkout.
+
+A later configuration change may select another location for the same repository;
+previous checkouts are preserved. An interrupted temporary clone must first be
+recovered at its original location. Codex assignments already preparing a repository
+retain their original path; see [issue assessment recovery](../../CODEX.md#issue-assessment).
+
+Without either setting, managed repositories remain bare clones selected by a
+stable repository id. Agent System accepts supported network remotes but rejects
+local or credential-bearing clone URLs. Ordinary worktree preparation pins a
+repository id to its first source. A declared local override is authoritative: `install` preserves a
 missing path as drift so ordered setup can create it, while non-repositories,
 symlinks, and other unsafe paths fail closed. Managed worktree preparation
 still requires every declared local override to be a ready repository. Use a
 remote base such as `origin/main` to start from the latest fetched branch.
 
+Install creates a missing working directory and inspects existing ownership and
+permissions without changing them. Preparation retains interrupted clone state for
+retry; an incomplete temporary clone requires operator inspection before retrying.
+OpenClaw uses its managed Git runner. [Standalone Codex](../../CODEX.md#issue-assessment)
+uses native host authorization and separately verifies saved project registration.
+
 Preparation is serialized per repository; concurrent callers reuse the same
 worktree, while different repositories can prepare independently. Waiting callers
 honor cancellation and stop after ten minutes if the repository remains busy.
-See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/worktree/README.md)
-for lock-loss and recovery checks.
+See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
+for preparation, repeated reuse, agent-session execution, and safe removal.
 
 Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
 all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
 from canonical GitHub HTTPS URLs and use isolated SSH credentials. Configure SSH
-before enabling private-repository notification delivery. Channel-specific origin
-changes and retirement follow the [notification worktree lifecycle](../../channels/github/ADVANCED.md#managed-worktrees).
+before enabling private-repository notification work.
 
 `install` creates workspace-local roots with owner-only permissions and adds
 them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored
@@ -275,11 +296,11 @@ Run ordinary Git commands using the trusted active agent. Configuration and
 
 #### Parameters
 
-| Parameter | Type         | Required | Default         | Description                                                                            |
-| --------- | ------------ | -------- | --------------- | -------------------------------------------------------------------------------------- |
-| `argv`    | string array | yes      | none            | 1–256 Git arguments, without the `git` executable.                                     |
-| `cwd`     | string       | no       | agent workspace | Working directory within the workspace or configured worktree root; 1–4096 characters. |
-| `stdin`   | string       | no       | none            | Ordinary command input, at most 64 KiB; never credentials.                             |
+| Parameter | Type         | Required | Default                      | Description                                                                            |
+| --------- | ------------ | -------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `argv`    | string array | yes      | none                         | 1–256 Git arguments, without the `git` executable.                                     |
+| `cwd`     | string       | no       | verified execution workspace | Working directory within the workspace or configured worktree root; 1–4096 characters. |
+| `stdin`   | string       | no       | none                         | Ordinary command input, at most 64 KiB; never credentials.                             |
 
 #### Usage
 
@@ -291,6 +312,12 @@ Inspect the active workspace:
 
 For a managed checkout, pass its returned canonical path as `cwd`. Results include
 `exitCode`, `stdout`, `stderr`, and `truncated`.
+
+In an ordinary session bound to a registered worktree under the agent's managed
+bare-repository layout, omitted and relative `cwd` values use that worktree.
+Agent configuration and Git identity still come from the canonical agent workspace.
+Home-workspace sessions retain the agent workspace default. This binding does not
+admit an issue or expand Git policy.
 
 ### `agent_system_git_worktree`
 
@@ -420,8 +447,7 @@ Preparation is idempotent.
 For ordinary managed work, Agent System names both the branch and directory
 `<work-id-slug>-<digest>`. Prefer `<task-id>-<brief-kebab-case-description>` for
 the work id when a description is available; otherwise use `<task-id>`.
-See [notification worktrees](../../channels/github/ADVANCED.md#managed-worktrees)
-for issue branch naming and retirement.
+Native issue workflows retain their worktree binding in the owning runtime.
 
 ### `openclaw agent-system tool worktree -- remove`
 

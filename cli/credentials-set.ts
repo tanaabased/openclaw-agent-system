@@ -82,24 +82,31 @@ async function setCredentialsAgentSystem(options: SetCredentialsAgentSystemOptio
     options.setExitCode(1);
     return;
   }
-  if (result.gatewayInvalidation === 'confirmed') {
-    writeCliSummary(
-      options.output,
-      [{ label: 'gateway cache', style: 'status', value: 'invalidation confirmed' }],
-      options.styles,
-    );
-  }
   writeCliSummary(
     options.output,
     [
       {
-        label: result.status,
+        label: 'credential',
         style: result.status === 'stored' ? 'action' : 'status',
-        value: `op credential for ${result.agentId}`,
+        value: `op for ${result.agentId} ${result.status}`,
       },
       { label: 'store', style: 'target', value: result.storeId },
+      { label: 'input source', style: 'field', value: input.source },
+      {
+        label: 'gateway cache',
+        style:
+          result.gatewayInvalidation === 'pending'
+            ? 'warning'
+            : result.gatewayInvalidation === 'confirmed'
+              ? 'status'
+              : 'field',
+        value: result.gatewayInvalidation
+          ? `invalidation ${result.gatewayInvalidation}`
+          : 'invalidation not required',
+      },
     ],
     options.styles,
+    { rowPadding: 0 },
   );
 }
 

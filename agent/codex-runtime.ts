@@ -1,4 +1,16 @@
+import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
+import runCodexFeedback from './codex-feedback.ts';
+import codexRuntimeRequest from './codex-runtime-request.ts';
+import runCodexContinuation from './codex-continuation.ts';
+import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
+
+import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
+import codexHostAccess from './codex-host-access.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
+import { runCodexDispatch } from './codex-dispatch.ts';
+import { inspectCodexIntake, runCodexIntake } from './codex-intake.ts';
+import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 import {
   acknowledgeCodexAutomation,
@@ -40,7 +52,7 @@ interface BindingOptions {
 
 function parsePluginData(args: string[]): string {
   if (args.length !== 2 || args[0] !== '--plugin-data' || !args[1]) {
-    throw new Error('expected exactly --plugin-data <path>');
+    throw new Error('expected exactly --plugin-data <path>; send JSON on stdin without --input');
   }
   return args[1];
 }
@@ -216,13 +228,110 @@ async function runSetup(args: string[]): Promise<void> {
   }
 }
 
+let failureScope: ReturnType<typeof workflowFailureScope> | undefined;
+async function readWorkflowCommand(route: string, args: string[]) {
+  if (args.includes('--input'))
+    throw new Error(
+      'expected <action> [<operation>] --plugin-data <path>; send JSON on stdin without --input',
+    );
+  const result = codexRuntimeRequest(route, args, JSON.parse(await readStandardInput()));
+  failureScope = workflowFailureScope('codex', route, result.request);
+  return result;
+}
+
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
+  if (command === 'feedback') {
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
+    writeJson(await runCodexFeedback(pluginData, request));
+    return;
+  }
+  if (command === 'continuation') {
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
+    writeJson(await runCodexContinuation(pluginData, request));
+    return;
+  }
+  if (command === 'delivery') {
+    if (args[1] === '--help') {
+      process.stdout.write(
+        'Usage: delivery <prepare|publish|reconcile|compose|candidate|announce|present> --plugin-data <path>\nRequest data is JSON on stdin; action is visible in argv and stdin cannot change it; id is the retained managed issue receipt. Prepare returns a digest for publication within the verified implementation stage or current user direction; no separate publication approval is required. compose selects the reply skill; candidate prepares the issue announcement; announce publishes its exact digest or reconciles an uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
+      );
+      return;
+    }
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
+    writeJson(await runCodexDelivery(pluginData, request));
+    return;
+  }
+  if (command === 'dispatch') {
+    if (args[1] === '--help') {
+      process.stdout.write(
+        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a closed issue and queues the shared retirement lifecycle while preserving evidence and the existing grace deadline. It accepts active or paused intake; configured cleanup proceeds on the next eligible active intake run. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+      );
+      return;
+    }
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
+    if (!request || typeof request !== 'object' || Array.isArray(request))
+      throw new Error('dispatch-action-invalid');
+    const { action, ...input } = request as Record<string, unknown>;
+    if (
+      typeof action !== 'string' ||
+      ![
+        'inspect',
+        'next',
+        'prepare',
+        'reconcile',
+        'context',
+        'present',
+        'result',
+        'summary',
+        'handoff',
+        'report',
+        'retry-denied',
+        'reset',
+        'retire',
+      ].includes(action)
+    )
+      throw new Error('dispatch-action-invalid');
+    writeJson(await runCodexDispatch(pluginData, action, input));
+    return;
+  }
   if (command === 'model-routing') {
     const pluginData = parsePluginData(args.slice(1));
     writeJson(await codexModelRouting(pluginData, JSON.parse(await readStandardInput())));
+    return;
+  }
+  if (command === 'intake') {
+    const action = args[1];
+    if (action === '--help') {
+      process.stdout.write(
+        'Usage: intake <inspect|scan|quiet-response|failure-response> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only. Quiet-response formats JSON polling outcomes from stdin without reading or writing state.\n',
+      );
+      return;
+    }
+    const pluginData = parsePluginData(args.slice(2));
+    if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
+    else if (action === 'scan') writeJson(await runCodexIntake(pluginData));
+    else if (action === 'failure-response') {
+      const input = JSON.parse(await readStandardInput()) as Record<string, unknown>;
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        Object.keys(input).some((key) => !['automationId', 'code'].includes(key)) ||
+        typeof input.automationId !== 'string' ||
+        typeof input.code !== 'string' ||
+        !/^[a-z][a-z0-9-]{0,127}$/u.test(input.code)
+      )
+        throw new Error('heartbeat-request-invalid');
+      const notice = codexIssueNotice({ event: 'failure', changed: true, code: input.code });
+      writeJson({
+        status: 'failure',
+        response: codexHeartbeatEnvelope(input.automationId, notice.message, true),
+      });
+    } else if (action === 'quiet-response')
+      writeJson(codexHeartbeat(JSON.parse(await readStandardInput())));
+    else throw new Error('expected intake inspect, scan, quiet-response, or failure-response');
     return;
   }
   if (command === 'setup') return runSetup(args.slice(1));
@@ -294,23 +403,51 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       );
     return;
   }
-  throw new Error('expected session-start, binding, setup, automations, or model-routing command');
+  throw new Error(
+    'expected session-start, binding, setup, automations, intake, dispatch, continuation, delivery, or model-routing command',
+  );
 }
 
 runCodexRuntime().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'unknown Agent System Codex failure';
-  const details =
-    error instanceof AgentSystemLifecycleError
+  const evidence = workflowFailure(error, 'workflow-operation-failed');
+  const details = codexHostAccess(error)
+    ? { code: 'codex-host-access-required' }
+    : error instanceof CodexDeliveryFailure
       ? {
-          component: error.component,
           code: error.code,
-          ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
+          ...(error.pullRequest
+            ? { workflowStatus: 'partially-delivered', pullRequest: error.pullRequest }
+            : {}),
         }
-      : error instanceof CodexSetupError ||
-          error instanceof RoutingError ||
-          error instanceof CodexAutomationError
-        ? { code: error.code }
-        : {};
-  process.stderr.write(`${JSON.stringify({ status: 'error', ...details, message })}\n`);
+      : error instanceof AgentSystemLifecycleError
+        ? {
+            component: error.component,
+            code: error.code,
+            ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
+          }
+        : error instanceof IntakeError ||
+            error instanceof CodexSetupError ||
+            error instanceof RoutingError ||
+            error instanceof CodexAutomationError
+          ? { code: error.code }
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment-result|heartbeat)-[a-z-]+$/u.test(
+                message,
+              )
+            ? { code: message }
+            : { code: evidence.code };
+  const notice = ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
+    process.argv[2] ?? '',
+  )
+    ? codexIssueNotice({
+        event: 'failure',
+        changed: true,
+        code: 'code' in details ? details.code : undefined,
+        providerDiagnostic: evidence.providerDiagnostic,
+      })
+    : undefined;
+  process.stderr.write(
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+  );
   process.exitCode = 1;
 });

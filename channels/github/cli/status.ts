@@ -1,17 +1,23 @@
+import nativeNotificationDiagnostic from './native-diagnostic.ts';
+import type OpenClawNotifications from '../../../agent/openclaw-notifications.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  createCliStyles,
+  renderCliSummary,
+  writeCliDiagnosticNotices,
   writeCliError,
   writeCliJson,
-  writeCliSummary,
+  writeCliLines,
 } from '../../../cli/output.ts';
-import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
+import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
 export interface StatusNotificationsAgentSystemOptions {
+  nativeService?: Pick<OpenClawNotifications, 'inspect'>;
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
@@ -20,8 +26,8 @@ export interface StatusNotificationsAgentSystemOptions {
   output: CliOutput;
   repository?: unknown;
   setExitCode(code: number): void;
-  statusService: Pick<GitHubNotificationStatusService, 'inspect'>;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -48,62 +54,146 @@ async function statusNotificationsAgentSystem(
   const manifest = await loadCommandManifest(options);
   if (!manifest) return;
 
-  const result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
+  let result;
+  try {
+    if (!options.nativeService) throw new Error('native notification backend is unavailable');
+    result = await options.nativeService.inspect(
+      manifest.manifest,
+      manifest.scope.workspaceDir,
+      selector,
+    );
+  } catch (error) {
+    writeCliError(
+      options.output,
+      formatRedactedErrorDiagnostic(
+        'github-notifications',
+        error,
+        'github-notification-status-failed',
+      ),
+      options,
+    );
+    options.setExitCode(1);
+    return;
+  }
   if (options.json) {
     writeCliJson(options.output, result);
   } else {
-    writeCliSummary(
-      options.output,
+    const styles = options.styles ?? createCliStyles();
+    const tableOptions = {
+      rowPadding: 0 as const,
+      terminalColumns: options.terminalColumns ?? process.stdout.columns,
+    };
+    const statusStyle =
+      result.status === 'degraded' ? 'error' : result.status === 'pending' ? 'warning' : 'status';
+    const summary = renderCliSummary(
       [
         { label: 'agent', style: 'target', value: result.agentId },
         {
-          label: 'status',
-          style:
-            result.status === 'degraded'
-              ? 'error'
-              : result.status === 'pending'
-                ? 'warning'
-                : 'status',
-          value: result.status,
+          label: 'scope',
+          style: 'field',
+          value: selector
+            ? `${selector.itemType} ${selector.repository}#${selector.number}`
+            : 'all items',
         },
-        { label: 'code', style: 'field', value: result.code },
-        { label: 'baseline', style: 'field', value: result.baseline.status },
+        { label: 'status', style: 'field', value: result.status, valueStyle: statusStyle },
+        { label: 'code', style: 'field', value: result.code, quiet: true },
+        {
+          label: 'baseline',
+          style: 'field',
+          value: result.baseline.status,
+          valueStyle: result.baseline.status === 'pending' ? 'warning' : 'field',
+        },
+        ...(result.scan
+          ? [
+              {
+                label: 'scan',
+                style: 'field' as const,
+                value:
+                  result.scan.completedAt === undefined
+                    ? 'pending'
+                    : `completed at ${new Date(result.scan.completedAt).toISOString()}`,
+              },
+            ]
+          : []),
         {
           label: 'capacity',
           style: 'field',
-          value: `active=${result.capacity.active} queued=${result.capacity.queued} limit=${result.capacity.limit}`,
+          value: `agent-wide active=${result.capacity.active} queued=${result.capacity.queued} limit=${result.capacity.limit}`,
+          quiet: true,
         },
-        ...result.items.map((item) => ({
-          component: `${item.repository}#${item.number}`,
-          label: 'item',
-          style: 'field' as const,
-          value: [
-            item.itemType,
-            item.disposition,
-            `stage=${item.stage ?? 'none'}`,
-            `worktree=${item.worktree}`,
-            ...(item.scheduling === undefined ? [] : [`scheduling=${item.scheduling}`]),
-            ...(item.waitingReason === undefined ? [] : [`waiting-reason=${item.waitingReason}`]),
-            ...(item.cleanup === undefined
-              ? []
-              : [
-                  `cleanup=${item.cleanup.status}`,
-                  `session=${item.cleanup.session}`,
-                  `cleanup-worktree=${item.cleanup.worktree}`,
-                  `cleanup-reason=${item.cleanup.reasonCode}`,
-                ]),
-          ].join(' '),
-        })),
-        ...(result.itemFailures ?? []).map((failure) => ({
-          component: `${failure.repository}#${failure.number}`,
-          label: 'failure',
-          style: 'error' as const,
-          value: `${failure.itemType} stage=${failure.stage} cause=${failure.cause} check repository write access and retry refresh`,
-        })),
       ],
-      options.styles,
+      styles,
+      tableOptions,
     );
+    const items = result.items.flatMap((item, index) => [
+      ...(index ? [''] : []),
+      ...renderCliSummary(
+        [
+          {
+            component: `${item.repository}#${item.number}`,
+            label: item.disposition,
+            style: 'field',
+            quiet: true,
+            value: `${item.itemType} stage=${item.workflow?.phase ?? item.stage ?? 'none'}`,
+          },
+        ],
+        styles,
+        tableOptions,
+      ),
+      ...renderCliSummary(
+        [
+          {
+            label: 'worktree',
+            style: 'field',
+            quiet: true,
+            value: `${item.worktree}${item.scheduling === undefined ? '' : ` scheduling=${item.scheduling}`}`,
+          },
+          ...(item.workflow?.conversation
+            ? [
+                {
+                  label: 'conversation',
+                  style: 'field' as const,
+                  quiet: true,
+                  value: item.workflow.conversation,
+                },
+              ]
+            : []),
+          ...(item.waitingReason === undefined
+            ? []
+            : [{ label: 'waiting', style: 'warning' as const, value: item.waitingReason }]),
+          ...(item.failureCode === undefined
+            ? []
+            : [{ label: 'failure', style: 'error' as const, value: item.failureCode }]),
+        ],
+        styles,
+        tableOptions,
+      ),
+    ]);
+    writeCliLines(options.output, [
+      '',
+      ...summary,
+      '',
+      styles.bold('items'),
+      '',
+      ...(items.length ? items : [styles.field(selector ? 'no matching items' : 'no items')]),
+      '',
+    ]);
   }
+  if (result.warnings?.length)
+    writeCliDiagnosticNotices(
+      options,
+      result.warnings
+        .filter(
+          (warning) =>
+            !manifest.diagnostics.some(
+              ({ code, fieldPath }) => code === warning.code && fieldPath === warning.fieldPath,
+            ),
+        )
+        .map(({ message }) => ({ severity: 'warning' as const, message })),
+    );
+  const remediation = nativeNotificationDiagnostic(result.code);
+  if (remediation)
+    writeCliDiagnosticNotices(options, [{ severity: 'error', message: remediation }]);
   if (result.status === 'degraded') options.setExitCode(1);
 }
 

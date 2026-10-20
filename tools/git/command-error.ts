@@ -1,3 +1,5 @@
+import gitDiagnostic from './diagnostic.ts';
+
 const operations = new Set([
   'common-directory inspection',
   'fetch',
@@ -31,12 +33,13 @@ function classify(stderr: string): string {
   return 'unknown';
 }
 
-/** retain classified subprocess evidence, never upstream prose, paths, or credentials. */
+/** retain classified subprocess evidence and bounded, redacted provider detail. */
 export default class GitCommandError extends Error {
   override name = 'GitCommandError';
   readonly category: string;
   readonly operation: string;
   readonly exitCode: number | null;
+  readonly providerDiagnostic: ReturnType<typeof gitDiagnostic>;
 
   constructor(operation: string, result: { exitCode: number | null; stderr: string }) {
     const safeOperation = operations.has(operation) ? operation : 'unknown';
@@ -46,6 +49,7 @@ export default class GitCommandError extends Error {
     this.category = category;
     this.operation = safeOperation;
     this.exitCode = exitCode;
+    this.providerDiagnostic = gitDiagnostic(result.stderr);
   }
 
   get diagnosticCode(): string {

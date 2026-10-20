@@ -1,0 +1,125 @@
+import { assessmentDecisionMode, type AssessmentResult } from '../../../agent/assessment-result.ts';
+import modelRoutingCard from './model-routing.ts';
+import redactCodexFeedback from '../../../agent/codex-feedback-redaction.ts';
+import type { RoutingDecision } from '../../../agent/model-routing.ts';
+import workflowInstructions, {
+  type WorkflowInstructionsSelection,
+  type WorkflowInstructionsPresentation,
+} from './workflow-instructions.ts';
+import githubNotificationCard, {
+  githubNotificationMarkdownText,
+  githubNotificationQuote,
+} from './card.ts';
+
+interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
+  issue: { label: string; url: string };
+  routing: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
+    model: string;
+    effort: string;
+  };
+  effective?: { status: 'verified' | 'unverified'; model?: string; effort?: string };
+  workspace?: string;
+  assessment?: WorkflowInstructionsSelection;
+}
+
+function item(markdown: string): string {
+  return '- ' + markdown.replace(/\n/g, '\n  ');
+}
+
+/** frame a validated result without interpreting its prose as state or routing authority. */
+export default function renderAssessmentResult(
+  result: AssessmentResult,
+  context: AssessmentPresentationContext,
+): string {
+  const titles = {
+    'plan-ready': '🧭 Plan ready',
+    'clarification-needed': '❓ Clarification needed',
+    'operator-setup-blocker': '⏸️ Issue assessment blocked',
+  };
+  const { routing, effective, assessment } = context;
+  const text = githubNotificationMarkdownText;
+  const routingCard = modelRoutingCard({ routing, effective });
+  const instructionsCard = workflowInstructions(
+    'Assessment',
+    assessment,
+    context.workspace,
+    context,
+  );
+  const outcomeCard = githubNotificationQuote(
+    [
+      '## ' + titles[result.outcome],
+      result.summary,
+      '**Issue:** [' + text(context.issue.label) + '](' + context.issue.url + ')',
+      ...(result.outcome === 'operator-setup-blocker'
+        ? ['## Action', result.remediation, '**Diagnostic:** `' + result.code + '`']
+        : []),
+    ].join('\n\n'),
+  );
+  const content = [
+    outcomeCard,
+    ...('assessment' in result ? ['## Assessment', result.assessment] : []),
+    routingCard,
+    ...(instructionsCard ? [instructionsCard] : []),
+    ...(result.decision
+      ? [
+          githubNotificationCard({
+            emoji: assessmentDecisionMode(result.decision) === 'plan' ? '⏸️' : '▶️',
+            title: 'Auto mode decision',
+            facts: [
+              {
+                label: 'Decision',
+                value: '`' + assessmentDecisionMode(result.decision) + '`',
+              },
+              {
+                label: 'Next',
+                value:
+                  assessmentDecisionMode(result.decision) === 'plan'
+                    ? 'Await your direction before implementation.'
+                    : 'Continue automatically once runtime checks pass.',
+              },
+              ...result.decision.reasons.map((reason) => ({
+                label: 'Reason',
+                value: text(redactCodexFeedback(reason)),
+              })),
+            ],
+          }),
+        ]
+      : []),
+    ...(result.outcome === 'plan-ready'
+      ? [
+          ...(result.planSummary ? ['## Plan summary', result.planSummary] : []),
+          ...(!result.fullAssessment ? ['## Full plan', result.plan] : []),
+        ]
+      : result.outcome === 'clarification-needed'
+        ? ['## Question', result.questions.map(item).join('\n\n')]
+        : []),
+    ...(result.fullAssessment ? ['## Full assessment', result.fullAssessment] : []),
+  ];
+  const hasInvestigation = result.progress.completed.length || result.progress.remaining.length;
+  if (result.evidence.length || hasInvestigation) {
+    content.push(
+      '## Reference material',
+      'Optional supporting detail: sources and investigation notes.',
+    );
+  }
+  if (result.evidence.length) {
+    content.push(
+      '### Evidence',
+      result.evidence
+        .map(({ source, status, detail }) =>
+          item('**' + status + ':** ' + source + '\n\n' + detail),
+        )
+        .join('\n\n'),
+    );
+  }
+  if (hasInvestigation) {
+    content.push('### Investigation');
+    for (const [label, entries] of [
+      ['Completed', result.progress.completed],
+      ['Remaining', result.progress.remaining],
+    ] as const) {
+      if (entries.length) content.push('#### ' + label, entries.map(item).join('\n\n'));
+    }
+  }
+  return content.join('\n\n');
+}

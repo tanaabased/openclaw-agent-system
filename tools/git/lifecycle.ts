@@ -36,6 +36,9 @@ export default function createGitLifecycleContribution(
           for (const [kind, status] of [
             ['repositories', inspection.repositoryRoot],
             ['worktrees', inspection.worktreeRoot],
+            ...(inspection.workingDirectory
+              ? [['working-directory', inspection.workingDirectory]]
+              : []),
           ] as const) {
             diagnostics.push(
               status === 'ready'
@@ -158,7 +161,9 @@ export default function createGitLifecycleContribution(
                       ? 'Git managed repository root'
                       : action === 'create-worktree-root'
                         ? 'Git managed worktree root'
-                        : 'workspace .gitignore',
+                        : action === 'create-working-directory'
+                          ? 'Git repository working directory'
+                          : 'workspace .gitignore',
                   status:
                     action === 'update-gitignore' ? ('updated' as const) : ('created' as const),
                 })),

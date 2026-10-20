@@ -2,13 +2,25 @@ import { Type, type Static } from 'typebox';
 
 import { assessmentSchema, selectedProfileSchema } from '../../agent/model-routing.ts';
 
+export const modelRoutingTextContextSchema = Type.String({ minLength: 1, maxLength: 18000 });
+export const modelRoutingContextSchema = Type.Union([
+  modelRoutingTextContextSchema,
+  Type.Object(
+    {
+      title: modelRoutingTextContextSchema,
+      body: Type.String({ maxLength: 18000 }),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
 export const modelRoutingRequestSchema = Type.Union([
   Type.Object({ action: Type.Literal('inspect') }, { additionalProperties: false }),
   Type.Object(
     {
       action: Type.Literal('resolve'),
       manifestDigest: Type.String({ minLength: 1, maxLength: 128 }),
-      context: Type.String({ minLength: 1, maxLength: 18000 }),
+      context: modelRoutingContextSchema,
       assessment: assessmentSchema,
       evidence: Type.Optional(
         Type.Object(

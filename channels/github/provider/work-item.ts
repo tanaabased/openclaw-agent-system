@@ -80,17 +80,6 @@ export interface GitHubAssignmentEvent {
   nodeId: string;
 }
 
-export type GitHubRepositoryPermission =
-  'admin' | 'maintain' | 'none' | 'read' | 'triage' | 'write';
-
-export function githubWorkItemKey(repositoryNodeId: string, itemNumber: number): string {
-  if (!repositoryNodeId.trim()) throw new Error('GitHub repository node ids must not be empty.');
-  if (!Number.isSafeInteger(itemNumber) || itemNumber < 1) {
-    throw new Error('GitHub work item numbers must be positive safe integers.');
-  }
-  return `github:${repositoryNodeId.trim()}:${itemNumber}`;
-}
-
 export function githubRepositoryPath(value: string): { name: string; owner: string } {
   const match = /^(?:https:\/\/api\.github\.com)?\/repos\/([^/]+)\/([^/?#]+)$/u.exec(value);
   if (!match?.[1] || !match[2]) throw new Error('GitHub returned an unsupported repository path.');
@@ -101,4 +90,33 @@ export function githubRepositoryPath(value: string): { name: string; owner: stri
     throw new Error('GitHub returned an invalid repository path.');
   }
   return { name, owner };
+}
+
+/** pinned identity comparisons require both the immutable id and case-insensitive login. */
+export function githubIdentityMatches(
+  left: Pick<GitHubIdentity, 'login' | 'nodeId'>,
+  right: Pick<GitHubIdentity, 'login' | 'nodeId'>,
+): boolean {
+  return left.nodeId === right.nodeId && left.login.toLowerCase() === right.login.toLowerCase();
+}
+
+/** merge matching pins while rejecting conflicting immutable identities. */
+export function githubIdentitySet<T extends Pick<GitHubIdentity, 'login' | 'nodeId'>>(
+  identities: readonly T[],
+  merge: (left: T, right: T) => T = (left) => left,
+): T[] {
+  const nodes = new Map<string, T>();
+  const logins = new Map<string, string>();
+  for (const identity of identities) {
+    const normalized = identity.login.toLowerCase();
+    const previous = nodes.get(identity.nodeId);
+    if (
+      (previous && !githubIdentityMatches(previous, identity)) ||
+      (logins.has(normalized) && logins.get(normalized) !== identity.nodeId)
+    )
+      throw new Error('github-identity-conflict');
+    nodes.set(identity.nodeId, previous ? merge(previous, identity) : identity);
+    logins.set(normalized, identity.nodeId);
+  }
+  return [...nodes.values()];
 }

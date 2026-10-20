@@ -1,7 +1,9 @@
 import ansis, { Ansis } from 'ansis';
 import stringWidth from 'fast-string-width';
 import { wrapAnsi } from 'fast-wrap-ansi';
-import { defaultRuntime, type OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
+import type { OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
+
+import type { CliCondition } from '../core/cli-diagnostic-context.ts';
 
 export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
   writeStderr(value: string): void;
@@ -75,7 +77,16 @@ export interface CliTableOptions {
   terminalColumns?: number;
 }
 
-interface CliTableRow {
+export interface CliTableCell {
+  value: string;
+  style?: keyof CliStyles;
+}
+
+export interface CliTableRow {
+  cells: CliTableCell[];
+}
+
+interface CliRenderedTableRow {
   cells: Array<{ value: string; style?: keyof CliStyles }>;
   value: string;
   quiet?: boolean;
@@ -84,7 +95,7 @@ interface CliTableRow {
 
 /** share terminal-cell alignment and wrapping; padding separates rows, not wrapped lines. */
 function renderCliTable(
-  rows: readonly CliTableRow[],
+  rows: readonly CliRenderedTableRow[],
   styles: CliStyles,
   { rowPadding = 0, terminalColumns = 80 }: CliTableOptions,
 ): string[] {
@@ -125,6 +136,47 @@ function renderCliTable(
       ),
     ];
   });
+}
+
+/** render a compact aligned table using the shared terminal-cell layout. */
+export function renderCliTableRows(
+  rows: readonly CliTableRow[],
+  styles: CliStyles = defaultCliStyles,
+  options: CliTableOptions = {},
+): string[] {
+  if (rows.length === 0) return [];
+  const columns = Math.max(1, Math.floor(options.terminalColumns ?? 80));
+  const count = Math.max(0, ...rows.map(({ cells }) => cells.length));
+  const widths = Array.from({ length: count }, (_, index) =>
+    Math.max(0, ...rows.map(({ cells }) => stringWidth(cells[index]?.value ?? ''))),
+  );
+  const wideEnough = widths.reduce((total, width) => total + width, 0) + count * 2 <= columns;
+  const header = rows[0]!.cells;
+  if (!wideEnough) {
+    if (rows.length === 1) {
+      return wrapAnsi(header.map(({ value }) => value).join('  '), columns, { hard: true }).split(
+        '\n',
+      );
+    }
+    return rows.slice(1).flatMap(({ cells }) =>
+      cells.flatMap((cell, index) => {
+        const label = header[index]?.value ?? '';
+        const line = `${label}: ${cell.value}`;
+        return wrapAnsi(line, columns, { hard: true })
+          .split('\n')
+          .map((part) => (cell.style ? styles[cell.style](part) : part));
+      }),
+    );
+  }
+  return rows.map(({ cells }) =>
+    cells
+      .map((cell, index) => {
+        const value = cell.style ? styles[cell.style](cell.value) : cell.value;
+        return `${value}${' '.repeat(widths[index]! - stringWidth(cell.value) + 2)}`;
+      })
+      .join('')
+      .trimEnd(),
+  );
 }
 
 export function renderCliSummary(
@@ -208,6 +260,37 @@ export function writeCliLifecycleTable(
 export interface CliNotice {
   message: string;
   severity: 'notice' | 'warning' | 'error';
+  condition?: CliCondition;
+  code?: string;
+  component?: string;
+  fieldPath?: string;
+  stepId?: string;
+  resource?: string;
+  occurrence?: string;
+  details?: readonly string[];
+  remediation?: readonly string[];
+}
+
+/** format safe evidence only; callers remain responsible for redaction. */
+export function cliNoticeBody(notice: Omit<CliNotice, 'severity'>): string {
+  const scope = notice.condition;
+  const component = notice.component ?? scope?.component;
+  const fieldPath = notice.fieldPath ?? scope?.fieldPath;
+  const stepId = notice.stepId ?? scope?.stepId;
+  const resource = notice.resource ?? scope?.resource;
+  const occurrence = notice.occurrence ?? scope?.occurrence;
+  const context = [
+    notice.code ? `code=${notice.code}` : undefined,
+    fieldPath ? `field=${fieldPath}` : undefined,
+    stepId ? `step=${stepId}` : undefined,
+    resource ? `resource=${resource}` : undefined,
+    occurrence ? `occurrence=${occurrence}` : undefined,
+  ].filter(Boolean);
+  return [
+    `${component ? `${component}: ` : ''}${notice.message}${context.length ? ` ${context.join(' ')}` : ''}`,
+    ...(notice.details ?? []),
+    ...(notice.remediation ?? []),
+  ].join('\n');
 }
 
 /** render shared diagnostic blocks without dimming recovery guidance. */
@@ -225,7 +308,9 @@ export function renderCliNotices(
   const ordered = [...notices].sort(
     (left, right) => priority[left.severity] - priority[right.severity],
   );
-  const blocks = ordered.flatMap(({ message, severity }, index) => {
+  const blocks = ordered.flatMap((notice, index) => {
+    const { severity } = notice;
+    const message = cliNoticeBody(notice);
     const label = { notice: 'ℹ info', warning: '⚠ warning', error: '✖ error' }[severity];
     const styledLabel = styles[severity](label);
     return [
@@ -263,7 +348,7 @@ export function writeCliDiagnosticNotices(
   writeCliDiagnostics(
     options.output,
     options.json
-      ? notices.map(({ message }) => message)
+      ? notices.map(cliNoticeBody)
       : renderCliNotices(
           notices,
           options.styles,
@@ -295,5 +380,5 @@ export function writeCliError(
 
 export const defaultCliOutput: CliOutput = {
   writeStderr: (value) => process.stderr.write(value),
-  writeStdout: (value) => defaultRuntime.writeStdout(value),
+  writeStdout: (value) => process.stdout.write(value),
 };

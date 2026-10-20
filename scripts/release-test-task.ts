@@ -169,23 +169,48 @@ try {
       'tools',
       'utils',
     ];
-    const [candidates, deleted] = await Promise.all([
-      run('git', [
-        'ls-files',
-        '--cached',
-        '--others',
-        '--exclude-standard',
-        '-z',
-        '--',
-        ...sourceDirectories,
-      ]),
-      run('git', ['ls-files', '--deleted', '-z', '--', ...sourceDirectories]),
-    ]);
-    const deletedPaths = new Set(deleted.output.trimEnd().split('\0').filter(Boolean));
-    const paths = candidates.output
-      .trimEnd()
-      .split('\0')
-      .filter((path) => path && !deletedPaths.has(path));
+    // hosted callers may supply the same inventory through native managed Git.
+    // this changes discovery only; every source must still exist in the real archive.
+    const inventoryPath = process.env.AGENT_SYSTEM_PACKAGE_SOURCE_INVENTORY?.trim();
+    const inventory: unknown = inventoryPath
+      ? JSON.parse(await readFile(inventoryPath, 'utf8'))
+      : undefined;
+    let supplied: { candidates: string[]; deleted: string[] } | undefined;
+    if (inventory !== undefined) {
+      assert.ok(inventory && typeof inventory === 'object');
+      const value = inventory as Record<string, unknown>;
+      assert.equal(value.workspaceDir, await realpath('.'));
+      for (const key of ['candidates', 'deleted'] as const) {
+        const paths = value[key];
+        assert.ok(Array.isArray(paths) && paths.length <= 10000);
+        assert.ok(
+          paths.every(
+            (path) =>
+              typeof path === 'string' &&
+              !/[\\\0\r\n]/u.test(path) &&
+              !path.split('/').some((part) => !part || part === '.' || part === '..') &&
+              sourceDirectories.some((directory) => path.startsWith(directory + '/')),
+          ),
+        );
+      }
+      supplied = value as unknown as typeof supplied;
+    }
+    const [candidates, deleted] = supplied
+      ? [{ output: supplied.candidates.join('\0') }, { output: supplied.deleted.join('\0') }]
+      : await Promise.all([
+          run('git', [
+            'ls-files',
+            '--cached',
+            '--others',
+            '--exclude-standard',
+            '-z',
+            '--',
+            ...sourceDirectories,
+          ]),
+          run('git', ['ls-files', '--deleted', '-z', '--', ...sourceDirectories]),
+        ]);
+    const deletedPaths = new Set(deleted.output.split('\0').filter(Boolean));
+    const paths = candidates.output.split('\0').filter((path) => path && !deletedPaths.has(path));
     assert.notEqual(paths.length, 0, 'package source inventory must not be empty');
     return paths;
   });
@@ -201,6 +226,7 @@ try {
     'dist/codex/codex-runtime.js.map',
     'hooks/hooks.json',
     'index.ts',
+    'agent/assessment-result.ts',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
     'bin/agent-system-ssh-signing-key',
@@ -227,6 +253,10 @@ try {
     'skills/github-update/agents/openai.yaml',
     'tools/install/README.md',
     'tools/doctor/README.md',
+    'skills/issue-implementation/SKILL.md',
+    'skills/issue-implementation/agents/openai.yaml',
+    'skills/issue-implementation/assets/icon-small.svg',
+    'skills/issue-implementation/assets/icon-large.svg',
     'skills/doctor/SKILL.md',
     'skills/doctor/agents/openai.yaml',
     'skills/install/SKILL.md',
@@ -254,23 +284,9 @@ try {
     for (const path of [
       'AGENTS.md',
       '.github/OPTIMIZATION.md',
-      'examples/install/README.md',
-      'scenarios/issue-guided-assignment/expected-evidence.json',
-      'scenarios/issue-guided-assignment/model-fixture.ts',
-      'scenarios/issue-work-assignment/expected-evidence.json',
-      'scenarios/issue-work-assignment/model-fixture.ts',
-      'scenarios/issue-work-comment/expected-evidence.json',
-      'scenarios/issue-work-comment/model-fixture.ts',
-      'scenarios/issue-work-implementation/expected-evidence.json',
-      'scenarios/issue-work-implementation/model-fixture.ts',
-      'scenarios/issue-work-pr-lifecycle/expected-evidence.json',
-      'scenarios/issue-work-pr-lifecycle/model-fixture.ts',
-      'scenarios/issue-work-retirement/expected-evidence.json',
-      'scenarios/issue-work-retirement/model-fixture.ts',
-      'scripts/github-notification-model-issue-work-scenario.ts',
+      'examples/os-install/README.md',
       'scripts/openclaw-aimock',
       'scripts/aimock-server.ts',
-      'scripts/openclaw-notification-setup',
       'test/encode.spec.ts',
     ]) {
       assert.equal(packedPaths.has(path), false, `packed plugin must exclude ${path}`);
@@ -450,7 +466,7 @@ try {
       assert.equal(result.status, 'unresolved');
       assert.deepEqual(result.candidate, inspected.profiles.default);
       assert.equal(result.application, 'not-requested');
-      assert.match(inspected.reportGuidance, /\*\*Model routing\*\*/);
+      assert.match(inspected.reportGuidance, /## 🧠 Model routing/);
       const overridden = await resolveRouting({
         ...input,
         overrides: { model: 'manual', effort: 'low' },

@@ -1,9 +1,11 @@
 import type { Static, TSchema } from 'typebox';
+import { resolve } from 'node:path';
 
 import type { AgentManifest } from '../manifest/types.ts';
 import resolveToolWorkingDirectory from './resolve-working-directory.ts';
 import { excludedToolExecutableDirectories } from './executable-requirements.ts';
 import AgentSystemToolError from './error.ts';
+import isManagedWorktreeWorkspace from '../tools/git/worktree-workspace.ts';
 import type {
   AgentSystemCliResult,
   AgentSystemCliRunner,
@@ -84,7 +86,24 @@ export default async function executeAgentSystemCliTool<
   >,
 ): Promise<AgentSystemCliToolExecutionPayload<TOutput>> {
   const { agentId, manifest, resolvedConfiguration, values, workspaceDir } = options.context;
+  // native execution context was verified by manifest binding before credential resolution.
+  const executionWorkingDirectory =
+    options.scope.source === 'tool' ? options.scope.toolContext?.workspaceDir : undefined;
+  if (
+    executionWorkingDirectory &&
+    resolve(executionWorkingDirectory) !== resolve(workspaceDir) &&
+    !(await isManagedWorktreeWorkspace(
+      workspaceDir,
+      manifest.git?.worktrees,
+      executionWorkingDirectory,
+    ))
+  )
+    throw new AgentSystemToolError(
+      'agent_not_resolved',
+      'The managed execution workspace changed before command execution.',
+    );
   const workingDirectoryScope = {
+    ...(executionWorkingDirectory ? { executionWorkingDirectory } : {}),
     ...(options.scope.source === 'agent-command' && options.scope.admittedWorkingDirectories
       ? { admittedWorkingDirectories: options.scope.admittedWorkingDirectories }
       : {}),
@@ -94,7 +113,7 @@ export default async function executeAgentSystemCliTool<
     source: options.scope.source,
     workspaceDir,
   } as const;
-  let childWorkingDirectory = workspaceDir;
+  let childWorkingDirectory = executionWorkingDirectory ?? workspaceDir;
   if (options.definition.runner.workingDirectory) {
     try {
       const requestedDirectory = await options.definition.runner.workingDirectory(
@@ -103,7 +122,7 @@ export default async function executeAgentSystemCliTool<
         workingDirectoryScope,
       );
       if (requestedDirectory === undefined) {
-        childWorkingDirectory = workspaceDir;
+        childWorkingDirectory = executionWorkingDirectory ?? workspaceDir;
       } else {
         const admitted =
           (await options.definition.runner.admittedWorkingDirectories?.(
@@ -115,6 +134,7 @@ export default async function executeAgentSystemCliTool<
           workspaceDir,
           requestedDirectory,
           [
+            ...(executionWorkingDirectory ? [executionWorkingDirectory] : []),
             ...(options.scope.source === 'agent-command'
               ? (options.scope.admittedWorkingDirectories ?? [])
               : []),

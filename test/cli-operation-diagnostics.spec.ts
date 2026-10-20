@@ -53,7 +53,7 @@ describe('cli/operation-diagnostics', () => {
   it('should classify native skip reasons while preserving automation json and exit status', async () => {
     for (const [reason, label] of [
       ['not-due', 'info'],
-      ['disabled', 'info'],
+      ['disabled', 'warning'],
       ['already-running', 'info'],
       ['stopped', 'warning'],
       ['invalid-spec', 'error'],
@@ -77,7 +77,12 @@ describe('cli/operation-diagnostics', () => {
           assert.deepEqual(test.stderr, []);
         } else {
           assert.ok(test.stderr.join('').includes(label!));
-          assert.equal(test.stdout.join(''), 'skipped\n');
+          if (reason === 'invalid-spec') {
+            assert.equal(test.stderr.join('').match(/✖ error/gu)?.length, 1);
+            assert.match(test.stderr.join(''), /review the automation specification/u);
+          }
+          assert.match(test.stdout.join(''), /result +skipped/u);
+          assert.match(test.stdout.join(''), /workspace +\/workspace/u);
         }
       }
     }

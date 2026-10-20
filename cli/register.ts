@@ -1,3 +1,4 @@
+import type OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import type { Readable } from 'node:stream';
 import type { Option } from 'commander';
 
@@ -21,11 +22,10 @@ import validateAgentSystem from './validate.ts';
 import backupCreate from './backup-create.ts';
 import backupVerify from './backup-verify.ts';
 import backupPrune from './backup-prune.ts';
+import backupCleanup from './backup-cleanup.ts';
 import backupRestore from './backup-restore.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
 import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
-import type GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
-import type GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
 import {
   type default as AgentCommandAuthority,
@@ -74,13 +74,13 @@ export interface RegisterAgentSystemCliOptions {
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
   doctorService: Pick<AgentDoctorService, 'inspect'>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  installService: Pick<AgentInstallService, 'install'>;
+  installService: Pick<AgentInstallService, 'install'> &
+    Partial<Pick<AgentInstallService, 'sessionDispatchPlan'>>;
   input?: Readable;
   environment?: Readonly<NodeJS.ProcessEnv>;
   setupPrompt?: () => Promise<boolean | symbol>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
-  notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
+  nativeNotifications?: Pick<OpenClawNotifications, 'inspect' | 'refresh' | 'wait'>;
   output?: CliOutput;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke' | 'hostFallback'>;
   toolRuntime: AgentSystemToolRuntime;
@@ -106,6 +106,7 @@ export default function registerAgentSystemCli(
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
   const environment = options.environment ?? process.env;
   const allowOperatorCommand = async (json = false) => {
+    let cause = 'bound-descendant';
     try {
       const binding = await commandAuthority?.resolve(environment, cwd());
       if (
@@ -116,11 +117,12 @@ export default function registerAgentSystemCli(
       )
         return true;
     } catch {
+      cause = 'authority-unresolved';
       // Invalid authority must not downgrade an agent descendant to an operator.
     }
     writeCliError(
       output,
-      'agent system operator commands are unavailable to agent or setup descendants.',
+      `agent system operator commands are unavailable to agent or setup descendants. code=operator-command-denied cause=${cause}`,
       { json, styles: options.styles, terminalColumns: options.terminalColumns },
     );
     setExitCode(1);
@@ -200,7 +202,11 @@ export default function registerAgentSystemCli(
           typeof args.hash !== 'string' ||
           !/^[a-f0-9]{64}$/u.test(args.hash)
         ) {
-          output.writeStderr('automation execution requires an owned id and synchronized hash.\n');
+          writeCliError(
+            output,
+            'automation execution requires an owned id and synchronized hash. code=automation-execution-options-invalid',
+            { json: true },
+          );
           return completeOneShot(1);
         }
         const code = await executeAutomation({
@@ -219,7 +225,9 @@ export default function registerAgentSystemCli(
   const backupService = options.backupService ?? new WorkspaceBackupService();
   const backup = agentSystem
     .command('backup')
-    .description('create, verify, prune, and restore private per-agent recovery archives.')
+    .description(
+      'create, clean up, verify, prune, and restore private per-agent recovery archives.',
+    )
     .action(() => writeHelp(backup, output));
   const create = backup
     .command('create')
@@ -279,6 +287,30 @@ export default function registerAgentSystemCli(
       },
     });
   });
+  const cleanup = backup
+    .command('cleanup')
+    .description('preview abandoned incomplete artifacts; only operators may apply cleanup.')
+    .option('--agent <id>', 'select an installed agent (operators only).')
+    .option('--apply', 'remove only proven-abandoned incomplete temporary artifacts.')
+    .option('--json', 'write one structured json result.')
+    .action(async () => {
+      const selected = cleanup.opts();
+      await backupCleanup({
+        ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+        commandAuthority,
+        environment,
+        manifestService: options.manifestService,
+        workspaceDir: cwd(),
+        service: backupService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        json: selected.json === true,
+        apply: selected.apply === true,
+        terminalColumns:
+          options.terminalColumns ?? (process.stdout.isTTY ? process.stdout.columns : undefined),
+      });
+    });
   const prune = backup
     .command('prune')
     .description('retain the newest local backups by embedded capture time.')
@@ -416,10 +448,9 @@ export default function registerAgentSystemCli(
     completeOneShot,
     cwd,
     manifestService: options.manifestService,
-    monitorService: options.notificationMonitorService,
+    nativeService: options.nativeNotifications,
     output,
     setExitCode,
-    statusService: options.notificationStatusService,
     styles: options.styles,
   });
   const tool = agentSystem
@@ -431,7 +462,11 @@ export default function registerAgentSystemCli(
       const agentId = tool.opts().agent;
       const shim = tool.opts().shim;
       if (shim !== undefined && shim !== 'managed' && shim !== 'contextual') {
-        writeCliError(output, 'invalid internal launcher invocation.', options);
+        writeCliError(
+          output,
+          'invalid internal launcher invocation. code=tool-launcher-options-invalid',
+          options,
+        );
         setExitCode(1);
         return;
       }
@@ -563,6 +598,7 @@ export default function registerAgentSystemCli(
         output,
         setExitCode,
         styles: options.styles,
+        terminalColumns: process.stdout.columns,
         ...(typeof storeId === 'string' ? { storeId } : {}),
         workspaceDir: cwd(),
       });
@@ -570,7 +606,10 @@ export default function registerAgentSystemCli(
   const install = agentSystem
     .command('install')
     .description('install the workspace agent and reconcile configured lifecycle state.')
-    .option('--yes', 'confirm setup without prompting.')
+    .option(
+      '--yes',
+      'accept installation, including required session dispatch enrollment, without prompting.',
+    )
     .option('--non-interactive', 'run without interactive prompts.')
     .option('--skip-setup', 'skip all setup checks and applies with a warning.')
     .option('--skip-setup-host', 'skip host setup checks and applies with a warning.')

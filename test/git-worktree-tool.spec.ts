@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 
 import AgentSystemToolError from '../api/error.ts';
-import { githubNotificationToolCauseCode } from '../channels/github/intake/monitor/diagnostic.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
 
@@ -85,7 +84,7 @@ describe('tools/git/worktree-tool', () => {
         assert.ok(error instanceof AgentSystemToolError);
         assert.equal(error.cause, cause);
         assert.equal(
-          githubNotificationToolCauseCode(new Error('outer', { cause: error })),
+          (error.cause as { diagnosticCode?: string } | undefined)?.diagnosticCode,
           'git-clone-ssh-authentication-exit-128',
         );
         assert.equal(error.message.includes('private-token'), false);

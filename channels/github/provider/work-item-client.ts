@@ -30,7 +30,6 @@ import {
   type GitHubCanonicalWorkItem,
   type GitHubIdentity,
   type GitHubRepositoryIdentity,
-  type GitHubRepositoryPermission,
 } from './work-item.ts';
 
 const pageSize = 100;
@@ -52,12 +51,15 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
   async discoverAssigned(
     updatedSince: string,
     assignmentTypes: readonly ('issue' | 'pull-request')[],
+    requestedPage?: number,
   ): Promise<GitHubAssignedItemDiscovery> {
+    if (assignmentTypes.length === 0)
+      return { candidates: [], incomplete: false, totalCount: 0, truncated: false };
     const candidates: GitHubAssignedItemCandidate[] = [];
     let incomplete = false;
     let totalCount = 0;
     let hasNextPage = false;
-    for (let page = 1; page <= maximumSearchPages; page += 1) {
+    for (let page = requestedPage ?? 1; page <= (requestedPage ?? maximumSearchPages); page += 1) {
       const response = await this.#api.request(
         [
           '--method',
@@ -113,7 +115,8 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
       candidates,
       incomplete,
       totalCount,
-      truncated: incomplete || hasNextPage || totalCount > candidates.length,
+      truncated: incomplete || (!requestedPage && (hasNextPage || totalCount > candidates.length)),
+      ...(requestedPage ? { nextPage: hasNextPage ? requestedPage + 1 : 1 } : {}),
     };
   }
 
@@ -148,32 +151,6 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
       throw new Error('GitHub returned an unsupported default branch.');
     }
     return repository;
-  }
-
-  async getPermission(
-    owner: string,
-    name: string,
-    login: string,
-  ): Promise<GitHubRepositoryPermission> {
-    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(login)) {
-      throw new Error('GitHub account login is invalid.');
-    }
-    const response = await this.#api.request(
-      [
-        `${githubRepositoryEndpoint(owner, name)}/collaborators/${login}/permission`,
-        '--jq',
-        '{permission}',
-      ],
-      'repository permission',
-    );
-    const permission = githubResponseString(
-      githubResponseRecord(response.value, 'repository permission').permission,
-      'repository permission',
-    );
-    if (!['admin', 'maintain', 'none', 'read', 'triage', 'write'].includes(permission)) {
-      throw new Error('GitHub returned an unsupported repository permission.');
-    }
-    return permission as GitHubRepositoryPermission;
   }
 
   async getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem> {

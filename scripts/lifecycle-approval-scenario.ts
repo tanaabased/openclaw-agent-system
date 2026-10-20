@@ -10,10 +10,10 @@ import type { PluginApprovalRequest } from 'openclaw/plugin-sdk/approval-runtime
 
 import { assertLifecycleChatPending } from './lifecycle-approval-events.ts';
 
-// This exercises an installed Gateway and must never run against a developer profile.
+// this exercises an installed gateway and must never run against a developer profile.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions-only acceptance scenario');
 const agentId = process.argv[2];
-assert.ok(agentId === 'approval-codex' || agentId === 'approval-openclaw');
+assert.ok(agentId === 'runtime-codex' || agentId === 'runtime-openclaw');
 const operation = process.argv[3] ?? 'install';
 assert.ok(operation === 'doctor' || operation === 'install');
 const temporaryDirectory = process.env.TMPDIR;
@@ -24,7 +24,7 @@ const testCase =
   operation === 'doctor'
     ? { decision: 'allow-once' as const, toolName: 'agent_system_doctor' as const }
     : {
-        decision: agentId === 'approval-codex' ? ('allow-once' as const) : ('deny' as const),
+        decision: agentId === 'runtime-codex' ? ('allow-once' as const) : ('deny' as const),
         toolName: 'agent_system_install' as const,
       };
 const config = getRuntimeConfig({ pin: false });
@@ -36,7 +36,7 @@ const controlUi = await fetch(`${origin}/__openclaw__/`, {
   signal: AbortSignal.timeout(30_000),
 });
 assert.ok(controlUi.ok, `Control UI document request failed: ${controlUi.status}`);
-// The document identity appends an asset hash to the Gateway build ID.
+// the document identity appends an asset hash to the gateway build id.
 const clientBuildId = (await controlUi.text()).match(
   /<html\b[^>]*\sdata-openclaw-control-ui-build-id="([a-zA-Z0-9._-]{1,96})-[a-f0-9]{64}"/i,
 )?.[1];
@@ -133,7 +133,7 @@ function approvalFor(sessionKey: string) {
 async function assertUntouched() {
   assert.equal(await contents(checkFile), '', 'setup checks ran without approval');
   assert.equal(await contents(applyFile), '', 'install ran without approval');
-  // The apply marker is an empty file, so inspect existence separately.
+  // denied operations must leave no apply marker.
   await assert.rejects(readFile(applyFile), { code: 'ENOENT' });
 }
 
@@ -207,7 +207,7 @@ try {
     assert.ok(checkRan, 'approved checks did not run');
     if (testCase.toolName === 'agent_system_doctor') {
       assert.equal(applyRan, false, 'Doctor applied setup state');
-    } else await readFile(applyFile);
+    } else assert.equal(await contents(applyFile), 'applied\n', 'install must apply exactly once');
   } else await assertUntouched();
   process.stdout.write(`${agentId} ${testCase.toolName} ${testCase.decision}: verified\n`);
 } finally {

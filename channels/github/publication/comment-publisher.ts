@@ -1,8 +1,9 @@
+import providerWriteRejected from '../../../utils/provider-write-rejected.ts';
+
 import type {
   GitHubIssueCommentReceipt,
   GitHubNotificationPublicationClient,
 } from '../provider/work-event-client.ts';
-import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
   githubNotificationAttributedReplyText,
   githubNotificationPublicationComment,
@@ -10,12 +11,10 @@ import {
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
   type GitHubNotificationPublicationSource,
-} from './publication.ts';
+  type GitHubNotificationPublicationItem,
+} from './publication-contract.ts';
 
-type PublicationItem = Pick<
-  GitHubNotificationItemState,
-  'lifecycleId' | 'number' | 'repositoryName' | 'repositoryNodeId' | 'repositoryOwner'
->;
+type PublicationItem = GitHubNotificationPublicationItem;
 
 export type GitHubNotificationCommentPublicationInput = {
   conversationId?: string;
@@ -27,7 +26,11 @@ export type GitHubNotificationCommentPublicationInput = {
       source: GitHubNotificationPublicationSource;
     }
   | {
-      intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+      intent:
+        | 'assessment-summary'
+        | 'assignment-response'
+        | 'initial-acknowledgment'
+        | 'pull-request-handoff';
       publicationId: string;
     }
 );
@@ -43,6 +46,9 @@ export interface GitHubNotificationCommentPublicationConnection {
 }
 
 export interface GitHubNotificationCommentPublisherDependencies {
+  beforeCreate?(): Promise<void>;
+  onCreateRejected?(): Promise<void>;
+  redactText(text: string): string;
   authorize(
     input:
       | {
@@ -52,7 +58,11 @@ export interface GitHubNotificationCommentPublisherDependencies {
           target: string;
         }
       | {
-          intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+          intent:
+            | 'assessment-summary'
+            | 'assignment-response'
+            | 'initial-acknowledgment'
+            | 'pull-request-handoff';
           item: PublicationItem;
           publicationId: string;
           target: string;
@@ -110,7 +120,11 @@ export default class GitHubNotificationCommentPublisher {
     input: GitHubNotificationCommentPublicationInput,
     create: boolean,
   ): Promise<GitHubNotificationCommentPublicationResult | undefined> {
-    const text = githubNotificationPublicationText(input.intent, [{ text: input.text }]);
+    const text = githubNotificationPublicationText(
+      input.intent,
+      [{ text: input.text }],
+      this.#dependencies.redactText,
+    );
     const conversation = input.conversationId
       ? ({ conversationId: input.conversationId } as const)
       : ({ item: input.item } as const);
@@ -149,6 +163,7 @@ export default class GitHubNotificationCommentPublisher {
           ? githubNotificationAttributedReplyText(
               text,
               connection.commenterLogin ?? missingCommenterLogin(),
+              this.#dependencies.redactText,
             )
           : text;
       const expectedBody = githubNotificationPublicationComment(publicText, marker);
@@ -167,12 +182,18 @@ export default class GitHubNotificationCommentPublisher {
         return { receipt: existing, status: 'reconciled', target };
       }
       if (!create) return undefined;
-      const receipt = await connection.client.createIssueComment(
-        input.item.repositoryOwner,
-        input.item.repositoryName,
-        input.item.number,
-        expectedBody,
-      );
+      await this.#dependencies.beforeCreate?.();
+      const receipt = await connection.client
+        .createIssueComment(
+          input.item.repositoryOwner,
+          input.item.repositoryName,
+          input.item.number,
+          expectedBody,
+        )
+        .catch(async (error: unknown) => {
+          if (providerWriteRejected(error)) await this.#dependencies.onCreateRejected?.();
+          throw error;
+        });
       return { receipt, status: 'published', target };
     });
   }

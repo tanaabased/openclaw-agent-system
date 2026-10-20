@@ -1,17 +1,24 @@
-/** Public provider evidence contains no upstream prose or resource identifiers. */
+import { Type } from 'typebox';
+
+import providerErrorMessage from './provider-error-message.ts';
+
+/** Public provider evidence is bounded and redacted before retention or formatting. */
 export interface ProviderDiagnostic {
-  provider: '1password' | 'github';
+  provider: '1password' | 'github' | 'git';
   operation:
     | 'credential-resolve'
     | 'client-create'
     | 'secret-resolve'
     | 'environment-read'
     | 'identity-check'
-    | 'api-request';
+    | 'api-request'
+    | 'git-command';
   classification:
     'missing-credential' | 'authentication' | 'permission' | 'rate-limit' | 'transport' | 'unknown';
   explanation: string;
   httpStatus: number | null;
+  httpStatusSource?: 'structured' | 'message';
+  providerMessage?: string;
   providerCode: 'RateLimitExceededError' | 'AuthExpiredError' | 'DesktopSessionExpiredError' | null;
   retryAfterMs: number | null;
   resetAt: number | null;
@@ -44,8 +51,16 @@ export function providerDiagnostic(
   evidence: Partial<ProviderDiagnostic> = {},
 ): ProviderDiagnostic {
   const kind = Object.hasOwn(explanations, classification) ? classification : 'unknown';
+  const message = providerErrorMessage(evidence.providerMessage);
+  const httpStatus =
+    typeof evidence.httpStatus === 'number' &&
+    Number.isInteger(evidence.httpStatus) &&
+    evidence.httpStatus >= 100 &&
+    evidence.httpStatus <= 599
+      ? evidence.httpStatus
+      : null;
   return {
-    provider: provider === 'github' ? 'github' : '1password',
+    provider: provider === 'github' || provider === 'git' ? provider : '1password',
     operation: [
       'credential-resolve',
       'client-create',
@@ -53,18 +68,21 @@ export function providerDiagnostic(
       'environment-read',
       'identity-check',
       'api-request',
+      'git-command',
     ].includes(operation)
       ? operation
       : 'api-request',
     classification: kind,
-    explanation: explanations[kind],
-    httpStatus:
-      typeof evidence.httpStatus === 'number' &&
-      Number.isInteger(evidence.httpStatus) &&
-      evidence.httpStatus >= 100 &&
-      evidence.httpStatus <= 599
-        ? evidence.httpStatus
-        : null,
+    explanation:
+      message && kind === 'unknown'
+        ? 'The provider failure supplied no supported classification; see the redacted provider message.'
+        : explanations[kind],
+    ...(message ? { providerMessage: message } : {}),
+    ...(httpStatus !== null &&
+    (evidence.httpStatusSource === 'structured' || evidence.httpStatusSource === 'message')
+      ? { httpStatusSource: evidence.httpStatusSource }
+      : {}),
+    httpStatus,
     providerCode: [
       'RateLimitExceededError',
       'AuthExpiredError',
@@ -96,3 +114,51 @@ export function formatProviderDiagnostic(value: ProviderDiagnostic): string {
 export function withProviderDiagnostic(message: string, value?: ProviderDiagnostic): string {
   return value ? `${message} ${formatProviderDiagnostic(value)}` : message;
 }
+
+/** bounded provider evidence retained with workflow failures. */
+export const providerDiagnosticSchema = Type.Object(
+  {
+    provider: Type.Union([Type.Literal('github'), Type.Literal('git'), Type.Literal('1password')]),
+    operation: Type.Union([
+      Type.Literal('credential-resolve'),
+      Type.Literal('client-create'),
+      Type.Literal('secret-resolve'),
+      Type.Literal('environment-read'),
+      Type.Literal('identity-check'),
+      Type.Literal('api-request'),
+      Type.Literal('git-command'),
+    ]),
+    classification: Type.Union([
+      Type.Literal('missing-credential'),
+      Type.Literal('authentication'),
+      Type.Literal('permission'),
+      Type.Literal('rate-limit'),
+      Type.Literal('transport'),
+      Type.Literal('unknown'),
+    ]),
+    explanation: Type.String({ maxLength: 4096 }),
+    httpStatus: Type.Union([Type.Integer({ minimum: 100, maximum: 599 }), Type.Null()]),
+    httpStatusSource: Type.Optional(
+      Type.Union([Type.Literal('structured'), Type.Literal('message')]),
+    ),
+    providerMessage: Type.Optional(Type.String({ maxLength: 4096 })),
+    providerCode: Type.Union([
+      Type.Literal('RateLimitExceededError'),
+      Type.Literal('AuthExpiredError'),
+      Type.Literal('DesktopSessionExpiredError'),
+      Type.Null(),
+    ]),
+    retryAfterMs: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    resetAt: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    quotaScope: Type.Union([
+      Type.Literal('token'),
+      Type.Literal('account'),
+      Type.Literal('core'),
+      Type.Literal('search'),
+      Type.Literal('graphql'),
+      Type.Null(),
+    ]),
+    localBackoffMs: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);

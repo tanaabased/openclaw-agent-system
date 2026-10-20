@@ -1,3 +1,8 @@
+import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
+
+import { manifestNotices, lifecycleWarningNotice } from './diagnostic-notices.ts';
+import confirmSessionDispatch from './session-dispatch-consent.ts';
+import lifecycleDetails from './lifecycle-details.ts';
 import presentCliCommand from './presentation.ts';
 import confirmSetupInstall, { type SetupConsentOptions } from './setup-consent.ts';
 import {
@@ -10,19 +15,15 @@ import {
   type CliStyles,
   type CliNotice,
   writeCliDiagnosticNotices,
-  writeCliDiagnostics,
   writeCliJson,
   writeCliLifecycleTable,
 } from './output.ts';
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
-import { selectedSetupPhases } from '../agent/install-options.ts';
 import {
-  formatDiagnostic,
-  formatErrorDiagnostic,
-  formatManifestDiagnostics,
-  formatManifestFailure,
-} from '../core/logger.ts';
+  AgentSystemLifecycleError,
+  type AgentSystemLifecycleWarning,
+} from '../core/lifecycle-registry.ts';
+import { selectedSetupPhases } from '../agent/install-options.ts';
 
 export interface InstallAgentSystemOptions extends Pick<
   SetupConsentOptions,
@@ -35,7 +36,8 @@ export interface InstallAgentSystemOptions extends Pick<
   | 'input'
   | 'prompt'
 > {
-  installService: Pick<AgentInstallService, 'install'>;
+  installService: Pick<AgentInstallService, 'install'> &
+    Partial<Pick<AgentInstallService, 'sessionDispatchPlan'>>;
   json: boolean;
   manifestService: Pick<AgentManifestService, 'loadForCommandDirectory'>;
   output: CliOutput;
@@ -46,9 +48,15 @@ export interface InstallAgentSystemOptions extends Pick<
   workspaceDir: string;
 }
 
-function installNotices(warnings: ReadonlyArray<{ code: string; message: string }>): CliNotice[] {
-  return warnings.flatMap(({ code, message }) => {
-    if (code === 'collaboration-session-access') return [{ severity: 'notice', message }];
+function installNotices(
+  warnings: readonly AgentSystemLifecycleWarning[],
+  json: boolean,
+): CliNotice[] {
+  return warnings.flatMap((warning) => {
+    const { code } = warning;
+    const notice = lifecycleWarningNotice(warning);
+    if (json) return [notice];
+    if (code === 'collaboration-session-access') return [{ ...notice, severity: 'notice' }];
     if (code === 'github-operator-loaded-access-unverified') {
       return [
         {
@@ -56,33 +64,80 @@ function installNotices(warnings: ReadonlyArray<{ code: string; message: string 
           message:
             'operator recognition is channel-wide openclaw access, not repository-scoped access; independent tool policy still applies.',
         },
-        { severity: 'warning', message },
+        notice,
       ];
     }
-    return [{ severity: 'warning', message }];
+    return [notice];
   });
 }
 
-function isSetupSkipWarning(code: string): boolean {
-  return ['setup-skipped', 'setup-host-skipped', 'setup-agent-skipped'].includes(code);
+// selected setup skips remain in results and tables, not stderr.
+function isSelectedSetupSkip(
+  warning: AgentSystemLifecycleWarning,
+  options: InstallAgentSystemOptions,
+): boolean {
+  if (warning.component !== 'setup' || warning.stepId) return false;
+  const selection = selectedSetupPhases(options);
+  return (
+    (warning.code === 'setup-skipped' && selection.skipSetupHost && selection.skipSetupAgent) ||
+    (warning.code === 'setup-host-skipped' &&
+      selection.skipSetupHost &&
+      !selection.skipSetupAgent) ||
+    (warning.code === 'setup-agent-skipped' && selection.skipSetupAgent && !selection.skipSetupHost)
+  );
 }
 
 /** Reconcile every configured lifecycle component for the current workspace manifest. */
 async function installAgentSystem(options: InstallAgentSystemOptions): Promise<void> {
   const result = await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (result.status !== 'loaded') {
-    writeCliDiagnosticNotices(
-      options,
-      formatManifestFailure(result).map(({ level, message }) => ({ severity: level, message })),
-    );
+    writeCliDiagnosticNotices(options, manifestNotices(result));
     options.setExitCode(1);
     return;
   }
 
-  writeCliDiagnosticNotices(
-    options,
-    formatManifestDiagnostics(result).map(({ level, message }) => ({ severity: level, message })),
-  );
+  writeCliDiagnosticNotices(options, manifestNotices(result));
+  let sessionDispatchConsent = false;
+  try {
+    const plan = await options.installService.sessionDispatchPlan?.(result.manifest);
+    if (plan?.enrollmentRequired) {
+      sessionDispatchConsent = await confirmSessionDispatch(
+        { ...options, runtime: 'openclaw' },
+        plan.consumers,
+      );
+      if (!sessionDispatchConsent) {
+        writeCliDiagnosticNotices(options, [
+          {
+            severity: 'error',
+            message:
+              'session dispatch enrollment was not approved; use interactive install or --yes. code=session-dispatch-approval-required',
+          },
+        ]);
+        if (options.json)
+          writeCliJson(options.output, {
+            status: 'blocked',
+            code: 'session-dispatch-approval-required',
+          });
+        options.setExitCode(1);
+        return;
+      }
+    }
+  } catch {
+    writeCliDiagnosticNotices(options, [
+      {
+        severity: 'error',
+        message:
+          'session dispatch enrollment could not be inspected; no installation changes were made. code=session-dispatch-inspection-failed',
+      },
+    ]);
+    if (options.json)
+      writeCliJson(options.output, {
+        status: 'blocked',
+        code: 'session-dispatch-inspection-failed',
+      });
+    options.setExitCode(1);
+    return;
+  }
   if (
     !(await confirmSetupInstall({
       ...options,
@@ -101,39 +156,54 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     const selection = selectedSetupPhases(options);
     const installed = await options.installService.install({
       runtime: 'openclaw',
+      ...(sessionDispatchConsent
+        ? {
+            sessionDispatchConsent: true,
+            async assertCurrent() {
+              const current = await options.manifestService.loadForCommandDirectory(
+                options.workspaceDir,
+                'cli',
+              );
+              if (
+                current.status !== 'loaded' ||
+                current.digest !== result.digest ||
+                current.path !== result.path ||
+                current.scope.workspaceDir !== result.scope.workspaceDir
+              )
+                throw new AgentInstallError(
+                  'The manifest changed after session dispatch consent; rerun Install.',
+                  'session-dispatch-plan-changed',
+                );
+            },
+          }
+        : {}),
       manifest: result.manifest,
       workspaceDir: result.scope.workspaceDir,
       ...(selection.skipSetupHost ? { skipSetupHost: true } : {}),
       ...(selection.skipSetupAgent ? { skipSetupAgent: true } : {}),
       ...(options.rebuildCodexPath ? { rebuildCodexPath: true } : {}),
     });
-    if (options.json) {
-      writeCliDiagnostics(
-        options.output,
-        installed.warnings
-          .filter(({ code }) => !isSetupSkipWarning(code))
-          .map((warning) =>
-            formatDiagnostic({
-              code: warning.code,
-              component: warning.component,
-              message: warning.message,
-            }),
-          ),
-      );
-      writeCliJson(options.output, installed);
-    } else {
+    if (options.json) writeCliJson(options.output, installed);
+    else {
       writeCliLifecycleTable(
         options.output,
-        lifecycleTableLines(installed.outcomes),
+        lifecycleTableLines(
+          installed.outcomes.map((outcome) =>
+            lifecycleDetails(outcome, result.manifest.automations ?? []),
+          ),
+        ),
         installed.workspaceDir,
         options.styles,
         options.terminalColumns,
       );
-      writeCliDiagnosticNotices(
-        options,
-        installNotices(installed.warnings.filter(({ code }) => !isSetupSkipWarning(code))),
-      );
     }
+    writeCliDiagnosticNotices(
+      options,
+      installNotices(
+        installed.warnings.filter((warning) => !isSelectedSetupSkip(warning, options)),
+        options.json,
+      ),
+    );
   } catch (error) {
     const failure = error instanceof AgentSystemLifecycleError ? error : undefined;
     const blocked = {
@@ -170,7 +240,9 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     } else if (outcomes.length > 0) {
       writeCliLifecycleTable(
         options.output,
-        lifecycleTableLines(outcomes),
+        lifecycleTableLines(
+          outcomes.map((outcome) => lifecycleDetails(outcome, result.manifest.automations ?? [])),
+        ),
         result.scope.workspaceDir,
         options.styles,
         options.terminalColumns,
@@ -198,22 +270,18 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
           ]
         : []),
     ];
-    const errorMessage = formatErrorDiagnostic(blocked.component, error, blocked.code);
-    if (options.json) {
-      writeCliDiagnostics(options.output, [
-        ...warnings.map((warning) => formatDiagnostic(warning)),
-        errorMessage,
-        ...guidance,
-      ]);
-    } else {
-      writeCliDiagnosticNotices(options, [
-        ...installNotices(
-          warnings.map((warning) => ({ ...warning, message: formatDiagnostic(warning) })),
-        ),
-        { severity: 'error', message: errorMessage },
-        { severity: 'notice', message: guidance.join('\n') },
-      ]);
-    }
+    writeCliDiagnosticNotices(options, [
+      ...installNotices(warnings, options.json),
+      {
+        severity: 'error',
+        code: blocked.code,
+        component: blocked.component,
+        stepId: blocked.stepId,
+        message: formatErrorMessage(error),
+        details: guidance.slice(0, outcomes.length > 0 ? 1 : 2),
+        remediation: guidance.slice(outcomes.length > 0 ? 1 : 2),
+      },
+    ]);
     options.setExitCode(1);
   }
 }

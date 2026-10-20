@@ -1,0 +1,182 @@
+import workflowRecovery from './workflow-recovery.ts';
+import workflowStatus from './workflow-status.ts';
+import { automationHash } from './automation-hash.ts';
+import dispatchCapacity from './openclaw-capacity.ts';
+import pendingAssignments from './dispatch-pending.ts';
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
+import type { OpenClawDispatchState, OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import { intakeRemediation, type IntakeState } from '../channels/github/intake/record-store.ts';
+import {
+  githubNotificationMarkdownText as text,
+  githubNotificationQuote,
+} from '../channels/github/presentation/card.ts';
+
+export interface IntakeObservation {
+  status: 'ready' | 'blocked';
+  changed: boolean;
+  code?: string;
+}
+
+/** presentation metadata never selects work, releases capacity, or proves delivery. */
+export default function openclawIntakeReport(input: {
+  state: OpenClawDispatchState;
+  intake?: IntakeState;
+  observation: IntakeObservation;
+  slots: number;
+}) {
+  const { state, intake, observation } = input;
+  const active = state.records.filter(
+    (record) => !record.retired && !record.retirement && !record.reset,
+  );
+  const retirementPending = state.records.filter(
+    (record) => record.retirement && !record.retired,
+  ).length;
+  const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
+  const capacity = dispatchCapacity(state.records, input.slots);
+  const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
+  const pending =
+    intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
+  const failures = [
+    ...(observation.status === 'blocked'
+      ? [{ id: 'intake', code: observation.code ?? 'intake-check-incomplete' }]
+      : []),
+    ...(intake?.deferred ?? []).map((entry) => ({ id: 'deferred-' + entry.key, code: entry.code })),
+    ...active
+      .filter(
+        (record) =>
+          record.blocker &&
+          !record.handoff &&
+          !record.result &&
+          (!record.sessionCreation?.verified ||
+            record.failureStage === 'first-turn' ||
+            (record.failureStage === 'assessment-turn' &&
+              record.blocker.startsWith('dispatch-turn-'))),
+      )
+      .map((record) => ({ id: record.id, code: record.blocker! })),
+  ].sort((a, b) => (a.id + a.code).localeCompare(b.id + b.code));
+  const problems = failures.map(({ id, code }) => id + ':' + code);
+  const recovered = (state.intakeReport?.problems ?? []).filter((problem) => {
+    if (problems.includes(problem)) return false;
+    const id = problem.slice(0, problem.indexOf(':'));
+    if (id === 'intake') return observation.status === 'ready';
+    if (id.startsWith('deferred-')) return true;
+    const record = active.find((entry) => entry.id === id);
+    return Boolean(record && !record.blocker);
+  });
+  const fingerprint = automationHash({
+    problems,
+    managing: managing.length,
+    pending: pending ?? null,
+    capacity,
+  });
+  const changed =
+    started.length > 0 ||
+    (fingerprint !== state.intakeReport?.fingerprint &&
+      (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
+  const automationNotice = intakeAutomationNotice(observation.code ?? '');
+  const title =
+    automationNotice && failures.length === 1
+      ? `${automationNotice.emoji} ${automationNotice.title}`
+      : failures.length
+        ? observation.status === 'blocked'
+          ? '⚠️ Intake needs attention'
+          : '⚠️ Intake checked — some items need attention'
+        : started.length
+          ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
+          : recovered.length
+            ? '💡 Intake resumed'
+            : '💡 Intake checked';
+  const lines = ['## ' + title, ''];
+  const label = (record: OpenClawDispatchRecord) => {
+    const item = intake?.records.find((entry) => entry.id === record.intakeId);
+    return item
+      ? `${item.repository.owner.login}/${item.repository.name}#${item.issue.number}`
+      : 'Issue';
+  };
+  for (const record of started)
+    lines.push(
+      `- **Issue:** [${text(label(record))}](/chat?session=${encodeURIComponent(record.threadId!)})`,
+    );
+  if (started.length) lines.push('');
+  for (const failure of failures.slice(0, 12)) {
+    const notice = intakeAutomationNotice(failure.code);
+    if (failure.id === 'intake' && notice) {
+      lines.push(
+        `- **What happened:** ${notice.summary}`,
+        `- **Next step:** ${notice.next}`,
+        `- **Technical detail:** \`${failure.code}\``,
+      );
+      continue;
+    }
+    const provider =
+      failure.id === 'intake'
+        ? intake?.blocker?.providerDiagnostic
+        : intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id)
+            ?.providerDiagnostic;
+    if (provider)
+      lines.push(
+        `- **Provider:** ${text(provider.provider)} · ${text(provider.operation)}${provider.httpStatus ? ' · HTTP ' + provider.httpStatus : ''}`,
+        `  **Detail:** ${text(provider.providerMessage ?? provider.explanation)}`,
+      );
+    const deferred = intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id);
+    if (deferred) {
+      const candidate = JSON.parse(deferred.candidate) as {
+        repositoryPath: string;
+        number: number;
+      };
+      lines.push(
+        `- **Issue:** ${text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number)}`,
+        `  **Diagnostic:** \`${text(deferred.code)}\``,
+        '  **Action:** This assignment will be checked again on a later scan. Unrelated intake continues.',
+      );
+      continue;
+    }
+    const automation = failure.code.startsWith('automation-');
+    const record = active.find((record) => record.id === failure.id);
+    const retry = record?.retry ? record.retryAfter : undefined;
+    lines.push(
+      ...(record
+        ? [
+            `- **Issue:** ${text(label(record))}`,
+            `  **Operation:** ${text(record.failureStage ?? 'assignment preparation')}`,
+            `  **Status:** ${workflowStatus(record)}`,
+          ]
+        : ['- **Operation:** assignment scan']),
+      `- **Diagnostic:** \`${text(failure.code)}\``,
+      '  **Action:** ' +
+        (retry
+          ? 'Automatic recovery will retry at or after ' +
+            new Date(retry).toISOString() +
+            '. Preserve the retained request; no new stage approval is needed.'
+          : automation
+            ? /sync|required|disabled|ownership/.test(failure.code)
+              ? 'Run Agent System Install to reconcile the owned intake automation. Nothing was repaired automatically.'
+              : 'Inspect the intake automation execution and delivery health with supported Agent System Doctor. Preserve its receipts; retry observation when service access is available.'
+            : (workflowRecovery(failure.code)?.next ?? intakeRemediation(failure.code))),
+    );
+  }
+  if (failures.length) lines.push('');
+  if (recovered.length)
+    lines.push(
+      'The earlier intake condition has cleared: ' +
+        recovered.map((p) => '`' + text(p.slice(p.indexOf(':') + 1)) + '`').join(', ') +
+        '.',
+      '',
+    );
+  lines.push(
+    `**Active:** ${managing.length} issues${pending === undefined ? '' : ` · **Pending:** ${pending}`}`,
+    `**Retirement pending:** ${retirementPending}`,
+    `**Slots:** ${capacity.occupied}/${input.slots} occupied · ${capacity.available} available`,
+  );
+  if (pending && !capacity.available)
+    lines.push('Pending issues will start when a slot becomes available.');
+  if (observation.status === 'blocked')
+    lines.push('The check is incomplete; pending assignments are unknown.');
+  return {
+    changed,
+    fingerprint,
+    problems,
+    started: started.map((record) => record.id),
+    response: githubNotificationQuote(lines.join('\n')),
+  };
+}

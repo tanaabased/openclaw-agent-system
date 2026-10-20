@@ -1,13 +1,14 @@
+import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';
 import assert from 'node:assert/strict';
 
 import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
-import { githubNotificationCommenterToken } from '../channels/github/publication/publication.ts';
-import { approvedNotificationItem } from './github-notification-fixtures.ts';
+import { githubNotificationCommenterToken } from '../channels/github/publication/publication-contract.ts';
+import { publicationItem } from './github-provider-fixtures.ts';
 
 function input() {
   return {
     intent: 'github-reply' as const,
-    item: approvedNotificationItem(),
+    item: publicationItem(),
     source: { commentDatabaseId: 89, revisionId: 'a'.repeat(64) },
     text: `Thanks for flagging this, ${githubNotificationCommenterToken}. I checked the current behavior.`,
   };
@@ -18,6 +19,7 @@ describe('channels/github/publication/comment-publisher', () => {
     const calls: string[] = [];
     let publishedBody = '';
     const publisher = new GitHubNotificationCommentPublisher({
+      redactText: redactSensitiveText,
       authorize({ target }) {
         calls.push(`authorize:${target}`);
         return { authorized: true };
@@ -59,6 +61,7 @@ describe('channels/github/publication/comment-publisher', () => {
   it('should reconcile an existing marker without creating another comment', async () => {
     let created = false;
     const publisher = new GitHubNotificationCommentPublisher({
+      redactText: redactSensitiveText,
       authorize: () => ({ authorized: true }),
       connect: () => ({
         client: {
@@ -87,6 +90,7 @@ describe('channels/github/publication/comment-publisher', () => {
   it('should reject an existing marker whose accepted body differs', async () => {
     let created = false;
     const publisher = new GitHubNotificationCommentPublisher({
+      redactText: redactSensitiveText,
       authorize: () => ({ authorized: true }),
       connect: () => ({
         client: {
@@ -118,6 +122,7 @@ describe('channels/github/publication/comment-publisher', () => {
   it('should prefix the verified commenter when the model omits the token', async () => {
     let publishedBody = '';
     const publisher = new GitHubNotificationCommentPublisher({
+      redactText: redactSensitiveText,
       authorize: () => ({ authorized: true }),
       connect: () => ({
         client: {
@@ -140,6 +145,7 @@ describe('channels/github/publication/comment-publisher', () => {
   it('should reject revoked authority before credentials are connected', async () => {
     let connected = false;
     const publisher = new GitHubNotificationCommentPublisher({
+      redactText: redactSensitiveText,
       authorize: () => ({ authorized: false, reasonCode: 'authority-revoked' }),
       connect: () => {
         connected = true;
@@ -157,6 +163,7 @@ describe('channels/github/publication/comment-publisher', () => {
   it('should publish a deterministic acknowledgment without commenter attribution', async () => {
     let publishedBody = '';
     const publisher = new GitHubNotificationCommentPublisher({
+      redactText: redactSensitiveText,
       authorize: () => ({ authorized: true }),
       connect: () => ({
         client: {
@@ -172,7 +179,7 @@ describe('channels/github/publication/comment-publisher', () => {
 
     await publisher.publish({
       intent: 'initial-acknowledgment',
-      item: approvedNotificationItem(),
+      item: publicationItem(),
       publicationId: 'EV_assignment',
       text: "Got it — I'm starting on this now.",
     });

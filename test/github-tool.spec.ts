@@ -11,6 +11,7 @@ import AgentSystemToolRuntime from '../api/runtime.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from '../api/types.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { createGitHubTool } from '../tools/github/tool.ts';
+import { assertValidationParity } from './tool-validation-fixture.ts';
 
 const workspaceDir = '/workspace/data';
 const manifest: AgentManifest = {
@@ -337,29 +338,20 @@ describe('tools/github/tool', () => {
   });
 
   it('should reject credential, config, extension, and interactive escape paths before credentials load', async () => {
-    const environmentCalls: string[] = [];
-    const registry = new AgentSystemToolRegistry([createTool()]);
-
-    for (const argv of [
-      ['auth', 'token'],
-      ['auth', 'login'],
-      ['config', 'set', 'git_protocol', 'ssh'],
-      ['alias', 'set', 'mine', '!sh'],
-      ['extension', 'exec', 'mine'],
-      ['auth', 'status', '--show-token'],
-      ['api', 'user', '--hostname=example.com'],
-      ['repo', 'view', '--web'],
-    ]) {
-      await assert.rejects(
-        registry.invoke('gh', createRuntime({ environmentCalls }), argv, {
-          source: 'command',
-          workspaceDir,
-        }),
-        (error: unknown) =>
-          error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
-      );
-    }
-    assert.deepEqual(environmentCalls, []);
+    await assertValidationParity(createTool(), manifest, [
+      { argv: ['auth', 'token'], signals: [/inspect auth status/u, /may not reveal or mutate/u] },
+      { argv: ['auth', 'login', '--with-token'], signals: [/authentication/u] },
+      {
+        argv: ['config', 'set', 'editor', 'private-editor-sentinel'],
+        signals: [/agent\.yaml/u, /may not be mutated/u],
+      },
+      { argv: ['alias', 'set', 'mine', 'private-alias-sentinel'], signals: [/aliases/u] },
+      { argv: ['extension', 'exec', 'private-extension-sentinel'], signals: [/extensions/u] },
+      { argv: ['auth', 'status', '--show-token'], signals: [/identity/u] },
+      { argv: ['api', 'user', '--hostname=private-host-sentinel'], signals: [/identity/u] },
+      { argv: ['repo', 'view', '--web'], signals: [/browser/u] },
+      { argv: ['issue', 'edit', '1', '--editor=private-editor-sentinel'], signals: [/editor/u] },
+    ]);
   });
 
   it('should deny github release mutations before credentials load', async () => {

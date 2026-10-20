@@ -11,5 +11,6 @@ export interface AgentSystemHookContext {
   chatId?: string;
   messageProvider?: string;
   sessionKey?: string;
+  sessionId?: string;
   workspaceDir?: string;
 }

@@ -6,6 +6,7 @@ import type {
 } from 'openclaw/plugin-sdk/plugin-entry';
 
 import defineAgentSystemCliTool from '../api/define-cli-tool.ts';
+import AgentSystemToolError from '../api/error.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
 import {
   createToolTestDefinition,
@@ -14,6 +15,69 @@ import {
 } from './tool-test-fixture.ts';
 
 describe('api/define-cli-tool', () => {
+  it('should preserve only typed validation reasons through trusted policy', async () => {
+    const safeReason = 'Use the managed tool instead.';
+    const genericReason = 'The agent_system_test_tool request is invalid.';
+    for (const [failure, reason] of [
+      [new AgentSystemToolError('invalid_arguments', safeReason), safeReason],
+      [new Error('private-sentinel'), genericReason],
+      [
+        { name: 'AgentSystemToolError', code: 'invalid_arguments', message: 'private-sentinel' },
+        genericReason,
+      ],
+      [new AgentSystemToolError('execution_failed', 'private-sentinel'), genericReason],
+    ] as const) {
+      let policy: PluginTrustedToolPolicyRegistration | undefined;
+      let validationCalls = 0;
+      defineAgentSystemCliTool(
+        createToolTestDefinition({
+          validate() {
+            validationCalls += 1;
+            throw failure;
+          },
+          authorize() {
+            assert.fail('validation must reject before authorization');
+          },
+        }),
+      ).registerTrustedPolicy?.(
+        {
+          registerTrustedToolPolicy(registration) {
+            policy = registration;
+          },
+        },
+        {
+          async loadForAgentId() {
+            return loadedToolTestManifest();
+          },
+        },
+      );
+      assert.ok(policy);
+      const context = { agentId: 'data', toolName: 'agent_system_test_tool' };
+      assert.deepEqual(
+        await policy.evaluate(
+          {
+            toolName: context.toolName,
+            params: { argument: 'private-input', stdin: 'private-stdin' },
+          },
+          context,
+        ),
+        { allow: false, reason },
+      );
+      assert.equal(validationCalls, 1);
+      assert.deepEqual(
+        await policy.evaluate(
+          {
+            toolName: context.toolName,
+            params: { argument: 42 },
+          },
+          context,
+        ),
+        { allow: false, reason: genericReason },
+      );
+      assert.equal(validationCalls, 1);
+    }
+  });
+
   it('should compile command and native tool calls through one runtime definition', async () => {
     const definition = createToolTestDefinition();
     const registered = defineAgentSystemCliTool(definition);

@@ -1,269 +1,110 @@
-# GitHub Notifications Advanced Guide
-
-Configuration, commands, and operations for the GitHub notification channel.
-Start with the [README](./README.md) for setup.
-
-- [Configuration Reference](#configuration-reference)
-  - [`github.notifications.allowed-repository-owners`](#githubnotificationsallowed-repository-owners)
-  - [`github.notifications.approved-actors`](#githubnotificationsapproved-actors)
-  - [`github.notifications.approved-feedback-authors`](#githubnotificationsapproved-feedback-authors)
-  - [`github.notifications.approved-issue-assigners`](#githubnotificationsapproved-issue-assigners)
-  - [`github.notifications.assignment-types`](#githubnotificationsassignment-types)
-  - [`github.notifications.initial-mode`](#githubnotificationsinitial-mode)
-  - [`github.notifications.interval-minutes`](#githubnotificationsinterval-minutes)
-  - [`github.notifications.max-concurrent-issues`](#githubnotificationsmax-concurrent-issues)
-  - [`github.notifications.pull-request`](#githubnotificationspull-request)
-  - [Required Conversation Hook](#required-conversation-hook)
-- [Tools](#tools)
-  - [`agent_system_github_task_pr`](#agent_system_github_task_pr)
-- [CLI](#cli)
-  - [`openclaw agent-system notifications refresh`](#openclaw-agent-system-notifications-refresh)
-  - [`openclaw agent-system notifications status`](#openclaw-agent-system-notifications-status)
-  - [`openclaw agent-system notifications wait`](#openclaw-agent-system-notifications-wait)
-- [Model routing](#model-routing)
-- [Processing and Lifecycle](#processing-and-lifecycle)
-  - [Managed Worktrees](#managed-worktrees)
-  - [Pull Request Review Feedback](#pull-request-review-feedback)
-- [Security and Lifecycle](#security-and-lifecycle)
-  - [Durable State and Upgrades](#durable-state-and-upgrades)
+# GitHub Notification Reference
 
 ## Configuration Reference
 
-Declare `github.notifications` in the workspace manifest; see the
-[complete example](./README.md#configuration) and shared
-[manifest rules](../../MANIFEST.md).
+GitHub notifications require `github.notifications.schema-version: 2`. See the
+[manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
+authority, runtime selection, and current support. OpenClaw supports
+Plan, Work, and Auto issue assignment with configured feedback
+on retained issues and their linked delivery PRs. Independent review requests warn
+without blocking those workflows.
+Standalone Codex uses its [native workflow controls](../../CODEX.md#github-notification-policy).
 
-| Field under `github.notifications` | Required | Default                 | Values                                     |
-| ---------------------------------- | -------- | ----------------------- | ------------------------------------------ |
-| `allowed-repository-owners`        | no       | any owner               | Nonempty list of pinned owner identities   |
-| `approved-actors`                  | no       | none                    | Deprecated nonempty list of pinned users   |
-| `approved-feedback-authors`        | no       | legacy list, else deny  | Pinned users; `[]` denies all feedback     |
-| `approved-issue-assigners`         | no       | legacy list, else deny  | Pinned users; `[]` denies issue assignment |
-| `assignment-types`                 | no       | `[issue, pull-request]` | One or both kinds, without duplicates      |
-| `initial-mode`                     | no       | `work`                  | `guided` or `work`                         |
-| `interval-minutes`                 | no       | `5`                     | Integer from `1` through `1440`            |
-| `max-concurrent-issues`            | no       | `2`                     | Positive integer                           |
-| `pull-request`                     | no       | see below               | Delivery PR assignees and reviewers        |
+Both runtimes save bounded discovery progress and resume on later polls. Ordinary
+comments are fetched by update time; unchanged history does not trigger feedback.
+OpenClaw keeps discovery inside one condition budget and wakes the coordinator for
+saved actionable work or a one-time progress/recovery card. After upgrading, run
+Install to reconcile the changed condition before relying on scheduled intake.
 
-### `github.notifications.allowed-repository-owners`
+The live bound `agent.yaml` governs the next automatic operation for every active
+issue. Mode, author, feedback, recipient, and guidance edits take effect without
+Install. Plan holds future implementation; Work permits an actionable plan to
+continue; Auto additionally requires a Work decision. Existing Plan issues can become
+eligible when the operator changes the mode to Work. Once implementation has
+started, changing the default mode does not return the issue to planning. Both
+runtimes retain this stage across restart and recover older implementation receipts
+in place; existing lifecycle and native execution checks still apply.
 
-Filters assignments by repository owner using the same `login` and `node-id`
-identity shape as `approved-actors`, with unique node IDs. The filter does not
-grant repository access or approve the owner's members.
+Verified comments from approved feedback authors are task direction in Codex and
+OpenClaw, like direct input in the issue chat. In Plan, an explicit request to
+implement can enter Work through the same recorded transition. Work permits
+appropriate implementation; Auto may choose Plan or Work. Authors need not also be
+issue assignees. Quoted and linked material cannot independently direct the agent. Questions need not produce code.
+Each feedback attempt retains its own outcome and commit without replacing the
+original assessment or implementation. Finished work updates the existing PR;
+uncertain pushes are reconciled, and the original announcement is reused. A
+clarification request preserves implementation authority for the next admitted answer.
+No separate repair policy or author list is required.
 
-### `github.notifications.approved-actors`
+Discovery retains bounded observations independently of reply eligibility.
+Feedback observed while disabled stays in GitHub history and is not queued for
+later dispatch. When the runtime observes feedback reenabled, it saves an admission
+cutoff for the issue and its PR using the previous policy-check time. Approved
+comments or revisions after that cutoff become new feedback, including those
+between the last check and reenabling. This overlap avoids missing comments posted
+just after a configuration edit; a longer polling gap means a longer overlap.
+Older records without a policy-check timestamp use their last saved scan time,
+or the current check when neither timestamp is available. Work already admitted
+before a pause remains recoverable, and publication receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
 
-Deprecated compatibility grant. Legacy-only configurations retain issue assignment,
-direct pull-request assignment, and existing-work feedback authorization. Each new
-explicit list replaces only its own legacy fallback. Validation emits
-`github-notification-approved-actors-deprecated` without blocking otherwise valid work.
+Install reconciles changes to installed scheduling machinery. Policy-only edits do
+not change the orchestration definition. Native execution facts, explicit task
+cancellation, lifecycle state, account/repository/chat identity, and exact submitted
+requests remain distinct from mutable policy. A policy edit never repeats an
+uncertain send or publication or automatically terminates a running native turn.
 
-| Field            | Type    | Required | Default | Description                                |
-| ---------------- | ------- | -------- | ------- | ------------------------------------------ |
-| `login`          | string  | yes      | none    | Records the user's current GitHub login.   |
-| `node-id`        | string  | yes      | none    | Pins the user's immutable GitHub identity. |
-| `operator-owner` | boolean | no       | `false` | Requests OpenClaw operator recognition.    |
+Git and GitHub enforce provider permissions. Managed workflow failures expose safe,
+bounded provider detail and an HTTP status when supplied. Unsupported execution
+capabilities are reported for their stage without disabling discovery.
 
-Node IDs must be unique within the list. The channel verifies the login and
-node ID together so a renamed or recycled login cannot inherit authorization.
+## Assignment lifecycle
 
-#### Optional operator recognition
+The existing intake run checks retained assignments in both runtimes. Verified issue
+closure, removal of the receiving assignee by a live `issue-assignment.allowed` actor,
+or manual chat archival moves work from
+**Active** to **Retirement pending** immediately. This stops new assessment,
+continuation, and feedback dispatch for that record. Native work already running
+still occupies a slot until inactivity is verified.
 
-`operator-owner: true` requests `commands.ownerAllowFrom` access for the verified
-`agent-system-github:<node-id>` identity. This is **channel-wide OpenClaw operator
-recognition**, not a repository-scoped or styling-only permission. It can expose
-other owner-gated capabilities permitted by independent tool policy. The flag is
-not accepted on the new authorization lists or `allowed-repository-owners` and is unrelated to the visible session
-assignee. No username-only, unqualified, or wildcard grant is generated.
+When GitHub no longer shows the assignment but its removal actor is unapproved or
+cannot be verified, inspection and issue context report unresolved removal authority.
+The existing chat, worktree and implementation stage remain intact; already admitted
+work may continue only within its existing mode and permissions. Plan stays Plan.
+No automatic reassignment occurs. Verified reassignment clears the warning; recovered
+provider evidence or a relevant live actor-list change can resolve removal authority.
+Removal authority is checked again before cleanup. Completed or uncertain native
+cleanup effects keep their receipts and are not automatically undone or repeated.
 
-```yaml
-github:
-  notifications:
-    approved-actors:
-      - login: pirog
-        node-id: MDQ6VXNlcjcxMzQyNA==
-        operator-owner: true
-      - login: emoriwan
-        node-id: U_kgDOEUqvpg
-        operator-owner: false
-```
+Automatic cleanup defaults to enabled, with a 60-minute grace period under
+`github.notifications.cleanup`. The deadline starts when intake first observes the
+change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
+verified reassignment before archival reactivates the existing conversation. A fresh
+assignment after archival or retirement can start another attempt without erasing
+prior receipts. An admitted new comment from a configured feedback author can also
+reactivate an unarchived conversation before cleanup starts. This resumes feedback,
+not implementation or a mode change. Reopening alone, incidental comments, and the
+agent's own published replies do not reactivate work.
 
-Each actor opts in independently; omitted or false flags grant nothing. Run
-`doctor` to inspect access and `install` to reconcile it. Missing or unverifiable
-optional access warns without blocking intake. Install verifies login/node-ID
-pins before changing grants; passive discovery and issue prose never grant access.
+OpenClaw archives the exact idle session and removes its managed worktree after
+verifying a clean checkout and retained branch or tag. It protects pinned sessions,
+automation owners, shared worktrees, unresolved activity, and unpreserved changes.
+Each successful cleanup step is retained so interrupted cleanup can reconcile on a
+later poll. Branches, issue content, and assessment history are preserved.
 
-Install requests a configuration reload. If the Gateway remains stale, restart
-it and verify a fresh assignment. Doctor inspects its own process's loaded policy,
-not a separate Gateway. Explicit tool denials, narrower allowlists, and session
-visibility restrictions still apply.
+Codex prepares archival through the desktop's native tools after checking pins,
+automation ownership, shared use, and preserved work. The desktop owns worktree
+snapshotting and reclamation; intake marks work retired only after observing both
+archival and removal. If desktop settings retain the checkout, cleanup stays pending
+without blocking other intake. Disabling cleanup preserves resources and marks
+inactive work retired.
+Run Install after an upgrade when Doctor reports changed automation machinery.
+Policy-only edits apply live.
 
-Removing a flag, actor, or notification declaration retires its grant claim on
-the next install. Pre-existing/manual grants and grants needed by other
-installations remain. Uncertain ownership warns and preserves access; do not
-delete the provenance ledger to repair it. Before uninstalling the plugin or
-deleting a workspace, remove the flags and run install to verify cleanup while
-the declaration and receipts are available. Plugin removal cannot revoke grants.
-
-Initial assignments use native `sessions` tools for owner, color, and group
-setup. A read-only check records persisted results privately, preserves manual
-fields, and reports missing evidence as unverified. Setup failures do not retry,
-block work, or add GitHub comments. This optional access does not replace the
-[required conversation hook](#required-conversation-hook).
-
-### `github.notifications.approved-feedback-authors`
-
-Pins users who may provide actionable issue comments, linked delivery PR comments,
-submitted reviews, and eligible inline replies on existing admitted work. Membership
-does not authorize assignments or start unrelated work. Current-work eligibility,
-repository scope, exact mentions in author prose, human-author and self-comment
-checks, and reauthorization before publication still apply.
-
-### `github.notifications.approved-issue-assigners`
-
-Pins users who may assign issues, including the agent's verified identity when
-self-assignment is intended. Membership does not authorize feedback.
-
-Both new lists use required `login` and immutable `node-id` pins, with unique node IDs
-within each list. They do not accept `operator-owner`. Each omitted list falls back
-to `approved-actors`, or denies all if the legacy list is also omitted. An explicit
-`[]` denies its permission even when the legacy list is present.
-
-| Permission                    | Grant                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| Issue assignment              | `approved-issue-assigners`, otherwise `approved-actors`, otherwise deny  |
-| Existing-work feedback        | `approved-feedback-authors`, otherwise `approved-actors`, otherwise deny |
-| Direct PR assignment          | `approved-actors` only, subject to `assignment-types`                    |
-| OpenClaw operator recognition | Legacy `approved-actors` records with `operator-owner: true` only        |
-
-#### Migration
-
-Configure both explicit lists to separate assignment from feedback. Retain legacy
-records needed for direct PR assignments or existing `operator-owner` grants;
-the new lists neither create nor revoke these permissions. Removing a legacy
-operator record retires its grant claim at the next install under the existing
-provenance rules. To retain operator recognition without its assignment or feedback
-fallbacks, keep that record and explicitly configure both new lists; use
-`assignment-types: [issue]` to disable direct PR intake.
-
-Review-request intake is outside this channel's current lifecycle. None of these
-grants authorizes it. The separate implementation tracked in
-[#239](https://github.com/tanaabased/openclaw-agent-system/issues/239) must use
-`approved-review-requesters`, not a fallback to these lists.
-
-### `github.notifications.assignment-types`
-
-Selects the assignment kinds the channel discovers. Direct pull-request
-assignments use only `approved-actors` for compatibility; the issue-specific list
-neither grants nor removes their authority. They have the
-[documented limitations](./README.md#current-limitations).
-
-### `github.notifications.initial-mode`
-
-Selects `guided` or `work` for newly accepted issues. Guided prepares the
-session and waits for direction; Work schedules the initial implementation
-turn.
-
-### `github.notifications.interval-minutes`
-
-Sets how often the Gateway polls for assignments and comments.
-
-### `github.notifications.max-concurrent-issues`
-
-Limits concurrent issue work for one agent. The durable queue is shared by the
-Gateway and one-shot CLI refreshes, so a second process cannot evade the limit.
-An issue keeps its slot across planning and automatic implementation. Delivery,
-an explicit wait for follow-up, or a retryable failure releases the slot; failed
-work moves to the back of the queue. Pull-request assignment intake is not
-counted against this issue-work limit.
-
-### `github.notifications.pull-request`
-
-Controls recipients on issue task pull requests published by automatic Work
-delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant issue
-Work and Guided turns receive these defaults; unrelated direct `gh` pull requests
-are not linked.
-
-| Field       | Type                              | Required | Default            | Description                                                                                                               |
-| ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `assignees` | `assignment-actor` or pinned list | no       | `assignment-actor` | Add the admitted assigning actor, or replace that choice with up to ten pinned users. `[]` disables automatic assignment. |
-| `reviewers` | pinned list                       | no       | `[]`               | Request reviews from eligible users. Assignment alone does not request review.                                            |
-
-Each pinned user has `login` and `node-id`, as in the authorization lists. The login
-must still resolve to that node ID at delivery. Duplicate identities within a
-list are invalid. GitHub eligibility applies; the agent cannot review its own
-PR. The same person may be both assignee and reviewer. Recipients need not be
-in either authorization list: receiving a PR never grants assignment or comment authority.
-Existing assignees, review requests, and CODEOWNERS behavior are preserved.
-
-```yaml
-github:
-  notifications:
-    approved-issue-assigners:
-      - login: pirog
-        node-id: U_kgDOB9x7Qw
-    pull-request:
-      reviewers:
-        - login: reviewer
-          node-id: REPLACE_WITH_REAL_GITHUB_NODE_ID
-```
-
-A missing assigning-actor identity fails delivery rather than falling back to
-the issue author. An interrupted handoff reuses its PR and adds only missing
-recipients, without re-requesting a submitted review.
-
-### Required Conversation Hook
-
-For configured notifications, `doctor` reports unset or denied
-`plugins.entries.agent-system.hooks.allowConversationAccess` as blocked without
-changing it. Run `openclaw agent-system install` from the agent workspace to grant
-access and verify required hook registration. Install preserves unrelated
-configuration and does not override `hooks.allowPromptInjection: false`.
-If the running Gateway has not reloaded the permission, restart it after install;
-notifications remain blocked until its required hooks are available.
-
-## Tools
-
-### `agent_system_github_task_pr`
-
-Publish a task pull request from a prepared, trusted GitHub issue-owned session
-when work continues outside the automatic Work implementation turn. Use this
-tool instead of `gh pr create` for that issue. Automatic Work delivery still
-publishes terminally without a model tool call.
-
-#### Parameters
-
-| Parameter | Type   | Required | Default             | Description                   |
-| --------- | ------ | -------- | ------------------- | ----------------------------- |
-| `body`    | string | no       | `Closes #<issue>`   | Body for a newly created PR.  |
-| `title`   | string | no       | current issue title | Title for a newly created PR. |
-
-#### Usage
-
-From the prepared issue session, publish committed work on its exact managed
-branch:
-
-```json
-{ "title": "Finish the issue fix", "body": "Implementation and validation. Closes #12" }
-```
-
-The tool verifies current assignment authority, the agent-owned open PR and
-branch, then adds missing configured recipients. It preserves an existing PR's
-title, body, assignees, and completed reviews. It records the PR in the issue
-session; the next notification reconciliation completes the ordinary
-`pull-request-opened` card, comment baseline, and issue handoff. The tool does
-not merge. It is unavailable outside a prepared issue-owned session.
-
-The response reports `status: linked` for the completed PR link and a
-`handoffStatus` snapshot at return time: `awaiting-reconciliation` until the
-durable handoff is published, then `published` on a later call. A verified same-PR
-retry remains available during its own PR-opened turn. If that turn lacks confirmed
-terminal completion, `recovery-required` preserves the pending event and stops
-automatic replay; it does not mean the PR must be recreated. This includes
-interrupted attempts whose completion cannot be recovered through the supported
-host API. Pending comments remain unconsumed until handoff is resolved. Checkpoint
-failures retain a bounded reason code and the already-completed publication outcome.
-The tool does not run the asynchronous handoff turn itself.
+`retirement-native-archive-denied` means the exact native archive call was rejected;
+inspect the intake chat's native approval result before taking operator action.
+`retirement-native-archive-unverified` means submission or outcome is uncertain;
+intake keeps reconciling native evidence. Neither result repeats the archive. A
+fresh preparation is automatic only when native history proves no call was submitted.
 
 ## CLI
 
@@ -294,23 +135,63 @@ openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/
 ```
 
 ```sh
-# run intake and prepared-issue reconciliation now.
+# request the installed native workflow now.
 openclaw agent-system notifications refresh
 ```
 
-Without an item selector, `refresh` processes the agent's eligible assignments.
-A selector limits the cycle to one exact item. A completed cycle may establish
-the baseline, prepare an issue, continue one pending Work implementation,
-process a bounded pair of admitted comments, or retire work. Deferred and failed
-cycles return nonzero.
-Manual refresh bypasses the normal interval and local permission/configuration
-backoff for one bounded attempt. Confirmed GitHub throttling still defers retry
-and reports its reason and retry time.
+`refresh` requests a run of the
+already installed native OpenClaw issue automation. A successful request
+reports `queued` and its native run ID; it does not claim the scan or assessment
+has completed. Installation and workflow activation remain explicit. Disabled,
+stale, or unreconciled workflows fail without enabling jobs.
+Each scheduled or explicitly requested intake run can start several assessments,
+bounded by the slots available when it begins. Already-started assessments keep
+running; quick completions do not refill that run’s allowance. Excess assignments
+wait for a later run. Item-specific failures do not stop unrelated eligible work.
 
-The CLI first polls and saves intake, then waits for execution within the refresh
-timeout. If execution is busy or the wait ends, newly admitted items remain visible
-through `notifications status` and can resume on a later cycle. The CLI waits for
-any execution it starts to settle before exiting.
+Codex and OpenClaw retain uncertain creation and send attempts for reconciliation;
+a newer assignment never authorizes a duplicate conversation. Capacity is released
+when native evidence proves inactivity, not merely because an error occurred or a
+record was retired. Dispatch reports use `waiting` for unresolved receipts or setup
+requirements, `retrying` for scheduled transient recovery, and `blocked` for explicit
+stops such as denial, cancellation, or lost authority. Recognized transport and
+rate-limit failures back off across scheduled runs, from five minutes up to an hour,
+honoring longer provider cooldowns. A prolonged outage needs no fresh stage approval;
+it does not discard the request or replay an uncertain write. Inspection also exposes
+`workflowStatus`: `retirement-pending` identifies work awaiting cleanup, `retired`
+identifies completed lifecycle retirement, `obsolete` identifies other superseded intent, and
+`partially-delivered` preserves a published PR while linkage, attachment, or its
+announcement remains incomplete. These descriptions do not release capacity or grant
+authority. Diagnostics identify the affected operation and issue, retaining successful
+starts alongside failures. Provider errors keep their bounded structured evidence;
+unclassified failures do not establish a credential problem.
+
+Codex preserves the earlier retirement contract for historical records created before
+reservation tracking: unresolved retired creations remain in inspectable history,
+while any verified active native chat still occupies a slot. Their evidence remains
+intact, and another creation for the same issue stays fenced until native inactivity
+or non-submission is proved. New retirement never releases an uncertain reservation. Retired history appears in
+routine reports only when it consumes capacity or prevents a newer assignment from
+starting. Closed, retired fixtures do not need repeated operator cleanup.
+The owning intake observes at most twelve recovery candidates per check and can use
+`dispatch` action `reconcile` with a retired record's `id` to retry observation and
+search native creation history when its receipt is missing. Ordinary polling avoids
+repeating that broad search for retired records without a child ID. Native
+terminal history remains readable for this purpose even when the chat is archived or
+its worktree is gone. Missing resources alone prove nothing; inspection retains the
+specific missing evidence in `capacityObservation`. Denial recovery reads native history from the retained preparation turn forward and
+validates the latest admitted assignment. An automatic approval denial still needs
+explicit operator recovery for its exact call; reassignment does not erase it.
+Closed historical feedback with
+no outstanding work stays quiet. Uncertain sends and publications remain visible.
+
+With `--repository OWNER/REPO --kind issue --number NUMBER`, refresh performs one
+immediate intake scan of that issue and reports `completed` when admission checking
+finishes. It does not run or alter the recurring automation, dispatch work, or retain
+the selector. It preserves the account-wide checkpoint and previously admitted work.
+Pull-request selectors are unsupported; feedback remains owned by retained issue
+conversations. Without selectors, refresh requests the installed native automation
+as described above. An uncertain native enqueue is reported rather than retried.
 
 ### `openclaw agent-system notifications status`
 
@@ -337,13 +218,22 @@ openclaw agent-system notifications status [--agent <id>] [--repository <owner/n
 openclaw agent-system notifications status --json
 ```
 
-The result reports a redacted baseline and item projection, including lifecycle,
-worktree, cleanup, scheduling state, and aggregate active, queued, and limit
-counts when available. Waiting items include a stable reason code. A durable
-monitor diagnostic returns `degraded` and a nonzero exit code.
-Permission-check failures list the affected repository and item with a safe
-cause; unrelated admitted items remain available, and later polls retry the
-failed items after access is corrected.
+Healthy, unchanged native checks stay silent. Intake reports link started issues to
+their native conversations and show known managing, pending and slot counts. New or
+materially changed blockers appear once; verified recovery appears once. Automation
+drift directs you to supported Agent System Install; checks never repair schedules.
+An absent or disabled job cannot warn from its own run: use explicit Doctor/Install.
+Incomplete observations are not empty successful scans. Report preparation is retained
+for same-run replay; it is not proof that the final card was visibly delivered.
+
+`status` reads the native intake and dispatch records.
+The existing table and JSON envelope report baseline, capacity, item preparation,
+and blockers. An item's optional `workflow` contains its phase and bound
+conversation: queued, routing, uncertain creation, created, assessing, or the
+retained assessment outcome. A created conversation is not a completed plan.
+Only issue selectors and the native OpenClaw Plan workflow are currently supported;
+other runtime/workflow selections fail explicitly. Observation performs no scan,
+credential resolution, scheduler writes, or conversation creation.
 
 ### `openclaw agent-system notifications wait`
 
@@ -358,7 +248,7 @@ Wait for one semantic notification checkpoint without parsing session history or
 | `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
 | `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
 | `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
-| `--refresh`                    | no                   | off                 | Advance provider-owned intake while waiting.                                 |
+| `--refresh`                    | no                   | off                 | Request native workflow runs while waiting.                                  |
 | `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
 | `--timeout <seconds>`          | no                   | `300`               | Integer from `1` through `2147483` bounding the complete wait.               |
 
@@ -381,177 +271,106 @@ openclaw agent-system notifications wait \
 
 Supported targets:
 
-| Target                | Selector required | Meaning                                       |
-| --------------------- | ----------------- | --------------------------------------------- |
-| `assignment-rejected` | yes               | The selected assignment failed admission      |
-| `baseline-ready`      | no                | The first safe provider observation completed |
-| `prepared`            | yes               | Lifecycle-owned intake resources are ready    |
-| `retired`             | yes               | The selected assignment retired logically     |
-| `worktree-ready`      | yes               | The selected issue worktree is ready          |
+| Target           | Selector required | Meaning                                       |
+| ---------------- | ----------------- | --------------------------------------------- |
+| `baseline-ready` | no                | The first safe provider observation completed |
+| `plan-ready`     | yes               | Native V2 retained assessment is plan-ready   |
+| `prepared`       | yes               | Lifecycle-owned intake resources are ready    |
+| `worktree-ready` | yes               | The selected issue worktree is ready          |
+
+V2 waits use the same native observation as `status`. `prepared` requires a
+verified conversation binding and worktree; `plan-ready` requires the retained
+assessment result. The wait command does not expose rejected assignments or lifecycle
+retirement as targets. `assignment-rejected` and `retired` return
+`github-notification-wait-target-unsupported` immediately without requesting a refresh.
+With `--refresh` and an issue selector, each intake refresh is limited to that
+issue. These one-off scans do not run dispatch; waits observe progress made by the
+native coordinator. Without a selector, refresh requests the ordinary automation
+and waits for its exact native run before requesting another cycle. Without
+`--refresh`, selectors restrict observation only.
 
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.
 
-## Model routing
+## Issue Implementation and PR Delivery
 
-All four [model profiles](../../MANIFEST.md#models) enable routing for new issue
-conversations in either mode; existing conversations and default-only manifests
-keep their behavior. Before substantive work, the manifest default model assesses
-bounded issue content in a fresh, tool-free native context. The channel validates
-the assessment with the [shared resolver](../../tools/model-routing/README.md)
-and saves the selection before the initial assignment turn.
-Automatic effort is `medium`, `high`, or justified `xhigh`.
+An authenticated operator can continue a retained Plan-mode assessment in its
+owning issue chat. An actionable Plan-mode issue needs human direction to enter implementation;
+once there, ordinary PR delivery needs no separate publication grant. The agent retains the
+complete plan and uses the existing chat, managed worktree, and model selection.
 
-Verified native **Complexity** takes precedence. When native metadata is missing
-or unavailable, a visible fenced YAML capsule with `schema: tanaab/task-metadata/v2`,
-`mode: fallback`, and `fallback.complexity` can supply it. Missing, invalid,
-conflicting, and unavailable values remain distinct evidence for content
-assessment. **Work size** informs scope and decomposition, never the tier.
-Unresolved complexity retains its status and reason and uses the frozen default;
-manual model and effort selection remains available. Unsupported profiles,
-malformed assessments, and failed classifiers block the issue for retry without
-substitution.
+Work policy or an Auto Work decision lets the next intake pass continue an
+actionable plan in the same issue chat, using shared capacity and its saved native
+send receipt. An uncertain send is reconciled without sending again. Existing
+implementation stages survive later default-mode edits.
 
-For complete issue routing, `install` additively grants agent and classifier
-access to the manifest default in both OpenClaw LLM allowlists, preserving
-unrelated settings. Default-only, disabled, and pull-request-only declarations
-request nothing. If `doctor` reports saved permissions absent from its loaded
-state, restart the Gateway and retry the prepared assignment. Polling never
-grants access or substitutes for authentication.
+Implementation may return `clarification-needed` with specific questions and a
+complete account of partial work. The issue remains in implementation. Its chat
+displays the questions and waits; a new answer resumes through verified context
+without another handoff or approval. Scheduled intake does not replay the request.
+A recorded `done` result can continue through PR delivery without repeating implementation.
 
-Saved model and effort survive retries, restarts, comments, delivery continuation,
-and manifest edits. Supported native overrides take precedence independently.
-A permitted native fallback can continue automatic routing; a strict-selection
-mismatch or unapproved model cancels work. Execution records distinguish verified,
-permitted, and unverified selections. Missing native evidence alone neither blocks
-publication nor proves the requested route ran. The initial
-[routing note](../../tools/model-routing/README.md#reporting-and-continuation)
-remains private and is not execution evidence.
+Delivery requires committed work on the task branch. It applies configured
+`issue-assignment.pull-request.recipients`, verifies GitHub's closing link, and
+posts one concise announcement on the originating issue with the PR link, change
+description, and GitHub's draft/ready status. It uses the configured reply skill and
+voice guidance even when feedback intake is disabled. The private response retains
+the complete quoted PR card, public quote, and publication outcome. Native approval
+still applies to the comment. After an interrupted publication, ask the same
+chat to reconcile the existing PR. A retained attempt with no verifiable PR remains
+blocked rather than risking a second creation. Native denial, reassignment, or a
+changed session/worktree stops the operation without discarding the work.
 
-A demonstrated reasoning blocker permits a conversational request for operator
-approval of a specific stronger profile, explaining the failed approach; it is
-not a structured clarification outcome. Authentication failures, rate limits,
-slow tests, and missing requirements do not justify escalation. Apply an approved
-change only through native controls that preserve both model and effort, or leave
-it to the operator's supported session controls. Native runtime evidence must
-confirm the stronger selection.
+In Codex and OpenClaw, authorized follow-up commits can fast-forward the same PR
+branch from its last verified push. The PR receipt and original announcement stay
+with the delivery. Explicit title/body changes update that PR; commit-only pushes
+preserve text edited on GitHub. Interrupted updates reconcile the same operation.
+If initial PR creation is still uncertain, reconcile it before changing its text.
+A stale publication preview returns a refreshed operation without writing. Inspect
+it and retry once within the existing authorization; repeated staleness needs
+investigation. Workflow activation or an operator request already covering that
+effect needs no additional stage approval. Native approval denials remain terminal.
 
-## Processing and Lifecycle
+If showing an already-created PR is interrupted or temporarily busy, ask the same
+issue chat to show its card again. Saved plans and PR cards remain readable in
+the owning chat without fresh publication permission, a matching working commit,
+or GitHub access. They show retained evidence, not a fresh provider verification.
+Native chat identity is still checked. Presentation does not push, create a PR, or
+post an announcement. In Codex, attachment reconciliation retries only attachment
+inspection. Recipient identities remain pinned; GitHub authorizes recipient changes. If announcing fails, the PR
+remains delivered. Ask the same chat to recover its announcement; uncertain writes
+reconcile the saved text and receipt without posting a duplicate. Announcement
+recovery uses the saved published commit, so newer local work does not require
+another push. Recovery instructions skip confirmed attachments and announcements.
 
-Run `openclaw agent-system install` after changing the configuration. Installation
-establishes the first safe assignment baseline; only assignments observed after
-that baseline create local work. A baseline failure reports
-`github-notification-baseline-failed` and leaves intake inactive.
+## V1 Retirement
 
-Work implementation uses the same session and worktree, validates the change,
-creates one local commit, performs the first ordinary push, and creates or
-normalizes one delivery pull request. Guided performs no automatic
-implementation; the operator or an approved exact-mention comment decides what
-happens next. GitHub prose cannot select or elevate the configured mode.
+Unversioned notification declarations are rejected with
+`github-notification-v1-retired`. The polling channel, its Work/guided engine,
+reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
+Retirement does not imply feature parity.
 
-The channel also:
+The channel id `agent-system-github` remains registered as a read-only readiness
+surface. Existing accounts and bindings remain valid; the deprecated plugin
+`githubNotifications` limits are accepted but unused. Legacy configuration never
+activates V2 intake. Install adopts an old account only when its matching
+Agent System-managed binding establishes ownership; conflicting accounts require
+operator resolution. Historical receipts and grants remain untouched.
 
-- enforces the [admission and publication boundaries](#security-and-lifecycle)
-- keeps approved issue and delivery pull-request comments in the issue-owned
-  session, publishes each ordinary final response back to its exact source,
-  and drains a bounded pair of queued comments serially per execution pass
-- retires issue-owned work after delivery merge or loss of assignment authority
-  and removes only clean managed worktrees for completed lifecycles
-- supports the bundled [GitHub Update skill](../../skills/github-update/SKILL.md)
-  for an explicit, mode-neutral public progress update
+Install manages each agent's channel account from its enabled OpenClaw notification
+workflows. Removing or disabling those workflows requires another Install to disable
+that account. Other agents and operator-owned entries are preserved. With no enabled
+accounts, the channel is inactive; its schema remains registered for compatibility.
 
-The Gateway polls independently of issue workers, so new assignments can begin
-while another issue is running. Each issue serializes preparation, comments,
-responses, and retirement across Gateway and CLI processes. Different issues
-can proceed concurrently up to the agent's durable issue-work limit; shared
-repository preparation is serialized. See the
-[assignment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-assignment/README.md)
-for execution-lease and durable-recording checks.
+The channel reports setup or synchronization needs, unsupported workflows, scheduler
+availability, execution/delivery failures, and the last successful scan. Three missed
+scan intervals report overdue intake. Status reads manifest and retained state plus
+native scheduler observations; it never resolves credentials or starts work. If native
+inspection is unavailable it reports unknown. Missing optional capabilities report
+degraded status while ready intake keeps running. Healthy status describes these observations,
+not a fresh credential probe or a guarantee that the next dispatch will succeed.
 
-### Managed Worktrees
-
-The channel uses [managed Git worktrees](../../tools/git/README.md#gitworktrees).
-New GitHub issue worktrees keep the immutable-id directory but name the branch
-`<issue-number>-<title-slug>-<five-character-hash>`. The title slug is limited to
-48 characters and falls back to `issue` when the title cannot be slugged. The
-hash separates agent-scoped worktrees for the same issue. Existing GitHub issue
-branches keep their original names through retries, title edits, and cleanup.
-
-When GitHub reports new canonical coordinates for the same immutable repository
-and owner identities, the channel may update the managed origin. It verifies and
-fetches the new origin before continuing and restores the prior origin on failure.
-This retargeting is unavailable through the model-facing worktree tool and
-operator command.
-
-Completed assignment retirement removes only the exact clean managed checkout,
-using non-forced Git removal. Missing worktrees complete idempotently; dirty,
-unsafe, or unreadable checkouts, local branches, and remote refs remain untouched.
-See the [retirement scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-retirement/README.md)
-for incomplete-work retention and completed-work cleanup.
-
-### Pull Request Review Feedback
-
-Submitted reviews on an issue's linked delivery PR enter the same conversation as
-ordinary comments. An approved human must mention the installed GitHub account in
-their review summary or one of their findings, outside quotes and code. That mention
-admits the review's findings together; reviewer assignment or a review skill does
-not grant admission. Pending reviews do not trigger work. Later inline replies
-require their own approved author and exact mention; parent text and diff hunks
-cannot supply either.
-
-One review produces one feedback turn. Later edits include only changed findings,
-while unchanged summaries and parent replies remain context. The
-[feedback presentation](./PRESENTATION.md#direct-message) preserves source links
-and locations; original locations are historical, and the agent must inspect
-current code before applying an old finding. The
-[comment scenario](https://github.com/tanaabased/openclaw-agent-system/blob/main/scenarios/issue-work-comment/README.md)
-covers grouped reviews, historical locations, and later inline replies.
-
-Discovery pages and consumed member digests survive restarts. Each pass reads a
-bounded page of reviews and inline comments, resumes pagination, and revisits
-completed scans for edits. A review must fit the complete-group boundary before it
-can dispatch: at most 400 comments within 40 pages, the configured
-`maxCommentCharacters` across its authored prose, and 64,000 characters of projected
-diff context. Each diff hunk is limited to 8,000 characters with explicit truncation
-metadata. Oversized or incomplete groups are not executed as partial instructions.
-The existing 400-revision conversation limit remains; capacity exhaustion reports
-`github-notification-feedback-capacity-exceeded` without consuming the new source.
-
-Replies remain top-level comments on the source PR, with exact-source
-reauthorization and durable publication receipts. Inline reply publication,
-automatic thread resolution, and independent review-assignment sessions are not
-implemented.
-
-## Security and Lifecycle
-
-- Installed account and workspace routing must match the manifest. Missing,
-  duplicate, conflicting, or cross-agent routing fails closed.
-- Admission requires the authenticated assigned account, an approved immutable
-  assigning actor, an eligible repository owner, and sufficient repository
-  access.
-- Assignment and comment reads are bounded and reauthorized before model turns.
-  Private monitor and conversation state contain no tokens.
-- An approved actor may enter the conversation but cannot select capabilities;
-  the trusted channel lifecycle and configured mode remain authoritative.
-- Replies are reauthorized against their exact source before credentials load
-  and are published idempotently. An ordinary approved comment uses the same
-  final response in GitHub and the private session. If deterministic validation
-  rejects that response, the channel publishes a safe notice instead of going
-  silent while retaining the detailed response privately.
-- Merging a delivery pull request retires its issue-owned lifecycle. Closing and
-  reopening the pull request suspends and safely re-baselines that comment source.
-- Removing `github.notifications` and reinstalling retires tracked assignments,
-  removes owned routing and converged monitor state, and stops intake without
-  deleting existing issue worktrees.
-
-### Durable State and Upgrades
-
-Intake checkpoints and per-issue conversation state are stored separately in the
-agent's private state directory. Stop old runtime processes before upgrading;
-running old and new state writers together is unsupported.
-
-Supported older conversation snapshots and reply-turn records migrate on use.
-The retained `github-notification-conversations.legacy.json` snapshot allows an
-interrupted migration to retry, but receives no later updates and is not a
-current backup. Older plugin versions cannot read the new index. Missing or
-invalid conversation records block only the affected lifecycle.
+Declare V2 authority explicitly and run Install to reconcile its owning schedule.
+Old checkpoints and conversations do not establish V2 activation or completion.
+Keep the prior package and configuration backup if an old conversation still needs
+its V1 runtime; this package does not resume V1 work.

@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 jobs:
   release-npm:
     name: Publish npm package

@@ -42,7 +42,6 @@ const jobSchema = Type.Object(
     thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
     runtimes: Type.Optional(
       Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
-        minItems: 1,
         uniqueItems: true,
       }),
     ),
@@ -96,6 +95,14 @@ export interface AgentAutomation {
   overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
 }
 export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
+  /** optional presentation supplied by a runtime-owned job projection. */
+  displayName?: string;
+  /** Trusted runtime-derived settings; not accepted by the external manifest schema. */
+  internalOpenClaw?: {
+    trigger: { script: string };
+    toolsAllow: string[];
+    group?: string;
+  };
   payload: { kind: 'command'; run: NormalizedCommand } | { kind: 'prompt'; prompt: string };
 };
 

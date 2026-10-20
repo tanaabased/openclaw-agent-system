@@ -1,8 +1,58 @@
 import assert from 'node:assert/strict';
 
 import runAgentSystemTool from '../cli/tool.ts';
+import AgentSystemToolError from '../api/error.ts';
+import presentCliCommand from '../cli/presentation.ts';
 
 describe('cli/tool', () => {
+  it('should present safe validation reasons on stderr while redacting unexpected failures', async () => {
+    for (const failure of [
+      new AgentSystemToolError(
+        'invalid_arguments',
+        'Use agent_system_git_worktree for managed lifecycle changes.',
+      ),
+      new Error('private-exception-sentinel'),
+    ]) {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      const exitCodes: number[] = [];
+      const output = {
+        writeStderr: (message: string) => stderr.push(message),
+        writeStdout: (message: string) => stdout.push(message),
+      };
+      await presentCliCommand(runAgentSystemTool)({
+        invocationMode: 'operator',
+        manifestService: {
+          async loadForCommandDirectory() {
+            assert.fail('unexpected discovery');
+          },
+        },
+        argv: ['worktree', 'add', 'private-argument-sentinel'],
+        command: 'git',
+        output,
+        setExitCode: (code) => exitCodes.push(code),
+        toolRegistry: {
+          hostFallback: () => undefined,
+          async invoke() {
+            throw failure;
+          },
+        },
+        toolRuntime: {} as never,
+        workspaceDir: '/workspace/data',
+      });
+      assert.deepEqual(stdout, []);
+      assert.deepEqual(exitCodes, [1]);
+      const rendered = stderr.join('');
+      assert.match(
+        rendered,
+        failure instanceof AgentSystemToolError ? /invalid_arguments/u : /execution_failed/u,
+      );
+      if (failure instanceof AgentSystemToolError)
+        assert.match(rendered, /agent_system_git_worktree/u);
+      assert.doesNotMatch(rendered, /private-/u);
+    }
+  });
+
   it('should use an opaque active-agent binding for descendant command shims', async () => {
     const scopes: unknown[] = [];
 

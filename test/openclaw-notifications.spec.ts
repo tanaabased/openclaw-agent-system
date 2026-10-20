@@ -1,0 +1,816 @@
+import assert from 'node:assert/strict';
+
+import { createCliStyles } from '../cli/output.ts';
+
+import { issueKey } from '../agent/dispatch-pending.ts';
+import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
+import OpenClawNotifications from '../agent/openclaw-notifications.ts';
+import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import workflowStatus from '../agent/workflow-status.ts';
+import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import refresh from '../channels/github/cli/refresh.ts';
+import status from '../channels/github/cli/status.ts';
+import wait from '../channels/github/cli/wait.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import { intakeFixture, baseline } from './github-intake-fixture.ts';
+
+const selector = { itemType: 'issue' as const, repository: 'owner/repo', number: 3 };
+function fixture() {
+  const provider = intakeFixture();
+  const manifest: AgentManifest = {
+    schemaVersion: 1,
+    agent: { id: 'receiver' },
+    github: {
+      username: 'receiver',
+      notifications: { ...provider.policy, runtimes: ['openclaw'] },
+    },
+  };
+  const selected = assignmentIntakePolicy(manifest, 'openclaw')!;
+  let state: IntakeState | undefined = {
+    version: 1,
+    scope: 'scope',
+    workspaceDir: '/workspace',
+    agentId: 'receiver',
+    account: { login: 'receiver', nodeId: 'U_receiver' },
+    policyDigest: selected.digest,
+    baselineAt: baseline,
+    checkpoint: baseline + 1,
+    records: [
+      {
+        version: 1,
+        id: 'intake',
+        scope: 'scope',
+        receiving: { login: 'receiver', nodeId: 'U_receiver' },
+        workspaceDir: '/workspace',
+        agentId: 'receiver',
+        host: 'github.com',
+        repository: provider.repository,
+        issue: { nodeId: provider.item.nodeId, databaseId: provider.item.databaseId, number: 3 },
+        assignment: { ...provider.events[0]!, event: 'assigned' },
+        evidence: {
+          policyDigest: selected.digest,
+          mode: 'plan',
+          open: true,
+          assigned: true,
+          repositoryReadable: true,
+          ownerPinned: true,
+          actorPinned: true,
+        },
+        observedAt: baseline + 1,
+        admittedAt: baseline + 1,
+        status: 'admitted',
+        requiresRevalidation: true,
+      },
+    ],
+  };
+  const records: OpenClawDispatchRecord[] = [];
+  let requests = 0;
+  let readiness: string | undefined;
+  let now = baseline;
+  const service = new OpenClawNotifications({
+    root: '/unused',
+    intake: {
+      async readiness() {
+        return readiness;
+      },
+      async select(value) {
+        return {
+          selected: assignmentIntakePolicy(value, 'openclaw'),
+          store: {
+            location: { scope: 'scope' },
+            async read() {
+              return state;
+            },
+          },
+        };
+      },
+    },
+    async readDispatch() {
+      return { records };
+    },
+    async inspectRun() {
+      return 'pending' as const;
+    },
+    async scanSelected(_manifest, _workspace, selected, signal) {
+      signal.throwIfAborted();
+      assert.deepEqual(selected, selector);
+      return { status: 'ready', admitted: 1 };
+    },
+    async requestRun(_manifest, _workspace, signal) {
+      signal.throwIfAborted();
+      requests++;
+      return { status: 'queued', runId: 'native-run' };
+    },
+    now: () => now,
+    async sleep(ms) {
+      now += ms;
+    },
+  });
+  return {
+    manifest,
+    service,
+    records,
+    set readiness(value: string | undefined) {
+      readiness = value;
+    },
+    get state() {
+      return state;
+    },
+    set state(value) {
+      state = value;
+    },
+    get requests() {
+      return requests;
+    },
+  };
+}
+function scheduledFixture() {
+  const f = fixture();
+  const refresh = f.service.refresh.bind(f.service);
+  // exercise native receipt polling independently of the selected intake adapter.
+  f.service.refresh = (manifest, workspace, { signal }) => refresh(manifest, workspace, { signal });
+  return f;
+}
+function record(): OpenClawDispatchRecord {
+  return {
+    id: 'a'.repeat(64),
+    intakeId: 'intake',
+    issueKey: 'b'.repeat(64),
+    sourceThreadId: 'coordinator',
+    phase: 'routing',
+    createdAt: baseline,
+    manifestDigest: 'digest',
+  };
+}
+
+describe('agent/openclaw-notifications', () => {
+  it('should report the same disabled policy across status refresh and wait without starting work', async () => {
+    const f = fixture();
+    f.manifest.github!.notifications!.issueAssignment!.enabled = false;
+    f.readiness = 'intake-policy-disabled';
+    const status = await f.service.inspect(f.manifest, '/workspace');
+    const refresh = await f.service.refresh(f.manifest, '/workspace', {
+      signal: AbortSignal.timeout(1000),
+    });
+    const waited = await f.service.wait(f.manifest, '/workspace', {
+      target: 'baseline-ready',
+      timeoutMs: 1000,
+      refresh: true,
+    });
+    for (const result of [status, refresh, waited])
+      assert.equal(result.code, 'github-notification-disabled');
+    assert.equal(f.requests, 0);
+  });
+
+  it('should expose required automation updates without losing retained admission evidence', async () => {
+    const f = fixture();
+    const before = structuredClone(f.state);
+    f.readiness = 'intake-automation-update-required';
+    const result = await f.service.inspect(f.manifest, '/workspace');
+    assert.equal(result.status, 'degraded');
+    assert.equal(result.diagnosticCode, 'intake-automation-update-required');
+    assert.equal(result.baseline.status, 'ready');
+    assert.equal(result.items.length, 1);
+    assert.equal(f.requests, 0);
+    assert.deepEqual(f.state, before);
+    f.readiness = undefined;
+    assert.equal((await f.service.inspect(f.manifest, '/workspace')).status, 'ready');
+  });
+
+  it('should refresh after a previous scan failure without ignoring current readiness', async () => {
+    const f = fixture();
+    f.state!.blocker = { code: 'intake-github-transport', since: baseline, retryAfter: baseline };
+    assert.equal(
+      (await f.service.inspect(f.manifest, '/workspace')).diagnosticCode,
+      'intake-github-transport',
+    );
+    const signal = new AbortController().signal;
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal, selector })).status,
+      'completed',
+    );
+    f.readiness = 'intake-automation-update-required';
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal, selector })).code,
+      'intake-automation-update-required',
+    );
+  });
+  it('should inspect native admission and capacity without running intake or exposing provider prose', async () => {
+    const f = fixture();
+    const result = await f.service.inspect(f.manifest, '/workspace', selector);
+    assert.equal(result.status, 'ready');
+    assert.deepEqual(result.capacity, { active: 0, queued: 1, limit: 2 });
+    assert.equal(result.items[0]?.workflow?.phase, 'queued');
+    assert.equal(result.items[0]?.stage, 'admitted');
+    assert.equal(f.requests, 0);
+    assert.equal(JSON.stringify(result).includes('policyDigest'), false);
+  });
+
+  it('should report implementation questions without changing the retained assessment', async () => {
+    const f = fixture();
+    const item = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: { outcome: 'plan-ready' },
+      work: {
+        assessmentDigest: 'a'.repeat(64),
+        result: {
+          outcome: 'clarification-needed',
+          summary: 'Need input.',
+          fullResult: 'Partial work.',
+          questions: ['Which caller?'],
+        },
+      },
+    } as OpenClawDispatchRecord;
+    f.records.push(item);
+    const result = await f.service.inspect(f.manifest, '/workspace', selector);
+    assert.equal(result.items[0]?.workflow?.phase, 'clarification-needed');
+    assert.equal(result.items[0]?.waitingReason, 'clarification-needed');
+    assert.equal(item.result!.outcome, 'plan-ready');
+    assert.equal(f.requests, 0);
+  });
+
+  it('should use the shared workflow status for implementation and delivery without mutating old records', async () => {
+    const f = fixture();
+    const item = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: { outcome: 'plan-ready' },
+      work: {
+        assessmentDigest: 'a'.repeat(64),
+        implementation: { runId: 'original', inputEventId: 'original-input' },
+      },
+    } as OpenClawDispatchRecord;
+    f.records.push(item);
+    for (const outcome of [undefined, 'done'] as const) {
+      if (outcome) item.work!.result = { outcome, summary: 'Done.', fullResult: 'Checked.' };
+      const before = structuredClone(item);
+      const result = await f.service.inspect(f.manifest, '/workspace', selector);
+      assert.equal(result.items[0]?.workflow?.phase, outcome ? 'delivery' : 'running');
+      assert.equal(result.items[0]?.workflow?.phase, workflowStatus(item));
+      assert.deepEqual(item, before);
+    }
+    assert.equal(f.requests, 0);
+  });
+
+  it('should expose capability warnings without failing supported refreshes and waits', async () => {
+    const f = fixture();
+    f.manifest.github!.notifications!.issueAssignment!.feedback = true;
+    f.manifest.github!.notifications!.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
+    f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
+    const observed = await f.service.inspect(f.manifest, '/workspace');
+    assert.equal(observed.status, 'ready');
+    assert.equal(observed.code, 'github-notification-status-ready');
+    assert.equal(observed.diagnosticCode, undefined);
+    assert.equal(observed.warnings?.length, 1);
+    assert.equal(observed.baseline.status, 'ready');
+    assert.equal(observed.items.length, 1);
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
+        .status,
+      'queued',
+    );
+    assert.equal(f.requests, 1);
+    assert.equal(
+      (
+        await f.service.wait(f.manifest, '/workspace', {
+          target: 'baseline-ready',
+          timeoutMs: 10,
+          refresh: false,
+        })
+      ).status,
+      'completed',
+    );
+    f.records.push({
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: {
+        version: 1,
+        outcome: 'plan-ready',
+        summary: 'summary',
+        assessment: 'assessment',
+        plan: 'plan',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+      },
+    });
+    assert.equal(
+      (
+        await f.service.wait(f.manifest, '/workspace', {
+          selector,
+          target: 'plan-ready',
+          timeoutMs: 10,
+          refresh: false,
+        })
+      ).status,
+      'completed',
+    );
+    f.state!.blocker = {
+      code: 'intake-provider-unavailable',
+      since: baseline,
+      retryAfter: baseline + 1000,
+    };
+    const blocked = await f.service.inspect(f.manifest, '/workspace');
+    assert.equal(blocked.diagnosticCode, 'intake-provider-unavailable');
+    assert.equal(blocked.warnings?.length, 1);
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
+        .status,
+      'queued',
+    );
+  });
+
+  it('should print capability warnings after status output and preserve structured degraded results', async () => {
+    const f = fixture();
+    f.manifest.github!.notifications!.reviewRequest = {
+      enabled: true,
+      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+    };
+    f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
+    const loaded = {
+      status: 'loaded' as const,
+      manifest: f.manifest,
+      scope: { workspaceDir: '/workspace' },
+      path: '/workspace/agent.yaml',
+      digest: 'digest',
+      diagnostics: [],
+      validationChecks: [],
+    };
+    for (const json of [false, true]) {
+      const events: { stream: string; text: string }[] = [];
+      const exits: number[] = [];
+      await status({
+        json,
+        styles: createCliStyles({ NO_COLOR: '1' }),
+        workspaceDir: '/workspace',
+        nativeService: f.service,
+        manifestService: {
+          loadForAgentId: async () => loaded,
+          loadForCommandDirectory: async () => loaded,
+        },
+        output: {
+          writeStdout: (text) => events.push({ stream: 'stdout', text }),
+          writeStderr: (text) => events.push({ stream: 'stderr', text }),
+        },
+        setExitCode: (code) => exits.push(code),
+      });
+      assert.deepEqual(
+        events.map(({ stream }) => stream),
+        ['stdout', 'stderr'],
+      );
+      assert.match(events[1]!.text, /review requests/);
+      assert.deepEqual(exits, []);
+      if (json) {
+        const result = JSON.parse(events[0]!.text);
+        assert.equal(result.status, 'ready');
+        assert.equal(result.warnings[0].fieldPath, '/github/notifications/review-request');
+        assert.equal(result.diagnosticCode, undefined);
+      } else {
+        assert.equal((events[1]!.text.match(/messages/g) ?? []).length, 1);
+      }
+    }
+  });
+
+  it('should distinguish creation uncertainty preparation assessment and retained plan completion', async () => {
+    const f = fixture();
+    const r = record();
+    r.issueKey = issueKey(f.state!.records[0]!);
+    f.records.push(r);
+    r.phase = 'creating';
+    assert.equal(
+      (await f.service.inspect(f.manifest, '/workspace')).items[0]?.workflow?.phase,
+      'uncertain',
+    );
+    r.phase = 'created';
+    r.worktree = '/worktree';
+    r.threadId = 'issue-chat';
+    r.sessionCreation = {
+      attempted: true,
+      sourceSessionId: 'coordinator',
+      sourceRunId: 'run',
+      sourceToolCallId: 'tool',
+      sessionId: 'session',
+      verified: true,
+    };
+    let result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'prepared',
+      timeoutMs: 1,
+      refresh: false,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(result.observation.items[0]?.workflow?.conversation, 'issue-chat');
+    delete r.sessionCreation;
+    r.native = {
+      sessionKey: 'issue-chat',
+      sessionId: 'session',
+      runId: 'run',
+      sourceSessionId: 'coordinator',
+      toolCallId: 'tool',
+    };
+    r.effective = { status: 'verified' };
+    r.setupComplete = true;
+    result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'prepared',
+      timeoutMs: 1,
+      refresh: false,
+    });
+    assert.equal(
+      result.status,
+      'completed',
+      'retained verified native bindings must remain observable',
+    );
+
+    r.phase = 'assessing';
+    result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 1,
+      refresh: false,
+    });
+    assert.equal(result.status, 'timed-out');
+    r.phase = 'complete';
+    r.result = {
+      version: 1,
+      outcome: 'plan-ready',
+      summary: 'summary',
+      assessment: 'assessment',
+      plan: 'plan',
+      evidence: [],
+      progress: { completed: [], remaining: [] },
+    };
+    result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 1,
+      refresh: false,
+    });
+    assert.equal(result.status, 'completed');
+  });
+
+  it('should report blocked and unreadable state as failure rather than an empty successful scan', async () => {
+    const f = fixture();
+    f.records.push({
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'blocked',
+      blocker: 'dispatch-native-session-diverged',
+    });
+    const blocked = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'prepared',
+      timeoutMs: 1,
+      refresh: false,
+    });
+    assert.equal(blocked.status, 'failed');
+    assert.equal(blocked.code, 'dispatch-native-session-diverged');
+    f.service.dependencies.readDispatch = async () => {
+      throw Error('unreadable private data');
+    };
+    assert.equal(
+      (await f.service.inspect(f.manifest, '/workspace')).code,
+      'github-notification-native-state-unavailable',
+    );
+  });
+
+  it('should perform selected intake directly and keep every wait refresh scoped without queueing automation', async () => {
+    const f = fixture();
+    let scans = 0;
+    f.service.dependencies.scanSelected = async (_manifest, _workspace, selected) => {
+      assert.deepEqual(selected, selector);
+      scans++;
+      return { status: 'ready', admitted: 0 };
+    };
+    const result = await f.service.refresh(f.manifest, '/workspace', {
+      selector,
+      signal: new AbortController().signal,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(result.runId, undefined);
+    await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 2500,
+      refresh: true,
+    });
+    assert.ok(scans > 1);
+    assert.equal(f.requests, 0);
+    await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal });
+    assert.equal(f.requests, 1, 'a later unscoped refresh keeps the ordinary workflow');
+  });
+
+  it('should queue the owned workflow and distinguish its receipt from completed scanning', async () => {
+    const f = scheduledFixture();
+    const result = await f.service.refresh(f.manifest, '/workspace', {
+      signal: new AbortController().signal,
+    });
+    assert.equal(result.status, 'queued');
+    assert.equal(result.runId, 'native-run');
+    assert.equal(f.requests, 1);
+    assert.equal('lastSuccessfulPollAt' in result, false);
+    const waited = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'prepared',
+      timeoutMs: 2,
+      refresh: true,
+    });
+    assert.equal(waited.status, 'timed-out');
+    assert.equal(f.requests, 2, 'wait must request only one cycle');
+  });
+
+  it('should advance refresh cycles only after the owning native run completes', async () => {
+    const f = scheduledFixture();
+    let sleeps = 0;
+    let reads = 0;
+    f.service.dependencies.now = () => baseline;
+    f.service.dependencies.inspectRun = async () => (++reads === 1 ? 'pending' : 'completed');
+    f.service.dependencies.sleep = async () => {
+      if (++sleeps === 3)
+        f.records.push({
+          ...record(),
+          issueKey: issueKey(f.state!.records[0]!),
+          phase: 'created',
+          worktree: '/worktree',
+          threadId: 'issue-chat',
+          sessionCreation: {
+            attempted: true,
+            verified: true,
+            sessionId: 'session',
+            sourceSessionId: 'coordinator',
+            sourceRunId: 'run',
+            sourceToolCallId: 'tool',
+          },
+        });
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'prepared',
+      timeoutMs: 1000,
+      refresh: true,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(f.requests, 2);
+    assert.equal(reads, 2);
+  });
+
+  it('should retry scheduler contention then observe the exact queued run through completion', async () => {
+    const f = scheduledFixture();
+    let requests = 0;
+    let inspections = 0;
+    f.service.dependencies.requestRun = async () =>
+      ++requests === 1
+        ? { status: 'skipped', reason: 'already-running' }
+        : { status: 'queued', runId: 'next-native-run' };
+    f.service.dependencies.inspectRun = async (_manifest, _workspace, runId) => {
+      assert.equal(runId, 'next-native-run');
+      if (++inspections === 1) return 'pending';
+      f.records.push({
+        ...record(),
+        issueKey: issueKey(f.state!.records[0]!),
+        phase: 'complete',
+        result: {
+          version: 1,
+          outcome: 'plan-ready',
+          summary: 'summary',
+          assessment: 'assessment',
+          plan: 'plan',
+          evidence: [],
+          progress: { completed: [], remaining: [] },
+        },
+      });
+      return 'completed';
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 10_000,
+      refresh: true,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(result.observation.items[0]?.workflow?.phase, 'plan-ready');
+    assert.equal(requests, 2);
+    assert.equal(inspections, 2);
+  });
+
+  it('should bound persistent scheduler contention without inventing a run to inspect', async () => {
+    const f = scheduledFixture();
+    let requests = 0;
+    f.service.dependencies.requestRun = async () => {
+      requests++;
+      return { status: 'skipped', reason: 'already-running' };
+    };
+    f.service.dependencies.inspectRun = async () => {
+      assert.fail('no queued native run exists');
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 3000,
+      refresh: true,
+    });
+    assert.equal(result.status, 'timed-out');
+    assert.equal(result.code, 'github-notification-wait-timeout');
+    assert.equal(requests, 3);
+  });
+
+  it('should stop refreshing on a skip other than scheduler contention', async () => {
+    const f = scheduledFixture();
+    let requests = 0;
+    f.service.dependencies.requestRun = async () => {
+      requests++;
+      return { status: 'skipped', reason: 'disabled' };
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 3000,
+      refresh: true,
+    });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.code, 'github-notification-refresh-disabled');
+    assert.equal(requests, 1);
+  });
+
+  it('should never fall back to legacy state when the native backend is absent', async () => {
+    const f = fixture();
+    let exit = 0;
+    const errors: string[] = [];
+    const loaded = {
+      status: 'loaded' as const,
+      manifest: f.manifest,
+      scope: { workspaceDir: '/workspace' },
+      path: '/workspace/agent.yaml',
+      digest: 'digest',
+      diagnostics: [],
+      validationChecks: [],
+    };
+    await status({
+      json: true,
+      workspaceDir: '/workspace',
+      manifestService: {
+        loadForAgentId: async () => loaded,
+        loadForCommandDirectory: async () => loaded,
+      },
+
+      output: {
+        writeStdout() {
+          throw Error('no successful json result');
+        },
+        writeStderr: (text) => errors.push(text),
+      },
+      setExitCode: (code) => {
+        exit = code;
+      },
+    });
+    assert.equal(exit, 1);
+    assert.match(errors.join(''), /github-notification-status-failed/u);
+  });
+
+  it('should apply live policy revisions while rejecting disabled inactive or unsupported runtime refreshes', async () => {
+    for (const change of ['disabled', 'inactive', 'stale', 'runtime', 'mode']) {
+      const f = fixture();
+      const policy = f.manifest.github!.notifications!;
+      assert.ok(policy.schemaVersion === 2);
+      if (change === 'disabled') policy.issueAssignment!.enabled = false;
+      if (change === 'inactive') f.state = undefined;
+      if (change === 'stale') f.state!.policyDigest = 'old';
+      if (change === 'runtime') policy.runtimes = ['codex'];
+      if (change === 'mode') policy.issueAssignment!.mode = 'work';
+      const result = await f.service.refresh(f.manifest, '/workspace', {
+        signal: new AbortController().signal,
+        selector,
+      });
+      assert.equal(
+        result.status,
+        ['stale', 'mode'].includes(change) ? 'completed' : 'failed',
+        change,
+      );
+      assert.equal(f.requests, 0, change);
+    }
+  });
+
+  it('should reject unsupported selectors and rejection waits immediately', async () => {
+    const f = fixture();
+    assert.equal(
+      (await f.service.inspect(f.manifest, '/workspace', { ...selector, itemType: 'pull-request' }))
+        .code,
+      'github-notification-selector-unsupported',
+    );
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'assignment-rejected',
+      timeoutMs: 100,
+      refresh: true,
+    });
+    assert.equal(result.code, 'github-notification-wait-target-unsupported');
+    assert.equal(f.requests, 0);
+  });
+
+  it('should reject retirement waits without polling or requesting a native run', async () => {
+    const f = fixture();
+    let sleeps = 0;
+    const sleep = f.service.dependencies.sleep!;
+    f.service.dependencies.sleep = async (ms, signal) => {
+      sleeps++;
+      await sleep(ms, signal);
+    };
+    const result = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'retired',
+      timeoutMs: 100,
+      refresh: true,
+    });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.code, 'github-notification-wait-target-unsupported');
+    assert.equal(f.requests, 0);
+    assert.equal(sleeps, 0);
+  });
+
+  it('should cancel before a run and retain uncertainty when a queue request is interrupted', async () => {
+    const f = fixture();
+    const abort = new AbortController();
+    abort.abort();
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal: abort.signal })).code,
+      'github-notification-refresh-cancelled',
+    );
+    const active = new AbortController();
+    f.service.dependencies.requestRun = async () => {
+      active.abort();
+      throw Error('unknown admission');
+    };
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal: active.signal })).code,
+      'github-notification-refresh-outcome-uncertain',
+    );
+    assert.equal(f.requests, 0);
+  });
+
+  it('should route all public cli functions to native state while preserving json and successful queue exit', async () => {
+    const f = fixture();
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    let exit = 0;
+    const loaded = {
+      status: 'loaded' as const,
+      manifest: f.manifest,
+      scope: { workspaceDir: '/workspace' },
+      path: '/workspace/agent.yaml',
+      digest: 'digest',
+      diagnostics: [],
+      validationChecks: [],
+    };
+    const options = {
+      json: true,
+      styles: createCliStyles({ NO_COLOR: '1' }),
+      workspaceDir: '/workspace',
+      nativeService: f.service,
+      manifestService: {
+        loadForAgentId: async () => loaded,
+        loadForCommandDirectory: async () => loaded,
+      },
+
+      output: {
+        writeStdout: (text: string) => stdout.push(text),
+        writeStderr: (text: string) => stderr.push(text),
+      },
+      setExitCode: (code: number) => {
+        exit = code;
+      },
+    };
+    await status(options);
+    assert.equal(JSON.parse(stdout.pop()!).status, 'ready');
+    await refresh(options);
+    assert.equal(JSON.parse(stdout.pop()!).status, 'queued');
+    assert.equal(exit, 0);
+    await wait({ ...options, refresh: false, target: 'baseline-ready' });
+    assert.equal(JSON.parse(stdout.pop()!).status, 'completed');
+    assert.deepEqual(stderr, []);
+    await refresh({ ...options, json: false });
+    const human = stdout.pop()!;
+    assert.match(human, /status\s+queued/u);
+    assert.match(human, /run\s+native-run/u);
+    assert.equal(human.includes(String.fromCharCode(27)), false);
+    await refresh({ ...options, repository: 'owner/repo', itemKind: 'issue', itemNumber: '3' });
+    assert.equal(JSON.parse(stdout.pop()!).status, 'completed');
+    assert.equal(exit, 0);
+    await refresh({
+      ...options,
+      repository: 'owner/repo',
+      itemKind: 'pull-request',
+      itemNumber: '3',
+    });
+    assert.equal(
+      JSON.parse(stdout.pop()!).code,
+      'github-notification-refresh-selector-unsupported',
+    );
+    assert.equal(exit, 1);
+  });
+});

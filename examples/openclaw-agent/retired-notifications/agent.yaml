@@ -1,0 +1,6 @@
+schema-version: 1
+agent:
+  id: retired-notifications
+github:
+  notifications:
+    approved-actors: []

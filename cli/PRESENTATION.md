@@ -15,6 +15,28 @@ command owns human guidance that also appears in JSON, author a separate human
 fragment rather than changing the serialized value. OpenClaw-rendered help
 internals and delegated output remain host-owned.
 
+## Doctor and Install Lifecycle Rows
+
+Keep the first column a stable lowercase kebab-case category, never a display
+name or masked identifier: `session-dispatch-credential`, `github-channel-intake`,
+and one `automation` row per job. Keep status in its own column; do not repeat a
+healthy status in the details. Doctor and Install, including completed outcomes
+on partial failure, use the same human projection.
+
+Put unquoted literal names and labeled identifiers in the detail column:
+`name: ISSUE ASSIGNMENTS; mode: persistent; thread: ***9c31; outcome: reused`.
+Preserve configured thread names exactly. Without one, use the automation's
+machine id as uppercase words, such as `BACKUP DRIVE NIGHTLY`, not `Automation`.
+Do not display a masked automation declaration id that merely repeats its name.
+Show a masked native thread only when one exists; command jobs have no thread.
+The session dispatch credential uses `name: Agent System` and a masked `device`.
+Mask identifiers to `***` plus their last four characters, including repeated
+references in recovery commands. JSON retains full identifiers and raw results.
+
+Author new human fragments in lowercase, preserving literal names and external
+errors. Do not lowercase whole result messages or identifiers to enforce style.
+Existing shared lifecycle prose remains literal data unless explicitly projected.
+
 ## Palette
 
 Use `createCliStyles` in `cli/output.ts`; callers must not define ANSI escapes or
@@ -71,6 +93,32 @@ source order within each severity. Display internal `notice` as `info` without
 renaming machine contracts or reordering JSON diagnostics. An empty collection produces no section. An early
 failure without a result table still displays its messages. Do not suppress or
 change severity to make output look healthy.
+
+### Condition Identity and Grouping
+
+A diagnostic block represents one collected condition, not one observation or
+line of advice. Keep its explanation, safe technical detail, and remediation in
+one `CliNotice`. Carry component, code, and relevant field, step, resource, and
+occurrence context until final presentation; do not recover identity from prose.
+
+Only producers may establish correlation with `condition`: its semantic key,
+component, and every applicable scope must match exactly. A shared code or message
+is not identity. Missing scope is not a wildcard. Use separate keys or occurrence
+identifiers for different causes or attempts; without trustworthy correlation,
+leave notices unkeyed and retain them separately.
+
+The outer command collector merges proven repeated observations into presentation
+copies. Retain complementary explanations and union safe details and remediation;
+use the highest observed severity without absorbing unrelated notices. Preserve
+first-observation order, then severity-sort only human rendering. JSON-mode stderr
+keeps first-observation order. Never mutate service results to group diagnostics.
+
+Keep primary table rows and JSON results intact. A Doctor finding in its table and
+a corresponding manifest notice on stderr are intentional cross-surface evidence.
+JSON stdout remains unchanged; plain stderr may group repeated observations but
+must preserve codes, values, safe evidence, and recovery. Do not introduce
+successful-operation notices into previously silent JSON paths. Provider details
+must remain allowlisted and system causes redacted before entering the collector.
 
 Interactive consent previews and prompts stay before mutation; they are not
 diagnostic sections. Child-tool stdout/stderr remain pass-through streams, and

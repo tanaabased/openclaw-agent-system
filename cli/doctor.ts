@@ -2,6 +2,7 @@ import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
 import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
+import lifecycleDetails from './lifecycle-details.ts';
 import { type CliOutput, type CliStyles, writeCliJson, writeCliLifecycleTable } from './output.ts';
 import { lifecycleTableLines, orderDoctorFindings } from '../core/lifecycle-presentation.ts';
 
@@ -31,11 +32,9 @@ async function doctorAgentSystem(options: DoctorAgentSystemOptions): Promise<voi
     writeCliLifecycleTable(
       options.output,
       lifecycleTableLines(
-        orderDoctorFindings(result.findings).map((finding) => ({
-          component: finding.component,
-          message: `${finding.message}${finding.remediation ? ` ${finding.remediation}` : ''}`,
-          status: finding.status,
-        })),
+        orderDoctorFindings(result.findings).map((finding) =>
+          lifecycleDetails(finding, manifest.manifest.automations ?? []),
+        ),
       ),
       result.workspaceDir,
       options.styles,

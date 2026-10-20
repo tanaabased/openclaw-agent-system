@@ -68,23 +68,6 @@
     "runtimeExtensions": [
       "./dist/index.js"
     ],
-    "channel": {
-      "id": "agent-system-github",
-      "label": "Agent System GitHub Notifications",
-      "selectionLabel": "Agent System GitHub Notifications",
-      "detailLabel": "GitHub Notifications",
-      "docsPath": "https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md",
-      "docsLabel": "GitHub notifications",
-      "blurb": "Admits authorized GitHub assignments and relays approved issue and linked delivery pull-request comments.",
-      "systemImage": "bell.badge",
-      "markdownCapable": true,
-      "exposure": {
-        "configured": true,
-        "docs": true,
-        "setup": false
-      },
-      "forceAccountBinding": true
-    },
     "compat": {
       "pluginApi": ">=2026.9.9",
       "minGatewayVersion": "2026.9.9"
@@ -95,6 +78,22 @@
     },
     "agentSystem": {
       "codexPlugin": "@openclaw/codex@2026.9.9"
+    },
+    "channel": {
+      "id": "agent-system-github",
+      "label": "Agent System GitHub Notifications",
+      "selectionLabel": "Agent System GitHub Notifications",
+      "detailLabel": "GitHub Notifications",
+      "docsPath": "https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md",
+      "docsLabel": "GitHub notifications",
+      "blurb": "Shows readiness and health of Agent System native notification automations.",
+      "systemImage": "bell.badge",
+      "markdownCapable": true,
+      "exposure": {
+        "configured": true,
+        "docs": true,
+        "setup": false
+      }
     }
   },
   "scripts": {
@@ -112,16 +111,24 @@
     "lint": "bun run lint:eslint && bun run format:check && bun run lint:shellcheck",
     "plugin:check": "bun scripts/check-plugin-task.ts",
     "sync": "node scripts/sync-task.mjs",
-    "test:codex-plugin": "node --import tsx scripts/codex-plugin-test-task.ts",
-    "test:release": "node --import tsx scripts/release-test-task.ts",
     "test": "bun run test:unit",
-    "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/unit-timing-reporter.cjs \"test/**/*.spec.ts\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json"
+    "test:all": "bun run build && node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.stress.spec.ts\" \"test/**/*.spec.ts\"",
+    "test:codex-plugin": "node --import tsx scripts/codex-plugin-test-task.ts",
+    "test:component": "bun run build && node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.os.component.spec.ts\" \"test/**/*.component.spec.ts\"",
+    "test:os": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.os.component.spec.ts\"",
+    "test:release": "node --import tsx scripts/release-test-task.ts",
+    "test:static": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.static.spec.ts\"",
+    "test:stress": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.stress.spec.ts\"",
+    "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.component.spec.ts\" --exclude \"test/**/*.stress.spec.ts\" --exclude \"test/**/*.static.spec.ts\" \"test/**/*.spec.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json",
+    "validate": "bun run lint && bun run typecheck && bun run test:all && bun run plugin:check"
   },
   "codexTools": {
     "managedPaths": [
       ".codex-plugin",
+      "agent/assessment-result.ts",
       "assets",
+      "channels/github/PRESENTATION.md",
       "dist/codex",
       "hooks",
       "package.json",
@@ -134,6 +141,8 @@
   "dependencies": {
     "@1password/sdk": "0.5.0",
     "@clack/prompts": "1.6.0",
+    "@openclaw/gateway-client": "2026.8.1",
+    "@openclaw/gateway-protocol": "2026.8.1",
     "ansis": "^4.3.1",
     "camelcase-keys": "6.2.2",
     "fast-string-width": "3.0.2",

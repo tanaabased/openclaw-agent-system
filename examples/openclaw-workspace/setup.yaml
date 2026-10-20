@@ -1,0 +1,8 @@
+steps:
+  - id: agent-ready
+    runtimes: [openclaw]
+    check: test -f agent-ready
+    apply: |
+      test -f host-ready
+      printf 'agent\n' >> setup-runs
+      touch agent-ready

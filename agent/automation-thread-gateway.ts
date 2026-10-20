@@ -63,6 +63,7 @@ export default function automationThreadGateway(
     return {
       id: key,
       ...(typeof row.displayName === 'string' ? { name: row.displayName } : {}),
+      ...(typeof row.category === 'string' ? { group: row.category } : {}),
       sessionId: row.sessionId,
       label: row.label,
       autoLabel: row.autoLabel,
@@ -81,6 +82,15 @@ export default function automationThreadGateway(
           cwd: context.workspaceDir,
         });
       return key;
+    },
+    async setGroup(id, group) {
+      const current = await lookup(id);
+      if (!current) throw new AutomationError('automation-thread-recovery-required');
+      await request('sessions.patch', {
+        key: id,
+        expectedSessionId: current.sessionId,
+        category: group,
+      });
     },
     async rename(id, name) {
       const current = await lookup(id);

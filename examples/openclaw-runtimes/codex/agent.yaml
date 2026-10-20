@@ -1,0 +1,18 @@
+schema-version: 1
+agent:
+  id: runtime-codex
+  name: Runtime Codex
+  email: runtime-codex@example.invalid
+  runtime: codex
+models:
+  default:
+    model: openai/gpt-5.4-nano
+    effort: medium
+environment:
+  path-prepend: tools/bin
+git: {}
+setup-agent:
+  check: |
+    printf 'checked\n' >> "$TMPDIR/agent-system-approval-check"
+    test -f "$TMPDIR/agent-system-approval-apply"
+  apply: printf 'applied\n' >> "$TMPDIR/agent-system-approval-apply"

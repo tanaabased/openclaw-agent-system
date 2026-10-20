@@ -1,4 +1,5 @@
-import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
+import { validateGitHubNotificationPublicationMarker } from '../publication/publication-contract.ts';
 import {
   GitHubWorkEventClientError,
   githubRepositoryEndpoint,
@@ -93,6 +94,41 @@ export default class GitHubIssueCommentClient
     return { comments, truncated: hasNextPage };
   }
 
+  async listIssueCommentPage(
+    owner: string,
+    name: string,
+    number: number,
+    page: number,
+    since: string,
+  ): Promise<GitHubIssueCommentPage> {
+    const pageSize = githubCommentPageSize(this.maximumCommentCharacters);
+    const response = await this.#api.request(
+      [
+        '--method',
+        'GET',
+        `${githubWorkItemEndpoint(owner, name, number)}/comments`,
+        '-F',
+        `per_page=${pageSize}`,
+        '-F',
+        `page=${page}`,
+        '-f',
+        `since=${since}`,
+        '--jq',
+        `[.[]|{databaseId:.id,nodeId:.node_id,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${this.maximumCommentCharacters + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}]`,
+      ],
+      'issue comments',
+    );
+    if (!Array.isArray(response.value)) {
+      throw new Error('GitHub returned invalid issue comments.');
+    }
+    return {
+      comments: response.value.map((comment) =>
+        githubResponseIssueComment(comment, this.maximumCommentCharacters),
+      ),
+      truncated: response.hasNextPage,
+    };
+  }
+
   /** Re-read one exact canonical top-level comment before dispatch or publication. */
   async getIssueComment(
     owner: string,
@@ -136,13 +172,7 @@ export default class GitHubIssueCommentClient
     number: number,
     marker: string,
   ): Promise<GitHubIssueCommentReconciliationReceipt | undefined> {
-    if (
-      !/^<!-- agent-system-github-publication:(?:assignment-response|github-reply|initial-acknowledgment|pull-request-handoff):[a-f0-9]{32} -->$/u.test(
-        marker,
-      )
-    ) {
-      throw new Error('GitHub notification publication markers are invalid.');
-    }
+    validateGitHubNotificationPublicationMarker(marker);
     let hasNextPage = false;
     const pageSize = maximumPageSize;
     for (let page = 1; page <= maximumCommentPages; page += 1) {
