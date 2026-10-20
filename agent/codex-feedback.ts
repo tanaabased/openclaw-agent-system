@@ -6,6 +6,7 @@ import {
   feedbackMode,
   feedbackDecisionSchema,
   feedbackWorkInstructions,
+  feedbackWorkContext,
 } from './feedback-work.ts';
 import { implementationResultSchema } from './implementation-result.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
@@ -507,10 +508,7 @@ export default async function runCodexFeedback(
               discussion: await provider.client.getItemContext(owner, name, event.number),
               assessment: record.result,
               previousImplementation: record.continuation?.result,
-              previousFeedbackWork: feedback.events
-                .filter((item) => item.id !== event.id && item.work?.result)
-                .slice(-1)
-                .map((item) => ({ eventId: item.id, result: item.work!.result })),
+              previousFeedbackWork: feedbackWorkContext(record, event.id),
               work: event.work,
               worktree: record.worktree,
               resultSchema: implementationResultSchema,
@@ -571,6 +569,8 @@ export default async function runCodexFeedback(
               decisionSchema: feedbackDecisionSchema,
               work: event.work,
               assessment: record.result,
+              previousImplementation: record.continuation?.result,
+              previousFeedbackWork: feedbackWorkContext(record, event.id),
               discussion: await provider.client.getItemContext(owner, name, event.number),
               workInstructions: feedbackWorkInstructions,
               presentation: sourcePresentation,

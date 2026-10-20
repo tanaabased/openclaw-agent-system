@@ -34,6 +34,9 @@ Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
 uncertain pushes are reconciled, and the original announcement is reused. A
 clarification request preserves implementation authority for the next admitted answer.
+Direct and GitHub follow-ups receive retained plan revisions, private responses,
+and partial work before interpreting the new message; that history supplies context,
+not new authority.
 No separate repair policy or author list is required.
 
 Discovery retains bounded observations independently of reply eligibility.

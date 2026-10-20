@@ -3271,6 +3271,37 @@ describe('agent/openclaw issue dispatch', () => {
     return { ...setup, before };
   }
 
+  it('should include a github plan revision in direct planning context without entering work', async () => {
+    const { id, who } = await operatorFollowup();
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.feedback = {
+        baseline: {},
+        events: [
+          {
+            id: 'a'.repeat(64),
+            sourceId: 'plan-comment',
+            nodeId: 'I_issue',
+            number: 3,
+            itemType: 'issue',
+            source: '{}',
+            revision: 'b'.repeat(64),
+            createdAt: 1,
+            policyDigest: 'c'.repeat(64),
+            phase: 'published',
+            result: { privateText: 'Keep the smaller approach.' },
+          },
+        ],
+      };
+      await save();
+    });
+    const response = await context(id, who);
+    assert.equal(response.status, 'verified');
+    assert.ok('feedbackWork' in response && response.feedbackWork);
+    assert.equal(response.feedbackWork[0]!.privateText, 'Keep the smaller approach.');
+    assert.equal((await record()).progression, undefined);
+  });
+
   it('should refresh an original assignment and hand off in the same native owner after upgrade', async () => {
     const { id, who, before } = await originalAssignment();
     const refreshed = await context(id, who);
@@ -3843,6 +3874,19 @@ describe('agent/openclaw issue dispatch', () => {
         baseline: {},
         events: [
           {
+            id: 'd'.repeat(64),
+            sourceId: 'plan-comment',
+            nodeId: 'I_issue',
+            number: 3,
+            itemType: 'issue',
+            source: '{}',
+            revision: 'e'.repeat(64),
+            createdAt: 0,
+            policyDigest: 'c'.repeat(64),
+            phase: 'published',
+            result: { privateText: 'Keep the smaller approach.' },
+          },
+          {
             id: 'a'.repeat(64),
             sourceId: 'answer-comment',
             nodeId: 'I_issue',
@@ -3881,8 +3925,9 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(response.status, 'verified');
     assert.ok('feedbackWork' in response);
-    assert.equal(response.feedbackWork?.[0]?.decision?.plan, 'Implement the agreed approach.');
-    assert.equal(response.feedbackWork?.[0]?.result?.outcome, 'clarification-needed');
+    assert.equal(response.feedbackWork?.[0]?.privateText, 'Keep the smaller approach.');
+    assert.equal(response.feedbackWork?.[1]?.decision?.plan, 'Implement the agreed approach.');
+    assert.equal(response.feedbackWork?.[1]?.result?.outcome, 'clarification-needed');
     assert.deepEqual((await record()).result, question);
     assert.equal((await record()).progression?.stage, 'implementation');
     assert.equal(creates().length, 1);

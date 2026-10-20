@@ -48,6 +48,15 @@ make status complete and the next scan idle without a separate completion transi
 Interrupt before the announcement or card and confirm recovery finishes those steps
 without repeating implementation or creating another PR.
 
+For message parity, compare a question, plan revision, clarification answer,
+implementation request, and repair sent directly and through approved issue/linked-PR
+comments in the same task state. Verify that both receive the retained plans and
+partial work before interpreting the message. Questions in Plan must not start
+implementation; an authorized repair must retain the conversation, checkout, and PR.
+Check the full private answer in the native chat and the public reply at its exact
+GitHub source. Controlled component pairs cover state and context; headless checks
+and OpenClaw-hosted Codex do not establish standalone desktop display or interpretation.
+
 For removal-authority verification in the desktop, remove an admitted assignment
 through an actor outside the live `issue-assignment.allowed` list. Confirm inspection
 reports missing assignment and unresolved authority, preserves the exact chat,
