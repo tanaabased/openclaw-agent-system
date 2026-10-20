@@ -10,8 +10,8 @@ credential, isolated configuration, and policy. Enable it through the workspace'
 
 > [!IMPORTANT]
 > GitHub authorization and server-side protections are authoritative. Agent
-> System adds only the narrow release control documented under
-> [`github.policy`](#githubpolicy).
+> System adds the narrow release control documented under
+> [`github.policy`](#githubpolicy) and fixed [self-unassignment protection](#assignment-protection).
 
 - [Configuration Reference](#configuration-reference)
   - [`github.config`](#githubconfig)
@@ -21,6 +21,7 @@ credential, isolated configuration, and policy. Enable it through the workspace'
   - [`github.ssh-signing-keys`](#githubssh-signing-keys)
   - [`github.token`](#githubtoken)
   - [`github.username`](#githubusername)
+- [Assignment Protection](#assignment-protection)
 - [Native Tool](#native-tool)
   - [`agent_system_github`](#agent_system_github)
 - [CLI](#cli)
@@ -128,7 +129,8 @@ through `gh release list` (including its `ls` alias), `gh release view`, and
 `gh release download` remain available. REST `GET` and `HEAD` requests and `POST`
 requests to `.../releases/generate-notes` also remain available.
 
-All other valid `gh` operations pass to GitHub, including repository and issue
+Apart from fixed [assignment protection](#assignment-protection), other valid `gh`
+operations pass to GitHub, including repository and issue
 deletion, repository settings, branch and tag mutation, and pull-request merges.
 Control them through the agent's token, repository role, organization policy,
 and rulesets. Omit the GitHub `Administration` permission when an agent must not
@@ -201,8 +203,31 @@ not hostile-process secret isolation.
 | ---------------------------------- | ------------ | ------- |
 | string or `from-environment` value | for SSH keys | none    |
 
-When configured, Agent System verifies `gh api user --jq .login` in the same
-child environment before each requested operation and rejects a different login.
+When configured, Agent System verifies the authenticated login through `gh api user`
+in the same child environment before each requested operation and rejects a different login.
+
+## Assignment Protection
+
+Managed execution rejects removal of the authenticated account's own assignment.
+This fixed guard has no manifest override; an operator or another authorized user
+must make the reassignment separately. Removing other users, adding assignees,
+and replacing an unrelated issue's assignments remain subject to GitHub permissions.
+
+The guard covers `gh issue edit` and `gh pr edit --remove-assignee`, REST assignee
+removal and issue assignee-list replacement (including legacy `assignee`), and
+GraphQL `removeAssigneesFromAssignable`, `updateIssue`, and `updatePullRequest`.
+It inspects selected GraphQL operations and snapshots JSON/file-backed API inputs.
+Unreadable or ambiguous protected inputs, failed identity checks, and incomplete
+current-assignment reads stop the request before mutation. Provide inspectable
+input or correct the failed check before retrying. Configurable policy and native
+approval still run before credentials; authenticated assignment reads run afterward.
+
+The native tool, managed CLI, contextual shim in agent context, and strict launcher
+share this guard, including OpenClaw-hosted Codex's managed calls. It is not an atomic
+GitHub assignment lock or a universal restriction: concurrent external changes,
+standalone Codex native host commands, absolute host binaries, HTTP/SDKs, unrelated
+integrations, and the shim's non-agent host fallback are outside it. See the
+[shared trust boundary](../../CLI.md#trust-boundary).
 
 ## Native Tool
 
@@ -245,7 +270,7 @@ Run ordinary GitHub CLI commands through the agent’s account and operation pol
 
 | Option or argument     | Required | Default             | Description                                                |
 | ---------------------- | -------- | ------------------- | ---------------------------------------------------------- |
-| `-- <gh-arguments...>` | yes      | none                | Pass ordinary GitHub CLI arguments unchanged.              |
+| `-- <gh-arguments...>` | yes      | none                | Supply ordinary GitHub CLI arguments.                      |
 | `--agent <id>`         | no       | workspace discovery | Use the exact configured workspace for an installed agent. |
 
 #### Usage
@@ -262,7 +287,8 @@ openclaw agent-system tool gh -- repo view owner/repo --json name --jq .name
 openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 ```
 
-Arguments after `--` pass to `gh` unchanged. The runtime blocks token display,
+Arguments after `--` select the GitHub request; inspected external API payloads
+are forwarded from their immutable snapshot. The runtime blocks token display,
 authentication or generated-config mutation, aliases, extensions, and browser
 or editor launch paths. These are non-configurable invariants, not operation policy.
 

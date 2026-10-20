@@ -247,6 +247,7 @@ export default async function executeAgentSystemCliTool<
       stdout: redact(result.stdout, secretValues),
     });
 
+    let preparedRequest: { argv: string[]; stdin?: string } | undefined;
     try {
       const preflight = options.definition.runner.preflight?.(resolvedConfiguration);
       if (preflight) {
@@ -259,6 +260,23 @@ export default async function executeAgentSystemCliTool<
         }
         preflight.validate(result);
       }
+      preparedRequest = await options.definition.runner.prepareRequest?.(
+        options.input,
+        resolvedConfiguration,
+        {
+          cwd: childWorkingDirectory,
+          async run(argv, stdin) {
+            const result = sanitize(await runRequest(argv, stdin));
+            if (result.timedOut) {
+              throw new AgentSystemToolError(
+                'execution_timed_out',
+                `The ${options.definition.id} tool preflight timed out.`,
+              );
+            }
+            return result;
+          },
+        },
+      );
     } catch (error) {
       if (error instanceof AgentSystemToolError) throw error;
       throw new AgentSystemToolError(
@@ -271,8 +289,11 @@ export default async function executeAgentSystemCliTool<
     try {
       commandResult = sanitize(
         await runRequest(
-          options.definition.runner.argv(options.input, resolvedConfiguration),
-          options.definition.runner.stdin?.(options.input, resolvedConfiguration),
+          preparedRequest?.argv ??
+            options.definition.runner.argv(options.input, resolvedConfiguration),
+          preparedRequest
+            ? preparedRequest.stdin
+            : options.definition.runner.stdin?.(options.input, resolvedConfiguration),
         ),
       );
     } catch {

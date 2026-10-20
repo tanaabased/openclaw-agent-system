@@ -48,7 +48,10 @@ Then use $agent-system-doctor to check readiness.
 ## Skills
 
 Standalone Codex supports workspace context, [applicable setup steps](./MANIFEST.md#setup), and [repository automations](#repository-automations).
-Git and GitHub use native host commands and authorization.
+Git and GitHub use native host commands and authorization. The managed GitHub
+[self-unassignment guard](./tools/github/README.md#assignment-protection) does not
+intercept standalone Codex's host `gh`, absolute binaries, HTTP/SDKs, or unrelated
+integrations; it is not a universal GitHub restriction.
 
 - [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
 - [Doctor](./skills/doctor/SKILL.md) — Inspect readiness without applying repairs.

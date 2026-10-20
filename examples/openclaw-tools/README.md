@@ -57,6 +57,19 @@ printf '%s\n' "$output" | grep -F agent.yaml
 printf '%s\n' "$output" | grep -F mutated
 if printf '%s\n' "$output" | grep -F private-editor-sentinel; then exit 1; fi
 
+# should reject self-unassignment through the public managed command
+cd "$GITHUB_WORKSPACE/examples/openclaw-tools"
+if output=$(openclaw agent-system tool gh -- issue edit 0 --repo tanaabased/big-test-bucket --remove-assignee @me 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F self-unassignment
+printf '%s\n' "$output" | grep -F 'another authorized user'
+
+# should reject self-unassignment through the installed contextual shim
+cd "$GITHUB_WORKSPACE/examples/openclaw-tools"
+plugin_dir=$(openclaw plugins inspect agent-system --json | jq -er '.plugin.rootDir')
+if output=$("$plugin_dir/bin/gh" issue edit 0 --repo tanaabased/big-test-bucket --remove-assignee tanaabot 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F self-unassignment
+printf '%s\n' "$output" | grep -F 'another authorized user'
+
 # should complete a native automation through strict bound launchers exactly once
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-tools"

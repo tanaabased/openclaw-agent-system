@@ -15,6 +15,9 @@ export const githubExampleEmoriCallId = 'call_example_github_emori';
 export const githubExampleValidationPrompt =
   'Use the managed GitHub tool to attempt setting git_protocol to ssh and report the configuration boundary.';
 export const githubExampleValidationCallId = 'call_example_github_validation';
+export const githubExampleAssignmentPrompt =
+  'Use the managed GitHub tool to attempt removing your own assignment and report the assignment boundary.';
+export const githubExampleAssignmentCallId = 'call_example_github_assignment';
 function roleText(request: ChatCompletionRequest, role: string): string {
   return request.messages
     .filter((message) => message.role === role)
@@ -76,6 +79,55 @@ const fixtures: Fixture[] = [
     match: {
       hasToolResult: false,
       model,
+      predicate: (request) => hasPrompt(request, githubExampleAssignmentPrompt),
+      toolName: 'agent_system_github',
+    },
+    response: {
+      id: `${githubExampleAssignmentCallId}_tool_response`,
+      toolCalls: [
+        {
+          arguments: JSON.stringify({
+            argv: [
+              'issue',
+              'edit',
+              '0',
+              '--repo',
+              'tanaabased/big-test-bucket',
+              '--remove-assignee',
+              '@me',
+            ],
+          }),
+          id: githubExampleAssignmentCallId,
+          name: 'agent_system_github',
+        },
+      ],
+    },
+  },
+  {
+    match: {
+      hasToolResult: true,
+      model,
+      predicate: (request) => {
+        const result = openClawAIMockToolResultText(
+          request.messages,
+          githubExampleAssignmentCallId,
+        );
+        return (
+          hasPrompt(request, githubExampleAssignmentPrompt) &&
+          result?.includes('self-unassignment') === true &&
+          result.includes('another authorized user')
+        );
+      },
+    },
+    response: {
+      content: 'Managed self-unassignment was rejected.',
+      id: `${githubExampleAssignmentCallId}_final_response`,
+    },
+  },
+  {
+    match: {
+      hasToolResult: false,
+      model,
       predicate: (request) => hasPrompt(request, githubExampleValidationPrompt),
       toolName: 'agent_system_github',
     },
@@ -114,7 +166,12 @@ const fixtures: Fixture[] = [
 ];
 
 export const githubExampleScenario: OpenClawAIMockScenario = {
-  finalResponses: ['tanaabot', 'emoriwan', 'Managed configuration mutation was rejected.'],
+  finalResponses: [
+    'tanaabot',
+    'emoriwan',
+    'Managed configuration mutation was rejected.',
+    'Managed self-unassignment was rejected.',
+  ],
   fixtures,
   id: 'openclaw-github',
   model: {
@@ -126,6 +183,7 @@ export const githubExampleScenario: OpenClawAIMockScenario = {
     { id: githubExampleTanaabotCallId, name: 'agent_system_github' },
     { id: githubExampleEmoriCallId, name: 'agent_system_github' },
     { id: githubExampleValidationCallId, name: 'agent_system_github' },
+    { id: githubExampleAssignmentCallId, name: 'agent_system_github' },
   ],
   userPromptSignals: [],
 };
