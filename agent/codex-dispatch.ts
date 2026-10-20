@@ -16,6 +16,7 @@ import reportDispatch, { failDispatch, notice } from './codex-dispatch-reporting
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import runCodexFeedback from './codex-feedback.ts';
+import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
 import { issueKey } from './dispatch-pending.ts';
@@ -86,16 +87,25 @@ export async function runCodexDispatch(
     .exclusive(async (state, save, signal) => {
       if (!operatorAction && !childAction) {
         const occurrence = await withNative(current, deps, (host) => host.occurrence(caller));
-        if (state.run?.id !== occurrence.id) {
-          state.run = { ...occurrence, actions: 0 };
-          delete state.checked;
-        }
+        await acceptCodexIntakeOccurrence(
+          state,
+          occurrence,
+          () =>
+            (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'intake',
+            ),
+          save,
+        );
         if (action !== 'report') {
-          if (state.run.actions >= 12) {
+          if (state.run!.actions >= 12) {
             await save();
             return { status: 'budget-exhausted', changed: false, nextAction: 'report' };
           }
-          state.run.actions++;
+          state.run!.actions++;
         }
         await save();
       }
@@ -134,7 +144,7 @@ export async function runCodexDispatch(
           intakeStore: current.store,
           now,
           save,
-          slots: codexIntakePolicy(current.manifest, true)?.policy.maxConcurrentItems ?? 3,
+          slots: codexIntakePolicy(current.manifest)?.policy.maxConcurrentItems ?? 3,
         });
       if (action === 'next') return nextDispatch(input, tx);
       if (typeof input.id !== 'string') throw new Error('dispatch-request-invalid');

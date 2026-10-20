@@ -23,6 +23,46 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  it('should discover pause-time feedback after resume without a cutoff or duplicate admission', async () => {
+    const policy = intakeFixture().policy;
+    const state: CodexFeedback = {
+      startedAt: Date.parse('2026-10-12T00:00:00Z'),
+      baseline: {},
+      events: [],
+    };
+    policy.issueAssignment!.paused = true;
+    observeFeedbackPolicy(state, policy, Date.parse('2026-10-13T00:00:00Z'));
+    assert.equal(state.admission?.enabled, true);
+    assert.equal(state.admission?.after, undefined);
+    const comments = [comment('during-pause')];
+    const scan = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-13T02:00:00Z'),
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+          reviews: reviewClientFixture(reviewFixture({ body: '' }), []),
+        },
+      });
+    policy.issueAssignment!.paused = false;
+    await scan();
+    assert.deepEqual(
+      state.events.map(({ sourceId }) => sourceId),
+      ['during-pause'],
+    );
+    const receipt = structuredClone(state.events[0]);
+    await scan();
+    assert.deepEqual(JSON.parse(JSON.stringify(state.events)), [receipt]);
+    assert.equal(state.admission?.after, undefined);
+  });
   it('should admit configured human self-feedback and reject changed pins or quoted mentions', () => {
     const policy = intakeFixture().policy;
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'approved');
@@ -40,16 +80,14 @@ describe('agent/codex-feedback-source', () => {
     policy.issueAssignment!.feedback = false;
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
-  for (const pause of ['parent', 'empty-authors', 'legacy'] as const)
+  for (const pause of ['empty-authors', 'legacy'] as const)
     it(`should preserve admission and receipts across ${pause} pause and resume without replaying history`, async () => {
       const startedAt = Date.parse('2026-10-12T00:00:00Z');
       let state: CodexFeedback = { startedAt, baseline: {}, events: [] };
       const policy = intakeFixture().policy;
       const suspend = () => {
-        if (pause === 'parent') policy.issueAssignment!.enabled = false;
-        else
-          policy.issueAssignment!.feedback =
-            pause === 'legacy' ? false : { inherit: false, allowed: [] };
+        policy.issueAssignment!.feedback =
+          pause === 'legacy' ? false : { inherit: false, allowed: [] };
       };
       const resume = () => {
         policy.issueAssignment!.enabled = true;

@@ -81,6 +81,19 @@ export default async function runCodexContinuation(
       if (occurrence && occurrence.automationId !== schedule.current.automationId)
         throw new Error('continuation-occurrence-mismatch');
       if (occurrence) {
+        await acceptCodexIntakeOccurrence(
+          state,
+          occurrence,
+          () =>
+            (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'intake',
+            ),
+          save,
+        );
         if (state.continuationRun?.id !== occurrence.id)
           state.continuationRun = { id: occurrence.id, actions: 0 };
         if (state.continuationRun.actions >= 12) return { status: 'budget-exhausted' as const };
@@ -187,3 +200,4 @@ export default async function runCodexContinuation(
     await connection?.close();
   }
 }
+import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';

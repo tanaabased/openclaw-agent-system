@@ -642,7 +642,7 @@ describe('agent/openclaw-feedback', () => {
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
   });
-  it('should block changed source and explicit revocation while retaining an admitted reply after default changes', async () => {
+  it('should block changed source and explicit revocation while retaining an admitted reply through pause', async () => {
     await start();
     const digest = await compose();
     const original = structuredClone(source);
@@ -666,9 +666,6 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(writes, 0);
     input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
     input.policy.issueAssignment!.enabled = false;
-    await assert.rejects(action('publish', { digest }), /workflow-policy-held/);
-    assert.equal(writes, 0);
-    input.policy.issueAssignment!.enabled = true;
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
     assert.match(event.result!.privateText, /Full private/);

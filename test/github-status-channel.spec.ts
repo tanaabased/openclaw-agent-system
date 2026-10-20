@@ -62,6 +62,10 @@ describe('github readiness channel', () => {
     });
     assert.equal((await lifecycle.reconcile!(context)).outcomes[0]?.status, 'unchanged');
     assert.equal(writes, 1);
+    value.github!.notifications!.issueAssignment!.paused = true;
+    assert.equal((await lifecycle.reconcile!(context)).outcomes[0]?.status, 'unchanged');
+    assert.equal(githubChannelAccounts(config).receiver?.enabled, true);
+    assert.equal(writes, 1);
     delete value.github!.notifications;
     assert.equal((await lifecycle.inspect!(context))[0]?.status, 'drift');
     await lifecycle.reconcile!(context);

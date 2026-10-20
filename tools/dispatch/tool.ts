@@ -4,7 +4,6 @@ import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
 
-import { effectiveAutomation } from '../../agent/automation-projection.ts';
 import AutomationThreads, { automationThreadSelection } from '../../agent/automation-threads.ts';
 import type AutomationService from '../../agent/automation-service.ts';
 import openclawIntakeJobs, {
@@ -82,20 +81,14 @@ export default function createDispatchTool(input: {
     connect: input.connect,
     delivery: input.delivery,
     feedbackConnect: input.feedbackConnect,
-    async coordinator(manifest, workspace, presentationOnly) {
-      const { store, context } = await input.automations.scope(manifest, workspace);
+    async coordinator(manifest, workspace) {
+      const { store } = await input.automations.scope(manifest, workspace);
       const job = openclawIntakeJobs(manifest).find(
         (entry) => entry.id === openclawIntakeAutomationId,
       );
       const ledger = await store.read();
       const record = ledger.records.find((entry) => entry.id === job?.id);
-      if (
-        !job ||
-        !record?.nativeId ||
-        (!presentationOnly && record.pending) ||
-        record.removed ||
-        (!presentationOnly && record.hash !== effectiveAutomation(job, context).hash)
-      )
+      if (!job || !record?.nativeId || record.removed)
         throw new Error('dispatch-automation-reconciliation-required');
       const unsupported = async (): Promise<never> => {
         throw new Error('dispatch-read-only-ownership');

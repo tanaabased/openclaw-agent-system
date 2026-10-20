@@ -16,7 +16,7 @@ github:
       - login: example
         node-id: O_example
     review-request:
-      enabled: true
+      paused: false
       allowed:
         - login: operator
           node-id: U_operator

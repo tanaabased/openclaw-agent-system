@@ -147,7 +147,7 @@ describe('agent/openclaw-notifications', () => {
   it('should report the same disabled policy across status refresh and wait without starting work', async () => {
     const f = fixture();
     f.manifest.github!.notifications!.issueAssignment!.enabled = false;
-    f.readiness = 'intake-policy-disabled';
+    f.readiness = 'intake-automation-paused';
     const status = await f.service.inspect(f.manifest, '/workspace');
     const refresh = await f.service.refresh(f.manifest, '/workspace', {
       signal: AbortSignal.timeout(1000),
@@ -158,7 +158,7 @@ describe('agent/openclaw-notifications', () => {
       refresh: true,
     });
     for (const result of [status, refresh, waited])
-      assert.equal(result.code, 'github-notification-disabled');
+      assert.equal(result.code, 'intake-automation-paused');
     assert.equal(f.requests, 0);
   });
 
@@ -689,7 +689,7 @@ describe('agent/openclaw-notifications', () => {
       });
       assert.equal(
         result.status,
-        ['stale', 'mode'].includes(change) ? 'completed' : 'failed',
+        ['stale', 'mode', 'disabled'].includes(change) ? 'completed' : 'failed',
         change,
       );
       assert.equal(f.requests, 0, change);

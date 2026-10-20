@@ -28,7 +28,7 @@ for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-intake', 'openclaw-
       ];
       const workflow = parsed.manifest.github!.notifications!.issueAssignment!;
       assert.deepEqual(feedbackIdentities(workflow.allowed, workflow.feedback), expectedActors);
-      assert.equal(parsed.manifest?.github?.notifications?.reviewRequest?.enabled, true);
+      assert.equal(parsed.manifest?.github?.notifications?.reviewRequest?.paused, false);
       assert.equal(parsed.manifest?.models?.default.model, 'aimock/gpt-5.5');
       assert.equal(parsed.manifest?.github?.username, ownerLogin);
       assert.equal(parsed.manifest?.github?.token, 'GH_TOKEN_TANAABOT');

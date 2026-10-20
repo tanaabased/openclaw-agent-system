@@ -42,16 +42,32 @@ No separate repair policy or author list is required.
 
 Discovery retains bounded observations independently of reply eligibility.
 Feedback follows its parent workflow and inherits approved assigners unless an
-explicit author policy replaces them. Activity observed while the parent is paused
-or no authors are approved stays in GitHub history and is not queued for later
-dispatch. When the runtime observes acceptance resume, it saves an admission
+explicit author policy replaces them. Activity observed while no authors are
+approved stays in GitHub history and is not queued for later dispatch. When the runtime observes acceptance resume, it saves an admission
 cutoff for the issue and its PR using the previous policy-check time. Approved
 comments or revisions after that cutoff become new feedback, including those
 between the last check and reenabling. This overlap avoids missing comments posted
 just after a configuration edit; a longer polling gap means a longer overlap.
 Older records without a policy-check timestamp use their last saved scan time,
 or the current check when neither timestamp is available. Work already admitted
-before a pause remains recoverable, and publication receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
+before an author-policy change remains recoverable, and publication receipts
+suppress duplicates. Reenabling sends no automatic retrospective assessment.
+
+Set `paused: true` on `issue-assignment` and run Install to pause its native
+schedule; `paused: false` resumes the same job and conversation. Native UI pause
+has the same execution boundary: future occurrences stop, while an accepted
+occurrence and running issue turns may finish. Pause does not change authorization,
+feedback eligibility, discovery checkpoints, queues, or completed effect receipts.
+Eligible activity arriving during the pause is discovered after resume. The
+readiness account and dispatch enrollment remain configured. Install follows the
+manifest, so it can reverse a UI-only pause when the manifest still requests an
+active schedule.
+
+The deprecated `enabled` alias is inverse: `enabled: false` means `paused: true`,
+and `enabled: true` means `paused: false`. Validate, Doctor, and Install warn with
+the exact replacement. Consistent pairs are accepted; contradictory pairs fail
+validation. Omission keeps the existing scheduling default. `review-request`
+accepts the same declaration but still has no execution adapter.
 
 Install reconciles changes to installed scheduling machinery. Policy-only edits do
 not change the orchestration definition. Native execution facts, explicit task
@@ -372,9 +388,9 @@ activates V2 intake. Install adopts an old account only when its matching
 Agent System-managed binding establishes ownership; conflicting accounts require
 operator resolution. Historical receipts and grants remain untouched.
 
-Install manages each agent's channel account from its enabled OpenClaw notification
+Install manages each agent's channel account from its declared OpenClaw notification
 workflows. Removing or disabling those workflows requires another Install to disable
-that account. Other agents and operator-owned entries are preserved. With no enabled
+that account. Other agents and operator-owned entries are preserved. With no declared
 accounts, the channel is inactive; its schema remains registered for compatibility.
 
 The channel reports setup or synchronization needs, unsupported workflows, scheduler

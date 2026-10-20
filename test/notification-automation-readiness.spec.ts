@@ -86,6 +86,19 @@ function fixture() {
 }
 
 describe('notification automation readiness', () => {
+  for (const pause of ['native', 'manifest'] as const)
+    it(`should gate ${pause} pause and resume with the same native identity`, async () => {
+      const f = fixture();
+      const id = f.record.nativeId;
+      assert.equal(await f.read(), undefined);
+      if (pause === 'native') f.native.enabled = false;
+      else f.manifest.github!.notifications!.issueAssignment!.paused = true;
+      assert.equal(await f.read(), 'intake-automation-paused');
+      f.native.enabled = true;
+      f.manifest.github!.notifications!.issueAssignment!.paused = false;
+      assert.equal(await f.read(), undefined);
+      assert.equal(f.record.nativeId, id);
+    });
   it('should apply live policy without scheduler drift and still detect changed native machinery', async () => {
     const f = fixture();
     assert.equal(await f.read(), undefined);
@@ -146,7 +159,7 @@ describe('notification automation readiness', () => {
       'intake-automation-update-required',
     );
     f.native.enabled = false;
-    assert.equal(await f.read(), 'intake-automation-update-required');
+    assert.equal(await f.read(), 'intake-automation-paused');
   });
 
   it('should require an available scheduler without blocking recovery after earlier run or delivery failures', async () => {
