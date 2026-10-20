@@ -1,4 +1,4 @@
-import { matchesIntakePolicy } from './assignment-intake-policy.ts';
+import retainedIntakePolicy from './retained-intake-policy.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import codexRetirementCleanup, {
@@ -21,7 +21,9 @@ export default async function reconcileCodexLifecycle(
   inventory?: unknown,
 ) {
   const current = await selectCodexIntake(pluginData, deps);
-  if (!current.policy) return;
+  const retained = await current.store.read();
+  if (!retained?.records.length) return;
+  current.policy = retainedIntakePolicy(current.manifest, retained, 'codex');
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   const feedbackBudget = new DiscoveryBudget();
   const now = (deps.now ?? Date.now)();
@@ -42,7 +44,7 @@ export default async function reconcileCodexLifecycle(
     pluginData,
     { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
     false,
-    false,
+    true,
   );
   if (caller !== activation.sourceThreadId) throw new Error('dispatch-intake-caller-required');
   const connection = deps.native
@@ -52,8 +54,7 @@ export default async function reconcileCodexLifecycle(
   try {
     const occurrence = await native.occurrence(caller);
     const admitted = await current.store.read();
-    if (!admitted || !matchesIntakePolicy(admitted.policyDigest, current.policy))
-      throw new Error('dispatch-policy-reconciliation-required');
+    if (!admitted) throw new Error('dispatch-policy-reconciliation-required');
     return await store.exclusive(async (state, save, signal) => {
       let prepared: { id: string; request: RetirementArchiveRequest } | undefined;
       let needsInventory = false;
@@ -72,9 +73,12 @@ export default async function reconcileCodexLifecycle(
             pluginData,
             { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
             false,
-            false,
+            true,
           );
-          if (selected.digest !== current.digest || verified.sourceThreadId !== caller)
+          if (
+            selected.store.location.scope !== current.store.location.scope ||
+            verified.sourceThreadId !== caller
+          )
             throw new Error('retirement-workflow-changed');
         },
         observe: async (record) => {

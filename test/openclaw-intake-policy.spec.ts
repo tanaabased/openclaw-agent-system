@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
@@ -24,15 +25,42 @@ function manifest(): AgentManifest {
 }
 
 describe('agent/openclaw-intake-policy', () => {
-  it('should omit unsupported notification jobs while retaining unrelated automations', () => {
+  it('should preserve bounded failure codes without mistaking contention for authorization loss', async () => {
+    const value = manifest();
+    value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
+    const script = openclawIntakeJobs(value).find((job) => job.id === 'github-issue-assignment')!
+      .internalOpenClaw!.trigger!.script;
+    for (const [message, code, status] of [
+      ['private-state-file-lock-busy', 'private-state-file-lock-busy', 'busy'],
+      ['intake-github-permission', 'intake-github-permission', 'failed'],
+      ['secret provider response with spaces', 'dispatch-condition-failed', 'failed'],
+    ]) {
+      let result: { state: { code: string; status: string } } | undefined;
+      await runInNewContext('(async()=>{' + script + '})()', {
+        agent_system_dispatch: async () => {
+          throw new Error(message);
+        },
+        json: (value: typeof result) => {
+          result = value;
+        },
+      });
+      assert.equal(result?.state.code, code);
+      assert.equal(result?.state.status, status);
+    }
+  });
+  it('should retain discovery and unrelated jobs when a workflow stage is unsupported', () => {
     for (const change of [
       { mode: 'work' as const },
       { mode: 'auto' as const },
       { assessment: { skill: 'custom:assessment' } },
     ]) {
       const value = manifest();
+      value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
       Object.assign(value.github!.notifications!.issueAssignment!, change);
-      assert.deepEqual(openclawIntakeJobs(value), value.automations);
+      assert.equal(
+        openclawIntakeJobs(value).some((job) => job.id === 'github-issue-assignment'),
+        true,
+      );
     }
   });
 

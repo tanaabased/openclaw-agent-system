@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import type { CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
@@ -207,7 +208,16 @@ describe('agent/codex-feedback', () => {
         args[0] === 'remote' ? 'https://github.com/owner/repo.git' : commonDir,
       feedbackConnect: async () =>
         ({
-          client: fixture.client,
+          client: {
+            ...fixture.client,
+            getItemContext: async () => ({
+              title: 'Issue',
+              body: 'Issue context',
+              comments: [],
+              labels: [],
+              truncated: false,
+            }),
+          },
           comments: {
             identity: account,
             listIssueComments: async () => ({ comments, truncated: false }),
@@ -228,6 +238,180 @@ describe('agent/codex-feedback', () => {
     };
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
+  async function feedbackMode(mode: 'plan' | 'work' | 'auto') {
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].mode = mode;
+    await writeFile(path, JSON.stringify(manifest));
+  }
+  it('should keep plan feedback in planning and use live work policy without install', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const context = await call('context', ref, true);
+    assert.equal('mode' in context && context.mode, 'plan');
+    const held = await call('implementation-context', ref, true);
+    assert.equal('reason' in held && held.reason, 'implementation-direction-required');
+    await feedbackMode('work');
+    const active = await call('implementation-context', ref, true);
+    assert.equal(active.status, 'verified');
+    await feedbackMode('plan');
+    const retained = await call('context', ref, true);
+    assert.equal('mode' in retained && retained.mode, 'work');
+    assert.equal((await store.read()).records[0]!.result!.outcome, 'plan-ready');
+  });
+  it('should resume the retained feedback after provider access is repaired', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const connect = deps.feedbackConnect!;
+    deps.feedbackConnect = async (...args) => {
+      const provider = await connect(...args);
+      provider.comments.getIssueComment = async () => {
+        throw Object.assign(new Error('github-notification-request-failed'), {
+          providerDiagnostic: providerDiagnostic('github', 'api-request', 'authentication'),
+        });
+      };
+      return provider;
+    };
+    await call('context', ref, true);
+    const failed = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.notEqual(failed.phase, 'blocked');
+    assert.equal(failed.providerDiagnostic?.classification, 'authentication');
+    deps.feedbackConnect = connect;
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
+    assert.equal(creates, 0);
+  });
+  it('should accept explicit implementation direction from approved feedback in plan', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const result = await call(
+      'implementation-context',
+      {
+        ...ref,
+        decision: {
+          mode: 'work',
+          reasons: ['Approved author asks to implement.'],
+          plan: 'Implement the requested change.',
+        },
+      },
+      true,
+    );
+    assert.equal(result.status, 'verified');
+    assert.equal((await store.read()).records[0]!.progression?.via, 'operator');
+  });
+  it('should retain feedback clarification and completed work without overwriting the initial result', async () => {
+    await feedbackMode('work');
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const original = (await store.read()).records[0]!.result;
+    await call('implementation-context', ref, true);
+    const result = {
+      outcome: 'clarification-needed',
+      summary: 'Need a value.',
+      fullResult: 'Partial work is retained.',
+      questions: ['Which value?'],
+    };
+    assert.equal(
+      (await call('implementation-result', { ...ref, implementationResult: result }, true)).status,
+      'recorded',
+    );
+    assert.equal((await call('implementation-context', ref, true)).status, 'finished');
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.progression?.stage, 'implementation');
+    assert.deepEqual(saved.feedback!.events[0]!.work!.result, result);
+    assert.deepEqual(saved.result, original);
+    await call('result', { ...ref, result: { privateText: 'Which value?' }, reply: false }, true);
+    await feedbackMode('plan');
+    sent = false;
+    ended = true;
+    occurrence++;
+    comments.push({
+      ...comments[0]!,
+      nodeId: 'answer',
+      databaseId: 43,
+      body: '@receiver use the smaller value.',
+      createdAt: '2026-10-13T01:01:00Z',
+      updatedAt: '2026-10-13T01:01:00Z',
+    });
+    const next = await call('next');
+    assert.equal(next.status, 'feedback-prepared');
+    assert.ok('eventId' in next && next.eventId);
+    sent = true;
+    ended = false;
+    turn = 'feedback-answer';
+    const resumed = await call('implementation-context', { id, eventId: next.eventId }, true);
+    assert.equal(resumed.status, 'verified');
+    assert.ok('previousFeedbackWork' in resumed && resumed.previousFeedbackWork);
+    assert.deepEqual(resumed.previousFeedbackWork[0]!.result, result);
+  });
+  it('should require a reasoned auto work decision and bind done feedback to its commit', async () => {
+    await feedbackMode('auto');
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const held = await call('implementation-context', ref, true);
+    assert.equal('reason' in held && held.reason, 'auto-decision-required');
+    const selected = await call(
+      'implementation-context',
+      {
+        ...ref,
+        decision: {
+          mode: 'work',
+          reasons: ['Bounded correction.'],
+          plan: 'Correct and test the handler.',
+        },
+      },
+      true,
+    );
+    assert.equal(selected.status, 'verified');
+    const git = deps.git!;
+    deps.git = async (cwd, args, signal) =>
+      args[0] === 'status'
+        ? ''
+        : args.join(' ') === 'rev-parse --verify HEAD'
+          ? 'c'.repeat(40)
+          : git(cwd, args, signal);
+    const result = { outcome: 'done', summary: 'Corrected.', fullResult: 'Corrected and tested.' };
+    assert.equal(
+      (await call('implementation-result', { ...ref, implementationResult: result }, true)).status,
+      'recorded',
+    );
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.feedback!.events[0]!.work!.head, 'c'.repeat(40));
+    assert.equal(saved.progression?.via, 'auto');
+    assert.equal((await call('implementation-context', ref, true)).status, 'finished');
+    const conflict = await call(
+      'implementation-result',
+      { ...ref, implementationResult: { ...result, summary: 'Different.' } },
+      true,
+    );
+    assert.equal('code' in conflict && conflict.code, 'feedback-implementation-result-conflict');
+  });
+  it('should retain the previous policy check even when feedback discovery is cached', async () => {
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].feedback = false;
+    await writeFile(path, JSON.stringify(manifest));
+    await call('next');
+    const first = deps.now!();
+    let now = first + 1000;
+    deps.now = () => now;
+    // the same native occurrence reuses discovery, but must still save the policy check.
+    await call('next');
+    assert.equal((await store.read()).records[0]!.feedback!.admission?.observedAt, now);
+    manifest.github.notifications['issue-assignment'].feedback = true;
+    await writeFile(path, JSON.stringify(manifest));
+    now += 1000;
+    await call('next');
+    assert.equal((await store.read()).records[0]!.feedback!.admission?.after, first + 1000);
+  });
   it('should continue scanning after an owner changes during its first checkpoint', async () => {
     const state = await store.read();
     const first = state.records[0]!;
@@ -254,7 +438,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(first.feedback, undefined);
     assert.deepEqual(
       scans.map((scan) => [scan.id, scan.feedback.code]),
-      [['e'.repeat(64), 'feedback-schedule-owner-changed']],
+      [['e'.repeat(64), undefined]],
     );
   });
   async function prepare(author = commenter) {
@@ -274,6 +458,30 @@ describe('agent/codex-feedback', () => {
     assert.ok('eventId' in result && result.eventId);
     return { id, eventId: result.eventId };
   }
+  it('should preserve feedback receipt custody when the scheduler moves to another chat', async () => {
+    const ref = await prepare();
+    const original = structuredClone((await store.read()).records[0]!.feedback!.events[0]!.attempt);
+    const activation = deps.activation!;
+    deps.activation = async (...args) => {
+      const selected = await activation(...args);
+      return {
+        ...selected,
+        sourceThreadId: 'replacement',
+        schedule: selected.schedule && {
+          current: { ...selected.schedule.current, sourceThreadId: 'replacement' },
+          saved: { ...selected.schedule.saved, sourceThreadId: 'replacement' },
+        },
+      };
+    };
+    sent = true;
+    turn = 'feedback';
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.sourceThreadId, 'intake');
+    assert.deepEqual(retained.feedback!.events[0]!.attempt, { ...original, turnId: 'feedback' });
+    assert.equal(original?.sourceThreadId, 'intake');
+  });
+
   it('should reactivate unassigned codex feedback in the original chat and retire again on closure', async () => {
     const provider = await deps.feedbackConnect!('', new AbortController().signal);
     const item = await provider.client.getItem('owner', 'repo', 3);
@@ -316,6 +524,21 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
     assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
   });
+  it('should keep approved feedback usable when new assignment intake is disabled', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    const path = join(root, 'workspace', 'agent.yaml');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.github.notifications['issue-assignment'].enabled = false;
+    manifest.github.notifications['allowed-repository-owners'] = [
+      { login: 'elsewhere', 'node-id': 'O_elsewhere' },
+    ];
+    await writeFile(path, JSON.stringify(manifest));
+    const context = await call('context', ref, true);
+    assert.equal(context.status, 'verified', JSON.stringify(context));
+  });
+
   async function recordReply(
     ref: { id: string; eventId: string },
     privateText: string,
@@ -427,7 +650,9 @@ describe('agent/codex-feedback', () => {
     turn = 'feedback';
     const context = await call('context', ref, true);
     assert.equal(context.status, 'verified');
-    assert.ok('resultSchema' in context && context.resultSchema);
+    assert.ok(
+      'resultSchema' in context && context.resultSchema && 'properties' in context.resultSchema,
+    );
     assert.deepEqual(Object.keys(context.resultSchema.properties), ['privateText']);
     await recordReply(ref, 'Detailed private answer.', 'A concise answer.');
     const preview = await call('publish', ref, true);
@@ -445,7 +670,9 @@ describe('agent/codex-feedback', () => {
     lost = true;
     const apply = { ...ref, digest: preview.digest };
     assert.equal((await call('publish', apply, true)).status, 'waiting');
-    const completed = await call('publish', apply, true);
+    ended = true;
+    occurrence++;
+    const completed = await call('next');
     assert.equal(completed.status, 'published');
     assert.ok('presentation' in completed && completed.presentation);
     assert.match(completed.presentation, /^> ## 💬 From /u);
@@ -945,7 +1172,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(feedback.events[0]!.receipt!.nodeId, 'reply');
     assert.equal(creates, 1);
   });
-  it('should stop after a private response when its composition turn ends unfinished', async () => {
+  it('should resume an interrupted composition while retaining its private response', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
@@ -954,8 +1181,11 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     await call('next');
     const event = (await store.read()).records[0]!.feedback!.events[0]!;
-    assert.equal(event.phase, 'blocked');
-    assert.equal(event.code, 'feedback-composition-interrupted');
+    assert.equal(event.phase, 'queued');
+    assert.equal(event.code, undefined);
+    assert.deepEqual(event.previousTurnIds, ['feedback']);
+    const resumed = await call('next');
+    assert.equal(resumed.status, 'feedback-prepared');
     assert.equal(event.result!.privateText, 'Saved before interruption.');
     assert.equal(creates, 0);
   });
@@ -986,16 +1216,16 @@ describe('agent/codex-feedback', () => {
       const events = (await store.read()).records[0]!.feedback!.events;
       assert.equal(events.length, 2);
       if (outcome === 'ended') {
-        assert.equal(next.status, 'feedback-prepared');
-        assert.ok('eventId' in next && next.eventId !== first.eventId);
-        assert.equal(events[0]!.code, 'feedback-turn-ended');
-        assert.equal(events[1]!.phase, 'prepared');
+        assert.equal(next.status, 'idle');
+        assert.equal(events[0]!.phase, 'queued');
+        assert.equal(events[1]!.phase, 'queued');
         const repeated = await call('next');
-        assert.notEqual(repeated.status, 'feedback-prepared');
+        assert.equal(repeated.status, 'feedback-prepared');
+        assert.equal('eventId' in repeated && repeated.eventId, first.eventId);
       } else {
         assert.equal(next.status, 'idle');
         assert.equal(events[1]!.phase, 'queued');
-        assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'blocked');
+        assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'queued');
       }
       assert.equal(creates, 0);
     });
@@ -1088,7 +1318,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(saved.publicationAttempted, undefined);
     assert.equal(saved.phase, 'blocked');
   });
-  it('should release retained feedback when its configured authority is removed', async () => {
+  it('should retain admitted feedback when discovery configuration is removed', async () => {
     await prepare();
     const manifestPath = join(root, 'workspace', 'agent.yaml');
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
@@ -1109,8 +1339,8 @@ describe('agent/codex-feedback', () => {
       }),
     );
     assert.ok(current.policy);
-    assert.equal((await call('next')).status, 'disabled');
-    assert.equal((await store.read())!.records[0]!.feedback!.events[0]!.phase, 'blocked');
+    assert.equal((await call('next')).status, 'idle');
+    assert.notEqual((await store.read())!.records[0]!.feedback!.events[0]!.phase, 'blocked');
   });
   it('should retain a denied native send without another prepared request', async () => {
     await prepare();
@@ -1120,16 +1350,17 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
   });
-  it('should stop unfinished publication and require an operator approval bound to the exact draft', async () => {
+  it('should preserve native publication denial and bind explicit recovery to the exact draft', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
     await recordReply(ref, 'Private.', 'Approved reply.');
     ended = true;
+    receiptStatus = 'blocked';
     await call('next');
     assert.equal(
       (await store.read())!.records[0]!.feedback!.events[0]!.code,
-      'feedback-publication-interrupted',
+      'continuation-native-approval-denied',
     );
     occurrence++;
     assert.equal((await call('next')).status, 'idle');

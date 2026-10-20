@@ -1,4 +1,4 @@
-import issueInputEvent from './openclaw-session-input.ts';
+import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
 import issueTurnReply from './openclaw-session-reply.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
@@ -17,7 +17,10 @@ export function consumedInputEvent(messages: unknown[], turn: OpenClawTurn) {
   if (!inputs.length && turn.consumedByEventId) return turn.consumedByEventId;
   if (inputs.length !== 1) throw new Error('dispatch-turn-delivery-unverified');
   const entry = inputs[0]!;
-  const eventId = issueInputEvent(entry, turn);
+  const eventId =
+    turn.origin === 'assessment' || turn.origin === 'input'
+      ? issueInputEventId(entry, turn.runId)
+      : issueInputEvent(entry, turn);
   if (!eventId) throw new Error('dispatch-turn-input-mismatch');
   return eventId;
 }
@@ -54,8 +57,9 @@ export async function reconcileOpenClawTurn(input: {
     const receipt = receipts[0];
     const info = sessionObject(history.sessionInfo);
     delete turn.inactive;
-    if (receipt?.cancelled === true) {
-      turn.inactive = info.hasActiveRun === false && receipt.queued !== true;
+    if (receipt?.cancelled === true || turn.cancelled) {
+      turn.cancelled = true;
+      turn.inactive = info.hasActiveRun === false && receipt?.queued !== true;
       await save();
       throw new Error('dispatch-turn-cancelled');
     }
@@ -80,10 +84,19 @@ export async function reconcileOpenClawTurn(input: {
       await request('agent.wait', { runId: turn.runId, timeoutMs: 0 }),
     );
     if (observed.runId !== turn.runId) throw new Error('dispatch-turn-run-mismatch');
-    if (observed.status === 'error' || observed.stopReason === 'aborted') {
+    if (observed.stopReason === 'aborted') {
+      turn.cancelled = true;
       turn.inactive = info.hasActiveRun === false && receipt?.queued !== true;
       await save();
-      throw new Error('dispatch-turn-failed');
+      throw new Error('dispatch-turn-cancelled');
+    }
+    if (observed.status === 'error') {
+      if (info.hasActiveRun !== false || receipt?.queued === true || !turn.consumedByEventId)
+        throw new Error('dispatch-turn-outcome-unverified');
+      turn.status = 'completed';
+      turn.failed = true;
+      await save();
+      return;
     }
     const reply = issueTurnReply(history.messages, turn.runId);
     if (reply && turn.status === 'consumed' && info.hasActiveRun === false) {

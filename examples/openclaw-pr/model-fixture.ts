@@ -19,8 +19,6 @@ const dispatchStages = [
   'context',
   'result',
   'report',
-  'refresh-context',
-  'refresh-result',
   'handoff-preview',
   'handoff',
   'work-context',
@@ -28,6 +26,10 @@ const dispatchStages = [
   'delivery-prepare',
   'delivery-publish',
   'delivery-publish-refreshed',
+  ...Array.from({ length: 3 }, (_, index) => [
+    `delivery-link-prepare-${index}`,
+    `delivery-link-publish-${index}`,
+  ]).flat(),
   'delivery-compose',
   'delivery-candidate',
   'delivery-announce',
@@ -35,6 +37,10 @@ const dispatchStages = [
   'delivery-present',
   'assessment-present',
   'feedback-context',
+  'feedback-work-context',
+  'feedback-work-result',
+  'feedback-delivery-prepare',
+  'feedback-delivery-publish',
   'feedback-result',
   'feedback-compose',
   'feedback-candidate',
@@ -108,10 +114,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
       const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
-      if (!digest) return;
       const scan = result('scan');
       if (!scan)
-        return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
+        return call('scan', 'agent_system_intake', {
+          action: 'scan',
+          ...(digest ? { policyDigest: digest } : {}),
+        });
       if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
     }
@@ -133,7 +141,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       const stopped = terminal(next);
       if (stopped) return stopped;
       if (
-        ['feedback-pending', 'feedback-completed', 'feedback-queued'].includes(String(next.status))
+        [
+          'implementation-pending',
+          'implementation-completed',
+          'implementation-queued',
+          'implementation-idle',
+          'policy-held',
+          'feedback-pending',
+          'feedback-completed',
+          'feedback-queued',
+        ].includes(String(next.status))
       )
         continue;
       if (typeof next.id !== 'string' || !/^[a-f0-9]{64}$/u.test(next.id)) return;
@@ -188,44 +205,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     }
     return;
   }
-  const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
-    prompt,
-  )?.[1];
-  if (refreshId) {
-    const privateContext = request.messages
-      .map(({ content }) => getTextContent(content) ?? '')
-      .join('\n');
-    if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('previousResultDigest')
-    )
-      return;
-    const fresh = result('refresh-context');
-    if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
-    const evidence = fresh.evidence as { body?: string } | undefined;
-    if (
-      fresh.status !== 'verified' ||
-      !fresh.previousResult ||
-      typeof fresh.previousResultDigest !== 'string' ||
-      !evidence?.body?.includes('notification-hidden-later-fact')
-    )
-      return;
-    const saved = result('refresh-result');
-    if (!saved)
-      return dispatch('refresh-result', {
-        action: 'result',
-        id: refreshId,
-        previousResultDigest: fresh.previousResultDigest,
-        result: {
-          ...(fresh.previousResult as Record<string, unknown>),
-          fullAssessment:
-            String((fresh.previousResult as Record<string, unknown>).fullAssessment) +
-            '\n\nFresh issue context verified after restart.',
-        },
-      });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return { content: saved.presentation };
-  }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
     const [, id, eventId] = feedback;
@@ -238,13 +217,79 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       context.publication !== 'allowed'
     )
       return;
+    if (context.mode !== 'work') return;
+    const work = result('feedback-work-context');
+    if (!work)
+      return dispatch('feedback-work-context', { ...args, operation: 'implementation-context' });
+    const implementation = work.implementation as { skill?: { path?: string } } | undefined;
+    if (
+      work.status !== 'verified' ||
+      typeof work.worktree !== 'string' ||
+      !implementation?.skill?.path
+    )
+      return;
+    if (
+      openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') === undefined
+    )
+      return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
+    const file = `notification-fixture-${id}.md`;
+    const patch = `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep feedback changes on the original PR.\n`;
+    const steps = [
+      { stage: 'feedback-apply', argv: ['apply', '-'], stdin: patch },
+      { stage: 'feedback-check', argv: ['diff', '--check'] },
+      { stage: 'feedback-add', argv: ['add', '--', file] },
+      {
+        stage: 'feedback-commit',
+        argv: ['commit', '-m', 'document feedback update continuity', '--', file],
+      },
+    ];
+    for (const step of steps) {
+      const executed = result(step.stage);
+      if (!executed)
+        return call(step.stage, 'agent_system_git', {
+          argv: step.argv,
+          cwd: work.worktree,
+          ...('stdin' in step ? { stdin: step.stdin } : {}),
+        });
+      if (executed.exitCode !== 0 || executed.truncated !== false) return;
+    }
+    const completed = result('feedback-work-result');
+    if (!completed)
+      return dispatch('feedback-work-result', {
+        ...args,
+        operation: 'implementation-result',
+        implementationResult: {
+          outcome: 'done',
+          summary: 'Added the feedback continuity note.',
+          fullResult:
+            'Updated the original note, checked the diff, and committed the feedback change.',
+        },
+      });
+    if (completed.status !== 'recorded') return;
+    const delivery = result('feedback-delivery-prepare');
+    if (!delivery)
+      return dispatch('feedback-delivery-prepare', {
+        ...args,
+        operation: 'delivery',
+        deliveryOperation: 'prepare',
+      });
+    if (delivery.status !== 'prepared' || typeof delivery.digest !== 'string') return;
+    const delivered = result('feedback-delivery-publish');
+    if (!delivered)
+      return dispatch('feedback-delivery-publish', {
+        ...args,
+        operation: 'delivery',
+        deliveryOperation: 'publish',
+        digest: delivery.digest,
+      });
+    if (delivered.status !== 'published') return;
     const saved = result('feedback-result');
     if (!saved)
       return dispatch('feedback-result', {
         ...args,
         operation: 'result',
         privateText:
-          'The retained plan was implemented as a cleanup note. The linked PR contains the initial commit and its follow-up. This feedback turn only explains the existing result; no additional repository changes were made.',
+          'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.',
       });
     if (saved.status !== 'recorded') return;
     const composition = result('feedback-compose');
@@ -265,7 +310,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         operation: 'candidate',
         digest: composition.digest,
         publicText:
-          'The linked PR adds the cleanup note from the retained plan. No further code changes were made in response to this comment.',
+          'Added the requested note about keeping feedback changes on the original PR, checked the diff, and pushed the commit to this PR.',
       });
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('feedback-preview');
@@ -299,7 +344,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return dispatch('handoff-preview', {
           action: 'handoff',
           id: operatorId,
-          permission: 'implementation-and-publication',
         });
       if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
       const handed = result('handoff');
@@ -307,7 +351,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         return dispatch('handoff', {
           action: 'handoff',
           id: operatorId,
-          permission: 'implementation-and-publication',
           digest: preview.digest,
         });
       if (handed.status !== 'handed-off') return;
@@ -356,7 +399,10 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
               'Committed the requested cleanup note change through managed Git in the verified issue worktree.',
           },
         });
-      if (saved.status !== 'recorded') return;
+      const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
+      if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
+      if (!result('delivery-prepare'))
+        return dispatch('delivery-prepare', { ...handoff.request, title, body });
     }
     if (!retry) {
       const prepared = result('delivery-prepare');
@@ -393,6 +439,39 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           });
         published = refreshed;
       }
+      for (
+        let index = 0;
+        index < 3 && published.code === 'github-delivery-linkage-unverified';
+        index++
+      ) {
+        const receipt = published.pullRequest as Record<string, unknown> | undefined;
+        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        const prepareStage = `delivery-link-prepare-${index}`;
+        const retained = result(prepareStage);
+        if (!retained)
+          return dispatch(prepareStage, {
+            action: 'delivery',
+            operation: 'prepare',
+            id: operatorId,
+            title,
+            body,
+          });
+        if (retained.status !== 'prepared' || typeof retained.digest !== 'string') return;
+        const publishStage = `delivery-link-publish-${index}`;
+        const reconciled = result(publishStage);
+        if (!reconciled)
+          return dispatch(publishStage, {
+            action: 'delivery',
+            operation: 'publish',
+            id: operatorId,
+            digest: retained.digest,
+            title,
+            body,
+          });
+        published = reconciled;
+      }
+      if (published.code === 'github-delivery-linkage-unverified')
+        throw new Error('notification-linkage-reconciliation-exhausted');
       if (published.status !== 'published') return;
       if (!update && published.workflowStatus !== 'partially-delivered')
         throw new Error('published pr must retain pending announcement as partial delivery');
@@ -468,7 +547,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
   )?.[1];
-  if (!id || !prompt.includes('Stop before implementation.')) return;
+  if (
+    !id ||
+    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
+  )
+    return;
   const context = result('context');
   if (!context) {
     const privateContext = request.messages
@@ -563,6 +646,7 @@ export const prExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'feedback-skill', name: 'read' },
+    { id: prefix + 'feedback-implementation-skill', name: 'read' },
     { id: prefix + 'delivery-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
@@ -570,7 +654,16 @@ export const prExampleScenario: OpenClawAIMockScenario = {
         name: 'agent_system_dispatch',
       })),
     ),
-    ...['git', 'apply', 'add', 'commit'].map((stage) => ({
+    ...[
+      'git',
+      'apply',
+      'add',
+      'commit',
+      'feedback-apply',
+      'feedback-check',
+      'feedback-add',
+      'feedback-commit',
+    ].map((stage) => ({
       id: prefix + stage,
       name: 'agent_system_git',
     })),

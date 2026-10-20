@@ -1,5 +1,5 @@
+import { assessmentDecisionMode, type AssessmentResult } from '../../../agent/assessment-result.ts';
 import modelRoutingCard from './model-routing.ts';
-import type { AssessmentResult } from '../../../agent/assessment-result.ts';
 import redactCodexFeedback from '../../../agent/codex-feedback-redaction.ts';
 import type { RoutingDecision } from '../../../agent/model-routing.ts';
 import workflowInstructions, {
@@ -63,17 +63,17 @@ export default function renderAssessmentResult(
     ...(result.decision
       ? [
           githubNotificationCard({
-            emoji: result.decision.action === 'wait' ? '⏸️' : '▶️',
+            emoji: assessmentDecisionMode(result.decision) === 'plan' ? '⏸️' : '▶️',
             title: 'Auto mode decision',
             facts: [
               {
                 label: 'Decision',
-                value: '`' + result.decision.action + '`',
+                value: '`' + assessmentDecisionMode(result.decision) + '`',
               },
               {
                 label: 'Next',
                 value:
-                  result.decision.action === 'wait'
+                  assessmentDecisionMode(result.decision) === 'plan'
                     ? 'Await your direction before implementation.'
                     : 'Continue automatically once runtime checks pass.',
               },

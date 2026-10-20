@@ -62,7 +62,7 @@ export function announcementPresentation(
     : '';
   const outcome =
     state?.receipt && !state.code
-      ? `## ℹ️ PR announcement published\n\n[Published announcement ↗](${issueUrl}#issuecomment-${state.receipt.databaseId})`
+      ? `## 💡 PR announcement published\n\n[Published announcement ↗](${issueUrl}#issuecomment-${state.receipt.databaseId})`
       : `## ⚠️ PR announcement pending\n\nThe PR is retained. Recover the announcement in this chat; do not recreate the PR.${state?.code ? `\n\nDiagnostic: \`${state.code}\`.` : ''}`;
   return [quote, githubNotificationQuote(outcome)].filter(Boolean).join('\n\n');
 }
@@ -74,6 +74,27 @@ export function announcementRecoveryInstructions(state?: DeliveryAnnouncementSta
   if (state?.attempted || state?.receipt)
     return 'Call delivery announce to reconcile the retained announcement attempt. Do not compose or post a replacement.';
   return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce with its preview digest.';
+}
+
+/** native attachment is the only host-specific step after verified publication. */
+export function deliveryCompletionInstructions(
+  runtime: 'codex' | 'openclaw',
+  delivery: Delivery & { attached?: boolean },
+) {
+  const attachment =
+    runtime === 'openclaw'
+      ? ''
+      : delivery.attached
+        ? 'Native PR attachment is confirmed. '
+        : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
+  return (
+    attachment +
+    announcementRecoveryInstructions(delivery.announcement) +
+    ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Continue in this same turn; an attachment, announcement, or card failure never requires recreating the PR. ' +
+    (runtime === 'codex'
+      ? 'For automatic workflows, use continuationRuntime action:delivery with the nested delivery operation.'
+      : 'Use agent_system_dispatch action delivery with the requested operation.')
+  );
 }
 
 /** the native delivery owner supplies authority and serializes state with the PR receipt. */

@@ -1,3 +1,4 @@
+import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import mergeStateSnapshot, {
@@ -16,6 +17,8 @@ import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
+import recoverTaskBlockers from './recover-task-blockers.ts';
+import { issueProgressionSchema, retainedIssueProgression } from './issue-progression.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
@@ -24,6 +27,7 @@ import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const dispatchRecordProperties = {
+  providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   id: hash,
   intakeId: hash,
   issueKey: hash,
@@ -39,6 +43,7 @@ export const dispatchRecordProperties = {
     Type.Literal('retrying'),
   ]),
   createdAt: Type.Integer({ minimum: 0 }),
+  progression: Type.Optional(issueProgressionSchema),
   manifestDigest: text,
   assessment: Type.Optional(assessmentSelectionSchema),
   context: Type.Optional(Type.String({ maxLength: 96000 })),
@@ -57,8 +62,18 @@ export const dispatchRecordProperties = {
     ),
   ),
   result: Type.Optional(assessmentResultSchema),
+  compatibilityRecovery: Type.Optional(
+    Type.Object(
+      {
+        version: Type.Literal(1),
+        codes: Type.Array(text),
+        previousResult: Type.Optional(assessmentResultSchema),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
-  assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema, { maxItems: 32 })),
+  assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema)),
   stageReceipt: Type.Optional(
     Type.Object(
       {
@@ -253,12 +268,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               pass.selected.filter((id) => !pass.recovery.includes(id)).length >
                 pass.candidates.length ||
               pass.recovery.some((id) => !state.records.some((record) => record.id === id)) ||
-              pass.selected.some(
-                (id) =>
-                  !state.records.some(
-                    (record) => record.id === id && record.sourceThreadId === pass.sessionKey,
-                  ),
-              ),
+              pass.selected.some((id) => !state.records.some((record) => record.id === id)),
           ))) ||
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
       new Set(
@@ -287,6 +297,15 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       } catch {
         throw new Error('dispatch-state-invalid');
       }
+    }
+    this.validate(state);
+    for (let index = 0; index < state.records.length; index++) {
+      const candidate = structuredClone(state.records[index]!);
+      recoverTaskBlockers(candidate);
+      const progression = retainedIssueProgression(candidate);
+      if (progression) candidate.progression = progression;
+      // incomplete native custody remains for its owning reconciliation route.
+      if (this.contract.validRecord(candidate)) state.records[index] = candidate;
     }
     this.validate(state);
     // discard obsolete presentation queues, preserving all assignment and assessment records.

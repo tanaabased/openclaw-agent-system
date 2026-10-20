@@ -1,40 +1,33 @@
-interface Delivery {
-  pullRequest?: { pullRequestNumber: number };
-  reconciled?: boolean;
-  attached?: boolean;
-  announcement?: { receipt?: unknown };
-}
-interface State {
-  phase: string;
-  retired?: unknown;
-  retirement?: unknown;
-  reset?: unknown;
-  blocker?: string;
-  retry?: unknown;
-  result?: { code?: string; outcome?: string };
-  continuation?: { phase?: string; code?: string; retry?: unknown; message?: string };
-  delivery?: Delivery;
-  work?: { delivery?: Delivery };
+import issueWorkflowProgress, { type IssueWorkflowState } from './issue-workflow-progress.ts';
+
+interface State extends IssueWorkflowState {
+  feedback?: {
+    events: Array<{
+      id?: string;
+      phase: string;
+      retry?: unknown;
+      work?: { head?: string; result?: { outcome: string } };
+      workDelivery?: IssueWorkflowState['delivery'];
+    }>;
+  };
 }
 
-/** presentation follows retained evidence; it never grants authority or releases capacity. */
+/** feedback overlays its own work; issue status uses the coordinator's shared progress facts. */
 export default function workflowStatus(record: State) {
-  if (record.retirement) return record.retired ? 'retired' : 'retirement-pending';
-  if (
-    record.retired ||
-    record.reset ||
-    record.blocker === 'dispatch-assignment-superseded' ||
-    record.result?.code === 'dispatch-assignment-superseded'
-  )
-    return 'obsolete';
-  const delivery = record.delivery ?? record.work?.delivery;
-  if (
-    delivery?.pullRequest &&
-    (!delivery.reconciled || delivery.attached === false || !delivery.announcement?.receipt)
-  )
-    return 'partially-delivered';
-  const failure = record.continuation?.code ? record.continuation : record;
-  if (failure.phase === 'blocked' || failure.phase === 'cancelled') return 'blocked';
-  if (failure.retry) return 'retrying';
-  return failure.phase ?? record.phase;
+  const progress = issueWorkflowProgress(record);
+  if (progress.action === 'stopped' || record.progression?.workOwner === 'issue')
+    return progress.status;
+  const feedback = record.feedback?.events.findLast(
+    (event) =>
+      event.work && (!record.progression?.workOwner || event.id === record.progression.workOwner),
+  );
+  if (!feedback) return progress.status;
+  const delivery = feedback.workDelivery ?? record.delivery ?? record.work?.delivery;
+  if (feedback.phase === 'blocked' || feedback.work?.result?.outcome === 'blocked')
+    return 'blocked';
+  if (feedback.retry) return 'retrying';
+  if (feedback.work?.result?.outcome === 'clarification-needed') return 'clarification-needed';
+  if (!feedback.work?.result) return 'running';
+  if (!delivery?.reconciled || delivery.pushedHead !== feedback.work.head) return 'delivery';
+  return issueWorkflowProgress({ phase: 'complete', delivery }).status;
 }

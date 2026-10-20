@@ -6,12 +6,11 @@ const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const feedbackEventSchema = Type.Object(
   {
     ...feedbackSourceEventSchema.properties,
-    resumed: Type.Optional(Type.Integer({ minimum: 0, maximum: 3 })),
-    previousTurnIds: Type.Optional(Type.Array(text, { maxItems: 3 })),
     attempt: Type.Optional(
       Type.Object(
         {
           id: hash,
+          sourceThreadId: Type.Optional(text),
           sourceTurnId: text,
           beforeTurnId: text,
           turnId: Type.Optional(text),

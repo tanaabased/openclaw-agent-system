@@ -145,10 +145,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
       const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
-      if (!digest) return;
       const scan = result('scan');
       if (!scan)
-        return call('scan', 'agent_system_intake', { action: 'scan', policyDigest: digest });
+        return call('scan', 'agent_system_intake', {
+          action: 'scan',
+          ...(digest ? { policyDigest: digest } : {}),
+        });
       if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
     }
@@ -321,7 +323,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
   )?.[1];
-  if (!id || !prompt.includes('Stop before implementation.')) return;
+  if (
+    !id ||
+    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
+  )
+    return;
   const context = result('context');
   if (!context) {
     const privateContext = request.messages

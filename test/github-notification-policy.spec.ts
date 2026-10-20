@@ -52,8 +52,6 @@ describe('channels/github/notification-policy', () => {
     };
     assert.equal(githubNotificationRuntimeBlocker(parsed(supported), 'openclaw'), undefined);
     for (const [extra, capability] of [
-      [{ mode: 'work' }, 'work issue assignment'],
-      [{ mode: 'auto' }, 'auto issue assignment'],
       [{ assessment: { skill: 'custom:assess' } }, 'replacement assessment skills'],
     ] as const) {
       const declaration = parsed({
@@ -65,10 +63,22 @@ describe('channels/github/notification-policy', () => {
           message.includes(capability),
         ),
       );
-      assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw') === undefined, false);
+      assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'codex'), undefined);
       declaration.issueAssignment!.enabled = false;
       assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
+    }
+    for (const mode of ['work', 'auto']) {
+      assert.deepEqual(
+        githubNotificationRuntimeDiagnostics(
+          parsed({
+            ...supported,
+            'issue-assignment': { ...supported['issue-assignment'], mode },
+          }),
+          'openclaw',
+        ),
+        [],
+      );
     }
     const review = parsed({ ...supported, 'review-request': { allowed: [{ ...actor }] } });
     assert.equal(githubNotificationRuntimeBlocker(review, 'openclaw'), undefined);
@@ -110,21 +120,18 @@ describe('channels/github/notification-policy', () => {
       new Set(
         diagnostics.filter(({ status }) => status === 'warning').map(({ fieldPath }) => fieldPath),
       ),
-      new Set(['/github/notifications/review-request']),
+      new Set([
+        '/github/notifications/review-request',
+        '/github/notifications/issue-assignment/assessment/skill',
+      ]),
     );
     assert.deepEqual(
       new Set(
         diagnostics.filter(({ status }) => status === 'blocked').map(({ fieldPath }) => fieldPath),
       ),
-      new Set([
-        '/github/notifications/issue-assignment/mode',
-        '/github/notifications/issue-assignment/assessment/skill',
-      ]),
+      new Set(),
     );
-    assert.equal(
-      githubNotificationRuntimeBlocker(declaration, 'openclaw')?.workflow,
-      'issue-assignment',
-    );
+    assert.equal(githubNotificationRuntimeBlocker(declaration, 'openclaw'), undefined);
     assert.deepEqual(
       githubNotificationRuntimeDiagnostics(declaration, 'codex').map(({ workflow, status }) => ({
         workflow,

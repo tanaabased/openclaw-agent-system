@@ -9,14 +9,14 @@ linked PR. Standalone Codex additionally supports declared automatic implementat
 
 Use `github.notifications.schema-version: 2` in `agent.yaml`. Declare the runtime,
 pinned repository owners, and allowed assignment actors explicitly. For OpenClaw,
-choose Plan mode and the default assessment skill. See the
+use the default assessment skill; Plan stops after assessment, Work continues an
+actionable plan, and Auto chooses Plan or Work. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for a complete example,
 fields, defaults, and runtime limitations.
 
-Native OpenClaw Work/Auto, independent review requests, and replacement assessment
-skills remain unsupported. Unavailable review requests warn without stopping
-supported assignment intake. Unsupported assignment modes or assessment skills
-block assignment execution; they are never silently replaced.
+Independent review requests and replacement assessment skills remain unavailable.
+They warn without stopping supported assignment intake; unavailable skills are
+never silently replaced.
 
 After reading a retained plan, ask the agent in that issue chat to implement it and
 open a PR, together or separately. The authenticated operator request authorizes
@@ -24,12 +24,14 @@ only the requested work. The agent keeps the same worktree and returns a quoted
 card linking the issue and PR. If publication is interrupted, continue in that chat
 so it can reconcile the existing attempt without creating another PR.
 
-Set `issue-assignment.feedback` and run Install to activate comment intake. Approved
+Once intake is installed, set `issue-assignment.feedback` to enable comment intake. Approved
 mentions in issue comments, PR conversation comments, submitted reviews, and inline
 replies return to the original issue chat. The agent retains its complete private
 answer and composes a separate public reply with the configured feedback skill.
 Inline replies return to their original review thread; other replies return to the
-source issue or PR. Feedback grants explanation and replies, never implementation.
+source issue or PR. Feedback follows the issue stage: Plan investigates and plans;
+Work may implement appropriate changes; Auto may choose Plan or Work. Updates stay
+on the existing PR, with the original assessment and implementation preserved.
 Busy chats queue comments in the shared oldest-eligible capacity pool. Edited or
 removed sources and changed authority stop pending replies; uncertain sends or
 publications are reconciled without repeating them.

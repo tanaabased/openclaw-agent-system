@@ -1,3 +1,4 @@
+import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { Type, type Static } from 'typebox';
 
 import { implementationResultSchema } from './implementation-result.ts';
@@ -6,9 +7,11 @@ import { workflowBindingSchema } from './workflow-result.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
-const attemptSchema = Type.Object(
+export const attemptSchema = Type.Object(
   {
     id: hash,
+    origin: Type.Optional(Type.Literal('assessment')),
+    sourceThreadId: Type.Optional(text),
     sourceTurnId: text,
     beforeTurnId: text,
     request: Type.Object(
@@ -30,11 +33,13 @@ export const codexContinuationStateSchema = Type.Object(
       Type.Literal('waiting'),
       Type.Literal('prepared'),
       Type.Literal('running'),
+      Type.Literal('clarification-needed'),
       Type.Literal('delivery'),
       Type.Literal('complete'),
       Type.Literal('blocked'),
       Type.Literal('cancelled'),
     ]),
+    providerDiagnostic: Type.Optional(providerDiagnosticSchema),
     retry: Type.Optional(
       Type.Object(
         { code: text, attempts: Type.Integer({ minimum: 1, maximum: 5 }) },
@@ -43,6 +48,10 @@ export const codexContinuationStateSchema = Type.Object(
     ),
     retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
     policyDigest: hash,
+    policyHeld: Type.Optional(text),
+    clarificationTurnId: Type.Optional(text),
+    blockedTurnId: Type.Optional(text),
+    activeTurnId: Type.Optional(text),
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
     assessmentSelectionDigest: Type.Optional(hash),
@@ -79,7 +88,6 @@ export const codexContinuationStateSchema = Type.Object(
           },
           { additionalProperties: false },
         ),
-        { maxItems: 8 },
       ),
     ),
     publicationAttempt: Type.Optional(attemptSchema),

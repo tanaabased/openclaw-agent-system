@@ -14,7 +14,7 @@ import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
-function fixture(legacyPolicy = false) {
+function fixture() {
   const manifest: AgentManifest = {
     schemaVersion: 1,
     agent: { id: 'receiver' },
@@ -37,7 +37,7 @@ function fixture(legacyPolicy = false) {
     agentId: 'receiver',
     workspaceDir: '/workspace',
   });
-  const job = openclawIntakeJobs(manifest, legacyPolicy)[0]!;
+  const job = openclawIntakeJobs(manifest)[0]!;
   const record: AutomationRecord = {
     id: job.id,
     marker: store.marker(job.id),
@@ -86,15 +86,15 @@ function fixture(legacyPolicy = false) {
 }
 
 describe('notification automation readiness', () => {
-  it('should retain an unchanged legacy schedule but reject changed authority and native drift', async () => {
-    const f = fixture(true);
+  it('should apply live policy without scheduler drift and still detect changed native machinery', async () => {
+    const f = fixture();
     assert.equal(await f.read(), undefined);
     const workflow = f.manifest.github!.notifications!.issueAssignment!;
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), undefined);
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'U_receiver' };
     f.native.payload = { ...f.native.payload, text: 'changed consent' };
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
   });
   it('should reject malformed scheduler observations instead of inventing an empty scan', async () => {
     const f = fixture();
@@ -124,17 +124,17 @@ describe('notification automation readiness', () => {
     );
     assert.equal(await f.readOperator(async () => ({})), 'automation-observation-unavailable');
     f.manifest.models!.default!.effort = 'high';
-    assert.equal(await f.read(), 'automation-sync-required');
-    assert.equal(await f.readOperator(request), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
+    assert.equal(await f.readOperator(request), 'intake-automation-update-required');
   });
 
   it('should report missing, changed, disabled and uncertain projections', async () => {
     const f = fixture();
     f.records.length = 0;
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-activation-required');
     f.records.push(f.record);
     f.record.pending = { kind: 'update', nativeHash: 'a'.repeat(64) };
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
     delete f.record.pending;
     assert.equal(
       await f.read({
@@ -143,13 +143,13 @@ describe('notification automation readiness', () => {
           return [];
         },
       }),
-      'automation-sync-required',
+      'intake-automation-update-required',
     );
     f.native.enabled = false;
-    assert.equal(await f.read(), 'automation-sync-required');
+    assert.equal(await f.read(), 'intake-automation-update-required');
   });
 
-  it('should report scheduler availability and distinguish execution from delivery failure', async () => {
+  it('should require an available scheduler without blocking recovery after earlier run or delivery failures', async () => {
     const f = fixture();
     assert.equal(await f.unavailable(), 'automation-observation-unavailable');
     assert.equal(await f.read({ list: f.scheduler.list }), 'automation-observation-unavailable');
@@ -163,10 +163,10 @@ describe('notification automation readiness', () => {
       'automation-scheduler-disabled',
     );
     f.native.state.lastRunStatus = 'error';
-    assert.equal(await f.read(), 'automation-execution-failed');
+    assert.equal(await f.read(), undefined);
     f.native.state.lastRunStatus = 'ok';
     f.native.state.lastDeliveryStatus = 'not-delivered';
-    assert.equal(await f.read(), 'automation-delivery-failed');
+    assert.equal(await f.read(), undefined);
   });
 
   it('should refuse ambiguous or differently owned native jobs', async () => {

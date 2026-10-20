@@ -10,6 +10,7 @@ import workflowRecovery from './workflow-recovery.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
@@ -65,8 +66,36 @@ export default function prepareDispatchReport(input: {
   );
   const failures = [
     ...(intake.blocker
-      ? [{ id: 'scan', code: intake.blocker.code, operation: 'assignment scan' }]
+      ? [
+          {
+            id: 'scan',
+            code: intake.blocker.code,
+            operation: 'assignment scan',
+            providerDiagnostic: intake.blocker.providerDiagnostic,
+          },
+        ]
       : []),
+    ...(intake.deferred ?? []).map((entry) => {
+      const candidate = JSON.parse(entry.candidate) as { repositoryPath: string; number: number };
+      return {
+        id: 'deferred-' + entry.key,
+        code: entry.code,
+        providerDiagnostic: entry.providerDiagnostic,
+        operation:
+          'assignment scan for ' +
+          text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number),
+      };
+    }),
+    ...state.records
+      .filter(
+        (record) => !record.continuation && record.result?.outcome === 'plan-ready' && record.retry,
+      )
+      .map((record) => ({
+        id: record.id,
+        code: record.retry!.code,
+        operation: 'implementation preparation',
+        providerDiagnostic: record.providerDiagnostic,
+      })),
     ...feedbackProblems.map((record) => ({
       id: record.id,
       code: record.feedback!.code!,
@@ -89,8 +118,16 @@ export default function prepareDispatchReport(input: {
     ...codexIssueNotice({
       event: 'failure',
       code: failure.code,
+      providerDiagnostic: 'providerDiagnostic' in failure ? failure.providerDiagnostic : undefined,
       changed: health !== state.intakeHealth,
     }),
+    ...(failure.id.startsWith('deferred-')
+      ? {
+          severity: 'warning' as const,
+          summary: 'This assignment could not be checked. Unrelated intake continues.',
+          next: 'A later scan will retry this assignment. Preserve the retained issue and check its diagnostic if the problem persists.',
+        }
+      : {}),
   }));
   const severity = notices.some((notice) => notice.severity === 'error')
     ? 'error'
@@ -110,21 +147,25 @@ export default function prepareDispatchReport(input: {
     dispatch: [{ status: 'idle', changed: false }],
   });
   if (quiet.status !== 'quiet') throw new Error('heartbeat-request-invalid');
-  const title = notices.length
-    ? !intake.blocker
-      ? '⚠️ Intake checked — some items need attention'
-      : severity === 'error'
-        ? '❌ Intake could not finish'
-        : '⚠️ Intake needs attention'
-    : started.length
-      ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
-      : sent.length
-        ? `ℹ️ Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
-        : recovered
-          ? 'ℹ️ Intake resumed'
-          : pending
-            ? `ℹ️ Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-            : 'ℹ️ Intake checked';
+  const automationNotice = intakeAutomationNotice(intake.blocker?.code ?? '');
+  const title =
+    automationNotice && notices.length === 1
+      ? `${automationNotice.emoji} ${automationNotice.title}`
+      : notices.length
+        ? !intake.blocker
+          ? '⚠️ Intake checked — some items need attention'
+          : severity === 'error'
+            ? '❌ Intake could not finish'
+            : '⚠️ Intake needs attention'
+        : started.length
+          ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
+          : sent.length
+            ? `💡 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
+            : recovered
+              ? '💡 Intake resumed'
+              : pending
+                ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+                : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
   for (const record of started)
@@ -145,6 +186,14 @@ export default function prepareDispatchReport(input: {
   if (sent.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
     const record = active.find((entry) => entry.id === notice.id);
+    if (notice.id === 'scan' && intakeAutomationNotice(notice.code)) {
+      lines.push(
+        `- **What happened:** ${notice.summary}`,
+        `- **Next step:** ${notice.next}`,
+        `- **Technical detail:** \`${notice.code}\``,
+      );
+      continue;
+    }
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
       `  **Operation:** ${notice.operation}`,

@@ -2,7 +2,7 @@ import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import { automationHash } from './automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 
-/** scheduling controls do not change the effects granted by an activated workflow. */
+/** historical projection retained for provenance, never for policy authorization. */
 export function legacyNotificationAuthority(policy: GitHubNotificationPolicy) {
   return {
     schemaVersion: policy.schemaVersion,
@@ -45,16 +45,7 @@ export function notificationAuthorityDigest(policy: GitHubNotificationPolicy | u
   return automationHash(policy ? notificationAuthority(policy) : null);
 }
 
-/** unchanged older receipts remain usable without silently widening their original grant. */
-export function matchesNotificationAuthority(digest: string, policy: GitHubNotificationPolicy) {
-  return (
-    digest === notificationAuthorityDigest(policy) ||
-    digest === automationHash(legacyNotificationAuthority(policy)) ||
-    digest === automationHash(policy)
-  );
-}
-
-/** a reply grant cannot become implementation authority or inherit unrelated workflow settings. */
+/** cache key for reevaluating observed sources when live feedback eligibility changes. */
 function feedbackAuthority(policy: GitHubNotificationPolicy) {
   return {
     effect: 'feedback-reply',
@@ -77,12 +68,4 @@ export function feedbackAuthorityDigest(policy: GitHubNotificationPolicy) {
     allowedRepositoryOwners: ordered(value.allowedRepositoryOwners),
     authors: ordered(value.authors),
   });
-}
-
-export function matchesFeedbackAuthority(digest: string, policy: GitHubNotificationPolicy) {
-  return (
-    digest === feedbackAuthorityDigest(policy) ||
-    digest === automationHash(feedbackAuthority(policy)) ||
-    matchesNotificationAuthority(digest, policy)
-  );
 }

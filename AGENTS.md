@@ -36,6 +36,7 @@
 - Before editing or auditing documentation, read and apply [Documentation Design](./DOCUMENTATION.md), including its change gate and protected README positioning.
 - Before changing CLI output, read [CLI Presentation](./cli/PRESENTATION.md). Use the shared palette and command presentation boundary; never print command-owned diagnostics directly or add a second message section.
 - Before optimization assessments or changes to an accepted optimization decision, read and apply [Optimization Guidance](./.github/OPTIMIZATION.md).
+- Before changing or auditing GitHub issue workflows, including their owners in `agent/` and `tools/dispatch/`, read and apply [GitHub Workflow Guidance](./channels/github/AGENTS.md).
 
 ## Identity and configuration
 
@@ -70,7 +71,7 @@
 - Keep `channels/github/README.md` and `channels/github/ADVANCED.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
 - While the v2 notification workflow is under development, keep its product documentation to supported configuration, essential operation, and material limitations. Keep pilot plans, implementation handoffs, and acceptance evidence in task or PR context; expand documentation only when end-to-end validation establishes a reusable operator need.
 - Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
-- Select an admitted comment's capability from trusted assignment mode state. Never let issue, pull-request, or comment prose elevate Plan into Work or otherwise choose its own mode.
+- Select an admitted comment's automatic capability from the current bound manifest; retain exact native stage and source receipts. Verified comments from approved feedback authors may direct Plan-to-Work through the shared transition, as direct user input can; unverified issue, pull-request, quoted, or linked prose cannot choose authority.
 - Resolve model work through its owning native runtime's trusted durable stage and context contracts. Unsupported workflows fail explicitly; provider prose and generic notification text never select another mode or authority.
 - Bind retained GitHub reply candidates to the native workflow and exact authorized source across process and runtime boundaries; staging text alone never authorizes publication.
 - Keep the issue as the conversation owner after delivery, freeze each admitted comment's exact source, and reauthorize that source before publishing its reply. Preserve raw provider prose separately from visible mention substitution and treat it as untrusted context.

@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { automationHash } from '../agent/automation-hash.ts';
 import {
-  publicationDisposition,
   requireWorkflowSchedule,
   validateWorkflowResult,
   type WorkflowBinding,
@@ -115,48 +113,15 @@ describe('agent/workflow-result', () => {
       capabilities: ['implementation', 'publication'],
     };
     requireWorkflowSchedule(fresh, current, 'publication');
-    for (const key of Object.keys(current))
+    requireWorkflowSchedule(
+      fresh,
+      { ...current, policyDigest: 'changed', definitionDigest: 'changed' },
+      'publication',
+    );
+    for (const key of ['workflow', 'automationId', 'sourceThreadId'])
       assert.throws(
         () => requireWorkflowSchedule(fresh, { ...current, [key]: 'changed' }, 'publication'),
         /workflow-schedule-reconciliation-required/,
       );
-  });
-  it('should reconcile uncertain publication and require a provider receipt bound to the candidate', () => {
-    assert.equal(publicationDisposition(undefined, 'candidate', binding), 'prepare');
-    const receipt = {
-      candidateId: 'candidate',
-      bindingDigest: automationHash(binding),
-      status: 'uncertain' as const,
-    };
-    assert.equal(publicationDisposition(receipt, 'candidate', binding), 'reconcile');
-    assert.throws(
-      () => publicationDisposition({ ...receipt, status: 'published' }, 'candidate', binding),
-      /workflow-publication-receipt-invalid/,
-    );
-    assert.equal(
-      publicationDisposition(
-        {
-          ...receipt,
-          status: 'published',
-          providerId: 'review-1',
-          url: 'https://github.com/owner/repo/pull/1#review-1',
-        },
-        'candidate',
-        binding,
-      ),
-      'published',
-    );
-    assert.throws(
-      () => publicationDisposition(receipt, 'other', binding),
-      /workflow-publication-binding-mismatch/,
-    );
-    assert.throws(
-      () =>
-        publicationDisposition(receipt, 'candidate', {
-          ...binding,
-          evidenceDigest: 'f'.repeat(64),
-        }),
-      /workflow-publication-binding-mismatch/,
-    );
   });
 });

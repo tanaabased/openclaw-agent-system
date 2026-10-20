@@ -24,7 +24,6 @@ import type {
   GitHubCanonicalWorkItem,
   GitHubIdentity,
   GitHubRepositoryIdentity,
-  GitHubRepositoryPermission,
 } from './work-item.ts';
 
 export { GitHubWorkEventClientError } from './work-event-api-client.ts';
@@ -86,10 +85,6 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
 
   getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity> {
     return this.#items.getRepository(owner, name);
-  }
-
-  getPermission(owner: string, name: string, login: string): Promise<GitHubRepositoryPermission> {
-    return this.#items.getPermission(owner, name, login);
   }
 
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem> {

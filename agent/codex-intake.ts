@@ -1,11 +1,10 @@
-import { matchesIntakePolicy } from './assignment-intake-policy.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import codexIssueNotice from './codex-issue-notice.ts';
-import codexHostAccess from './codex-host-access.ts';
+import { CodexAutomationError } from './codex-automation-state.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
@@ -38,12 +37,9 @@ export async function connectCodexGitHub(
 
 export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDependencies) {
   const inspection = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
-  if (
-    inspection.status !== 'bound' ||
-    inspection.preview.status !== 'ready' ||
-    inspection.preview.manifest.status !== 'loaded'
-  )
-    throw new IntakeError('intake-binding-unavailable');
+  if (inspection.status !== 'bound') throw new IntakeError('intake-binding-unavailable');
+  if (inspection.preview.status !== 'ready' || inspection.preview.manifest.status !== 'loaded')
+    throw new IntakeError('intake-manifest-unavailable');
   const loaded = inspection.preview.manifest;
   const workspace = inspection.preview.workspaceDir;
   const policy = codexIntakePolicy(loaded.manifest);
@@ -141,6 +137,27 @@ export async function preflightCodexIntake(pluginData: string, deps: CodexIntake
   return { manifestDigest: current.digest };
 }
 
+async function assertCodexIntakeActive(
+  pluginData: string,
+  current: Awaited<ReturnType<typeof selectCodexIntake>>,
+  deps: CodexIntakeDependencies,
+) {
+  try {
+    if (deps.assertActive) await deps.assertActive();
+    else
+      await inspectCodexDispatchActivation(
+        pluginData,
+        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        false,
+        false,
+        'intake',
+      );
+  } catch (error) {
+    if (error instanceof CodexAutomationError) throw new IntakeError(error.code);
+    throw error;
+  }
+}
+
 export async function runCodexIntake(
   pluginData: string,
   activate = false,
@@ -150,28 +167,11 @@ export async function runCodexIntake(
     const current = await selectCodexIntake(pluginData, deps);
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const { policy, digest } = current.policy;
-    const assertActive = async () => {
-      if (activate) return;
-      try {
-        if (deps.assertActive) await deps.assertActive();
-        else
-          await inspectCodexDispatchActivation(pluginData, {
-            codexHome: current.codexHome,
-            inspectBinding: deps.inspectBinding,
-          });
-      } catch (error) {
-        if (codexHostAccess(error)) throw error;
-        throw new IntakeError('intake-activation-required');
-      }
-    };
     const assertCurrent = async () => {
       const fresh = await selectCodexIntake(pluginData, deps);
-      if (
-        fresh.digest !== current.digest ||
-        fresh.store.location.scope !== current.store.location.scope
-      )
-        throw new IntakeError('intake-policy-changed');
-      await assertActive();
+      if (fresh.store.location.scope !== current.store.location.scope)
+        throw new IntakeError('intake-workspace-binding-changed');
+      if (!activate) await assertCodexIntakeActive(pluginData, current, deps);
     };
     const result = await scanAssignments({
       store: current.store,
@@ -191,6 +191,12 @@ export async function runCodexIntake(
         );
       },
       assertCurrent,
+      async readPolicy() {
+        await assertCurrent();
+        const live = await selectCodexIntake(pluginData, deps);
+        if (!live.policy) throw new IntakeError('intake-policy-disabled');
+        return live.policy;
+      },
     });
     return {
       ...result,
@@ -221,6 +227,7 @@ export async function runCodexIntake(
       !(error instanceof IntakeError) ||
       ![
         'intake-binding-unavailable',
+        'intake-manifest-unavailable',
         'intake-policy-disabled',
         'intake-policy-reconciliation-required',
       ].includes(error.code)
@@ -264,9 +271,8 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
       ? 'intake-policy-disabled'
       : !state
         ? 'intake-activation-required'
-        : !matchesIntakePolicy(state.policyDigest, current.policy)
-          ? 'intake-policy-reconciliation-required'
-          : state.blocker?.code;
+        : state.blocker?.code;
+    if (current.policy && state) await assertCodexIntakeActive(pluginData, current, deps);
   } catch (error) {
     state = await retainedStore(pluginData, deps)
       .then((store) => store?.read())

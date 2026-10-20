@@ -32,9 +32,11 @@ jobs:
           - openclaw-google
           - openclaw-tools
           - openclaw-worktree
-          - openclaw-notifications
+          - openclaw-intake
+          - openclaw-lifecycle
           - openclaw-issue
           - openclaw-pr
+          - openclaw-progression
           - openclaw-collaboration
           - openclaw-memory
           - openclaw-backup

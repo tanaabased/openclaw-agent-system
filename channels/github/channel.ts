@@ -88,9 +88,9 @@ export default function createGitHubStatusChannel(
       );
       if (blocker) return result('blocked', blocker.code);
       const intake = await dependencies.intake.inspect(loaded.manifest, loaded.scope.workspaceDir);
-      if (intake.code)
+      if (intake.code && intake.code !== 'intake-policy-reconciliation-required')
         return result(
-          intake.code === 'intake-policy-reconciliation-required'
+          intake.code === 'intake-automation-update-required'
             ? 'sync-required'
             : intake.code === 'intake-activation-required'
               ? 'setup-required'
@@ -104,11 +104,13 @@ export default function createGitHubStatusChannel(
       const fields = { lastInboundAt: intake.checkpoint ?? null };
       if (automation)
         return result(
-          automation === 'automation-sync-required'
+          ['automation-sync-required', 'intake-automation-update-required'].includes(automation)
             ? 'sync-required'
-            : automation === 'automation-observation-unavailable'
-              ? 'unknown'
-              : 'degraded',
+            : automation === 'intake-activation-required'
+              ? 'setup-required'
+              : automation === 'automation-observation-unavailable'
+                ? 'unknown'
+                : 'degraded',
           automation,
           fields,
         );

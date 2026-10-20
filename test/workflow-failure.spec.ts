@@ -27,8 +27,8 @@ describe('agent/workflow-failure', () => {
     });
     const failure = workflowFailure(error, 'workflow-operation-failed');
     assert.equal(failure.code, 'delivery-provider-failed');
-    assert.equal(dispatchFailurePhase({}, failure.code, error), 'blocked');
-    assert.equal(scheduleDispatchRetry({}, failure.code, error, 0), false);
+    assert.equal(dispatchFailurePhase({}, failure.code, error), 'waiting');
+    assert.equal(scheduleDispatchRetry({}, failure.code, error, 0), true);
   });
   it('should bound cyclic causes and avoid classifying unknown errors as host failures', () => {
     const error = new Error('raw upstream data');

@@ -7,7 +7,6 @@ import type {
   GitHubCanonicalWorkItem,
   GitHubIdentity,
   GitHubRepositoryIdentity,
-  GitHubRepositoryPermission,
 } from './work-item.ts';
 
 export interface GitHubNotificationItemContextComment {
@@ -67,7 +66,6 @@ export interface GitHubNotificationIntakeClient {
     page?: number,
   ): Promise<GitHubAssignedItemDiscovery>;
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem>;
-  getPermission(owner: string, name: string, login: string): Promise<GitHubRepositoryPermission>;
   getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity>;
   listAssignmentEvents(
     owner: string,

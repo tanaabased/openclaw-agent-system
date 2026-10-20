@@ -148,6 +148,28 @@ describe('assignment retirement', () => {
     assert.equal(h.records.length, 1);
     assert.equal(h.cleanups(), 0);
   });
+  it('should restore an admitted reassignment after its assigner leaves the allowlist', async () => {
+    const h = setup();
+    h.fixture.item.assignees = [];
+    await h.run();
+    const event = {
+      ...h.fixture.events[0]!,
+      nodeId: 'reassigned',
+      event: 'assigned' as const,
+      databaseId: 31,
+      createdAt: new Date(baseline + 60_000).toISOString(),
+    };
+    h.fixture.item.assignees = [account];
+    h.fixture.events.push(event);
+    h.admissions.push({ ...h.admitted, id: 'successor', assignment: event });
+    h.fixture.policy.issueAssignment!.allowed = [];
+    h.fixture.policy.allowedRepositoryOwners = [];
+    h.advance(1);
+    await h.run();
+    assert.equal(h.record.retirement, undefined);
+    assert.equal(h.record.intakeId, 'successor');
+    assert.equal(h.cleanups(), 0);
+  });
   it('should not retire when another assignee is added or a provider read is unavailable', async () => {
     const h = setup();
     h.fixture.item.assignees.push({ ...account, login: 'someone', nodeId: 'someone' });

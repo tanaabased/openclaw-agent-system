@@ -86,7 +86,7 @@ intake through one managed `github-issue-assignment` schedule and one retained c
 `interval-minutes`; the automation ID is reserved. Intake records eligible
 assignments durably. After explicit reconciliation of the assessment-enabled
 schedule, `plan`, `work`, and `auto` assignments can prepare repositories and create native issue chats
-and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery; Auto requires a retained `proceed` decision.
+and worktrees in saved local Git-backed projects. Work mode continues actionable assessments through implementation and managed PR delivery; Auto requires a retained `decision.mode: work` decision.
 Issue feedback can resume its owning chat for explanation and a bounded public reply.
 Independent review requests remain unavailable through this Codex path.
 Unavailable reviews warn without blocking independent setup or issue-assignment scheduling.
@@ -208,10 +208,14 @@ until reconciled and are never blindly repeated.
 
 The intake card reports feedback delivered to chats, queued items across issues, and
 occupied slots. Answers and publication outcomes stay in the owning chat;
-unchanged checks remain quiet. Feedback authorizes read-only investigation,
-private explanation and an optional concise public reply. It does not start
-implementation or a review. Publication rechecks the exact source, assignment
-and permissions, and reconciles uncertain writes before another action.
+unchanged checks remain quiet. Feedback follows the issue's stage: Plan permits
+investigation and planning; Work permits appropriate implementation; Auto may choose
+Plan or Work with a reasoned decision. An issue already in implementation keeps that
+stage after default mode changes. Questions can still receive a direct answer.
+Feedback work retains its own result and commit, preserving the original assessment
+and implementation. Delivery updates the same PR and reuses its announcement.
+Publication rechecks the exact source and active assignment, and reconciles uncertain
+writes before another action.
 The chat displays the complete retained private response. The configured
 `feedback.skill` (default `agent-system:agent-system-feedback-reply`) then composes
 a separate public candidate, applying optional `feedback.guidance` and applicable
@@ -244,45 +248,75 @@ new feedback admission with a diagnostic; they do not silently discard comments.
 
 Set `github.notifications.issue-assignment.mode: auto`, then authorize Install to
 reconcile the saved workflow. Auto uses your existing assessment skill and guidance
-to recommend `proceed` or `wait`, with reasons shown in the issue chat. Clear, bounded
+to choose `decision.mode: work` or `decision.mode: plan`, with reasons shown in the issue chat. Clear, bounded
 work can continue through the configured implementation and managed PR delivery;
 incomplete requirements, broad scope, or consequential uncertainty should wait.
 A ready plan alone does not authorize implementation.
 
-A wait retains the complete plan and releases its implementation slot. Polling and
-feedback cannot promote it; explicitly direct further work in the same chat through
-the [manual handoff](#issue-assessment). Missing or invalid decisions, changed issue
-evidence before implementation, changed skills/guidance, lost authority, and native
-denials stop continuation. Fix the stated obstacle and give explicit direction;
-never recreate the issue chat to bypass its retained stop. Existing Plan/Work schedules
-do not grant Auto authority without reconciliation. Native OpenClaw Auto is not supported.
+A Plan decision retains the complete plan and releases its implementation slot.
+Polling alone does not change the decision. Newly admitted feedback may support a
+new Auto decision; Plan mode still needs operator direction to enter implementation.
+Missing or invalid decisions, lost task identity, and native denials stop continuation.
+Preserve the issue chat and its retained work when resolving an obstacle. Live mode changes govern
+entry into implementation for existing planning issues. Once implementation has
+started, later mode changes preserve that stage. Auto requires
+a verified Work decision before implementation. OpenClaw uses the same Plan/Work decision and continues eligible work in its existing issue chat.
 
 ### Work Mode
 
 Set `github.notifications.issue-assignment.mode: work`, optionally override its
-implementation skill or guidance, then authorize Install to reconcile the saved schedule. Activating Work
-mode authorizes assessment, implementation, and PR publication without routine
-stage approvals. Existing Plan-mode schedules remain assessment-only until that
-explicit update. An actionable assessment continues in its original issue chat
-with the complete plan, retained guidance, and selected model and effort.
+implementation skill or guidance. Initial setup uses Install to create the native
+schedule; later mode and guidance edits apply without Install. Work mode permits
+assessment, implementation, and PR publication without routine
+stage approvals. Changing the live mode to Work also makes existing actionable Plan issues eligible
+for automatic continuation; an explicit operator request can still use the retained handoff. An actionable assessment hands directly to the implementation skill in the same
+native turn, with the complete plan, current guidance, and selected model and effort.
+The coordinator resumes interrupted or older issues; a second wake-up is not
+required between assessment and implementation.
 
-The runtime automatically checks that the activation and assignment still apply;
-these checks do not ask for renewed approval. Missing requirements, changed or
-unavailable skills/guidance, cancellation, and actual native approval or provider
-denials stop work. Implementation and delivery count against workflow capacity;
+The runtime reads live workflow policy and checks the owning chat, active assignment,
+and native receipts without renewed stage approval. Policy-only edits take effect
+without Install. Disabled effects and currently ineligible authors are held and
+reconsidered automatically. Preserve completed work, explicit cancellations, native
+denials, and uncertain submissions. Choose current implementation instructions
+before preparing a new send; never rewrite a submitted request. Older issues recover
+their implementation stage from retained execution receipts without recreating
+the chat, repeating the handoff, or requiring Install.
+Implementation and delivery count against workflow capacity;
 intake reports stay limited to admission and capacity.
 
 Automatic PR publication requires an explicit public description of the change,
 verified checks, and limitations. Private reports are not copied into GitHub.
+
+Work and Auto activation already authorize the workflow's branch push, PR creation
+and updates, and its originating-issue announcement. Configured assessment summaries
+and feedback replies use their own activated authority. These effects do not require
+a second conversational permission request. Native execution review and provider
+permissions still apply; syncing the plugin does not grant host permissions or
+override an earlier denial.
+
+Workflow commands expose their action before `--plugin-data`: for example,
+`delivery prepare`, `delivery publish`, `dispatch summary compose`, or
+`continuation delivery publish`. Keep request data on stdin; an action repeated
+there must match argv. Preparation validates and returns the exact draft and digest
+without publication. Only the explicit publication operation may perform its
+authorized external write. Saved action-on-stdin commands remain compatible.
 
 Native continuation intent is retained before sending. An uncertain send is
 reconciled, never repeated blindly. A recorded implementation can resume delivery
 without reimplementing or creating another PR. A stopped implementation remains
 in the same chat with its files and evidence: inspect the blocker and explicitly
 continue through the existing manual handoff if human intervention is needed.
+For missing consequential requirements, an implementation result can be
+`clarification-needed`, with questions and the complete partial-work report. The
+issue keeps its implementation stage. A new answer in the same chat resumes
+through continuation context without another approval; scheduled scans leave it
+waiting instead of resending the request.
+
 Use `continuationRuntime` action `cancel` in the issue chat to stop further automatic
 work; it does not undo files or an already-started external operation. Disable the
-workflow through Install to revoke future automatic stage and publication authority.
+workflow in the live manifest to hold pending automatic work; Install reconciles
+the saved automation.
 
 For `continuation-turn-ended` before an implementation result or delivery attempt,
 an operator may request `continuationRuntime` action `retry` with the retained `id`,
@@ -311,8 +345,8 @@ execution or visible card delivery.
 
 ### Pull Request Delivery
 
-After implementation handoff, explicitly authorize publication in the retained
-issue chat. The trusted `deliveryRuntime` accepts JSON actions with the retained
+Once an issue enters implementation, its ordinary PR delivery needs no separate
+publication grant. Honor explicit restrictions in the conversation. The trusted `deliveryRuntime` accepts JSON actions with the retained
 dispatch `id`: `prepare` previews the current branch, head, identity, and recipient
 policy; `publish` requires that preview's `digest` and the same optional `title`
 and `body`. Preparation grants no publication authority. Codex uses native host
@@ -354,13 +388,13 @@ before assessment; the display title does not establish chat identity.
 
 When you explicitly ask the issue chat to continue with implementation, its agent
 records a `handoff` before changing the checkout. This records the transition out of assessment;
-it does not mark the issue complete or grant permission to publish. The existing
+it does not mark the issue complete. Implementation includes ordinary PR delivery. The existing
 chat, worktree, and recorded outcome are retained. If an unsaved assessment still
 occupies a slot after you approved further work, recover from the issue or operator
 chat with `dispatchRuntime` input `{"action":"handoff","id":"<assessment-receipt>"}`,
 then repeat with the returned `digest`. The runtime verifies the existing native
-chat and repository and a later user turn; the agent must establish the human's
-explicit authorization from the conversation. Keep the existing work rather than
+chat and repository, then verifies the transition against live Work/Auto policy or
+native human direction for Plan. Keep the existing work rather than
 resetting and reassigning it.
 
 Each scheduled check produces one intake report: newly started **Issue** links,

@@ -22,9 +22,13 @@ import {
   runCodexIntake,
   selectCodexIntake,
 } from '../agent/codex-intake.ts';
-import { codexIntakeJobs, codexIntakePolicy } from '../agent/codex-intake-policy.ts';
+import {
+  codexIntakeJobs,
+  codexIntakePolicy,
+  intakeAutomationId,
+} from '../agent/codex-intake-policy.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
-import { baseline, intakeFixture } from './github-intake-fixture.ts';
+import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 const models = {
   default: { model: 'openai/gpt-6-astra', effort: 'high' },
@@ -96,6 +100,31 @@ describe('agent/codex-intake', () => {
     assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
     const { store } = await selectCodexIntake(pluginData, deps);
     assert.equal((await store.read())!.records.length, 1);
+  });
+  it('should reject original retained-work digests as codex intake activation', async () => {
+    const { client } = intakeFixture();
+    let connects = 0;
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => baseline,
+      connect: async () => {
+        connects++;
+        return client;
+      },
+    };
+    await runCodexIntake(pluginData, true, deps);
+    const selected = await selectCodexIntake(pluginData, deps);
+    const original = originalIntakeDigest(selected.manifest);
+    await selected.store.exclusive(async (state, save) => {
+      state!.policyDigest = original;
+      await save(state!);
+    });
+    assert.equal((await inspectCodexIntake(pluginData, deps)).status, 'ready');
+    const before = connects;
+    assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
+    assert.equal((await selected.store.read())!.baselineAt, baseline);
+    assert.ok(connects > before);
   });
   it('should reactivate despite obsolete full notification queues', async () => {
     const { client } = intakeFixture();
@@ -345,7 +374,7 @@ describe('agent/codex-intake', () => {
       },
     });
     assert.ok('code' in raced);
-    assert.equal(raced.code, 'intake-policy-changed');
+    assert.equal(raced.code, 'intake-policy-disabled');
     const stopped = await inspectCodexIntake(pluginData, deps);
     assert.equal(stopped.baselineAt, before.baselineAt);
     assert.equal(stopped.checkpoint, before.checkpoint);
@@ -473,9 +502,57 @@ describe('agent/codex-intake', () => {
     await acknowledgeCodexAutomation(pluginData, desired.digest, undefined, deps);
     assert.equal((await plan()).status, 'aligned');
     assert.equal((await plan()).actions.length, 0);
+    if (!legacy) {
+      const selected = await selectCodexIntake(pluginData, deps);
+      const before = await selected.store.read();
+      const file = (await readdir(pluginData)).find(
+        (name) => name.startsWith('codex-automations-') && name.endsWith('.json'),
+      )!;
+      const path = join(pluginData, file);
+      const original = await readFile(path, 'utf8');
+      const ledger = JSON.parse(original);
+      const oldPrompt =
+        'Previously reconciled automation instructions.\n\n' +
+        codexAutomationMarker(ledger.scope, intakeAutomationId);
+      ledger.records[0].definition.prompt = oldPrompt;
+      await writeFile(path, JSON.stringify(ledger));
+      await saveNative({ ...prepared.request, prompt: oldPrompt });
+      const inspection = await inspectCodexIntake(pluginData, { codexHome });
+      assert.equal(inspection.code, 'intake-automation-update-required');
+      assert.match(inspection.remediation!, /apply the update/);
+      assert.deepEqual(await selected.store.read(), before);
+      const blocked = await runCodexIntake(pluginData, false, {
+        codexHome,
+        now: () => baseline + 60000,
+        connect: async () => assert.fail('an update must block before provider access'),
+      });
+      assert.equal(blocked.status, 'blocked');
+      assert.ok('code' in blocked);
+      assert.equal(blocked.code, 'intake-automation-update-required');
+      assert.ok('notice' in blocked && blocked.notice!.message.startsWith('> ## ✨ '));
+      assert.equal((await selected.store.read())!.baselineAt, before!.baselineAt);
+      assert.deepEqual((await selected.store.read())!.records, before!.records);
+      const update = await plan();
+      assert.equal(update.actions[0]!.id, nativeId);
+      const repair = await prepareCodexAutomation(pluginData, update.digest, {}, deps);
+      await saveNative(repair.request);
+      await acknowledgeCodexAutomation(pluginData, update.digest, undefined, deps);
+      assert.equal((await inspectCodexIntake(pluginData, { codexHome })).status, 'ready');
+      assert.equal((await selected.store.read())!.baselineAt, before!.baselineAt);
+      assert.equal(creates, 1);
+    }
     if (legacy) {
       const selected = await selectCodexIntake(pluginData, deps);
       assert.notEqual(selected.policy!.digest, selected.policy!.legacyDigest);
+      const originalPrompt = prepared.request.prompt.replace(
+        selected.policy!.digest,
+        originalIntakeDigest(selected.manifest),
+      );
+      await saveNative({ ...prepared.request, prompt: originalPrompt });
+      assert.equal(
+        (await inspectCodexDispatchActivation(pluginData, deps)).sourceThreadId,
+        'intake-thread',
+      );
       const oldPrompt = prepared.request.prompt.replace(
         selected.policy!.digest,
         selected.policy!.legacyDigest,
@@ -512,9 +589,9 @@ describe('agent/codex-intake', () => {
         join(workspace, 'agent.yaml'),
         JSON.stringify({ ...manifest, github: { ...manifest.github, username: 'foreign' } }),
       );
-      await assert.rejects(
-        inspectCodexDispatchActivation(pluginData, deps),
-        /dispatch-activation-required/,
+      assert.equal(
+        (await inspectCodexDispatchActivation(pluginData, deps)).sourceThreadId,
+        'intake-thread',
       );
       await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
       await saveNative({ ...prepared.request, prompt: oldPrompt + '\nchanged consent' });
@@ -554,9 +631,9 @@ describe('agent/codex-intake', () => {
       inspectCodexDispatchActivation(pluginData, deps),
       /dispatch-activation-required/,
     );
-    await assert.rejects(
-      inspectCodexDispatchActivation(pluginData, deps, false, true),
-      /dispatch-activation-required/,
+    assert.equal(
+      (await inspectCodexDispatchActivation(pluginData, deps, false, true)).sourceThreadId,
+      'intake-thread',
     );
     await saveNative(prepared.request);
     await writeFile(
@@ -566,9 +643,9 @@ describe('agent/codex-intake', () => {
         git: { worktrees: { repositories: { 'working-directory': '../checkouts' } } },
       }),
     );
-    await assert.rejects(
-      inspectCodexDispatchActivation(pluginData, deps),
-      /dispatch-activation-required/,
+    assert.equal(
+      (await inspectCodexDispatchActivation(pluginData, deps)).sourceThreadId,
+      'intake-thread',
     );
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     assert.deepEqual(await inspectCodexDispatchActivation(pluginData, deps), {
@@ -590,14 +667,6 @@ describe('agent/codex-intake', () => {
           implementation: { skill: 'company:implement' },
         });
         await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(work));
-        await assert.rejects(
-          inspectCodexDispatchActivation(pluginData, deps, false, false, 'implementation'),
-          /activation-required/,
-        );
-        const workPlan = await plan();
-        const workPrepared = await prepareCodexAutomation(pluginData, workPlan.digest, {}, deps);
-        await saveNative(workPrepared.request);
-        await acknowledgeCodexAutomation(pluginData, workPlan.digest, undefined, deps);
         const activated = await inspectCodexDispatchActivation(
           pluginData,
           deps,
@@ -605,36 +674,13 @@ describe('agent/codex-intake', () => {
           false,
           'implementation',
         );
-        assert.deepEqual(activated.schedule?.saved.capabilities, [
-          'assessment',
-          'implementation',
-          'publication',
-        ]);
+        assert.equal(activated.sourceThreadId, 'intake-thread');
         assert.equal(activated.schedule?.current.automationId, nativeId);
-        assert.equal(
-          (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'publication'))
-            .schedule?.current.sourceThreadId,
-          'intake-thread',
-        );
         await assert.rejects(
           inspectCodexDispatchActivation(pluginData, deps, false, false, 'review'),
           /schedule-reconciliation-required/,
         );
-        await saveNative({ ...workPrepared.request, status: 'PAUSED' });
-        await assert.rejects(
-          inspectCodexDispatchActivation(pluginData, deps, false, false, 'publication'),
-          /activation-required/,
-        );
-        await saveNative(workPrepared.request);
         await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
-        const planAgain = await plan();
-        const preparedAgain = await prepareCodexAutomation(pluginData, planAgain.digest, {}, deps);
-        await saveNative(preparedAgain.request);
-        await acknowledgeCodexAutomation(pluginData, planAgain.digest, undefined, deps);
-        await assert.rejects(
-          inspectCodexDispatchActivation(pluginData, deps, false, false, 'implementation'),
-          /schedule-reconciliation-required/,
-        );
       }
     }
     const disabled = structuredClone(manifest);
@@ -654,7 +700,7 @@ describe('agent/codex-intake', () => {
     const retained = await inspectCodexIntake(pluginData, { codexHome });
     assert.equal(
       retained.code,
-      disable === 'manifest corruption' ? 'intake-binding-unavailable' : 'intake-policy-disabled',
+      disable === 'manifest corruption' ? 'intake-manifest-unavailable' : 'intake-policy-disabled',
     );
     assert.equal(retained.baselineAt, baseline);
     assert.equal(retained.checkpoint, baseline);
@@ -694,7 +740,7 @@ describe('agent/codex-intake', () => {
       },
     });
     assert.ok('code' in stale);
-    assert.equal(stale.code, 'intake-activation-required');
+    assert.equal(stale.code, 'intake-automation-update-required');
     const reenable = await plan();
     assert.equal(reenable.actions[0]!.id, nativeId);
     const resume = await prepareCodexAutomation(pluginData, reenable.digest, {}, deps);
@@ -754,7 +800,7 @@ describe('agent/codex-intake', () => {
       code: 'intake-automation-id-reserved',
     });
     policy.issueAssignment!.allowed = [];
-    assert.equal(codexIntakeJobs(value).length, 0);
+    assert.equal(codexIntakeJobs(value).length, 1);
     assert.equal(
       codexAutomationSchedule({ kind: 'every', seconds: 1001 * 60, missedRun: 'native' }),
       'FREQ=MINUTELY;INTERVAL=1001',
@@ -765,7 +811,7 @@ describe('agent/codex-intake', () => {
     );
   });
 
-  it('should include creation orchestration in both modes and continuation only in work', () => {
+  it('should keep installed orchestration unchanged across live workflow policy edits', () => {
     const { policy } = intakeFixture();
     const manifest = {
       schemaVersion: 1 as const,
@@ -775,38 +821,16 @@ describe('agent/codex-intake', () => {
     };
     const runtime = {
       nodeExecutable: '/host/node',
-      entrypoint: '/installed plugin/dist/codex/codex-runtime.js',
-      pluginData: '/private/plugin data',
+      entrypoint: '/plugin/codex-runtime.js',
+      pluginData: '/plugin-data',
     };
-    const prompt = () => {
-      const job = codexIntakeJobs(manifest, runtime)[0]!;
-      if (job.payload.kind !== 'prompt') throw new Error('expected prompt');
-      return job.payload.prompt;
-    };
-    const plan = prompt();
-    assert.ok(plan.includes(runtime.entrypoint));
-    assert.ok(plan.includes('tools.mcp__codex_app__create_thread(prepared.request)'));
-    assert.ok(!plan.includes('Installed continuation command'));
+    const before = codexIntakeJobs(manifest, runtime);
     policy.issueAssignment!.mode = 'work';
-    assert.throws(() => codexIntakeJobs(manifest), {
-      code: 'continuation-runtime-identity-required',
-    });
-    const work = prompt();
-    assert.ok(
-      work.includes(
-        JSON.stringify([
-          runtime.nodeExecutable,
-          runtime.entrypoint,
-          'continuation',
-          '--plugin-data',
-          runtime.pluginData,
-        ]),
-      ),
-    );
-    assert.match(work, /next and action:reconcile.*private tracking state/u);
-    assert.match(work, /do not edit repository files.*publish a pull request/u);
-    assert.match(work, /match continuationRuntime.*newest trusted context/u);
-    assert.match(work, /stop on denial/u);
+    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.allowed = [];
+    assert.deepEqual(codexIntakeJobs(manifest, runtime), before);
+    policy.intervalMinutes += 5;
+    assert.notDeepEqual(codexIntakeJobs(manifest, runtime), before);
   });
 
   it('should update the quiet response prompt on the same native schedule and chat', async () => {

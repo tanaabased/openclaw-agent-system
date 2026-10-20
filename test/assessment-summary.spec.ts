@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import assert from 'node:assert/strict';
 import assessmentSummary, {
   assessmentSummaryOwnPublications,
@@ -88,15 +89,20 @@ function fixture() {
     saves = 0,
     lost = false,
     forbidden = false,
-    changed = false;
+    changed = false,
+    rejectWrite = false;
   let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
-  const run = (action: AssessmentSummaryRequest, turnId = 'turn') =>
+  const run = (
+    action: AssessmentSummaryRequest,
+    turnId = 'turn',
+    authorityDigest = 'e'.repeat(64),
+  ) =>
     assessmentSummary({
       record,
       intake,
       action,
       turnId,
-      authorityDigest: 'e'.repeat(64),
+      authorityDigest,
       presentation: result.fullAssessment,
       authorize: async () => {
         if (forbidden) throw new Error('native-approval-denied');
@@ -111,6 +117,12 @@ function fixture() {
           createIssueComment: async (_owner, _repo, number, body) => {
             assert.equal(number, 3);
             writes++;
+            if (rejectWrite)
+              throw Object.assign(new Error('github-request-rejected'), {
+                providerDiagnostic: providerDiagnostic('github', 'api-request', 'permission', {
+                  httpStatus: 403,
+                }),
+              });
             receipt = { nodeId: 'comment-' + writes, databaseId: writes, body };
             if (lost) throw new Error('response-lost');
             return receipt;
@@ -154,6 +166,9 @@ function fixture() {
     get saves() {
       return saves;
     },
+    rejectWrite: (value: boolean) => {
+      rejectWrite = value;
+    },
     lose: () => {
       lost = true;
     },
@@ -184,6 +199,18 @@ function fixture() {
 }
 
 describe('agent/assessment-summary', () => {
+  it('retries a definitive rejection without treating it as an uncertain write', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    f.rejectWrite(true);
+    assert.equal((await f.run({ operation: 'publish', digest })).status, 'blocked');
+    assert.equal(f.record.assessmentSummaries![0]!.attempt, undefined);
+    f.rejectWrite(false);
+    assert.equal((await f.run({ operation: 'publish', digest })).status, 'published');
+    assert.equal(f.writes, 2);
+  });
+
   it('requires a complete retained assessment before composition and keeps publication separate', async () => {
     const f = fixture();
     assert.equal((await f.run({ operation: 'compose' })).status, 'blocked');
@@ -272,6 +299,16 @@ describe('agent/assessment-summary', () => {
 
     assert.equal(f.writes, 0);
   });
+  it('should retain a prepared assessment summary when configuration provenance changes', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    assert.equal(
+      (await f.run({ operation: 'publish', digest }, 'turn', 'f'.repeat(64))).status,
+      'published',
+    );
+    assert.equal(f.writes, 1);
+  });
   it('rejects lost authority and a different assessment turn without changing readiness', async () => {
     const f = fixture();
     f.retain();
@@ -319,7 +356,28 @@ describe('agent/assessment-summary', () => {
     assert.equal(f.writes, 0);
     assert.deepEqual(f.record.result, f.result);
   });
-  it('bounds revision history without deleting receipts or blocking assessment readiness', async () => {
+  it('retains a reconciled provider receipt even when its local attempt was absent', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    await f.run({ operation: 'publish', digest });
+    const summary = f.record.assessmentSummaries![0]!;
+    delete summary.attempt;
+    delete summary.receipt;
+    const preview = await f.run({ operation: 'publish' });
+    assert.ok('digest' in preview);
+    assert.equal(
+      (await f.run({ operation: 'publish', digest: preview.digest })).status,
+      'published',
+    );
+    assert.equal(f.writes, 1);
+    f.retain({ ...f.result, fullAssessment: 'Revised assessment.' });
+    assert.equal((await f.run({ operation: 'compose' })).status, 'composition-ready');
+    assert.equal(f.record.assessmentSummaries!.length, 2);
+    assert.ok(f.record.assessmentSummaries![0]!.receipt);
+  });
+
+  it('keeps existing receipts without imposing a lifetime revision ceiling', async () => {
     const f = fixture();
     f.retain();
     const digest = await f.compose();
@@ -332,9 +390,9 @@ describe('agent/assessment-summary', () => {
     f.record.assessmentRevision = 32;
     f.retain({ ...f.result, fullAssessment: 'A thirty-third deliberate revision.' });
     const blocked = await f.run({ operation: 'compose' });
-    assert.ok('code' in blocked && blocked.code === 'assessment-summary-history-full');
+    assert.equal(blocked.status, 'composition-ready');
     assert.equal(f.record.phase, 'complete');
-    assert.equal(f.record.assessmentSummaries.length, 32);
+    assert.equal(f.record.assessmentSummaries.length, 33);
     assert.equal(f.writes, 1);
   });
   it('rejects secrets and private plan as an automatic fallback', async () => {

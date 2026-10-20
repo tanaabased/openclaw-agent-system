@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import waitForAssessmentRelease from '../examples/openclaw-notifications/assessment-barrier.ts';
+import waitForAssessmentRelease from '../examples/openclaw-intake/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -9,12 +9,20 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
-import { notificationsExampleScenario } from '../examples/openclaw-notifications/model-fixture.ts';
+import { intakeExampleScenario } from '../examples/openclaw-intake/model-fixture.ts';
+import { lifecycleExampleScenario } from '../examples/openclaw-lifecycle/model-fixture.ts';
+import { progressionExampleScenario } from '../examples/openclaw-progression/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
-for (const scenario of [issueExampleScenario, prExampleScenario, notificationsExampleScenario]) {
+for (const scenario of [
+  issueExampleScenario,
+  prExampleScenario,
+  progressionExampleScenario,
+  intakeExampleScenario,
+  lifecycleExampleScenario,
+]) {
   const id = 'a'.repeat(64);
   const job = openclawIntakeJobs({
     schemaVersion: 1,
@@ -27,7 +35,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
   })[0]!;
   assert.equal(job.payload.kind, 'prompt');
   const intakePrompt = job.payload.kind === 'prompt' ? job.payload.prompt : '';
-  const digest = /Policy digest: ([a-f0-9]{64})/u.exec(intakePrompt)![1]!;
+  const digest = 'd'.repeat(64);
 
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
 
@@ -37,7 +45,9 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
       messages: [
         { role: 'system', content: 'Name: Notification Tanaabot' },
         { role: 'user', content: prompt },
-        ...(prompt.includes('Stop before implementation.')
+        ...(prompt.includes(
+          'Agent System: assess this admitted issue and retain its complete plan.',
+        )
           ? [
               {
                 role: 'user' as const,
@@ -90,7 +100,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
-    if (scenario.id === 'openclaw-notifications')
+    if (scenario.id === 'openclaw-intake')
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
         const directory = '/tmp/notification-barrier-fixture';
         const files = new Set<string>();
@@ -214,8 +224,8 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
       await action(input, 'next');
       append(input, 'next-1', { status: 'pass-completed' });
       await action(input, 'report');
-      append(input, 'report', { status: 'reported', response: '> ## ℹ️ Intake complete' });
-      assert.deepEqual(await response(input), { content: '> ## ℹ️ Intake complete' });
+      append(input, 'report', { status: 'reported', response: '> ## 💡 Intake complete' });
+      assert.deepEqual(await response(input), { content: '> ## 💡 Intake complete' });
       input.messages.push({
         role: 'user',
         content: `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
@@ -323,48 +333,52 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
 
-    it('should require model-only context before assessment and consume fresh later evidence after recovery', async () => {
+    it('should require model-only context before assessment', async () => {
       const missing = request(
-        `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+        `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
       missing.messages.pop();
       assert.equal(matchFixture([...scenario.fixtures], missing), null);
-      const later = request(`Refresh retained assessment for managed issue ${id}`);
-      assert.equal(matchFixture([...scenario.fixtures], later), null);
-      later.messages.push({
-        role: 'user',
-        content:
-          '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts previousResultDigest',
-      });
-      assert.equal((await action(later, 'context')).id, id);
-      append(later, 'refresh-context', {
-        status: 'verified',
-        previousResultDigest: digest,
-        previousResult: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Retained.',
-          assessment: 'Observed.',
-          plan: 'Complete retained plan.',
-          planSummary: 'Retain it.',
-          fullAssessment: 'Complete retained plan.',
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        },
-        evidence: { body: 'notification-hidden-later-fact' },
-      });
-      const revised = await action(later, 'result');
-      assert.equal(revised.previousResultDigest, digest);
-      assert.ok(!JSON.stringify(revised.result).includes('notification-hidden-later-fact'));
-      append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
-      const nextResponse = await response(later);
-      assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
-      if (scenario.id !== 'openclaw-pr')
-        assert.equal((await action(later, 'summary')).operation, 'compose');
     });
 
+    if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id))
+      it('should consume fresh later evidence after recovery', async () => {
+        const later = request(`Refresh retained assessment for managed issue ${id}`);
+        assert.equal(matchFixture([...scenario.fixtures], later), null);
+        later.messages.push({
+          role: 'user',
+          content:
+            '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts previousResultDigest',
+        });
+        assert.equal((await action(later, 'context')).id, id);
+        append(later, 'refresh-context', {
+          status: 'verified',
+          previousResultDigest: digest,
+          previousResult: {
+            version: 1,
+            outcome: 'plan-ready',
+            summary: 'Retained.',
+            assessment: 'Observed.',
+            plan: 'Complete retained plan.',
+            planSummary: 'Retain it.',
+            fullAssessment: 'Complete retained plan.',
+            evidence: [],
+            progress: { completed: [], remaining: [] },
+          },
+          evidence: { body: 'notification-hidden-later-fact' },
+        });
+        const revised = await action(later, 'result');
+        assert.equal(revised.previousResultDigest, digest);
+        assert.ok(!JSON.stringify(revised.result).includes('notification-hidden-later-fact'));
+        append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
+        const nextResponse = await response(later);
+        assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
+        if (scenario.id !== 'openclaw-pr')
+          assert.equal((await action(later, 'summary')).operation, 'compose');
+      });
+
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
-      const prompt = `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`;
+      const prompt = `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`;
       for (const code of ['private-state-file-lock-busy', 'private-state-snapshot-conflict']) {
         const input = request(prompt);
         const original = await action(input, 'context');
@@ -394,7 +408,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
 
     it('should retain a plan only after native context and git verify its worktree', async () => {
       const input = request(
-        `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+        `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
       assert.equal((await action(input, 'context')).id, id);
       const context = {
@@ -425,7 +439,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
         'content' in nextResponse && nextResponse.content,
         'The complete retained presentation.',
       );
-      if (scenario.id !== 'openclaw-pr')
+      if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id))
         assert.equal((await action(input, 'summary')).operation, 'compose');
       for (const value of [
         { ...context, runtime: 'codex' },
@@ -433,7 +447,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
         { ...context, status: 'blocked' },
       ]) {
         const invalid = request(
-          `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+          `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
         );
         append(invalid, 'context', value);
         assert.equal(matchFixture([...scenario.fixtures], invalid), null);
@@ -463,7 +477,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
       });
       assert.equal(matchFixture([...scenario.fixtures], unrelated), null);
       const invalid = request(
-        `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+        `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
       append(invalid, 'context', {
         status: 'verified',
@@ -476,12 +490,89 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
+    if (scenario.id === 'openclaw-progression') {
+      for (const direct of [false, true])
+        it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
+          const automatic = request(
+            direct
+              ? `Resume the unfinished Auto decision. Refresh agent_system_dispatch action context with id ${id}.`
+              : `Continue this issue through implementation. Call agent_system_dispatch action implementation-context with id ${id}.`,
+          );
+          if (direct) {
+            await action(automatic, 'context');
+            append(automatic, 'refresh-context', {
+              status: 'verified',
+              mode: 'auto',
+              previousResult: {
+                version: 1,
+                outcome: 'plan-ready',
+                summary: 'Ready.',
+                assessment: 'Bounded documentation.',
+                plan: 'Document cleanup.',
+                evidence: [],
+                progress: { completed: [], remaining: [] },
+              },
+              previousResultDigest: digest,
+            });
+            await action(automatic, 'result');
+            append(automatic, 'refresh-result', {
+              status: 'recorded',
+              presentation: 'The retained plan.',
+              handoff: { next: 'implementation' },
+            });
+          }
+          await action(automatic, 'implementation-context');
+          append(automatic, 'work-context', {
+            status: 'verified',
+            runtime: 'openclaw',
+            publicationAuthorized: true,
+            project: { path: '/tmp/owned' },
+          });
+          const question = await action(automatic, 'implementation-result');
+          assert.equal(question.implementationResult.outcome, 'clarification-needed');
+          append(automatic, 'work-result', {
+            status: 'recorded',
+            presentation: 'Which cleanup timing?',
+          });
+          assert.deepEqual(await response(automatic), {
+            content: direct
+              ? 'The retained plan.\n\nWhich cleanup timing?'
+              : 'Which cleanup timing?',
+          });
+          const answer = request(
+            `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
+          );
+          await action(answer, 'implementation-context');
+          append(answer, 'work-context', {
+            status: 'verified',
+            runtime: 'openclaw',
+            publicationAuthorized: true,
+            project: { path: '/tmp/owned' },
+            previousImplementationResult: question.implementationResult,
+          });
+          for (const stage of ['apply', 'add', 'commit']) {
+            const resumed = await response(answer);
+            assert.ok('toolCalls' in resumed);
+            assert.equal(resumed.toolCalls?.[0]?.name, 'agent_system_git');
+            assert.equal(JSON.parse(resumed.toolCalls![0]!.arguments).argv[0], stage);
+            append(answer, stage, { exitCode: 0, truncated: false });
+          }
+          const completed = await action(answer, 'implementation-result');
+          assert.equal(completed.implementationResult.outcome, 'done');
+          append(answer, 'work-result', {
+            status: 'recorded',
+            presentation: 'Committed locally.',
+            handoff: { next: 'delivery' },
+          });
+          assert.deepEqual(await response(answer), { content: 'Committed locally.' });
+        });
+    }
     if (scenario.id === 'openclaw-pr') {
       it('should wait for native handoff before implementation and use the same delivery for an operator retry', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
-        assert.equal((await action(input, 'handoff')).permission, 'implementation-and-publication');
+        await action(input, 'handoff');
         append(input, 'handoff-preview', { status: 'handoff-available', digest });
         assert.equal((await action(input, 'handoff')).digest, digest);
         append(input, 'handoff', { status: 'handed-off' });
@@ -500,11 +591,29 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
           append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
         }
         await action(input, 'implementation-result');
-        append(input, 'work-result', { status: 'recorded' });
+        append(input, 'work-result', {
+          status: 'recorded',
+          handoff: {
+            next: 'delivery',
+            request: { action: 'delivery', id, operation: 'prepare' },
+          },
+        });
         assert.equal((await action(input, 'delivery')).operation, 'prepare');
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).digest, digest);
         append(input, 'delivery-publish', {
+          status: 'waiting',
+          code: 'github-delivery-linkage-unverified',
+          pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
+        });
+        const reconciliation = await action(input, 'delivery');
+        assert.equal(reconciliation.operation, 'prepare');
+        assert.equal(reconciliation.id, id);
+        append(input, 'delivery-link-prepare-0', { status: 'prepared', digest });
+        const linkageRetry = await action(input, 'delivery');
+        assert.equal(linkageRetry.operation, 'publish');
+        assert.equal(linkageRetry.id, id);
+        append(input, 'delivery-link-publish-0', {
           status: 'published',
           workflowStatus: 'partially-delivered',
         });
@@ -551,7 +660,13 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
         assert.doesNotMatch(args.stdin, /new file mode/);
         for (const stage of ['apply', 'add', 'commit'])
           append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
-        append(input, 'work-result', { status: 'recorded' });
+        append(input, 'work-result', {
+          status: 'recorded',
+          handoff: {
+            next: 'delivery',
+            request: { action: 'delivery', id, operation: 'prepare' },
+          },
+        });
         const prepared = await action(input, 'delivery');
         assert.equal(prepared.operation, 'prepare');
         assert.match(prepared.title!, /cleanup and verification/);
@@ -592,7 +707,7 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
         assert.equal(matchFixture([...scenario.fixtures], input), null);
       });
     } else {
-      it('should refuse implementation in the issue-only fixture', () => {
+      it('should refuse operator pr delivery in a non-pr fixture', () => {
         assert.equal(
           matchFixture(
             [...scenario.fixtures],
@@ -604,50 +719,89 @@ for (const scenario of [issueExampleScenario, prExampleScenario, notificationsEx
         );
       });
     }
-    it('should keep feedback private retention skill selection candidate and publication as distinct stages', async () => {
-      const eventId = 'e'.repeat(64);
-      const input = request(
-        `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${eventId}`,
-      );
-      assert.equal((await action(input, 'feedback')).operation, 'context');
-      append(input, 'feedback-context', {
-        status: 'verified',
-        runtime: 'openclaw',
-        publication: 'allowed',
+    if (scenario.id !== 'openclaw-progression')
+      it('should keep feedback private retention skill selection candidate and publication as distinct stages', async () => {
+        const eventId = 'e'.repeat(64);
+        const input = request(
+          `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${eventId}`,
+        );
+        assert.equal((await action(input, 'feedback')).operation, 'context');
+        append(input, 'feedback-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          publication: 'allowed',
+        });
+        if (scenario.id === 'openclaw-pr') {
+          const last = input.messages.at(-1)!;
+          last.content = JSON.stringify({
+            status: 'verified',
+            runtime: 'openclaw',
+            publication: 'allowed',
+            mode: 'work',
+          });
+          assert.equal((await action(input, 'feedback')).operation, 'implementation-context');
+          append(input, 'feedback-work-context', {
+            status: 'verified',
+            worktree: '/tmp/worktree',
+            implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
+          });
+          const selected = await response(input);
+          assert.ok('toolCalls' in selected);
+          assert.equal(selected.toolCalls?.[0]?.name, 'read');
+          append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+          for (const stage of [
+            'feedback-apply',
+            'feedback-check',
+            'feedback-add',
+            'feedback-commit',
+          ]) {
+            const step = await response(input);
+            assert.ok('toolCalls' in step);
+            assert.equal(step.toolCalls?.[0]?.name, 'agent_system_git');
+            append(input, stage, { exitCode: 0, truncated: false });
+          }
+          assert.equal((await action(input, 'feedback')).operation, 'implementation-result');
+          append(input, 'feedback-work-result', { status: 'recorded' });
+          assert.equal((await action(input, 'feedback')).deliveryOperation, 'prepare');
+          append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });
+          const delivered = await action(input, 'feedback');
+          assert.equal(delivered.deliveryOperation, 'publish');
+          assert.equal(delivered.digest, digest);
+          append(input, 'feedback-delivery-publish', { status: 'published' });
+        }
+        const retained = await action(input, 'feedback');
+        assert.equal(retained.operation, 'result');
+        if (scenario.id !== 'openclaw-pr')
+          assert.match(retained.privateText!, /implementation remains unstarted/);
+        append(input, 'feedback-result', {
+          status: 'recorded',
+          presentation: 'Full private response',
+        });
+        assert.equal((await action(input, 'feedback')).operation, 'compose');
+        append(input, 'feedback-compose', {
+          status: 'composition-ready',
+          digest,
+          selection: { skill: { path: '/tmp/SKILL.md' } },
+        });
+        const read = await response(input);
+        assert.ok('toolCalls' in read);
+        assert.equal(read.toolCalls?.[0]?.name, 'read');
+        append(input, 'feedback-skill', { text: 'Selected reply method' });
+        const candidate = await action(input, 'feedback');
+        assert.equal(candidate.operation, 'candidate');
+        if (scenario.id !== 'openclaw-pr')
+          assert.match(candidate.publicText!, /Implementation has not started/);
+        append(input, 'feedback-candidate', { status: 'candidate-recorded' });
+        assert.equal((await action(input, 'feedback')).digest, undefined);
+        append(input, 'feedback-preview', { status: 'publication-ready', digest });
+        assert.equal((await action(input, 'feedback')).digest, digest);
+        append(input, 'feedback-publish', {
+          status: 'published',
+          presentation: 'Complete private and public presentation',
+        });
+        assert.deepEqual(await response(input), {
+          content: 'Complete private and public presentation',
+        });
       });
-      const retained = await action(input, 'feedback');
-      assert.equal(retained.operation, 'result');
-      if (scenario.id !== 'openclaw-pr')
-        assert.match(retained.privateText!, /implementation remains unstarted/);
-      append(input, 'feedback-result', {
-        status: 'recorded',
-        presentation: 'Full private response',
-      });
-      assert.equal((await action(input, 'feedback')).operation, 'compose');
-      append(input, 'feedback-compose', {
-        status: 'composition-ready',
-        digest,
-        selection: { skill: { path: '/tmp/SKILL.md' } },
-      });
-      const read = await response(input);
-      assert.ok('toolCalls' in read);
-      assert.equal(read.toolCalls?.[0]?.name, 'read');
-      append(input, 'feedback-skill', { text: 'Selected reply method' });
-      const candidate = await action(input, 'feedback');
-      assert.equal(candidate.operation, 'candidate');
-      if (scenario.id !== 'openclaw-pr')
-        assert.match(candidate.publicText!, /Implementation has not started/);
-      append(input, 'feedback-candidate', { status: 'candidate-recorded' });
-      assert.equal((await action(input, 'feedback')).digest, undefined);
-      append(input, 'feedback-preview', { status: 'publication-ready', digest });
-      assert.equal((await action(input, 'feedback')).digest, digest);
-      append(input, 'feedback-publish', {
-        status: 'published',
-        presentation: 'Complete private and public presentation',
-      });
-      assert.deepEqual(await response(input), {
-        content: 'Complete private and public presentation',
-      });
-    });
   });
 }

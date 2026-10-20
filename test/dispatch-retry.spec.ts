@@ -12,7 +12,6 @@ describe('agent/dispatch-retry', () => {
     const record = {} as SharedDispatchRecord;
     for (const code of [
       'dispatch-creation-denied',
-      'delivery-human-publication-required',
       'delivery-branch-changed',
       'feedback-source-author-changed',
       'dispatch-turn-cancelled',
@@ -23,6 +22,9 @@ describe('agent/dispatch-retry', () => {
       'dispatch-project-registration-unavailable',
       'dispatch-creation-unresolved',
       'dispatch-operation-failed',
+      'continuation-skill-identity-changed',
+      'continuation-schedule-binding-mismatch',
+      'feedback-schedule-owner-changed',
     ])
       assert.equal(dispatchFailurePhase(record, code), 'waiting');
     scheduleDispatchRetry(record, 'dispatch-host-unavailable', undefined, 0);
@@ -50,7 +52,7 @@ describe('agent/dispatch-retry', () => {
       assert.equal(dispatchRetryDue(record, now), true);
     }
   });
-  it('should honor provider cooldown and never retry authentication or permission denials', () => {
+  it('should recheck repaired provider access while preserving native denials', () => {
     const record = {} as SharedDispatchRecord;
     const diagnostic = providerDiagnostic('github', 'api-request', 'rate-limit', {
       resetAt: 10000000,
@@ -70,7 +72,7 @@ describe('agent/dispatch-retry', () => {
       dispatchFailurePhase(record, 'github-notification-request-failed', {
         providerDiagnostic: diagnostic,
       }),
-      'blocked',
+      'retrying',
     );
     for (const classification of ['authentication', 'permission', 'unknown'] as const) {
       diagnostic.classification = classification;
@@ -81,9 +83,25 @@ describe('agent/dispatch-retry', () => {
           { providerDiagnostic: diagnostic },
           1,
         ),
-        false,
+        classification !== 'unknown',
       );
     }
     assert.equal(scheduleDispatchRetry(record, 'dispatch-creation-denied', undefined, 1), false);
+    diagnostic.classification = 'permission';
+    assert.equal(
+      scheduleDispatchRetry(
+        record,
+        'continuation-native-approval-denied',
+        { providerDiagnostic: diagnostic },
+        1,
+      ),
+      false,
+    );
+    assert.equal(
+      dispatchFailurePhase(record, 'continuation-native-approval-denied', {
+        providerDiagnostic: diagnostic,
+      }),
+      'blocked',
+    );
   });
 });

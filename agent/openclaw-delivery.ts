@@ -1,8 +1,10 @@
+import { retainedIssueProgression } from './issue-progression.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
+import publishIssueDelivery from './publish-issue-delivery.ts';
 import deliveryAnnouncement, {
   announcementPresentation,
-  announcementRecoveryInstructions,
+  deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
@@ -36,6 +38,7 @@ export default async function openClawDelivery(input: {
   base: string;
   recipients?: GitHubPullRequestRecipient[];
   feedbackEnabled: boolean;
+  existingOnly?: boolean;
   selectAnnouncement?(
     state?: DeliveryAnnouncementState,
   ): Promise<DeliveryAnnouncementState['composition']>;
@@ -49,9 +52,10 @@ export default async function openClawDelivery(input: {
   if (action.operation === 'present')
     return presentOpenClawDelivery(record, intake, input.feedbackEnabled);
   const work = record.work;
-  if (!record.handoff || !work?.publication) throw new Error('delivery-human-publication-required');
+  if (!work || (!retainedIssueProgression(record) && !work.publication))
+    throw new Error('delivery-implementation-incomplete');
   if (
-    work.result?.outcome === 'blocked' ||
+    (work.result && work.result.outcome !== 'done') ||
     (work.implementation && work.result?.outcome !== 'done')
   )
     throw new Error('delivery-implementation-incomplete');
@@ -112,7 +116,7 @@ export default async function openClawDelivery(input: {
     base: input.base,
     head,
     authorId: connection.account.identity.nodeId,
-    policyDigest: record.manifestDigest,
+    policyDigest: previous?.binding.policyDigest ?? record.manifestDigest,
   };
   // the commit belongs to this attempt; the issue, session and branch own the delivery.
   const bindingChange =
@@ -126,7 +130,6 @@ export default async function openClawDelivery(input: {
       'branch',
       'base',
       'authorId',
-      'policyDigest',
     ]);
   if (bindingChange) throw new Error(bindingChange);
   const title = action.title ?? previous?.title;
@@ -157,7 +160,7 @@ export default async function openClawDelivery(input: {
     title,
     body,
     source: input.source,
-    authorization: work.publication,
+    progression: retainedIssueProgression(record) ?? work.publication,
     previous: previous ?? null,
   });
   if (
@@ -176,7 +179,7 @@ export default async function openClawDelivery(input: {
         (action.operation === 'publish'
           ? 'This stale preview made no publication write. Inspect the refreshed operation and retry once with its digest only within the retained authorization; investigate repeated staleness. '
           : '') +
-        'Publish only under the retained explicit operator request, including authorized follow-up commits, using this digest and the same title/body. No new stage approval is needed within that request; native denials still stop the operation. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
+        'The verified implementation stage or current operator direction authorizes ordinary PR delivery and appropriate follow-up commits. Publish using this digest and the same title/body without a separate publication grant. Honor explicit user restrictions and native denials. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
     };
   const provider = new IssueDeliveryProvider({
     identity: connection.account.identity,
@@ -210,16 +213,6 @@ export default async function openClawDelivery(input: {
     contentUpdate: Object.keys(contentUpdate).length ? contentUpdate : undefined,
     signal: input.signal,
     expectedPullRequest: delivery.pullRequest,
-    async beforeCreate() {
-      await assertCurrent();
-      if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
-      delivery.creationAttempted = true;
-      await save();
-    },
-    async checkpoint(receipt) {
-      delivery.pullRequest = receipt;
-      await save();
-    },
   };
   if (
     action.operation === 'compose' ||
@@ -261,27 +254,21 @@ export default async function openClawDelivery(input: {
     delivery.reconciled = false;
     work.delivery = delivery;
     await save();
-    const ref = `refs/heads/${branch}`;
-    const remoteHead = (await git(['ls-remote', '--heads', 'origin', ref])).split(/\s/u)[0] ?? '';
-    if (remoteHead && remoteHead !== head) {
-      if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
-        throw new Error('delivery-remote-head-diverged');
-      await git(['merge-base', '--is-ancestor', remoteHead, head]);
-    }
-    publication.expectedPullRequest = await provider.inspect({
-      ...publication,
-      headSha: remoteHead,
+    await publishIssueDelivery({
+      delivery,
+      publication: { ...publication, headSha: head },
+      provider,
+      git,
+      authorize: async () => {
+        await assertCurrent();
+        await input.reauthorize();
+      },
+      beforeCreate: async () => {
+        if (input.existingOnly) throw new Error('feedback-delivery-owner-changed');
+      },
+      save,
     });
-    if (remoteHead !== head) await git(['push', '--set-upstream', 'origin', `${head}:${ref}`]);
-    if ((await git(['ls-remote', '--heads', 'origin', ref])).split(/\s/u)[0] !== head)
-      throw new Error('delivery-push-unverified');
-    delivery.pushedHead = head;
-    await save();
-    // only the exact pre-push observation may lag behind a verified fast-forward.
-    if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
-    await provider.publish(publication);
-    delete delivery.contentUpdate;
-    delivery.reconciled = true;
+    if (work.code === 'implementation-delivery-incomplete') delete work.code;
     await save();
   } else {
     if (!previous?.pullRequest || !previous.reconciled)
@@ -297,9 +284,7 @@ export default async function openClawDelivery(input: {
     pullRequest: receipt,
     workflowStatus: workflowStatus({ phase: 'complete', delivery }),
     url,
-    instructions:
-      announcementRecoveryInstructions(delivery.announcement) +
-      ' Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
+    instructions: deliveryCompletionInstructions('openclaw', delivery),
   };
 }
 

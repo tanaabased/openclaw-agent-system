@@ -1,5 +1,6 @@
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import runCodexFeedback from './codex-feedback.ts';
+import codexRuntimeRequest from './codex-runtime-request.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
@@ -228,10 +229,14 @@ async function runSetup(args: string[]): Promise<void> {
 }
 
 let failureScope: ReturnType<typeof workflowFailureScope> | undefined;
-async function readWorkflowInput(route: string) {
-  const request: unknown = JSON.parse(await readStandardInput());
-  failureScope = workflowFailureScope('codex', route, request);
-  return request;
+async function readWorkflowCommand(route: string, args: string[]) {
+  if (args.includes('--input'))
+    throw new Error(
+      'expected <action> [<operation>] --plugin-data <path>; send JSON on stdin without --input',
+    );
+  const result = codexRuntimeRequest(route, args, JSON.parse(await readStandardInput()));
+  failureScope = workflowFailureScope('codex', route, result.request);
+  return result;
 }
 
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
@@ -239,38 +244,34 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'feedback') {
-    writeJson(
-      await runCodexFeedback(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
-    );
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
+    writeJson(await runCodexFeedback(pluginData, request));
     return;
   }
   if (command === 'continuation') {
-    writeJson(
-      await runCodexContinuation(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
-    );
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
+    writeJson(await runCodexContinuation(pluginData, request));
     return;
   }
   if (command === 'delivery') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: delivery --plugin-data <path>\nJSON on stdin: action prepare, publish, reconcile, compose, candidate, announce, or present; id is the retained managed issue receipt. Prepare returns a digest for explicitly authorized publication. compose selects the reply skill; candidate prepares the issue announcement; announce publishes its exact digest or reconciles an uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
+        'Usage: delivery <prepare|publish|reconcile|compose|candidate|announce|present> --plugin-data <path>\nRequest data is JSON on stdin; action is visible in argv and stdin cannot change it; id is the retained managed issue receipt. Prepare returns a digest for publication within the verified implementation stage or current user direction; no separate publication approval is required. compose selects the reply skill; candidate prepares the issue announcement; announce publishes its exact digest or reconciles an uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
       );
       return;
     }
-    writeJson(
-      await runCodexDelivery(parsePluginData(args.slice(1)), await readWorkflowInput(command)),
-    );
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
+    writeJson(await runCodexDelivery(pluginData, request));
     return;
   }
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch --plugin-data <path>\nRequests are JSON on stdin with action: inspect, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews a digest-bound end to assessment monitoring after a user follow-up; it never authorizes implementation. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a closed issue and queues the shared retirement lifecycle while preserving evidence and the existing grace deadline. It accepts active or paused intake; configured cleanup proceeds on the next eligible active intake run. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a closed issue and queues the shared retirement lifecycle while preserving evidence and the existing grace deadline. It accepts active or paused intake; configured cleanup proceeds on the next eligible active intake run. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }
-    const pluginData = parsePluginData(args.slice(1));
-    const request = await readWorkflowInput(command);
+    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
     if (!request || typeof request !== 'object' || Array.isArray(request))
       throw new Error('dispatch-action-invalid');
     const { action, ...input } = request as Record<string, unknown>;

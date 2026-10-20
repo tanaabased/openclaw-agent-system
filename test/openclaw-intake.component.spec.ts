@@ -23,7 +23,7 @@ import type { NativeAutomation } from '../agent/automation-gateway.ts';
 import { intakeLocation } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
-import { baseline, intakeFixture } from './github-intake-fixture.ts';
+import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 function manifest() {
   const { policy } = intakeFixture();
@@ -111,6 +111,18 @@ describe('openclaw v2 intake slice', () => {
     );
     assert.equal((await store.read())!.policyDigest, selected!.digest);
   });
+  it('should retain the baseline and reevaluate live policy independently of saved fingerprints', async () => {
+    const f = fixture();
+    await f.service.run(f.value, root, 'activate');
+    const { store } = await f.service.select(f.value, root);
+    await store.exclusive(async (state, save) => {
+      state!.policyDigest = originalIntakeDigest(f.value);
+      await save(state!);
+    });
+    assert.equal((await f.service.inspect(f.value, root)).status, 'ready');
+    assert.equal((await f.service.run(f.value, root, 'scan', '0'.repeat(64))).status, 'ready');
+    assert.equal((await store.read())!.baselineAt, baseline);
+  });
   it('should keep activated intake after cadence, capacity and grace changes', async () => {
     const f = fixture();
     const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
@@ -123,7 +135,7 @@ describe('openclaw v2 intake slice', () => {
     assert.equal((await f.service.run(f.value, root, 'scan', digest)).status, 'ready');
     assert.equal((await f.service.inspect(f.value, root)).records.length, 1);
     f.value.github.notifications.issueAssignment!.allowed = [];
-    await assert.rejects(f.service.run(f.value, root, 'scan', digest), /intake-policy-disabled/);
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).status, 'ready');
   });
   it('should restrict both native check and scan to each isolated fixtures selected issue', async () => {
     const f = fixture();
@@ -220,29 +232,18 @@ describe('openclaw v2 intake slice', () => {
     notifications.intervalMinutes++;
     await inspect('healthy', 'intake-ready');
     notifications.issueAssignment!.feedback = true;
-    await inspect('drift', 'intake-policy-reconciliation-required');
+    await inspect('healthy', 'intake-ready');
   });
 
-  it('should block unsupported native workflows before provider access or activation', async () => {
+  it('should keep discovery available for supported work mode', async () => {
     const f = fixture();
     f.value.github.notifications.issueAssignment!.mode = 'work';
     const contribution = f.service.contribution();
     const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
-    assert.equal(
-      contribution.validate!(context)?.diagnostics?.[0]?.code,
-      'github-notification-runtime-unsupported',
-    );
-    assert.equal(
-      (await f.service.inspect(f.value, root)).code,
-      'github-notification-runtime-unsupported',
-    );
-    const result = await contribution.reconcile!(context);
-    assert.equal(result.outcomes[0]?.status, 'skipped');
-    assert.equal(result.warnings?.[0]?.code, 'github-notification-runtime-unsupported');
-    await assert.rejects(f.service.run(f.value, root, 'activate'), {
-      code: 'github-notification-runtime-unsupported',
-    });
-    assert.equal(f.connects(), 0);
+    assert.deepEqual(contribution.validate!(context)?.diagnostics ?? [], []);
+    await f.service.run(f.value, root, 'activate');
+    assert.equal((await f.service.inspect(f.value, root)).status, 'ready');
+    assert.ok(f.connects() > 0);
   });
 
   it('should carry notification presentation context through the registry without changing serialized records', async () => {
@@ -258,8 +259,13 @@ describe('openclaw v2 intake slice', () => {
     const context = { manifest: f.value, workspaceDir: root, runtime: 'openclaw' as const };
     const validated = registry.validate(context);
     const reconciled = await registry.reconcile(context);
-    assert.equal(validated.diagnostics.length, 3);
-    assert.equal(reconciled.warnings.length, 3);
+    assert.deepEqual(
+      new Set(validated.diagnostics.map(({ fieldPath }) => fieldPath)),
+      new Set([
+        '/github/notifications/review-request',
+        '/github/notifications/issue-assignment/assessment/skill',
+      ]),
+    );
     assert.deepEqual(
       reconciled.warnings.map(getCliDiagnosticContext),
       validated.diagnostics.map(getCliDiagnosticContext),
@@ -307,7 +313,7 @@ describe('openclaw v2 intake slice', () => {
         .map(({ text }) => text)
         .join('');
       assert.equal(events.at(-1)?.stream, 'stderr');
-      assert.equal(stderr.match(/code=github-notification-runtime-unsupported/gu)?.length, 3);
+      assert.match(stderr, /code=github-notification-runtime-unsupported/u);
       for (const diagnostic of validated.diagnostics) {
         assert.equal(stderr.split(`field=${diagnostic.fieldPath}`).length - 1, 1);
         assert.equal(
@@ -316,9 +322,9 @@ describe('openclaw v2 intake slice', () => {
         );
       }
       if (json) assert.equal(events[0]!.text, `${JSON.stringify(installed, undefined, 2)}\n`);
-      else assert.equal(stderr.match(/⚠ warning/gu)?.length, 3);
+      else assert.match(stderr, /⚠ warning/u);
     }
-    assert.equal(f.connects(), 0);
+    assert.ok(f.connects() > 0);
   });
 
   it('should activate and scan assignments while warning about independent unavailable capabilities', async () => {
@@ -422,9 +428,7 @@ describe('openclaw v2 intake slice', () => {
     );
     assert.equal((await store.read())!.baselineAt, baseline);
     f.value.github!.notifications!.issueAssignment!.feedback = true;
-    await assert.rejects(f.service.run(f.value, root, 'scan', digest), {
-      code: 'intake-policy-changed',
-    });
+    assert.equal((await f.service.run(f.value, root, 'scan', digest)).status, 'ready');
     await f.service.contribution().reconcile!(context);
     assert.equal((await store.read())!.baselineAt, baseline);
     assert.equal((await store.read())!.records.length, 1);
@@ -436,11 +440,11 @@ describe('openclaw v2 intake slice', () => {
       name: 'AbortError',
     });
     await assert.rejects(f.service.run(f.value, root, 'scan', '0'.repeat(64)), {
-      code: 'intake-policy-changed',
+      code: 'intake-activation-required',
     });
     f.loaded.scope.workspaceDir = '/tmp';
     await assert.rejects(f.service.run(f.value, root, 'scan', digest), {
-      code: 'intake-policy-changed',
+      code: 'intake-workspace-binding-changed',
     });
     f.value.github!.notifications!.runtimes = ['codex'];
     await assert.rejects(f.service.run(f.value, root, 'scan', digest), {
@@ -536,7 +540,7 @@ describe('openclaw v2 intake slice', () => {
     let inspections = 0;
     f.service.dependencies.readiness = async () => {
       inspections++;
-      return 'automation-sync-required';
+      return 'intake-automation-update-required';
     };
     const before = f.connects();
     const result = await f.service.run(
@@ -546,7 +550,7 @@ describe('openclaw v2 intake slice', () => {
       (await f.service.select(f.value, root)).selected!.digest,
     );
     assert.equal(result.status, 'blocked');
-    assert.equal(result.code, 'automation-sync-required');
+    assert.equal(result.code, 'intake-automation-update-required');
     assert.equal(inspections, 1);
     assert.equal(f.connects(), before);
     const failure = new Error('scheduler connection failed');
@@ -691,7 +695,7 @@ describe('openclaw v2 intake slice', () => {
         },
       });
       assert.equal(output!.fire, true);
-      assert.equal(output!.state.status, 'blocked');
+      assert.equal(output!.state.status, 'failed');
       assert.equal(output!.state.stage, sample.stage);
       assert.equal(output!.state.code, sample.code);
       assert.ok(output!.message.includes(sample.code));

@@ -3,6 +3,7 @@ import workflowStatus from './workflow-status.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import pendingAssignments from './dispatch-pending.ts';
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import type { OpenClawDispatchState, OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { intakeRemediation, type IntakeState } from '../channels/github/intake/record-store.ts';
 import {
@@ -39,6 +40,7 @@ export default function openclawIntakeReport(input: {
     ...(observation.status === 'blocked'
       ? [{ id: 'intake', code: observation.code ?? 'intake-check-incomplete' }]
       : []),
+    ...(intake?.deferred ?? []).map((entry) => ({ id: 'deferred-' + entry.key, code: entry.code })),
     ...active
       .filter(
         (record) =>
@@ -57,6 +59,7 @@ export default function openclawIntakeReport(input: {
     if (problems.includes(problem)) return false;
     const id = problem.slice(0, problem.indexOf(':'));
     if (id === 'intake') return observation.status === 'ready';
+    if (id.startsWith('deferred-')) return true;
     const record = active.find((entry) => entry.id === id);
     return Boolean(record && !record.blocker);
   });
@@ -70,15 +73,19 @@ export default function openclawIntakeReport(input: {
     started.length > 0 ||
     (fingerprint !== state.intakeReport?.fingerprint &&
       (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
-  const title = failures.length
-    ? observation.status === 'blocked'
-      ? '⚠️ Intake needs attention'
-      : '⚠️ Intake checked — some items need attention'
-    : started.length
-      ? `ℹ️ Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
-      : recovered.length
-        ? 'ℹ️ Intake resumed'
-        : 'ℹ️ Intake checked';
+  const automationNotice = intakeAutomationNotice(observation.code ?? '');
+  const title =
+    automationNotice && failures.length === 1
+      ? `${automationNotice.emoji} ${automationNotice.title}`
+      : failures.length
+        ? observation.status === 'blocked'
+          ? '⚠️ Intake needs attention'
+          : '⚠️ Intake checked — some items need attention'
+        : started.length
+          ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
+          : recovered.length
+            ? '💡 Intake resumed'
+            : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   const label = (record: OpenClawDispatchRecord) => {
     const item = intake?.records.find((entry) => entry.id === record.intakeId);
@@ -92,6 +99,38 @@ export default function openclawIntakeReport(input: {
     );
   if (started.length) lines.push('');
   for (const failure of failures.slice(0, 12)) {
+    const notice = intakeAutomationNotice(failure.code);
+    if (failure.id === 'intake' && notice) {
+      lines.push(
+        `- **What happened:** ${notice.summary}`,
+        `- **Next step:** ${notice.next}`,
+        `- **Technical detail:** \`${failure.code}\``,
+      );
+      continue;
+    }
+    const provider =
+      failure.id === 'intake'
+        ? intake?.blocker?.providerDiagnostic
+        : intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id)
+            ?.providerDiagnostic;
+    if (provider)
+      lines.push(
+        `- **Provider:** ${text(provider.provider)} · ${text(provider.operation)}${provider.httpStatus ? ' · HTTP ' + provider.httpStatus : ''}`,
+        `  **Detail:** ${text(provider.providerMessage ?? provider.explanation)}`,
+      );
+    const deferred = intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id);
+    if (deferred) {
+      const candidate = JSON.parse(deferred.candidate) as {
+        repositoryPath: string;
+        number: number;
+      };
+      lines.push(
+        `- **Issue:** ${text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number)}`,
+        `  **Diagnostic:** \`${text(deferred.code)}\``,
+        '  **Action:** This assignment will be checked again on a later scan. Unrelated intake continues.',
+      );
+      continue;
+    }
     const automation = failure.code.startsWith('automation-');
     const record = active.find((record) => record.id === failure.id);
     const retry = record?.retry ? record.retryAfter : undefined;

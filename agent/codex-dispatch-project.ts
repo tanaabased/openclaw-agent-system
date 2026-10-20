@@ -12,6 +12,7 @@ import {
 import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
 import { resolveToolExecutable } from '../api/cli-runner.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
+import gitDiagnostic from '../tools/git/diagnostic.ts';
 
 export type DispatchGit = (cwd: string, argv: string[], signal?: AbortSignal) => Promise<string>;
 
@@ -35,8 +36,13 @@ export const dispatchGit: DispatchGit = async (cwd, argv, signal) => {
       /authentication failed|could not read (?:Username|Password)|terminal prompts disabled|Permission denied \(publickey\)/iu.test(
         result.stderr,
       );
-    throw new Error(
-      authentication ? 'dispatch-project-git-auth-unavailable' : 'dispatch-project-git-unavailable',
+    throw Object.assign(
+      new Error(
+        authentication
+          ? 'dispatch-project-git-auth-unavailable'
+          : 'dispatch-project-git-unavailable',
+      ),
+      { providerDiagnostic: gitDiagnostic(result.stderr, result.termination !== 'exit') },
     );
   }
   return result.stdout.trim();

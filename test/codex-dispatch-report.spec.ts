@@ -23,15 +23,70 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should report a deferred assignment without saying unrelated intake is paused', () => {
+    const current = {
+      ...intake,
+      deferred: [
+        {
+          key: 'one',
+          code: 'intake-assignment-history-incomplete',
+          candidate: JSON.stringify({ repositoryPath: '/repos/owner/repo', number: 3 }),
+        },
+      ],
+    };
+    const report = prepareDispatchReport({ ...input, intake: current });
+    assert.match(report.response, /owner\/repo#3/);
+    assert.match(report.response, /intake-assignment-history-incomplete/);
+    assert.match(report.response, /Unrelated intake continues/);
+    assert.doesNotMatch(report.response, /Issue checks are temporarily paused/);
+    assert.match(
+      prepareDispatchReport({
+        ...input,
+        intake: current,
+        state: { ...state, intakeHealth: report.health },
+      }).response,
+      /DONT_NOTIFY/,
+    );
+  });
+
+  it('should report an automation update once and preserve the first-setup distinction', () => {
+    const current = {
+      ...intake,
+      blocker: {
+        code: 'intake-automation-update-required',
+        since: 1,
+        retryAfter: 2,
+      },
+    };
+    const update = prepareDispatchReport({ ...input, intake: current });
+    assert.match(update.response, /> ## ✨ Automation update available/);
+    assert.match(update.response, /New intake is paused/);
+    assert.match(update.response, /Install.*update.*resume intake/);
+    assert.match(update.response, /`intake-automation-update-required`/);
+    assert.match(update.response, /<decision>NOTIFY<\/decision>/);
+    const repeat = prepareDispatchReport({
+      ...input,
+      intake: current,
+      state: { ...state, intakeHealth: update.health },
+    });
+    assert.match(repeat.response, /DONT_NOTIFY/);
+    const initial = prepareDispatchReport({
+      ...input,
+      intake: { ...current, blocker: { ...current.blocker, code: 'intake-activation-required' } },
+    });
+    assert.match(initial.response, /> ## ⚠️ Set up intake automation/);
+    assert.doesNotMatch(initial.response, /update available/);
+  });
+
   it('should show progress transitions as information cards without repeating unchanged notices', () => {
     const progress = { pending: true, sources: 4, reported: undefined as boolean | undefined };
     const current = { ...input, state: { ...state, discoveryProgress: progress } };
-    assert.match(prepareDispatchReport(current).response, /> ## ℹ️ Intake discovery continues/u);
+    assert.match(prepareDispatchReport(current).response, /> ## 💡 Intake discovery continues/u);
     assert.doesNotMatch(prepareDispatchReport(current).response, /DONT_NOTIFY/);
     progress.reported = true;
     assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
     progress.pending = false;
-    assert.match(prepareDispatchReport(current).response, /> ## ℹ️ Intake discovery caught up/u);
+    assert.match(prepareDispatchReport(current).response, /> ## 💡 Intake discovery caught up/u);
     progress.reported = false;
     assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
   });
@@ -43,7 +98,7 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(report.response, /Slots:\*\* 0\/2 occupied/);
     assert.deepEqual(report.started, []);
     const message = report.response.split('<message>')[1]!.split('</message>')[0]!;
-    assert.ok(message.startsWith('> ## ℹ️'));
+    assert.ok(message.startsWith('> ## 💡'));
     assert.ok(message.split('\n').every((line) => line.startsWith('>')));
   });
   it('should report an intake failure and recovery without repeating notifications', () => {

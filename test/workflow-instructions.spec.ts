@@ -102,7 +102,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       publication: { url: 'https://github.com/owner/repo/issues/1#issuecomment-2' },
     });
     assert.ok(output.indexOf('Feedback reply instructions') > output.indexOf('Published reply'));
-    assert.ok(output.includes('> ## ℹ️ Reply published\n>\n> [Published reply ↗]'));
+    assert.ok(output.includes('> ## 💡 Reply published\n>\n> [Published reply ↗]'));
     assert.ok(output.includes('Private English answer.'));
     assert.ok(
       output.includes('> ## 📤 To [@contributor](https://github.com/contributor)\n>\n> Ita.'),

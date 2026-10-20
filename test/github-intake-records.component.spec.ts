@@ -1,10 +1,15 @@
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import DiscoveryBudget from '../agent/discovery-budget.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import IntakeRecordStore, { intakeLocation } from '../channels/github/intake/record-store.ts';
+import IntakeRecordStore, {
+  IntakeError,
+  intakeLocation,
+} from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
@@ -60,10 +65,8 @@ describe('channels/github/intake/records', () => {
         after.records.map(({ id }) => id),
         before.records.map(({ id }) => id),
       );
-      await assert.rejects(
-        scanAssignments({ ...next, policyDigest: 'changed', legacyPolicyDigest: 'changed-legacy' }),
-        /intake-policy-reconciliation-required/,
-      );
+      assert.equal((await scanAssignments({ ...next, policyDigest: 'changed' })).status, 'ready');
+      assert.equal((await store.read())!.baselineAt, before.baselineAt);
     });
   }
   it('should admit only the selected issue without searching or advancing the global checkpoint', async () => {
@@ -96,6 +99,50 @@ describe('channels/github/intake/records', () => {
       assert.equal((await store.read())!.checkpoint, checkpoint);
     }
     assert.deepEqual(fetched, [3, 4]);
+  });
+
+  it('should reconsider a policy hold immediately after intake is reenabled', async () => {
+    const { input, store, events } = setup();
+    const assigned = events.splice(0);
+    await scanAssignments({ ...input, activate: true });
+    events.push(...assigned);
+    const held = await scanAssignments({
+      ...input,
+      now: baseline + 120000,
+      readPolicy: async () => {
+        input.policy.issueAssignment!.enabled = false;
+        throw new IntakeError('intake-policy-disabled');
+      },
+    });
+    assert.equal(held.code, 'intake-policy-disabled');
+    input.policy.issueAssignment!.enabled = true;
+    const resumed = await scanAssignments({ ...input, now: baseline + 120001 });
+    assert.equal(resumed.status, 'ready');
+    assert.equal(resumed.admitted, 1);
+    assert.equal((await store.read())!.blocker, undefined);
+  });
+
+  it('should retain unapproved assignments and admit them after a live policy update without activation', async () => {
+    const { input, store, events } = setup();
+    const assigned = events.splice(0);
+    await scanAssignments({ ...input, activate: true });
+    events.push(...assigned);
+    const approved = input.policy.issueAssignment!.allowed;
+    input.policy.issueAssignment!.allowed = [];
+    assert.equal((await scanAssignments({ ...input, now: baseline + 120000 })).admitted, 0);
+    const held = (await store.read())!;
+    assert.equal(held.records.length, 0);
+    assert.equal(held.observedAssignments?.length, 1);
+    input.policy.issueAssignment!.allowed = approved;
+    assert.equal(
+      (await scanAssignments({ ...input, policyDigest: 'live-update', now: baseline + 180000 }))
+        .admitted,
+      1,
+    );
+    const resumed = (await store.read())!;
+    assert.equal(resumed.baselineAt, held.baselineAt);
+    assert.equal(resumed.records[0]!.id, held.observedAssignments![0]!.id);
+    assert.equal((await scanAssignments({ ...input, now: baseline + 240000 })).admitted, 0);
   });
 
   it('should still require assignment, actor and owner authorization for selected intake', async () => {
@@ -254,20 +301,110 @@ describe('channels/github/intake/records', () => {
       assert.equal((await fixture.store.read())!.records.length, 0);
     }
   });
-  it('should retain the checkpoint on partial scans and suppress unchanged blockers', async () => {
-    const { input, client, store, events } = setup();
-    events[0]!.createdAt = new Date(baseline - 1).toISOString();
-    await scanAssignments({ ...input, activate: true });
-    client.listAssignmentEvents = async () => ({ events, truncated: true });
-    const failure = await scanAssignments({ ...input, now: baseline + 10_000 });
-    assert.equal(failure.code, 'intake-assignment-history-incomplete');
-    assert.equal(failure.changed, true);
-    assert.equal((await store.read())!.checkpoint, baseline);
-    assert.equal((await scanAssignments({ ...input, now: baseline + 11_000 })).changed, false);
-    client.listAssignmentEvents = async () => ({ events, truncated: false });
-    assert.equal((await scanAssignments({ ...input, now: baseline + 400_000 })).changed, true);
-    assert.equal((await store.read())!.blocker, undefined);
-  });
+  for (const failure of ['history', 'identity', 'permission', 'missing'] as const) {
+    it(`should defer an issue with ${failure} failure and admit unrelated work before retrying after restart`, async () => {
+      const { input, client, store, events, item } = setup();
+      const assigned = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assigned);
+      let broken = true;
+      let search = true;
+      const candidate = (number: number) => ({
+        repositoryPath: '/repos/owner/repo',
+        itemType: 'issue' as const,
+        updatedAt: item.updatedAt,
+        number,
+        nodeId: `I_${number}`,
+        databaseId: number,
+      });
+      client.discoverAssigned = async () => ({
+        candidates: search ? [candidate(3), candidate(4)] : [],
+        totalCount: search ? 2 : 0,
+        incomplete: false,
+        truncated: false,
+      });
+      client.getItem = async (_owner, _repo, number) => {
+        if (broken && number === 3 && ['permission', 'missing'].includes(failure))
+          throw new GitHubWorkEventClientError(
+            'github-denied',
+            'denied',
+            {},
+            undefined,
+            providerDiagnostic(
+              'github',
+              'api-request',
+              failure === 'missing' ? 'unknown' : 'permission',
+              { httpStatus: failure === 'missing' ? 404 : 403 },
+            ),
+          );
+        return {
+          ...item,
+          number,
+          databaseId: number,
+          nodeId: broken && number === 3 && failure === 'identity' ? 'wrong' : `I_${number}`,
+        };
+      };
+      client.listAssignmentEvents = async (_owner, _repo, number) => ({
+        events,
+        truncated: broken && number === 3 && failure === 'history',
+      });
+      const first = await scanAssignments({ ...input, now: baseline + 10000 });
+      assert.equal(first.status, 'ready');
+      assert.equal(first.admitted, 1);
+      const held = (await store.read())!;
+      assert.deepEqual(
+        held.records.map((entry) => entry.issue.number),
+        [4],
+      );
+      assert.equal(held.deferred?.length, 1);
+      assert.equal(held.blocker, undefined);
+      assert.equal(held.checkpoint, baseline + 10000);
+      const again = await scanAssignments({ ...input, now: baseline + 11000 });
+      assert.equal(again.changed, false);
+      broken = false;
+      search = false;
+      const resumed = await scanAssignments({
+        ...input,
+        store: new IntakeRecordStore(store.location),
+        now: baseline + 12000,
+      });
+      assert.equal(resumed.status, 'ready');
+      assert.equal(resumed.admitted, 1);
+      const after = (await store.read())!;
+      assert.deepEqual(
+        after.records.map((entry) => entry.issue.number),
+        [4, 3],
+      );
+      assert.deepEqual(after.deferred, []);
+      assert.equal(after.baselineAt, baseline);
+    });
+  }
+
+  for (const classification of ['authentication', 'rate-limit', 'transport'] as const) {
+    it(`should retain scan-wide backoff for ${classification} failures`, async () => {
+      const { input, client, store } = setup();
+      await scanAssignments({ ...input, activate: true });
+      client.getItem = async () => {
+        throw new GitHubWorkEventClientError(
+          'github-failed',
+          'failed',
+          {},
+          undefined,
+          providerDiagnostic('github', 'api-request', classification),
+        );
+      };
+      const result = await scanAssignments({ ...input, now: baseline + 10000 });
+      assert.equal(result.status, 'blocked');
+      assert.equal(result.code, `intake-github-${classification}`);
+      assert.equal((await store.read())!.deferred, undefined);
+      assert.equal((await store.read())!.blocker?.retryAfter, baseline + 310000);
+      assert.equal(
+        (await store.read())!.blocker?.providerDiagnostic?.classification,
+        classification,
+      );
+    });
+  }
+
   it('should serialize overlapping store instances and refuse commits after policy changes', async () => {
     const { input, store, events } = setup();
     events[0]!.createdAt = new Date(baseline - 1).toISOString();
@@ -309,9 +446,7 @@ describe('channels/github/intake/records', () => {
   it('should preserve corrupt evidence and reject identity or policy changes', async () => {
     const { input, store } = setup();
     await scanAssignments({ ...input, activate: true });
-    await assert.rejects(scanAssignments({ ...input, policyDigest: 'unapproved' }), {
-      code: 'intake-policy-reconciliation-required',
-    });
+    assert.equal((await scanAssignments({ ...input, policyDigest: 'updated' })).status, 'ready');
     await writeFile(store.location.path, '{broken', { mode: 0o600 });
     await assert.rejects(scanAssignments(input), { code: 'intake-state-invalid' });
     assert.equal(await readFile(store.location.path, 'utf8'), '{broken');

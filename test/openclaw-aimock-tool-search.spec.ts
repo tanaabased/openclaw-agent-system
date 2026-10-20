@@ -74,7 +74,7 @@ describe('scripts/aimock-tool-search', () => {
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
     const input = request(
-      `Stop before implementation. Call agent_system_dispatch with action context and id ${id}`,
+      `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
     );
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
     input.messages.push({
@@ -140,15 +140,10 @@ describe('scripts/aimock-tool-search', () => {
       },
     );
     await discover();
-    assert.equal(
-      (
-        await step('handoff-preview', 'agent_system_dispatch', {
-          status: 'handoff-available',
-          digest,
-        })
-      ).permission,
-      'implementation-and-publication',
-    );
+    await step('handoff-preview', 'agent_system_dispatch', {
+      status: 'handoff-available',
+      digest,
+    });
     assert.equal(
       (await step('handoff', 'agent_system_dispatch', { status: 'handed-off' })).digest,
       digest,
@@ -165,7 +160,13 @@ describe('scripts/aimock-tool-search', () => {
         '/tmp/owned',
       );
     }
-    await step('work-result', 'agent_system_dispatch', { status: 'recorded' });
+    await step('work-result', 'agent_system_dispatch', {
+      status: 'recorded',
+      handoff: {
+        next: 'delivery',
+        request: { action: 'delivery', id, operation: 'prepare' },
+      },
+    });
     await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
     assert.equal(
       (
@@ -218,7 +219,7 @@ describe('scripts/aimock-tool-search', () => {
   it('should identify a rejected notification tool envelope without exposing call arguments', async () => {
     const scenario = withToolSearch(resolveScenario('openclaw-pr'));
     const input = request(
-      `Stop before implementation. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
+      `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
     );
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
     input.messages.push({

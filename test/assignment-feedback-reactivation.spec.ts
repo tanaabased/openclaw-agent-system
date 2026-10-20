@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import reactivate, {
   revalidateFeedbackAssignment,
 } from '../agent/assignment-feedback-reactivation.ts';
-import revalidateAssignment from '../agent/dispatch-assignment.ts';
+import { inspectActiveIssue } from '../agent/dispatch-assignment.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { FeedbackSourceState } from '../agent/feedback-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -94,7 +94,7 @@ describe('assignment feedback reactivation', () => {
       h.provider.repository,
     );
     await assert.rejects(
-      revalidateAssignment(h.input.policy, h.input.intake, h.provider.client),
+      inspectActiveIssue(h.input.intake, h.provider.client),
       /dispatch-assignment-removed/,
     );
     h.record.feedback!.events[0]!.phase = 'published';
@@ -124,6 +124,34 @@ describe('assignment feedback reactivation', () => {
     assert.equal(await h.run(), false);
     assert.equal(h.record.feedback!.events.length, 0);
   });
+  it('should hold and resume the same feedback event when live feedback approval changes', async () => {
+    const h = fixture();
+    assert.equal(await h.run(), true);
+    const eventId = h.record.feedback!.events[0]!.id;
+    h.provider.policy.issueAssignment!.feedback = false;
+    assert.equal(await h.run(), false);
+    assert.equal(h.record.feedbackReactivation, undefined);
+    h.provider.policy.issueAssignment!.feedback = true;
+    assert.equal(await h.run(), true);
+    assert.equal(h.record.feedback!.events.length, 1);
+    const reactivation = () => h.record.feedbackReactivation;
+    assert.equal(reactivation()?.eventId, eventId);
+  });
+
+  it('should exclude feedback from the disabled period when reactivating an unassigned owner', async () => {
+    const h = fixture();
+    h.provider.policy.issueAssignment!.feedback = false;
+    assert.equal(await h.run(), false);
+    h.provider.policy.issueAssignment!.feedback = true;
+    assert.equal(await h.run(), false);
+    assert.equal(h.record.feedback!.events.length, 0);
+    h.comment.body = '@receiver a new question';
+    h.comment.updatedAt = new Date(h.input.now + 1000).toISOString();
+    h.input.now += 2000;
+    assert.equal(await h.run(), true);
+    assert.equal(h.record.feedback!.events.length, 1);
+  });
+
   it('should retain comment reactivation after unrelated workflow changes', async () => {
     const h = fixture();
     assert.equal(await h.run(), true);

@@ -13,12 +13,36 @@ function localSendArguments(value: unknown) {
   return request;
 }
 
-/** reconcile the exact native send, never a model claim that it sent a message. */
+/** verify the native assessment turn or exact recovery send, never a model claim. */
 export default function codexContinuationNative(request: CodexThreadRequest) {
   return async (
     sourceThreadId: string,
     attempt: NonNullable<CodexContinuationState['attempt']>,
   ) => {
+    if (attempt.origin === 'assessment') {
+      if (
+        attempt.sourceThreadId !== attempt.request.threadId ||
+        attempt.turnId !== attempt.sourceTurnId
+      )
+        throw new Error('continuation-assessment-origin-invalid');
+      const turns = await dispatchHistory(request, attempt.request.threadId, true);
+      const turn = turns.find((entry) => entry.id === attempt.turnId);
+      if (!turn || !Array.isArray(turn.items)) throw new Error('continuation-history-incomplete');
+      const ended =
+        ['completed', 'failed', 'interrupted'].includes(String(turn.status)) &&
+        typeof turn.completedAt === 'number' &&
+        Number.isFinite(turn.completedAt) &&
+        turn.completedAt > 0;
+      if (codexTurnApprovalDenied(turn.items))
+        return {
+          status: 'blocked' as const,
+          code: 'continuation-native-approval-denied',
+          turnId: attempt.turnId!,
+          ended,
+        };
+      return { status: 'verified' as const, turnId: attempt.turnId!, ended };
+    }
+    sourceThreadId = attempt.sourceThreadId ?? sourceThreadId;
     const entries = await dispatchHistoryPages(request, 'thread/items/list', {
       threadId: sourceThreadId,
       turnId: attempt.sourceTurnId,

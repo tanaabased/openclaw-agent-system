@@ -1,3 +1,5 @@
+import { feedbackDecisionSchema } from './feedback-work.ts';
+import { implementationResultSchema } from './implementation-result.ts';
 import { dispatchRetryProperties } from './dispatch-retry.ts';
 import { Type, type Static } from 'typebox';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
@@ -17,6 +19,8 @@ export const feedbackResultSchema = Type.Object(
 export const feedbackSourceEventSchema = Type.Object(
   {
     ...dispatchRetryProperties,
+    resumed: Type.Optional(Type.Integer({ minimum: 0 })),
+    previousTurnIds: Type.Optional(Type.Array(text)),
     id: hash,
     sourceId: text,
     number: Type.Integer({ minimum: 1 }),
@@ -26,6 +30,7 @@ export const feedbackSourceEventSchema = Type.Object(
     revision: hash,
     createdAt: Type.Integer({ minimum: 0 }),
     policyDigest: hash,
+    policyHeld: Type.Optional(text),
     phase: Type.Union([
       Type.Literal('queued'),
       Type.Literal('prepared'),
@@ -34,6 +39,23 @@ export const feedbackSourceEventSchema = Type.Object(
       Type.Literal('published'),
       Type.Literal('blocked'),
     ]),
+    work: Type.Optional(
+      Type.Object(
+        {
+          selection: assessmentSelectionSchema,
+          decision: Type.Optional(feedbackDecisionSchema),
+          result: Type.Optional(implementationResultSchema),
+          head: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
+          pullRequest: Type.Optional(
+            Type.Object(
+              { pullRequestNodeId: text, pullRequestNumber: Type.Integer({ minimum: 1 }) },
+              { additionalProperties: false },
+            ),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     result: Type.Optional(feedbackResultSchema),
     replyRequested: Type.Optional(Type.Boolean()),
     composition: Type.Optional(assessmentSelectionSchema),
@@ -51,6 +73,17 @@ export const feedbackSourceEventSchema = Type.Object(
 );
 export const feedbackSourceStateSchema = Type.Object(
   {
+    evaluatedPolicyDigests: Type.Optional(Type.Record(text, hash)),
+    admission: Type.Optional(
+      Type.Object(
+        {
+          enabled: Type.Boolean(),
+          observedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+          after: Type.Optional(Type.Integer({ minimum: 0 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     startedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     scannedAt: Type.Optional(Type.String()),
     scannedTime: Type.Optional(Type.Integer({ minimum: 0 })),

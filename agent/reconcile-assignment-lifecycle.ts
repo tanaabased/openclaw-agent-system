@@ -1,5 +1,5 @@
 import assignmentRetirement from './assignment-retirement.ts';
-import revalidateAssignment from './dispatch-assignment.ts';
+import { inspectAdmittedIssue } from './dispatch-assignment.ts';
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
@@ -116,7 +116,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         successor &&
         successor.id !== (record.retirement?.intakeId ?? record.intakeId)
       ) {
-        await revalidateAssignment(policy, successor, client);
+        await inspectAdmittedIssue(successor, client);
         await input.fresh();
         record.intakeId = successor.id;
         delete record.retirement;

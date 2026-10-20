@@ -12,15 +12,10 @@ import {
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
-  const policy = manifest.github?.notifications;
-  return (
-    policy?.schemaVersion === 2 &&
-    feedbackIdentities(policy.issueAssignment?.allowed ?? [], policy.issueAssignment?.feedback)
-      .length > 0
-  );
+  return workflowFeedbackEnabled(manifest.github?.notifications, 'issue-assignment');
 }
 export interface OpenClawFeedbackScan {
   id: string;
@@ -42,8 +37,6 @@ export async function scanOpenClawFeedback(input: {
 }) {
   const { service, manifest, now } = input;
   const budget = input.budget ?? new DiscoveryBudget(20000, input.authority.signal);
-  const enabled = openClawFeedbackEnabled(manifest);
-  if (!enabled && !input.state.records.some((record) => record.feedback)) return [];
   const scans: OpenClawFeedbackScan[] = [];
   const records = input.state.records
     .filter(
@@ -75,17 +68,7 @@ export async function scanOpenClawFeedback(input: {
     feedback.discoveryPending = true;
     try {
       await save();
-      if (!enabled) {
-        for (const event of feedback.events)
-          if (!['published', 'blocked'].includes(event.phase)) {
-            event.phase = 'blocked';
-            event.code = 'feedback-authority-revoked';
-          }
-        delete feedback.activity;
-        delete feedback.code;
-      } else {
-        if (record.sourceThreadId !== input.sourceThreadId)
-          throw new Error('feedback-schedule-owner-changed');
+      {
         const validateLocal = async () => {
           budget.check();
           await input.authority.assertCurrent?.();
@@ -101,9 +84,10 @@ export async function scanOpenClawFeedback(input: {
             );
           if (
             fresh.status !== 'loaded' ||
-            automationHash(fresh.manifest) !== automationHash(manifest)
+            fresh.manifest.agent.id !== manifest.agent.id ||
+            fresh.scope.workspaceDir !== input.workspace
           )
-            throw new Error('feedback-policy-changed');
+            throw new Error('feedback-workspace-binding-changed');
         };
         await validateLocal();
         connection ??= await service.dependencies.connect(
@@ -215,7 +199,7 @@ export async function scanOpenClawFeedback(input: {
         break;
       }
       feedback.code = openClawDispatchFailureCode(error);
-      if (/revoked|policy-changed|owner-changed/.test(feedback.code)) {
+      if (/revoked|owner-changed/.test(feedback.code)) {
         for (const event of feedback.events)
           if (!['published', 'blocked'].includes(event.phase)) {
             event.phase = 'blocked';

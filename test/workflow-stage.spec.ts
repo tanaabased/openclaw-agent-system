@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { nextIssueStage, selectWorkflowStage } from '../agent/workflow-stage.ts';
+import { selectWorkflowStage } from '../agent/workflow-stage.ts';
 
 describe('agent/workflow-stage', () => {
   const skill = {
@@ -62,16 +62,5 @@ describe('agent/workflow-stage', () => {
         }),
         /skill-unavailable/,
       );
-  });
-  it('should require usable assessment and an explicit auto recommendation before implementation', () => {
-    for (const outcome of ['plan-ready', 'clarification-needed', 'operator-setup-blocker'] as const)
-      assert.equal(nextIssueStage('plan', outcome, 'proceed'), 'stop');
-    assert.equal(nextIssueStage('work', 'plan-ready'), 'implementation');
-    assert.equal(nextIssueStage('auto', 'plan-ready', 'proceed'), 'implementation');
-    assert.equal(nextIssueStage('auto', 'plan-ready', 'wait'), 'stop');
-    assert.throws(() => nextIssueStage('auto', 'plan-ready'), /workflow-recommendation-required/);
-    for (const mode of ['work', 'auto'] as const)
-      for (const outcome of ['clarification-needed', 'operator-setup-blocker'] as const)
-        assert.equal(nextIssueStage(mode, outcome, 'proceed'), 'stop');
   });
 });

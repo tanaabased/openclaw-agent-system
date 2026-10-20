@@ -2,9 +2,10 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
-/** retained anchors locate evidence; only native owner metadata establishes custody. */
-export async function operatorInputEvent(input: {
+/** native tool context establishes owner authority; history establishes exact input custody. */
+export async function nativeInputEvent(input: {
   request: DispatchRequest;
+  requireOwner?: boolean;
   sessionKey: string;
   sessionId: string;
   runId: string;
@@ -12,7 +13,9 @@ export async function operatorInputEvent(input: {
 }) {
   const { request, sessionKey, sessionId, runId } = input;
   const fail = (): never => {
-    throw new Error('dispatch-operator-input-unverified');
+    throw new Error(
+      input.requireOwner ? 'dispatch-operator-input-unverified' : 'dispatch-input-unverified',
+    );
   };
   const history = sessionObject(
     await request('chat.history', {
@@ -52,7 +55,11 @@ export async function operatorInputEvent(input: {
   if (candidates.length > 1) fail();
   if (candidates.length) {
     const id = issueInputEventId(candidates[0]!, runId);
-    if (!id || sessionObject(candidates[0]!.__openclaw).senderIsOwner !== true) fail();
+    if (
+      !id ||
+      (input.requireOwner && sessionObject(candidates[0]!.__openclaw).senderIsOwner === false)
+    )
+      fail();
     anchors.push(id!);
   }
   if (!anchors.length || anchors.some((id) => !id || id !== anchors[0])) fail();
@@ -82,10 +89,22 @@ export async function operatorInputEvent(input: {
   const entry = matches[0]!;
   if (
     issueInputEventId(entry, runId) !== inputEventId ||
-    sessionObject(entry.__openclaw).senderIsOwner !== true
+    (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
   )
     fail();
-  return { runId, inputEventId };
+  return {
+    runId,
+    inputEventId,
+    message: typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content),
+  };
+}
+
+/** owner verification is needed only when human direction supplies the transition. */
+export async function operatorInputEvent(
+  input: Omit<Parameters<typeof nativeInputEvent>[0], 'requireOwner'> & { senderIsOwner: boolean },
+) {
+  if (!input.senderIsOwner) throw new Error('dispatch-operator-input-unverified');
+  return nativeInputEvent({ ...input, requireOwner: true });
 }
 
 /** user input custody is journaled by idempotency key; run metadata is optional. */

@@ -46,7 +46,11 @@ export const workflowResultSchema = Type.Union([
       resultContract: Type.Literal(stageResultContracts.implementation),
       result: Type.Object(
         {
-          outcome: Type.Union([Type.Literal('done'), Type.Literal('blocked')]),
+          outcome: Type.Union([
+            Type.Literal('done'),
+            Type.Literal('blocked'),
+            Type.Literal('clarification-needed'),
+          ]),
           summary,
         },
         { additionalProperties: false },
@@ -122,38 +126,12 @@ export function requireWorkflowSchedule(
     !saved.capabilities.includes(capability) ||
     !current.automationId ||
     !current.sourceThreadId ||
-    !current.policyDigest ||
-    !current.definitionDigest ||
     saved.automationId !== current.automationId ||
     saved.workflow !== current.workflow ||
     (capability !== 'publication' &&
       capability !== 'feedback' &&
       (capability === 'review') !== (current.workflow === 'review-request')) ||
-    saved.sourceThreadId !== current.sourceThreadId ||
-    saved.policyDigest !== current.policyDigest ||
-    saved.definitionDigest !== current.definitionDigest
+    saved.sourceThreadId !== current.sourceThreadId
   )
     throw new Error('workflow-schedule-reconciliation-required');
-}
-
-export interface WorkflowPublicationReceipt {
-  candidateId: string;
-  bindingDigest: string;
-  status: 'pending' | 'uncertain' | 'published';
-  providerId?: string;
-  url?: string;
-}
-
-/** a lost publication response requires provider reconciliation, never another blind write. */
-export function publicationDisposition(
-  receipt: WorkflowPublicationReceipt | undefined,
-  candidateId: string,
-  binding: WorkflowBinding,
-): 'prepare' | 'reconcile' | 'published' {
-  if (!receipt) return 'prepare';
-  if (receipt.candidateId !== candidateId || receipt.bindingDigest !== automationHash(binding))
-    throw new Error('workflow-publication-binding-mismatch');
-  if (receipt.status !== 'published') return 'reconcile';
-  if (!receipt.providerId || !receipt.url) throw new Error('workflow-publication-receipt-invalid');
-  return 'published';
 }

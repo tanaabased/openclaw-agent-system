@@ -14,7 +14,7 @@ export default function assignmentIntakePolicy(
     policy?.schemaVersion !== 2 ||
     !policy.runtimes.includes(runtime) ||
     (!retainedWork && policy.issueAssignment?.enabled === false) ||
-    !policy.issueAssignment?.allowed.length
+    !policy.issueAssignment
   )
     return;
   const username = manifest.github?.username;
@@ -31,16 +31,4 @@ export default function assignmentIntakePolicy(
     digest: digest(notificationAuthority),
     legacyDigest: digest(legacyNotificationAuthority),
   };
-}
-
-/** only the exact unchanged legacy projection can inherit its existing activation. */
-export function matchesIntakePolicy(
-  digest: string | undefined,
-  selected:
-    | Pick<NonNullable<ReturnType<typeof assignmentIntakePolicy>>, 'digest' | 'legacyDigest'>
-    | undefined,
-) {
-  return Boolean(
-    selected && digest && (digest === selected.digest || digest === selected.legacyDigest),
-  );
 }

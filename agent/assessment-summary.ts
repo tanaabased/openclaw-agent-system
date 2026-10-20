@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 import { randomUUID } from 'node:crypto';
 import { automationHash } from './automation-hash.ts';
@@ -88,11 +89,8 @@ export default async function assessmentSummary(input: {
     if (action.operation !== 'reconcile') {
       if (record.resultTurnId !== input.turnId)
         throw new Error('assessment-summary-assessment-turn-required');
-      if (
-        summary &&
-        (summary.turnId !== input.turnId || summary.authorityDigest !== input.authorityDigest)
-      )
-        throw new Error('assessment-summary-authority-changed');
+      if (summary && summary.turnId !== input.turnId)
+        throw new Error('assessment-summary-assessment-turn-required');
       const selection = await input.select(summary?.selection);
       if (summary && automationHash(selection) !== automationHash(summary.selection)) {
         if (action.operation !== 'compose')
@@ -106,9 +104,7 @@ export default async function assessmentSummary(input: {
         if (action.operation !== 'compose')
           throw new Error('assessment-summary-composition-required');
         // Supersede candidates that have never been attempted; retain every provider receipt.
-        record.assessmentSummaries = summaries.filter((entry) => entry.attempt);
-        if (record.assessmentSummaries.length >= 32)
-          throw new Error('assessment-summary-history-full');
+        record.assessmentSummaries = summaries.filter((entry) => entry.attempt || entry.receipt);
         summary = {
           revision: record.assessmentRevision,
           resultDigest: automationHash(record.result),
@@ -177,6 +173,17 @@ export default async function assessmentSummary(input: {
     if (!summary?.publicText) throw new Error('assessment-summary-candidate-required');
     const publication = assessmentSummaryPublication(record, intake, summary);
     const publisher = new GitHubNotificationCommentPublisher({
+      beforeCreate: async () => {
+        const attempt = randomUUID();
+        summary!.attempt = attempt;
+        await input.save();
+        summary = record.assessmentSummaries?.find((entry) => entry.attempt === attempt);
+        if (!summary) throw new Error('assessment-summary-state-changed');
+      },
+      onCreateRejected: async () => {
+        delete summary!.attempt;
+        await input.save();
+      },
       redactText: input.redact,
       authorize: async () => {
         await input.authorize();
@@ -187,16 +194,7 @@ export default async function assessmentSummary(input: {
     });
     let receipt;
     if (summary.attempt) receipt = (await publisher.reconcile(publication))?.receipt;
-    else {
-      // A unique claim makes concurrent snapshot saves conflict before either can write twice.
-      const attempt = randomUUID();
-      summary.attempt = attempt;
-      await input.save();
-      // Saving refreshes the snapshot and replaces the unkeyed summary array.
-      summary = record.assessmentSummaries?.find((entry) => entry.attempt === attempt);
-      if (!summary) throw new Error('assessment-summary-state-changed');
-      receipt = (await publisher.publish(publication)).receipt;
-    }
+    else receipt = (await publisher.publish(publication)).receipt;
     if (!receipt) throw new Error('assessment-summary-publication-unconfirmed');
     summary.receipt = { nodeId: receipt.nodeId, databaseId: receipt.databaseId };
     delete summary.code;
@@ -211,17 +209,15 @@ export default async function assessmentSummary(input: {
     };
   } catch (error) {
     if (isFilesystemAccessError(error)) throw error;
-    const message = error instanceof Error ? error.message : '';
-    const code = /^[a-z][a-z0-9-]{0,127}$/u.test(message)
-      ? message
-      : 'assessment-summary-publication-failed';
+    const failure = workflowFailure(error, 'assessment-summary-publication-failed');
+    const { code } = failure;
     if (summary) {
       summary.code = code;
       await input.save();
     }
     return {
       status: 'blocked',
-      code,
+      ...failure,
       presentation: input.presentation,
       instruction:
         'The private assessment remains recorded. Show its complete presentation and this summary-delivery diagnostic. For an uncertain write, use summary operation reconcile; for missing authority or skill, restore the configured workflow before retrying. Stop on native denial and do not use a different publication route.',

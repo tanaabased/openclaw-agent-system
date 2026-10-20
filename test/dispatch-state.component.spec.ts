@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import dispatchCapacity from '../agent/dispatch-capacity.ts';
 import OpenClawDispatchStore, {
   type OpenClawDispatchRecord,
 } from '../agent/openclaw-dispatch-state.ts';
@@ -91,7 +90,6 @@ describe('agent/shared dispatch state', () => {
       [{ ...pass, selected: [pending().id, pending().id] }],
       [{ ...pass, selected: ['d'.repeat(64)] }],
       [{ ...pass, recovery: ['d'.repeat(64)] }],
-      [{ ...pass, sessionKey: 'foreign' }],
     ]) {
       await assert.rejects(
         store.exclusive(async (state, save) => {
@@ -107,7 +105,7 @@ describe('agent/shared dispatch state', () => {
     await assert.rejects(codex.read(), /dispatch-state-invalid/);
   });
 
-  it('should retain an uncertain creation and its occupied slot across restart', async () => {
+  it('should retain an uncertain creation across restart', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     await store.exclusive(async (state, save) => {
       state.records.push(prepared());
@@ -116,12 +114,70 @@ describe('agent/shared dispatch state', () => {
     const restarted = new OpenClawDispatchStore(root, scope);
     const state = await restarted.read();
     assert.equal(state.records[0]!.phase, 'creating');
-    assert.deepEqual(dispatchCapacity(state.records, 1), { occupied: 1, available: 0 });
-    state.records[0]!.phase = 'blocked';
-    assert.equal(dispatchCapacity(state.records, 1).available, 0);
-    state.records[0]!.phase = 'complete';
-    assert.equal(dispatchCapacity(state.records, 1).available, 1);
-    assert.throws(() => dispatchCapacity([], 0), /dispatch-capacity-invalid/);
+  });
+
+  it('should recover a known legacy blocker on read and persist it only through an owner save', async () => {
+    const store = new CodexDispatchStore(root, scope);
+    const original = {
+      ...pending(),
+      threadId: 'native-chat',
+      worktree: '/worktree',
+      phase: 'blocked' as const,
+      result: {
+        version: 1 as const,
+        outcome: 'operator-setup-blocker' as const,
+        code: 'dispatch-policy-changed',
+        summary: 'Configuration changed.',
+        remediation: 'Old repair.',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+      },
+      context: '{}',
+      routing: '{}',
+      routingNote: 'selected',
+      effective: { status: 'verified' as const },
+      project: {
+        id: 'project',
+        path: '/repo',
+        commonDir: '/common',
+        ref: 'main',
+        commit: 'a'.repeat(40),
+      },
+      request: {
+        title: 'issue',
+        prompt: 'assess',
+        model: 'model',
+        thinking: 'high',
+        target: {
+          type: 'project' as const,
+          projectId: 'project',
+          environment: {
+            type: 'worktree' as const,
+            startingState: { type: 'branch' as const, branchName: 'main' },
+          },
+        },
+      },
+    };
+    await store.exclusive(async (state, save) => {
+      state.records.push(original);
+      await save();
+    });
+    const before = await readFile(store.path, 'utf8');
+    const restarted = new CodexDispatchStore(root, scope);
+    const recovered = (await restarted.read()).records[0]!;
+    assert.equal(recovered.phase, 'assessing');
+    assert.equal(recovered.result, undefined);
+    assert.deepEqual(recovered.compatibilityRecovery?.previousResult, original.result);
+    assert.deepEqual(recovered.request, original.request);
+    assert.equal(recovered.threadId, original.threadId);
+    assert.equal(recovered.worktree, original.worktree);
+    assert.deepEqual(recovered.compatibilityRecovery?.codes, ['dispatch-policy-changed']);
+    assert.equal(await readFile(store.path, 'utf8'), before);
+    await restarted.exclusive(async (_state, save) => {
+      await save();
+    });
+    assert.deepEqual((await new CodexDispatchStore(root, scope).read()).records[0], recovered);
+    assert.notEqual(await readFile(store.path, 'utf8'), before);
   });
 
   it('should reject duplicate identities and invalid transitions before replacing valid evidence', async () => {

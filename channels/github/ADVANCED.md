@@ -4,8 +4,8 @@
 
 GitHub notifications require `github.notifications.schema-version: 2`. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
-authority, runtime selection, and current support. OpenClaw currently supports
-Plan-mode issue assignment with the default assessment skill and configured feedback
+authority, runtime selection, and current support. OpenClaw supports
+Plan, Work, and Auto issue assignment with configured feedback
 on retained issues and their linked delivery PRs. Independent review requests warn
 without blocking those workflows.
 Standalone Codex uses its [native workflow controls](../../CODEX.md#github-notification-policy).
@@ -16,18 +16,46 @@ OpenClaw keeps discovery inside one condition budget and wakes the coordinator f
 saved actionable work or a one-time progress/recovery card. After upgrading, run
 Install to reconcile the changed condition before relying on scheduled intake.
 
-Polling cadence, concurrent-item limits, and cleanup grace periods control execution;
-they do not revoke intake or feedback authority. Schedule changes still need Install
-to update the native timer. Runtime enablement, identities, repository scope, allowed
-actors, workflow mode, and cleanup enablement remain permission-bearing settings.
-A retained feedback reply is narrower: it checks runtime and workflow enablement,
-repository scope, and approved feedback actors. Assessment, implementation, cleanup,
-and review settings do not revoke that reply or grant it permission to change code.
-Changed reply skill content or guidance can be loaded again with `compose`; the
-private answer is retained and the unattempted public draft is replaced. An attempted
-write must be reconciled before further publication.
-Older receipts retain their original authority check until replaced; changed older policies
-can still require reconciliation.
+The live bound `agent.yaml` governs the next automatic operation for every active
+issue. Mode, author, feedback, recipient, and guidance edits take effect without
+Install. Plan holds future implementation; Work permits an actionable plan to
+continue; Auto additionally requires a Work decision. Existing Plan issues can become
+eligible when the operator changes the mode to Work. Once implementation has
+started, changing the default mode does not return the issue to planning. Both
+runtimes retain this stage across restart and recover older implementation receipts
+in place; existing lifecycle and native execution checks still apply.
+
+Verified comments from approved feedback authors are task direction in Codex and
+OpenClaw, like direct input in the issue chat. In Plan, an explicit request to
+implement can enter Work through the same recorded transition. Work permits
+appropriate implementation; Auto may choose Plan or Work. Authors need not also be
+issue assignees. Quoted and linked material cannot independently direct the agent. Questions need not produce code.
+Each feedback attempt retains its own outcome and commit without replacing the
+original assessment or implementation. Finished work updates the existing PR;
+uncertain pushes are reconciled, and the original announcement is reused. A
+clarification request preserves implementation authority for the next admitted answer.
+No separate repair policy or author list is required.
+
+Discovery retains bounded observations independently of reply eligibility.
+Feedback observed while disabled stays in GitHub history and is not queued for
+later dispatch. When the runtime observes feedback reenabled, it saves an admission
+cutoff for the issue and its PR using the previous policy-check time. Approved
+comments or revisions after that cutoff become new feedback, including those
+between the last check and reenabling. This overlap avoids missing comments posted
+just after a configuration edit; a longer polling gap means a longer overlap.
+Older records without a policy-check timestamp use their last saved scan time,
+or the current check when neither timestamp is available. Work already admitted
+before a pause remains recoverable, and publication receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
+
+Install reconciles changes to installed scheduling machinery. Policy-only edits do
+not change the orchestration definition. Native execution facts, explicit task
+cancellation, lifecycle state, account/repository/chat identity, and exact submitted
+requests remain distinct from mutable policy. A policy edit never repeats an
+uncertain send or publication or automatically terminates a running native turn.
+
+Git and GitHub enforce provider permissions. Managed workflow failures expose safe,
+bounded provider detail and an HTTP status when supplied. Unsupported execution
+capabilities are reported for their stage without disabling discovery.
 
 ## Assignment lifecycle
 
@@ -59,7 +87,8 @@ snapshotting and reclamation; intake marks work retired only after observing bot
 archival and removal. If desktop settings retain the checkout, cleanup stays pending
 without blocking other intake. Disabling cleanup preserves resources and marks
 inactive work retired.
-Run Install after upgrading to reconcile the changed notification policy.
+Run Install after an upgrade when Doctor reports changed automation machinery.
+Policy-only edits apply live.
 
 `retirement-native-archive-denied` means the exact native archive call was rejected;
 inspect the intake chat's native approval result before taking operator action.
@@ -101,7 +130,7 @@ openclaw agent-system notifications refresh
 ```
 
 `refresh` requests a run of the
-already installed native OpenClaw issue-planning automation. A successful request
+already installed native OpenClaw issue automation. A successful request
 reports `queued` and its native run ID; it does not claim the scan or assessment
 has completed. Installation and workflow activation remain explicit. Disabled,
 stale, or unreconciled workflows fail without enabling jobs.
@@ -253,12 +282,23 @@ and waits for its exact native run before requesting another cycle. Without
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.
 
-## Operator-Requested PR Delivery
+## Issue Implementation and PR Delivery
 
 An authenticated operator can continue a retained Plan-mode assessment in its
-owning issue chat. Request implementation, PR publication, or both explicitly;
-assignment and a completed plan alone authorize neither. The agent retains the
+owning issue chat. An actionable Plan-mode issue needs human direction to enter implementation;
+once there, ordinary PR delivery needs no separate publication grant. The agent retains the
 complete plan and uses the existing chat, managed worktree, and model selection.
+
+Work policy or an Auto Work decision lets the next intake pass continue an
+actionable plan in the same issue chat, using shared capacity and its saved native
+send receipt. An uncertain send is reconciled without sending again. Existing
+implementation stages survive later default-mode edits.
+
+Implementation may return `clarification-needed` with specific questions and a
+complete account of partial work. The issue remains in implementation. Its chat
+displays the questions and waits; a new answer resumes through verified context
+without another handoff or approval. Scheduled intake does not replay the request.
+A recorded `done` result can continue through PR delivery without repeating implementation.
 
 Delivery requires committed work on the task branch. It applies configured
 `issue-assignment.pull-request.recipients`, verifies GitHub's closing link, and
@@ -297,8 +337,7 @@ another push. Recovery instructions skip confirmed attachments and announcements
 
 Unversioned notification declarations are rejected with
 `github-notification-v1-retired`. The polling channel, its Work/guided engine,
-reply-staging tool, and task-PR tool have been removed. Native OpenClaw Work/Auto,
-independent review requests and custom assessment skills remain unavailable.
+reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
 Retirement does not imply feature parity.
 
 The channel id `agent-system-github` remains registered as a read-only readiness

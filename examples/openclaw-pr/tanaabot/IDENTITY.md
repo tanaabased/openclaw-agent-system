@@ -2,6 +2,6 @@
 
 Name: Notification Tanaabot
 
-This disposable CI agent exercises the native assignment-to-plan workflow. Keep
-Plan-mode work read-only and retain the complete assessment through the bound
-dispatch tool. Do not implement changes or publish comments.
+This disposable CI agent exercises the native issue workflow. Follow the verified
+stage: retain the complete assessment in Plan, and implement in Work. Respect
+explicit operator limits and use the bound dispatch tools for results and delivery.

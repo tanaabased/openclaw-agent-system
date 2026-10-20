@@ -1,3 +1,4 @@
+import redactFeedback from '../agent/feedback-redaction.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -9,11 +10,11 @@ import {
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
   parseGitHubNotificationPublicationTarget,
-} from '../channels/github/publication/publication.ts';
+} from '../channels/github/publication/publication-contract.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 import { publicationItem } from './github-provider-fixtures.ts';
 
-describe('channels/github/publication/publication', () => {
+describe('channels/github/publication/publication-contract', () => {
   it('should mint one opaque target and hidden marker for a publication intent', () => {
     const target = githubNotificationPublicationTarget({
       intent: 'initial-acknowledgment',
@@ -39,25 +40,31 @@ describe('channels/github/publication/publication', () => {
 
   it('should accept bounded text for each explicit publication intent', () => {
     assert.equal(
-      githubNotificationPublicationText('initial-acknowledgment', [
-        { text: "Gladly — I've picked this one up." },
-      ]),
+      githubNotificationPublicationText(
+        'initial-acknowledgment',
+        [{ text: "Gladly — I've picked this one up." }],
+        redactFeedback,
+      ),
       "Gladly — I've picked this one up.",
     );
     assert.equal(
-      githubNotificationPublicationText('github-reply', [
-        {
-          text: [
-            '## Result',
-            '',
-            `The \`notification\` flow is ready, ${githubNotificationCommenterToken}.`,
-            '',
-            '| Check | Status |',
-            '| --- | --- |',
-            '| [Build](https://github.com/tanaabased/example/actions) | Passing |',
-          ].join('\n'),
-        },
-      ]),
+      githubNotificationPublicationText(
+        'github-reply',
+        [
+          {
+            text: [
+              '## Result',
+              '',
+              `The \`notification\` flow is ready, ${githubNotificationCommenterToken}.`,
+              '',
+              '| Check | Status |',
+              '| --- | --- |',
+              '| [Build](https://github.com/tanaabased/example/actions) | Passing |',
+            ].join('\n'),
+          },
+        ],
+        redactFeedback,
+      ),
       [
         '## Result',
         '',
@@ -69,15 +76,19 @@ describe('channels/github/publication/publication', () => {
       ].join('\n'),
     );
     assert.equal(
-      githubNotificationPublicationText('assignment-response', [
-        { text: 'I reviewed the assignment and have a plan ready.' },
-      ]),
+      githubNotificationPublicationText(
+        'assignment-response',
+        [{ text: 'I reviewed the assignment and have a plan ready.' }],
+        redactFeedback,
+      ),
       'I reviewed the assignment and have a plan ready.',
     );
     assert.equal(
-      githubNotificationPublicationText('pull-request-handoff', [
-        { text: '## Pull request opened\n\n- **Pull request:** #45' },
-      ]),
+      githubNotificationPublicationText(
+        'pull-request-handoff',
+        [{ text: '## Pull request opened\n\n- **Pull request:** #45' }],
+        redactFeedback,
+      ),
       '## Pull request opened\n\n- **Pull request:** #45',
     );
   });
@@ -86,16 +97,28 @@ describe('channels/github/publication/publication', () => {
     const text =
       'I reviewed `/Users/runner/work/example/channels/github/publication.ts`, will create `assignment-fixture-32681544592-1.txt`, and based the plan on commit `0123456789abcdef0123456789abcdef01234567`.';
 
-    assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
+    assert.equal(
+      githubNotificationPublicationText('assignment-response', [{ text }], redactFeedback),
+      text,
+    );
   });
 
   it('should preserve action references, scoped packages, and github mentions', () => {
     const text =
       'I will update `tanaabased/actions/openclaw-setup@v1`, verify `@lando/leia`, and ask @pirog to review.';
 
-    assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
-    assert.equal(githubNotificationPublicationText('github-reply', [{ text }]), text);
-    assert.equal(githubNotificationAttributedReplyText(text, 'emoriwan'), `@emoriwan\n\n${text}`);
+    assert.equal(
+      githubNotificationPublicationText('assignment-response', [{ text }], redactFeedback),
+      text,
+    );
+    assert.equal(
+      githubNotificationPublicationText('github-reply', [{ text }], redactFeedback),
+      text,
+    );
+    assert.equal(
+      githubNotificationAttributedReplyText(text, 'emoriwan', redactFeedback),
+      `@emoriwan\n\n${text}`,
+    );
   });
 
   it('should substitute the verified commenter wherever the reserved token reads naturally', () => {
@@ -103,17 +126,19 @@ describe('channels/github/publication/publication', () => {
       githubNotificationAttributedReplyText(
         `Thanks for flagging this, ${githubNotificationCommenterToken}. I checked the flow.`,
         'emoriwan',
+        redactFeedback,
       ),
       'Thanks for flagging this, @emoriwan. I checked the flow.',
     );
     assert.equal(
-      githubNotificationAttributedReplyText('I checked the flow.', 'emoriwan'),
+      githubNotificationAttributedReplyText('I checked the flow.', 'emoriwan', redactFeedback),
       '@emoriwan\n\nI checked the flow.',
     );
     assert.equal(
       githubNotificationAttributedReplyText(
         `I checked the flow. Thanks, ${githubNotificationCommenterToken}`,
         'emoriwan',
+        redactFeedback,
       ),
       'I checked the flow. Thanks, @emoriwan',
     );
@@ -126,19 +151,35 @@ describe('channels/github/publication/publication', () => {
       .join('')
       .replace(/ $/u, 'a');
 
-    assert.equal(githubNotificationPublicationText('github-reply', [{ text: maximum }]), maximum);
+    assert.equal(
+      githubNotificationPublicationText('github-reply', [{ text: maximum }], redactFeedback),
+      maximum,
+    );
     assert.throws(
-      () => githubNotificationPublicationText('github-reply', [{ text: `${maximum}a` }]),
+      () =>
+        githubNotificationPublicationText(
+          'github-reply',
+          [{ text: `${maximum}a` }],
+          redactFeedback,
+        ),
       /not safe to publish/u,
     );
   });
 
   it('should allow ordinary environment examples without weakening credential detection', () => {
     const text = 'Run NODE_ENV=production PORT=3000 LOG_LEVEL=debug TOKEN_COUNT=10 bun start.';
-    assert.equal(githubNotificationPublicationText('github-reply', [{ text }]), text);
+    assert.equal(
+      githubNotificationPublicationText('github-reply', [{ text }], redactFeedback),
+      text,
+    );
     for (const name of ['GH_TOKEN', 'DATABASE_PASSWORD', 'AWS_SECRET_ACCESS_KEY', 'api_key'])
       assert.throws(
-        () => githubNotificationPublicationText('github-reply', [{ text: `${name}=sensitive` }]),
+        () =>
+          githubNotificationPublicationText(
+            'github-reply',
+            [{ text: `${name}=sensitive` }],
+            redactFeedback,
+          ),
         /not safe to publish/u,
       );
   });
@@ -146,9 +187,14 @@ describe('channels/github/publication/publication', () => {
     for (const [text, safetyCategory] of [
       ['OPENAI_API_KEY=value', 'environment-assignment'],
       ['Token ghp_abcdef', 'credential-prefix'],
+      ['Authorization: Basic dXNlcjpwYXNz', 'redaction'],
+      ['Bearer sensitive', 'redaction'],
+      ['-----BEGIN PRIVATE KEY-----', 'redaction'],
+      ['https://user:password@example.com', 'redaction'],
+      ['https://example.com?token=sensitive', 'environment-assignment'],
     ] as const) {
       assert.throws(
-        () => githubNotificationPublicationText('github-reply', [{ text }]),
+        () => githubNotificationPublicationText('github-reply', [{ text }], redactFeedback),
         (error: unknown) =>
           error instanceof GitHubNotificationPublicationError &&
           error.code === 'github-notification-publication-secret-safety-rejected' &&
@@ -161,13 +207,20 @@ describe('channels/github/publication/publication', () => {
   it('should reject unsupported shapes and secret-sensitive text', () => {
     assert.throws(
       () =>
-        githubNotificationPublicationText('initial-acknowledgment', [
-          { text: 'I have this.\nI am starting.' },
-        ]),
+        githubNotificationPublicationText(
+          'initial-acknowledgment',
+          [{ text: 'I have this.\nI am starting.' }],
+          redactFeedback,
+        ),
       /not safe to publish/u,
     );
     assert.throws(
-      () => githubNotificationPublicationText('github-reply', [{ text: 'Token ghp_abcdef' }]),
+      () =>
+        githubNotificationPublicationText(
+          'github-reply',
+          [{ text: 'Token ghp_abcdef' }],
+          redactFeedback,
+        ),
       /not safe to publish/u,
     );
     for (const text of [
@@ -178,14 +231,19 @@ describe('channels/github/publication/publication', () => {
       githubNotificationCommenterToken,
     ]) {
       assert.throws(
-        () => githubNotificationPublicationText('github-reply', [{ text }]),
+        () => githubNotificationPublicationText('github-reply', [{ text }], redactFeedback),
         (error: unknown) =>
           error instanceof GitHubNotificationPublicationError &&
           error.code === 'github-notification-publication-commenter-token-invalid',
       );
     }
     assert.throws(
-      () => githubNotificationPublicationText('github-reply', [{ mediaUrl: '/tmp/result.png' }]),
+      () =>
+        githubNotificationPublicationText(
+          'github-reply',
+          [{ mediaUrl: '/tmp/result.png' }],
+          redactFeedback,
+        ),
       /not safe to publish/u,
     );
   });

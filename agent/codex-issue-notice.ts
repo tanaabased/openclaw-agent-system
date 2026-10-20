@@ -1,5 +1,9 @@
 import workflowRecovery from './workflow-recovery.ts';
-import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
+import {
+  providerDiagnostic as sanitizeProviderDiagnostic,
+  type ProviderDiagnostic,
+} from '../utils/provider-diagnostic.ts';
 import githubNotificationCard, {
   githubNotificationMarkdownText as text,
 } from '../channels/github/presentation/card.ts';
@@ -8,6 +12,7 @@ export type IssueNoticeEvent = 'intake-recovered' | 'failure';
 
 interface NoticeCopy {
   severity: 'info' | 'warning' | 'error';
+  emoji?: string;
   title: string;
   summary: string;
   next: string;
@@ -23,9 +28,62 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  if (code === 'intake-manifest-unavailable')
+    return {
+      severity: 'error',
+      title: 'Cannot read the automation policy',
+      summary: 'The bound workspace manifest is missing, unreadable, or invalid.',
+      next: 'Restore a readable, valid agent.yaml, then retry. Policy-only repairs do not require Install or a new workspace binding.',
+    };
+  if (code === 'workflow-policy-held')
+    return {
+      severity: 'info',
+      title: 'Waiting on current workflow policy',
+      summary:
+        'The live agent.yaml does not currently permit this automatic operation. Saved work and receipts are retained.',
+      next: 'Update the relevant workflow setting to resume eligible work. Policy edits take effect without Install.',
+    };
+  const automation = intakeAutomationNotice(code);
+  if (automation) return automation;
   const recovery = workflowRecovery(code, diagnostic);
   if (recovery)
-    return { severity: 'warning', title: 'This operation needs attention', ...recovery };
+    return {
+      severity:
+        diagnostic &&
+        ['authentication', 'permission', 'missing-credential'].includes(diagnostic.classification)
+          ? 'error'
+          : 'warning',
+      title:
+        diagnostic?.provider === 'git'
+          ? 'Git could not complete the operation'
+          : diagnostic?.provider === 'github'
+            ? 'GitHub could not complete the operation'
+            : 'This operation needs attention',
+      ...recovery,
+    };
+  if (code === 'dispatch-issue-inactive' || code === 'dispatch-assessment-retired')
+    return {
+      severity: 'warning',
+      title: code === 'dispatch-assessment-retired' ? 'Issue retired' : 'Issue inactive',
+      summary:
+        'This issue is no longer active, so automated work is paused. Existing work is retained subject to its cleanup state.',
+      next: 'Check whether the issue was closed, unassigned, or retired. Restore its active assignment when appropriate, then verify the retained chat and checkout before resuming; cleanup may already have completed.',
+    };
+  if (code === 'dispatch-assessment-handed-off')
+    return {
+      severity: 'info',
+      title: 'Assessment handed off',
+      summary:
+        'This issue has moved beyond assessment. Its existing work and permissions are retained.',
+      next: 'Use the owning implementation or delivery context in this chat to continue the requested work.',
+    };
+  if (code === 'dispatch-reset-pending')
+    return {
+      severity: 'warning',
+      title: 'Issue reset pending',
+      summary: 'A retained reset must be reconciled before this operation can continue.',
+      next: 'Reconcile the existing reset and native receipt; preserve the chat and worktree.',
+    };
   if (code === 'dispatch-native-occurrence-unavailable')
     return {
       severity: 'warning',
@@ -187,7 +245,13 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       summary: 'The repository is ready, but Codex needs it registered as a local project.',
       next: 'Add the specified folder as the primary folder of a local Codex project. The next scheduled check will verify it and resume this assignment.',
     };
-  if (/activation|reconciliation|policy-changed/u.test(code))
+  if (
+    [
+      'intake-activation-required',
+      'dispatch-activation-required',
+      'intake-automation-update-required',
+    ].includes(code)
+  )
     return {
       severity: 'warning',
       title: 'Refresh the intake configuration',
@@ -199,7 +263,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       severity: 'info',
       title: 'Issue intake is disabled',
       summary: 'No new automated issue work will start. Existing chats and progress are retained.',
-      next: 'If the old schedule is still active, run Agent System Install to pause it. Re-enabling also requires Install.',
+      next: 'The live policy holds new intake. Use Install to pause the saved schedule if desired; re-enabling requires Install only if that schedule was paused or removed.',
     };
   if (
     /authority|access|binding|authentication|identity|auth-unavailable|permission|forbidden/u.test(
@@ -222,7 +286,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       severity: 'warning',
       title: 'Update the setup to continue',
       summary: 'A required project, assessment instruction, or model setting is unavailable.',
-      next: 'Correct the indicated setting and reconcile configuration changes through Agent System Install.',
+      next: 'Correct the indicated project, instruction, or model setting, then retry the retained operation. Live policy changes do not require Install.',
     };
   if (/model|routing/u.test(code))
     return {
@@ -250,17 +314,24 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
 export default function codexIssueNotice(input: {
   event: IssueNoticeEvent;
   changed: boolean;
+  emoji?: string;
   code?: string;
   providerDiagnostic?: ProviderDiagnostic;
   issue?: { label: string; url: string };
   actionMarkdown?: string;
   facts?: { label: string; value: string }[];
 }) {
+  const diagnostic = input.providerDiagnostic
+    ? sanitizeProviderDiagnostic(
+        input.providerDiagnostic.provider,
+        input.providerDiagnostic.operation,
+        input.providerDiagnostic.classification,
+        input.providerDiagnostic,
+      )
+    : undefined;
   const code = input.code && /^[a-z][a-z0-9-]{0,127}$/u.test(input.code) ? input.code : undefined;
   const copy =
-    input.event === 'failure'
-      ? failure(code ?? 'unknown', input.providerDiagnostic)
-      : events[input.event];
+    input.event === 'failure' ? failure(code ?? 'unknown', diagnostic) : events[input.event];
   const facts = [
     ...(input.issue
       ? [{ label: 'Issue', value: `[${text(input.issue.label)}](${input.issue.url})` }]
@@ -268,6 +339,12 @@ export default function codexIssueNotice(input: {
     { label: 'What happened', value: copy.summary },
     { label: 'Next step', value: input.actionMarkdown ?? copy.next },
     ...(input.facts ?? []),
+    ...(diagnostic?.httpStatus
+      ? [{ label: 'HTTP status', value: String(diagnostic.httpStatus) }]
+      : []),
+    ...(diagnostic?.providerMessage
+      ? [{ label: 'Provider detail', value: text(diagnostic.providerMessage) }]
+      : []),
     ...(code ? [{ label: 'Technical detail', value: '`' + code + '`' }] : []),
   ];
   return {
@@ -277,7 +354,11 @@ export default function codexIssueNotice(input: {
     severity: copy.severity,
     notify: input.changed,
     message: githubNotificationCard({
-      emoji: { info: 'ℹ️', warning: '⚠️', error: '❌' }[copy.severity],
+      emoji:
+        copy.emoji ??
+        (copy.severity === 'info'
+          ? (input.emoji ?? '💡')
+          : { warning: '⚠️', error: '❌' }[copy.severity]),
       title: copy.title,
       facts,
     }),

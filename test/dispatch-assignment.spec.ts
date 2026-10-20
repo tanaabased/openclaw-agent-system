@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import revalidateAssignment from '../agent/dispatch-assignment.ts';
-import { dispatchFailurePhase } from '../agent/dispatch-retry.ts';
+import { inspectActiveIssue, inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -19,43 +18,13 @@ describe('agent/dispatch-assignment', () => {
       },
     ],
     [
-      'dispatch-repository-archived',
-      (f) => {
-        f.repository.archived = true;
-      },
-    ],
-    [
-      'dispatch-repository-disabled',
-      (f) => {
-        f.repository.disabled = true;
-      },
-    ],
-    [
-      'dispatch-repository-owner-changed',
-      (f) => {
-        f.repository.owner = { login: 'other', nodeId: 'other', type: 'Organization' };
-      },
-    ],
-    [
-      'dispatch-repository-name-changed',
-      (f) => {
-        f.repository.name = 'other';
-      },
-    ],
-    [
-      'dispatch-repository-owner-not-allowed',
-      (f) => {
-        f.policy.allowedRepositoryOwners = [];
-      },
-    ],
-    [
       'dispatch-issue-identity-changed',
       (f) => {
         f.item.nodeId = 'other';
       },
     ],
     [
-      'dispatch-issue-type-changed',
+      'dispatch-issue-identity-changed',
       (f) => {
         Object.assign(f.item, { itemType: 'pull-request' });
       },
@@ -78,18 +47,6 @@ describe('agent/dispatch-assignment', () => {
         f.events.length = 0;
       },
     ],
-    [
-      'dispatch-assignment-actor-type-changed',
-      (f) => {
-        f.events[0]!.actor = { ...f.events[0]!.actor, type: 'Bot' };
-      },
-    ],
-    [
-      'dispatch-assignment-actor-not-allowed',
-      (f) => {
-        f.policy.issueAssignment!.allowed = [];
-      },
-    ],
   ];
   for (const [code, change] of cases)
     it(`should identify ${code}`, async () => {
@@ -101,17 +58,43 @@ describe('agent/dispatch-assignment', () => {
         assignment: f.events[0],
       }) as unknown as IntakeRecord;
       change(f);
-      await assert.rejects(
-        revalidateAssignment(
-          { policy: f.policy, username: 'receiver', digest: '', legacyDigest: 'legacy' },
-          record,
-          f.client,
-        ),
-        { message: code },
-      );
-      assert.equal(
-        dispatchFailurePhase({}, code),
-        code === 'dispatch-assignment-event-missing' ? 'waiting' : 'blocked',
-      );
+      await assert.rejects(inspectAdmittedIssue(record, f.client), { message: code });
+    });
+  it('should continue an active task independently of admission defaults and assignment history', async () => {
+    const f = intakeFixture();
+    const record = structuredClone({
+      receiving: f.client.identity,
+      repository: f.repository,
+      issue: f.item,
+      assignment: f.events[0],
+    }) as unknown as IntakeRecord;
+    f.policy.allowedRepositoryOwners = [];
+    f.policy.issueAssignment!.allowed = [];
+    f.events.length = 0;
+    f.repository.archived = true;
+    assert.equal(
+      (await inspectActiveIssue(record, f.client)).repo.nodeId,
+      record.repository.nodeId,
+    );
+  });
+  for (const [code, change] of cases.filter(([code]) =>
+    [
+      'dispatch-receiver-account-changed',
+      'dispatch-repository-identity-changed',
+      'dispatch-issue-identity-changed',
+      'dispatch-issue-closed',
+      'dispatch-assignment-removed',
+    ].includes(code),
+  ))
+    it(`should retain ${code} as an active-task boundary`, async () => {
+      const f = intakeFixture();
+      const record = structuredClone({
+        receiving: f.client.identity,
+        repository: f.repository,
+        issue: f.item,
+        assignment: f.events[0],
+      }) as unknown as IntakeRecord;
+      change(f);
+      await assert.rejects(inspectActiveIssue(record, f.client), { message: code });
     });
 });

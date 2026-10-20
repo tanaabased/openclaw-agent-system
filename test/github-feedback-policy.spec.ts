@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { stringify } from 'yaml';
 
-import { allowsWorkflowFeedback, feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { feedbackIdentities, workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 const pirog = { login: 'pirog', nodeId: 'U_pirog' };
@@ -50,6 +50,23 @@ describe('channels/github/feedback-policy', () => {
     );
     assert.deepEqual(feedbackIdentities([], { inherit: true, allowed: [smutlord] }), [smutlord]);
   });
+  it('should distinguish feedback enablement from workflow disablement and an empty author set', () => {
+    const parsed = parse({
+      'issue-assignment': { mode: 'plan', allowed: [pin(pirog)], feedback: true },
+    });
+    assert.equal(parsed.status, 'valid');
+    if (parsed.status !== 'valid') return;
+    const policy = parsed.manifest.github!.notifications!;
+    assert.equal(workflowFeedbackEnabled(policy, 'issue-assignment'), true);
+    policy.issueAssignment!.enabled = false;
+    assert.equal(workflowFeedbackEnabled(policy, 'issue-assignment'), false);
+    policy.issueAssignment!.enabled = true;
+    policy.issueAssignment!.allowed = [];
+    assert.equal(workflowFeedbackEnabled(policy, 'issue-assignment'), false);
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [smutlord] };
+    assert.equal(workflowFeedbackEnabled(policy, 'issue-assignment'), true);
+  });
+
   it('should reject conflicting pins instead of choosing a login or node id', () => {
     for (const other of [
       { ...pirog, nodeId: 'U_other' },
@@ -59,23 +76,6 @@ describe('channels/github/feedback-policy', () => {
         () => feedbackIdentities([pirog], { inherit: true, allowed: [other] }),
         /feedback-identity-conflict/,
       );
-  });
-  it('should keep author and reviewer feedback scopes separate in every issue mode', () => {
-    for (const mode of ['plan', 'work', 'auto']) {
-      const parsed = parse({
-        'issue-assignment': { mode, allowed: [pin(pirog)], feedback: true },
-        'review-request': { allowed: [pin(smutlord)], feedback: { allowed: [pin(smutlord)] } },
-      });
-      assert.ok(parsed.status === 'valid');
-      const policy = parsed.manifest.github!.notifications;
-      assert.ok(policy?.schemaVersion === 2);
-      assert.equal(allowsWorkflowFeedback(policy, 'issue-assignment', pirog), true);
-      assert.equal(allowsWorkflowFeedback(policy, 'issue-assignment', smutlord), false);
-      assert.equal(allowsWorkflowFeedback(policy, 'review-request', smutlord), true);
-      assert.equal(allowsWorkflowFeedback(policy, 'review-request', pirog), false);
-      policy.issueAssignment!.allowed = [];
-      assert.equal(allowsWorkflowFeedback(policy, 'issue-assignment', pirog), false);
-    }
   });
   it('should normalize object defaults and reject removed global feedback even when disabled', () => {
     const defaults = parse({ 'issue-assignment': { feedback: {} } });
@@ -125,8 +125,8 @@ describe('channels/github/feedback-policy', () => {
       allowed: [],
       guidance: { file: 'guidance/reply.md' },
     });
-    assert.equal(allowsWorkflowFeedback(policy, 'issue-assignment', pirog), false);
-    assert.equal(allowsWorkflowFeedback(policy, 'review-request', smutlord), false);
+    assert.equal(workflowFeedbackEnabled(policy, 'issue-assignment'), false);
+    assert.equal(workflowFeedbackEnabled(policy, 'review-request'), false);
     for (const feedback of [{ skill: '../file' }, { guidance: { file: '' } }])
       assert.equal(parse({ 'issue-assignment': { feedback } }).status, 'invalid');
   });

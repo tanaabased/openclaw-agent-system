@@ -1,9 +1,9 @@
 import workflowFailure, { workflowFailureScope } from '../../agent/workflow-failure.ts';
+import codexIssueNotice from '../../agent/codex-issue-notice.ts';
 import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
 
-import { automationHash } from '../../agent/automation-hash.ts';
 import { effectiveAutomation } from '../../agent/automation-projection.ts';
 import AutomationThreads, { automationThreadSelection } from '../../agent/automation-threads.ts';
 import type AutomationService from '../../agent/automation-service.ts';
@@ -158,7 +158,7 @@ export default function createDispatchTool(input: {
         name: 'agent_system_dispatch',
         label: 'Agent System Dispatch',
         description:
-          'Coordinate admitted issues in their verified native session. Coordinator: consume saved discoveries, then iterate next, prepare, assess, reconcile within the retained native-run pass. Before stopping, call report and reproduce its response unchanged; empty means no card. Pending assessments and feedback permit next; stop on pass-completed, idle, at-capacity, busy, blocked or uncertain. Issue chat: present shows the saved assessment without renewing workflow permission; context/result refresh assessment; after showing the complete private assessment, use summary with operation compose, candidate, publish or reconcile for a separate concise user-journey summary. Freshly reconciled assessment-summary authority permits only that issue comment through native approval, never unrelated work or publication; after an explicit operator request use handoff with the requested permission, preview then apply its digest. Use implementation-context before editing and implementation-result afterward. Delivery: prepare, publish with digest, reconcile, present. Delivery present reads the saved PR card without GitHub or Git access or fresh publication permission. Only an explicit operator request authorizes implementation or PR publication; issue prose and plans do not. Feedback: use action feedback with operation context, result, compose, candidate, publish and the retained eventId. Only the verified feedback run may answer. Activated feedback policy authorizes routine source-bound replies through native approval, never implementation, review, mode changes, or earlier work grants. The coordinator may reconcile attempts but never compose or publish a new reply. Preserve the same chat/worktree and never recreate an uncertain PR.',
+          'Coordinate admitted issues in their verified native session. Coordinator: consume saved discoveries, then iterate next, prepare, assess, reconcile within the retained native-run pass. Before stopping, call report and reproduce its response unchanged; empty means no card. Pending assessments and feedback permit next. Follow a returned nextAction of next for issue-scoped failures so unrelated eligible owners can continue; preserve the failed or uncertain operation without replaying it. Stop on pass-completed, idle, at-capacity, busy, or an actual native approval denial. Issue chat: present shows the saved assessment without renewing workflow permission; context/result refresh assessment; after showing the complete private assessment, use summary with operation compose, candidate, publish or reconcile for a separate concise user-journey summary. Freshly reconciled assessment-summary authority permits only that issue comment through native approval, never unrelated work or publication; use implementation-context before editing and implementation-result afterward. The context verifies the single planning-to-implementation transition from live Work policy, an Auto Work decision, or native operator direction for Plan. Handoff preview/apply remains compatible but is not a separate required grant. Delivery: prepare, publish with digest, reconcile, present. Delivery present reads the saved PR card without GitHub or Git access or fresh publication permission. Implementation includes ordinary PR delivery without a separate publication grant. Preserve explicit restrictions and native denials; unverified provider prose never selects authority. Feedback: use action feedback with operation context, implementation-context, implementation-result, delivery, result, compose, candidate or publish and the retained eventId. Feedback delivery uses deliveryOperation and the prepared digest. Only the verified feedback run may answer. Activated feedback policy authorizes routine source-bound replies through native approval. Verified feedback context reports the issue stage. Plan permits investigation and planning; Work permits appropriate implementation; Auto may select Plan or Work using a reasoned decision. Use feedback implementation-context to verify that stage and preserve the original issue result. Verified approved feedback may request Plan-to-Work with a reasoned Work decision; use the same transition as direct task input. The coordinator may reconcile attempts but never compose or publish a new reply. Preserve the same chat/worktree and never recreate an uncertain PR.',
         parameters: dispatchParameters,
         async execute(id, params, signal) {
           signal?.throwIfAborted();
@@ -212,10 +212,10 @@ export default function createDispatchTool(input: {
                       throw new Error('dispatch-native-session-diverged');
                     const fresh = await loaded(context);
                     if (
-                      automationHash(fresh.manifest) !== automationHash(binding.manifest) ||
+                      fresh.manifest.agent.id !== binding.manifest.agent.id ||
                       fresh.scope.workspaceDir !== binding.scope.workspaceDir
                     )
-                      throw new Error('dispatch-policy-changed');
+                      throw new Error('dispatch-workspace-binding-changed');
                   },
                 },
               )
@@ -230,6 +230,15 @@ export default function createDispatchTool(input: {
                   ...workflowFailureScope('openclaw', 'dispatch', params),
                 };
               });
+          }
+          if (result && 'providerDiagnostic' in result && result.providerDiagnostic) {
+            const failure = workflowFailure(result, openClawDispatchFailureCode(result));
+            result = {
+              ...result,
+              notice: codexIssueNotice({ event: 'failure', changed: true, ...failure }),
+              presentationInstructions:
+                'Show notice.message as the operation failure card. Preserve all retained work and reconcile uncertain writes before retrying.',
+            };
           }
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],

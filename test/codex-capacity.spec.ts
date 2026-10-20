@@ -18,6 +18,15 @@ const record = (phase: DispatchRecord['phase'], events: FeedbackEvent['phase'][]
     feedback: { baseline: {}, events: events.map((phase) => ({ phase }) as FeedbackEvent) },
   }) as DispatchRecord;
 describe('agent/codex-capacity', () => {
+  it('should release an unsubmitted initial continuation once feedback owns implementation', () => {
+    const item = record('complete', ['published']);
+    item.continuation = { phase: 'waiting' } as DispatchRecord['continuation'];
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.feedback!.events[0]!.work = { selection: {} as never };
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+    item.feedback!.events[0]!.phase = 'running';
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+  });
   it('should require native inactivity before releasing blocked or retired creations', () => {
     const item = record('blocked');
     item.effective = { status: 'verified' };
@@ -61,6 +70,23 @@ describe('agent/codex-capacity', () => {
       available: 3,
     });
     assert.throws(() => codexCapacity([], 0), /capacity-invalid/);
+  });
+  it('should reserve unfinished delivery from its result despite an obsolete complete phase', () => {
+    const item = record('complete');
+    item.continuation = {
+      phase: 'complete',
+      result: { outcome: 'done' },
+    } as DispatchRecord['continuation'];
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.continuation!.head = 'new';
+    item.delivery = {
+      reconciled: true,
+      pushedHead: 'old',
+      pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+    } as DispatchRecord['delivery'];
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.delivery!.pushedHead = 'new';
+    assert.equal(codexCapacity([item], 1).occupied, 0);
   });
   it('should release reconciled pr delivery without releasing active feedback or implementation', () => {
     const item = record('complete');

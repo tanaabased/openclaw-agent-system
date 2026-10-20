@@ -6,6 +6,7 @@ import { issueKey } from '../agent/dispatch-pending.ts';
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import refresh from '../channels/github/cli/refresh.ts';
 import status from '../channels/github/cli/status.ts';
@@ -64,10 +65,14 @@ function fixture() {
   };
   const records: OpenClawDispatchRecord[] = [];
   let requests = 0;
+  let readiness: string | undefined;
   let now = baseline;
   const service = new OpenClawNotifications({
     root: '/unused',
     intake: {
+      async readiness() {
+        return readiness;
+      },
       async select(value) {
         return {
           selected: assignmentIntakePolicy(value, 'openclaw'),
@@ -105,6 +110,9 @@ function fixture() {
     manifest,
     service,
     records,
+    set readiness(value: string | undefined) {
+      readiness = value;
+    },
     get state() {
       return state;
     },
@@ -136,6 +144,57 @@ function record(): OpenClawDispatchRecord {
 }
 
 describe('agent/openclaw-notifications', () => {
+  it('should report the same disabled policy across status refresh and wait without starting work', async () => {
+    const f = fixture();
+    f.manifest.github!.notifications!.issueAssignment!.enabled = false;
+    f.readiness = 'intake-policy-disabled';
+    const status = await f.service.inspect(f.manifest, '/workspace');
+    const refresh = await f.service.refresh(f.manifest, '/workspace', {
+      signal: AbortSignal.timeout(1000),
+    });
+    const waited = await f.service.wait(f.manifest, '/workspace', {
+      target: 'baseline-ready',
+      timeoutMs: 1000,
+      refresh: true,
+    });
+    for (const result of [status, refresh, waited])
+      assert.equal(result.code, 'github-notification-disabled');
+    assert.equal(f.requests, 0);
+  });
+
+  it('should expose required automation updates without losing retained admission evidence', async () => {
+    const f = fixture();
+    const before = structuredClone(f.state);
+    f.readiness = 'intake-automation-update-required';
+    const result = await f.service.inspect(f.manifest, '/workspace');
+    assert.equal(result.status, 'degraded');
+    assert.equal(result.diagnosticCode, 'intake-automation-update-required');
+    assert.equal(result.baseline.status, 'ready');
+    assert.equal(result.items.length, 1);
+    assert.equal(f.requests, 0);
+    assert.deepEqual(f.state, before);
+    f.readiness = undefined;
+    assert.equal((await f.service.inspect(f.manifest, '/workspace')).status, 'ready');
+  });
+
+  it('should refresh after a previous scan failure without ignoring current readiness', async () => {
+    const f = fixture();
+    f.state!.blocker = { code: 'intake-github-transport', since: baseline, retryAfter: baseline };
+    assert.equal(
+      (await f.service.inspect(f.manifest, '/workspace')).diagnosticCode,
+      'intake-github-transport',
+    );
+    const signal = new AbortController().signal;
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal, selector })).status,
+      'completed',
+    );
+    f.readiness = 'intake-automation-update-required';
+    assert.equal(
+      (await f.service.refresh(f.manifest, '/workspace', { signal, selector })).code,
+      'intake-automation-update-required',
+    );
+  });
   it('should inspect native admission and capacity without running intake or exposing provider prose', async () => {
     const f = fixture();
     const result = await f.service.inspect(f.manifest, '/workspace', selector);
@@ -147,6 +206,55 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
 
+  it('should report implementation questions without changing the retained assessment', async () => {
+    const f = fixture();
+    const item = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: { outcome: 'plan-ready' },
+      work: {
+        assessmentDigest: 'a'.repeat(64),
+        result: {
+          outcome: 'clarification-needed',
+          summary: 'Need input.',
+          fullResult: 'Partial work.',
+          questions: ['Which caller?'],
+        },
+      },
+    } as OpenClawDispatchRecord;
+    f.records.push(item);
+    const result = await f.service.inspect(f.manifest, '/workspace', selector);
+    assert.equal(result.items[0]?.workflow?.phase, 'clarification-needed');
+    assert.equal(result.items[0]?.waitingReason, 'clarification-needed');
+    assert.equal(item.result!.outcome, 'plan-ready');
+    assert.equal(f.requests, 0);
+  });
+
+  it('should use the shared workflow status for implementation and delivery without mutating old records', async () => {
+    const f = fixture();
+    const item = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'complete',
+      result: { outcome: 'plan-ready' },
+      work: {
+        assessmentDigest: 'a'.repeat(64),
+        implementation: { runId: 'original', inputEventId: 'original-input' },
+      },
+    } as OpenClawDispatchRecord;
+    f.records.push(item);
+    for (const outcome of [undefined, 'done'] as const) {
+      if (outcome) item.work!.result = { outcome, summary: 'Done.', fullResult: 'Checked.' };
+      const before = structuredClone(item);
+      const result = await f.service.inspect(f.manifest, '/workspace', selector);
+      assert.equal(result.items[0]?.workflow?.phase, outcome ? 'delivery' : 'running');
+      assert.equal(result.items[0]?.workflow?.phase, workflowStatus(item));
+      assert.deepEqual(item, before);
+    }
+    assert.equal(f.requests, 0);
+  });
+
   it('should expose capability warnings without failing supported refreshes and waits', async () => {
     const f = fixture();
     f.manifest.github!.notifications!.issueAssignment!.feedback = true;
@@ -156,8 +264,8 @@ describe('agent/openclaw-notifications', () => {
     };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
     const observed = await f.service.inspect(f.manifest, '/workspace');
-    assert.equal(observed.status, 'degraded');
-    assert.equal(observed.code, 'github-notification-capabilities-degraded');
+    assert.equal(observed.status, 'ready');
+    assert.equal(observed.code, 'github-notification-status-ready');
     assert.equal(observed.diagnosticCode, undefined);
     assert.equal(observed.warnings?.length, 1);
     assert.equal(observed.baseline.status, 'ready');
@@ -214,7 +322,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(
       (await f.service.refresh(f.manifest, '/workspace', { signal: new AbortController().signal }))
         .status,
-      'failed',
+      'queued',
     );
   });
 
@@ -257,10 +365,10 @@ describe('agent/openclaw-notifications', () => {
         ['stdout', 'stderr'],
       );
       assert.match(events[1]!.text, /review requests/);
-      assert.deepEqual(exits, [1]);
+      assert.deepEqual(exits, []);
       if (json) {
         const result = JSON.parse(events[0]!.text);
-        assert.equal(result.status, 'degraded');
+        assert.equal(result.status, 'ready');
         assert.equal(result.warnings[0].fieldPath, '/github/notifications/review-request');
         assert.equal(result.diagnosticCode, undefined);
       } else {
@@ -565,7 +673,7 @@ describe('agent/openclaw-notifications', () => {
     assert.match(errors.join(''), /github-notification-status-failed/u);
   });
 
-  it('should reject disabled inactive stale and unsupported refreshes without starting work', async () => {
+  it('should apply live policy revisions while rejecting disabled inactive or unsupported runtime refreshes', async () => {
     for (const change of ['disabled', 'inactive', 'stale', 'runtime', 'mode']) {
       const f = fixture();
       const policy = f.manifest.github!.notifications!;
@@ -579,7 +687,11 @@ describe('agent/openclaw-notifications', () => {
         signal: new AbortController().signal,
         selector,
       });
-      assert.equal(result.status, 'failed', change);
+      assert.equal(
+        result.status,
+        ['stale', 'mode'].includes(change) ? 'completed' : 'failed',
+        change,
+      );
       assert.equal(f.requests, 0, change);
     }
   });

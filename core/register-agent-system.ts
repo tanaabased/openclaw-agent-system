@@ -773,7 +773,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
             selector,
           );
           if (observation.status === 'ready')
-            await dispatchV2.service.check(manifest, workspace, signal, observation);
+            await dispatchV2.service.check(manifest, workspace, signal, observation, selector);
           return observation;
         },
         inspectRun: async (manifest, workspace, runId, signal) => {

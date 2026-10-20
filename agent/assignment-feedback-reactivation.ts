@@ -1,13 +1,13 @@
 import feedbackOwnPublications from './feedback-own-publications.ts';
-import { feedbackAuthorityDigest, matchesFeedbackAuthority } from './notification-authority.ts';
+import { feedbackAuthorityDigest } from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { inspectAssignedIssue, inspectAssignment } from './dispatch-assignment.ts';
+import { inspectActiveIssue } from './dispatch-assignment.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import { discoverFeedback } from './feedback-source.ts';
+import { admitFeedback, discoverFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
@@ -24,15 +24,23 @@ export async function inspectFeedbackAssignment(
   client: GitHubNotificationIntakeClient,
   record: SharedDispatchRecord,
 ) {
-  if (!record.feedbackReactivation) return inspectAssignedIssue(policy, intake, client);
-  const observation = await inspectAssignment(policy, intake, client);
-  const { latest } = observation;
-  if (
-    latest?.nodeId !== record.feedbackReactivation.assignmentEventId ||
-    !matchesFeedbackAuthority(record.feedbackReactivation.policyDigest, policy.policy)
-  )
-    throw new Error('feedback-reactivation-superseded');
-  return observation;
+  const current = await inspectActiveIssue(intake, client, Boolean(record.feedbackReactivation));
+  if (record.feedbackReactivation) {
+    const history = await client.listAssignmentEvents(
+      intake.repository.owner.login,
+      intake.repository.name,
+      intake.issue.number,
+    );
+    if (history.truncated) throw new Error('dispatch-authority-history-incomplete');
+    const latest = history.events
+      .filter((event) => event.assignee.nodeId === intake.receiving.nodeId)
+      .sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
+      )[0];
+    if (latest?.nodeId !== record.feedbackReactivation.assignmentEventId)
+      throw new Error('feedback-reactivation-superseded');
+  }
+  return current;
 }
 
 export async function revalidateFeedbackAssignment(
@@ -58,23 +66,44 @@ export default async function reactivateAssignmentFeedback(input: {
   pullRequest?: { number: number; nodeId: string };
 }) {
   const { record, intake, policy, client } = input;
-  if (
-    !feedbackIdentities(
-      policy.policy.issueAssignment?.allowed ?? [],
-      policy.policy.issueAssignment?.feedback,
-    ).length
-  ) {
+  if (!workflowFeedbackEnabled(policy.policy, 'issue-assignment')) {
+    const feedback = (record.feedback ??= { startedAt: input.now, baseline: {}, events: [] });
+    observeFeedbackPolicy(feedback, policy.policy, input.now);
     delete record.feedbackReactivation;
     return false;
   }
-  const { latest } = await inspectAssignment(policy, intake, client);
+  if (record.feedback) observeFeedbackPolicy(record.feedback, policy.policy, input.now);
+  await inspectActiveIssue(intake, client, true);
+  if (
+    !policy.policy.allowedRepositoryOwners.some(
+      (owner) => owner.nodeId === intake.repository.owner.nodeId,
+    )
+  )
+    return false;
+  const history = await client.listAssignmentEvents(
+    intake.repository.owner.login,
+    intake.repository.name,
+    intake.issue.number,
+  );
+  if (history.truncated) throw new Error('dispatch-authority-history-incomplete');
+  const latest = history.events
+    .filter((event) => event.assignee.nodeId === intake.receiving.nodeId)
+    .sort(
+      (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
+    )[0];
   if (!latest) throw new Error('dispatch-assignment-event-missing');
   const digest = feedbackAuthorityDigest(policy.policy);
-  if (
-    record.feedbackReactivation?.assignmentEventId === latest.nodeId &&
-    matchesFeedbackAuthority(record.feedbackReactivation.policyDigest, policy.policy)
-  )
-    return true;
+  if (record.feedbackReactivation?.assignmentEventId === latest.nodeId) {
+    const event = record.feedback?.events.find(
+      (entry) => entry.id === record.feedbackReactivation!.eventId,
+    );
+    if (
+      event &&
+      admitFeedback(policy.policy, client.identity, JSON.parse(event.source)).disposition ===
+        'approved'
+    )
+      return true;
+  }
   delete record.feedbackReactivation;
   const since = Math.max(
     Date.parse(latest.createdAt),
@@ -127,7 +156,7 @@ export default async function reactivateAssignmentFeedback(input: {
         event.nodeId === target.nodeId &&
         event.phase === 'queued' &&
         event.createdAt >= since &&
-        matchesFeedbackAuthority(event.policyDigest, policy.policy) &&
+        !event.policyHeld &&
         revisions.get(event.sourceId) === event.revision,
     );
     if (event) {

@@ -6,6 +6,19 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For coordinator replacement verification, retain an active issue, reconcile the automation to a new intake chat, and continue that same issue. Verify its original creation source remains intact, new sends record the replacement coordinator, and both old and new send receipts reconcile without duplicate messages. Rename the issue chat and change its live assessment or implementation guidance before a subsequent context request; neither requires another issue admission or Install. Controlled tests cover these transitions; the desktop run remains the native transport proof.
+
+Native same-turn verification also requires the desktop: run one Work issue and one
+Auto issue whose recorded decision selects Work. Confirm implementation context
+binds to the assessment turn and implementation starts without a coordinator send.
+End a turn before implementation completes and confirm the next intake resumes the
+same issue with its saved assessment and checkout. A clarification result must wait
+for an answer rather than being retried on each scan.
+After delivery, confirm the PR, announcement, attachment, and card-generation receipts
+make status complete and the next scan idle without a separate completion transition.
+Interrupt before the announcement or card and confirm recovery finishes those steps
+without repeating implementation or creating another PR.
+
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 ## Setup
@@ -30,6 +43,18 @@ printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access
   | node "$runtime" intake failure-response --plugin-data "$root/uncreated-failure-data" \
   | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("> ## ⚠️ Codex needs access to its tracking files\n>\n>")) and (.response | contains("> - **Technical detail:**")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
 test ! -e "$root/uncreated-failure-data"
+
+# should distinguish a required automation update from first-time setup in the packaged failure response
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+printf '%s\n' '{"automationId":"fixture-native-intake","code":"intake-automation-update-required"}' \
+  | node "$runtime" intake failure-response --plugin-data "$root/uncreated-update-data" \
+  | jq -e '.status == "failure" and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("✨")) and (.response | contains("New intake is paused")) and (.response | contains("intake-automation-update-required"))'
+printf '%s\n' '{"automationId":"fixture-native-intake","code":"intake-activation-required"}' \
+  | node "$runtime" intake failure-response --plugin-data "$root/uncreated-update-data" \
+  | jq -e '.status == "failure" and (.response | contains("⚠️")) and (.response | contains("intake-activation-required")) and (.response | contains("✨") | not)'
+test ! -e "$root/uncreated-update-data"
 
 # should format a packaged quiet heartbeat without activating intake or changing its state
 root="$TMPDIR/agent-system-codex-notifications"
@@ -176,9 +201,29 @@ sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-notifications/a
 mv "$root/work-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
 jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
-node_executable=$(node -p 'process.execPath')
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" \
-  | jq -e --arg node "$node_executable" --arg runtime "$runtime" --arg data "$plugin_data" '.actions[0].expected.prompt | contains([$node,$runtime,"continuation","--plugin-data",$data] | tojson)'
+printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-schedule.json"
+node --input-type=module - "$root/work-schedule.json" "$runtime" "$plugin_data" <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+const [planPath, runtimePath, pluginData] = process.argv.slice(2);
+const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+const block = plan.actions[0].expected.prompt.split('\n\n').find(part => part.startsWith('const runtime = '));
+assert.ok(block, 'installed schedule must contain its execution block');
+const calls = [];
+await runInNewContext('(async () => {' + block + '})()', {
+  runtimeRoute: 'continuation', runtimeInput: { action: 'next' },
+  load: () => undefined, store: () => {}, text: () => {},
+  tools: { exec_command: async request => {
+    calls.push(request);
+    return { exit_code: 0, output: JSON.stringify({ status: 'idle' }) };
+  } },
+});
+const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+const argv = [process.execPath, runtimePath, 'continuation', 'next', '--plugin-data', pluginData];
+assert.equal(calls.length, 1);
+assert.equal(calls[0].cmd, argv.map(quote).join(' ') + " <<'AGENT_SYSTEM_INPUT'\n" + JSON.stringify({ action: 'next' }) + '\nAGENT_SYSTEM_INPUT');
+NODE
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$CODEX_HOME/rules"
 

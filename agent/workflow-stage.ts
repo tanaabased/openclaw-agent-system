@@ -56,14 +56,3 @@ export async function selectWorkflowStage(input: {
     },
   };
 }
-
-/** a recommendation selects only the next fixed stage; it never grants execution authority. */
-export function nextIssueStage(
-  mode: 'plan' | 'work' | 'auto',
-  outcome: 'plan-ready' | 'clarification-needed' | 'operator-setup-blocker',
-  recommendation?: 'wait' | 'proceed',
-): 'implementation' | 'stop' {
-  if (outcome !== 'plan-ready' || mode === 'plan') return 'stop';
-  if (mode === 'auto' && !recommendation) throw new Error('workflow-recommendation-required');
-  return mode === 'work' || recommendation === 'proceed' ? 'implementation' : 'stop';
-}

@@ -8,9 +8,8 @@ interface GitHubNotificationPullRequestOpenedPresentationInput {
   repositoryOwner: string;
 }
 
-function pullRequestOpenedCard(
+export function githubNotificationPullRequestOpenedCard(
   input: GitHubNotificationPullRequestOpenedPresentationInput,
-  quoted: boolean,
 ): string {
   const repository = `${input.repositoryOwner}/${input.repositoryName}`;
   const repositoryUrl =
@@ -46,23 +45,6 @@ function pullRequestOpenedCard(
       ],
       title: 'Pull request opened',
     },
-    { quoted },
+    { quoted: true },
   );
-}
-
-/** render the private card without changing the public handoff body. */
-export function githubNotificationPullRequestOpenedCard(
-  input: GitHubNotificationPullRequestOpenedPresentationInput,
-): string {
-  return pullRequestOpenedCard(input, true);
-}
-
-/** Render the deterministic issue comment that announces the delivery pull request. */
-export function githubNotificationPullRequestHandoffComment(
-  input: GitHubNotificationPullRequestOpenedPresentationInput,
-): string {
-  if (!Number.isSafeInteger(input.pullRequestNumber) || input.pullRequestNumber < 1) {
-    throw new Error('GitHub notification pull request numbers must be positive safe integers.');
-  }
-  return pullRequestOpenedCard(input, false);
 }

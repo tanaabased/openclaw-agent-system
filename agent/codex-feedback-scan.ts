@@ -68,8 +68,6 @@ export async function scanCodexFeedback(input: {
     feedback.discoveryPending = true;
     try {
       await save();
-      if (record.sourceThreadId !== input.sourceThreadId)
-        throw new Error('feedback-schedule-owner-changed');
       await revalidateFeedbackAssignment(current.policy, admitted, provider.client, record);
       let publications: Promise<string[]> | undefined;
       const source = {

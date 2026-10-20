@@ -2,16 +2,32 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 const text = Type.String({ minLength: 1, maxLength: 32000, pattern: '\\S' });
-export const assessmentDecisionSchema = Type.Object(
-  {
-    action: Type.Union([Type.Literal('proceed'), Type.Literal('wait')]),
-    reasons: Type.Array(Type.String({ minLength: 1, maxLength: 1000, pattern: '\\S' }), {
-      minItems: 1,
-      maxItems: 5,
-    }),
-  },
+const decisionReasons = Type.Array(Type.String({ minLength: 1, maxLength: 1000, pattern: '\\S' }), {
+  minItems: 1,
+  maxItems: 5,
+});
+const currentDecisionSchema = Type.Object(
+  { mode: Type.Union([Type.Literal('plan'), Type.Literal('work')]), reasons: decisionReasons },
   { additionalProperties: false },
 );
+export const assessmentDecisionSchema = Type.Union([
+  currentDecisionSchema,
+  Type.Object(
+    {
+      action: Type.Union([Type.Literal('proceed'), Type.Literal('wait')]),
+      reasons: decisionReasons,
+    },
+    { additionalProperties: false },
+  ),
+]);
+
+/** interpret old receipts without rewriting their digest-bound source. */
+export function assessmentDecisionMode(
+  decision?: { mode: 'plan' | 'work' } | { action: 'proceed' | 'wait' },
+) {
+  if (!decision) return undefined;
+  return 'mode' in decision ? decision.mode : decision.action === 'proceed' ? 'work' : 'plan';
+}
 const evidence = Type.Array(
   Type.Object(
     {
@@ -80,7 +96,7 @@ export const assessmentResultSchema = Type.Union([
 ]);
 // the model-facing contract shares repeated fields instead of expanding them per outcome.
 export const assessmentResultContextSchema = {
-  $defs: common,
+  $defs: { ...common, decision: Type.Optional(currentDecisionSchema) },
   anyOf: assessmentResultSchema.anyOf.map((variant) => ({
     ...variant,
     properties: {
@@ -94,7 +110,7 @@ export type AssessmentResult = Static<typeof assessmentResultSchema>;
 export function parseAssessmentResult(value: unknown): AssessmentResult {
   if (!Value.Check(assessmentResultSchema, value) || JSON.stringify(value).length > 96000)
     throw new Error('assessment-result-invalid');
-  if (value.decision?.action === 'proceed' && value.outcome !== 'plan-ready')
+  if (assessmentDecisionMode(value.decision) === 'work' && value.outcome !== 'plan-ready')
     throw new Error('assessment-decision-conflict');
   return value;
 }

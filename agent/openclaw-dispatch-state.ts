@@ -67,6 +67,8 @@ export const openclawDispatchRecordSchema = Type.Object(
     ),
     firstTurn: Type.Optional(issueTurnSchema),
     assessmentTurn: Type.Optional(issueTurnSchema),
+    decisionTurn: Type.Optional(issueTurnSchema),
+    previousDecisionTurns: Type.Optional(Type.Array(issueTurnSchema)),
     assessmentCaller: Type.Optional(
       Type.Object({ runId: text, inputEventId: text }, { additionalProperties: false }),
     ),
@@ -152,8 +154,32 @@ function validIssueTurn(turn: Static<typeof issueTurnSchema>, runId: string) {
     ['consumed', 'completed'].includes(turn.status) === Boolean(turn.consumedByEventId) &&
     (!turn.executionModel || turn.status === 'completed') &&
     (!turn.replyEventId || turn.status === 'completed') &&
-    (turn.status !== 'completed' || Boolean(turn.replyEventId))
+    (!turn.failed || turn.status === 'completed') &&
+    (turn.status !== 'completed' || turn.failed || Boolean(turn.replyEventId))
   );
+}
+
+function validWorkTurns(record: OpenClawDispatchRecord) {
+  const work = record.work;
+  if (!work) return true;
+  for (const slot of ['turn', 'deliveryTurn'] as const) {
+    const prefix = `${record.id}:${slot === 'turn' ? 'implementation' : 'delivery'}`;
+    const previous = (work.previousTurns ?? []).filter((entry) => entry.slot === slot);
+    const expected = (index: number) => prefix + (index ? `:resume:${index}` : '');
+    const valid = (turn: Static<typeof issueTurnSchema>, index: number) =>
+      turn.origin === 'assessment' || turn.origin === 'input'
+        ? slot === 'turn' &&
+          index === 0 &&
+          (turn.origin !== 'assessment' || turn.runId === record.resultTurnId) &&
+          turn.consumedByEventId === work.implementation?.inputEventId &&
+          turn.runId === work.implementation?.runId &&
+          validIssueTurn(turn, work.implementation.runId)
+        : validIssueTurn(turn, expected(index));
+    if (previous.some(({ turn }, index) => turn.status !== 'completed' || !valid(turn, index)))
+      return false;
+    if (work[slot] && !valid(work[slot], previous.length)) return false;
+  }
+  return true;
 }
 
 export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatchRecord> {
@@ -167,14 +193,21 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
             (!record.feedback ||
               record.feedback.events.length === 0 ||
               (record.sessionCreation?.verified &&
-                record.feedback.events.every(
-                  (event) =>
-                    !event.turn || validIssueTurn(event.turn, `${record.id}:feedback:${event.id}`),
-                ))) &&
+                record.feedback.events.every((event) => {
+                  const prefix = `${record.id}:feedback:${event.id}`;
+                  const previous = event.previousTurnIds ?? [];
+                  const expected = (index: number) => prefix + (index ? `:resume:${index}` : '');
+                  return (
+                    previous.length === (event.resumed ?? 0) &&
+                    previous.every((id, index) => id === expected(index)) &&
+                    (!event.turn || validIssueTurn(event.turn, expected(previous.length)))
+                  );
+                }))) &&
             (!record.work ||
-              (record.handoff &&
-                record.result?.outcome === 'plan-ready' &&
-                record.work.assessmentDigest === record.stageReceipt?.resultDigest)) &&
+              ((record.progression?.stage === 'implementation' ||
+                (record.handoff && record.result?.outcome === 'plan-ready')) &&
+                record.work.assessmentDigest === record.stageReceipt?.resultDigest &&
+                validWorkTurns(record))) &&
             record.sessionCreation &&
             record.worktree === record.request.cwd &&
             !record.native &&
@@ -208,6 +241,20 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
                 record.assessment &&
                 (!record.firstTurn || record.firstTurn.status === 'completed') &&
                 validIssueTurn(record.assessmentTurn, `${record.id}:assessment`))) &&
+            (record.previousDecisionTurns ?? []).every(
+              (turn, index) =>
+                turn.status === 'completed' &&
+                validIssueTurn(
+                  turn,
+                  `${record.id}:auto-decision${index ? ':resume:' + index : ''}`,
+                ),
+            ) &&
+            (!record.decisionTurn ||
+              (record.assessmentTurn?.status === 'completed' &&
+                validIssueTurn(
+                  record.decisionTurn,
+                  `${record.id}:auto-decision${record.previousDecisionTurns?.length ? ':resume:' + record.previousDecisionTurns.length : ''}`,
+                ))) &&
             (!record.assessmentCaller || record.assessmentTurn) &&
             (!record.result ||
               (record.assessmentTurn &&
@@ -224,6 +271,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
           !record.sessionCreation &&
           !record.firstTurn &&
           !record.assessmentTurn &&
+          !record.decisionTurn &&
           !record.assessmentCaller &&
           record.phase !== 'created' &&
           (!record.request || record.worktree === record.request.cwd) &&
@@ -289,6 +337,7 @@ export function preserveOpenClawProgress(
     if (fresh.result && record.phase === 'assessing') record.phase = 'complete';
     preserve(previous.firstTurn, record.firstTurn, fresh.firstTurn);
     preserve(previous.assessmentTurn, record.assessmentTurn, fresh.assessmentTurn);
+    preserve(previous.decisionTurn, record.decisionTurn, fresh.decisionTurn);
     for (const event of record.feedback?.events ?? []) {
       const retained = fresh.feedback?.events.find((entry) => entry.id === event.id);
       if (

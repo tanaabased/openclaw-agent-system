@@ -1,5 +1,8 @@
+import { beginFeedbackWork } from '../agent/feedback-work.ts';
+import { discoverFeedback } from '../agent/feedback-source.ts';
+import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -75,7 +78,193 @@ describe('agent/codex-delivery', () => {
       ...content,
     });
   }
+  async function feedbackWorkFixture() {
+    const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    declaration.github.notifications['issue-assignment'].feedback = {
+      allowed: [{ login: 'reviewer', 'node-id': 'U_reviewer' }],
+    };
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
+    await publish();
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const policy = current.manifest.github!.notifications!;
+    const source = {
+      nodeId: 'C_feedback work',
+      databaseId: 42,
+      author: { login: 'reviewer', nodeId: 'U_reviewer', type: 'User' },
+      body: '@receiver fix empty input and push',
+      bodyTruncated: false,
+      createdAt: new Date(baseline + 70000).toISOString(),
+      updatedAt: new Date(baseline + 70000).toISOString(),
+    };
+    const comments = {
+      ...fixture.client,
+      identity: account,
+      listIssueComments: async () => ({ comments: [source], truncated: false }),
+      getIssueComment: async () => source,
+    };
+    const authority = {
+      workflow: 'issue-assignment' as const,
+      automationId: 'automation',
+      sourceThreadId: 'intake',
+      policyDigest: notificationAuthorityDigest(policy),
+      definitionDigest: 'e'.repeat(64),
+    };
+    deps.activation = async () => ({
+      sourceThreadId: 'intake',
+      schedule: {
+        current: authority,
+        saved: { ...authority, version: 1, capabilities: ['feedback', 'publication'] },
+      },
+    });
+    deps.feedbackConnect = async () => ({ client: fixture.client, comments }) as never;
+    head = 'b'.repeat(40);
+    const eventId = await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.feedback = { baseline: { I_issue: {} }, events: [] };
+      await discoverFeedback({
+        state: record.feedback,
+        client: comments,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I_issue',
+        itemType: 'issue',
+        now: baseline + 80000,
+      });
+      const event = record.feedback.events[0]!;
+      event.phase = 'running';
+      event.attempt = {
+        id: 'f'.repeat(64),
+        sourceTurnId: 'intake',
+        beforeTurnId: 'before',
+        turnId: 'turn',
+        request: { threadId: 'child', prompt: 'feedback', model: 'model', thinking: 'high' },
+      };
+      record.progression = { stage: 'implementation', via: 'legacy' };
+      await beginFeedbackWork({
+        record,
+        event,
+        policy,
+        workspace,
+        now: baseline + 80000,
+        pullRequest: record.delivery!.pullRequest,
+        resolveSkill: (id) => deps.native!.assessmentSkill!(record.worktree!, id),
+      });
+      event.work!.result = {
+        outcome: 'done',
+        summary: 'Fixed.',
+        fullResult: 'Regression passed; committed.',
+      };
+      event.work!.head = head;
+      await save();
+      return event.id;
+    });
+    return { eventId, source };
+  }
+  it('should retry pr creation after a definite provider rejection', async () => {
+    rejectCreation = true;
+    await assert.rejects(publish(), /403/);
+    rejectCreation = false;
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 2);
+  });
+
+  it('should publish a source-bound feedback work to the same pr without a new operator turn', async () => {
+    const { eventId } = await feedbackWorkFixture();
+    deps.native!.find = async () => ({
+      id: 'child',
+      cwd: (await store.read()).records[0]!.worktree!,
+      status: 'active',
+      turnId: 'turn',
+      followUpUserTurn: false,
+    });
+    await assert.rejects(request('prepare'), /feedback-event-required/);
+    const preview = await request('prepare', { eventId });
+    const outcome = await request('publish', { eventId, digest: requiredDigest(preview) });
+    assert.equal(outcome.status, 'published');
+    assert.equal(creates, 1);
+    assert.equal(remote, head);
+    assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
+  });
+
+  it('should reconcile an uncertain feedback work push without repeating implementation or push', async () => {
+    const { eventId } = await feedbackWorkFixture();
+    const git = deps.git!;
+    let lost = true;
+    deps.git = async (cwd, args, signal) => {
+      const result = await git(cwd, args, signal);
+      if (lost && args.includes('push')) {
+        lost = false;
+        throw new Error('transport lost');
+      }
+      return result;
+    };
+    const preview = await request('prepare', { eventId });
+    await assert.rejects(
+      request('publish', { eventId, digest: requiredDigest(preview) }),
+      /transport lost/,
+    );
+    assert.equal(remote, head);
+    const retained = (await store.read()).records[0]!.feedback!.events[0]!.work;
+    const retry = await request('prepare', { eventId });
+    assert.equal(
+      (await request('publish', { eventId, digest: requiredDigest(retry) })).status,
+      'published',
+    );
+    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0]!.work, retained);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
+    assert.equal(creates, 1);
+  });
+  it('should stop a feedback work push when its native activated authority is revoked after preparation', async () => {
+    const { eventId } = await feedbackWorkFixture();
+    const preview = await request('prepare', { eventId });
+    const active = deps.activation!;
+    const git = deps.git!;
+    let revoked = false;
+    deps.activation = async (...args) => {
+      if (revoked) throw new Error('feedback-authority-revoked');
+      return active(...args);
+    };
+    deps.git = async (cwd, args, signal) => {
+      const value = await git(cwd, args, signal);
+      if (args[0] === 'ls-remote') revoked = true;
+      return value;
+    };
+    await assert.rejects(
+      request('publish', { eventId, digest: requiredDigest(preview) }),
+      /authority-revoked/,
+    );
+    assert.equal(remote, firstHead);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
+  });
+  it('should reject a different commit or native turn after feedback work is recorded', async () => {
+    const { eventId } = await feedbackWorkFixture();
+    head = 'c'.repeat(40);
+    await assert.rejects(request('prepare', { eventId }), /feedback-implementation-head-changed/u);
+    head = 'b'.repeat(40);
+    const find = deps.native!.find;
+    deps.native!.find = async (...args) => ({ ...(await find(...args))!, turnId: 'another-turn' });
+    await assert.rejects(request('prepare', { eventId }), /feedback-owner-caller-required/u);
+    assert.equal(remote, firstHead);
+    assert.equal(creates, 1);
+  });
+  it('should stop a changed source before a feedback work push and retain the existing receipt', async () => {
+    const { eventId, source } = await feedbackWorkFixture();
+    const preview = await request('prepare', { eventId });
+    source.body = '@receiver withdrawn';
+    await assert.rejects(
+      request('publish', { eventId, digest: requiredDigest(preview) }),
+      /feedback-source-changed/,
+    );
+    assert.equal(remote, firstHead);
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
+  });
+  let rejectCreation = false;
   beforeEach(async () => {
+    rejectCreation = false;
     root = await realpath(await mkdtemp(join(tmpdir(), 'codex_delivery-')));
     workspace = join(root, 'workspace');
     pluginData = join(root, 'plugin');
@@ -224,6 +413,12 @@ describe('agent/codex-delivery', () => {
               return result(pr ? [pr] : []);
             if (endpoint === 'repos/owner/repo/pulls' && argv.includes('POST')) {
               creates++;
+              if (rejectCreation)
+                return {
+                  ...result(null),
+                  exitCode: 1,
+                  stderr: 'gh: Resource not accessible by integration (HTTP 403)',
+                };
               if (failCreate) throw new Error('transport lost');
               pr = {
                 itemNodeId: 'PR_7',
@@ -453,7 +648,7 @@ describe('agent/codex-delivery', () => {
     assert.ok(shown.includes('[work.md](<'));
     assert.ok(!shown.includes('Private instructions'));
   });
-  it('should show feedback only when the configured schedule and owner are verified', async () => {
+  it('should show feedback under a verified replacement scheduler without changing the issue owner', async () => {
     const configured = structuredClone(manifest);
     Object.assign(configured.github.notifications['issue-assignment'], { feedback: true });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -479,15 +674,16 @@ describe('agent/codex-delivery', () => {
     assert.match(String(active.presentation), /Approved feedback.*original issue chat/u);
     assert.match(String(active.presentation), /originating item or review thread/u);
     activation.sourceThreadId = 'other-intake';
+    activation.schedule.current.sourceThreadId = 'other-intake';
+    activation.schedule.saved.sourceThreadId = 'other-intake';
     assert.match(
       String((await request('present')).presentation),
-      /active intake could not be verified/u,
+      /Approved feedback.*original issue chat/u,
     );
-    activation.sourceThreadId = 'intake';
     activation.schedule.saved.policyDigest = 'stale';
     assert.match(
       String((await request('present')).presentation),
-      /active intake could not be verified/u,
+      /Approved feedback.*original issue chat/u,
     );
     deps.activation = async () => {
       throw new Error('dispatch-activation-required');
@@ -703,12 +899,14 @@ describe('agent/codex-delivery', () => {
     assert.equal(presented.notices?.[0]?.severity, 'warning');
     assert.match(String(presented.presentation), /delivery-attachment-pending/);
   });
-  it('should require human handoff or a fresh publication schedule and reject request-supplied authority', async () => {
+  it('should require issue work or current operator direction and reject request-supplied authority', async () => {
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.handoff;
       await save();
     });
-    await assert.rejects(request('prepare'), /human-publication-required/);
+    const find = deps.native!.find;
+    deps.native!.find = async (...args) => ({ ...(await find(...args))!, followUpUserTurn: false });
+    await assert.rejects(request('prepare'), /workflow-policy-held/);
     const current = {
       workflow: 'issue-assignment' as const,
       sourceThreadId: 'intake',
@@ -730,10 +928,23 @@ describe('agent/codex-delivery', () => {
         {},
         { schedule: { current, saved: { ...current, version: 1, capabilities: ['publication'] } } },
       ),
-      /schedule-stale/,
+      /delivery-body-required/,
     );
     await assert.rejects(request('prepare', { schedule: current }), /request-invalid/);
     assert.equal(creates, 0);
+  });
+  it('should publish retained implementation without another human turn or handoff', async () => {
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.handoff;
+      state.records[0]!.progression = { stage: 'implementation', via: 'work' };
+      await save();
+    });
+    const find = deps.native!.find;
+    deps.native!.find = async (...args) => ({ ...(await find(...args))!, followUpUserTurn: false });
+    await publish();
+    assert.equal(creates, 1);
+    assert.equal((await request('reconcile')).status, 'ready');
+    assert.equal(creates, 1);
   });
   async function workSchedule() {
     const configured = structuredClone(manifest);

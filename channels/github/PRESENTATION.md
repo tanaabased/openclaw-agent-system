@@ -48,9 +48,25 @@ outcome or call to action.
 
 Use one compact card for the outcome of an intake check:
 
-- **ℹ️ Information:** issues started, pending assignments, or intake recovery.
+- **💡 Information:** issues started, pending assignments, or intake recovery.
+- **✨ Update:** an available automation update, including a required update that pauses intake.
 - **⚠️ Warning:** an intake action is needed or a temporary provider delay.
 - **❌ Error:** intake or preparation could not complete.
+
+Informational notices may supply a custom header emoji. Required automation updates
+use ✨ with warning severity and explicitly say that new intake is paused. Other
+warnings and errors keep their standard icons.
+
+Reserve `intake-activation-required` for initial setup. An existing intake automation
+that needs reconciliation uses `intake-automation-update-required`:
+
+```markdown
+> ## ✨ Automation update available
+>
+> - **What happened:** Your intake automation needs an update. New intake is paused until it’s applied. Existing chats and work are retained.
+> - **Next step:** Run Agent System Install to apply the update and resume intake.
+> - **Technical detail:** `intake-automation-update-required`
+```
 
 List each started item as **Issue:** followed by its repository and number linked
 to its work destination. Do not add an “Open chat” label or duplicate GitHub link.
@@ -62,10 +78,12 @@ changed blocker once, suppress identical repeats, and show verified recovery onc
 Use native conversation destinations for OpenClaw issue links. Omit unknown counts rather than showing zero.
 Warnings and errors explain the affected item or intake operation and its next action;
 include the exact project folder when registration is needed and a bounded diagnostic
-when useful. Preserve successful starts in a report that also contains an obstacle.
+when useful. Provider failures name Git or GitHub, include its safe bounded detail
+and supplied HTTP status, and distinguish access failures from temporary delays.
+Preserve successful starts in a report that also contains an obstacle.
 
 ```markdown
-> ## ℹ️ Intake complete — 2 issues started
+> ## 💡 Intake complete — 2 issues started
 >
 > - **Issue:** [example/project #7](codex://threads/example-7)
 > - **Issue:** [example/project #8](codex://threads/example-8)
@@ -295,7 +313,7 @@ invented file list.
 
 When an assessment includes a continuation decision, show an **Auto mode decision**
 card after the instruction card (or routing card when debug is off). Keep it visible
-regardless of debug presentation. Use ▶️ for `proceed` and ⏸️ for `wait`, with the exact
+regardless of debug presentation. Use ▶️ for `work` and ⏸️ for `plan`, with the exact
 code-formatted value in **Decision**. Use **Next** to distinguish automatic continuation
 once runtime checks pass from waiting for the operator's direction before implementation.
 Follow with bounded **Reason** rows. Escape reason text and withhold credential-shaped
@@ -401,7 +419,7 @@ it when the turn finishes. Keep the source card outside the public reply quote.
 >
 > <complete GitHub-facing response>
 
-> ## ℹ️ Reply published
+> ## 💡 Reply published
 >
 > [Published reply ↗](https://github.com/example/project/issues/7#issuecomment-123)
 ```

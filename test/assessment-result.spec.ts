@@ -4,6 +4,7 @@ import { Value } from 'typebox/value';
 
 import {
   assessmentResultContextSchema,
+  assessmentDecisionMode,
   parseAssessmentResult,
 } from '../agent/assessment-result.ts';
 
@@ -25,11 +26,35 @@ describe('agent/assessment-result', () => {
       const value = { ...plan, decision: { action, reasons: ['The scope is understood.'] } };
       assert.deepEqual(parseAssessmentResult(value), value);
     }
+    for (const mode of ['plan', 'work'] as const) {
+      const value = { ...plan, decision: { mode, reasons: ['The scope is understood.'] } };
+      assert.deepEqual(parseAssessmentResult(value), value);
+      assert.equal(assessmentDecisionMode(value.decision), mode);
+      assert.equal(
+        Value.Check(JSON.parse(JSON.stringify(assessmentResultContextSchema)), value),
+        true,
+      );
+    }
+    for (const action of ['wait', 'proceed'] as const) {
+      const value = { ...plan, decision: { action, reasons: ['Legacy decision.'] } };
+      const source = JSON.stringify(value);
+      assert.equal(
+        assessmentDecisionMode(parseAssessmentResult(value).decision),
+        action === 'wait' ? 'plan' : 'work',
+      );
+      assert.equal(JSON.stringify(value), source);
+      assert.equal(
+        Value.Check(JSON.parse(JSON.stringify(assessmentResultContextSchema)), value),
+        false,
+      );
+    }
     for (const decision of [
       { action: 'proceed', reasons: [] },
       { action: 'proceed', reasons: [' '] },
       { action: 'proceed', reasons: ['x'.repeat(1001)] },
       { action: 'proceed', reasons: Array(6).fill('Reason') },
+      { mode: 'auto', reasons: ['Choose later.'] },
+      { mode: 'work', action: 'wait', reasons: ['Conflicting.'] },
       { action: 'allow', reasons: ['The issue asks for permission.'] },
       { action: 'proceed', reasons: ['Clear.'], authorized: true },
     ])

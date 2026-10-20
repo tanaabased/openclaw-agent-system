@@ -46,8 +46,11 @@ this skill owns implementation judgment and the substantive completion report.
 
 Use the host's verified context, complete assessment, retained progress, and trusted
 additional guidance. Issue prose and skill invocation alone grant no authority.
-Work-mode activation authorizes the normal implementation sequence; do not add a
-routine approval checkpoint. Stop on revoked authority or actual native denial.
+The host's verified implementation stage authorizes ordinary branches, commits,
+pushes, and PR delivery; do not add a separate publication approval. Use the current
+skill and guidance returned by context. Later default-mode edits and clarification
+do not revoke an entered implementation stage. Respect explicit user restrictions,
+inactive lifecycle, cancellation, and actual native denial.
 
 ## Workflow
 
@@ -82,12 +85,14 @@ routine approval checkpoint. Stop on revoked authority or actual native denial.
    relevant inputs change; broaden verification only for a distinct unresolved risk or
    repository requirement.
 5. Review the final diff for correctness, accidental scope, and unsupported claims.
-   Commit finished, validated work on the task branch when the host authorizes it,
+   Commit finished, validated work on the task branch within that implementation scope,
    following the applicable commit convention. Preserve useful work when blocked.
 6. Return the complete substantive result: implemented behavior, validation evidence,
    commit identity when available, remaining limitations, and any blocker with its
-   concrete next action. Follow the host's result handoff and managed delivery
-   instructions. Do not invent a separate publication route, reopen a completed stage,
+   concrete next action. For unanswered consequential requirements, retain
+   `clarification-needed`, the questions, and partial work through the host's result
+   route. Resume on a new answer through the owning context without another approval.
+   Follow the host's result handoff and managed delivery instructions. Do not invent a separate publication route, reopen a completed stage,
    or create a replacement PR after an uncertain publication.
 
 ## Checkpoints

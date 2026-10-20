@@ -1,3 +1,4 @@
+import providerWriteRejected from '../../../utils/provider-write-rejected.ts';
 import { githubCliDiagnostic } from '../../../credentials/github-diagnostic.ts';
 import { parseGitHubApiResponse } from '../provider/api-response.ts';
 import {
@@ -54,6 +55,7 @@ export interface IssueDeliveryInput {
   linkIssue?: boolean;
   contentUpdate?: { title?: string; body?: string };
   beforeCreate?: () => Promise<void>;
+  onCreateRejected?: () => Promise<void>;
   onLinkageRetry?: () => Promise<void>;
   checkpoint?: (receipt: GitHubNotificationIssueDeliveryReceipt) => Promise<void>;
 }
@@ -420,7 +422,10 @@ export default class IssueDeliveryProvider {
               head: branch,
               title: normalize ? issue.title : (input.title ?? issue.title),
             }),
-          ),
+          ).catch(async (error: unknown) => {
+            if (providerWriteRejected(error)) await input.onCreateRejected?.();
+            throw error;
+          }),
         )
       : existing;
     await this.#verify(input, pullRequest, normalize);

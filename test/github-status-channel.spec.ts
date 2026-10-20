@@ -183,8 +183,16 @@ describe('github readiness channel', () => {
     checkpoint = baseline - 20 * 60_000;
     assert.equal((await snapshot()).stateReason, 'intake-scan-overdue');
     code = 'intake-policy-reconciliation-required';
+    assert.notEqual((await snapshot()).statusState, 'sync-required');
+    code = 'intake-automation-update-required';
     assert.equal((await snapshot()).statusState, 'sync-required');
+    code = 'intake-activation-required';
+    assert.equal((await snapshot()).statusState, 'setup-required');
     code = undefined;
+    automation = 'intake-automation-update-required';
+    assert.equal((await snapshot()).statusState, 'sync-required');
+    automation = 'intake-activation-required';
+    assert.equal((await snapshot()).statusState, 'setup-required');
     for (const expected of [
       'automation-sync-required',
       'automation-execution-failed',
@@ -211,12 +219,10 @@ describe('github readiness channel', () => {
     assert.equal((await snapshot()).stateReason, 'github-notification-capabilities-degraded');
     checkpoint = baseline - 20 * 60_000;
     assert.equal((await snapshot()).stateReason, 'intake-scan-overdue');
-    code = 'intake-policy-reconciliation-required';
-    assert.equal((await snapshot()).statusState, 'sync-required');
     code = undefined;
     checkpoint = baseline;
     value.github!.notifications!.issueAssignment!.mode = 'work';
-    assert.equal((await snapshot()).statusState, 'blocked');
+    assert.equal((await snapshot()).statusState, 'degraded');
     fail = true;
     const failed = await snapshot();
     assert.equal(failed.statusState, 'unknown');

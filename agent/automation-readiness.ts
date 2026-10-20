@@ -23,13 +23,11 @@ export default async function notificationAutomationReadiness(
   const declared = openclawIntakeJobs(manifest).find(({ id }) => id === openclawIntakeAutomationId);
   if (!declared) return 'intake-policy-disabled';
   const record = (await store.read()).records.find(({ id }) => id === declared.id);
-  if (!record || record.removed || record.pending || !record.nativeId || !record.nativeHash)
-    return 'automation-sync-required';
-  if (record.hash !== effectiveAutomation(declared, context).hash) {
-    const legacy = openclawIntakeJobs(manifest, true).find(({ id }) => id === declared.id);
-    if (!legacy || record.hash !== effectiveAutomation(legacy, context).hash)
-      return 'automation-sync-required';
-  }
+  if (!record) return 'intake-activation-required';
+  if (record.removed || record.pending || !record.nativeId || !record.nativeHash)
+    return 'intake-automation-update-required';
+  if (record.hash !== effectiveAutomation(declared, context).hash)
+    return 'intake-automation-update-required';
   if (!scheduler && !request) return 'automation-observation-unavailable';
   const enabled = scheduler
     ? await scheduler.isEnabled?.()
@@ -46,7 +44,7 @@ export default async function notificationAutomationReadiness(
   const matches = jobs.filter(
     (job) => job.id === record.nativeId || job.declarationKey === record.marker,
   );
-  if (!matches.length) return 'automation-sync-required';
+  if (!matches.length) return 'intake-automation-update-required';
   const native = matches[0]!;
   if (
     matches.length !== 1 ||
@@ -55,9 +53,7 @@ export default async function notificationAutomationReadiness(
     native.agentId !== manifest.agent.id
   )
     return 'automation-ownership-conflict';
-  if (native.enabled !== true) return 'automation-sync-required';
-  if (nativeAutomationHash(native) !== record.nativeHash) return 'automation-sync-required';
-  if (native.state?.lastRunStatus === 'error') return 'automation-execution-failed';
-  if (native.state?.lastDeliveryStatus === 'not-delivered' || native.state?.lastDeliveryError)
-    return 'automation-delivery-failed';
+  if (native.enabled !== true) return 'intake-automation-update-required';
+  if (nativeAutomationHash(native) !== record.nativeHash)
+    return 'intake-automation-update-required';
 }

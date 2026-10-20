@@ -1,3 +1,4 @@
+import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
 import { Type, type TProperties } from 'typebox';
 import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
 import { assessmentResultSchema } from '../../agent/assessment-result.ts';
@@ -39,11 +40,13 @@ export const dispatchParameters = Type.Union([
   object({
     action: Type.Literal('handoff'),
     id,
-    permission: Type.Union([
-      Type.Literal('implementation'),
-      Type.Literal('publication'),
-      Type.Literal('implementation-and-publication'),
-    ]),
+    permission: Type.Optional(
+      Type.Union([
+        Type.Literal('implementation'),
+        Type.Literal('publication'),
+        Type.Literal('implementation-and-publication'),
+      ]),
+    ),
     digest: Type.Optional(id),
   }),
   object({ action: Type.Literal('implementation-context'), id }),
@@ -81,12 +84,30 @@ export const dispatchParameters = Type.Union([
     eventId: id,
     operation: Type.Union([
       Type.Literal('context'),
+      Type.Literal('implementation-context'),
+      Type.Literal('implementation-result'),
+      Type.Literal('delivery'),
       Type.Literal('result'),
       Type.Literal('compose'),
       Type.Literal('candidate'),
       Type.Literal('publish'),
       Type.Literal('reconcile'),
     ]),
+    decision: Type.Optional(feedbackDecisionSchema),
+    implementationResult: Type.Optional(implementationResultSchema),
+    deliveryOperation: Type.Optional(
+      Type.Union([
+        Type.Literal('prepare'),
+        Type.Literal('publish'),
+        Type.Literal('reconcile'),
+        Type.Literal('present'),
+        Type.Literal('compose'),
+        Type.Literal('candidate'),
+        Type.Literal('announce'),
+      ]),
+    ),
+    title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+    body: Type.Optional(Type.String({ maxLength: 65536 })),
     digest: Type.Optional(id),
     privateText: Type.Optional(feedbackResultSchema.properties.privateText),
     publicText: Type.Optional(feedbackResultSchema.properties.publicText),

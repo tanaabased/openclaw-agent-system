@@ -64,8 +64,6 @@ export async function describeIssueSession(
   match(typeof cwd === 'string' && (await realpath(cwd)) === (await realpath(expected.cwd)), 'cwd');
   match(model === expected.model, 'model');
   match(row.thinkingLevel === expected.thinkingLevel, 'thinkingLevel');
-  match(row.label === expected.label, 'label');
-  match(row.category === expected.category, 'category');
   match(
     row.parentSessionKey === undefined || row.parentSessionKey === mainParent,
     'parentSessionKey',

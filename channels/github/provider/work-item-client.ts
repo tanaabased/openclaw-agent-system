@@ -30,7 +30,6 @@ import {
   type GitHubCanonicalWorkItem,
   type GitHubIdentity,
   type GitHubRepositoryIdentity,
-  type GitHubRepositoryPermission,
 } from './work-item.ts';
 
 const pageSize = 100;
@@ -152,32 +151,6 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
       throw new Error('GitHub returned an unsupported default branch.');
     }
     return repository;
-  }
-
-  async getPermission(
-    owner: string,
-    name: string,
-    login: string,
-  ): Promise<GitHubRepositoryPermission> {
-    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(login)) {
-      throw new Error('GitHub account login is invalid.');
-    }
-    const response = await this.#api.request(
-      [
-        `${githubRepositoryEndpoint(owner, name)}/collaborators/${login}/permission`,
-        '--jq',
-        '{permission}',
-      ],
-      'repository permission',
-    );
-    const permission = githubResponseString(
-      githubResponseRecord(response.value, 'repository permission').permission,
-      'repository permission',
-    );
-    if (!['admin', 'maintain', 'none', 'read', 'triage', 'write'].includes(permission)) {
-      throw new Error('GitHub returned an unsupported repository permission.');
-    }
-    return permission as GitHubRepositoryPermission;
   }
 
   async getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem> {

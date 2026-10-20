@@ -52,7 +52,6 @@ export default async function recoverDispatch(
       )
     )
       throw new Error('dispatch-operator-caller-required');
-    if (record.sourceThreadId !== sourceThreadId) throw new Error('dispatch-retire-unavailable');
     const client = await connect();
     const item = await client.getItem(
       intake.repository.owner.login,
@@ -96,13 +95,7 @@ export default async function recoverDispatch(
       state.records.some((entry) => entry.threadId === caller || entry.receiptThreadId === caller)
     )
       throw new Error('dispatch-operator-caller-required');
-    if (
-      record.sourceThreadId !== sourceThreadId ||
-      record.phase !== 'complete' ||
-      !record.result ||
-      !record.request ||
-      !record.threadId
-    )
+    if (record.phase !== 'complete' || !record.result || !record.request || !record.threadId)
       throw new Error('dispatch-reset-unavailable');
     const native = await withNative((client) =>
       client.find({
@@ -155,8 +148,7 @@ export default async function recoverDispatch(
       record.threadId ||
       record.worktree ||
       record.continuation?.attempt ||
-      record.continuation?.publicationAttempt ||
-      (record.deniedCreations?.length ?? 0) >= 8
+      record.continuation?.publicationAttempt
     )
       throw new Error('dispatch-denial-unverified');
     await revalidate();

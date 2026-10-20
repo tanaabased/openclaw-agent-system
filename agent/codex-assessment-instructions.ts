@@ -10,6 +10,6 @@ const codexAssessmentInstructions =
   assessmentSummaryInstructions('codex');
 
 export const autoAssessmentInstructions =
-  'Trusted issue mode: auto. Include decision {action:proceed|wait,reasons:[...]} in this assessment result, with one to five nonempty reasons of at most 1000 characters each. Apply the shared assessment suitability guidance, including for ordinary replacement skills. Proceed requires plan-ready; a ready plan may still wait. Missing or unusable judgment must wait or report a blocker, never default to proceed. Record and present the complete assessment, follow the bounded summary instructions when authorized, then stop. Only the owning continuation runtime may adopt proceed under freshly installed authority.';
+  'Trusted issue mode: auto. Include decision {mode:plan|work,reasons:[...]} in this assessment result, with one to five nonempty reasons of at most 1000 characters each. Apply the shared assessment suitability guidance, including for ordinary replacement skills. Work requires plan-ready; a ready plan may still select Plan. Missing or unusable judgment must select Plan or report a blocker, never default to Work. Record and present the complete assessment, handle its summary, and follow the returned handoff. A Work handoff continues through continuation context in this same turn; Plan waits for direction.';
 
 export default codexAssessmentInstructions;

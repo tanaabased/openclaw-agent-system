@@ -1,5 +1,7 @@
 import { Type } from 'typebox';
 
+import { issueTurnSchema } from './openclaw-turn-state.ts';
+import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { implementationResultSchema } from './implementation-result.ts';
 import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
 
@@ -9,9 +11,25 @@ const input = Type.Object({ runId: text, inputEventId: text }, { additionalPrope
 export const openclawWorkStateSchema = Type.Object(
   {
     assessmentDigest: hash,
+    turn: Type.Optional(issueTurnSchema),
+    previousTurns: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            slot: Type.Union([Type.Literal('turn'), Type.Literal('deliveryTurn')]),
+            turn: issueTurnSchema,
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    deliveryTurn: Type.Optional(issueTurnSchema),
+    code: Type.Optional(text),
+    selection: Type.Optional(assessmentSelectionSchema),
     implementation: Type.Optional(input),
     publication: Type.Optional(input),
     caller: Type.Optional(input),
+    clarificationInput: Type.Optional(input),
     operatorInput: Type.Optional(input),
     result: Type.Optional(implementationResultSchema),
     delivery: Type.Optional(

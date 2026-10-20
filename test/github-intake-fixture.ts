@@ -1,4 +1,6 @@
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import { automationHash } from '../agent/automation-hash.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import type {
   GitHubAssignmentEvent,
@@ -9,6 +11,22 @@ import type {
 export const account = { login: 'receiver', nodeId: 'U_receiver', type: 'User' };
 export const owner = { login: 'owner', nodeId: 'O_owner', type: 'Organization' };
 export const baseline = Date.parse('2026-10-07T10:00:00Z');
+// reproduce the original admission contract independently of current compatibility code.
+export function originalIntakeDigest(manifest: AgentManifest) {
+  const policy = manifest.github!.notifications!;
+  return automationHash({
+    username: manifest.github!.username,
+    host: manifest.github!.host,
+    policy: {
+      schemaVersion: policy.schemaVersion,
+      runtimes: policy.runtimes,
+      intervalMinutes: policy.intervalMinutes,
+      maxConcurrentItems: policy.maxConcurrentItems,
+      allowedRepositoryOwners: policy.allowedRepositoryOwners,
+      issueAssignment: policy.issueAssignment,
+    },
+  });
+}
 export function intakeFixture() {
   const policy: GitHubNotificationPolicy = {
     schemaVersion: 2,
@@ -71,9 +89,6 @@ export function intakeFixture() {
     },
     async getItem() {
       return item;
-    },
-    async getPermission() {
-      throw new Error('read-only intake must not require write permission');
     },
     async listAssignmentEvents() {
       return { events, truncated: false };

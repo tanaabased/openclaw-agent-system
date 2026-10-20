@@ -1,3 +1,5 @@
+import openClawWorkAction from '../agent/openclaw-work.ts';
+import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -33,7 +35,9 @@ describe('agent/openclaw-delivery', () => {
     revoked: boolean;
   let pr: Record<string, unknown> | undefined;
   let input: Omit<Parameters<typeof openClawDelivery>[0], 'action'>;
+  let rejectCreation = false;
   beforeEach(async () => {
+    rejectCreation = false;
     root = await realpath(await mkdtemp(join(tmpdir(), 'openclaw-delivery-')));
     announcement = announcementFixture({ login: 'agent', nodeId: 'U_agent', type: 'User' });
     creates = pushes = saves = 0;
@@ -150,6 +154,12 @@ describe('agent/openclaw-delivery', () => {
                 return response(pr ? [pr] : []);
               if (endpoint === 'repos/owner/repo/pulls' && argv.includes('POST')) {
                 creates++;
+                if (rejectCreation)
+                  return {
+                    ...response(null),
+                    exitCode: 1,
+                    stderr: 'gh: Resource not accessible by integration (HTTP 403)',
+                  };
                 assert.ok(record.work?.delivery?.creationAttempted);
                 if (!missing)
                   pr = {
@@ -219,6 +229,60 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, ...content });
   }
+  it('should finish a new implementation through the same pr after earlier delivery completed', async () => {
+    await publish();
+    const composed = await request('compose');
+    assert.ok('digest' in composed);
+    const candidate = await request('candidate', {
+      digest: composed.digest,
+      publicText: 'Delivers the requested change.',
+    });
+    assert.ok('digest' in candidate);
+    await request('announce', { digest: candidate.digest });
+    assert.equal(issueWorkflowProgress(record).action, 'complete');
+    const receipt = structuredClone(record.work!.delivery!.pullRequest);
+    record.work!.caller = input.source;
+    head = 'b'.repeat(40);
+    await openClawWorkAction({
+      record,
+      source: input.source,
+      caller: {
+        sessionKey: record.threadId!,
+        sessionId: 'issue-session',
+        runId: input.source.runId,
+        toolCallId: 'result',
+      },
+      progression: { stage: 'implementation', via: 'operator' },
+      action: {
+        action: 'implementation-result',
+        id: record.id,
+        implementationResult: {
+          outcome: 'done',
+          summary: 'Follow-up complete.',
+          fullResult: 'Committed and checked.',
+        },
+      },
+      now: 3,
+      assertCurrent: input.assertCurrent,
+      save: input.save,
+    });
+    assert.equal(issueWorkflowProgress(record).action, 'delivery');
+    assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
+    await publish();
+    assert.equal(issueWorkflowProgress(record).action, 'complete');
+    assert.equal(creates, 1);
+    assert.equal(announcement.posts, 1);
+    assert.equal(record.work!.delivery!.pushedHead, head);
+  });
+
+  it('should retry pr creation after a definite provider rejection', async () => {
+    rejectCreation = true;
+    await assert.rejects(publish(), /403/);
+    rejectCreation = false;
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 2);
+  });
+
   for (const draft of [false, true])
     it(`should reconcile announce and present a ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
@@ -325,13 +389,13 @@ describe('agent/openclaw-delivery', () => {
     assert.deepEqual(record.work!.delivery, retained);
     assert.equal(pushes, 1);
   });
-  it('should still reject a changed session or policy on an existing delivery', async () => {
+  it('should reject a changed session while retaining delivery across configuration changes', async () => {
     await publish();
     record.sessionCreation!.sessionId = 'other-session';
     await assert.rejects(request('prepare'), /delivery-session-changed/);
     record.sessionCreation!.sessionId = 'issue-session';
     record.manifestDigest = 'c'.repeat(64);
-    await assert.rejects(request('prepare'), /delivery-policy-changed/);
+    assert.equal((await request('prepare')).status, 'prepared');
     assert.equal(pushes, 1);
   });
   it('should fast forward the verified branch while retaining the same pr', async () => {
@@ -501,10 +565,20 @@ describe('agent/openclaw-delivery', () => {
     await publish();
     assert.equal(creates, 1);
   });
+  it('should publish completed implementation without a publication-only grant', async () => {
+    delete record.handoff;
+    delete record.work!.publication;
+    record.progression = { stage: 'implementation', via: 'work' };
+    record.work!.implementation = input.source;
+    record.work!.result = { outcome: 'done', summary: 'Done', fullResult: 'Done and tested.' };
+    await publish();
+    assert.equal(creates, 1);
+    assert.equal(record.work!.delivery!.reconciled, true);
+  });
   it('should refresh stale previews and reject unauthorized dirty divergent and revoked publication before writes', async () => {
     const permission = record.work!.publication;
     delete record.work!.publication;
-    await assert.rejects(publish(), /delivery-human-publication-required/);
+    await assert.rejects(publish(), /delivery-implementation-incomplete/);
     record.work!.publication = permission;
     dirty = true;
     await assert.rejects(publish(), /delivery-uncommitted-work/);
