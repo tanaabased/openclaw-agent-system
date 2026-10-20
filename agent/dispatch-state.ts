@@ -175,6 +175,9 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       ),
       discoveryCycleAt: Type.Optional(Type.Integer({ minimum: 0 })),
       discoveryCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      discoveryRun: Type.Optional(
+        Type.Pick(openclawIntakePassSchema, ['sessionKey', 'sessionId', 'runId']),
+      ),
       discoveryProgress: Type.Optional(
         Type.Object(
           {

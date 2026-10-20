@@ -244,9 +244,7 @@ export default class OpenClawDispatchCoordinator {
       ...(code ? { code } : {}),
       changed:
         report.changed ||
-        scans.some(
-          (scan) => scan.feedback.code && scan.feedback.code !== previousCodes.get(scan.id),
-        ) ||
+        scans.some((scan) => scan.feedback.code !== previousCodes.get(scan.id)) ||
         Boolean(
           state.discoveryProgress &&
           state.discoveryProgress.reported !== state.discoveryProgress.pending,

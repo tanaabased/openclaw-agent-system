@@ -26,6 +26,7 @@ import OpenClawDispatchStore, {
   type OpenClawDispatchRecord,
 } from './openclaw-dispatch-state.ts';
 import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
+import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import { IssueSessionMismatchError, type DispatchCaller } from './openclaw-session-create.ts';
 import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -173,21 +174,40 @@ export default class OpenClawDispatch {
     if (input.action === 'next')
       await reconcileOpenClawLifecycle({ service: this, manifest, workspace, authority });
     const snapshot = await current.journal.read();
-    const scans =
+    const discover =
       input.action === 'next' &&
-      (!snapshot.discoveryCheckedAt || Date.now() - snapshot.discoveryCheckedAt > 120000)
-        ? await scanOpenClawFeedback({
-            service: this,
-            state: snapshot,
-            manifest,
-            workspace: current.workspace,
-            sourceThreadId,
-            authority,
-            now: (this.dependencies.now ?? Date.now)(),
-            checkpoint: (scan) =>
-              discoveryCheckpoint(current.journal, scan, authority.assertCurrent),
-          })
-        : [];
+      (!snapshot.discoveryCheckedAt ||
+        Date.now() - snapshot.discoveryCheckedAt > 120000 ||
+        snapshot.records.some(
+          (record) =>
+            !record.retired &&
+            !record.retirement &&
+            !record.reset &&
+            (record.feedback?.discoveryPending ||
+              Object.keys(record.feedback?.discovery ?? {}).length > 0),
+        )) &&
+      (await current.journal.exclusive(async (state, save) => {
+        if (state.discoveryRun && sameIntakeRun(state.discoveryRun, caller)) return false;
+        state.discoveryRun = {
+          sessionKey: caller.sessionKey,
+          sessionId: caller.sessionId,
+          runId: caller.runId,
+        };
+        await save();
+        return true;
+      }));
+    const scans = discover
+      ? await scanOpenClawFeedback({
+          service: this,
+          state: snapshot,
+          manifest,
+          workspace: current.workspace,
+          sourceThreadId,
+          authority,
+          now: (this.dependencies.now ?? Date.now)(),
+          checkpoint: (scan) => discoveryCheckpoint(current.journal, scan, authority.assertCurrent),
+        })
+      : [];
     const transactionOptions: Parameters<typeof current.journal.transaction>[1] = {
       signal: authority.signal,
       reconcile: preserveOpenClawProgress,
