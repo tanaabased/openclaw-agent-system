@@ -46,7 +46,7 @@ export function feedbackMode(record: Issue, policy: GitHubNotificationPolicy) {
     (record.continuation?.phase === 'cancelled' && !record.handoff)
   )
     throw new Error('feedback-issue-inactive');
-  return retainedIssueProgression(record) ? 'work' : (policy.issueAssignment?.mode ?? 'plan');
+  return retainedIssueProgression(record) ? 'work' : (policy.issueAssignment?.mode ?? 'auto');
 }
 
 /** feedback uses the issue transition; its own result never replaces the original attempt. */

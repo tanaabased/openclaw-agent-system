@@ -1,3 +1,4 @@
+import workflowRecovery from './workflow-recovery.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import {
@@ -482,6 +483,9 @@ export default async function runCodexFeedback(
             await save();
             return {
               status: 'verified',
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               issueStage: 'implementation',
               implementation,
               source,
@@ -536,6 +540,9 @@ export default async function runCodexFeedback(
             if (admission.disposition !== 'approved') throw new Error('feedback-source-changed');
             return {
               status: 'verified',
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               id: record.id,
               eventId: event.id,
               mode: feedbackMode(

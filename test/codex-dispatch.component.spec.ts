@@ -1,3 +1,4 @@
+import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import runCodexContinuation, {
@@ -19,7 +20,7 @@ import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
-import { baseline, intakeFixture } from './github-intake-fixture.ts';
+import { baseline, intakeFixture, removeFixtureAssignment } from './github-intake-fixture.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
 
@@ -2144,56 +2145,62 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
-  it('should prepare native archival during intake and retire only after observed reclamation', async () => {
-    worktree = join(codexHome, 'worktrees', 'retiring', 'repo');
-    await mkdir(worktree, { recursive: true });
-    const prepared = await prepare();
-    created();
-    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
-    native!.status = 'idle';
-    native!.turnEnded = true;
-    fixture.item.state = 'closed';
-    now += 60_000;
-    await next();
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    now = (await store.read()).records[0]!.retirement!.eligibleAt;
-    const git = deps.git!;
-    deps.git = async (path, args) =>
-      args[0] === 'for-each-ref' ? 'refs/heads/preserved' : git(path, args);
-    deps.retirementNative = {
-      worktreeUsers: async () => ['issue-thread'],
-      archiveOutcome: async () => 'unverified',
-    };
-    const archived = await request('next', {
-      projects,
-      threads: {
-        schemaVersion: 4,
-        pinnedThreads: [],
-        unavailableHosts: [],
-        unavailableSources: [],
-      },
+  for (const reason of ['closure', 'approved removal'] as const) {
+    it(`should prepare native archival during intake and retire only after observed reclamation: ${reason}`, async () => {
+      worktree = join(codexHome, 'worktrees', 'retiring', 'repo');
+      await mkdir(worktree, { recursive: true });
+      const prepared = await prepare();
+      created();
+      await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+      native!.status = 'idle';
+      native!.turnEnded = true;
+      if (reason === 'closure') fixture.item.state = 'closed';
+      else removeFixtureAssignment(fixture);
+      now += 60_000;
+      await next();
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      now = (await store.read()).records[0]!.retirement!.eligibleAt;
+      const git = deps.git!;
+      deps.git = async (path, args) =>
+        args[0] === 'for-each-ref' ? 'refs/heads/preserved' : git(path, args);
+      deps.retirementNative = {
+        worktreeUsers: async () => ['issue-thread'],
+        archiveOutcome: async () => 'unverified',
+      };
+      const archived = await request('next', {
+        projects,
+        threads: {
+          schemaVersion: 4,
+          pinnedThreads: [],
+          unavailableHosts: [],
+          unavailableSources: [],
+        },
+      });
+      assert.equal(archived.status, 'retirement-prepared');
+      assert.deepEqual(archived.request, {
+        threadId: 'issue-thread',
+        hostId: 'local',
+        archived: true,
+      });
+      assert.equal((await store.read()).records[0]!.retired, undefined);
+      native!.archived = true;
+      await next();
+      assert.equal(
+        (await store.read()).records[0]!.retirement?.code,
+        'retirement-native-reclamation-pending',
+      );
+      assert.equal((await store.read()).records[0]!.retired, undefined);
+      await rm(worktree, { recursive: true });
+      await next();
+      const retired = (await store.read()).records[0]!;
+      assert.equal(retired.retired?.at, now);
+      assert.equal(retired.result?.summary, result.summary);
     });
-    assert.equal(archived.status, 'retirement-prepared');
-    assert.deepEqual(archived.request, {
-      threadId: 'issue-thread',
-      hostId: 'local',
-      archived: true,
-    });
-    assert.equal((await store.read()).records[0]!.retired, undefined);
-    native!.archived = true;
-    await next();
-    assert.equal(
-      (await store.read()).records[0]!.retirement?.code,
-      'retirement-native-reclamation-pending',
-    );
-    assert.equal((await store.read()).records[0]!.retired, undefined);
-    await rm(worktree, { recursive: true });
-    await next();
-    const retired = (await store.read()).records[0]!;
-    assert.equal(retired.retired?.at, now);
-    assert.equal(retired.result?.summary, result.summary);
-  });
+  }
 
   it('should request native inventory for obsolete codex work without deleting resources', async () => {
     const prepared = await prepare();
@@ -2201,7 +2208,7 @@ describe('agent/codex-dispatch', () => {
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
     native!.status = 'idle';
     native!.turnEnded = true;
-    fixture.item.assignees = [];
+    removeFixtureAssignment(fixture);
     now += 60_000;
     await next();
     const current = await selectCodexIntake(pluginData, deps);
@@ -3543,6 +3550,69 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'idle');
   });
 
+  for (const scenario of ['approved', 'unapproved', 'unavailable', 'reassignment'] as const) {
+    it(`should retain the codex owner and stage unless removal is approved: ${scenario}`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      const before = await work.run('context', {}, true);
+      assert.ok('issueStage' in before);
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      const original = (await store.read()).records[0]!;
+      const event = removeFixtureAssignment(fixture);
+      if (scenario === 'unapproved' || scenario === 'reassignment')
+        event.actor = { ...event.actor, nodeId: 'U_outsider', login: 'outsider' };
+      if (scenario === 'unavailable')
+        fixture.client.listAssignmentEvents = async () => {
+          throw new Error('provider-unavailable');
+        };
+      if (scenario === 'approved')
+        await assert.rejects(work.run('context', {}, true), /assignment-removed/);
+      else {
+        const after = await work.run('context', {}, true);
+        assert.equal(after.status, 'verified');
+        assert.ok('assignmentObservation' in after && after.assignmentObservation?.missing);
+        assert.ok('issueStage' in after);
+        assert.equal(after.issueStage, before.issueStage);
+        assert.ok('assignmentWarning' in after && after.assignmentWarning);
+        assert.match(after.assignmentWarning.summary, /assignment is missing/i);
+        if (scenario === 'reassignment') {
+          fixture.item.assignees = [fixture.client.identity];
+          fixture.events.push({
+            ...event,
+            nodeId: 'E_reassigned',
+            databaseId: 32,
+            event: 'assigned',
+            createdAt: '2026-10-07T10:03:00Z',
+          });
+          const restored = await work.run('context', {}, true);
+          assert.ok('assignmentObservation' in restored && !restored.assignmentObservation);
+        }
+      }
+      now += 60_000;
+      await reconcileCodexLifecycle(pluginData, deps);
+      const saved = (await store.read()).records[0]!;
+      assert.equal(
+        saved.retirement?.reason,
+        scenario === 'approved' ? 'assignment-removed' : undefined,
+      );
+      if (scenario !== 'approved')
+        assert.equal(codexItemOccupied(saved), codexItemOccupied(original));
+      assert.equal(saved.threadId, original.threadId);
+      assert.equal(saved.worktree, original.worktree);
+      assert.deepEqual(saved.progression, original.progression);
+      assert.equal(saved.retired, undefined);
+      assert.equal(
+        gitCalls.some((argv) => argv.includes('remove')),
+        false,
+      );
+    });
+  }
+
   it('should preserve implementation through intake-only policy changes', async () => {
     const work = await workIssue();
     await work.run('next');
@@ -3556,7 +3626,10 @@ describe('agent/codex-dispatch', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(changed));
     assert.equal((await work.run('context', {}, true)).status, 'verified');
     fixture.item.assignees = [];
-    await assert.rejects(work.run('context', {}, true), /assignment-removed/);
+    const unresolved = await work.run('context', {}, true);
+    assert.equal(unresolved.status, 'verified');
+    assert.ok('assignmentObservation' in unresolved);
+    assert.equal(unresolved.assignmentObservation?.code, 'assignment-removal-evidence-conflicting');
   });
 
   it('should isolate a missing implementation skill and reconsider it after repair', async () => {

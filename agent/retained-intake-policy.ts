@@ -21,7 +21,7 @@ export default function retainedIntakePolicy(
           ...manifest.github?.notifications,
           runtimes: [runtime],
           issueAssignment: {
-            mode: 'plan',
+            mode: 'auto',
             ...manifest.github?.notifications?.issueAssignment,
             allowed:
               manifest.github?.notifications?.issueAssignment?.allowed ??

@@ -28,6 +28,16 @@ Check the full private answer in the native chat and the public reply at its exa
 GitHub source. Controlled component pairs cover state and context; headless checks
 and OpenClaw-hosted Codex do not establish standalone desktop display or interpretation.
 
+For removal-authority verification in the desktop, remove an admitted assignment
+through an actor outside the live `issue-assignment.allowed` list. Confirm inspection
+reports missing assignment and unresolved authority, preserves the exact chat,
+checkout and implementation stage, and permits only already authorized work. Verify
+reassignment clears the warning without creating another owner. An approved removal
+must instead queue normal retirement; removing that actor from the live list before
+cleanup must prevent stale removal authority from reclaiming resources. Controlled
+source tests cover actor/evidence permutations; these headless checks do not establish
+the desktop journey.
+
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 ## Setup

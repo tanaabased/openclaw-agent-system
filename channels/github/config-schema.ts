@@ -221,7 +221,7 @@ export function decodeGitHubNotifications(
               ? {}
               : { enabled: value['issue-assignment'].enabled }),
             allowed: actors(value['issue-assignment']),
-            mode: value['issue-assignment'].mode ?? 'plan',
+            mode: value['issue-assignment'].mode ?? 'auto',
             ...feedback(value['issue-assignment'].feedback),
             ...(value['issue-assignment']['pull-request'] === undefined
               ? {}

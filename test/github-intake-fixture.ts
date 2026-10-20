@@ -96,3 +96,16 @@ export function intakeFixture() {
   };
   return { policy, repository, item, events, client };
 }
+
+export function removeFixtureAssignment(fixture: ReturnType<typeof intakeFixture>) {
+  fixture.item.assignees = [];
+  const event = {
+    ...fixture.events[0]!,
+    event: 'unassigned' as const,
+    nodeId: 'E_unassignment',
+    databaseId: 31,
+    createdAt: '2026-10-07T10:02:00Z',
+  };
+  fixture.events.push(event);
+  return event;
+}
