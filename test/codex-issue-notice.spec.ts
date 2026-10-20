@@ -3,6 +3,29 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should distinguish pending retirement observations from actionable cleanup blockers', () => {
+    for (const code of [
+      'retirement-native-archive-unverified',
+      'retirement-native-reclamation-pending',
+    ]) {
+      const notice = codexIssueNotice({ event: 'failure', code, changed: false });
+      assert.equal(notice.severity, 'info');
+      assert.match(notice.next, /No action is needed/);
+      assert.match(notice.next, /Intake will/);
+    }
+    for (const code of [
+      'retirement-native-archive-denied',
+      'retirement-worktree-dirty',
+      'retirement-worktree-unpreserved',
+      'retirement-native-resource-protected',
+      'retirement-session-identity-unresolved',
+    ]) {
+      const notice = codexIssueNotice({ event: 'failure', code, changed: true });
+      assert.equal(notice.severity, 'warning');
+      assert.doesNotMatch(notice.next, /No action is needed/);
+    }
+  });
+
   it('should distinguish required automation updates from first-time setup while retaining warning severity', () => {
     const update = codexIssueNotice({
       event: 'failure',

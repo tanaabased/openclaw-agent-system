@@ -621,6 +621,82 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
   });
 
+  it('should reconcile external worktree removal after verifying historical session custody', async () => {
+    await prepare(await next());
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const saved = state.records[0]!;
+      const request = saved.request!;
+      assert.ok('key' in request);
+      const creation = saved.sessionCreation!;
+      saved.request = {
+        task: 'retained task',
+        label: request.label,
+        cwd: request.cwd,
+        model: request.model,
+        runtime: 'subagent',
+        visible: true,
+        cleanup: 'keep',
+      };
+      saved.creationCall = {
+        sessionId: creation.sourceSessionId,
+        runId: creation.sourceRunId,
+        toolCallId: creation.sourceToolCallId,
+      };
+      saved.native = {
+        sessionKey: request.key,
+        sessionId: creation.sessionId!,
+        sourceSessionId: creation.sourceSessionId,
+        toolCallId: creation.sourceToolCallId,
+        runId: 'historical-child',
+      };
+      delete saved.sessionCreation;
+      delete saved.feedback;
+      saved.phase = 'blocked';
+      await save();
+    });
+    const before = structuredClone(await record());
+    service.dependencies.worktrees.inspectGitHub = async () => undefined;
+    service.dependencies.worktrees.cleanupGitHub = async () => {
+      throw new Error('must-not-remove');
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'still-present' },
+      { action: 'next' },
+    );
+    assert.equal((await record()).retirement?.code, 'retirement-worktree-observation-required');
+    assert.equal(session!.archived, undefined);
+    await rm(before.worktree!, { recursive: true });
+    service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline + 60_000 });
+    await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'external-cleanup' },
+      { action: 'next' },
+    );
+    const after = await record();
+    assert.ok(after.retired);
+    assert.deepEqual(after.native, before.native);
+    assert.deepEqual(after.creationCall, before.creationCall);
+    assert.deepEqual(after.request, before.request);
+    assert.equal(after.sessionCreation, undefined);
+    assert.equal(after.retirement?.worktreeRemovalAttemptedAt, undefined);
+    assert.deepEqual(after.retirement?.worktreeRemovalObserved, {
+      at: deadline + 60_000,
+      source: 'external-cleanup',
+    });
+    service.dependencies.now = () => deadline + 120_000;
+    await service.run(manifest, root, { ...coordinator, runId: 'repeat' }, { action: 'next' });
+    assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
+    assert.equal(creates().length, 1);
+  });
+
   it('should preserve a session targeted by a native automation', async () => {
     await prepare(await next());
     cronJobs = [{ sessionTarget: `session:${(await record()).threadId}` }];
