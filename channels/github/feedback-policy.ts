@@ -35,17 +35,3 @@ export function workflowFeedbackEnabled(
     feedbackIdentities(selected.allowed, selected.feedback).length,
   );
 }
-
-/** the admitted owner selects the scope, including an issue's verified delivery pr. */
-export function allowsWorkflowFeedback(
-  policy: GitHubNotificationPolicy,
-  workflow: 'issue-assignment' | 'review-request',
-  actor: GitHubIdentityPin,
-): boolean {
-  const owner = workflow === 'issue-assignment' ? policy.issueAssignment : policy.reviewRequest;
-  return feedbackIdentities(owner?.allowed ?? [], owner?.feedback).some(
-    (identity) =>
-      identity.nodeId === actor.nodeId &&
-      identity.login.toLowerCase() === actor.login.toLowerCase(),
-  );
-}

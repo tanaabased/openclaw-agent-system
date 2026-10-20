@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
 import { githubNotificationCommentPresentation } from '../channels/github/presentation/comment.ts';
-import {
-  githubNotificationPullRequestHandoffComment,
-  githubNotificationPullRequestOpenedCard,
-} from '../channels/github/presentation/pull-request-opened.ts';
-import { githubNotificationPublicationText } from '../channels/github/publication/publication.ts';
+import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
 
 describe('channels/github/presentation/feedback', () => {
-  it('should render the pull request handoff for private and github surfaces', () => {
+  it('should render the private pull request card', () => {
     const input = {
       issueNumber: 12,
       pullRequestNumber: 45,
@@ -24,22 +20,6 @@ describe('channels/github/presentation/feedback', () => {
         '> - **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
         '> - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
       ].join('\n'),
-    );
-    const publicText = githubNotificationPullRequestHandoffComment(input);
-    assert.match(publicText, /^## 🔀 Pull request opened\n\n/u);
-    assert.equal(
-      publicText,
-      privateText
-        .split('\n')
-        .map((line) => (line === '>' ? '' : line.slice(2)))
-        .join('\n'),
-    );
-    assert.equal(
-      githubNotificationPublicationText('pull-request-handoff', [{ text: publicText }]),
-      publicText,
-    );
-    assert.throws(() =>
-      githubNotificationPullRequestHandoffComment({ ...input, pullRequestNumber: 0 }),
     );
   });
 

@@ -135,25 +135,3 @@ export function requireWorkflowSchedule(
   )
     throw new Error('workflow-schedule-reconciliation-required');
 }
-
-export interface WorkflowPublicationReceipt {
-  candidateId: string;
-  bindingDigest: string;
-  status: 'pending' | 'uncertain' | 'published';
-  providerId?: string;
-  url?: string;
-}
-
-/** a lost publication response requires provider reconciliation, never another blind write. */
-export function publicationDisposition(
-  receipt: WorkflowPublicationReceipt | undefined,
-  candidateId: string,
-  binding: WorkflowBinding,
-): 'prepare' | 'reconcile' | 'published' {
-  if (!receipt) return 'prepare';
-  if (receipt.candidateId !== candidateId || receipt.bindingDigest !== automationHash(binding))
-    throw new Error('workflow-publication-binding-mismatch');
-  if (receipt.status !== 'published') return 'reconcile';
-  if (!receipt.providerId || !receipt.url) throw new Error('workflow-publication-receipt-invalid');
-  return 'published';
-}
