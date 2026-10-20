@@ -315,6 +315,7 @@ export default class GitWorktreeService {
     workId: string,
     expectedBranch?: string,
     verifyOnly = false,
+    purge = false,
   ): Promise<GitWorktreeCleanupResult> {
     validateIdentifier(repositoryId, 'repository id');
     validateIdentifier(workId, 'work id');
@@ -346,7 +347,7 @@ export default class GitWorktreeService {
       '--untracked-files=all',
     ]);
     if (status.exitCode !== 0) return { ...base, status: 'failed' };
-    if (status.stdout.trim()) return { ...base, status: 'dirty' };
+    if (status.stdout.trim() && !purge) return { ...base, status: 'dirty' };
     const preserved = await this.#run(context, path, [
       'for-each-ref',
       '--format=%(refname)',
@@ -357,7 +358,12 @@ export default class GitWorktreeService {
     if (preserved.exitCode !== 0) return { ...base, status: 'failed' };
     if (!preserved.stdout.trim()) return { ...base, status: 'unpreserved' };
     if (verifyOnly) return { ...base, status: 'preserved' };
-    const removed = await this.#run(context, repository.path, ['worktree', 'remove', path]);
+    const removed = await this.#run(context, repository.path, [
+      'worktree',
+      'remove',
+      ...(purge ? ['--force'] : []),
+      path,
+    ]);
     return { ...base, status: removed.exitCode === 0 ? 'removed' : 'failed' };
   }
 

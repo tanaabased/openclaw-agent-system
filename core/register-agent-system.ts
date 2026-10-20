@@ -4,6 +4,7 @@ import notificationAutomationReadiness, {
   type NotificationScheduler,
 } from '../agent/automation-readiness.ts';
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';
+import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
 import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
 import { readFile } from 'node:fs/promises';
 
@@ -244,6 +245,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
   const intakeV2 = new OpenClawIntake({
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
+    resetRoot: join(
+      privateStateRoot ?? api.runtime.state.resolveStateDir(),
+      'agent-system-dispatch-v2',
+    ),
     namespace: api.runtime.state.resolveStateDir(),
     manifestService: lifecycleManifestService,
     // tool registrations need not share the service-start closure; use enrolled read authority.
@@ -715,6 +720,40 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         api.runtime.system.runCommandWithTimeout(argv, options),
     });
     registerAgentSystemCli(program, {
+      notificationReset: {
+        listAgents: async () => {
+          const ids = listAgentIds(await readConfig());
+          const managed = await Promise.all(
+            ids.map(async (id) =>
+              (await manifestService.loadForAgentId(id, 'cli')).status === 'loaded'
+                ? id
+                : undefined,
+            ),
+          );
+          return managed.filter((id): id is string => id !== undefined);
+        },
+        service: new OpenClawNotificationReset({
+          root: join(
+            privateStateRoot ?? api.runtime.state.resolveStateDir(),
+            'agent-system-dispatch-v2',
+          ),
+          intake: operatorIntake,
+          automations,
+          credential: sessionDispatch,
+          worktrees: gitCapability.trustedWorktreeService,
+          connect: async (manifest, workspaceDir) => {
+            const account = await githubCapability.accountClient.connect(
+              { manifest, workspaceDir },
+              'cli',
+              AbortSignal.timeout(30000),
+            );
+            return {
+              account,
+              client: new GitHubWorkItemClient(new GitHubWorkEventApiClient(account)),
+            };
+          },
+        }),
+      },
       backupService: new WorkspaceBackupService(
         async (agentId) => {
           const config = await readConfig();

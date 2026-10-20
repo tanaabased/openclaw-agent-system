@@ -35,6 +35,7 @@ export interface TrustedGitHubWorktreePrepareInput extends TrustedGitHubWorktree
 
 export interface TrustedGitHubWorktreeCleanupInput extends TrustedGitHubWorktreeInput {
   verifyOnly?: boolean;
+  purge?: boolean;
   worktree: { branch: string; path: string };
 }
 
@@ -219,6 +220,7 @@ export default class TrustedGitWorktreeService {
       observed.branch,
       input.signal,
       input.verifyOnly,
+      input.purge,
     );
   }
 
@@ -229,6 +231,7 @@ export default class TrustedGitWorktreeService {
     expectedBranch: string,
     signal?: AbortSignal,
     verifyOnly = false,
+    purge = false,
   ): Promise<GitWorktreeCleanupResult> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
@@ -243,7 +246,9 @@ export default class TrustedGitWorktreeService {
         { type: 'git-repository', id: repositoryId },
         { type: 'git-worktree', id: workId },
       ],
-      summary: 'Remove a clean retired GitHub worktree',
+      summary: purge
+        ? 'Purge an operator-selected GitHub worktree'
+        : 'Remove a clean retired GitHub worktree',
     };
     const authorization = await this.#dependencies.definition.authorization?.authorize?.(
       operation,
@@ -296,6 +301,7 @@ export default class TrustedGitWorktreeService {
       },
       expectedBranch,
       verifyOnly,
+      purge,
     );
   }
 

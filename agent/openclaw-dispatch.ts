@@ -1,4 +1,5 @@
 import advanceOpenClawDecision, { openClawDecisionPending } from './openclaw-auto-decision.ts';
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import advanceOpenClawWork, { openClawWorkSlot } from './openclaw-continuation.ts';
 import issueProgression from './issue-progression.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
@@ -203,6 +204,7 @@ export default class OpenClawDispatch {
 
   async scope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
+    await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
     const admitted = await current.store.read();
     if (!admitted) throw new Error('dispatch-intake-activation-required');
     const selected = current.selected ?? retainedIntakePolicy(manifest, admitted, 'openclaw');

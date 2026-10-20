@@ -35,6 +35,18 @@ codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/
 ## Testing
 
 ```bash
+# should reject an unattended reset without an explicit target before accessing private state
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+status=0
+node "$runtime" notifications reset --plugin-data "$root/uncreated-reset-data" > "$root/reset-result.json" <<'JSON' || status=$?
+{"yes":true}
+JSON
+test "$status" -ne 0
+jq -e '.code == "notification-reset-explicit-bound-agent-required"' "$root/reset-result.json"
+test ! -e "$root/uncreated-reset-data"
+
 # should explain a host permission failure in one heartbeat without accessing tracking state
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

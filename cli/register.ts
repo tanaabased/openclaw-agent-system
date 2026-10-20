@@ -25,7 +25,9 @@ import backupPrune from './backup-prune.ts';
 import backupCleanup from './backup-cleanup.ts';
 import backupRestore from './backup-restore.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
-import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
+import registerGitHubNotificationsCli, {
+  type RegisterGitHubNotificationsCliOptions,
+} from '../channels/github/cli/register.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
 import {
   type default as AgentCommandAuthority,
@@ -63,6 +65,7 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
+  notificationReset?: RegisterGitHubNotificationsCliOptions['reset'];
   automations?: AutomationService;
   boundCommands?: BoundCommandService;
   backupService?: WorkspaceBackupService;
@@ -445,6 +448,8 @@ export default function registerAgentSystemCli(
       });
     });
   registerGitHubNotificationsCli(agentSystem, {
+    reset: options.notificationReset,
+    allowOperatorCommand,
     completeOneShot,
     cwd,
     manifestService: options.manifestService,

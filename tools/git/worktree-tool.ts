@@ -47,6 +47,7 @@ export type GitWorktreeToolDefinition = GitWorktreeToolDefinitionBase & {
     scope: GitWorktreeToolExecutionScope,
     expectedBranch?: string,
     verifyOnly?: boolean,
+    purge?: boolean,
   ): Promise<GitWorktreeCleanupResult>;
   executeTrustedGitHubPrepare(
     input: GitWorktreePrepareToolInput,
@@ -238,6 +239,7 @@ export function createGitWorktreeToolDefinition(
     scope: GitWorktreeToolExecutionScope,
     expectedBranch?: string,
     verifyOnly?: boolean,
+    purge?: boolean,
   ): Promise<GitWorktreeCleanupResult> {
     if (!dependencies.service.cleanup) {
       throw new AgentSystemToolError(
@@ -266,6 +268,7 @@ export function createGitWorktreeToolDefinition(
         input.workId,
         expectedBranch,
         verifyOnly,
+        purge,
       );
     } finally {
       await lease.dispose();

@@ -20,6 +20,7 @@ import type { GitHubNotificationItemSelector } from '../channels/github/provider
 
 export interface OpenClawIntakeDependencies {
   root: string;
+  resetRoot?: string;
   namespace: string;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   connect(
@@ -44,6 +45,7 @@ export default class OpenClawIntake {
         namespace: this.dependencies.namespace,
         workspaceDir: workspace,
         agentId: manifest.agent.id,
+        resetRoot: this.dependencies.resetRoot,
       }),
     );
     return { selected, store, workspace };

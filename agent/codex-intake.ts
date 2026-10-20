@@ -1,4 +1,5 @@
 import connectCodexGitHubAccount from './codex-github-client.ts';
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -35,7 +36,11 @@ export async function connectCodexGitHub(
   return (await connectCodexGitHubAccount(workspace, signal, run)).client;
 }
 
-export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDependencies) {
+export async function selectCodexIntake(
+  pluginData: string,
+  deps: CodexIntakeDependencies,
+  inspectionOnly = false,
+) {
   const inspection = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
   if (inspection.status !== 'bound') throw new IntakeError('intake-binding-unavailable');
   if (inspection.preview.status !== 'ready' || inspection.preview.manifest.status !== 'loaded')
@@ -56,6 +61,7 @@ export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDep
       agentId: loaded.manifest.agent.id,
     }),
   );
+  if (!inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
     policy,
     store,
