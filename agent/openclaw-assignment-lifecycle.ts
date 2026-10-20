@@ -1,13 +1,13 @@
-import DiscoveryBudget from './discovery-budget.ts';
-import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
 import { lstat } from 'node:fs/promises';
+import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
+import DiscoveryBudget from './discovery-budget.ts';
 
-import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
-import { sessionObject } from './openclaw-session-create.ts';
-import type OpenClawDispatch from './openclaw-dispatch.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type { AgentManifest } from '../manifest/types.ts';
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import { sessionObject } from './openclaw-session-create.ts';
+import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
 
 /** observe the exact native session, including archived sessions and pending inputs. */
 export async function observeRetiringSession(
@@ -49,7 +49,7 @@ export async function observeRetiringSession(
 }
 
 export default async function reconcileOpenClawLifecycle(input: {
-  service: OpenClawDispatch;
+  service: Pick<OpenClawDispatchContext, 'scope' | 'dependencies'>;
   manifest: AgentManifest;
   workspace: string;
   authority: DispatchAuthority;

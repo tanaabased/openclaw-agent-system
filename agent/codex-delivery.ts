@@ -31,7 +31,7 @@ import dispatchHistory from './codex-dispatch-history.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import { revalidateDispatchAssignment } from './codex-dispatch.ts';
+import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import type { CodexDeliveryState } from './codex-delivery-state.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import codexHostAccess from './codex-host-access.ts';

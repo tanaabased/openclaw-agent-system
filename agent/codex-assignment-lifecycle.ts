@@ -8,7 +8,7 @@ import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts'
 import connectCodexFeedback from './codex-feedback-client.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
-import type { CodexDispatchDependencies } from './codex-dispatch.ts';
+import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
