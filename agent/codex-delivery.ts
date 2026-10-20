@@ -358,7 +358,7 @@ export default async function runCodexDelivery(
         )
           throw new Error('delivery-continuation-stopped');
         const transition = issueProgression(record, {
-          mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
           now: (deps.now ?? Date.now)(),
         });
         if (
@@ -384,6 +384,7 @@ export default async function runCodexDelivery(
         { connect: async () => connected.client },
         signal,
         true,
+        record,
       );
       const policyDigest =
         previous?.binding.policyDigest ??

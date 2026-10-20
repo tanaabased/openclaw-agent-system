@@ -62,10 +62,20 @@ capabilities are reported for their stage without disabling discovery.
 ## Assignment lifecycle
 
 The existing intake run checks retained assignments in both runtimes. Verified issue
-closure, removal of the receiving assignee, or manual chat archival moves work from
+closure, removal of the receiving assignee by a live `issue-assignment.allowed` actor,
+or manual chat archival moves work from
 **Active** to **Retirement pending** immediately. This stops new assessment,
 continuation, and feedback dispatch for that record. Native work already running
 still occupies a slot until inactivity is verified.
+
+When GitHub no longer shows the assignment but its removal actor is unapproved or
+cannot be verified, inspection and issue context report unresolved removal authority.
+The existing chat, worktree and implementation stage remain intact; already admitted
+work may continue only within its existing mode and permissions. Plan stays Plan.
+No automatic reassignment occurs. Verified reassignment clears the warning; recovered
+provider evidence or a relevant live actor-list change can resolve removal authority.
+Removal authority is checked again before cleanup. Completed or uncertain native
+cleanup effects keep their receipts and are not automatically undone or repeated.
 
 Automatic cleanup defaults to enabled, with a 60-minute grace period under
 `github.notifications.cleanup`. The deadline starts when intake first observes the

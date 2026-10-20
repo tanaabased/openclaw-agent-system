@@ -1,3 +1,4 @@
+import workflowRecovery from './workflow-recovery.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
@@ -159,6 +160,9 @@ export default async function openClawWorkAction(input: {
       status: 'verified',
       runtime: 'openclaw',
       issueStage: record.progression?.stage ?? 'planning',
+      assignmentObservation: record.assignmentObservation,
+      assignmentWarning:
+        record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       id: record.id,
       project: { path: record.worktree },
       assessment: record.result,

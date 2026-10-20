@@ -194,6 +194,33 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].feedback.admission.enabled == true and .[0].feedback.admission.after > 0 and .[0].feedback.admission.after < .[0].feedback.admission.observedAt and (.[0].feedback.events | length) == 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
+# should preserve admitted work when the live actor list does not authorize its removal
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); writeFileSync(process.env.TMPDIR+"/notification-policy-before.yaml",readFileSync(path)); value.github.notifications["issue-assignment"].allowed=value.github.notifications["issue-assignment"].allowed.filter(actor=>actor.login!=="emoriwan"); writeFileSync(path,stringify(value));'
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'all(.assignees[]; .login != "tanaabot")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+# allow the owning lifecycle observation interval, not the zero cleanup grace, to elapse.
+sleep 61
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and (.[0] | .assignmentObservation.missing == true and .assignmentObservation.code == "assignment-removal-unapproved" and .assignmentObservation.event.actor.login == "emoriwan" and .retirement == null and .retired == null and .threadId == $before[0].threadId and .worktree == $before[0].worktree and .progression == $before[0].progression and .result == $before[0].result)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived != true and .session.archivedAt == null'
+test -d "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")"
+
+# should clear the unresolved warning on verified reassignment without creating another owner
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+cp "$TMPDIR/notification-policy-before.yaml" agent.yaml
+sleep 61
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[]] | length == 1 and (.[0] | .id == $before[0].id and .threadId == $before[0].threadId and .worktree == $before[0].worktree and .assignmentObservation == null and .retirement == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
 # should reactivate an unassigned issue from approved feedback in its original chat
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"

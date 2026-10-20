@@ -17,7 +17,12 @@ import runCodexDelivery, {
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
+import {
+  account,
+  baseline,
+  intakeFixture,
+  removeFixtureAssignment,
+} from './github-intake-fixture.ts';
 
 const id = 'd'.repeat(64);
 const firstHead = 'a'.repeat(40);
@@ -1049,7 +1054,7 @@ describe('agent/codex-delivery', () => {
     dirty = true;
     await assert.rejects(request('prepare'), /uncommitted-work/);
     dirty = false;
-    fixture.item.assignees = [];
+    removeFixtureAssignment(fixture);
     await assert.rejects(request('prepare'), /dispatch-assignment-removed/);
     assert.equal(creates, 0);
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));

@@ -1,3 +1,4 @@
+import workflowRecovery from './workflow-recovery.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import { needsAutoDecision, autoDecisionInstructions } from './auto-decision.ts';
@@ -160,7 +161,7 @@ export default async function runCodexContinuation(
           )
             continue;
           try {
-            await revalidateDispatchAssignment(current, admitted, deps, signal, true);
+            await revalidateDispatchAssignment(current, admitted, deps, signal, true, record);
             if (record.autoDecision && !record.autoDecision.ended) {
               const decision = record.autoDecision;
               if (decision.code) {
@@ -476,7 +477,7 @@ export default async function runCodexContinuation(
               throw new Error('continuation-assessment-selection-changed');
           }
           const transition = issueProgression(record, {
-            mode: liveMode ?? 'plan',
+            mode: liveMode ?? 'auto',
             now: (deps.now ?? Date.now)(),
           });
           if (
@@ -492,6 +493,7 @@ export default async function runCodexContinuation(
             deps,
             signal,
             true,
+            record,
           );
           const found = await native.find({
             sourceThreadId: record.sourceThreadId,
@@ -827,6 +829,9 @@ export default async function runCodexContinuation(
               status: 'verified',
               id: record.id,
               issueStage: record.progression?.stage ?? 'planning',
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               assessment: record.result,
               currentIssue: dispatchContext(
                 await client.getItemContext(
