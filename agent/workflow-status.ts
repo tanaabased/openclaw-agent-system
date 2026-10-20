@@ -73,10 +73,12 @@ export default function workflowStatus(record: State) {
   if (record.work?.code === 'implementation-delivery-incomplete') return 'delivery';
   if (record.work?.code === 'implementation-result-missing') return 'result-missing';
   if (record.work?.code || record.work?.result?.outcome === 'blocked') return 'blocked';
-  if (record.autoDecision && !record.autoDecision.ended)
-    return record.autoDecision.code ? 'blocked' : 'assessing';
-  if (record.decisionTurn && record.decisionTurn.status !== 'completed')
-    return record.decisionTurn.inactive ? 'blocked' : 'assessing';
+  if (record.progression?.stage !== 'implementation') {
+    if (record.autoDecision && !record.autoDecision.ended)
+      return record.autoDecision.code ? 'blocked' : 'assessing';
+    if (record.decisionTurn && record.decisionTurn.status !== 'completed')
+      return record.decisionTurn.inactive ? 'blocked' : 'assessing';
+  }
   const failure = record.continuation ?? record;
   if (failure.phase === 'cancelled') return record.handoff ? 'running' : 'cancelled';
   if (failure.phase === 'blocked') return 'blocked';

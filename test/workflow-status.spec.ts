@@ -2,6 +2,45 @@ import assert from 'node:assert/strict';
 import workflowStatus from '../agent/workflow-status.ts';
 
 describe('agent/workflow-status', () => {
+  it('should report codex work after a same-turn auto decision without awaiting reconciliation', () => {
+    const record = {
+      phase: 'complete',
+      autoDecision: { ended: false },
+      progression: { stage: 'implementation' },
+    };
+    for (const phase of [
+      'running',
+      'clarification-needed',
+      'delivery',
+      'complete',
+      'blocked',
+      'cancelled',
+    ])
+      assert.equal(workflowStatus({ ...record, continuation: { phase } }), phase);
+    assert.equal(record.autoDecision.ended, false);
+  });
+  it('should report openclaw work and questions while the original decision receipt is pending', () => {
+    const record = {
+      phase: 'complete',
+      decisionTurn: { status: 'consumed' },
+      progression: { stage: 'implementation' },
+    };
+    assert.equal(workflowStatus(record), 'running');
+    for (const [outcome, expected] of [
+      ['clarification-needed', 'clarification-needed'],
+      ['done', 'delivery'],
+      ['blocked', 'blocked'],
+    ])
+      assert.equal(
+        workflowStatus({ ...record, work: { result: { outcome: outcome! } } }),
+        expected,
+      );
+    assert.equal(
+      workflowStatus({ ...record, work: { code: 'dispatch-turn-cancelled' } }),
+      'blocked',
+    );
+    assert.equal(record.decisionTurn.status, 'consumed');
+  });
   it('should report decision assessment and legacy handoff without claiming cancelled work', () => {
     assert.equal(workflowStatus({ phase: 'complete', autoDecision: {} }), 'assessing');
     assert.equal(
