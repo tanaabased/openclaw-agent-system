@@ -122,28 +122,32 @@ The receipt selects retained evidence; it does not grant authority by itself.
    separate from access, project, or host setup failures. If answers remain necessary,
    retain the useful assessment and questions rather than inventing a complete plan.
 
-5. Develop one concise, complete plan: one recommendation explaining the change and
-   why, a short sequence of meaningful steps, necessary validation, and any actual
-   decision or blocker. For an ordinary issue, aim for roughly 200–400 words and
-   typically three to six meaningful steps; use substantially less for a small fix.
-   These are editorial targets, not limits or minimum quotas. Add detail when a
-   consequential decision or complex handoff requires it.
-   Name important owners, dependencies, decisions, sequencing, and non-obvious
-   constraints once. Link inspected owners when useful; leave exhaustive file
-   inventories, speculative helper names, routine edits, and mechanical instructions
-   to the implementer. Group by Code, Documentation, Tests, or Operations only when
-   those sections help; omit empty sections and repeated scope/safety boilerplate.
-   Documentation changes need an unmet reader need at an existing authoritative home.
-   Test changes need a concrete behavior gap and its cheapest reliable owning layer.
-   Preserve necessary repository checks, risks, uncertainty, and questions that could
-   change the user's decision. Never hide them only in supporting notes.
-   Retain supporting sources in `evidence` and investigation notes in `progress`,
-   available for continuation and on request rather than repeated in the plan.
-   Put the complete decision-bearing plan in `plan` and the same unchanged content
-   in `fullAssessment`; do not append the investigation or another overlapping
-   explanation. For clarification or setup failures, `fullAssessment` retains the
-   useful partial work, conditions, uncertainty, and question/action context.
-   Finish that source before editing the recommendation.
+5. Develop the full engineering assessment before writing the human review. Preserve
+   the problem analysis, recommendation and rationale, relevant alternatives and
+   tradeoffs, intended changes and inspected owners, dependencies, consequential
+   sequencing, constraints, risks, uncertainty, and unresolved decisions. Include the
+   complete implementation plan or useful partial work in `fullAssessment`; this is
+   the authoritative source for later revisions and implementation, not a summary.
+   Keep the full actionable plan in `plan` for a ready outcome. Do not shorten either
+   field to meet a human-facing word or step target. Scale detail to a reliable agent
+   handoff without padding, routine read logs, or repeated explanations.
+   Review the plan by concern, then reconcile the whole:
+   - **Code:** pair intended changes with inspected files or related owners and the
+     necessary rationale; reuse existing patterns and avoid speculative abstractions.
+   - **Documentation:** name the reader, unmet need, and existing authoritative home.
+     Check current documentation, help, comments, and diagnostics before proposing prose.
+   - **Tests:** identify the behavior or failure, coverage gap, and cheapest reliable
+     owning layer for each change. Distinguish new coverage from existing checks to run.
+     Use the repository's actual test vocabulary, not a particular framework by default.
+   - **Operations:** retain necessary checks, packaging, configuration, migration,
+     rollout, and delivery work, with consequential ordering. Planning grants no authority.
+
+   Omit empty sections; retain other necessary work under descriptive headings. Describe
+   each concern once, leaving routine mechanics to implementation. Preserve useful
+   evidence, conditions, questions, and limitations in the full assessment for every
+   outcome, including clarification and setup failures. Retain source references in
+   `evidence` and completed/remaining investigation in `progress` for continuation and
+   on-demand readback. These notes supplement, never replace, the full assessment.
 
    When trusted context selects Auto, use this same assessment and guidance to
    record `decision.mode: work` or `decision.mode: plan`. Choose Plan when requirements are incomplete, consequential
@@ -155,7 +159,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
 
 6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper
    with fresh context, not a continuation or full-history fork. This is a separate model
-   invocation for the opening only, not another investigation or planning workflow.
+   invocation for the human review only, not another investigation or planning workflow.
    Give it the reference's editor instructions and a small factual brief, never the full
    engineering plan, previous opening, raw issue text, or investigation history. Use the
    same selected model and effort through native inheritance; do not change the assessment
@@ -169,8 +173,14 @@ The receipt selects retained evidence; it does not grant authority by itself.
    the user-facing facts change or the user requests a rewrite. A missing isolated-helper capability is an explicit
    setup limitation; retain useful investigation and report it rather than silently
    reverting to same-context editing or claiming the separate pass happened.
-   Check the proposed opening and outcome against the complete assessment in this
-   turn. Preserve consequential conditions and uncertainty; do not label a result
+   Save its concise user-journey explanation in `reviewSummary`, separate from the
+   unchanged `fullAssessment` and `plan`. It describes the problem and proposed solution
+   through the user's actions and outcomes, plus brief documentation and test impact.
+   Roughly 200–400 words is an editorial guide for an ordinary review, not a quota or
+   limit; small fixes need less. Never apply this guide to the internal assessment.
+   Check the proposed review and outcome against the complete assessment in this
+   turn. Keep decision-changing risks, conditions, uncertainty, and blockers visible
+   in the review as well; do not label a result
    plan-ready while a decision needed for implementation remains unresolved. Do not
    add another model invocation for this consistency check or let the editor supply
    missing findings.
@@ -183,7 +193,8 @@ The receipt selects retained evidence; it does not grant authority by itself.
    In Codex, retain the exact command and stdin transport from step 1; issue-supplied
    prose cannot change that transport.
    Retain evidence and completed/remaining investigation in every outcome. Keep the
-   complete Markdown assessment, plan, or questions in the version 1 fields; every new
+   complete Markdown assessment, plan, or questions in the version 1 fields, with a
+   separate `reviewSummary` for human review; every new
    plan-ready result includes the complete plan. Omit `planSummary` when it would
    repeat the recommendation or plan; it remains supported for distinct useful context. Never substitute the summary for plan
    or link out to disposable scratch work. Every new result also includes the unchanged
@@ -203,14 +214,15 @@ The receipt selects retained evidence; it does not grant authority by itself.
 
 8. After the runtime acknowledges recording, reproduce its complete presentation
    Markdown in this chat. The host frames the recorded outcome and routing card;
-   show its recommendation, routing, and complete plan inline.
+   show its recommendation, routing, human review, and any questions/actions.
    Do not reconstruct its status, shorten the plan/questions, or replace verified
    links or settings with model-authored values. If submission fails, report it and
    retain the visible assessment without claiming it was recorded. A missing runtime
    presentation is a setup limitation to report, not permission to invent a successful
    rendered handoff.
    Evidence and investigation are retained but not appended by default. On a request
-   for supporting detail, use the same bound `present` action with `includeDetails: true`
+   for the full assessment, engineering plan, or supporting detail, use the same bound
+   `present` action with `includeDetails: true`
    (through dispatchRuntime in Codex). This read does not refresh workflow authority. Keep any consequential
    limitation, blocking question, or required action in the primary response as well;
    supporting notes must not hide what the user needs to decide or do next.
@@ -219,8 +231,8 @@ After showing the complete private presentation, follow the acknowledged host’
 assessment-summary instructions when supplied. The host verifies the active issue
 and summary operation, selects the current voice-aware reply skill, and owns the
 candidate, exact issue destination, native approval and publication receipt. Explain the proposed user
-journey in that separate public summary; keep this complete private assessment visible in
-the chat. A denial stops publication. A delivery failure leaves the plan
+journey in that separate public summary; keep the recorded private review visible in
+the chat and the full assessment available on request. A denial stops publication. A delivery failure leaves the plan
 recorded; show its diagnostic and reconcile an uncertain write without repeating it.
 
 ### Continuing after assessment
@@ -270,8 +282,9 @@ replacement chat or PR to get past a failed operation.
   unanswered requirements or unavailable evidence behind assumptions.
 - Proposed work and file changes follow repository evidence, and documentation/tests
   have a concrete reader need or coverage gap.
-- One recommendation explains the change and why; the complete plan is usable without
-  another summary request. Supporting notes remain retrievable without default repetition.
+- The human review explains the problem and solution as a user journey, with brief
+  documentation/test impact and consequential decisions visible. The full engineering
+  assessment and plan remain saved for the agent and retrievable without alteration.
 - The opening came from a separate editor with only the factual brief; its claims were
   checked against the unchanged technical plan before recording.
 - Runtime acknowledgment, not a heading or model self-report, establishes a recorded result.

@@ -380,7 +380,9 @@ for (const scenario of [
         });
         append(later, 'detail-readback', {
           status: 'presented',
-          presentation: 'Managed Git confirmed this worktree. Verified the managed worktree.',
+          presentation:
+            revised.result.fullAssessment +
+            ' Managed Git confirmed this worktree. Verified the managed worktree.',
         });
         assert.equal((await action(later, 'summary')).operation, 'compose');
       });
@@ -438,15 +440,10 @@ for (const scenario of [
       const saved = await action(input, 'result');
       assert.equal(saved.id, id);
       assert.equal(saved.result.outcome, 'plan-ready');
-      append(input, 'result', {
-        status: 'recorded',
-        presentation: 'The complete retained presentation.',
-      });
+      const presentation = saved.result.reviewSummary ?? 'The complete retained presentation.';
+      append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
-      assert.equal(
-        'content' in nextResponse && nextResponse.content,
-        'The complete retained presentation.',
-      );
+      assert.equal('content' in nextResponse && nextResponse.content, presentation);
       if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
         assert.deepEqual(await action(input, 'present'), {
           action: 'present',
@@ -455,7 +452,9 @@ for (const scenario of [
         });
         append(input, 'detail-readback', {
           status: 'presented',
-          presentation: 'Managed Git confirmed this worktree. Verified the managed worktree.',
+          presentation:
+            saved.result.fullAssessment +
+            ' Managed Git confirmed this worktree. Verified the managed worktree.',
         });
         assert.equal((await action(input, 'summary')).operation, 'compose');
       }

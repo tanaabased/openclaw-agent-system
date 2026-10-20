@@ -49,11 +49,13 @@ cleanup must prevent stale removal authority from reclaiming resources. Controll
 source tests cover actor/evidence permutations; these headless checks do not establish
 the desktop journey.
 
-For saved-plan readback verification in the native issue chat, request the retained
-evidence and investigation. Confirm the bound `present` request with
+For saved-plan readback verification in the native issue chat, request the full
+assessment, evidence, and investigation. Confirm the bound `present` request with
 `includeDetails: true` shows those notes and the complete plan without changing the
-saved result or its digest. The default reply must keep the plan without appending
-the notes; a different chat must not read them.
+saved result or its digest. For a result with `reviewSummary`, the default reply must
+show the user journey and documentation/test impact without the engineering source.
+Implementation context must still receive the complete saved assessment and plan; a
+different chat must not read them.
 
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 

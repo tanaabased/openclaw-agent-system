@@ -219,35 +219,34 @@ tables when they make the complete result easier to review.
 > - **Source:** <saved profile and evidence source>
 > - **Effective settings:** <verified native settings or not independently verified>
 
-## Full assessment
+## Proposed change
 
-<short, complete plan with meaningful steps, necessary validation, and actual decisions or blockers>
+<problem and proposed solution as a concise user journey, brief documentation/test impact, and consequential limits or decisions>
+
+The full assessment and engineering plan are saved for implementation. Ask for the full assessment to inspect them.
 ```
 
-Generate one recommendation and a concise, complete plan. For an ordinary issue,
-roughly 200–400 words and typically three to six meaningful steps are useful editorial
-targets, not limits, truncation rules, or minimum quotas. Small fixes need less;
-consequential decisions and complex handoffs may need more. Name important owners,
-dependencies, uncertainty, and non-obvious constraints once. Leave routine mechanics,
-exhaustive file inventories, and speculative helper names to implementation.
-Use Code, Documentation, Tests, Operations, or descriptive subsections only when useful;
-omit empty sections and repeated scope/safety boilerplate. Link inspected owners with
-short repository-relative labels where useful; identify provisional paths honestly.
+For results with an explicit `reviewSummary` and retained `fullAssessment`, show the
+review by default instead of the engineering source. Explain what the person does
+today, where it fails, and what they would do and receive after the proposed change.
+Include brief documentation and test impact in the repository's own terms, plus any
+risk, uncertainty, or decision that could change approval. Roughly 200–400 words is
+an editorial guide for an ordinary human review, not a limit or minimum. Small fixes
+need less. Do not apply review-length guidance to the retained assessment or plan.
 
-Write the recommendation for someone who knows the product and needs to decide what
-work should happen. Explain concrete actions and consequences, not a list of internal
-components. Preserve decision-changing limits, risks, uncertainty, and blocking questions
-in the primary response. Do not require another request to obtain the actionable plan.
+The full engineering assessment remains authoritative for implementation: rationale,
+tradeoffs, owners, dependencies, constraints, complete plan, validation, evidence, and
+unresolved questions. Keep it unchanged in `fullAssessment` and retain the full
+implementation plan in `plan`. `reviewSummary` is a derived human view, never a
+replacement source. `assessment` may repeat the recommendation; `planSummary` remains
+optional. Requesting `includeDetails: true` shows the complete assessment and any
+distinct plan, followed by supporting evidence and investigation.
 
-The complete `fullAssessment` remains unchanged and inline for every outcome. For new
-default ready plans it contains the same complete plan as `plan`; supporting sources
-and investigation stay in their structured fields. `assessment` may repeat the concise
-recommendation to satisfy the version 1 contract; `planSummary` is optional when redundant.
-Omit a separately rendered assessment or plan summary only when its exact text is already
-in the recommendation or complete source. Show a distinct plan even when a complete source
-exists. Do not infer expendable text from headings, size, or skill identity. Preserve
-substantive older and custom output without rewriting, truncation, or an additional click.
-Questions and required actions remain prominent even when repeated in the complete source.
+Without both an explicit review and full source, preserve the existing complete
+inline display for older/custom results. Omit only verbatim duplicate openings;
+never infer expendable content from headings, size, or skill identity. Never truncate
+or rewrite substantive source text. Questions and required actions remain prominent
+in every default and detailed view, even when repeated in the complete source.
 
 When an assessment includes a continuation decision, show an **Auto mode decision**
 card after the instruction card (or routing card when debug is off). Keep it visible
@@ -255,12 +254,12 @@ regardless of debug presentation. Use ▶️ for `work` and ⏸️ for `plan`, w
 code-formatted value in **Decision**. Use **Next** to distinguish automatic continuation
 once runtime checks pass from waiting for the operator's direction before implementation.
 Follow with bounded **Reason** rows. Escape reason text and withhold credential-shaped
-content; do not present the decision as permission or replace the complete assessment.
+content; do not present the decision as permission or replace the retained assessment.
 
 The private routing card follows the recommendation (or a distinct assessment). Its values come from saved routing and
 native readback, with requested selection distinct from effective execution. Preserve
 the model, effort, selection rationale, and provenance; use readable Markdown rather
-than assuming native card styling. By default, do not append structured evidence or investigation. When explicitly requested,
+than assuming native card styling. By default, do not append the retained engineering source, structured evidence, or investigation when a human review is present. When explicitly requested,
 place retained **Evidence** and **Investigation** under one **Reference material** section
 after the complete source, questions, or setup action. Introduce it as supporting detail; nest **Completed** and **Remaining** beneath
 Investigation. Omit empty subsections and omit Reference material when both are empty.

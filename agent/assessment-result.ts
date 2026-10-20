@@ -59,6 +59,8 @@ const common = {
   progress,
   // complete source for new assessments; existing structured results remain supported.
   fullAssessment: Type.Optional(text),
+  // explicit human review; absent on older results, whose complete display is preserved.
+  reviewSummary: Type.Optional(text),
   decision: Type.Optional(assessmentDecisionSchema),
 };
 

@@ -132,7 +132,7 @@ export default async function assessmentSummary(input: {
           verifiedOutcome: { assessment: record.result },
           maximumPublicCharacters: maximumGitHubNotificationReplyLength,
           instruction:
-            'The complete private assessment must already be presented here. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
+            'The recorded private review must already be presented here; the full assessment stays saved for implementation and on-demand inspection. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
         };
       if (action.operation === 'candidate') {
         if (action.digest !== digest) throw new Error('assessment-summary-composition-stale');
@@ -155,7 +155,7 @@ export default async function assessmentSummary(input: {
         return {
           status: 'candidate-recorded',
           instruction:
-            'Call summary operation publish without a digest to inspect the exact destination and draft, then with its digest through native approval. This bounded summary is covered by the freshly activated assessment workflow; a native denial stops publication. Preserve the full private assessment in the final answer.',
+            'Call summary operation publish without a digest to inspect the exact destination and draft, then with its digest through native approval. This bounded summary is covered by the freshly activated assessment workflow; a native denial stops publication. Preserve the recorded private review presentation in the final answer; keep the full assessment saved for implementation.',
         };
       }
       if (!summary.publicText) throw new Error('assessment-summary-candidate-required');
@@ -205,7 +205,7 @@ export default async function assessmentSummary(input: {
       destination,
       presentation: publishedPresentation(summary),
       instruction:
-        'Reproduce this complete presentation in the final answer: preserve the private assessment, separate public summary and verified publication link. Publication does not mean implementation is complete.',
+        'Reproduce this complete presentation in the final answer: preserve the private review, separate public summary and verified publication link. Publication does not mean implementation is complete.',
     };
   } catch (error) {
     if (isFilesystemAccessError(error)) throw error;

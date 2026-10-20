@@ -58,10 +58,11 @@ export default function renderAssessmentResult(
   );
   // omit only verbatim duplicates; never infer dispensable content from prose or skill identity.
   const source = result.fullAssessment ?? (result.outcome === 'plan-ready' ? result.plan : '');
+  const reviewOnly = !!result.reviewSummary && !!result.fullAssessment && !context.includeDetails;
   const needsSection = (value: string) => value !== result.summary && !source.includes(value);
   const content = [
     outcomeCard,
-    ...('assessment' in result && needsSection(result.assessment)
+    ...(!reviewOnly && 'assessment' in result && needsSection(result.assessment)
       ? ['## Assessment', result.assessment]
       : []),
     routingCard,
@@ -91,7 +92,8 @@ export default function renderAssessmentResult(
           }),
         ]
       : []),
-    ...(result.outcome === 'plan-ready'
+    ...(reviewOnly ? ['## Proposed change', result.reviewSummary!] : []),
+    ...(!reviewOnly && result.outcome === 'plan-ready'
       ? [
           ...(result.planSummary && needsSection(result.planSummary)
             ? ['## Plan summary', result.planSummary]
@@ -101,11 +103,18 @@ export default function renderAssessmentResult(
       : result.outcome === 'clarification-needed'
         ? ['## Question', result.questions.map(item).join('\n\n')]
         : []),
-    ...(result.fullAssessment ? ['## Full assessment', result.fullAssessment] : []),
-    ...(result.outcome === 'plan-ready' && result.fullAssessment && !source.includes(result.plan)
+    ...(!reviewOnly && result.fullAssessment ? ['## Full assessment', result.fullAssessment] : []),
+    ...(!reviewOnly &&
+    result.outcome === 'plan-ready' &&
+    result.fullAssessment &&
+    !source.includes(result.plan)
       ? ['## Full plan', result.plan]
       : []),
   ];
+  if (reviewOnly)
+    content.push(
+      'The full assessment and engineering plan are saved for implementation. Ask for the full assessment to inspect them.',
+    );
   if (!context.includeDetails) return content.join('\n\n');
   const hasInvestigation = result.progress.completed.length || result.progress.remaining.length;
   if (result.evidence.length || hasInvestigation) {

@@ -337,9 +337,11 @@ If showing an already-created PR is interrupted or temporarily busy, ask the sam
 issue chat to show its card again. Saved plans and PR cards remain readable in
 the owning chat without fresh publication permission, a matching working commit,
 or GitHub access. They show retained evidence, not a fresh provider verification.
-Native chat identity is still checked. Ask for the saved assessment’s evidence or
-investigation in that same issue chat to retrieve supporting detail; it is not appended
-by default. The bound `present` request accepts `includeDetails: true` in both runtimes.
+Native chat identity is still checked. New assessments show a concise user-journey
+review with documentation/test impact; the full assessment and engineering plan stay
+saved for the agent. Ask for the full assessment, evidence, or investigation in that
+same issue chat to inspect them. Older results without a separate review retain their
+complete display. The bound `present` request accepts `includeDetails: true` in both runtimes.
 Presentation does not push, create a PR, or post an announcement. In Codex, attachment reconciliation retries only attachment
 inspection. Recipient identities remain pinned; GitHub authorizes recipient changes. If announcing fails, the PR
 remains delivered. Ask the same chat to recover its announcement; uncertain writes

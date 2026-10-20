@@ -58,6 +58,63 @@ describe('channels/github/presentation/assessment-result', () => {
     assert.deepEqual(result, before);
   });
 
+  it('should show the explicit human review while preserving the full source for on-demand inspection', () => {
+    const fullAssessment =
+      'Rationale: preserve caller ownership.\n\nAlternatives: reject a second store.\n\n' +
+      'Detailed handoff constraint. '.repeat(200);
+    const reviewSummary =
+      'Today you finish without seeing a result. After the change you receive it immediately.\n\nDocs: clarify the result. Tests: cover the missing return. Limitation: retention still needs confirmation.';
+    for (const outcome of [
+      {
+        outcome: 'plan-ready' as const,
+        assessment: 'Internal diagnosis.',
+        plan: 'Return the value after saving its receipt.',
+        planSummary: 'Technical sequencing.',
+      },
+      {
+        outcome: 'clarification-needed' as const,
+        assessment: 'Internal diagnosis.',
+        questions: ['Which retention period applies?'],
+      },
+      {
+        outcome: 'operator-setup-blocker' as const,
+        code: 'repository-unavailable',
+        remediation: 'Restore repository access.',
+      },
+    ]) {
+      const result: AssessmentResult = { ...common, ...outcome, fullAssessment, reviewSummary };
+      const before = structuredClone(result);
+      const output = renderAssessmentResult(result, { ...context, includeDetails: false });
+      assert.ok(output.includes(reviewSummary));
+      assert.ok(!output.includes(fullAssessment));
+      if (outcome.outcome !== 'operator-setup-blocker')
+        assert.ok(!output.includes(outcome.assessment));
+      if (outcome.outcome === 'plan-ready') assert.ok(!output.includes(outcome.plan));
+      if (outcome.outcome === 'clarification-needed')
+        assert.ok(output.includes(outcome.questions[0]!));
+      if (outcome.outcome === 'operator-setup-blocker')
+        assert.ok(output.includes(outcome.remediation));
+      const detailed = renderAssessmentResult(result, { ...context, includeDetails: true });
+      assert.ok(detailed.includes(fullAssessment));
+      if (outcome.outcome === 'plan-ready') assert.ok(detailed.includes(outcome.plan));
+      assert.ok(detailed.includes(common.evidence[0]!.detail.split('\n')[0]!));
+      assert.deepEqual(result, before);
+    }
+  });
+
+  it('should not hide a legacy plan when a review has no retained full assessment', () => {
+    const result: AssessmentResult = {
+      ...common,
+      outcome: 'plan-ready',
+      assessment: 'Observed.',
+      plan: 'Preserve this complete plan.',
+      reviewSummary: 'A short review.',
+    };
+    assert.ok(
+      renderAssessmentResult(result, { ...context, includeDetails: false }).includes(result.plan),
+    );
+  });
+
   it('should preserve distinct older and custom fields regardless of their size or headings', () => {
     const result: AssessmentResult = {
       ...common,
