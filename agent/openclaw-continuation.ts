@@ -56,10 +56,27 @@ export default async function advanceOpenClawWork(input: {
   assertCurrent(): Promise<void>;
 }) {
   const { record, request, save } = input;
-  const slot = openClawWorkSlot(record, input.mode);
   const expected = record.request;
-  if (!slot || !expected || !('key' in expected))
-    return { status: 'implementation-idle', id: record.id };
+  if (!expected || !('key' in expected)) return { status: 'implementation-idle', id: record.id };
+  // A same-turn handoff ends decision scheduling, not custody of its native turn.
+  if (
+    record.handoff &&
+    record.decisionTurn &&
+    record.decisionTurn.status !== 'completed' &&
+    !record.decisionTurn.inactive
+  ) {
+    await describeIssueSession(request, record, input.config);
+    await reconcileOpenClawTurn({
+      request,
+      sessionKey: expected.key,
+      sessionId: record.sessionCreation!.sessionId!,
+      model: expected.model,
+      turn: record.decisionTurn,
+      save,
+    });
+  }
+  const slot = openClawWorkSlot(record, input.mode);
+  if (!slot) return { status: 'implementation-idle', id: record.id };
   // Older direct handoffs retained custody without a coordinator turn. Adopt it before any send.
   if (slot === 'turn' && !record.work?.turn && record.work?.implementation) {
     const source = record.work.implementation;

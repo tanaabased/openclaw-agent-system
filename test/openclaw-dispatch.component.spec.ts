@@ -4493,53 +4493,83 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.events[0]!.phase, 'published');
     assert.equal(creates().length, 1);
   });
-  it('should dispatch queued feedback in the pass that reconciles a finished implementation turn', async () => {
-    const { id } = await feedbackOwner();
-    const current = await service.scope(manifest, root);
-    await current.journal.exclusive(async (state, save) => {
-      const record = state.records[0]!;
-      record.assessmentTurn!.status = 'completed';
-      record.assessmentTurn!.replyEventId = 'assessment-reply';
-      record.work!.turn = {
-        runId: `${id}:implementation`,
-        message: 'Continue work.',
-        status: 'accepted',
-      };
-      record.work!.result = {
-        outcome: 'clarification-needed',
-        summary: 'Need input.',
-        fullResult: 'Partial work.',
-        questions: ['Which behavior?'],
-      };
-      await save();
+  for (const source of ['implementation', 'auto-handoff'] as const)
+    it(`should dispatch queued feedback in the pass that reconciles a finished ${source} turn`, async () => {
+      const { id } = await feedbackOwner();
+      const current = await service.scope(manifest, root);
+      await current.journal.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        record.assessmentTurn!.status = 'completed';
+        record.assessmentTurn!.replyEventId = 'assessment-reply';
+        record.work!.turn = {
+          runId: `${id}:implementation`,
+          message: 'Continue work.',
+          status: 'accepted',
+        };
+        if (source === 'auto-handoff') {
+          record.work!.turn = {
+            ...record.work!.turn,
+            status: 'completed',
+            consumedByEventId: 'old-work-input',
+            replyEventId: 'old-work-reply',
+          };
+          record.decisionTurn = {
+            runId: `${id}:auto-decision`,
+            message: 'Choose plan or work.',
+            status: 'accepted',
+          };
+        }
+        record.work!.result = {
+          outcome: 'clarification-needed',
+          summary: 'Need input.',
+          fullResult: 'Partial work.',
+          questions: ['Which behavior?'],
+        };
+        await save();
+      });
+      active = false;
+      inputReceipts = [];
+      messages.push(
+        {
+          role: 'user',
+          content: 'Continue work.',
+          idempotencyKey: `${id}:implementation:user`,
+          __openclaw: { id: 'old-work-input', idempotencyKey: `${id}:implementation:user` },
+        },
+        {
+          role: 'assistant',
+          stopReason: 'stop',
+          content: [{ type: 'text', text: 'Which behavior?' }],
+          __openclaw: { id: 'old-work-reply', runId: `${id}:implementation`, runTerminal: true },
+        },
+      );
+      if (source === 'auto-handoff')
+        messages.push(
+          {
+            role: 'user',
+            content: 'Choose plan or work.',
+            idempotencyKey: `${id}:auto-decision:user`,
+            __openclaw: { id: 'decision-input', idempotencyKey: `${id}:auto-decision:user` },
+          },
+          {
+            role: 'assistant',
+            stopReason: 'stop',
+            content: [{ type: 'text', text: 'Work is ready.' }],
+            __openclaw: { id: 'decision-reply', runId: `${id}:auto-decision`, runTerminal: true },
+          },
+        );
+      const before = sends().length;
+      const next = await workPass('feedback-after-work');
+      assert.equal(next.status, 'feedback-pending', JSON.stringify(next));
+      const saved = await record();
+      assert.equal(saved.id, id);
+      assert.equal(saved.work!.turn!.status, 'completed');
+      if (source === 'auto-handoff') assert.equal(saved.decisionTurn!.status, 'completed');
+      assert.equal(saved.feedback!.events[0]!.phase, 'running');
+      assert.equal(sends().length, before + 1);
+      await workPass('feedback-after-work');
+      assert.equal(sends().length, before + 1);
     });
-    active = false;
-    inputReceipts = [];
-    messages.push(
-      {
-        role: 'user',
-        content: 'Continue work.',
-        idempotencyKey: `${id}:implementation:user`,
-        __openclaw: { id: 'old-work-input', idempotencyKey: `${id}:implementation:user` },
-      },
-      {
-        role: 'assistant',
-        stopReason: 'stop',
-        content: [{ type: 'text', text: 'Which behavior?' }],
-        __openclaw: { id: 'old-work-reply', runId: `${id}:implementation`, runTerminal: true },
-      },
-    );
-    const before = sends().length;
-    const next = await workPass('feedback-after-work');
-    assert.equal(next.status, 'feedback-pending', JSON.stringify(next));
-    const saved = await record();
-    assert.equal(saved.id, id);
-    assert.equal(saved.work!.turn!.status, 'completed');
-    assert.equal(saved.feedback!.events[0]!.phase, 'running');
-    assert.equal(sends().length, before + 1);
-    await workPass('feedback-after-work');
-    assert.equal(sends().length, before + 1);
-  });
 
   it('should queue feedback during operator work and revoke an edited or removed source before sending', async () => {
     const { comments } = await feedbackOwner();
