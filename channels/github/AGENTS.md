@@ -18,8 +18,11 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   independently of the queue of eligible effects.
 - Reevaluate already admitted, unprocessed work after policy changes without
   rebuilding its queue, replaying completed effects, or requiring Install.
-- Feedback observed while disabled remains history and never becomes an automatic
-  backlog. When the runtime observes reenabling, use its previous policy-check time as
+- Feedback belongs to its parent workflow and inherits its approved actors by default.
+  Explicit additions and replacement lists control authors, never a second enable flag.
+  Keep legacy booleans and implicit replacement policies only for the bounded V2 transition.
+- Feedback observed while the parent is paused or no authors are eligible remains history
+  and never becomes an automatic backlog. When acceptance resumes, use the previous policy-check time as
   the cutoff shared by the issue and its PR. Admit subsequent approved comments
   or revisions, including the interval between checks; do not replay older history. Preserve work
   admitted before the pause. Do not send a retrospective assessment automatically.

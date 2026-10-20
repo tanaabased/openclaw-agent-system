@@ -72,11 +72,10 @@ describe('agent/codex-feedback', () => {
             'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
             'issue-assignment': {
               mode: 'plan',
-              allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
-              feedback: {
-                inherit: true,
-                allowed: [{ login: commenter.login, 'node-id': commenter.nodeId }],
-              },
+              allowed: [
+                { login: 'receiver', 'node-id': 'U_receiver' },
+                { login: commenter.login, 'node-id': commenter.nodeId },
+              ],
             },
           },
         },
@@ -524,7 +523,7 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
     assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
   });
-  it('should keep approved feedback usable when new assignment intake is disabled', async () => {
+  it('should hold feedback while its parent is paused and resume the same admitted event', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
@@ -535,8 +534,14 @@ describe('agent/codex-feedback', () => {
       { login: 'elsewhere', 'node-id': 'O_elsewhere' },
     ];
     await writeFile(path, JSON.stringify(manifest));
+    const paused = await call('context', ref, true);
+    assert.equal(paused.status, 'policy-held', JSON.stringify(paused));
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
+    manifest.github.notifications['issue-assignment'].enabled = true;
+    await writeFile(path, JSON.stringify(manifest));
     const context = await call('context', ref, true);
     assert.equal(context.status, 'verified', JSON.stringify(context));
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
   });
 
   async function recordReply(
@@ -796,8 +801,11 @@ describe('agent/codex-feedback', () => {
       const path = join(root, 'workspace', 'agent.yaml');
       const manifest = JSON.parse(await readFile(path, 'utf8'));
       manifest.debug = !debug;
-      manifest.github.notifications['issue-assignment'].feedback.skill = 'custom:latin';
-      manifest.github.notifications['issue-assignment'].feedback.guidance = 'Base guidance.';
+      manifest.github.notifications['issue-assignment'].feedback = {
+        inherit: true,
+        skill: 'custom:latin',
+        guidance: 'Base guidance.',
+      };
       await writeFile(path, JSON.stringify(manifest));
       const overlayPath = join(root, 'workspace', 'agent.local.yaml');
       await writeFile(

@@ -40,7 +40,7 @@ import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-cli
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
 import workflowInstructions from '../channels/github/presentation/workflow-instructions.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';
@@ -227,13 +227,7 @@ export default async function runCodexDelivery(
         }
         let commentFlow: 'codex' | 'unavailable' | 'unverified' = 'unavailable';
         const policy = current.manifest.github?.notifications;
-        if (
-          policy?.schemaVersion === 2 &&
-          feedbackIdentities(
-            policy.issueAssignment?.allowed ?? [],
-            policy.issueAssignment?.feedback,
-          ).length
-        ) {
+        if (workflowFeedbackAvailable(policy, 'issue-assignment')) {
           commentFlow = 'unverified';
           try {
             const activation = await (deps.activation ?? inspectCodexDispatchActivation)(

@@ -1,6 +1,6 @@
 import issueProgression from './issue-progression.ts';
 import assessmentHandoff from './assessment-handoff.ts';
-import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
@@ -785,7 +785,7 @@ export async function runCodexDispatch(
               startedAt: now,
               admission: {
                 observedAt: now,
-                enabled: workflowFeedbackEnabled(
+                enabled: workflowFeedbackAccepting(
                   current.manifest.github?.notifications,
                   'issue-assignment',
                 ),

@@ -1,7 +1,7 @@
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { feedbackAuthorityDigest } from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
-import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
@@ -66,7 +66,7 @@ export default async function reactivateAssignmentFeedback(input: {
   pullRequest?: { number: number; nodeId: string };
 }) {
   const { record, intake, policy, client } = input;
-  if (!workflowFeedbackEnabled(policy.policy, 'issue-assignment')) {
+  if (!workflowFeedbackAccepting(policy.policy, 'issue-assignment')) {
     const feedback = (record.feedback ??= { startedAt: input.now, baseline: {}, events: [] });
     observeFeedbackPolicy(feedback, policy.policy, input.now);
     delete record.feedbackReactivation;

@@ -4,7 +4,10 @@ import type DiscoveryBudget from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import type { FeedbackSourceState, FeedbackSourceEvent } from './feedback-state.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
-import { feedbackIdentities, workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import {
+  feedbackIdentities,
+  workflowFeedbackAccepting,
+} from '../channels/github/feedback-policy.ts';
 import {
   admitGitHubComment,
   githubCommentRevision,
@@ -43,6 +46,7 @@ export function admitFeedback(
     },
   };
   if (
+    !workflowFeedbackAccepting(policy, 'issue-assignment') ||
     !source.author ||
     !authors.some(
       (author) =>
@@ -62,7 +66,7 @@ export function observeFeedbackPolicy(
   policy: GitHubNotificationPolicy | undefined,
   now: number,
 ) {
-  const accepting = workflowFeedbackEnabled(policy, 'issue-assignment');
+  const accepting = workflowFeedbackAccepting(policy, 'issue-assignment');
   if (accepting && state.admission?.enabled === false) {
     state.admission = {
       enabled: true,
