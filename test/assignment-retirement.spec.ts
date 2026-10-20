@@ -96,6 +96,47 @@ function setup() {
 }
 
 describe('assignment retirement', () => {
+  for (const shared of [false, true]) {
+    it(`should ${shared ? 'block' : 'complete'} unavailable-session retirement ${shared ? 'with' : 'without'} an active shared owner`, async () => {
+      const h = setup();
+      h.record.worktree = '/managed/issue';
+      h.fixture.item.state = 'closed';
+      h.fixture.policy.cleanup = { enabled: true, graceMinutes: 0 };
+      if (shared)
+        h.records.push({ ...h.record, id: 'active-peer', sourceThreadId: 'different-owner' });
+      let removals = 0;
+      await reconcile({
+        records: h.records,
+        admitted: h.admissions,
+        policy: {
+          policy: h.fixture.policy,
+          username: 'receiver',
+          digest: 'digest',
+          legacyDigest: 'legacy',
+        },
+        client: h.fixture.client,
+        owner: 'intake',
+        now: baseline,
+        save: async () => {},
+        fresh: async () => {},
+        observe: async () => ({ archived: false, idle: false, unavailableSession: 'not-found' }),
+        cleanup: async (_record, _intake, recheck) => {
+          await recheck();
+          removals++;
+          return { archived: false, unavailableSession: 'not-found', worktreeRemoved: true };
+        },
+      });
+      assert.equal(removals, shared ? 0 : 1);
+      assert.equal(Boolean(h.record.retired), !shared);
+      assert.equal(h.record.retirement?.archivedAt, undefined);
+      assert.equal(h.record.nativeInactive, undefined);
+      assert.deepEqual(h.record.retirement?.sessionUnavailableObserved, {
+        at: baseline,
+        session: 'not-found',
+      });
+      if (shared) assert.equal(h.record.retirement?.code, 'retirement-worktree-shared');
+    });
+  }
   for (const reason of ['issue-closed', 'assignment-removed', 'chat-archived'] as const) {
     it(`should preserve the ${reason} deadline across repeated observations and restart`, () => {
       const first = assignmentRetirement({

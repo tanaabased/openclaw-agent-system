@@ -43,6 +43,19 @@ export const retirementSchema = Type.Object(
     removalEventId: Type.Optional(text),
     eligibleAt: time,
     activityId: Type.Optional(text),
+    sessionUnavailableObserved: Type.Optional(
+      Type.Object(
+        {
+          at: time,
+          session: Type.Union([
+            Type.Literal('not-found'),
+            Type.Literal('identity-unresolved'),
+            Type.Literal('access-denied'),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     archivedAt: Type.Optional(time),
     archiveAttempt: Type.Optional(
       Type.Object({ at: time, turnId: text }, { additionalProperties: false }),

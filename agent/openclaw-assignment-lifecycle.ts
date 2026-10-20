@@ -6,7 +6,9 @@ import type { DispatchAuthority, DispatchRequest } from '../credentials/session-
 import type { AgentManifest } from '../manifest/types.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import observeUnavailableRetirementSession from './openclaw-retirement-unavailable.ts';
 import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
+import workflowFailure from './workflow-failure.ts';
 
 function retirementObject(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -126,6 +128,22 @@ export default async function reconcileOpenClawLifecycle(input: {
     )
       throw new Error('retirement-workflow-changed');
   };
+  const observe = async (request: DispatchRequest, record: OpenClawDispatchRecord) => {
+    try {
+      const observed = await observeRetiringSession(request, record, manifest.agent.id);
+      return observed && { ...observed, unavailableSession: undefined };
+    } catch (error) {
+      const unavailableSession = await observeUnavailableRetirementSession({
+        record,
+        agentId: manifest.agent.id,
+        owner,
+        request,
+        code: workflowFailure(error, 'retirement-native-observation-unavailable').code,
+      });
+      if (!unavailableSession) throw error;
+      return { row: undefined, archived: false, idle: false, unavailableSession };
+    }
+  };
   return current.journal.exclusive(async (state, save) => {
     await reconcileAssignmentLifecycle({
       records: state.records,
@@ -137,9 +155,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       fresh,
       save,
       observe: (record) =>
-        service.dependencies.credential.use(authority, (request) =>
-          observeRetiringSession(request, record, manifest.agent.id),
-        ),
+        service.dependencies.credential.use(authority, (request) => observe(request, record)),
       reactivate: async (record, intake) => {
         const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
         return reactivateAssignmentFeedback({
@@ -175,12 +191,12 @@ export default async function reconcileOpenClawLifecycle(input: {
             code: 'retirement-worktree-cleanup-unavailable',
           };
         return service.dependencies.credential.use(authority, async (request) => {
-          const observed = await observeRetiringSession(request, record, manifest.agent.id);
+          const observed = await observe(request, record);
           if (
             !observed ||
-            !observed.idle ||
-            observed.row.pinned === true ||
-            observed.row.key === owner
+            (!observed.idle && !observed.unavailableSession) ||
+            observed.row?.pinned === true ||
+            observed.row?.key === owner
           )
             throw new Error('retirement-native-resource-protected');
           const jobs = retirementObject(
@@ -190,8 +206,13 @@ export default async function reconcileOpenClawLifecycle(input: {
           if (!Array.isArray(jobs.jobs))
             throw new Error('retirement-automation-ownership-unavailable');
           for (const other of shared) {
-            const peer = await observeRetiringSession(request, other, manifest.agent.id);
-            if (!peer?.idle || peer.row.pinned === true || peer.row.key === owner)
+            const peer = await observe(request, other);
+            if (
+              !peer ||
+              (!peer.idle && !peer.unavailableSession) ||
+              peer.row?.pinned === true ||
+              peer.row?.key === owner
+            )
               throw new Error('retirement-native-resource-protected');
           }
           const owners = new Set(
@@ -261,26 +282,39 @@ export default async function reconcileOpenClawLifecycle(input: {
             await save();
           }
           await recheck();
-          if (!observed.archived) {
-            await request('sessions.patch', {
-              key: observed.row.key,
-              expectedSessionId: observed.row.sessionId,
-              ...(typeof observed.row.lifecycleRevision === 'string'
-                ? { expectedLifecycleRevision: observed.row.lifecycleRevision }
-                : {}),
-              archived: true,
-            });
-          }
-          const archived = await observeRetiringSession(request, record, manifest.agent.id);
-          if (!archived?.archived || !archived.idle)
-            throw new Error('retirement-archive-unverified');
-          record.retirement!.archivedAt ??= now;
-          await save();
-          for (const other of shared) {
-            const peer = await observeRetiringSession(request, other, manifest.agent.id);
-            if (!peer?.archived || !peer.idle)
-              return {
+          if (observed.unavailableSession) {
+            record.retirement!.sessionUnavailableObserved = {
+              at: now,
+              session: observed.unavailableSession,
+            };
+          } else {
+            if (!observed.archived) {
+              await request('sessions.patch', {
+                key: observed.row.key,
+                expectedSessionId: observed.row.sessionId,
+                ...(typeof observed.row.lifecycleRevision === 'string'
+                  ? { expectedLifecycleRevision: observed.row.lifecycleRevision }
+                  : {}),
                 archived: true,
+              });
+            }
+            const archived = await observe(request, record);
+            if (!archived?.archived || !archived.idle)
+              throw new Error('retirement-archive-unverified');
+            record.retirement!.archivedAt ??= now;
+          }
+          await save();
+          const settled = {
+            archived: !observed.unavailableSession,
+            ...(observed.unavailableSession
+              ? { unavailableSession: observed.unavailableSession }
+              : {}),
+          };
+          for (const other of shared) {
+            const peer = await observe(request, other);
+            if (!peer || (!peer.unavailableSession && (!peer.archived || !peer.idle)))
+              return {
+                ...settled,
                 worktreeRemoved: false,
                 code: 'retirement-shared-archive-pending',
               };
@@ -298,7 +332,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             record.retirement!.worktreeRemovedAt = now;
             await save();
           }
-          return { archived: true, worktreeRemoved: true };
+          return { ...settled, worktreeRemoved: true };
         });
       },
     });
