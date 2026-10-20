@@ -390,6 +390,7 @@ export default async function runCodexDelivery(
         { connect: async () => connected.client },
         signal,
         true,
+        record,
       );
       const policyDigest =
         previous?.binding.policyDigest ??

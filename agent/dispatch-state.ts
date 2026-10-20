@@ -9,7 +9,7 @@ import mergeStateSnapshot, {
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { retirementSchema } from './assignment-retirement.ts';
+import { assignmentObservationSchema, retirementSchema } from './assignment-retirement.ts';
 
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSummarySchema } from './assessment-summary-state.ts';
@@ -88,6 +88,7 @@ export const dispatchRecordProperties = {
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
   lifecycleCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  assignmentObservation: Type.Optional(assignmentObservationSchema),
   retirement: Type.Optional(retirementSchema),
   feedbackReactivation: Type.Optional(
     Type.Object(
