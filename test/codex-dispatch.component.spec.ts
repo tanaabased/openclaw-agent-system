@@ -317,6 +317,7 @@ describe('agent/codex-dispatch', () => {
       deps.feedbackConnect = async () =>
         ({
           comments: {
+            identity: fixture.client.identity,
             createIssueComment: async (_o: string, _n: string, _i: number, body: string) => {
               writes++;
               receipt = { nodeId: 'SUMMARY', databaseId: 900, body };
@@ -357,7 +358,13 @@ describe('agent/codex-dispatch', () => {
         );
         assert.equal((await summary({ operation: 'reconcile' })).status, 'published');
       }
-      assert.equal((await summary({ operation: 'compose' })).status, 'published');
+      const retained = await summary({ operation: 'compose' });
+      assert.equal(retained.status, 'published');
+      assert.ok(
+        String(retained.presentation).includes(
+          `[Plan assessment ↗](https://github.com/owner/repo/issues/3#issuecomment-900) by [@${fixture.client.identity.login}]`,
+        ),
+      );
       assert.equal(writes, 1);
       assert.deepEqual(
         (await request('context', { id: prepared.id }, child)).previousResult,
@@ -985,6 +992,13 @@ describe('agent/codex-dispatch', () => {
     const shown = await request('present', { id: prepared.id }, child);
     assert.equal(shown.status, 'presented');
     assert.equal(shown.presentation, recorded.presentation);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = await store.read();
+    const detailed = await request('present', { id: prepared.id, includeDetails: true }, child);
+    assert.equal(detailed.status, 'presented');
+    assert.ok(String(detailed.presentation).includes(result.progress.completed[0]!));
+    assert.deepEqual(await store.read(), before);
     await assert.rejects(
       request('present', { id: prepared.id }, { threadId: 'foreign' }),
       /caller-mismatch/,
@@ -2684,10 +2698,14 @@ describe('agent/codex-dispatch', () => {
 
   for (const mode of ['work', 'auto'] as const)
     it(`should hand ${mode} directly from assessment to implementation without a coordinator send`, async () => {
-      const assessment =
-        mode === 'auto'
-          ? { ...result, decision: { mode: 'work' as const, reasons: ['Ready.'] } }
-          : result;
+      const assessment = {
+        ...result,
+        fullAssessment:
+          'Internal rationale and alternatives. Preserve exact source and receipt ordering.',
+        reviewSummary:
+          'You would see the result immediately. Docs clarify it; tests cover the missing return.',
+        ...(mode === 'auto' ? { decision: { mode: 'work' as const, reasons: ['Ready.'] } } : {}),
+      };
       const work = await workIssue(assessment, 'Follow the plan.', 'company:implement', mode);
       native!.status = 'active';
       native!.turnStatus = 'inProgress';
@@ -2698,8 +2716,18 @@ describe('agent/codex-dispatch', () => {
         { threadId: native!.id },
       );
       assert.equal((recorded.handoff as { next: string }).next, 'implementation');
+      assert.ok(String(recorded.presentation).includes(assessment.reviewSummary));
+      assert.ok(!String(recorded.presentation).includes(assessment.fullAssessment));
+      const detailed = await request(
+        'present',
+        { id: work.id, includeDetails: true },
+        { threadId: native!.id },
+      );
+      assert.ok(String(detailed.presentation).includes(assessment.fullAssessment));
       const verified = await work.run('context', {}, true);
       assert.equal(verified.status, 'verified', JSON.stringify(verified));
+      assert.ok('assessment' in verified);
+      assert.deepEqual(verified.assessment, assessment);
       assert.equal(
         'implementation' in verified && verified.implementation?.skill.name,
         'company:implement',

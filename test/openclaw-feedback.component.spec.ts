@@ -600,7 +600,11 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(result.status, 'published');
     assert.equal(destination, 'item:3');
     assert.match(String(result.presentation), /Full private evidence/);
-    assert.match(String(result.presentation), /To.*operator/);
+    assert.match(
+      String(result.presentation),
+      /\[Reply ↗\]\(https:\/\/github.com\/owner\/repo\/issues\/3#issuecomment-99\) from \[@receiver\]/,
+    );
+    assert.ok(!String(result.presentation).includes('Reply published'));
     assert.equal(writes, 1);
     await action('publish', { digest });
     assert.equal(writes, 1);

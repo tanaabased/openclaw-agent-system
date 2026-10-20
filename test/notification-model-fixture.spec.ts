@@ -373,8 +373,18 @@ for (const scenario of [
         append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
         const nextResponse = await response(later);
         assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
-        if (scenario.id !== 'openclaw-pr')
-          assert.equal((await action(later, 'summary')).operation, 'compose');
+        assert.deepEqual(await action(later, 'present'), {
+          action: 'present',
+          id,
+          includeDetails: true,
+        });
+        append(later, 'detail-readback', {
+          status: 'presented',
+          presentation:
+            revised.result.fullAssessment +
+            ' Managed Git confirmed this worktree. Verified the managed worktree.',
+        });
+        assert.equal((await action(later, 'summary')).operation, 'compose');
       });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
@@ -430,17 +440,24 @@ for (const scenario of [
       const saved = await action(input, 'result');
       assert.equal(saved.id, id);
       assert.equal(saved.result.outcome, 'plan-ready');
-      append(input, 'result', {
-        status: 'recorded',
-        presentation: 'The complete retained presentation.',
-      });
+      const presentation = saved.result.reviewSummary ?? 'The complete retained presentation.';
+      append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
-      assert.equal(
-        'content' in nextResponse && nextResponse.content,
-        'The complete retained presentation.',
-      );
-      if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id))
+      assert.equal('content' in nextResponse && nextResponse.content, presentation);
+      if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
+        assert.deepEqual(await action(input, 'present'), {
+          action: 'present',
+          id,
+          includeDetails: true,
+        });
+        append(input, 'detail-readback', {
+          status: 'presented',
+          presentation:
+            saved.result.fullAssessment +
+            ' Managed Git confirmed this worktree. Verified the managed worktree.',
+        });
         assert.equal((await action(input, 'summary')).operation, 'compose');
+      }
       for (const value of [
         { ...context, runtime: 'codex' },
         { ...context, id: 'c'.repeat(64) },

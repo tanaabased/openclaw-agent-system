@@ -855,7 +855,12 @@ describe('agent/codex-delivery', () => {
       1,
     );
     const presented = await request('present');
-    assert.match(String(presented.presentation), /Issue link verified after retry/);
+    assert.doesNotMatch(String(presented.presentation), /Issue link verified after retry/);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
+    assert.match(
+      String((await request('present')).presentation),
+      /Issue link verified after retry/,
+    );
     assert.match(String(presented.presentation), /PR attachment needs a check/);
     assert.equal(creates, 1);
   });

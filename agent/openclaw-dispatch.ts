@@ -1778,7 +1778,7 @@ export default class OpenClawDispatch {
                     client,
                   );
                   if (!provider) throw new Error('assessment-summary-provider-unavailable');
-                  return { client: provider };
+                  return { client: provider, authorLogin: provider.identity.login };
                 },
               });
             }
@@ -2047,6 +2047,7 @@ export default class OpenClawDispatch {
                 id: record.id,
                 presentation: assessmentPresentation(record.result, record, intake, workspace, {
                   debug: manifest.debug,
+                  includeDetails: action.includeDetails,
                 }),
                 instructions:
                   'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',

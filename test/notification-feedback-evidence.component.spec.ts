@@ -21,7 +21,8 @@ for (const [scenario, itemType] of [
         role: 'assistant',
         __openclaw: { runId: 'current' },
         stopReason: 'stop',
-        content: 'Private explanation. Public answer. Reply published',
+        content:
+          'Private explanation. Public answer.\n> *[Reply ↗](https://github.com/owner/repo/issues/3#issuecomment-99) from [@tanaabot](https://github.com/tanaabot)*',
       };
       const write = (name: string, value: unknown) =>
         writeFile(join(root, `notification-${name}.json`), JSON.stringify(value));
@@ -63,6 +64,7 @@ for (const [scenario, itemType] of [
           },
           {
             node_id: 'reply',
+            html_url: 'https://github.com/owner/repo/issues/3#issuecomment-99',
             user: { login: 'tanaabot' },
             body: 'Public answer.',
           },

@@ -9,7 +9,6 @@ models:
 github:
   username: example-agent
   notifications:
-    schema-version: 2
     allowed-repository-owners:
       - login: example-owner
         node-id: O_example
