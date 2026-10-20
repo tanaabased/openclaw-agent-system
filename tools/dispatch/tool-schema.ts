@@ -35,7 +35,7 @@ export const dispatchParameters = Type.Union([
   object({ action: Type.Literal('start'), id }),
   object({ action: Type.Literal('assess'), id }),
   object({ action: Type.Literal('context'), id }),
-  object({ action: Type.Literal('present'), id }),
+  object({ action: Type.Literal('present'), id, includeDetails: Type.Optional(Type.Boolean()) }),
   object({ action: Type.Literal('summary'), id, ...assessmentSummaryRequestProperties }),
   object({
     action: Type.Literal('handoff'),

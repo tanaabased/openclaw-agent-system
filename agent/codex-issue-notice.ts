@@ -1,3 +1,4 @@
+import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import {
@@ -28,18 +29,8 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
-  if (code.startsWith('retirement-'))
-    return {
-      severity: 'warning',
-      title: 'Retirement cleanup needs attention',
-      summary: 'Automatic retirement could not finish. The retained resources remain protected.',
-      next:
-        code === 'retirement-worktree-shared'
-          ? 'Inspect the other native chats using this worktree. Preserve independent or running work; intake will retry after the ownership blocker clears.'
-          : code === 'retirement-worktree-dirty' || code === 'retirement-worktree-unpreserved'
-            ? 'Preserve the checkout changes and commits before cleanup. Intake will retry after the preservation check succeeds.'
-            : 'Inspect the retained retirement diagnostic and native resource state. Reconcile uncertain archive results; do not force removal or repeat a denied operation.',
-    };
+  const retirement = code.startsWith('retirement-') ? retirementNotice(code) : undefined;
+  if (retirement) return retirement;
   if (code === 'intake-manifest-unavailable')
     return {
       severity: 'error',

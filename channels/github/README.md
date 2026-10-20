@@ -7,7 +7,8 @@ linked PR. Standalone Codex additionally supports declared automatic implementat
 
 ## Configuration
 
-Use `github.notifications.schema-version: 2` in `agent.yaml`. Declare the runtime,
+In `agent.yaml`, omit `github.notifications.schema-version` or set it to numeric
+`2` (the default and only supported value). Declare the runtime,
 pinned repository owners, and allowed assignment actors explicitly. For OpenClaw,
 use the default assessment skill; omitted mode defaults to Auto, Plan stops after
 assessment, Work continues an actionable plan, and Auto chooses Plan or Work. See the

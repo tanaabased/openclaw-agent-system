@@ -1,5 +1,7 @@
 /** one occurrence owns its deadline; completed checkpoints outlive the request signal. */
 export default class DiscoveryBudget {
+  operation = 'discovery';
+  completed = 0;
   readonly signal: AbortSignal;
   readonly deadline: number;
   constructor(
@@ -15,6 +17,11 @@ export default class DiscoveryBudget {
   }
   check() {
     if (this.exhausted) throw new DiscoveryPaused();
+  }
+  async read<T>(operation: string, read: () => Promise<T>) {
+    this.operation = operation;
+    this.check();
+    return read();
   }
 }
 

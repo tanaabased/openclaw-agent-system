@@ -8,6 +8,50 @@ function state(): OpenClawDispatchState {
 }
 
 describe('agent/openclaw-intake-report', () => {
+  it('should keep retirement progress quiet and report real blockers once', () => {
+    const journal = state();
+    const record = {
+      id: 'a'.repeat(64),
+      intakeId: 'b'.repeat(64),
+      phase: 'complete',
+      retirement: {
+        reason: 'issue-closed',
+        at: 1,
+        checkedAt: 1,
+        eligibleAt: 1,
+        intakeId: 'b'.repeat(64),
+        code: 'retirement-shared-archive-pending',
+      },
+    } as OpenClawDispatchState['records'][number];
+    journal.records.push(record);
+    const input = {
+      state: journal,
+      slots: 3,
+      observation: { status: 'ready' as const, changed: false },
+    };
+    const progress = openclawIntakeReport(input);
+    assert.equal(progress.changed, false);
+    assert.deepEqual(progress.problems, []);
+    assert.match(progress.response, /No action is needed/);
+    journal.intakeReport = { ...progress, runId: 'progress' };
+    record.retirement!.code = 'retirement-session-identity-unresolved';
+    const blocked = openclawIntakeReport(input);
+    assert.equal(blocked.changed, true);
+    assert.match(blocked.response, /session receipt/);
+    journal.intakeReport = { ...blocked, runId: 'blocked' };
+    assert.equal(openclawIntakeReport(input).changed, false);
+    record.retirement!.code = 'retirement-shared-archive-pending';
+    const cleared = openclawIntakeReport(input);
+    assert.equal(cleared.changed, true);
+    assert.match(cleared.response, /Retirement blocker cleared/);
+    journal.intakeReport = { ...cleared, runId: 'cleared' };
+    record.retired = { at: 2, by: 'owner' };
+    const complete = openclawIntakeReport(input);
+    assert.equal(complete.changed, false);
+    assert.match(complete.response, /Retirement pending:\*\* 0/);
+    assert.doesNotMatch(complete.response, /Intake resumed/);
+  });
+
   it('should report deferred assignments as item failures and recognize their recovery', () => {
     const journal = state();
     const intake = {

@@ -17,8 +17,7 @@ export default function liveWorkflowPolicy(
       : undefined;
   if (effect !== 'assignment') return;
   if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
-  if (!policy.issueAssignment || policy.issueAssignment.enabled === false)
-    return 'issue-workflow-disabled';
+  if (!policy.issueAssignment) return 'issue-workflow-disabled';
   if (
     !policy.allowedRepositoryOwners.some((owner) =>
       githubIdentityMatches(owner, intake.repository.owner),

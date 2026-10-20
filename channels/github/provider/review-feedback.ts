@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import { GitHubWorkEventClientError } from './work-event-api-client.ts';
-import { githubNotificationMarkdownText, githubNotificationQuote } from '../presentation/card.ts';
+import { githubCommentCard } from '../presentation/comment.ts';
+import { githubNotificationMarkdownText } from '../presentation/card.ts';
 import {
   admitGitHubComment,
   type GitHubCanonicalIssueComment,
@@ -256,18 +257,24 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
   const { review, receipt } = comment.feedback;
   const context = reviewFeedbackContext(comment);
   const sourceUrl = receipt.kind === 'review' ? review.url : context.findings[0]!.url;
-  const lines = [
-    `## 💬 From [@${githubNotificationMarkdownText(comment.author!.login)}](https://github.com/${encodeURIComponent(comment.author!.login)})`,
-  ];
+  const lines: string[] = [];
   if (receipt.kind === 'review')
     lines.push(
       `Review summary${receipt.summarySelected ? '' : ' (unchanged context)'}:\n${review.body || '(empty summary)'}`,
     );
   for (const finding of context.findings) {
     lines.push(
-      `[${githubNotificationMarkdownText(finding.path)} ↗](${finding.url}) · reviewed commit \`${finding.originalCommitId.slice(0, 7)}\`\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n\n${finding.body}\n\n${reviewDiffPreview(finding)}`,
+      `${finding.body}\n\n[${githubNotificationMarkdownText(finding.path)} ↗](${finding.url}) · reviewed commit \`${finding.originalCommitId.slice(0, 7)}\`\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n\n${reviewDiffPreview(finding)}`,
     );
   }
-  lines.push(`[View ${receipt.kind === 'review' ? 'review' : 'comment'} ↗](${sourceUrl})`);
-  return githubNotificationQuote(lines.join('\n\n'));
+  return githubCommentCard({
+    body: lines.join('\n\n'),
+    author: {
+      label: comment.author!.login,
+      url: `https://github.com/${encodeURIComponent(comment.author!.login)}`,
+    },
+    label: 'Review comment',
+    connector: 'from',
+    publication: { url: sourceUrl },
+  });
 }

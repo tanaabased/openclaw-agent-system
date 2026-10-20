@@ -602,7 +602,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(saved.reconciled, true);
     assert.equal(saved.announcement!.attempted, true);
     assert.equal(saved.announcement!.receipt, undefined);
-    assert.match(String((await request('present')).presentation), /announcement pending/);
+    assert.match(String((await request('present')).presentation), /announcement unconfirmed/);
     announcement.lost = false;
     assert.equal((await request('announce')).status, 'announced');
     assert.equal(announcement.posts, 1);
@@ -855,7 +855,12 @@ describe('agent/codex-delivery', () => {
       1,
     );
     const presented = await request('present');
-    assert.match(String(presented.presentation), /Issue link verified after retry/);
+    assert.doesNotMatch(String(presented.presentation), /Issue link verified after retry/);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
+    assert.match(
+      String((await request('present')).presentation),
+      /Issue link verified after retry/,
+    );
     assert.match(String(presented.presentation), /PR attachment needs a check/);
     assert.equal(creates, 1);
   });
@@ -1151,7 +1156,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
   });
-  it('should update only a known ancestor on the same pr and reject unrelated remote heads', async () => {
+  it('should update the same pr when collaborator work is incorporated', async () => {
     await publish();
     const operationId = (await store.read()).records[0]!.delivery!.id;
     head = 'b'.repeat(40);
@@ -1164,7 +1169,10 @@ describe('agent/codex-delivery', () => {
       ),
     );
     remote = 'c'.repeat(40);
-    await assert.rejects(publish(), /remote-head-diverged/);
+    pr!.headSha = remote;
+    await publish();
+    assert.equal(remote, head);
+    assert.equal(creates, 1);
   });
   for (const interruption of ['before', 'after'] as const)
     it(`should recover metadata updates interrupted ${interruption} the provider write`, async () => {

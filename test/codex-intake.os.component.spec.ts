@@ -351,7 +351,7 @@ describe('agent/codex-intake', () => {
     }
   });
 
-  it('should reject disabled and stale scans and retain progress through explicit reactivation', async () => {
+  it('should finish an accepted scan across pause and deduplicate after resume', async () => {
     const fixture = intakeFixture();
     fixture.events[0]!.createdAt = new Date(baseline - 1000).toISOString();
     const deps = {
@@ -373,31 +373,18 @@ describe('agent/codex-intake', () => {
         return fixture.client;
       },
     });
-    assert.ok('code' in raced);
-    assert.equal(raced.code, 'intake-policy-disabled');
+    assert.ok('admitted' in raced);
+    assert.equal(raced.admitted, 1);
     const stopped = await inspectCodexIntake(pluginData, deps);
     assert.equal(stopped.baselineAt, before.baselineAt);
-    assert.equal(stopped.checkpoint, before.checkpoint);
-    assert.deepEqual(stopped.records, before.records);
-    const noCredentials = {
-      ...deps,
-      connect: async () => {
-        throw new Error('must not authenticate');
-      },
-    };
-    await assert.rejects(runCodexIntake(pluginData, true, noCredentials), {
-      code: 'intake-policy-disabled',
-    });
-    const idle = await runCodexIntake(pluginData, false, noCredentials);
-    assert.ok('code' in idle);
-    assert.equal(idle.code, 'intake-policy-disabled');
+    assert.equal(stopped.records?.length, 1);
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     const resumed = await runCodexIntake(pluginData, true, {
       ...deps,
       now: () => baseline + 120000,
     });
     assert.ok('admitted' in resumed);
-    assert.equal(resumed.admitted, 1);
+    assert.equal(resumed.admitted, 0);
     const repeated = await runCodexIntake(pluginData, false, {
       ...deps,
       now: () => baseline + 180000,
@@ -624,7 +611,7 @@ describe('agent/codex-intake', () => {
     });
     await assert.rejects(
       inspectCodexDispatchActivation(pluginData, deps),
-      /dispatch-activation-required/,
+      /intake-automation-paused/,
     );
     await saveNative({ ...prepared.request, prompt: 'Previously authorized intake only.' });
     await assert.rejects(
@@ -700,7 +687,9 @@ describe('agent/codex-intake', () => {
     const retained = await inspectCodexIntake(pluginData, { codexHome });
     assert.equal(
       retained.code,
-      disable === 'manifest corruption' ? 'intake-manifest-unavailable' : 'intake-policy-disabled',
+      disable === 'manifest corruption'
+        ? 'intake-manifest-unavailable'
+        : 'intake-automation-paused',
     );
     assert.equal(retained.baselineAt, baseline);
     assert.equal(retained.checkpoint, baseline);
@@ -740,7 +729,7 @@ describe('agent/codex-intake', () => {
       },
     });
     assert.ok('code' in stale);
-    assert.equal(stale.code, 'intake-automation-update-required');
+    assert.equal(stale.code, 'intake-automation-paused');
     const reenable = await plan();
     assert.equal(reenable.actions[0]!.id, nativeId);
     const resume = await prepareCodexAutomation(pluginData, reenable.digest, {}, deps);
@@ -792,8 +781,8 @@ describe('agent/codex-intake', () => {
     assert.equal(codexIntakePolicy(value)!.digest, originalDigest);
     assert.deepEqual(codexIntakeJobs(value), [job]);
     policy.issueAssignment!.enabled = false;
-    assert.equal(codexIntakeJobs({ ...value, models: undefined }).length, 0);
-    assert.equal(codexIntakePolicy(value), undefined);
+    assert.equal(codexIntakeJobs(value)[0]!.enabled, false);
+    assert.equal(codexIntakePolicy(value)!.digest, originalDigest);
     policy.issueAssignment!.enabled = true;
     assert.equal(codexIntakeJobs(value).length, 1);
     assert.throws(() => codexIntakeJobs({ ...value, automations: [job] }), {

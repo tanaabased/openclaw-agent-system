@@ -1,12 +1,14 @@
 # OpenClaw PR Delivery and Feedback Example
 
-Assign one disposable issue, retain its plan, and use an authenticated operator follow-up to implement it and deliver a linked PR in the same chat and worktree. Implement one approved PR conversation comment in the existing implementation stage, then verify the same PR head, exact publication, and no duplicate reply after another scan. Issue-comment coverage belongs to `openclaw-issue`; installed review-thread coverage is deferred to the OpenClaw review flow.
+Assign one disposable issue, retain its plan, and use an authenticated operator follow-up to implement it and deliver a linked PR in the same chat and worktree. Implement one approved PR conversation comment in the existing implementation stage, after incorporating a disposable collaborator commit, then verify the same PR head, exact publication, and no duplicate reply after another scan. Issue-comment coverage belongs to `openclaw-issue`; installed review-thread coverage is deferred to the OpenClaw review flow.
 
 Each manual refresh admits only this example’s issue, then asks the existing native coordinator to advance retained work. The 24-hour recurring interval keeps scheduled discovery outside the bounded CI run; the examples still run in parallel.
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. Native tool context establishes operator identity; transcript receipts bind the exact input without requiring a duplicated owner flag in history. Operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device keeps `operator.read` and `operator.write`. EMORI creates the issue and posts the feedback comment. Only Tanaabot receives issue and PR assignments; EMORI has a production OpenClaw instance. CI owns the disposable workspaces, issue, PR, branch, and SSH key and cleans up only those resources.
 
 An operator follow-up implements the retained plan and publishes its linked PR in the same turn. A second follow-up adds a commit and updates the existing PR title and body while retaining its announcement. A final follow-up recovers the saved plan and complete PR card despite uncommitted edits, before approved PR feedback is implemented. Mode changes, interrupted decisions, and clarification/resumption are covered by `openclaw-progression`.
+
+The provider fixture delays only the registered PR’s incremental comment read beyond the installed discovery deadline. Three bounded checks must retain an empty PR read checkpoint and a named obstacle; coordinator recovery then consumes the real GitHub comment once. Detailed timing and pagination permutations remain in source tests.
 
 This scenario retains one coordinator key. Replacement-key recovery has component coverage for assessment and implementation: the current coordinator resumes the same issue, preserves its original creation evidence, and sends no duplicate turns after restart. Native replacement verification must also confirm that the automation resolves the replacement key; do not edit private journals to simulate that result.
 
@@ -44,8 +46,13 @@ cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-pr/
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
-# should start the isolated gateway
-OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+# should start the isolated gateway with a controlled forwarding github provider
+mkdir -p "$TMPDIR/pr-provider"
+node --input-type=module -e 'import assert from "node:assert/strict"; import {writeFileSync} from "node:fs"; assert.equal(process.env.GITHUB_ACTIONS,"true"); writeFileSync(process.env.TMPDIR+"/pr-provider/control.json",JSON.stringify({ci:true,executable:process.argv[1],paused:false}));' "$(command -v gh)"
+cp "$GITHUB_WORKSPACE/examples/openclaw-pr/provider-fixture.mjs" "$TMPDIR/pr-provider/gh"
+chmod 755 "$TMPDIR/pr-provider/gh"
+# preserve the fixture ahead of system gh when openclaw bootstraps its cli path
+PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 
 # should install emori in its fixture workspace
 set -o pipefail
@@ -185,16 +192,39 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
 # should implement one approved pr comment in the owning issue chat
+set -o pipefail
+feedback_diagnostics() {
+  feedback_status=$?
+  if test "$feedback_status" -ne 0; then
+    jq -es '[.[].records[] | {id,phase,feedbackCode:.feedback.code,discoveryPending:.feedback.discoveryPending,stalls:.feedback.discoveryStalls,checkpoints:(.feedback.discovery // {} | with_entries(.value |= {startedAt,reads:(.reads | keys)}))}]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2 || true
+    if test -f "$TMPDIR/pr-provider/reads.jsonl"; then
+      tail -n 12 "$TMPDIR/pr-provider/reads.jsonl" >&2
+    else
+      echo 'the controlled pr comment read was not reached' >&2
+    fi
+  fi
+  exit "$feedback_status"
+}
+trap feedback_diagnostics EXIT
 test -f "$TMPDIR/notification-activation-ready"
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 # remove only the uncommitted readme line created by the preceding scenario
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.argv[1]; const text=readFileSync(p,"utf8"); const suffix="Uncommitted follow-up work.\n"; if(!text.endsWith(suffix)) throw new Error("fixture line missing"); writeFileSync(p,text.slice(0,-suffix.length));' "$worktree/README.md"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/emori"
 number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-bucket/contents/collaborator-$number.txt" -f message="preserve disposable collaborator evidence" -f branch="$branch" -f content=Q29sbGFib3JhdG9yIHdvcmsuCg== > "$TMPDIR/notification-collaborator.json"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
-run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.endpoint="repos/tanaabased/big-test-bucket/issues/"+process.argv[1]+"/comments"; control.paused=true; writeFileSync(p,JSON.stringify(control));' "$number"
+for poll in 1 2 3; do
+  PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.status == "completed"'
+done
+jq -s -e 'length == 3 and all(.[]; .paused and .operation == "comments:1")' "$TMPDIR/pr-provider/reads.jsonl"
+jq -es --arg pr "$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" 'all(.[].records[]; .feedback.discoveryPending and .feedback.code == "feedback-discovery-no-progress" and .feedback.discoveryStalls[$pr].operation == "comments:1" and (.feedback.discovery[$pr].reads | length) == 0 and (.feedback.events | length) == 0)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.paused=false; writeFileSync(p,JSON.stringify(control));'
+run_id=$(openclaw agent-system automations run github-issue-assignment --json | jq -er 'select(.status == "queued") | .runId')
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
 jq -es '[.[].records[] | {id,phase,blocker,feedbackCode:.feedback.code,discoveryPending:.feedback.discoveryPending,events:[.feedback.events[]? | {sourceId,phase,code,policyHeld,turnStatus:.turn.status}]}]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -es 'all(.[].records[]; .work.turn.status == "completed")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one feedback turn required; inspect retained dispatch feedback state") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
@@ -205,6 +235,8 @@ jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner r
 jq -e --slurp '.[1].progression.workOwner == .[1].feedback.events[0].id and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].work.result == .[1].work.result and .[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest and .[0].work.delivery.announcement == .[1].work.delivery.announcement and .[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .phase == "published" and .work.result.outcome == "done" and .work.head == .workDelivery.pushedHead and .itemType == "pull-request" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-recovered.json" "$TMPDIR/notification-feedback.json"
 openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .feedback.events[0].work.head "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
+git -C "$worktree" merge-base --is-ancestor "$(jq -er .commit.sha "$TMPDIR/notification-collaborator.json")" HEAD
+git -C "$worktree" show "HEAD:collaborator-$number.txt" | grep -F 'Collaborator work.'
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan
@@ -212,7 +244,7 @@ test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
 number=$(jq -er .feedback.events[0].number "$TMPDIR/notification-feedback.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-feedback-replies.json"
-node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,1); const event=record.feedback.events[0]; assert.equal(event.itemType,"pull-request"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const found=replies.filter(c=>c.node_id===event.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(event.result.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(event.result.privateText)); assert.ok(text.includes(event.result.publicText)); assert.ok(text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot").length,1);'
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,1); const event=record.feedback.events[0]; assert.equal(event.itemType,"pull-request"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const found=replies.filter(c=>c.node_id===event.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(event.result.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(event.result.privateText)); assert.ok(text.includes(event.result.publicText)); assert.ok(text.includes("[Reply ↗]("+found[0].html_url+") from [@tanaabot](https://github.com/tanaabot)")); assert.ok(!text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot").length,1);'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]] | length == 1 and (.[0].feedback.events | length) == 1 and all(.[0].feedback.events[]; .turn.status == "completed" and .phase == "published")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json

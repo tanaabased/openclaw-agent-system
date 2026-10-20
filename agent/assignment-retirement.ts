@@ -47,6 +47,18 @@ export const retirementSchema = Type.Object(
     archiveAttempt: Type.Optional(
       Type.Object({ at: time, turnId: text }, { additionalProperties: false }),
     ),
+    worktreeRemovalObserved: Type.Optional(
+      Type.Object(
+        {
+          at: time,
+          source: Type.Union([
+            Type.Literal('retirement-attempt'),
+            Type.Literal('external-cleanup'),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     worktreeRemovedAt: Type.Optional(time),
     worktreeRemovalAttemptedAt: Type.Optional(time),
     code: Type.Optional(text),

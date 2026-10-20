@@ -44,7 +44,7 @@ import { githubNotificationCommentPresentation } from '../channels/github/presen
 import feedbackResponse, {
   feedbackReplyPresentation,
 } from '../channels/github/presentation/feedback-response.ts';
-import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
+import publicResponse from './public-response.ts';
 import { githubNotificationAttributedReplyText } from '../channels/github/publication/publication-contract.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 
@@ -270,7 +270,7 @@ export default async function openClawFeedback(input: {
       selection: event.composition,
       workspace: input.workspace,
       debug: input.debug,
-      ...(body ? { publicReply: { recipient: source.author!.login, text: body } } : {}),
+      ...(body ? { publicReply: { author: provider.identity.login, text: body } } : {}),
       publication,
     });
   if (action.operation !== 'reconcile') {
@@ -321,7 +321,7 @@ export default async function openClawFeedback(input: {
         event.receipt && event.result?.publicText
           ? presentation(
               {
-                url: `${destination.split('#')[0]}#${root ? 'discussion_r' : 'issuecomment-'}${event.receipt.databaseId}`,
+                url: `${destination.split('#')[0]}#${root ? 'discussion_r' : 'issuecomment-'}${event.receipt!.databaseId}`,
               },
               githubNotificationAttributedReplyText(
                 event.result.publicText,
@@ -630,7 +630,7 @@ export default async function openClawFeedback(input: {
       body,
       destination,
       presentation:
-        feedbackReplyPresentation(source.author!.login, body) +
+        feedbackReplyPresentation(provider.identity.login, body) +
         `\n\n[Reply destination ↗](${destination})`,
       instruction:
         'Inspect this exact reply and destination. The activated feedback policy authorizes this routine reply; call operation publish with the digest through native approval. A denial stops publication. Never substitute another route.',
@@ -639,35 +639,6 @@ export default async function openClawFeedback(input: {
     throw new Error('feedback-publication-stale');
   if (action.operation === 'reconcile' && !event.publicationAttempted)
     throw new Error('feedback-publication-unattempted');
-  const publisher = new GitHubNotificationCommentPublisher({
-    beforeCreate: async () => {
-      event.publicationAttempted = true;
-      await save();
-    },
-    onCreateRejected: async () => {
-      event.publicationAttempted = false;
-      await save();
-    },
-    redactText: redactFeedback,
-    authorize: async () => {
-      await input.reauthorize?.();
-      await authorizeFeedback(input);
-      await select();
-      return { authorized: true };
-    },
-    connect: async () => ({
-      commenterLogin: source.author!.login,
-      client: root
-        ? {
-            createIssueComment: (o, n, number, text) =>
-              provider.replies.create(o, n, number, root, text),
-            findOwnIssueComment: (o, n, number, marker) =>
-              provider.replies.find(o, n, number, root, marker),
-          }
-        : provider,
-    }),
-    exclusive: async (_key, run) => run(),
-  });
   const publication = {
     intent: 'github-reply' as const,
     item: {
@@ -680,19 +651,45 @@ export default async function openClawFeedback(input: {
     source: { commentDatabaseId: source.databaseId, revisionId: event.revision },
     text: event.result.publicText,
   };
-  if (event.publicationAttempted) {
-    const found = await publisher.reconcile(publication);
-    if (!found)
-      return {
-        status: 'uncertain',
-        code: 'feedback-publication-unconfirmed',
-        presentation: presentation({ withheld: 'feedback-publication-unconfirmed' }),
-      };
-    event.receipt = { nodeId: found.receipt.nodeId, databaseId: found.receipt.databaseId };
-  } else {
-    const receipt = (await publisher.publish(publication)).receipt;
-    event.receipt = { nodeId: receipt.nodeId, databaseId: receipt.databaseId };
-  }
+  const published = await publicResponse({
+    publication,
+    attempted: Boolean(event.publicationAttempted),
+    receipt: event.receipt,
+    setAttempted: (attempted) => {
+      event.publicationAttempted = attempted;
+    },
+    setReceipt: (receipt) => {
+      event.receipt = receipt;
+    },
+    save,
+    dependencies: {
+      redactText: redactFeedback,
+      authorize: async () => {
+        await input.reauthorize?.();
+        await authorizeFeedback(input);
+        await select();
+        return { authorized: true };
+      },
+      connect: async () => ({
+        commenterLogin: source.author!.login,
+        client: root
+          ? {
+              createIssueComment: (o, n, number, text) =>
+                provider.replies.create(o, n, number, root, text),
+              findOwnIssueComment: (o, n, number, marker) =>
+                provider.replies.find(o, n, number, root, marker),
+            }
+          : provider,
+      }),
+      exclusive: async (_key, run) => run(),
+    },
+  });
+  if (published.status !== 'published')
+    return {
+      status: 'uncertain',
+      code: 'feedback-publication-unconfirmed',
+      presentation: presentation({ withheld: 'feedback-publication-unconfirmed' }, body),
+    };
   event.phase = 'published';
   delete event.code;
   delete event.retry;
@@ -706,7 +703,7 @@ export default async function openClawFeedback(input: {
     receipt: event.receipt,
     presentation: presentation(
       {
-        url: `${destination.split('#')[0]}#${root ? 'discussion_r' : 'issuecomment-'}${event.receipt.databaseId}`,
+        url: `${destination.split('#')[0]}#${root ? 'discussion_r' : 'issuecomment-'}${event.receipt!.databaseId}`,
       },
       body,
     ),

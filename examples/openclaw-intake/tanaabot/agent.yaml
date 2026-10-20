@@ -28,7 +28,6 @@ github:
     path: keys/id_ed25519.pub
     title: agent-system-intake-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__
   notifications:
-    schema-version: 2
     runtimes: [openclaw]
     interval-minutes: 1440
     cleanup:

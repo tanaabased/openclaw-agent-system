@@ -20,7 +20,7 @@ export const openclawIntakePassSchema = Type.Object(
 export type OpenClawIntakePass = Static<typeof openclawIntakePassSchema>;
 
 export function sameIntakeRun(
-  pass: OpenClawIntakePass,
+  pass: Pick<OpenClawIntakePass, 'sessionKey' | 'sessionId' | 'runId'>,
   caller: { sessionKey: string; sessionId: string; runId: string },
 ) {
   return (

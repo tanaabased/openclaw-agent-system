@@ -57,6 +57,7 @@ describe('agent/delivery-announcement', () => {
         },
       },
       authorId: 'U_agent',
+      authorLogin: 'posting-agent',
       client: {
         async findOwnIssueComment(owner, name, number, marker) {
           reads++;
@@ -257,7 +258,27 @@ describe('agent/delivery-announcement', () => {
     );
     assert.match(pending, /announcement pending/);
     assert.match(pending, /Keeps the issue/);
+    assert.match(preview.presentation!, /PR announcement draft by \[@posting-agent\]/);
+    assert.ok(!preview.presentation!.includes('#issuecomment-'));
     await run('announce', { digest: preview.digest });
+    const confirmed = announcementPresentation(
+      delivery.announcement,
+      'https://github.com/owner/repo/issues/3',
+    );
+    assert.ok(confirmed.includes(delivery.announcement!.publicText!.split('\n')[0]!));
+    assert.ok(
+      confirmed.includes(
+        '[PR announcement ↗](https://github.com/owner/repo/issues/3#issuecomment-1) by [@posting-agent]',
+      ),
+    );
+    assert.ok(!confirmed.includes('announcement published'));
+    delete delivery.announcement!.authorLogin;
+    assert.ok(
+      announcementPresentation(
+        delivery.announcement,
+        'https://github.com/owner/repo/issues/3',
+      ).includes('by author unavailable*'),
+    );
     assert.match(
       announcementPresentation(delivery.announcement, 'https://github.com/owner/repo/issues/3'),
       /#issuecomment-1/,

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { stringify } from 'yaml';
 
+import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import {
   githubNotificationRuntimeBlocker,
   githubNotificationRuntimeDiagnostics,
@@ -31,8 +32,116 @@ function parsed(notifications: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
+  for (const version of [undefined, 2])
+    it(`should normalize pause aliases and reject contradictions with ${version ?? 'omitted'} notification version`, () => {
+      const currentPolicy = { ...policy, 'schema-version': version };
+      for (const key of ['issue-assignment', 'review-request'] as const) {
+        const decoded = key === 'issue-assignment' ? 'issueAssignment' : 'reviewRequest';
+        for (const paused of [true, false]) {
+          for (const declaration of [
+            { paused },
+            { enabled: !paused },
+            { paused, enabled: !paused },
+          ]) {
+            const result = parse({ ...currentPolicy, [key]: declaration });
+            assert.ok(result.status === 'valid');
+            assert.equal(result.manifest.github!.notifications![decoded]!.paused, paused);
+            assert.equal(result.manifest.github!.notifications![decoded]!.enabled, undefined);
+            const diagnostic = result.diagnostics.find(
+              ({ code }) => code === 'github-notification-enabled-deprecated',
+            );
+            assert.equal(Boolean(diagnostic), 'enabled' in declaration);
+            if (diagnostic) {
+              assert.equal(diagnostic.severity, 'warning');
+              assert.equal(diagnostic.fieldPath, `/github/notifications/${key}/enabled`);
+              assert.ok(diagnostic.message.includes(`paused: ${paused}`));
+            }
+          }
+          const conflict = parse({ ...currentPolicy, [key]: { paused, enabled: paused } });
+          assert.equal(conflict.status, 'invalid');
+          assert.ok(
+            conflict.diagnostics.some(({ code }) => code === 'github-notification-pause-conflict'),
+          );
+        }
+        for (const paused of ['true', 0, null])
+          assert.equal(parse({ ...currentPolicy, [key]: { paused } }).status, 'invalid');
+      }
+    });
+
+  it('should normalize omitted and explicit notification versions without authority drift', () => {
+    for (const runtimes of [['openclaw'], ['codex'], ['openclaw', 'codex']]) {
+      const unversioned = {
+        'allowed-repository-owners': [owner],
+        runtimes,
+        'issue-assignment': { allowed: [actor], mode: 'plan', feedback: true },
+      };
+      const omitted = parsed(unversioned);
+      const explicit = parsed({ ...unversioned, 'schema-version': 2 });
+      assert.equal(omitted.schemaVersion, 2);
+      assert.deepEqual(omitted, explicit);
+      assert.equal(notificationAuthorityDigest(omitted), notificationAuthorityDigest(explicit));
+    }
+    const absent = parse(undefined);
+    assert.ok(absent.status === 'valid');
+    assert.equal(absent.manifest.github?.notifications, undefined);
+  });
+
+  it('should reject every unsupported explicit notification version', () => {
+    for (const version of [1, 0, 3, 2.5, '2', null, false, [], {}]) {
+      const result = parse({ ...policy, 'schema-version': version });
+      assert.equal(result.status, 'invalid', JSON.stringify(version));
+      assert.ok(
+        result.diagnostics.some(
+          ({ code }) =>
+            code === (version === 1 ? 'github-notification-v1-retired' : 'manifest-schema'),
+        ),
+      );
+    }
+  });
+
+  it('should diagnose missing current policy fields without classifying omission as v1', () => {
+    for (const current of [{}, { 'issue-assignment': { allowed: [actor] } }]) {
+      const result = parse(current);
+      assert.equal(result.status, 'invalid');
+      assert.ok(
+        result.diagnostics.some(
+          ({ code, fieldPath }) =>
+            code === 'manifest-required-key' &&
+            fieldPath === '/github/notifications/allowed-repository-owners',
+        ),
+      );
+      assert.ok(result.diagnostics.every(({ code }) => code !== 'github-notification-v1-retired'));
+    }
+  });
+
+  it('should diagnose removed global feedback only for current-format notification policies', () => {
+    for (const version of [undefined, 2]) {
+      const result = parse({ ...policy, 'schema-version': version, feedback: false });
+      assert.equal(result.status, 'invalid');
+      assert.ok(
+        result.diagnostics.some(
+          ({ code }) => code === 'github-notification-global-feedback-removed',
+        ),
+      );
+    }
+    for (const invalid of [
+      { ...policy, 'schema-version': 3 },
+      { ...policy, 'schema-version': 1 },
+      { 'approved-actors': [actor] },
+      {},
+    ]) {
+      const result = parse({ ...invalid, feedback: false });
+      assert.equal(result.status, 'invalid');
+      assert.ok(
+        result.diagnostics.every(
+          ({ code }) => code !== 'github-notification-global-feedback-removed',
+        ),
+      );
+    }
+  });
+
   it('should reject retired unversioned notifications with explicit migration guidance', () => {
-    for (const old of [{}, { 'approved-actors': [actor] }, { 'assignment-types': ['issue'] }]) {
+    for (const old of [{ 'approved-actors': [actor] }, { 'assignment-types': ['issue'] }]) {
       const result = parse(old);
       assert.equal(result.status, 'invalid');
       const diagnostic = result.diagnostics.find(
@@ -48,7 +157,7 @@ describe('channels/github/notification-policy', () => {
       ...policy,
       runtimes: ['openclaw', 'codex'],
       'issue-assignment': { allowed: [actor], mode: 'plan', feedback: false },
-      'review-request': { enabled: false, allowed: [{ ...actor }], feedback: true },
+      'review-request': undefined,
     };
     assert.equal(githubNotificationRuntimeBlocker(parsed(supported), 'openclaw'), undefined);
     for (const [extra, capability] of [
@@ -152,17 +261,17 @@ describe('channels/github/notification-policy', () => {
             ...policy,
             [key]: { allowed, ...(enabled === undefined ? {} : { enabled }) },
           });
-          assert.equal(declaration[decoded]?.enabled, enabled);
+          assert.equal(declaration[decoded]?.paused, enabled === undefined ? undefined : !enabled);
           assert.equal(declaration[decoded]?.allowed.length, allowed?.length ?? 0);
           assert.equal(
             githubNotificationRuntimeDiagnostics(declaration, 'openclaw')[0]?.code,
-            key === 'review-request' && (enabled ?? Boolean(allowed?.length))
+            key === 'review-request' && (enabled !== undefined || Boolean(allowed?.length))
               ? 'github-notification-runtime-unsupported'
               : undefined,
           );
           assert.equal(
             githubNotificationRuntimeDiagnostics(declaration, 'codex')[0]?.code,
-            key !== 'issue-assignment' && (enabled ?? Boolean(allowed?.length))
+            key !== 'issue-assignment' && (enabled !== undefined || Boolean(allowed?.length))
               ? 'github-notification-runtime-unsupported'
               : undefined,
           );

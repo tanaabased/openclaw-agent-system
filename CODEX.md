@@ -106,14 +106,17 @@ and applicable identity pins. Repository read access is sufficient. The first
 successful activation establishes a historical baseline; reinstall and restart
 retain it and deduplicate assignments by event identity.
 
-To stop issue assignments on this machine, set `enabled: false` under
+To pause future issue-intake occurrences on this machine, set `paused: true` under
 `github.notifications.issue-assignment`, then authorize Install to pause and verify
-the owned schedule. Stale scheduled runs cannot admit or dispatch new work. Existing
-chats, assessment results, and checkpoints remain; an already-issued chat creation
-can finish and be reconciled. Re-enable through Install to revalidate access and
-resume the same schedule and chat. The retained baseline permits eligible assignments
-to catch up without repeating recorded events. You choose which machine runs each
-workflow; two active machines do not coordinate or deduplicate work between them.
+the owned schedule. Native UI pause stops the same future work. An accepted
+occurrence and already-running issue turns may finish; authorization, feedback,
+checkpoints, and completed receipts remain unchanged. Set `paused: false` and run
+Install to resume the same schedule and chat. Eligible assignments and comments
+that arrived during the pause can then be discovered without repeating completed
+effects. Install can reverse a UI-only pause if the manifest still requests active
+intake. Legacy `enabled` is an inverse alias with a deprecation warning.
+You choose which machine runs each workflow; two active machines do not coordinate
+or deduplicate work between them.
 
 Use `$agent-system-doctor` to inspect admitted issues, assigning actors, event IDs,
 baseline, checkpoint, and blockers without contacting GitHub. Scheduled scans use
@@ -306,6 +309,13 @@ Workflow commands expose their action before `--plugin-data`: for example,
 there must match argv. Preparation validates and returns the exact draft and digest
 without publication. Only the explicit publication operation may perform its
 authorized external write. Saved action-on-stdin commands remain compatible.
+
+A saved assessment summary can resume in a newer verified turn, including after
+implementation has begun. Its source assessment remains unchanged; recovery finishes
+only the missing response. Summary-only native continuations use the existing issue
+chat and exact send receipts. A native denial remains a blocker across turns, and an
+uncertain GitHub post is observed rather than reposted. Private recovery notices name
+the affected response and preserve the complete private result and draft.
 
 Native continuation intent is retained before sending. An uncertain send is
 reconciled, never repeated blindly. A recorded implementation can resume delivery

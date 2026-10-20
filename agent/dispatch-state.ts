@@ -132,10 +132,20 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       version: Type.Literal(1),
       scope: hash,
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
+      openclawOccurrence: Type.Optional(
+        Type.Object(
+          { sessionKey: text, sessionId: text, runId: text },
+          { additionalProperties: false },
+        ),
+      ),
       openclawPasses: Type.Optional(Type.Array(openclawIntakePassSchema)),
       continuationRun: Type.Optional(
         Type.Object(
-          { id: text, actions: Type.Integer({ minimum: 0, maximum: 12 }) },
+          {
+            id: text,
+            actions: Type.Integer({ minimum: 0, maximum: 12 }),
+            responses: Type.Optional(Type.Array(text, { maxItems: 12 })),
+          },
           { additionalProperties: false },
         ),
       ),
@@ -165,6 +175,9 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       ),
       discoveryCycleAt: Type.Optional(Type.Integer({ minimum: 0 })),
       discoveryCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      discoveryRun: Type.Optional(
+        Type.Pick(openclawIntakePassSchema, ['sessionKey', 'sessionId', 'runId']),
+      ),
       discoveryProgress: Type.Optional(
         Type.Object(
           {

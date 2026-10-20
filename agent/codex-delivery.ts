@@ -31,7 +31,7 @@ import dispatchHistory from './codex-dispatch-history.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import { revalidateDispatchAssignment } from './codex-dispatch.ts';
+import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import type { CodexDeliveryState } from './codex-delivery-state.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import codexHostAccess from './codex-host-access.ts';
@@ -196,7 +196,11 @@ export default async function runCodexDelivery(
             ...(!attached ? ['delivery-attachment-pending'] : []),
           ]),
         ]
-          .filter((code) => code !== 'delivery-ssh-transport')
+          .filter(
+            (code) =>
+              code !== 'delivery-ssh-transport' &&
+              (code !== 'delivery-linkage-retried' || current.manifest.debug),
+          )
           .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
       if (input.action === 'present' || input.action === 'reconcile') {
@@ -520,6 +524,7 @@ export default async function runCodexDelivery(
             8000,
           ),
           authorId: connected.account.identity.nodeId,
+          authorLogin: connected.account.identity.login,
           select: async (retained) => {
             if (!native.assessmentSkill) throw new Error('delivery-announcement-skill-unavailable');
             return (

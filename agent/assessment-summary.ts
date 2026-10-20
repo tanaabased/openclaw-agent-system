@@ -1,3 +1,5 @@
+import publicResponse from './public-response.ts';
+import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
 import workflowFailure from './workflow-failure.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +11,7 @@ import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationConnection,
 } from '../channels/github/publication/comment-publisher.ts';
+import { githubCommentCard } from '../channels/github/presentation/comment.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 
@@ -18,23 +21,32 @@ export default async function assessmentSummary(input: {
   intake: IntakeRecord;
   action: AssessmentSummaryRequest;
   turnId: string;
+  recovery?: boolean;
   authorityDigest: string;
   presentation: string;
   authorize(): Promise<void>;
   select(previous?: AssessmentSelection): Promise<AssessmentSelection>;
-  connect(): Promise<GitHubNotificationCommentPublicationConnection>;
+  connect(): Promise<GitHubNotificationCommentPublicationConnection & { authorLogin?: string }>;
   redact(text: string): string;
   save(): Promise<void>;
 }) {
   const { record, intake, action } = input;
   const destination = `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`;
-  const publishedPresentation = (summary: AssessmentSummary) =>
-    input.presentation +
-    `\n\n[Proposed plan on GitHub ↗](${destination}#issuecomment-${summary.receipt!.databaseId})\n\n` +
-    summary
-      .publicText!.split('\n')
-      .map((line) => `> ${line}`)
-      .join('\n');
+  const summaryCard = (summary: AssessmentSummary) =>
+    githubCommentCard({
+      body: summary.publicText!,
+      author: summary.authorLogin
+        ? {
+            label: summary.authorLogin,
+            url: `https://github.com/${encodeURIComponent(summary.authorLogin)}`,
+          }
+        : undefined,
+      label: 'Plan assessment',
+      connector: 'by',
+      publication: summary.receipt
+        ? { url: `${destination}#issuecomment-${summary.receipt.databaseId}` }
+        : { draft: true },
+    });
   let summary: AssessmentSummary | undefined;
   try {
     await input.authorize();
@@ -50,8 +62,7 @@ export default async function assessmentSummary(input: {
       binding.repositoryId !== intake.repository.nodeId ||
       binding.subjectId !== intake.issue.nodeId ||
       record.reset ||
-      record.retired ||
-      record.handoff
+      record.retired
     )
       throw new Error('assessment-summary-source-unavailable');
     const summaries = (record.assessmentSummaries ??= []);
@@ -71,26 +82,39 @@ export default async function assessmentSummary(input: {
           summary.resultDigest !== automationHash(record.result)))
     )
       throw new Error('assessment-summary-binding-mismatch');
+    if (summary?.code && /denied|cancelled/.test(summary.code)) throw new Error(summary.code);
     if (summary?.receipt)
       return {
         status: 'published',
         receipt: summary.receipt,
         destination,
-        presentation: publishedPresentation(summary),
+        presentation: input.presentation + '\n\n' + summaryCard(summary),
       };
     if (summary?.attempt && action.operation !== 'reconcile')
       return {
         status: 'reconcile-required',
         code: 'assessment-summary-publication-unconfirmed',
+        presentation: [
+          input.presentation,
+          summary.publicText && summaryCard(summary),
+          publicResponsePresentation({ kind: 'Assessment summary', destination, attempted: true }),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
         instruction: 'Call summary operation reconcile. Never repeat an uncertain write.',
       };
     if (action.operation === 'reconcile' && !summary?.attempt)
       throw new Error('assessment-summary-publication-unattempted');
     if (action.operation !== 'reconcile') {
-      if (record.resultTurnId !== input.turnId)
+      if (record.resultTurnId !== input.turnId && !input.recovery)
         throw new Error('assessment-summary-assessment-turn-required');
-      if (summary && summary.turnId !== input.turnId)
+      if (summary && summary.turnId !== input.turnId && !input.recovery)
         throw new Error('assessment-summary-assessment-turn-required');
+      if (summary && summary.turnId !== input.turnId && input.recovery) {
+        summary.turnId = input.turnId;
+        summary.authorityDigest = input.authorityDigest;
+        await input.save();
+      }
       const selection = await input.select(summary?.selection);
       if (summary && automationHash(selection) !== automationHash(summary.selection)) {
         if (action.operation !== 'compose')
@@ -121,6 +145,7 @@ export default async function assessmentSummary(input: {
         code: undefined,
         attempt: undefined,
         receipt: undefined,
+        authorLogin: undefined,
       });
       if (action.operation === 'compose')
         return {
@@ -132,7 +157,7 @@ export default async function assessmentSummary(input: {
           verifiedOutcome: { assessment: record.result },
           maximumPublicCharacters: maximumGitHubNotificationReplyLength,
           instruction:
-            'The complete private assessment must already be presented here. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
+            'The recorded private review must already be presented here; the full assessment stays saved for implementation and on-demand inspection. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
         };
       if (action.operation === 'candidate') {
         if (action.digest !== digest) throw new Error('assessment-summary-composition-stale');
@@ -155,7 +180,7 @@ export default async function assessmentSummary(input: {
         return {
           status: 'candidate-recorded',
           instruction:
-            'Call summary operation publish without a digest to inspect the exact destination and draft, then with its digest through native approval. This bounded summary is covered by the freshly activated assessment workflow; a native denial stops publication. Preserve the full private assessment in the final answer.',
+            'Call summary operation publish without a digest to inspect the exact destination and draft, then with its digest through native approval. This bounded summary is covered by the freshly activated assessment workflow; a native denial stops publication. Preserve the recorded private review presentation in the final answer; keep the full assessment saved for implementation.',
         };
       }
       if (!summary.publicText) throw new Error('assessment-summary-candidate-required');
@@ -165,6 +190,7 @@ export default async function assessmentSummary(input: {
           digest,
           destination,
           body: summary.publicText,
+          presentation: summaryCard(summary),
           instruction:
             'Inspect this exact issue and proposed summary, then call summary operation publish with this digest through native approval. No new per-summary human confirmation is needed. Stop on denial; never substitute another route.',
         };
@@ -172,40 +198,52 @@ export default async function assessmentSummary(input: {
     }
     if (!summary?.publicText) throw new Error('assessment-summary-candidate-required');
     const publication = assessmentSummaryPublication(record, intake, summary);
-    const publisher = new GitHubNotificationCommentPublisher({
-      beforeCreate: async () => {
-        const attempt = randomUUID();
-        summary!.attempt = attempt;
+    const result = await publicResponse({
+      publication,
+      attempted: Boolean(summary.attempt),
+      receipt: summary.receipt,
+      reconcileOnly: action.operation === 'reconcile',
+      setAttempted: (attempted) => {
+        if (attempted) summary!.attempt = randomUUID();
+        else delete summary!.attempt;
+      },
+      setReceipt: (receipt) => {
+        summary!.receipt = receipt;
+      },
+      save: async () => {
+        const retained = { revision: summary!.revision, resultDigest: summary!.resultDigest };
         await input.save();
-        summary = record.assessmentSummaries?.find((entry) => entry.attempt === attempt);
+        summary = record.assessmentSummaries?.find(
+          (entry) =>
+            entry.revision === retained.revision && entry.resultDigest === retained.resultDigest,
+        );
         if (!summary) throw new Error('assessment-summary-state-changed');
       },
-      onCreateRejected: async () => {
-        delete summary!.attempt;
-        await input.save();
+      dependencies: {
+        redactText: input.redact,
+        authorize: async () => {
+          await input.authorize();
+          return { authorized: true };
+        },
+        connect: async () => {
+          const connection = await input.connect();
+          if (connection.authorLogin) summary!.authorLogin = connection.authorLogin;
+          return connection;
+        },
+        exclusive: async (_key, run) => run(),
       },
-      redactText: input.redact,
-      authorize: async () => {
-        await input.authorize();
-        return { authorized: true };
-      },
-      connect: input.connect,
-      exclusive: async (_key, run) => run(),
     });
-    let receipt;
-    if (summary.attempt) receipt = (await publisher.reconcile(publication))?.receipt;
-    else receipt = (await publisher.publish(publication)).receipt;
-    if (!receipt) throw new Error('assessment-summary-publication-unconfirmed');
-    summary.receipt = { nodeId: receipt.nodeId, databaseId: receipt.databaseId };
+    if (result.status !== 'published')
+      throw new Error('assessment-summary-publication-unconfirmed');
     delete summary.code;
     await input.save();
     return {
       status: 'published',
       receipt: summary.receipt,
       destination,
-      presentation: publishedPresentation(summary),
+      presentation: input.presentation + '\n\n' + summaryCard(summary),
       instruction:
-        'Reproduce this complete presentation in the final answer: preserve the private assessment, separate public summary and verified publication link. Publication does not mean implementation is complete.',
+        'Reproduce this complete presentation in the final answer: preserve the private review, separate public summary and verified publication link. Publication does not mean implementation is complete.',
     };
   } catch (error) {
     if (isFilesystemAccessError(error)) throw error;
@@ -218,7 +256,18 @@ export default async function assessmentSummary(input: {
     return {
       status: 'blocked',
       ...failure,
-      presentation: input.presentation,
+      presentation: [
+        input.presentation,
+        summary?.publicText && summaryCard(summary),
+        publicResponsePresentation({
+          kind: 'Assessment summary',
+          destination,
+          attempted: Boolean(summary?.attempt),
+          code,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       instruction:
         'The private assessment remains recorded. Show its complete presentation and this summary-delivery diagnostic. For an uncertain write, use summary operation reconcile; for missing authority or skill, restore the configured workflow before retrying. Stop on native denial and do not use a different publication route.',
     };

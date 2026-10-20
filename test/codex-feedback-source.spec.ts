@@ -23,6 +23,46 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  it('should discover pause-time feedback after resume without a cutoff or duplicate admission', async () => {
+    const policy = intakeFixture().policy;
+    const state: CodexFeedback = {
+      startedAt: Date.parse('2026-10-12T00:00:00Z'),
+      baseline: {},
+      events: [],
+    };
+    policy.issueAssignment!.paused = true;
+    observeFeedbackPolicy(state, policy, Date.parse('2026-10-13T00:00:00Z'));
+    assert.equal(state.admission?.enabled, true);
+    assert.equal(state.admission?.after, undefined);
+    const comments = [comment('during-pause')];
+    const scan = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-13T02:00:00Z'),
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+          reviews: reviewClientFixture(reviewFixture({ body: '' }), []),
+        },
+      });
+    policy.issueAssignment!.paused = false;
+    await scan();
+    assert.deepEqual(
+      state.events.map(({ sourceId }) => sourceId),
+      ['during-pause'],
+    );
+    const receipt = structuredClone(state.events[0]);
+    await scan();
+    assert.deepEqual(JSON.parse(JSON.stringify(state.events)), [receipt]);
+    assert.equal(state.admission?.after, undefined);
+  });
   it('should admit configured human self-feedback and reject changed pins or quoted mentions', () => {
     const policy = intakeFixture().policy;
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'approved');
@@ -40,16 +80,14 @@ describe('agent/codex-feedback-source', () => {
     policy.issueAssignment!.feedback = false;
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
-  for (const pause of ['parent', 'empty-authors', 'legacy'] as const)
+  for (const pause of ['empty-authors', 'legacy'] as const)
     it(`should preserve admission and receipts across ${pause} pause and resume without replaying history`, async () => {
       const startedAt = Date.parse('2026-10-12T00:00:00Z');
       let state: CodexFeedback = { startedAt, baseline: {}, events: [] };
       const policy = intakeFixture().policy;
       const suspend = () => {
-        if (pause === 'parent') policy.issueAssignment!.enabled = false;
-        else
-          policy.issueAssignment!.feedback =
-            pause === 'legacy' ? false : { inherit: false, allowed: [] };
+        policy.issueAssignment!.feedback =
+          pause === 'legacy' ? false : { inherit: false, allowed: [] };
       };
       const resume = () => {
         policy.issueAssignment!.enabled = true;
@@ -427,6 +465,85 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(state.discovery!.I, undefined);
     await run();
     assert.equal(state.events.length, 2);
+  });
+
+  it('should retain a late pr comment across interrupted review reads and restart without advancing past it', async () => {
+    const start = Date.parse('2026-10-12T00:00:00Z');
+    let state: CodexFeedback = { startedAt: start, baseline: {}, events: [] };
+    let saved = structuredClone(state);
+    const policy = intakeFixture().policy;
+    const late = {
+      ...comment('late'),
+      updatedAt: new Date(start + 2000).toISOString(),
+      createdAt: new Date(start + 2000).toISOString(),
+    };
+    let arrived = false;
+    let pause: 'reviews' | 'review-comments' | undefined = 'reviews';
+    let now = start + 1000;
+    const reviews = reviewClientFixture(reviewFixture(), []);
+    reviews.listReviews = async () => {
+      if (pause === 'reviews') throw new DiscoveryPaused();
+      return { values: [], nextPage: 1 };
+    };
+    reviews.listComments = async () => {
+      if (pause === 'review-comments') throw new DiscoveryPaused();
+      return { values: [], nextPage: 1 };
+    };
+    const cutoffs: string[] = [];
+    const run = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 7,
+        nodeId: 'PR',
+        itemType: 'pull-request',
+        now,
+        client: {
+          identity: account,
+          reviews,
+          getIssueComment: async () => late,
+          listIssueComments: async () => {
+            throw new Error('unbounded read');
+          },
+          listIssueCommentPage: async (_o, _n, _id, page, since) => {
+            cutoffs.push(since);
+            return { comments: arrived && page === 1 ? [late] : [], truncated: page === 1 };
+          },
+        },
+        discovery: {
+          budget: new DiscoveryBudget(),
+          save: async () => {
+            saved = structuredClone(state);
+          },
+        },
+      });
+    await assert.rejects(run(), DiscoveryPaused);
+    assert.deepEqual(Object.keys(saved.discovery!.PR!.reads), ['comments:1', 'comments:2']);
+    assert.equal(saved.watermarks?.PR, undefined);
+    arrived = true;
+    state = JSON.parse(JSON.stringify(saved));
+    pause = 'review-comments';
+    now = start + 3000;
+    await assert.rejects(run(), DiscoveryPaused);
+    state = JSON.parse(JSON.stringify(saved));
+    assert.equal(state.watermarks?.PR, undefined);
+    pause = undefined;
+    now = start + 4000;
+    await run();
+    assert.equal(state.watermarks!.PR, start + 1000);
+    assert.equal(state.events.length, 0, 'the retained first page predates the late comment');
+    assert.ok(cutoffs.every((cutoff) => cutoff === new Date(start - 2000).toISOString()));
+    state = JSON.parse(JSON.stringify(saved));
+    now = start + 5000;
+    await run();
+    await run();
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['late'],
+    );
+    assert.deepEqual(JSON.parse(state.events[0]!.source), late);
   });
 
   it('should detect an edited historical review without expanding unchanged review members', async () => {

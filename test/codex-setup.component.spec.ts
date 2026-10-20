@@ -28,15 +28,21 @@ describe('agent/codex-setup', () => {
       join(workspace, 'agent.yaml'),
       `schema-version: 1\nagent:\n  id: emori\n${contents}`,
     );
-    await bindCodexWorkspace(pluginData, workspace);
+    const bound = await bindCodexWorkspace(pluginData, workspace);
+    assert.equal(bound.status, 'bound', JSON.stringify(bound));
   }
 
   const dependencies = {
     baseEnvironment: { HOME: '/tmp', PATH: '/bin:/usr/bin' },
   };
 
-  it('should install disabled unsupported workflows without models or github access', async () => {
-    await manifest(`github:
+  it('should plan paused workflows without github access and surface inverse alias warnings', async () => {
+    await manifest(`models:
+  default: {model: openai/gpt-6-luna, effort: medium}
+  low: {model: openai/gpt-6-luna, effort: medium}
+  medium: {model: openai/gpt-6-luna, effort: medium}
+  high: {model: openai/gpt-6-luna, effort: medium}
+github:
   username: pirog
   notifications:
     schema-version: 2
@@ -62,11 +68,21 @@ describe('agent/codex-setup', () => {
       },
     };
     const installed = await installCodexSetup(pluginData, undefined, deps);
-    assert.equal(installed.status, 'installed');
+    assert.equal(installed.status, 'requires-native-app-sync');
     assert.equal(installed.automations.actions.length, 0);
+    const warnings = installed.warnings.filter(
+      ({ code }) => code === 'github-notification-enabled-deprecated',
+    );
+    assert.equal(warnings.length, 2);
+    assert.ok(warnings.every(({ message }) => message.includes('paused: true')));
     const inspected = await inspectCodexSetup(pluginData, undefined, deps);
+    assert.equal(
+      inspected.findings.filter(({ code }) => code === 'github-notification-enabled-deprecated')
+        .length,
+      2,
+    );
     assert.ok(
-      !inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
+      inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
     );
   });
 

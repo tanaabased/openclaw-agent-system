@@ -2,7 +2,8 @@
 
 ## Configuration Reference
 
-GitHub notifications require `github.notifications.schema-version: 2`. See the
+`github.notifications.schema-version` is optional and defaults to `2`; only
+numeric `2` is supported when explicit. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
 authority, runtime selection, and current support. OpenClaw supports
 Plan, Work, and Auto issue assignment with configured feedback
@@ -14,7 +15,12 @@ Both runtimes save bounded discovery progress and resume on later polls. Ordinar
 comments are fetched by update time; unchanged history does not trigger feedback.
 OpenClaw keeps discovery inside one condition budget and wakes the coordinator for
 saved actionable work or a one-time progress/recovery card. After upgrading, run
-Install to reconcile the changed condition before relying on scheduled intake.
+Install to reconcile the changed condition before relying on scheduled intake. Repeated
+checks that cannot complete a required feedback operation report
+`feedback-discovery-no-progress` with the affected issue or PR and pending operation.
+Later bounded checks retry automatically; if the obstacle persists, inspect that
+operation and provider access or latency. Preserve the checkpoint; no reset
+or replay is needed.
 
 The live bound `agent.yaml` governs the next automatic operation for every active
 issue. Mode, author, feedback, recipient, and guidance edits take effect without
@@ -41,16 +47,32 @@ No separate repair policy or author list is required.
 
 Discovery retains bounded observations independently of reply eligibility.
 Feedback follows its parent workflow and inherits approved assigners unless an
-explicit author policy replaces them. Activity observed while the parent is paused
-or no authors are approved stays in GitHub history and is not queued for later
-dispatch. When the runtime observes acceptance resume, it saves an admission
+explicit author policy replaces them. Activity observed while no authors are
+approved stays in GitHub history and is not queued for later dispatch. When the runtime observes acceptance resume, it saves an admission
 cutoff for the issue and its PR using the previous policy-check time. Approved
 comments or revisions after that cutoff become new feedback, including those
 between the last check and reenabling. This overlap avoids missing comments posted
 just after a configuration edit; a longer polling gap means a longer overlap.
 Older records without a policy-check timestamp use their last saved scan time,
 or the current check when neither timestamp is available. Work already admitted
-before a pause remains recoverable, and publication receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
+before an author-policy change remains recoverable, and publication receipts
+suppress duplicates. Reenabling sends no automatic retrospective assessment.
+
+Set `paused: true` on `issue-assignment` and run Install to pause its native
+schedule; `paused: false` resumes the same job and conversation. Native UI pause
+has the same execution boundary: future occurrences stop, while an accepted
+occurrence and running issue turns may finish. Pause does not change authorization,
+feedback eligibility, discovery checkpoints, queues, or completed effect receipts.
+Eligible activity arriving during the pause is discovered after resume. The
+readiness account and dispatch enrollment remain configured. Install follows the
+manifest, so it can reverse a UI-only pause when the manifest still requests an
+active schedule.
+
+The deprecated `enabled` alias is inverse: `enabled: false` means `paused: true`,
+and `enabled: true` means `paused: false`. Validate, Doctor, and Install warn with
+the exact replacement. Consistent pairs are accepted; contradictory pairs fail
+validation. Omission keeps the existing scheduling default. `review-request`
+accepts the same declaration but still has no execution adapter.
 
 Install reconciles changes to installed scheduling machinery. Policy-only edits do
 not change the orchestration definition. Native execution facts, explicit task
@@ -94,7 +116,11 @@ OpenClaw archives the exact idle session and removes its managed worktree after
 verifying a clean checkout and retained branch or tag. It protects pinned sessions,
 automation owners, shared worktrees, unresolved activity, and unpreserved changes.
 Each successful cleanup step is retained so interrupted cleanup can reconcile on a
-later poll. Branches, issue content, and assessment history are preserved.
+later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
+them. If the managed inventory and recorded path both confirm an already-removed
+worktree, retirement records observed external cleanup after its ownership checks;
+this does not claim to have removed or preserved the missing checkout. Ambiguous
+session identity remains a blocker.
 
 Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree
@@ -327,10 +353,13 @@ blocked rather than risking a second creation. Native denial, reassignment, or a
 changed session/worktree stops the operation without discarding the work.
 
 In Codex and OpenClaw, authorized follow-up commits can fast-forward the same PR
-branch from its last verified push. The PR receipt and original announcement stay
+branch when the observed remote commits are incorporated locally, including collaborator updates. The same open PR, destination and ancestry are verified before a non-force push. The PR receipt and original announcement stay
 with the delivery. Explicit title/body changes update that PR; commit-only pushes
 preserve text edited on GitHub. Interrupted updates reconcile the same operation.
+OpenClaw delivery reconciliation can finish incomplete provider checkpoints when the retained commit is already remote; a missing push requires the prepared publication path. Newer local or uncommitted work is not included by reconciliation.
 If initial PR creation is still uncertain, reconcile it before changing its text.
+Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. Implementation context also exposes pending summaries without moving work back to planning.
+
 A stale publication preview returns a refreshed operation without writing. Inspect
 it and retry once within the existing authorization; repeated staleness needs
 investigation. Workflow activation or an operator request already covering that
@@ -340,8 +369,12 @@ If showing an already-created PR is interrupted or temporarily busy, ask the sam
 issue chat to show its card again. Saved plans and PR cards remain readable in
 the owning chat without fresh publication permission, a matching working commit,
 or GitHub access. They show retained evidence, not a fresh provider verification.
-Native chat identity is still checked. Presentation does not push, create a PR, or
-post an announcement. In Codex, attachment reconciliation retries only attachment
+Native chat identity is still checked. New assessments show a concise user-journey
+review with documentation/test impact; the full assessment and engineering plan stay
+saved for the agent. Ask for the full assessment, evidence, or investigation in that
+same issue chat to inspect them. Older results without a separate review retain their
+complete display. The bound `present` request accepts `includeDetails: true` in both runtimes.
+Presentation does not push, create a PR, or post an announcement. In Codex, attachment reconciliation retries only attachment
 inspection. Recipient identities remain pinned; GitHub authorizes recipient changes. If announcing fails, the PR
 remains delivered. Ask the same chat to recover its announcement; uncertain writes
 reconcile the saved text and receipt without posting a duplicate. Announcement
@@ -350,8 +383,9 @@ another push. Recovery instructions skip confirmed attachments and announcements
 
 ## V1 Retirement
 
-Unversioned notification declarations are rejected with
-`github-notification-v1-retired`. The polling channel, its Work/guided engine,
+Explicit notification version `1` and recognizable retired keys in unversioned
+declarations are rejected with `github-notification-v1-retired`; current-format
+declarations may omit the version and default to `2`. The polling channel, its Work/guided engine,
 reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
 Retirement does not imply feature parity.
 
@@ -362,9 +396,9 @@ activates V2 intake. Install adopts an old account only when its matching
 Agent System-managed binding establishes ownership; conflicting accounts require
 operator resolution. Historical receipts and grants remain untouched.
 
-Install manages each agent's channel account from its enabled OpenClaw notification
+Install manages each agent's channel account from its declared OpenClaw notification
 workflows. Removing or disabling those workflows requires another Install to disable
-that account. Other agents and operator-owned entries are preserved. With no enabled
+that account. Other agents and operator-owned entries are preserved. With no declared
 accounts, the channel is inactive; its schema remains registered for compatibility.
 
 The channel reports setup or synchronization needs, unsupported workflows, scheduler

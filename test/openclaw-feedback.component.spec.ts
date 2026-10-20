@@ -411,7 +411,7 @@ describe('agent/openclaw-feedback', () => {
   for (const lostPush of [false, true])
     it(`should deliver feedback on the same pr with lost push response ${lostPush}`, async () => {
       await enableFeedbackWork();
-      let remote = 'a'.repeat(40),
+      let remote = 'c'.repeat(40),
         pushes = 0,
         creates = 0;
       let lost = lostPush;
@@ -438,6 +438,8 @@ describe('agent/openclaw-feedback', () => {
           if (argv[0] === 'rev-parse') return head;
           if (argv[0] === 'rev-list') return '2';
           if (argv[0] === 'ls-remote') return `${remote} refs/heads/fix`;
+          if (argv[0] === 'merge-base')
+            assert.deepEqual(argv, ['merge-base', '--is-ancestor', remote, head]);
           if (argv[0] === 'push') {
             pushes++;
             remote = head;
@@ -503,6 +505,12 @@ describe('agent/openclaw-feedback', () => {
         assert.equal(record.work!.delivery!.pushedHead, 'a'.repeat(40));
         assert.equal(record.work!.delivery!.reconciled, true);
         assert.ok(event.workDelivery);
+        input.record = record = JSON.parse(JSON.stringify(record));
+        input.event = event = record.feedback!.events[0]!;
+        const reconciled = await action('delivery', { deliveryOperation: 'reconcile' });
+        assert.equal(reconciled.status, 'ready');
+        assert.equal(event.workDelivery!.reconciled, true);
+        assert.equal(record.work!.delivery!.pushedHead, head);
       }
       const currentPreview = lostPush
         ? await action('delivery', { deliveryOperation: 'prepare' })
@@ -600,7 +608,11 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(result.status, 'published');
     assert.equal(destination, 'item:3');
     assert.match(String(result.presentation), /Full private evidence/);
-    assert.match(String(result.presentation), /To.*operator/);
+    assert.match(
+      String(result.presentation),
+      /\[Reply ↗\]\(https:\/\/github.com\/owner\/repo\/issues\/3#issuecomment-99\) from \[@receiver\]/,
+    );
+    assert.ok(!String(result.presentation).includes('Reply published'));
     assert.equal(writes, 1);
     await action('publish', { digest });
     assert.equal(writes, 1);
@@ -638,7 +650,7 @@ describe('agent/openclaw-feedback', () => {
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
   });
-  it('should block changed source and explicit revocation while retaining an admitted reply after default changes', async () => {
+  it('should block changed source and explicit revocation while retaining an admitted reply through pause', async () => {
     await start();
     const digest = await compose();
     const original = structuredClone(source);
@@ -662,9 +674,6 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(writes, 0);
     input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
     input.policy.issueAssignment!.enabled = false;
-    await assert.rejects(action('publish', { digest }), /workflow-policy-held/);
-    assert.equal(writes, 0);
-    input.policy.issueAssignment!.enabled = true;
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
     assert.match(event.result!.privateText, /Full private/);

@@ -1,3 +1,4 @@
+import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 import { automationHash } from './automation-hash.ts';
@@ -28,19 +29,37 @@ export default function openclawIntakeReport(input: {
   const active = state.records.filter(
     (record) => !record.retired && !record.retirement && !record.reset,
   );
-  const retirementPending = state.records.filter(
-    (record) => record.retirement && !record.retired,
-  ).length;
+  const retiring = state.records.filter(
+    (record) => record.retirement && !record.retired && !record.reset,
+  );
+  const retirementPending = retiring.length;
+  const retirementNotices = retiring
+    .filter((record) => record.retirement?.code)
+    .map((record) => ({
+      record,
+      notice:
+        retirementNotice(record.retirement!.code!) ??
+        retirementNotice('retirement-check-unavailable')!,
+    }));
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
   const capacity = dispatchCapacity(state.records, input.slots);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
   const failures = [
+    ...retirementNotices
+      .filter(({ notice }) => notice.severity !== 'info')
+      .map(({ record }) => ({ id: record.id, code: record.retirement!.code! })),
     ...(observation.status === 'blocked'
       ? [{ id: 'intake', code: observation.code ?? 'intake-check-incomplete' }]
       : []),
     ...(intake?.deferred ?? []).map((entry) => ({ id: 'deferred-' + entry.key, code: entry.code })),
+    ...managing
+      .filter((record) => record.feedback?.code)
+      .map((record) => ({
+        id: 'feedback-' + record.id,
+        code: record.feedback!.code!,
+      })),
     ...active
       .filter(
         (record) =>
@@ -60,6 +79,17 @@ export default function openclawIntakeReport(input: {
     const id = problem.slice(0, problem.indexOf(':'));
     if (id === 'intake') return observation.status === 'ready';
     if (id.startsWith('deferred-')) return true;
+    if (id.startsWith('feedback-'))
+      return Boolean(active.find((record) => record.id === id.slice(9) && !record.feedback?.code));
+    const retired = state.records.find(
+      (entry) => entry.id === id && (entry.retirement || entry.retired),
+    );
+    if (retired)
+      return (
+        !retired.retirement?.code ||
+        Boolean(retired.retired) ||
+        retirementNotice(retired.retirement.code)?.severity === 'info'
+      );
     const record = active.find((entry) => entry.id === id);
     return Boolean(record && !record.blocker);
   });
@@ -84,8 +114,16 @@ export default function openclawIntakeReport(input: {
         : started.length
           ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
           : recovered.length
-            ? '💡 Intake resumed'
-            : '💡 Intake checked';
+            ? recovered.some((problem) =>
+                state.records.some(
+                  (record) => problem.startsWith(record.id + ':') && record.retirement,
+                ),
+              )
+              ? '💡 Retirement blocker cleared'
+              : '💡 Intake resumed'
+            : retirementNotices.length
+              ? '💡 Intake checked — retirement in progress'
+              : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   const label = (record: OpenClawDispatchRecord) => {
     const item = intake?.records.find((entry) => entry.id === record.intakeId);
@@ -105,6 +143,17 @@ export default function openclawIntakeReport(input: {
         `- **What happened:** ${notice.summary}`,
         `- **Next step:** ${notice.next}`,
         `- **Technical detail:** \`${failure.code}\``,
+      );
+      continue;
+    }
+    const retiring = retirementNotices.find(({ record }) => record.id === failure.id);
+    if (retiring) {
+      lines.push(
+        `- **Issue:** ${text(label(retiring.record))}`,
+        `  **Operation:** retirement cleanup`,
+        `  **What happened:** ${retiring.notice.summary}`,
+        `  **Action:** ${retiring.notice.next}`,
+        `  **Diagnostic:** \`${text(failure.code)}\``,
       );
       continue;
     }
@@ -132,6 +181,32 @@ export default function openclawIntakeReport(input: {
       continue;
     }
     const automation = failure.code.startsWith('automation-');
+    if (failure.id.startsWith('feedback-')) {
+      const record = managing.find((record) => record.id === failure.id.slice(9))!;
+      const item = intake?.records.find((entry) => entry.id === record.intakeId);
+      const pr = record.work?.delivery?.pullRequest;
+      const stalls = Object.entries(record.feedback?.discoveryStalls ?? {}).filter(
+        ([, stall]) => stall.attempts >= 3,
+      );
+      lines.push(`- **Issue:** ${text(label(record))}`);
+      for (const [nodeId, stall] of stalls) {
+        const number = nodeId === pr?.pullRequestNodeId ? pr.pullRequestNumber : item?.issue.number;
+        const kind = nodeId === pr?.pullRequestNodeId ? 'pull' : 'issues';
+        const url =
+          item && number
+            ? `https://github.com/${item.repository.owner.login}/${item.repository.name}/${kind}/${number}`
+            : undefined;
+        lines.push(
+          `  **Source:** ${url ? `[${kind === 'pull' ? 'PR' : 'Issue'} #${number}](${url})` : text(label(record))}`,
+          `  **Operation:** \`${text(stall.operation)}\``,
+        );
+      }
+      lines.push(
+        `  **Diagnostic:** \`${text(failure.code)}\``,
+        '  **Action:** Later bounded checks retry automatically. If this persists, inspect the named operation and provider access or latency. Preserve the saved checkpoint; do not reset or replay.',
+      );
+      continue;
+    }
     const record = active.find((record) => record.id === failure.id);
     const retry = record?.retry ? record.retryAfter : undefined;
     lines.push(
@@ -155,6 +230,14 @@ export default function openclawIntakeReport(input: {
             : (workflowRecovery(failure.code)?.next ?? intakeRemediation(failure.code))),
     );
   }
+  for (const { record, notice } of retirementNotices
+    .filter(({ notice }) => notice.severity === 'info')
+    .slice(0, 12))
+    lines.push(
+      `- **Issue:** ${text(label(record))}`,
+      `  **What happened:** ${notice.summary}`,
+      `  **Next step:** ${notice.next}`,
+    );
   if (failures.length) lines.push('');
   if (recovered.length)
     lines.push(
