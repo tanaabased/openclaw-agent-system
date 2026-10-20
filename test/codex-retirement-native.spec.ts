@@ -90,6 +90,59 @@ describe('codex retirement native evidence', () => {
       ['guardian'],
     );
   });
+  it('should inspect larger helper sets without treating their count as shared ownership', async () => {
+    const rows = Array.from({ length: 21 }, (_, i) => helper(`helper-${i}`));
+    const reader = nativeRetirement(async (method, params) => {
+      if (method === 'thread/list') return { data: rows };
+      if (method === 'thread/read')
+        return { thread: rows.find((row) => row.id === params.threadId) };
+      return { data: [{ status: 'completed', completedAt: 10 }] };
+    });
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), []);
+    rows.push(helper('independent', 'other'));
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), ['independent']);
+  });
+  it('should release only verified inactive guardian descendants with an empty complete history', async () => {
+    const guardian = {
+      id: 'guardian',
+      cwd: '/worktree',
+      parentThreadId: 'owner',
+      forkedFromId: null as string | null,
+      source: { subAgent: { other: 'guardian' } },
+      threadSource: 'guardian_review',
+      status: { type: 'notLoaded' },
+    };
+    let history: Record<string, unknown> = { data: [], nextCursor: null };
+    const reader = nativeRetirement(async (method) => {
+      if (method === 'thread/list') return { data: [guardian] };
+      if (method === 'thread/read') return { thread: guardian };
+      return history;
+    });
+    const users = () => reader.worktreeUsers('/worktree', new Set(['owner']));
+    assert.deepEqual(await users(), []);
+    for (const invalid of [
+      {},
+      { data: [], nextCursor: 'more' },
+      { data: [{ status: 'inProgress', completedAt: null }] },
+    ]) {
+      history = invalid;
+      assert.deepEqual(await users(), ['guardian']);
+    }
+    history = { data: [], nextCursor: null };
+    guardian.status.type = 'active';
+    assert.deepEqual(await users(), ['guardian']);
+    guardian.status.type = 'notLoaded';
+    guardian.parentThreadId = 'other';
+    assert.deepEqual(await users(), ['guardian']);
+    guardian.parentThreadId = 'owner';
+    guardian.forkedFromId = 'owner';
+    assert.deepEqual(await users(), ['guardian']);
+    guardian.forkedFromId = null;
+    assert.deepEqual(
+      await reader.worktreeUsers('/worktree', new Set(['owner']), new Set(['guardian'])),
+      ['guardian'],
+    );
+  });
   for (const kind of [
     'active',
     'unfinished',
