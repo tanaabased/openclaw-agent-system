@@ -16,7 +16,7 @@ export default function assessmentPresentation(
   record: SharedDispatchRecord,
   intake: IntakeRecord,
   workspace: string,
-  presentation: WorkflowInstructionsPresentation = {},
+  presentation: WorkflowInstructionsPresentation & { includeDetails?: boolean } = {},
 ) {
   const decision = JSON.parse(record.routing!) as RoutingDecision;
   return renderAssessmentResult(result, {

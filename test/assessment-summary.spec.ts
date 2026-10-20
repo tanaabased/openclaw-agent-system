@@ -59,6 +59,8 @@ function fixture() {
     planSummary: 'Return the result.',
     plan: 'Repair handler.ts.',
     fullAssessment: 'The complete private plan, evidence and limitations.',
+    reviewSummary:
+      'You would see the result immediately. Docs and tests will explain and verify it.',
     evidence: [],
     progress: { completed: [], remaining: [] },
   };
@@ -103,7 +105,7 @@ function fixture() {
       action,
       turnId,
       authorityDigest,
-      presentation: result.fullAssessment,
+      presentation: result.reviewSummary,
       authorize: async () => {
         if (forbidden) throw new Error('native-approval-denied');
       },
@@ -233,7 +235,10 @@ describe('agent/assessment-summary', () => {
     const published = await f.run({ operation: 'publish', digest });
     assert.equal(published.status, 'published');
     assert.ok(
-      'presentation' in published && published.presentation?.includes(f.result.fullAssessment),
+      'presentation' in published && published.presentation?.includes(f.result.reviewSummary),
+    );
+    assert.ok(
+      'presentation' in published && !published.presentation?.includes(f.result.fullAssessment),
     );
     assert.ok(
       'presentation' in published &&

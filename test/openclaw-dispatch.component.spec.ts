@@ -2097,9 +2097,26 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       await context(input.id);
-      const result = await submit(
-        input.id,
-        mode === 'auto' ? { ...plan, decision: { mode: 'work', reasons: ['Ready.'] } } : plan,
+      const assessment: AssessmentResult = {
+        ...plan,
+        reviewSummary:
+          'You would receive the missing result. Docs clarify it; tests cover the return.',
+        ...(mode === 'auto' ? { decision: { mode: 'work', reasons: ['Ready.'] } } : {}),
+      };
+      const result = await submit(input.id, assessment);
+      assert.ok(
+        'presentation' in result && result.presentation?.includes(assessment.reviewSummary!),
+      );
+      assert.ok(
+        'presentation' in result && !result.presentation?.includes(assessment.fullAssessment!),
+      );
+      const detailed = await service.run(manifest, root, assessor(input.id), {
+        action: 'present',
+        id: input.id,
+        includeDetails: true,
+      });
+      assert.ok(
+        'presentation' in detailed && detailed.presentation?.includes(assessment.fullAssessment!),
       );
       assert.ok('handoff' in result && result.handoff?.next === 'implementation');
       inputReceipts = [];
@@ -2109,6 +2126,9 @@ describe('agent/openclaw issue dispatch', () => {
         id: input.id,
       });
       assert.equal(verified.status, 'verified', JSON.stringify(verified));
+      assert.ok('assessment' in verified);
+      assert.deepEqual(verified.assessment, assessment);
+      assert.deepEqual((await record()).result, assessment);
       assert.equal((await record()).work?.turn?.runId, who.runId);
       assert.equal((await record()).work?.turn?.origin, 'assessment');
       assert.equal((await record()).progression?.via, mode);
@@ -3230,7 +3250,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
-  it('should reject incomplete results but accept completed work after skill content changes', async () => {
+  it('should reject incomplete results but accept a complete plan without a redundant summary', async () => {
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -3240,8 +3260,10 @@ describe('agent/openclaw issue dispatch', () => {
       /assessment-result-incomplete/,
     );
     await writeFile(join(root, 'SKILL.md'), '# changed selection');
-    await submit(input.id);
-    assert.deepEqual((await record()).result, plan);
+    const concise = { ...plan };
+    delete concise.planSummary;
+    await submit(input.id, concise);
+    assert.deepEqual((await record()).result, concise);
   });
 
   it('should keep an uncertain assessment send blocked and never reinterpret it as a fresh attempt', async () => {
@@ -3895,6 +3917,18 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(plan.status, 'presented');
     assert.ok('presentation' in plan);
+    const before = await record();
+    const detailed = await service.run(
+      manifest,
+      root,
+      setup.who,
+      { action: 'present', id: setup.id, includeDetails: true },
+      false,
+    );
+    assert.equal(detailed.status, 'presented');
+    assert.ok('presentation' in detailed && typeof detailed.presentation === 'string');
+    assert.ok(detailed.presentation.includes(before.result!.progress.completed[0]!));
+    assert.deepEqual(await record(), before);
     const foreign = await service.run(
       manifest,
       root,
