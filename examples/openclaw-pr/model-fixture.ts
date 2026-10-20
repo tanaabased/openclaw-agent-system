@@ -218,6 +218,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     )
       return;
     if (context.mode !== 'work') return;
+    assert.equal((context.previousImplementation as { outcome?: string }).outcome, 'done');
+    assert.deepEqual(context.previousFeedbackWork, []);
     const work = result('feedback-work-context');
     if (!work)
       return dispatch('feedback-work-context', { ...args, operation: 'implementation-context' });
@@ -228,6 +230,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       !implementation?.skill?.path
     )
       return;
+    assert.deepEqual(work.previousFeedbackWork, context.previousFeedbackWork);
+    assert.deepEqual(work.previousImplementation, context.previousImplementation);
     if (
       openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') === undefined
     )

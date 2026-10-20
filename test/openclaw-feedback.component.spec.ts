@@ -14,7 +14,7 @@ import openClawFeedback, {
 import OpenClawDispatchStore, {
   type OpenClawDispatchRecord,
 } from '../agent/openclaw-dispatch-state.ts';
-import { discoverFeedback } from '../agent/feedback-source.ts';
+import { discoverFeedback, feedbackRevision } from '../agent/feedback-source.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
@@ -229,6 +229,23 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
+  for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
+    it(`should retain planning input without implementation for ${message.toLowerCase()}`, async () => {
+      input.policy.issueAssignment!.mode = 'plan';
+      source.body = `@receiver ${message}`;
+      event.source = JSON.stringify(source);
+      event.revision = feedbackRevision(source);
+      const context = await start();
+      assert.equal(context.status, 'verified');
+      const saved = await action('result', {
+        privateText: 'Retained plan response.',
+        reply: false,
+      });
+      assert.equal(saved.status, 'recorded');
+      assert.equal(record.progression, undefined);
+      assert.equal(event.work, undefined);
+      assert.equal(writes, 0);
+    });
   it('should keep plan feedback in planning and preserve legacy implementation authority', async () => {
     input.policy.issueAssignment!.mode = 'plan';
     await start();
@@ -271,7 +288,12 @@ describe('agent/openclaw-feedback', () => {
     };
     record.result = structuredClone(original);
     await start();
-    await action('implementation-context');
+    const decision = {
+      mode: 'work' as const,
+      reasons: ['Approved revised plan.'],
+      plan: 'Use the smaller parser change.',
+    };
+    await action('implementation-context', { decision });
     const result = {
       outcome: 'clarification-needed',
       summary: 'Need a value.',
@@ -311,11 +333,16 @@ describe('agent/openclaw-feedback', () => {
     input.event = event;
     input.caller.runId = `${record.id}:feedback:${event.id}`;
     busy = false;
-    await start();
+    const answerContext = await start();
+    assert.ok('previousFeedbackWork' in answerContext && answerContext.previousFeedbackWork);
+    assert.deepEqual(answerContext.previousFeedbackWork[0]!.decision, decision);
+    assert.deepEqual(answerContext.previousFeedbackWork[0]!.result, result);
+    assert.equal(answerContext.previousFeedbackWork[0]!.privateText, 'Which value?');
     const resumed = await action('implementation-context');
     assert.equal(resumed.status, 'verified');
     assert.ok('previousFeedbackWork' in resumed && resumed.previousFeedbackWork);
     assert.deepEqual(resumed.previousFeedbackWork[0]!.result, result);
+    assert.deepEqual(resumed.previousFeedbackWork, answerContext.previousFeedbackWork);
   });
   it('should require a reasoned auto decision and retain done work at its exact commit', async () => {
     input.policy.issueAssignment!.mode = 'auto';
