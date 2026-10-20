@@ -68,7 +68,25 @@ export const openclawDispatchRecordSchema = Type.Object(
     firstTurn: Type.Optional(issueTurnSchema),
     assessmentTurn: Type.Optional(issueTurnSchema),
     decisionTurn: Type.Optional(issueTurnSchema),
+    summaryRecovery: Type.Optional(
+      Type.Object(
+        {
+          revision: Type.Integer({ minimum: 1 }),
+          turn: issueTurnSchema,
+          code: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     previousDecisionTurns: Type.Optional(Type.Array(issueTurnSchema)),
+    previousSummaryTurns: Type.Optional(
+      Type.Array(
+        Type.Object(
+          { revision: Type.Integer({ minimum: 1 }), turn: issueTurnSchema },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     assessmentCaller: Type.Optional(
       Type.Object({ runId: text, inputEventId: text }, { additionalProperties: false }),
     ),
@@ -338,6 +356,11 @@ export function preserveOpenClawProgress(
     preserve(previous.firstTurn, record.firstTurn, fresh.firstTurn);
     preserve(previous.assessmentTurn, record.assessmentTurn, fresh.assessmentTurn);
     preserve(previous.decisionTurn, record.decisionTurn, fresh.decisionTurn);
+    preserve(
+      previous.summaryRecovery?.turn,
+      record.summaryRecovery?.turn,
+      fresh.summaryRecovery?.turn,
+    );
     for (const event of record.feedback?.events ?? []) {
       const retained = fresh.feedback?.events.find((entry) => entry.id === event.id);
       if (

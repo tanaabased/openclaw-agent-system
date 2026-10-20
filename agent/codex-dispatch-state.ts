@@ -50,6 +50,18 @@ const creationSchema = Type.Object(
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    previousSummaryAttempts: Type.Optional(Type.Array(attemptSchema)),
+    summaryRecovery: Type.Optional(
+      Type.Object(
+        {
+          revision: Type.Integer({ minimum: 1 }),
+          attempt: attemptSchema,
+          ended: Type.Optional(Type.Literal(true)),
+          code: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     autoDecision: Type.Optional(
       Type.Object(
         {

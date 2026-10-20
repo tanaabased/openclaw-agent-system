@@ -15,6 +15,27 @@ describe('agent/codex-summary-authority', () => {
     turn = { id: 'turn', completedAt: 1 };
     await assert.rejects(codexSummaryAuthority(request, 'issue', 'turn'), /turn-ended/);
   });
+  it('should retain a source-turn native denial when recovering in a newer turn', async () => {
+    const request = async (method: string, params: Record<string, unknown>) =>
+      method === 'thread/turns/list'
+        ? {
+            data:
+              params.limit === 1
+                ? [{ id: 'new', completedAt: null }]
+                : [{ id: 'old', status: 'interrupted', completedAt: 1 }],
+          }
+        : {
+            data:
+              params.turnId === 'old'
+                ? [{ turnId: 'old', item: { type: 'commandExecution', status: 'declined' } }]
+                : [],
+            nextCursor: null,
+          };
+    await assert.rejects(
+      codexSummaryAuthority(request, 'issue', 'new', ['old']),
+      /native-approval-denied/,
+    );
+  });
   for (const item of [
     { type: 'commandExecution', status: 'declined' },
     { type: 'mcpToolCall', status: 'failed', error: { message: 'user rejected MCP tool call' } },

@@ -1,3 +1,7 @@
+import continueOpenClawResponse, {
+  openClawResponseEligible,
+} from './openclaw-response-continuation.ts';
+import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { Static } from 'typebox';
 
 import { type IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -54,6 +58,31 @@ export default class OpenClawDispatchIssue {
     authority: DispatchAuthority,
     reconcileOnly = false,
   ) {
+    if (openClawResponseEligible(record)) {
+      try {
+        await this.context.validate(manifest, workspace, record, true);
+        return (
+          (await this.context.dependencies.credential.use(authority, (request) =>
+            continueOpenClawResponse({
+              record,
+              request,
+              config: this.context.dependencies.config(),
+              reconcileOnly,
+              save,
+              assertCurrent: async () => {
+                await authority.assertCurrent?.();
+                await this.context.validate(manifest, workspace, record, true);
+              },
+            }),
+          )) ?? { status: 'assessment-pending' as const, id: record.id }
+        );
+      } catch (error) {
+        const code = openClawDispatchFailureCode(error);
+        if (record.summaryRecovery) record.summaryRecovery.code = code;
+        await save();
+        return { status: 'assessment-pending' as const, id: record.id, code, nextAction: 'next' };
+      }
+    }
     if (
       openClawDecisionPending(
         record,
@@ -587,22 +616,27 @@ export default class OpenClawDispatchIssue {
         assertCurrent: async () => {
           signal.throwIfAborted();
           await authority.assertCurrent?.();
-          await this.context.validateLocal(manifest, workspace, record);
+          await this.context.validateLocal(manifest, workspace, record, input.action === 'summary');
           signal.throwIfAborted();
         },
       };
       await childAuthority.assertCurrent();
       return this.context.dependencies.credential.use(childAuthority, async (request) => {
         if (input.action === 'summary') {
-          if (
-            !record.result ||
-            !record.request ||
-            !('key' in record.request) ||
-            record.assessmentCaller?.runId !== caller.runId
-          )
+          if (!record.result || !record.request || !('key' in record.request))
             throw new Error('assessment-summary-assessment-turn-required');
           const expected = record.request;
+          const recovery = record.resultTurnId !== caller.runId;
+          if (recovery || record.assessmentCaller?.runId !== caller.runId)
+            await openClawResponseAuthority({
+              request,
+              record,
+              caller,
+              config: this.context.dependencies.config(),
+              observeOnly: input.operation === 'reconcile',
+            });
           return assessmentSummary({
+            recovery,
             record,
             intake,
             action: input,
@@ -622,7 +656,7 @@ export default class OpenClawDispatchIssue {
                 manifest,
                 workspace,
                 record,
-                false,
+                true,
                 false,
                 undefined,
                 signal,

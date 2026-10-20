@@ -372,6 +372,30 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
   });
+  it('should reconcile an accepted creation with a lost receipt despite newer dirty local work', async () => {
+    lost = true;
+    await assert.rejects(publish());
+    input.record = record = JSON.parse(JSON.stringify(record));
+    lost = false;
+    const delivered = remote;
+    head = 'b'.repeat(40);
+    dirty = true;
+    assert.equal((await request('reconcile')).status, 'ready');
+    assert.equal(record.work!.delivery!.pushedHead, delivered);
+    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(pushes, 1);
+    assert.equal(creates, 1);
+  });
+  it('should resume incomplete provider effects without another push after restart', async () => {
+    failLink = true;
+    await assert.rejects(publish());
+    input.record = record = JSON.parse(JSON.stringify(record));
+    failLink = false;
+    assert.equal((await request('reconcile')).status, 'ready');
+    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(pushes, 1);
+    assert.equal(creates, 1);
+  });
   it('should prepare a new commit on the retained delivery without changing its receipt', async () => {
     await publish();
     const retained = structuredClone(record.work!.delivery!);
@@ -411,15 +435,17 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
   });
-  it('should reject a rewritten commit or unexpected remote head before pushing', async () => {
+  it('should reject incompatible history but accept an incorporated collaborator head', async () => {
     await publish();
     head = 'b'.repeat(40);
     ancestor = false;
     await assert.rejects(publish(), /not an ancestor/);
     ancestor = true;
     remote = 'c'.repeat(40);
-    await assert.rejects(publish(), /delivery-remote-head-diverged/);
-    assert.equal(pushes, 1);
+    pr!.headSha = remote;
+    await publish();
+    assert.equal(remote, head);
+    assert.equal(pushes, 2);
     assert.equal(creates, 1);
   });
   it('should reject a replacement pr before advancing the remote branch', async () => {

@@ -50,7 +50,7 @@ import {
 } from '../channels/github/provider/review-feedback.ts';
 import { githubNotificationCommentPresentation } from '../channels/github/presentation/comment.ts';
 import { githubNotificationAttributedReplyText } from '../channels/github/publication/publication-contract.ts';
-import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
+import publicResponse from './public-response.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 
 const requestSchema = Type.Object(
@@ -756,34 +756,6 @@ export default async function runCodexFeedback(
               event.publicationApproval = { by: caller, at: now, digest };
               await save();
             }
-            const publisher = new GitHubNotificationCommentPublisher({
-              beforeCreate: async () => {
-                event.publicationAttempted = true;
-                await save();
-              },
-              onCreateRejected: async () => {
-                event.publicationAttempted = false;
-                await save();
-              },
-              redactText: redactCodexFeedback,
-              authorize: async () => {
-                await authorize();
-                if (event.composition && !reconcilingPublication) await selectComposition();
-                return { authorized: true };
-              },
-              connect: async () => ({
-                commenterLogin: source.author!.login,
-                client: root
-                  ? {
-                      createIssueComment: (o, n, number, body) =>
-                        provider.replies.create(o, n, number, root, body),
-                      findOwnIssueComment: (o, n, number, marker) =>
-                        provider.replies.find(o, n, number, root, marker),
-                    }
-                  : provider.comments,
-              }),
-              exclusive: async (_key, run) => run(), // the dispatch journal lock covers the entire publication.
-            });
             const publication = {
               intent: 'github-reply' as const,
               item: {
@@ -796,23 +768,51 @@ export default async function runCodexFeedback(
               source: { commentDatabaseId: source.databaseId, revisionId: event.revision },
               text: event.result.publicText,
             };
-            if (event.publicationAttempted) {
-              const existing = await publisher.reconcile(publication);
-              if (!existing)
-                return {
-                  status: 'uncertain',
-                  id: record.id,
-                  eventId: event.id,
-                  code: 'feedback-publication-unconfirmed',
-                };
-              event.receipt = {
-                nodeId: existing.receipt.nodeId,
-                databaseId: existing.receipt.databaseId,
+            const published = await publicResponse({
+              publication,
+              attempted: Boolean(event.publicationAttempted),
+              receipt: event.receipt,
+              setAttempted: (attempted) => {
+                event.publicationAttempted = attempted;
+              },
+              setReceipt: (receipt) => {
+                event.receipt = receipt;
+              },
+              save,
+              dependencies: {
+                redactText: redactCodexFeedback,
+                authorize: async () => {
+                  await authorize();
+                  if (event.composition && !reconcilingPublication) await selectComposition();
+                  return { authorized: true };
+                },
+                connect: async () => ({
+                  commenterLogin: source.author!.login,
+                  client: root
+                    ? {
+                        createIssueComment: (o, n, number, body) =>
+                          provider.replies.create(o, n, number, root, body),
+                        findOwnIssueComment: (o, n, number, marker) =>
+                          provider.replies.find(o, n, number, root, marker),
+                      }
+                    : provider.comments,
+                }),
+                exclusive: async (_key, run) => run(),
+              },
+            });
+            if (published.status !== 'published')
+              return {
+                status: 'uncertain',
+                id: record.id,
+                eventId: event.id,
+                code: 'feedback-publication-unconfirmed',
+                presentation: feedbackResponse({
+                  sourcePresentation,
+                  privateText: event.result.privateText,
+                  publicReply: { author: provider.comments.identity.login, text: body },
+                  publication: { withheld: 'feedback-publication-unconfirmed' },
+                }),
               };
-            } else {
-              const receipt = (await publisher.publish(publication)).receipt;
-              event.receipt = { nodeId: receipt.nodeId, databaseId: receipt.databaseId };
-            }
             event.phase = 'published';
             delete event.code;
             delete event.retry;

@@ -2696,6 +2696,91 @@ describe('agent/codex-dispatch', () => {
     };
   }
 
+  it('should compose a retained assessment summary during implementation without requiring the initial checkout', async () => {
+    const assessment = { ...result, fullAssessment: 'Complete saved assessment.' };
+    const work = await workIssue(assessment);
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    const activation = deps.activation!;
+    const summaryDeps = {
+      ...deps,
+      summaryAuthority: async () => {},
+      activation: async (...args: Parameters<typeof activation>) => {
+        const selected = await activation(...args);
+        return {
+          ...selected,
+          schedule: {
+            ...selected.schedule!,
+            saved: {
+              ...selected.schedule!.saved,
+              capabilities: [
+                ...selected.schedule!.saved.capabilities,
+                'assessment-summary' as const,
+              ],
+            },
+          },
+        };
+      },
+      git: async (cwd: string, argv: string[]) =>
+        argv.includes('HEAD') ? 'f'.repeat(40) : deps.git!(cwd, argv),
+    };
+    const composed = await request(
+      'summary',
+      { id: work.id, operation: 'compose' },
+      { ...summaryDeps, threadId: native!.id },
+    );
+    assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.progression?.stage, 'implementation');
+    assert.deepEqual(retained.result, assessment);
+    assert.equal(retained.resultTurnId, 'first-turn');
+  });
+
+  it('should prepare only a pending summary in plan and retain uncertain native custody across occurrences', async () => {
+    const assessment = { ...result, fullAssessment: 'The complete retained private plan.' };
+    const work = await workIssue(assessment, 'Follow the plan.', 'company:implement', 'plan');
+    native!.turnEnded = true;
+    const activation = work.continuation.activation!;
+    work.continuation.activation = async (...args) => {
+      const selected = await activation(...args);
+      return {
+        ...selected,
+        schedule: {
+          ...selected.schedule!,
+          saved: {
+            ...selected.schedule!.saved,
+            capabilities: [...selected.schedule!.saved.capabilities, 'assessment-summary' as const],
+          },
+        },
+      };
+    };
+    const first = await work.run('next');
+    assert.equal(first.status, 'prepared', JSON.stringify(first));
+    assert.ok('request' in first && first.request);
+    assert.match(first.request.prompt, /Recover only the pending public assessment summary/);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = (await store.read()).records[0]!;
+    assert.equal(before.continuation, undefined);
+    assert.equal(before.handoff, undefined);
+    assert.deepEqual(before.result, assessment);
+    assert.equal((await work.run('next')).status, 'idle');
+    now++;
+    assert.equal((await work.run('next')).status, 'pending');
+    assert.deepEqual((await store.read()).records[0]!.summaryRecovery, before.summaryRecovery);
+    work.receive();
+    now++;
+    assert.equal((await work.run('next')).status, 'pending');
+    const running = (await store.read()).records[0]!;
+    assert.equal(running.summaryRecovery!.attempt.turnId, native!.turnId);
+    assert.deepEqual(running.stageReceipt, before.stageReceipt);
+    assert.equal(running.resultTurnId, before.resultTurnId);
+    assert.equal(running.continuation, undefined);
+  });
+
   for (const mode of ['work', 'auto'] as const)
     it(`should hand ${mode} directly from assessment to implementation without a coordinator send`, async () => {
       const assessment = {
