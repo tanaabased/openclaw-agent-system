@@ -1,3 +1,4 @@
+import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -13,34 +14,28 @@ type Mode = 'plan' | 'work' | 'auto';
 /** select a continuation without reviving stopped work or replaying a submitted turn. */
 export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
   if (
-    record.retired ||
-    record.retirement ||
-    record.reset ||
     record.feedbackReactivation ||
     (!record.work?.turn && record.decisionTurn && record.decisionTurn.status !== 'completed') ||
-    (record.work?.code &&
-      ![
-        'implementation-result-missing',
-        'implementation-delivery-incomplete',
-        'dispatch-turn-failed',
-      ].includes(record.work.code)) ||
     !record.sessionCreation?.verified ||
     (!record.work?.turn && record.assessmentTurn?.status !== 'completed')
   )
     return;
   const work = record.work;
+  const progress = issueWorkflowProgress(record);
+  if (progress.action === 'stopped') return;
   if (work?.turn && work.turn.status !== 'completed') return 'turn' as const;
   if (work?.deliveryTurn && work.deliveryTurn.status !== 'completed')
     return 'deliveryTurn' as const;
   if (feedbackWorkStarted(record)) return;
-  if (work?.turn?.status === 'completed' && !work.result) return 'turn' as const;
+  if (progress.action === 'delivery') return 'deliveryTurn' as const;
+  if (progress.action === 'implementation' && work?.turn?.status === 'completed')
+    return 'turn' as const;
   if (
-    work?.result?.outcome === 'done' &&
-    (!work.deliveryTurn || work.deliveryTurn.status === 'completed') &&
-    !(work.delivery?.reconciled && work.delivery.announcement?.receipt)
+    ['assessment', 'implementation'].includes(progress.action) &&
+    !work &&
+    !record.handoff &&
+    issueProgression(record, { mode, now: 0 }).status === 'ready'
   )
-    return 'deliveryTurn' as const;
-  if (!work && !record.handoff && issueProgression(record, { mode, now: 0 }).status === 'ready')
     return 'turn' as const;
 }
 
@@ -135,10 +130,7 @@ export default async function advanceOpenClawWork(input: {
       delete record.work!.code;
     if (slot === 'turn' && !record.work!.result)
       record.work!.code = 'implementation-result-missing';
-    if (
-      slot === 'deliveryTurn' &&
-      !(record.work!.delivery?.reconciled && record.work!.delivery.announcement?.receipt)
-    )
+    if (slot === 'deliveryTurn' && issueWorkflowProgress(record).action === 'delivery')
       record.work!.code = 'implementation-delivery-incomplete';
     await save();
   }

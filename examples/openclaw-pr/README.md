@@ -141,6 +141,8 @@ node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-publish" 300000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
 jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == (.[1].result | del(.decision)) and .[1].progression.stage == "implementation" and .[1].progression.via == "auto" and .[1].work.caller.runId == "notification-publish" and .[1].work.result.outcome == "done" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == .[1].stageReceipt.binding.subjectId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
+# should derive completion from receipts without a separate delivery wakeup
+jq -e '.work.deliveryTurn == null and .work.delivery.announcement.receipt.nodeId != null' "$TMPDIR/notification-delivery.json"
 openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.items[0].workflow.phase == "complete"'
 
 # should verify the actual pull request issue link and recipients before recovering presentation

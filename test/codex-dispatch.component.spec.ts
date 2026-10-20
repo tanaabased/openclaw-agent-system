@@ -1,3 +1,4 @@
+import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import runCodexContinuation, {
   type CodexContinuationDependencies,
@@ -4000,6 +4001,29 @@ describe('agent/codex-dispatch', () => {
     await assert.rejects(work.run('context', {}, true), /schedule-reconciliation-required/);
   });
 
+  it('should recover unfinished delivery despite an obsolete complete phase', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' } },
+      true,
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation!.phase = 'complete';
+      await save();
+    });
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    const next = await work.run('next');
+    assert.equal(next.status, 'prepared');
+    assert.match(String('request' in next && next.request?.prompt), /only the managed PR delivery/);
+    assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+  });
+
   it('should resume only delivery after a recorded implementation turn ends', async () => {
     const work = await workIssue();
     await work.run('next');
@@ -4340,6 +4364,7 @@ describe('agent/codex-dispatch', () => {
             authorId: 'U_receiver',
             policyDigest: 'a'.repeat(64),
           },
+          pushedHead: record.continuation!.head,
           creationAttempted: true,
           pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
           reconciled: true,
@@ -4367,7 +4392,8 @@ describe('agent/codex-dispatch', () => {
     assert.equal('deliveryOnly' in context && context.deliveryOnly, true);
     confirmed = true;
     await work.run('delivery', { delivery: { action: 'present' } }, true);
-    assert.equal((await store.read()).records[0]!.continuation!.phase, 'complete');
+    assert.equal(issueWorkflowProgress((await store.read()).records[0]!).action, 'complete');
+    assert.equal((await work.run('next')).status, 'idle');
     assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
   });
 

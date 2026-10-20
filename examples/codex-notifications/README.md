@@ -14,6 +14,10 @@ binds to the assessment turn and implementation starts without a coordinator sen
 End a turn before implementation completes and confirm the next intake resumes the
 same issue with its saved assessment and checkout. A clarification result must wait
 for an answer rather than being retried on each scan.
+After delivery, confirm the PR, announcement, attachment, and card-generation receipts
+make status complete and the next scan idle without a separate completion transition.
+Interrupt before the announcement or card and confirm recovery finishes those steps
+without repeating implementation or creating another PR.
 
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 

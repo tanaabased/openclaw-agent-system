@@ -71,6 +71,23 @@ describe('agent/codex-capacity', () => {
     });
     assert.throws(() => codexCapacity([], 0), /capacity-invalid/);
   });
+  it('should reserve unfinished delivery from its result despite an obsolete complete phase', () => {
+    const item = record('complete');
+    item.continuation = {
+      phase: 'complete',
+      result: { outcome: 'done' },
+    } as DispatchRecord['continuation'];
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.continuation!.head = 'new';
+    item.delivery = {
+      reconciled: true,
+      pushedHead: 'old',
+      pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+    } as DispatchRecord['delivery'];
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.delivery!.pushedHead = 'new';
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+  });
   it('should release reconciled pr delivery without releasing active feedback or implementation', () => {
     const item = record('complete');
     item.continuation = { phase: 'delivery' } as DispatchRecord['continuation'];

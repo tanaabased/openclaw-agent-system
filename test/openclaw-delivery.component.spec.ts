@@ -1,3 +1,5 @@
+import openClawWorkAction from '../agent/openclaw-work.ts';
+import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -227,6 +229,52 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, ...content });
   }
+  it('should finish a new implementation through the same pr after earlier delivery completed', async () => {
+    await publish();
+    const composed = await request('compose');
+    assert.ok('digest' in composed);
+    const candidate = await request('candidate', {
+      digest: composed.digest,
+      publicText: 'Delivers the requested change.',
+    });
+    assert.ok('digest' in candidate);
+    await request('announce', { digest: candidate.digest });
+    assert.equal(issueWorkflowProgress(record).action, 'complete');
+    const receipt = structuredClone(record.work!.delivery!.pullRequest);
+    record.work!.caller = input.source;
+    head = 'b'.repeat(40);
+    await openClawWorkAction({
+      record,
+      source: input.source,
+      caller: {
+        sessionKey: record.threadId!,
+        sessionId: 'issue-session',
+        runId: input.source.runId,
+        toolCallId: 'result',
+      },
+      progression: { stage: 'implementation', via: 'operator' },
+      action: {
+        action: 'implementation-result',
+        id: record.id,
+        implementationResult: {
+          outcome: 'done',
+          summary: 'Follow-up complete.',
+          fullResult: 'Committed and checked.',
+        },
+      },
+      now: 3,
+      assertCurrent: input.assertCurrent,
+      save: input.save,
+    });
+    assert.equal(issueWorkflowProgress(record).action, 'delivery');
+    assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
+    await publish();
+    assert.equal(issueWorkflowProgress(record).action, 'complete');
+    assert.equal(creates, 1);
+    assert.equal(announcement.posts, 1);
+    assert.equal(record.work!.delivery!.pushedHead, head);
+  });
+
   it('should retry pr creation after a definite provider rejection', async () => {
     rejectCreation = true;
     await assert.rejects(publish(), /403/);

@@ -1,3 +1,4 @@
+import issueWorkflowProgress from './issue-workflow-progress.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import { needsAutoDecision, autoDecisionInstructions } from './auto-decision.ts';
 import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
@@ -321,7 +322,6 @@ export default async function runCodexContinuation(
           ? state.records.filter(
               (record) =>
                 record.continuation &&
-                !(record.autoDecision && !record.autoDecision.ended) &&
                 !feedbackWorkStarted(record) &&
                 record.result &&
                 record.threadId &&
@@ -331,9 +331,7 @@ export default async function runCodexContinuation(
                 !record.retirement &&
                 !record.feedbackReactivation &&
                 !record.reset &&
-                (!['complete', 'blocked', 'cancelled', 'clarification-needed'].includes(
-                  record.continuation.phase,
-                ) ||
+                (['implementation', 'delivery'].includes(issueWorkflowProgress(record).action) ||
                   [
                     'continuation-auto-wait',
                     'continuation-assessment-not-actionable',
@@ -412,13 +410,11 @@ export default async function runCodexContinuation(
             !work.code;
           const blockedTurnId =
             work.blockedTurnId ?? work.activeTurnId ?? work.binding?.turnId ?? work.attempt?.turnId;
-          if (
-            !retry &&
-            !resumeBlocked &&
-            ['blocked', 'cancelled', 'complete'].includes(work.phase)
-          ) {
+          const progress = issueWorkflowProgress(record);
+          if (!retry && !resumeBlocked && ['stopped', 'complete'].includes(progress.action)) {
             if (input.action === 'next') continue;
-            return { status: work.phase, id: record.id, code: work.code };
+            if (progress.action === 'stopped' || !work.result)
+              return { status: progress.status, id: record.id, code: work.code };
           }
           if (!record.result) continue;
           const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
@@ -905,7 +901,6 @@ export default async function runCodexContinuation(
           }
           if (input.action === 'delivery') {
             if (
-              work.phase !== 'delivery' ||
               work.result?.outcome !== 'done' ||
               !work.head ||
               (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim() !== work.head
@@ -914,42 +909,11 @@ export default async function runCodexContinuation(
             return { status: 'deliver', id: record.id };
           }
           if (
-            occurrence &&
-            work.phase === 'delivery' &&
-            work.result?.outcome === 'done' &&
-            !work.publicationAttempt &&
-            currentTurnEnded &&
-            found.turnStatus === 'completed' &&
-            ['idle', 'notLoaded'].includes(found.status)
-          ) {
-            work.publicationAttempt = {
-              id: automationHash({
-                id: work.attempt.id,
-                stage: 'publication',
-                result: work.result,
-              }),
-              sourceThreadId: activation.sourceThreadId,
-              sourceTurnId: occurrence.id,
-              beforeTurnId: found.turnId,
-              request: {
-                threadId: record.threadId,
-                model: record.request.model,
-                thinking: record.request.thinking,
-                prompt:
-                  'Resume only the managed PR delivery for this issue; implementation is already recorded. Do not repeat implementation or ask for stage approval. Refresh continuationRuntime context using JSON on stdin: ' +
-                  JSON.stringify({ action: 'context', id: record.id }) +
-                  '. Reconcile the retained delivery operation; never create a replacement PR. Stop on actual native denial.',
-              },
-            };
-            await save();
-            return { status: 'prepared', id: record.id, request: work.publicationAttempt.request };
-          }
-          if (
             input.action === 'next' &&
             occurrence &&
             currentTurnEnded &&
             ['idle', 'notLoaded'].includes(found.status) &&
-            work.phase !== 'complete'
+            ['implementation', 'delivery'].includes(issueWorkflowProgress(record).action)
           ) {
             work.retries = [
               ...(work.retries ?? []),
@@ -968,15 +932,16 @@ export default async function runCodexContinuation(
               request: {
                 ...activeAttempt.request,
                 prompt:
-                  (work.result?.outcome === 'done'
-                    ? 'Resume only unfinished PR delivery. Reconcile the existing operation; never repeat implementation or create a replacement PR. '
+                  (issueWorkflowProgress(record).action === 'delivery'
+                    ? 'Resume only the managed PR delivery. Reconcile the existing operation; never repeat implementation or create a replacement PR. '
                     : 'Resume unfinished implementation in this issue. Reconcile current files, commits and the latest conversation; preserve completed work. ') +
                   'Work remains authorized. Refresh continuationRuntime context with JSON on stdin: ' +
                   JSON.stringify({ action: 'context', id: record.id }) +
                   '. Honor current user direction, cancellation and native denial. Retain the result before finishing.',
               },
             };
-            if (work.result?.outcome === 'done') work.publicationAttempt = resume;
+            if (issueWorkflowProgress(record).action === 'delivery')
+              work.publicationAttempt = resume;
             else {
               work.attempt = resume;
               work.phase = 'prepared';
@@ -1067,19 +1032,6 @@ export default async function runCodexContinuation(
         },
       },
     );
-    if ('action' in input.delivery && input.delivery.action === 'present')
-      await store.exclusive(async (state, save) => {
-        const record = state.records.find((entry) => entry.id === input.id);
-        if (
-          record?.continuation?.phase === 'delivery' &&
-          record.delivery?.reconciled &&
-          record.delivery.announcement?.receipt &&
-          !record.delivery.announcement.code
-        ) {
-          record.continuation.phase = 'complete';
-          await save();
-        }
-      }, true);
     return delivery;
   } finally {
     await connection?.close();

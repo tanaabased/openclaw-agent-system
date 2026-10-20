@@ -41,6 +41,10 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   same turn. Keep publication, announcement, and card orchestration outside replaceable
   implementation skills. Both runtimes share push and PR recovery; native adapters own
   execution identity and chat attachment. Resume missing effects from retained receipts.
+- Derive unfinished issue work and status from the same results and delivery receipts.
+  Keep native send reconciliation separate from that calculation. A completed PR,
+  announcement, and supported native presentation receipts determine completion;
+  displaying a card must not require another saved continuation-phase transition.
 - Recover older implementation stages from native continuation attempts or retained
   implementation handoffs, preserving the issue, assessment, and execution receipts.
   A plan, default mode, or publication-only request is not evidence of implementation.
