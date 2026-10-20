@@ -8,7 +8,7 @@ export default function sessionDispatchRequirements(manifest: AgentManifest) {
     { id: 'github-issue-assignment', name: 'issue assignments', policy: policy.issueAssignment },
     { id: 'github-review-request', name: 'pull request reviews', policy: policy.reviewRequest },
   ]
-    .filter(({ policy: trigger }) => trigger?.enabled !== false && !!trigger?.allowed.length)
+    .filter(({ policy: trigger }) => !!trigger?.allowed.length)
     .map(({ id, name }) => ({ id, name }));
 }
 

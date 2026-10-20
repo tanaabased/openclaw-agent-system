@@ -417,22 +417,27 @@ describe('agent/openclaw issue dispatch', () => {
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
     assert.equal((await context(routed.id)).status, 'verified');
   });
-  it('should resume the same prepared owner after a live policy hold without a retry grant', async () => {
-    const routed = await next();
-    const before = await record();
-    manifest.github!.notifications!.issueAssignment!.enabled = false;
-    const held = await prepare(routed);
-    assert.ok('status' in held && held.status === 'policy-held');
-    assert.equal((await record()).phase, before.phase);
-    assert.equal((await record()).blocker, undefined);
-    assert.equal(creates().length, 0);
-    manifest.github!.notifications!.issueAssignment!.enabled = true;
-    coordinator.runId = 'policy-resumed';
-    const resumed = await next();
-    assert.equal(resumed.id, routed.id);
-    await prepare(resumed);
-    assert.equal(creates().length, 1);
-  });
+  for (const pause of ['native', 'manifest'] as const)
+    it(`should finish an accepted run through ${pause} pause and gate the next occurrence`, async () => {
+      const routed = await next();
+      const intake = service.dependencies.intake;
+      const readiness = intake.readiness.bind(intake);
+      if (pause === 'manifest') manifest.github!.notifications!.issueAssignment!.paused = true;
+      intake.readiness = async () => 'intake-automation-paused';
+      await prepare(routed);
+      assert.equal(creates().length, 1);
+      coordinator.runId = 'next-paused-run';
+      await assert.rejects(
+        service.run(manifest, root, coordinator, { action: 'next' }),
+        /intake-automation-paused/u,
+      );
+      assert.equal(creates().length, 1);
+      manifest.github!.notifications!.issueAssignment!.paused = false;
+      intake.readiness = readiness;
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      assert.equal(creates().length, 1);
+      assert.equal((await record()).id, routed.id);
+    });
 
   it('should retain the previous feedback policy check across coordinator runs', async () => {
     manifest.github!.notifications!.issueAssignment!.feedback = false;

@@ -28,7 +28,11 @@ export function wantsGitHubChannel(manifest: AgentManifest): boolean {
     policy?.schemaVersion === 2 &&
     policy.runtimes.includes('openclaw') &&
     [policy.issueAssignment, policy.reviewRequest].some(
-      (workflow) => workflow && (workflow.enabled ?? Boolean(workflow.allowed.length)),
+      (workflow) =>
+        workflow &&
+        (workflow.paused !== undefined ||
+          workflow.enabled !== undefined ||
+          Boolean(workflow.allowed.length)),
     ),
   );
 }

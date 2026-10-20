@@ -555,7 +555,18 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
     assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
   });
-  it('should hold feedback while its parent is paused and resume the same admitted event', async () => {
+  it('should require occurrence activation before feedback discovery despite retained-work access', async () => {
+    const before = await store.read();
+    const activation = deps.activation!;
+    deps.activation = async (...args) => {
+      if (!args[3]) throw new Error('intake-automation-paused');
+      return activation(...args);
+    };
+    await assert.rejects(call('next'), /intake-automation-paused/u);
+    assert.deepEqual(await store.read(), before);
+  });
+
+  it('should keep the same admitted feedback event available through parent pause', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
@@ -567,7 +578,7 @@ describe('agent/codex-feedback', () => {
     ];
     await writeFile(path, JSON.stringify(manifest));
     const paused = await call('context', ref, true);
-    assert.equal(paused.status, 'policy-held', JSON.stringify(paused));
+    assert.equal(paused.status, 'verified', JSON.stringify(paused));
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
     manifest.github.notifications['issue-assignment'].enabled = true;
     await writeFile(path, JSON.stringify(manifest));

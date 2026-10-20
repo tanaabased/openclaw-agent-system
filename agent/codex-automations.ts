@@ -412,6 +412,12 @@ export async function inspectCodexDispatchActivation(
         ? 'intake-automation-update-required'
         : 'intake-activation-required'
       : 'dispatch-activation-required';
+  if (!retainedWork && !pausedRecovery && job?.enabled === false)
+    throw new CodexAutomationError('intake-automation-paused');
+  const saved = await readCodexAutomations(selected.codexHome);
+  const actual = saved.find((entry) => entry.id === record?.nativeId);
+  if (!retainedWork && !pausedRecovery && actual?.definition.status === 'PAUSED')
+    throw new CodexAutomationError('intake-automation-paused');
   const matchesPrompt = (prompt: string) => {
     const marker = '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId);
     return job?.payload.kind === 'prompt' && prompt === job.payload.prompt + marker;
@@ -429,8 +435,6 @@ export async function inspectCodexDispatchActivation(
         !matchesPrompt(record.definition.prompt)))
   )
     throw new CodexAutomationError(activationCode);
-  const saved = await readCodexAutomations(selected.codexHome);
-  const actual = saved.find((entry) => entry.id === record.nativeId);
   if (
     !retainedWork &&
     (!actual ||
