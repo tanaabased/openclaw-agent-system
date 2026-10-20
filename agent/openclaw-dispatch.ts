@@ -317,7 +317,7 @@ export default class OpenClawDispatch {
         if (input.action === 'next') return this.coordinator.next(tx);
         const record = state.records.find((entry) => entry.id === input.id);
         if (!record) throw new Error('dispatch-receipt-missing');
-        const feedback = await this.issue.routeFeedback(input, record, tx);
+        const feedback = await this.issue.routeFeedback(input, record, tx, operator);
         if (feedback !== undefined) return feedback;
         if (input.action === 'retry') {
           if (record.request) throw new Error('dispatch-native-recovery-required');
