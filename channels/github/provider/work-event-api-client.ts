@@ -124,7 +124,13 @@ export default class GitHubWorkEventApiClient {
       );
     }
     try {
-      return { hasNextPage: response.hasNextPage, value: JSON.parse(response.body) as unknown };
+      return {
+        hasNextPage: response.hasNextPage,
+        value:
+          response.status === 204 && !response.body.trim()
+            ? null
+            : (JSON.parse(response.body) as unknown),
+      };
     } catch (error) {
       throw new GitHubWorkEventClientError(
         'github-notification-response-invalid',

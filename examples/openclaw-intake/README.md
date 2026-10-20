@@ -4,11 +4,16 @@ Verify notification activation compatibility, native channel readiness and a saf
 
 `openclaw-lifecycle` owns recovery, reactivation, replay-safe replies and retirement. Assessment presentation and ordinary feedback belong to `openclaw-issue`; implementation and PR delivery belong to `openclaw-pr`; scheduler drift belongs to `openclaw-automations`.
 
+A separate bounded claim trial races two persisted instances against one disposable GitHub issue using the prepared package. It verifies two-pass selection, lost-response recovery, loser cleanup, rename and rotation. Native preparation is a counted callback in this trial; ordinary intake below does not yet consume claims.
+
 Strict AIMock reuses the issue assessment protocol with a per-receipt release barrier. This job owns its three issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issues or revoking its key.
 
 ## Setup
 
 ```bash
+# should select one two-pass claimant using the prepared package and disposable github state
+node --import tsx "$GITHUB_WORKSPACE/scripts/github-claim-trial-task.ts"
+
 # should prepare the packed plugin and strict notification fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 touch "$TMPDIR/notification-assessments-held"
