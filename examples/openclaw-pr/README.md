@@ -152,6 +152,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile source "$TMPDIR/notification-initial-source.json" '($saved[0].feedback.events[0]) as $event | ($event.source | fromjson).nodeId == $source[0].node_id and ([.[] | select(.node_id == $event.receipt.nodeId and .user.login == "tanaabot" and (.body | contains($event.result.publicText)))] | length) == 1'
 
 # should derive completion from receipts without a separate delivery wakeup
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
 jq -e '.work.deliveryTurn == null and .work.delivery.announcement.receipt.nodeId != null' "$TMPDIR/notification-delivery.json"
 openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.items[0].workflow.phase == "complete"'
 
@@ -230,7 +231,27 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_r
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
-jq -e --slurp '.[1].progression.workOwner == .[1].feedback.events[1].id and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].work.result == .[1].work.result and .[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest and .[0].work.delivery.announcement == .[1].work.delivery.announcement and .[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead and (.[1].feedback.events | length) == 2 and .[0].feedback.events[0] == .[1].feedback.events[0] and all(.[1].feedback.events[1:]; .phase == "published" and .work.result.outcome == "done" and .work.head == .workDelivery.pushedHead and .itemType == "pull-request" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-recovered.json" "$TMPDIR/notification-feedback.json"
+jq -e --slurp '
+  (.[0].feedback.events[0]) as $before |
+  (.[1].feedback.events[0]) as $after |
+  if $after == ($before + {turn:($before.turn + {status:"completed",replyEventId:$after.turn.replyEventId,executionModel:$after.turn.executionModel})})
+    and $after.turn.replyEventId != null and $after.turn.executionModel != null
+    and $after.turn.failed != true and $after.turn.cancelled != true
+  then true else error({code:"initial-feedback-receipts-changed",before:$before,after:$after} | tojson) end
+' "$TMPDIR/notification-recovered.json" "$TMPDIR/notification-feedback.json"
+jq -e --slurp '{
+  feedbackOwner:(.[1].progression.workOwner == .[1].feedback.events[1].id),
+  sameIssue:(.[0].id == .[1].id),
+  sameChat:(.[0].threadId == .[1].threadId),
+  sameWorktree:(.[0].worktree == .[1].worktree),
+  originalAssessment:(.[0].result == .[1].result),
+  originalImplementation:(.[0].work.result == .[1].work.result),
+  samePullRequest:(.[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest),
+  sameAnnouncement:(.[0].work.delivery.announcement == .[1].work.delivery.announcement),
+  changedHead:(.[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead),
+  exactEventCount:((.[1].feedback.events | length) == 2),
+  publishedFeedback:all(.[1].feedback.events[1:]; .phase == "published" and .work.result.outcome == "done" and .work.head == .workDelivery.pushedHead and .itemType == "pull-request" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)
+} | to_entries | map(select(.value == false)) | if length == 0 then true else error({code:"feedback-continuity-mismatch",failed:map(.key)} | tojson) end' "$TMPDIR/notification-recovered.json" "$TMPDIR/notification-feedback.json"
 openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .feedback.events[1].work.head "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
