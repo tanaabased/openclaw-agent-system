@@ -9,6 +9,7 @@ import { memoryExampleScenario } from '../examples/openclaw-memory/model-fixture
 import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-intake/model-fixture.ts';
 import { lifecycleExampleScenario } from '../examples/openclaw-lifecycle/model-fixture.ts';
+import { progressionExampleScenario } from '../examples/openclaw-progression/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
 import { worktreeExampleScenario } from '../examples/openclaw-worktree/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
@@ -24,6 +25,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [memoryExampleScenario.id, memoryExampleScenario],
   [worktreeExampleScenario.id, worktreeExampleScenario],
   [prExampleScenario.id, prExampleScenario],
+  [progressionExampleScenario.id, progressionExampleScenario],
   [issueExampleScenario.id, issueExampleScenario],
   [intakeExampleScenario.id, intakeExampleScenario],
   [lifecycleExampleScenario.id, lifecycleExampleScenario],

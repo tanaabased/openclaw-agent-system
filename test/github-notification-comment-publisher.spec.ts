@@ -2,7 +2,7 @@ import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';
 import assert from 'node:assert/strict';
 
 import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
-import { githubNotificationCommenterToken } from '../channels/github/publication/publication.ts';
+import { githubNotificationCommenterToken } from '../channels/github/publication/publication-contract.ts';
 import { publicationItem } from './github-provider-fixtures.ts';
 
 function input() {

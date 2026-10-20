@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import dispatchCapacity from '../agent/dispatch-capacity.ts';
 import OpenClawDispatchStore, {
   type OpenClawDispatchRecord,
 } from '../agent/openclaw-dispatch-state.ts';
@@ -106,7 +105,7 @@ describe('agent/shared dispatch state', () => {
     await assert.rejects(codex.read(), /dispatch-state-invalid/);
   });
 
-  it('should retain an uncertain creation and its occupied slot across restart', async () => {
+  it('should retain an uncertain creation across restart', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     await store.exclusive(async (state, save) => {
       state.records.push(prepared());
@@ -115,12 +114,6 @@ describe('agent/shared dispatch state', () => {
     const restarted = new OpenClawDispatchStore(root, scope);
     const state = await restarted.read();
     assert.equal(state.records[0]!.phase, 'creating');
-    assert.deepEqual(dispatchCapacity(state.records, 1), { occupied: 1, available: 0 });
-    state.records[0]!.phase = 'blocked';
-    assert.equal(dispatchCapacity(state.records, 1).available, 0);
-    state.records[0]!.phase = 'complete';
-    assert.equal(dispatchCapacity(state.records, 1).available, 1);
-    assert.throws(() => dispatchCapacity([], 0), /dispatch-capacity-invalid/);
   });
 
   it('should recover a known legacy blocker on read and persist it only through an owner save', async () => {

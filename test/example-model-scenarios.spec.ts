@@ -71,6 +71,7 @@ describe('scripts/example-model-scenarios', () => {
       'openclaw-memory',
       'openclaw-worktree',
       'openclaw-pr',
+      'openclaw-progression',
       'openclaw-issue',
       'openclaw-intake',
       'openclaw-lifecycle',

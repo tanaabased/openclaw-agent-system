@@ -20,6 +20,8 @@ describe('example environment resolution', () => {
       ['examples/openclaw-lifecycle/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-issue/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
       ['examples/openclaw-issue/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/openclaw-progression/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      ['examples/openclaw-progression/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-pr/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
       ['examples/openclaw-pr/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
     ] as const) {

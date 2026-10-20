@@ -36,6 +36,7 @@ jobs:
           - openclaw-lifecycle
           - openclaw-issue
           - openclaw-pr
+          - openclaw-progression
           - openclaw-collaboration
           - openclaw-memory
           - openclaw-backup

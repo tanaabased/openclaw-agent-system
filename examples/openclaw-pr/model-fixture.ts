@@ -19,8 +19,6 @@ const dispatchStages = [
   'context',
   'result',
   'report',
-  'refresh-context',
-  'refresh-result',
   'handoff-preview',
   'handoff',
   'work-context',
@@ -207,70 +205,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     }
     return;
   }
-  const decisionId = /Refresh agent_system_dispatch action context with id ([a-f0-9]{64})/u.exec(
-    prompt,
-  )?.[1];
-  if (decisionId) {
-    if (!prompt.includes('Resume the unfinished Auto decision.'))
-      return { content: 'The decision was interrupted before its result was recorded.' };
-    const fresh = result('refresh-context');
-    if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
-    if (fresh.status !== 'verified' || fresh.mode !== 'auto' || !fresh.previousResult) return;
-    const saved = result('refresh-result');
-    if (!saved)
-      return dispatch('refresh-result', {
-        action: 'result',
-        id: decisionId,
-        previousResultDigest: fresh.previousResultDigest,
-        result: {
-          ...(fresh.previousResult as Record<string, unknown>),
-          decision: {
-            mode: 'work',
-            reasons: ['The retained documentation plan is bounded and actionable.'],
-          },
-        },
-      });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    if ((saved.handoff as { next?: string } | undefined)?.next !== 'implementation') return;
-  }
-  const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
-    prompt,
-  )?.[1];
-  if (refreshId) {
-    const privateContext = request.messages
-      .map(({ content }) => getTextContent(content) ?? '')
-      .join('\n');
-    if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('previousResultDigest')
-    )
-      return;
-    const fresh = result('refresh-context');
-    if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
-    const evidence = fresh.evidence as { body?: string } | undefined;
-    if (
-      fresh.status !== 'verified' ||
-      !fresh.previousResult ||
-      typeof fresh.previousResultDigest !== 'string' ||
-      !evidence?.body?.includes('notification-hidden-later-fact')
-    )
-      return;
-    const saved = result('refresh-result');
-    if (!saved)
-      return dispatch('refresh-result', {
-        action: 'result',
-        id: refreshId,
-        previousResultDigest: fresh.previousResultDigest,
-        result: {
-          ...(fresh.previousResult as Record<string, unknown>),
-          fullAssessment:
-            String((fresh.previousResult as Record<string, unknown>).fullAssessment) +
-            '\n\nFresh issue context verified after restart.',
-        },
-      });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return { content: saved.presentation };
-  }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
     const [, id, eventId] = feedback;
@@ -392,16 +326,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
-  const automaticId =
-    decisionId ??
-    /Call agent_system_dispatch action implementation-context with id ([a-f0-9]{64})/u.exec(
-      prompt,
-    )?.[1];
-  const answerId = /Answer for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
-  const operatorId =
-    automaticId ??
-    answerId ??
-    /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
     const update = prompt.includes(
       'Add a follow-up commit and update the existing PR title and body.',
@@ -414,23 +339,21 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
-      if (!automaticId && !answerId) {
-        const preview = result('handoff-preview');
-        if (!preview)
-          return dispatch('handoff-preview', {
-            action: 'handoff',
-            id: operatorId,
-          });
-        if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
-        const handed = result('handoff');
-        if (!handed)
-          return dispatch('handoff', {
-            action: 'handoff',
-            id: operatorId,
-            digest: preview.digest,
-          });
-        if (handed.status !== 'handed-off') return;
-      }
+      const preview = result('handoff-preview');
+      if (!preview)
+        return dispatch('handoff-preview', {
+          action: 'handoff',
+          id: operatorId,
+        });
+      if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
+      const handed = result('handoff');
+      if (!handed)
+        return dispatch('handoff', {
+          action: 'handoff',
+          id: operatorId,
+          digest: preview.digest,
+        });
+      if (handed.status !== 'handed-off') return;
       const context = result('work-context');
       if (!context)
         return dispatch('work-context', { action: 'implementation-context', id: operatorId });
@@ -440,34 +363,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         context.runtime !== 'openclaw' ||
         !path ||
         context.publicationAuthorized !== true
-      )
-        return;
-      if (automaticId) {
-        const saved = result('work-result');
-        if (!saved)
-          return dispatch('work-result', {
-            action: 'implementation-result',
-            id: operatorId,
-            implementationResult: {
-              outcome: 'clarification-needed',
-              summary: 'Confirm cleanup timing.',
-              fullResult:
-                'Reviewed the retained plan. No files changed; cleanup timing needs confirmation.',
-              questions: ['Should cleanup happen after evidence is captured?'],
-            },
-          });
-        if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-        return {
-          content: [result('refresh-result')?.presentation, saved.presentation]
-            .filter(Boolean)
-            .join('\n\n'),
-        };
-      }
-      if (
-        answerId &&
-        ((context.previousImplementationResult as { outcome?: string })?.outcome !==
-          'clarification-needed' ||
-          !prompt.includes('Yes, after evidence is captured.'))
       )
         return;
       const file = `notification-fixture-${operatorId}.md`;
