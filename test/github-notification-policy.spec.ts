@@ -237,7 +237,7 @@ describe('channels/github/notification-policy', () => {
       allowedRepositoryOwners: [{ login: owner.login, nodeId: owner['node-id'] }],
     });
     const declaration = parsed({ ...policy, 'issue-assignment': {} });
-    assert.deepEqual(declaration.issueAssignment, { allowed: [], mode: 'plan' });
+    assert.deepEqual(declaration.issueAssignment, { allowed: [], mode: 'auto' });
     assert.equal(declaration.reviewRequest, undefined);
   });
 

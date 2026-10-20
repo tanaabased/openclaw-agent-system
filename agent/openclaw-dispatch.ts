@@ -358,7 +358,7 @@ export default class OpenClawDispatch {
     if (
       openClawDecisionPending(
         record,
-        manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
       )
     ) {
       const assertDecision = async () => {
@@ -369,7 +369,7 @@ export default class OpenClawDispatch {
           !record.decisionTurn &&
           !openClawDecisionPending(
             record,
-            live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+            live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
           )
         )
           throw new WorkflowPolicyHeld('workflow-mode-updated');
@@ -403,7 +403,7 @@ export default class OpenClawDispatch {
       authority.signal?.throwIfAborted();
       const live = await this.validateLocal(manifest, workspace, record, true);
       const transition = issueProgression(record, {
-        mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         now,
       });
       if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
@@ -435,7 +435,7 @@ export default class OpenClawDispatch {
         return advanceOpenClawWork({
           record,
           reconcileOnly,
-          mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
           selection,
           now,
           request,
@@ -779,11 +779,11 @@ export default class OpenClawDispatch {
       (record) =>
         (openClawDecisionPending(
           record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         ) ||
           openClawWorkSlot(
             record,
-            manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+            manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
           )) &&
         (openClawItemOccupied(record) || capacity.available > 0),
     );
@@ -1208,11 +1208,11 @@ export default class OpenClawDispatch {
             .flatMap((record) => {
               const slot = openClawWorkSlot(
                 record,
-                manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
               );
               const decision = openClawDecisionPending(
                 record,
-                manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
               );
               return slot || decision
                 ? [
@@ -1553,7 +1553,7 @@ export default class OpenClawDispatch {
               operator,
               mode:
                 (await this.validateLocal(manifest, workspace, record, true)).manifest.github
-                  ?.notifications?.issueAssignment?.mode ?? 'plan',
+                  ?.notifications?.issueAssignment?.mode ?? 'auto',
               now,
               request,
               config: this.dependencies.config(),

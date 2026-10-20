@@ -472,7 +472,7 @@ export async function runCodexDispatch(
       )
         throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
       const transition = issueProgression(record, {
-        mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         now: (deps.now ?? Date.now)(),
         operator: native.followUpUserTurn,
       });
@@ -1029,7 +1029,7 @@ export async function runCodexDispatch(
           });
           record.assessment = selected.selection;
           record.issueMode =
-            current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan';
+            current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
           if (record.issueMode === 'work' || record.issueMode === 'auto') {
             await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
@@ -1170,7 +1170,7 @@ export async function runCodexDispatch(
           await fresh();
           if (action === 'context')
             record.issueMode =
-              current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan';
+              current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
           if (action === 'summary') {
             if (!record.result || !native.turnId)
               throw new Error('assessment-summary-source-unavailable');
@@ -1272,7 +1272,7 @@ export async function runCodexDispatch(
                     previousResult: record.result,
                     handoff: assessmentHandoff(
                       record,
-                      current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                      current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
                       'codex',
                     ),
                     previousResultDigest: automationHash(record.result),
@@ -1294,7 +1294,7 @@ export async function runCodexDispatch(
                 : {}),
               resultContract: 'assessment-result/v1',
               resultSchema: assessmentResultContextSchema,
-              mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+              mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
               instructions:
                 codexAssessmentInstructions +
                 (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
@@ -1370,7 +1370,7 @@ export async function runCodexDispatch(
               previousResultDigest: automationHash(result),
               handoff: assessmentHandoff(
                 record,
-                current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
                 'codex',
               ),
               presentation,

@@ -193,7 +193,7 @@ export async function issueAssessmentAction(input: {
             previousResult: record.result,
             handoff: assessmentHandoff(
               record,
-              input.policy?.issueAssignment?.mode ?? 'plan',
+              input.policy?.issueAssignment?.mode ?? 'auto',
               'openclaw',
             ),
             previousResultDigest: automationHash(record.result),
@@ -203,7 +203,7 @@ export async function issueAssessmentAction(input: {
             }),
           }
         : {}),
-      mode: input.policy?.issueAssignment?.mode ?? 'plan',
+      mode: input.policy?.issueAssignment?.mode ?? 'auto',
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       instructions:
@@ -250,7 +250,7 @@ export async function issueAssessmentAction(input: {
     id: record.id,
     outcome: result.outcome,
     previousResultDigest: automationHash(result),
-    handoff: assessmentHandoff(record, input.policy?.issueAssignment?.mode ?? 'plan', 'openclaw'),
+    handoff: assessmentHandoff(record, input.policy?.issueAssignment?.mode ?? 'auto', 'openclaw'),
     presentation,
     instruction: assessmentSummaryInstructions('openclaw'),
   };
