@@ -428,8 +428,10 @@ result while preserving its chat and worktree; only a
 new assignment event after reset permits a fresh dispatch. Reassignment alone does
 not create another chat, and reset never authorizes implementation.
 
-Closed issues, unassigned work, and manually archived chats leave Active on the next
-intake check. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
+Closed issues, work unassigned by a live approved actor, and manually archived chats
+leave Active on the next intake check. Unapproved or unverifiable removal reports
+the missing assignment while preserving the existing chat, checkout and work stage;
+admitted work remains eligible within its existing permissions, without reassignment. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
 for grace periods, reactivation, and cleanup protections. Intake prepares eligible
 Codex chats for native archival; the desktop owns worktree snapshots and reclamation.
 Retirement completes after archival and checkout removal are observed. The explicit

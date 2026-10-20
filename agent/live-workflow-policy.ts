@@ -12,7 +12,7 @@ export default function liveWorkflowPolicy(
   const policy = manifest.github?.notifications;
   // admission rules apply once; live mode governs the first implementation transition.
   if (effect === 'implementation')
-    return (policy?.issueAssignment?.mode ?? 'plan') === 'plan'
+    return (policy?.issueAssignment?.mode ?? 'auto') === 'plan'
       ? 'implementation-disabled'
       : undefined;
   if (effect !== 'assignment') return;

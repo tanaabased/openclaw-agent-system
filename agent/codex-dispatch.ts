@@ -27,7 +27,7 @@ import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { inspectActiveIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import dispatchContext from './dispatch-context.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
@@ -196,6 +196,9 @@ function notice(record: DispatchRecord, intake?: IntakeRecord) {
     id: record.id,
     status: record.handoff ? 'handed-off' : record.phase,
     workflowStatus: workflowStatus(record),
+    assignmentObservation: record.assignmentObservation,
+    assignmentWarning:
+      record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
     changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
     threadId: record.threadId,
     ...(failure
@@ -246,10 +249,19 @@ export async function revalidateDispatchAssignment(
   deps: CodexDispatchDependencies,
   signal: AbortSignal,
   retainedWork = false,
+  dispatchRecord?: DispatchRecord,
 ) {
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
   const repo = retainedWork
-    ? (await inspectActiveIssue(record, client)).repo
+    ? (
+        await inspectContinuedIssue(
+          record,
+          client,
+          current.manifest.github?.notifications?.issueAssignment?.allowed ?? [],
+          dispatchRecord,
+          (deps.now ?? Date.now)(),
+        )
+      ).repo
     : (await inspectAdmittedIssue(record, client)).repo;
   return { client, repo };
 }
@@ -365,6 +377,9 @@ export async function runCodexDispatch(
       records: state.records.map((record) => ({
         ...record,
         workflowStatus: workflowStatus(record),
+        assignmentObservation: record.assignmentObservation,
+        assignmentWarning:
+          record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       })),
     };
   }
@@ -472,7 +487,7 @@ export async function runCodexDispatch(
       )
         throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
       const transition = issueProgression(record, {
-        mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+        mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         now: (deps.now ?? Date.now)(),
         operator: native.followUpUserTurn,
       });
@@ -1029,7 +1044,7 @@ export async function runCodexDispatch(
           });
           record.assessment = selected.selection;
           record.issueMode =
-            current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan';
+            current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
           if (record.issueMode === 'work' || record.issueMode === 'auto') {
             await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
@@ -1158,7 +1173,7 @@ export async function runCodexDispatch(
           }
           if (childAction && record.threadId && record.threadId !== caller)
             throw new Error('dispatch-assessment-caller-mismatch');
-          await revalidateDispatchAssignment(current, intake, deps, signal, true);
+          await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
           const native = await recover(
             current,
             record,
@@ -1170,7 +1185,7 @@ export async function runCodexDispatch(
           await fresh();
           if (action === 'context')
             record.issueMode =
-              current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan';
+              current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
           if (action === 'summary') {
             if (!record.result || !native.turnId)
               throw new Error('assessment-summary-source-unavailable');
@@ -1223,7 +1238,7 @@ export async function runCodexDispatch(
                   }
                 }
                 await activate();
-                await revalidateDispatchAssignment(current, intake, deps, signal, true);
+                await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
               },
               select: async (previous) =>
                 (
@@ -1259,6 +1274,9 @@ export async function runCodexDispatch(
             await save();
             return {
               status: 'verified',
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               id: record.id,
               project: record.project,
               routing: JSON.parse(record.routing!),
@@ -1272,7 +1290,7 @@ export async function runCodexDispatch(
                     previousResult: record.result,
                     handoff: assessmentHandoff(
                       record,
-                      current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                      current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
                       'codex',
                     ),
                     previousResultDigest: automationHash(record.result),
@@ -1294,7 +1312,7 @@ export async function runCodexDispatch(
                 : {}),
               resultContract: 'assessment-result/v1',
               resultSchema: assessmentResultContextSchema,
-              mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+              mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
               instructions:
                 codexAssessmentInstructions +
                 (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
@@ -1370,7 +1388,7 @@ export async function runCodexDispatch(
               previousResultDigest: automationHash(result),
               handoff: assessmentHandoff(
                 record,
-                current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+                current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
                 'codex',
               ),
               presentation,

@@ -23,7 +23,12 @@ import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import { Value } from 'typebox/value';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
+import {
+  baseline,
+  intakeFixture,
+  removeFixtureAssignment,
+  originalIntakeDigest,
+} from './github-intake-fixture.ts';
 
 describe('agent/openclaw issue dispatch', () => {
   let root: string;
@@ -670,7 +675,7 @@ describe('agent/openclaw issue dispatch', () => {
 
   it('should prepare the same intake report on retry and suppress its blocker after restart', async () => {
     const routed = await next();
-    fixture.item.assignees = [];
+    removeFixtureAssignment(fixture);
     await prepare(routed);
     const intake = service.dependencies.intake;
     const run = intake.run;
@@ -1102,7 +1107,7 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   it('should not prepare a revoked assignment or wake repeatedly on its blocker', async () => {
-    fixture.item.assignees = [];
+    removeFixtureAssignment(fixture);
     assert.equal(
       (await service.run(manifest, root, coordinator, { action: 'next' })).status,
       'blocked',
@@ -1794,7 +1799,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(sends().length, 0);
     await start(input.id);
-    fixture.item.assignees = [];
+    removeFixtureAssignment(fixture);
     assert.equal((await start(input.id)).status, 'blocked');
     assert.equal(sends().length, 1);
   });
@@ -2494,7 +2499,78 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
-  it('should retain implementation after intake disablement and still stop unassigned work', async () => {
+  for (const scenario of ['approved', 'unapproved', 'unavailable', 'reassignment'] as const) {
+    it(`should retain the openclaw owner and stage unless removal is approved: ${scenario}`, async () => {
+      const id = await readyWork('work');
+      consumeSend = true;
+      await workPass('start-work');
+      const who = assessor(id, `${id}:implementation`);
+      await service.run(manifest, root, who, { action: 'implementation-context', id });
+      const original = await record();
+      const event = removeFixtureAssignment(fixture);
+      if (scenario === 'unapproved' || scenario === 'reassignment')
+        event.actor = { ...event.actor, nodeId: 'U_outsider', login: 'outsider' };
+      if (scenario === 'unavailable')
+        fixture.client.listAssignmentEvents = async () => {
+          throw new Error('provider-unavailable');
+        };
+      if (scenario === 'approved')
+        await assert.rejects(
+          service.run(manifest, root, who, { action: 'implementation-context', id }),
+          /assignment-removed/,
+        );
+      else {
+        const after = await service.run(manifest, root, who, {
+          action: 'implementation-context',
+          id,
+        });
+        assert.equal(after.status, 'verified');
+        assert.ok('assignmentObservation' in after && after.assignmentObservation?.missing);
+        assert.ok(
+          'assignmentWarning' in after &&
+            /assignment is missing/i.test(after.assignmentWarning!.summary),
+        );
+        if (scenario === 'reassignment') {
+          fixture.item.assignees = [fixture.client.identity];
+          fixture.events.push({
+            ...event,
+            nodeId: 'E_reassigned',
+            databaseId: 32,
+            event: 'assigned',
+            createdAt: '2026-10-07T10:03:00Z',
+          });
+          const restored = await service.run(manifest, root, who, {
+            action: 'implementation-context',
+            id,
+          });
+          assert.ok('assignmentObservation' in restored && !restored.assignmentObservation);
+        }
+      }
+      const checkedAt = service.dependencies.now!();
+      service.dependencies.now = () => checkedAt + 60_000;
+      await workPass('removal-lifecycle-check');
+      const saved = await record();
+      assert.equal(
+        saved.retirement?.reason,
+        scenario === 'approved' ? 'assignment-removed' : undefined,
+      );
+      if (scenario !== 'approved')
+        assert.equal(
+          openClawCapacity([saved], 1).occupied,
+          openClawCapacity([original], 1).occupied,
+        );
+      assert.equal(saved.threadId, original.threadId);
+      assert.equal(saved.worktree, original.worktree);
+      assert.deepEqual(saved.progression, original.progression);
+      assert.equal(saved.retired, undefined);
+      assert.equal(
+        calls.some((call) => call.method === 'sessions.patch' && call.params.archived === true),
+        false,
+      );
+    });
+  }
+
+  it('should retain implementation after intake disablement and unresolved removal', async () => {
     const id = await readyWork('work');
     consumeSend = true;
     await workPass('start-work');
@@ -2507,10 +2583,12 @@ describe('agent/openclaw issue dispatch', () => {
       'verified',
     );
     fixture.item.assignees = [];
-    await assert.rejects(
-      service.run(manifest, root, who, { action: 'implementation-context', id }),
-      /assignment-removed/,
-    );
+    const unresolved = await service.run(manifest, root, who, {
+      action: 'implementation-context',
+      id,
+    });
+    assert.equal(unresolved.status, 'verified');
+    assert.ok('assignmentObservation' in unresolved && unresolved.assignmentObservation?.missing);
   });
 
   it('should share the fixed intake capacity between automatic implementation owners', async () => {
@@ -3069,7 +3147,7 @@ describe('agent/openclaw issue dispatch', () => {
     await assess(input.id);
     await context(input.id);
     await submit(input.id);
-    fixture.item.assignees = [];
+    removeFixtureAssignment(fixture);
     await assert.rejects(context(input.id), /dispatch-assignment-removed/);
     assert.deepEqual((await record()).result, plan);
     assert.equal((await record()).phase, 'complete');
@@ -3315,7 +3393,10 @@ describe('agent/openclaw issue dispatch', () => {
         return client;
       };
       if (change === 'repository') fixture.repository.nodeId = 'foreign';
-      if (change === 'assignment') fixture.item.assignees = [];
+      if (change === 'assignment') {
+        const event = removeFixtureAssignment(fixture);
+        manifest.github!.notifications!.issueAssignment!.allowed = [event.actor];
+      }
       service.dependencies.credential.use = async () => {
         throw new Error('native credentials must not resolve');
       };

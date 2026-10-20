@@ -24,6 +24,8 @@ export default async function reconcileCodexLifecycle(
   const retained = await current.store.read();
   if (!retained?.records.length) return;
   current.policy = retainedIntakePolicy(current.manifest, retained, 'codex');
+  current.policy.policy.issueAssignment!.allowed =
+    current.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   const feedbackBudget = new DiscoveryBudget();
   const now = (deps.now ?? Date.now)();
@@ -69,6 +71,10 @@ export default async function reconcileCodexLifecycle(
         save,
         fresh: async () => {
           const selected = await selectCodexIntake(pluginData, deps);
+          const live = retainedIntakePolicy(selected.manifest, admitted, 'codex');
+          current.policy!.policy = live.policy;
+          current.policy!.policy.issueAssignment!.allowed =
+            selected.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
           const verified = await (deps.activation ?? inspectCodexDispatchActivation)(
             pluginData,
             { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
@@ -137,7 +143,7 @@ export default async function reconcileCodexLifecycle(
               : undefined,
           });
         },
-        cleanup: async (record, intake, fresh, shared) => {
+        cleanup: async (record, intake, fresh, shared, observed) => {
           if (!record.request && !record.worktree) return { archived: true, worktreeRemoved: true };
           if (prepared) return { archived: false, worktreeRemoved: false };
           if (state.run?.id === occurrence.id && state.run.actions >= 12)
@@ -151,7 +157,7 @@ export default async function reconcileCodexLifecycle(
             shared,
             codexHome: current.codexHome,
             repository: intake.repository.owner.login + '/' + intake.repository.name,
-            archived: record.retirement?.reason === 'chat-archived',
+            archived: observed?.archived === true,
             inventory,
             now,
             turnId: occurrence.id,
