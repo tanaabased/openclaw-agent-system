@@ -597,7 +597,7 @@ including CODEOWNERS requests. Completed reviews are not requested again.
 
 #### Issue modes
 
-`issue-assignment.mode` is optional and defaults to `plan`. Assessment includes
+`issue-assignment.mode` is optional and defaults to `auto`. Assessment includes
 investigation and initial planning; workspace preparation belongs to runtime dispatch.
 
 | Mode   | Authorized journey                                                                                                                                                                                      |

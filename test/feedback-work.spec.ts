@@ -26,6 +26,13 @@ const skill = {
   digest: 'd'.repeat(64),
 };
 describe('agent/feedback-work', () => {
+  it('should treat an omitted issue mode as auto for new feedback work', () => {
+    const { policy } = intakeFixture();
+    policy.issueAssignment!.mode = undefined as never;
+
+    assert.equal(feedbackMode({} as never, policy), 'auto');
+  });
+
   it('should stop historical feedback from suppressing current issue recovery', () => {
     const record = { progression: { workOwner: 'issue' }, feedback: { events: [{ work: {} }] } };
     assert.equal(feedbackWorkStarted(record), false);

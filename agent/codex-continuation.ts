@@ -476,7 +476,7 @@ export default async function runCodexContinuation(
               throw new Error('continuation-assessment-selection-changed');
           }
           const transition = issueProgression(record, {
-            mode: liveMode ?? 'plan',
+            mode: liveMode ?? 'auto',
             now: (deps.now ?? Date.now)(),
           });
           if (
