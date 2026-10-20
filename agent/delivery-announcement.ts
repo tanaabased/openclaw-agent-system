@@ -11,6 +11,7 @@ import type IssueDeliveryProvider from '../channels/github/publication/issue-del
 import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
+import { githubCommentCard } from '../channels/github/presentation/comment.ts';
 import { githubNotificationQuote } from '../channels/github/presentation/card.ts';
 
 type CommentClient = Pick<
@@ -56,15 +57,28 @@ export async function reconcileAnnouncement(input: {
 export function announcementPresentation(
   state: DeliveryAnnouncementState | undefined,
   issueUrl: string,
+  authorLogin = state?.authorLogin,
 ) {
+  const confirmed = state?.receipt && !state.code;
   const quote = state?.publicText
-    ? githubNotificationQuote(`## 📤 To [GitHub issue](${issueUrl})\n\n${state.publicText}`)
+    ? githubCommentCard({
+        body: state.publicText,
+        author: authorLogin
+          ? { label: authorLogin, url: `https://github.com/${encodeURIComponent(authorLogin)}` }
+          : undefined,
+        label: 'PR announcement',
+        connector: 'by',
+        publication: confirmed
+          ? { url: `${issueUrl}#issuecomment-${state.receipt!.databaseId}` }
+          : { draft: true },
+      })
     : '';
-  const outcome =
-    state?.receipt && !state.code
-      ? `## 💡 PR announcement published\n\n[Published announcement ↗](${issueUrl}#issuecomment-${state.receipt.databaseId})`
-      : `## ⚠️ PR announcement pending\n\nThe PR is retained. Recover the announcement in this chat; do not recreate the PR.${state?.code ? `\n\nDiagnostic: \`${state.code}\`.` : ''}`;
-  return [quote, githubNotificationQuote(outcome)].filter(Boolean).join('\n\n');
+  const obstacle = confirmed
+    ? ''
+    : githubNotificationQuote(
+        `## ⚠️ PR announcement pending\n\nThe PR is retained. Recover the announcement in this chat; do not recreate the PR.${state?.code ? `\n\nDiagnostic: \`${state.code}\`.` : ''}`,
+      );
+  return [quote, obstacle].filter(Boolean).join('\n\n');
 }
 
 /** Recovery resumes only the announcement phase that has not finished. */
@@ -107,6 +121,7 @@ export default async function deliveryAnnouncement(input: {
   provider: Pick<IssueDeliveryProvider, 'announcement'>;
   client: CommentClient;
   authorId: string;
+  authorLogin?: string;
   select(state?: DeliveryAnnouncementState): Promise<DeliveryAnnouncementState['composition']>;
   authorize(): Promise<void>;
   save(): Promise<void>;
@@ -132,12 +147,17 @@ export default async function deliveryAnnouncement(input: {
         client: input.client,
         authorId: input.authorId,
       });
+      if (input.authorLogin) state.authorLogin = input.authorLogin;
       delete state.code;
       await input.save();
       return {
         status: 'announced',
         receipt: state.receipt,
-        presentation: announcementPresentation(state, issueUrl),
+        presentation: announcementPresentation(
+          state,
+          issueUrl,
+          input.authorLogin ?? state?.authorLogin,
+        ),
       };
     }
     const snapshot = await input.provider.announcement(publication);
@@ -202,9 +222,18 @@ export default async function deliveryAnnouncement(input: {
         digest: previewDigest,
         destination: issueUrl,
         publicText: state.publicText,
-        presentation: githubNotificationQuote(
-          `## 📤 To [GitHub issue](${issueUrl})\n\n${state.publicText}`,
-        ),
+        presentation: githubCommentCard({
+          body: state.publicText!,
+          author: input.authorLogin
+            ? {
+                label: input.authorLogin,
+                url: `https://github.com/${encodeURIComponent(input.authorLogin)}`,
+              }
+            : undefined,
+          label: 'PR announcement',
+          connector: 'by',
+          publication: { draft: true },
+        }),
         instruction:
           'Publish this exact announcement using delivery announce with this digest through native approval. Existing managed-delivery authority covers only this issue/PR announcement; stop on denial. Afterwards present the full private PR card and announcement outcome.',
       };
@@ -232,12 +261,17 @@ export default async function deliveryAnnouncement(input: {
     });
     const result = await publisher.publish(prepared);
     state.receipt = { nodeId: result.receipt.nodeId, databaseId: result.receipt.databaseId };
+    if (input.authorLogin) state.authorLogin = input.authorLogin;
     delete state.code;
     await input.save();
     return {
       status: 'announced',
       receipt: state.receipt,
-      presentation: announcementPresentation(state, issueUrl),
+      presentation: announcementPresentation(
+        state,
+        issueUrl,
+        input.authorLogin ?? state?.authorLogin,
+      ),
     };
   } catch (error) {
     if (isFilesystemAccessError(error) || (error instanceof Error && error.name === 'AbortError'))
@@ -273,7 +307,11 @@ export default async function deliveryAnnouncement(input: {
     return {
       status: 'announcement-blocked',
       code,
-      presentation: announcementPresentation(state, issueUrl),
+      presentation: announcementPresentation(
+        state,
+        issueUrl,
+        input.authorLogin ?? state?.authorLogin,
+      ),
       instruction:
         'The delivered PR is retained. Present its full private card and this announcement obstacle. Stop on denial or lost authority. On an authorized retry, compose again for a pre-write failure or announce to reconcile an uncertain write; never recreate the PR.',
     };

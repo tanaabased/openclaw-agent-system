@@ -1,13 +1,24 @@
+import { githubNotificationQuote } from './card.ts';
+import { githubCommentCard } from './comment.ts';
 import workflowInstructions, {
   type WorkflowInstructionsSelection,
   type WorkflowInstructionsPresentation,
 } from './workflow-instructions.ts';
-import { githubNotificationMarkdownText, githubNotificationQuote } from './card.ts';
 
-export function feedbackReplyPresentation(recipient: string, text: string): string {
-  return githubNotificationQuote(
-    `## 📤 To [@${githubNotificationMarkdownText(recipient)}](https://github.com/${encodeURIComponent(recipient)})\n\n${text}`,
-  );
+export function feedbackReplyPresentation(
+  author: string | undefined,
+  text: string,
+  url?: string,
+): string {
+  return githubCommentCard({
+    body: text,
+    author: author
+      ? { label: author, url: `https://github.com/${encodeURIComponent(author)}` }
+      : undefined,
+    label: 'Reply',
+    connector: 'from',
+    publication: url ? { url } : { draft: true },
+  });
 }
 
 /** display the retained private answer separately from the exact public reply and outcome. */
@@ -17,7 +28,7 @@ export default function feedbackResponse(
     selection?: WorkflowInstructionsSelection;
     workspace?: string;
     privateText: string;
-    publicReply?: { recipient: string; text: string };
+    publicReply?: { author?: string; text: string };
     publication?: { url: string } | { withheld: string };
   },
 ): string {
@@ -27,16 +38,18 @@ export default function feedbackResponse(
     input.privateText,
   ];
   if (input.publicReply)
-    sections.push(feedbackReplyPresentation(input.publicReply.recipient, input.publicReply.text));
-  if (input.publication)
     sections.push(
-      'url' in input.publication
-        ? githubNotificationQuote(
-            `## 💡 Reply published\n\n[Published reply ↗](${input.publication.url})`,
-          )
-        : githubNotificationQuote(
-            `## ⚠️ Public reply withheld\n\nPublic reply withheld: \`${input.publication.withheld}\`.`,
-          ),
+      feedbackReplyPresentation(
+        input.publicReply.author,
+        input.publicReply.text,
+        input.publication && 'url' in input.publication ? input.publication.url : undefined,
+      ),
+    );
+  if (input.publication && 'withheld' in input.publication)
+    sections.push(
+      githubNotificationQuote(
+        `## ⚠️ Public reply withheld\n\nPublic reply withheld: \`${input.publication.withheld}\`.`,
+      ),
     );
   const instructions = workflowInstructions(
     'Feedback reply',

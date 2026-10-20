@@ -6,6 +6,9 @@ Verify notification activation compatibility, native channel readiness and a saf
 
 Strict AIMock reuses the issue assessment protocol with a per-receipt release barrier. This job owns its three issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issues or revoking its key.
 
+Tanaabot omits the notification schema version so installation and intake exercise
+the default version `2` through the packed plugin.
+
 ## Setup
 
 ```bash

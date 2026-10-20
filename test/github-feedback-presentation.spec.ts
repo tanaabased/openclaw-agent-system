@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { githubNotificationCommentPresentation } from '../channels/github/presentation/comment.ts';
+import {
+  githubCommentCard,
+  githubNotificationCommentPresentation,
+} from '../channels/github/presentation/comment.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
 
 describe('channels/github/presentation/feedback', () => {
@@ -49,8 +52,6 @@ describe('channels/github/presentation/feedback', () => {
         },
       }),
       [
-        '> ## 💬 From [@pirog](https://github.com/pirog)',
-        '>',
         '>   @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
         '>',
         '> ## Notes',
@@ -64,9 +65,54 @@ describe('channels/github/presentation/feedback', () => {
         '> const mention = "@tanaabot";',
         '> ```',
         '>',
-        '> [View comment on tanaabased/openclaw-agent-system#46 ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123)',
+        '> <br>',
+        '>',
+        '> *[Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123) from [@pirog](https://github.com/pirog)*',
       ].join('\n'),
     );
+  });
+
+  it('should render all five labels with exact source attribution and an unlinked draft', () => {
+    const body = '- @recipient item\r\n\r\n```ts\r\nrun();\r\n```\r\n\r\n> context';
+    const author = { label: 'posting-agent', url: 'https://github.com/posting-agent' };
+    const url = 'https://github.com/owner/repo/issues/3#issuecomment-8';
+    for (const label of [
+      'Comment',
+      'Reply',
+      'Review comment',
+      'Plan assessment',
+      'PR announcement',
+    ] as const) {
+      const connector = label === 'Plan assessment' || label === 'PR announcement' ? 'by' : 'from';
+      const card = githubCommentCard({ body, author, label, connector, publication: { url } });
+      assert.ok(card.startsWith('> - @recipient item\n>\n> ```ts'));
+      assert.ok(card.includes('> run();\n> ```\n>\n> > context'));
+      assert.ok(
+        card.endsWith(
+          `> <br>\n>\n> *[${label} ↗](${url}) ${connector} [@posting-agent](https://github.com/posting-agent)*`,
+        ),
+      );
+      const draft = githubCommentCard({
+        body,
+        author,
+        label,
+        connector,
+        publication: { draft: true },
+      });
+      assert.ok(
+        draft.endsWith(
+          `> *${label} draft ${connector} [@posting-agent](https://github.com/posting-agent)*`,
+        ),
+      );
+      assert.ok(!draft.includes(url));
+    }
+    const legacy = githubCommentCard({
+      body: 'Original text.',
+      label: 'Plan assessment',
+      connector: 'by',
+      publication: { url },
+    });
+    assert.ok(legacy.includes('by author unavailable*'));
   });
 
   it('should keep all provider line endings inside the comment quote', () => {
@@ -80,6 +126,10 @@ describe('channels/github/presentation/feedback', () => {
     });
     assert.ok(presentation.includes('> @tanaabot first\n>\n> second\n> third'));
     assert.ok(presentation.split('\n').every((line) => line.startsWith('>')));
-    assert.ok(presentation.endsWith('/pull/12#issuecomment-91)'));
+    assert.ok(
+      presentation.includes(
+        '[Comment ↗](https://github.com/example/repo/pull/12#issuecomment-91) from [@pirog]',
+      ),
+    );
   });
 });

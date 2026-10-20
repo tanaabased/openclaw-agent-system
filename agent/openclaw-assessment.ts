@@ -222,12 +222,7 @@ export async function issueAssessmentAction(input: {
   )
     throw new Error('dispatch-assessment-context-required');
   const candidate = sessionObject(input.result);
-  if (
-    typeof candidate.fullAssessment !== 'string' ||
-    !candidate.fullAssessment.trim() ||
-    (candidate.outcome === 'plan-ready' &&
-      (typeof candidate.planSummary !== 'string' || !candidate.planSummary.trim()))
-  )
+  if (typeof candidate.fullAssessment !== 'string' || !candidate.fullAssessment.trim())
     throw new Error('assessment-result-incomplete');
   if (input.policy?.issueAssignment?.mode === 'auto' && !candidate.decision)
     throw new Error('assessment-decision-required');

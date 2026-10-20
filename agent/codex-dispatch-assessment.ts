@@ -80,6 +80,7 @@ export async function presentDispatch(
       id: record.id,
       presentation: assessmentPresentation(record.result!, record, intake, current.workspace, {
         debug: current.manifest.debug,
+        includeDetails: input.includeDetails === true,
       }),
       instruction:
         'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',
@@ -266,10 +267,13 @@ export async function assessDispatch(
               withNative(current, deps, (host) => host.assessmentSkill(native.cwd, id)),
           })
         ).selection,
-      connect: async () => ({
-        client: (await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal))
-          .comments,
-      }),
+      connect: async () => {
+        const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+          current.workspace,
+          signal,
+        );
+        return { client: provider.comments, authorLogin: provider.comments.identity.login };
+      },
     });
   }
   if (action === 'context') {

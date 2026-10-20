@@ -23,6 +23,56 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should keep native retirement progress healthy through completion without a recovery alert', () => {
+    const record = {
+      id: 'retiring',
+      intakeId: 'assignment',
+      phase: 'complete',
+      retirement: {
+        reason: 'issue-closed',
+        at: 1,
+        eligibleAt: 2,
+        checkedAt: 3,
+        intakeId: 'assignment',
+      },
+    } as DispatchRecord;
+    const current = { ...input, state: { ...state, records: [record], intakeHealth: '' } };
+    for (const code of [
+      'retirement-native-archive-unverified',
+      'retirement-native-reclamation-pending',
+    ]) {
+      record.retirement!.code = code;
+      const report = prepareDispatchReport(current);
+      assert.equal(report.health, '');
+      assert.match(report.response, /DONT_NOTIFY/);
+      assert.match(report.response, /retirement in progress/);
+      assert.match(report.response, /No action is needed/);
+      assert.match(report.response, /\*\*Retirement pending:\*\* 1/);
+      assert.doesNotMatch(report.response, /⚠️|needs attention|Intake resumed/);
+      current.state.intakeHealth = report.health;
+    }
+    const blocked = {
+      ...record,
+      id: 'blocked',
+      retirement: { ...record.retirement!, code: 'retirement-worktree-dirty' },
+    };
+    const mixed = prepareDispatchReport({
+      ...current,
+      state: { ...current.state, records: [record, blocked] },
+    });
+    assert.notEqual(mixed.health, '');
+    assert.match(mixed.response, /NOTIFY/);
+    assert.match(mixed.response, /⚠️/);
+    assert.match(mixed.response, /retirement-worktree-dirty/);
+
+    record.retired = { at: 4, by: 'operator' };
+    const completed = prepareDispatchReport(current);
+    assert.equal(completed.health, '');
+    assert.match(completed.response, /DONT_NOTIFY/);
+    assert.match(completed.response, /\*\*Retirement pending:\*\* 0/);
+    assert.doesNotMatch(completed.response, /Intake resumed|problem has cleared/);
+  });
+
   it('should report retirement blockers once without turning grace or inventory waits into warnings', () => {
     const record = {
       id: 'retiring',

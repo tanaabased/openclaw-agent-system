@@ -196,7 +196,11 @@ export default async function runCodexDelivery(
             ...(!attached ? ['delivery-attachment-pending'] : []),
           ]),
         ]
-          .filter((code) => code !== 'delivery-ssh-transport')
+          .filter(
+            (code) =>
+              code !== 'delivery-ssh-transport' &&
+              (code !== 'delivery-linkage-retried' || current.manifest.debug),
+          )
           .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
       if (input.action === 'present' || input.action === 'reconcile') {
@@ -520,6 +524,7 @@ export default async function runCodexDelivery(
             8000,
           ),
           authorId: connected.account.identity.nodeId,
+          authorLogin: connected.account.identity.login,
           select: async (retained) => {
             if (!native.assessmentSkill) throw new Error('delivery-announcement-skill-unavailable');
             return (

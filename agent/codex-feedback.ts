@@ -727,7 +727,7 @@ export default async function runCodexFeedback(
                 body,
                 destination,
                 presentation:
-                  feedbackReplyPresentation(source.author!.login, body) +
+                  feedbackReplyPresentation(provider.comments.identity.login, body) +
                   `\n\n[Reply destination ↗](${destination})`,
                 authority: schedule!.saved,
                 instruction: operatorPublication
@@ -819,7 +819,7 @@ export default async function runCodexFeedback(
                   ]?.path ?? current.manifestPath,
                 workspace: current.workspace,
                 privateText: event.result.privateText,
-                publicReply: { recipient: source.author!.login, text: body },
+                publicReply: { author: provider.comments.identity.login, text: body },
                 publication: {
                   url: `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#${root ? 'discussion_r' : 'issuecomment-'}${event.receipt!.databaseId}`,
                 },

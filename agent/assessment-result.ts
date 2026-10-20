@@ -59,6 +59,8 @@ const common = {
   progress,
   // complete source for new assessments; existing structured results remain supported.
   fullAssessment: Type.Optional(text),
+  // explicit human review; absent on older results, whose complete display is preserved.
+  reviewSummary: Type.Optional(text),
   decision: Type.Optional(assessmentDecisionSchema),
 };
 
@@ -69,7 +71,7 @@ export const assessmentResultSchema = Type.Union([
       ...common,
       outcome: Type.Literal('plan-ready'),
       assessment: text,
-      // optional for retained version 1 results written before summary/full-plan presentation.
+      // optional when the recommendation and complete source already explain the proposal.
       planSummary: Type.Optional(text),
       plan: text,
     },

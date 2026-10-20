@@ -18,6 +18,7 @@ import {
 } from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
+import { externalGitHubNotificationsSchema } from '../channels/github/config-schema.ts';
 import {
   githubFeedbackCompatibilityDiagnostics,
   validateGitHubNotificationPolicy,
@@ -178,12 +179,10 @@ function modelTierGroupDiagnostics(value: unknown): ManifestDiagnostic[] {
 function globalFeedbackDiagnostics(value: unknown): ManifestDiagnostic[] {
   const github = isRecord(value) && value.github;
   const notifications = isRecord(github) && github.notifications;
-  if (
-    !isRecord(notifications) ||
-    notifications['schema-version'] !== 2 ||
-    !Object.hasOwn(notifications, 'feedback')
-  )
-    return [];
+  if (!isRecord(notifications) || !Object.hasOwn(notifications, 'feedback')) return [];
+  const policy = { ...notifications };
+  delete policy.feedback;
+  if (!Value.Check(externalGitHubNotificationsSchema, policy)) return [];
   return [
     {
       code: 'github-notification-global-feedback-removed',
@@ -365,6 +364,8 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
 
 /** validate and normalize an effective document before any external values are resolved. */
 export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
+  const notifications =
+    isRecord(value) && isRecord(value.github) ? value.github.notifications : undefined;
   const agentKey = isRecord(value) && Object.hasOwn(value, 'setup-agent') ? 'setup-agent' : 'setup';
   const declarations = (['setup-host', agentKey] as const).flatMap((key) => {
     if (!isRecord(value) || !Object.hasOwn(value, key)) return [];
@@ -409,11 +410,17 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,
     ]),
-    ...(isRecord(value) &&
-    isRecord(value.github) &&
-    isRecord(value.github.notifications) &&
-    (value.github.notifications['schema-version'] === undefined ||
-      value.github.notifications['schema-version'] === 1)
+    ...(isRecord(notifications) &&
+    (notifications['schema-version'] === 1 ||
+      (notifications['schema-version'] === undefined &&
+        [
+          'approved-actors',
+          'approved-issue-assigners',
+          'assignment-types',
+          'initial-mode',
+          'max-concurrent-issues',
+          'pull-request',
+        ].some((key) => Object.hasOwn(notifications, key))))
       ? [
           {
             code: 'github-notification-v1-retired',

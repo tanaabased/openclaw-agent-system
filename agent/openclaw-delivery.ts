@@ -230,6 +230,7 @@ export default async function openClawDelivery(input: {
       provider,
       client: new GitHubIssueCommentClient(new GitHubWorkEventApiClient(connection.account), 8000),
       authorId: connection.account.identity.nodeId,
+      authorLogin: connection.account.identity.login,
       select: (state) => {
         if (!input.selectAnnouncement) throw new Error('delivery-announcement-skill-unavailable');
         return input.selectAnnouncement(state);

@@ -464,8 +464,9 @@ identifiers remain literal and are never casing-converted. See
 
 ### `github.notifications`
 
-Notification policy requires `schema-version: 2`. Unversioned V1 declarations
-are rejected with `github-notification-v1-retired`; the outer workspace manifest
+Notification policy defaults to `schema-version: 2`; numeric `2` is the only
+accepted explicit value. Retired V1 declarations are rejected with
+`github-notification-v1-retired`; the outer workspace manifest
 remains `schema-version: 1`. See [V1 retirement](./channels/github/ADVANCED.md#v1-retirement) before upgrading an old installation.
 
 **Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
@@ -538,7 +539,7 @@ See [Codex intake](./CODEX.md#github-notification-policy) for inspection and rec
 | `max-concurrent-items`      | no       | `3`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
 | `review-request`            | no       | absent              | Requests to start an independent PR review; not direct PR assignment.                                                               |
 | `runtimes`                  | no       | `[openclaw, codex]` | Nonempty unique selection of `openclaw` and/or `codex`. Each runtime owns its reconciliation; no cross-runtime claiming is implied. |
-| `schema-version`            | yes      | none                | Exactly `2`. Unversioned V1 declarations are rejected.                                                                              |
+| `schema-version`            | no       | `2`                 | Only numeric `2` is supported. Retired V1 declarations are rejected.                                                                |
 
 Each workflow accepts `allowed`, an optional list of actor identity records.
 Omission or `[]` grants no authority for that trigger. An absent trigger is not

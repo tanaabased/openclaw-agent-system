@@ -36,7 +36,8 @@ describe('channels/github/provider/review-feedback', () => {
       reviewReplyFeedback(review, { ...finding, replyToId: 70 }),
     ]) {
       const card = reviewFeedbackPresentation(comment);
-      assert.ok(card.startsWith(`> ## 💬 From [@${comment.author!.login}]`));
+      assert.ok(!card.startsWith('> ## 💬'));
+      assert.ok(card.indexOf('First paragraph.') < card.indexOf('reviewed commit'));
       assert.ok(card.split('\n').every((line) => line.startsWith('>')));
       assert.ok(card.includes('> - One\n> - Two'));
       assert.ok(card.includes('> ```ts\n> run();\n> ```'));
@@ -45,9 +46,31 @@ describe('channels/github/provider/review-feedback', () => {
       assert.ok(card.includes(finding.originalCommitId.slice(0, 7)));
       assert.ok(card.includes('> ```diff\n> @@ -1 +1 @@\n> +return values[0]\n> ```'));
       const source = comment.feedback.receipt.kind === 'review' ? review.url : finding.url;
-      assert.ok(card.endsWith(`↗](${source})`));
+      assert.ok(card.includes(`[Review comment ↗](${source}) from [@${comment.author!.login}]`));
     }
   });
+  it('should preserve every finding permalink beside the exact review footer', () => {
+    const review = reviewFixture();
+    const first = reviewCommentFixture({
+      nodeId: 'finding-one',
+      databaseId: 81,
+      url: 'https://github.com/owner/repo/pull/4#discussion_r81',
+      body: 'First finding.',
+    });
+    const second = reviewCommentFixture({
+      nodeId: 'finding-two',
+      databaseId: 82,
+      url: 'https://github.com/owner/repo/pull/4#discussion_r82',
+      body: 'Second finding.',
+    });
+    const card = reviewFeedbackPresentation(reviewFeedback(review, [first, second]));
+    for (const finding of [first, second]) {
+      assert.ok(card.includes(finding.body));
+      assert.ok(card.includes(`](${finding.url})`));
+    }
+    assert.ok(card.includes(`[Review comment ↗](${review.url})`));
+  });
+
   it('should bound reviewed diff previews and preserve literal code fences', () => {
     const finding = reviewCommentFixture({
       diffHunk: [
