@@ -166,7 +166,8 @@ export async function runCodexDispatch(
       }
       if (record.retired || (record.retirement && !operatorRetire))
         throw new Error('dispatch-assessment-retired');
-      if (record.handoff && !operatorRetire) throw new Error('dispatch-assessment-handed-off');
+      if (record.handoff && !operatorRetire && action !== 'summary')
+        throw new Error('dispatch-assessment-handed-off');
       if (action === 'retire' || action === 'reset' || action === 'retry-denied')
         return recoverDispatch(input, {
           action,
@@ -244,6 +245,7 @@ export async function runCodexDispatch(
             deps,
             save,
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
+            action === 'summary' ? 'handoff' : 'assessment',
           );
           await fresh();
           if (childAction) return assessDispatch(action, input, record, intake, native, tx);

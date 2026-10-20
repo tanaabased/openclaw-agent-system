@@ -12,7 +12,8 @@ import type { IssueDeliveryInput } from '../channels/github/publication/issue-de
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { githubCommentCard } from '../channels/github/presentation/comment.ts';
-import { githubNotificationQuote } from '../channels/github/presentation/card.ts';
+import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
+import publicResponse from './public-response.ts';
 
 type CommentClient = Pick<
   GitHubNotificationPublicationClient,
@@ -75,9 +76,13 @@ export function announcementPresentation(
     : '';
   const obstacle = confirmed
     ? ''
-    : githubNotificationQuote(
-        `## ⚠️ PR announcement pending\n\nThe PR is retained. Recover the announcement in this chat; do not recreate the PR.${state?.code ? `\n\nDiagnostic: \`${state.code}\`.` : ''}`,
-      );
+    : publicResponsePresentation({
+        kind: 'PR announcement',
+        destination: issueUrl,
+        attempted: state?.attempted,
+        receipt: state?.receipt,
+        code: state?.code,
+      });
   return [quote, obstacle].filter(Boolean).join('\n\n');
 }
 
@@ -238,14 +243,17 @@ export default async function deliveryAnnouncement(input: {
           'Publish this exact announcement using delivery announce with this digest through native approval. Existing managed-delivery authority covers only this issue/PR announcement; stop on denial. Afterwards present the full private PR card and announcement outcome.',
       };
     if (input.digest !== previewDigest) throw new Error('delivery-announcement-stale');
-    const publisher = new GitHubNotificationCommentPublisher({
-      redactText: redactFeedback,
-      authorize: async () => {
-        await input.authorize();
-        return { authorized: true };
+    const result = await publicResponse({
+      publication: prepared,
+      attempted: state.attempted,
+      receipt: state.receipt,
+      setAttempted: (attempted) => {
+        state.attempted = attempted;
       },
-      connect: () => ({ client: input.client }),
-      exclusive: async (_key, run) => run(),
+      setReceipt: (receipt) => {
+        state.receipt = receipt;
+      },
+      save: input.save,
       beforeCreate: async () => {
         await input.authorize();
         if (
@@ -254,13 +262,19 @@ export default async function deliveryAnnouncement(input: {
         )
           throw new Error('delivery-announcement-stale');
         await input.authorize();
-        state.attempted = true;
-        await input.save();
         posting = true;
       },
+      dependencies: {
+        redactText: redactFeedback,
+        authorize: async () => {
+          await input.authorize();
+          return { authorized: true };
+        },
+        connect: () => ({ client: input.client }),
+        exclusive: async (_key, run) => run(),
+      },
     });
-    const result = await publisher.publish(prepared);
-    state.receipt = { nodeId: result.receipt.nodeId, databaseId: result.receipt.databaseId };
+    if (result.status !== 'published') throw new Error('delivery-announcement-unconfirmed');
     if (input.authorLogin) state.authorLogin = input.authorLogin;
     delete state.code;
     await input.save();

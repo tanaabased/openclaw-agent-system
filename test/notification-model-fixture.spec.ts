@@ -802,6 +802,8 @@ for (const scenario of [
           assert.equal(selected.toolCalls?.[0]?.name, 'read');
           append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
           for (const stage of [
+            'feedback-fetch',
+            'feedback-incorporate',
             'feedback-apply',
             'feedback-check',
             'feedback-add',

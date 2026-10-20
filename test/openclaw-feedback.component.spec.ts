@@ -411,7 +411,7 @@ describe('agent/openclaw-feedback', () => {
   for (const lostPush of [false, true])
     it(`should deliver feedback on the same pr with lost push response ${lostPush}`, async () => {
       await enableFeedbackWork();
-      let remote = 'a'.repeat(40),
+      let remote = 'c'.repeat(40),
         pushes = 0,
         creates = 0;
       let lost = lostPush;
@@ -438,6 +438,8 @@ describe('agent/openclaw-feedback', () => {
           if (argv[0] === 'rev-parse') return head;
           if (argv[0] === 'rev-list') return '2';
           if (argv[0] === 'ls-remote') return `${remote} refs/heads/fix`;
+          if (argv[0] === 'merge-base')
+            assert.deepEqual(argv, ['merge-base', '--is-ancestor', remote, head]);
           if (argv[0] === 'push') {
             pushes++;
             remote = head;
@@ -503,6 +505,12 @@ describe('agent/openclaw-feedback', () => {
         assert.equal(record.work!.delivery!.pushedHead, 'a'.repeat(40));
         assert.equal(record.work!.delivery!.reconciled, true);
         assert.ok(event.workDelivery);
+        input.record = record = JSON.parse(JSON.stringify(record));
+        input.event = event = record.feedback!.events[0]!;
+        const reconciled = await action('delivery', { deliveryOperation: 'reconcile' });
+        assert.equal(reconciled.status, 'ready');
+        assert.equal(event.workDelivery!.reconciled, true);
+        assert.equal(record.work!.delivery!.pushedHead, head);
       }
       const currentPreview = lostPush
         ? await action('delivery', { deliveryOperation: 'prepare' })

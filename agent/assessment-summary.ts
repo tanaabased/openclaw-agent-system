@@ -1,3 +1,5 @@
+import publicResponse from './public-response.ts';
+import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
 import workflowFailure from './workflow-failure.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 import { randomUUID } from 'node:crypto';
@@ -19,6 +21,7 @@ export default async function assessmentSummary(input: {
   intake: IntakeRecord;
   action: AssessmentSummaryRequest;
   turnId: string;
+  recovery?: boolean;
   authorityDigest: string;
   presentation: string;
   authorize(): Promise<void>;
@@ -59,8 +62,7 @@ export default async function assessmentSummary(input: {
       binding.repositoryId !== intake.repository.nodeId ||
       binding.subjectId !== intake.issue.nodeId ||
       record.reset ||
-      record.retired ||
-      record.handoff
+      record.retired
     )
       throw new Error('assessment-summary-source-unavailable');
     const summaries = (record.assessmentSummaries ??= []);
@@ -80,6 +82,7 @@ export default async function assessmentSummary(input: {
           summary.resultDigest !== automationHash(record.result)))
     )
       throw new Error('assessment-summary-binding-mismatch');
+    if (summary?.code && /denied|cancelled/.test(summary.code)) throw new Error(summary.code);
     if (summary?.receipt)
       return {
         status: 'published',
@@ -91,15 +94,27 @@ export default async function assessmentSummary(input: {
       return {
         status: 'reconcile-required',
         code: 'assessment-summary-publication-unconfirmed',
+        presentation: [
+          input.presentation,
+          summary.publicText && summaryCard(summary),
+          publicResponsePresentation({ kind: 'Assessment summary', destination, attempted: true }),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
         instruction: 'Call summary operation reconcile. Never repeat an uncertain write.',
       };
     if (action.operation === 'reconcile' && !summary?.attempt)
       throw new Error('assessment-summary-publication-unattempted');
     if (action.operation !== 'reconcile') {
-      if (record.resultTurnId !== input.turnId)
+      if (record.resultTurnId !== input.turnId && !input.recovery)
         throw new Error('assessment-summary-assessment-turn-required');
-      if (summary && summary.turnId !== input.turnId)
+      if (summary && summary.turnId !== input.turnId && !input.recovery)
         throw new Error('assessment-summary-assessment-turn-required');
+      if (summary && summary.turnId !== input.turnId && input.recovery) {
+        summary.turnId = input.turnId;
+        summary.authorityDigest = input.authorityDigest;
+        await input.save();
+      }
       const selection = await input.select(summary?.selection);
       if (summary && automationHash(selection) !== automationHash(summary.selection)) {
         if (action.operation !== 'compose')
@@ -183,35 +198,43 @@ export default async function assessmentSummary(input: {
     }
     if (!summary?.publicText) throw new Error('assessment-summary-candidate-required');
     const publication = assessmentSummaryPublication(record, intake, summary);
-    const publisher = new GitHubNotificationCommentPublisher({
-      beforeCreate: async () => {
-        const attempt = randomUUID();
-        summary!.attempt = attempt;
+    const result = await publicResponse({
+      publication,
+      attempted: Boolean(summary.attempt),
+      receipt: summary.receipt,
+      reconcileOnly: action.operation === 'reconcile',
+      setAttempted: (attempted) => {
+        if (attempted) summary!.attempt = randomUUID();
+        else delete summary!.attempt;
+      },
+      setReceipt: (receipt) => {
+        summary!.receipt = receipt;
+      },
+      save: async () => {
+        const retained = { revision: summary!.revision, resultDigest: summary!.resultDigest };
         await input.save();
-        summary = record.assessmentSummaries?.find((entry) => entry.attempt === attempt);
+        summary = record.assessmentSummaries?.find(
+          (entry) =>
+            entry.revision === retained.revision && entry.resultDigest === retained.resultDigest,
+        );
         if (!summary) throw new Error('assessment-summary-state-changed');
       },
-      onCreateRejected: async () => {
-        delete summary!.attempt;
-        await input.save();
+      dependencies: {
+        redactText: input.redact,
+        authorize: async () => {
+          await input.authorize();
+          return { authorized: true };
+        },
+        connect: async () => {
+          const connection = await input.connect();
+          if (connection.authorLogin) summary!.authorLogin = connection.authorLogin;
+          return connection;
+        },
+        exclusive: async (_key, run) => run(),
       },
-      redactText: input.redact,
-      authorize: async () => {
-        await input.authorize();
-        return { authorized: true };
-      },
-      connect: async () => {
-        const connection = await input.connect();
-        if (connection.authorLogin) summary!.authorLogin = connection.authorLogin;
-        return connection;
-      },
-      exclusive: async (_key, run) => run(),
     });
-    let receipt;
-    if (summary.attempt) receipt = (await publisher.reconcile(publication))?.receipt;
-    else receipt = (await publisher.publish(publication)).receipt;
-    if (!receipt) throw new Error('assessment-summary-publication-unconfirmed');
-    summary.receipt = { nodeId: receipt.nodeId, databaseId: receipt.databaseId };
+    if (result.status !== 'published')
+      throw new Error('assessment-summary-publication-unconfirmed');
     delete summary.code;
     await input.save();
     return {
@@ -233,7 +256,18 @@ export default async function assessmentSummary(input: {
     return {
       status: 'blocked',
       ...failure,
-      presentation: input.presentation,
+      presentation: [
+        input.presentation,
+        summary?.publicText && summaryCard(summary),
+        publicResponsePresentation({
+          kind: 'Assessment summary',
+          destination,
+          attempted: Boolean(summary?.attempt),
+          code,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       instruction:
         'The private assessment remains recorded. Show its complete presentation and this summary-delivery diagnostic. For an uncertain write, use summary operation reconcile; for missing authority or skill, restore the configured workflow before retrying. Stop on native denial and do not use a different publication route.',
     };

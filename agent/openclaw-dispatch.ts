@@ -1,3 +1,4 @@
+import pendingPublicResponse from './pending-public-response.ts';
 import type { Static } from 'typebox';
 
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
@@ -268,6 +269,13 @@ export default class OpenClawDispatch {
               blocker: record.blocker,
               failureStage: record.failureStage,
               outcome: record.result?.outcome,
+              pendingPublicResponse: pendingPublicResponse(record),
+              summaryRecovery: record.summaryRecovery && {
+                revision: record.summaryRecovery.revision,
+                runId: record.summaryRecovery.turn.runId,
+                status: record.summaryRecovery.turn.status,
+                code: record.summaryRecovery.code,
+              },
               retirement: record.retirement,
               retired: record.retired,
               feedback: record.feedback,

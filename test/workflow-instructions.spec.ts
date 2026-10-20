@@ -84,11 +84,8 @@ describe('channels/github/presentation/workflow-instructions', () => {
       assert.ok(!output.includes('Hidden guidance.'));
       assert.ok(output.includes('Private answer.') && output.includes('Public answer.'));
       assert.ok(output.includes('approval-denied'));
-      assert.ok(
-        output.includes(
-          '> ## ⚠️ Public reply withheld\n>\n> Public reply withheld: `approval-denied`.',
-        ),
-      );
+      assert.match(output, /> ## ⚠️ Public reply needs attention/);
+      assert.match(output, /Publication is stopped/);
     }
     assert.ok(
       workflowInstructions('Assessment', { ...selection, defaultSkill: true }, undefined, {

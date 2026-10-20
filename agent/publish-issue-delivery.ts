@@ -30,8 +30,7 @@ export default async function publishIssueDelivery(input: {
   const remoteHead =
     (await git(['ls-remote', '--heads', 'origin', ref])).trim().split(/\s/u)[0] ?? '';
   if (remoteHead && remoteHead !== head) {
-    if (!delivery.pullRequest || remoteHead !== delivery.pushedHead)
-      throw new Error('delivery-remote-head-diverged');
+    if (!delivery.pullRequest) throw new Error('delivery-remote-head-diverged');
     await git(['merge-base', '--is-ancestor', remoteHead, head]);
   }
   const operation: IssueDeliveryInput = {

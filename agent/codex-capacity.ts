@@ -9,6 +9,7 @@ function reserved(record: DispatchRecord): boolean {
   const progress = issueWorkflowProgress(record);
   const { action } = progress;
   return (
+    Boolean(record.summaryRecovery && !record.summaryRecovery.ended && !record.nativeInactive) ||
     Boolean(record.autoDecision && !record.autoDecision.ended && !record.nativeInactive) ||
     (!record.handoff &&
       !(record.retired && record.nativeInactive) &&

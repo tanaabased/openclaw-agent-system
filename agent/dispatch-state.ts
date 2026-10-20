@@ -141,7 +141,11 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       openclawPasses: Type.Optional(Type.Array(openclawIntakePassSchema)),
       continuationRun: Type.Optional(
         Type.Object(
-          { id: text, actions: Type.Integer({ minimum: 0, maximum: 12 }) },
+          {
+            id: text,
+            actions: Type.Integer({ minimum: 0, maximum: 12 }),
+            responses: Type.Optional(Type.Array(text, { maxItems: 12 })),
+          },
           { additionalProperties: false },
         ),
       ),

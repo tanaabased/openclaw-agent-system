@@ -1,3 +1,4 @@
+import { openClawResponseEligible } from './openclaw-response-continuation.ts';
 import { randomUUID } from 'node:crypto';
 
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
@@ -226,8 +227,13 @@ export default class OpenClawDispatchCoordinator {
           )) &&
         (openClawItemOccupied(record) || capacity.available > 0),
     );
+    const responsePending = state.records.some((record) => openClawResponseEligible(record));
     const actionable =
-      feedbackPending || recoverable || workPending || (capacity.available > 0 && pending);
+      responsePending ||
+      feedbackPending ||
+      recoverable ||
+      workPending ||
+      (capacity.available > 0 && pending);
     const code = state.records.find(
       (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
     )?.feedback?.code;
@@ -440,6 +446,7 @@ export default class OpenClawDispatchCoordinator {
             entry.decisionTurn?.inactive ? undefined : entry.decisionTurn,
             entry.work?.turn,
             entry.work?.deliveryTurn,
+            entry.summaryRecovery?.turn,
           ].some((turn) => turn && turn.status !== 'completed'),
       )
       .slice(0, 12)) {
@@ -502,16 +509,17 @@ export default class OpenClawDispatchCoordinator {
           record,
           manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
         );
-        return slot || decision
+        return slot || decision || openClawResponseEligible(record)
           ? [
               {
                 record,
                 slot,
                 candidateId: automationHash({ implementation: record.id }),
                 recovering: Boolean(
-                  decision
+                  (record.summaryRecovery && record.summaryRecovery.turn.status !== 'completed') ||
+                  (decision
                     ? record.decisionTurn
-                    : slot && record.work?.[slot] && record.work[slot].status !== 'completed',
+                    : slot && record.work?.[slot] && record.work[slot].status !== 'completed'),
                 ),
               },
             ]

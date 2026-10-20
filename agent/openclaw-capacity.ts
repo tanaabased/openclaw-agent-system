@@ -12,9 +12,12 @@ export function openClawItemOccupied(record: OpenClawDispatchRecord) {
         ((record.assessmentTurn ?? record.firstTurn)?.status !== 'completed' &&
           Boolean(record.assessmentTurn ?? record.firstTurn) &&
           !(record.assessmentTurn ?? record.firstTurn)?.inactive))) ||
-    [record.decisionTurn, record.work?.turn, record.work?.deliveryTurn].some(
-      (turn) => turn && turn.status !== 'completed' && !turn.inactive,
-    ) ||
+    [
+      record.summaryRecovery?.turn,
+      record.decisionTurn,
+      record.work?.turn,
+      record.work?.deliveryTurn,
+    ].some((turn) => turn && turn.status !== 'completed' && !turn.inactive) ||
     record.feedback?.activity?.busy ||
     record.feedback?.events.some(
       (event) =>

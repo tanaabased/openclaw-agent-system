@@ -370,3 +370,18 @@ after the reply/footer or publication obstacle.
 >
 > _[Reply ↗](https://github.com/owner/repo/issues/123#issuecomment-789) from [@smutlord](https://github.com/smutlord)_
 ```
+
+## Delivery Recovery Notices
+
+Keep recovery private in the owning issue conversation, below the complete private
+result and any exact public draft. Reuse one quoted outcome component for assessment
+summaries, public replies and PR announcements. Name the affected step; a failed push
+is not a failed comment. Show pending as information, and unconfirmed or blocked
+publication as a warning, with the known destination, next supported action and safe
+diagnostic. Distinguish deliberately withheld replies from failed delivery.
+
+Do not describe recovery as running unless native execution establishes that fact.
+Unconfirmed writes require observation before any new post. Preserve completed work
+and drafts; do not tell the operator to reset the workflow. Unchanged polling must not
+produce repeated notices. Confirmed publication uses the linked attribution footer
+above, without a separate success card.
