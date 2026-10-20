@@ -64,10 +64,10 @@ describe('channels/github/feedback-policy', () => {
     const policy = parsed.manifest.github!.notifications!;
     assert.equal(workflowFeedbackAvailable(policy, 'issue-assignment'), true);
     assert.equal(workflowFeedbackAccepting(policy, 'issue-assignment'), true);
-    policy.issueAssignment!.enabled = false;
-    assert.equal(workflowFeedbackAvailable(policy, 'issue-assignment'), false);
-    assert.equal(workflowFeedbackAccepting(policy, 'issue-assignment'), false);
-    policy.issueAssignment!.enabled = true;
+    policy.issueAssignment!.paused = true;
+    assert.equal(workflowFeedbackAvailable(policy, 'issue-assignment'), true);
+    assert.equal(workflowFeedbackAccepting(policy, 'issue-assignment'), true);
+    policy.issueAssignment!.paused = false;
     policy.issueAssignment!.allowed = [];
     assert.equal(workflowFeedbackAvailable(policy, 'issue-assignment'), true);
     assert.equal(workflowFeedbackAccepting(policy, 'issue-assignment'), false);

@@ -20,6 +20,7 @@ import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
 import {
   githubFeedbackCompatibilityDiagnostics,
+  githubPauseCompatibilityDiagnostics,
   validateGitHubNotificationPolicy,
 } from '../channels/github/notification-policy.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
@@ -455,8 +456,11 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const host = declarations.find(({ key }) => key === 'setup-host');
   const agent = declarations.find(({ key }) => key === agentKey);
   const manifest = decodeManifest(value);
-  const notificationDiagnostics = validateGitHubNotificationPolicy(manifest.github);
-  if (notificationDiagnostics.length > 0) {
+  const notificationDiagnostics = [
+    ...validateGitHubNotificationPolicy(manifest.github),
+    ...githubPauseCompatibilityDiagnostics(value.github?.notifications),
+  ];
+  if (notificationDiagnostics.some(({ severity }) => severity === 'error')) {
     return { status: 'invalid', diagnostics: notificationDiagnostics };
   }
 
@@ -477,6 +481,7 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
         }
       : {}),
     diagnostics: [
+      ...notificationDiagnostics,
       ...githubFeedbackCompatibilityDiagnostics(value.github?.notifications),
       ...(isRecord(value) && Object.hasOwn(value, 'setup')
         ? [

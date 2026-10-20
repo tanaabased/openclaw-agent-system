@@ -136,6 +136,22 @@ export default async function runCodexFeedback(
       : undefined;
     if (occurrence && schedule && occurrence.automationId !== schedule.current.automationId)
       throw new Error('feedback-occurrence-mismatch');
+    if (occurrence)
+      await store.exclusive(async (state, save) =>
+        acceptCodexIntakeOccurrence(
+          state,
+          occurrence,
+          () =>
+            (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'intake',
+            ),
+          save,
+        ),
+      );
     const snapshot = input.action === 'next' ? await store.read() : undefined;
     if (snapshot?.run?.id === occurrence?.id && (snapshot?.run?.actions ?? 0) >= 12)
       return { status: 'budget-exhausted' };
@@ -929,3 +945,4 @@ export default async function runCodexFeedback(
     await connection?.close();
   }
 }
+import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';

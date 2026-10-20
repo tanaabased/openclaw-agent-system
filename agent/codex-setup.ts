@@ -102,6 +102,17 @@ function sameSnapshot(left: CodexSetupSnapshot, right: CodexSetupSnapshot): bool
   );
 }
 
+function pauseWarnings(selected: CodexSetupSnapshot) {
+  return selected.manifest.diagnostics
+    .filter(({ code }) => code === 'github-notification-enabled-deprecated')
+    .map(({ code, fieldPath, message }) => ({
+      component: 'github-notifications',
+      code,
+      stepId: fieldPath,
+      message,
+    }));
+}
+
 async function runtime(
   pluginData: string,
   signal: AbortSignal | undefined,
@@ -170,6 +181,7 @@ export async function inspectCodexSetup(
     intake: await inspectCodexIntake(pluginData, dependencies),
     findings: [
       ...(await lifecycle.inspect(context)),
+      ...pauseWarnings(selected).map((warning) => ({ ...warning, status: 'warning' as const })),
       ...notificationDiagnostics.map<AgentSystemLifecycleFinding>((diagnostic) => ({
         component: 'github-notifications',
         ...diagnostic,
@@ -211,6 +223,7 @@ export async function installCodexSetup(
     ...result,
     warnings: [
       ...result.warnings,
+      ...pauseWarnings(selected),
       ...notificationDiagnostics.map(({ code, message }) => ({
         component: 'github-notifications',
         code,

@@ -21,7 +21,7 @@ describe('agent/notification policy provenance', () => {
     policy.issueAssignment!.feedback = false;
     assert.equal(feedbackAuthorityDigest(policy), replacement);
     policy.issueAssignment!.enabled = false;
-    assert.notEqual(feedbackAuthorityDigest(policy), replacement);
+    assert.equal(feedbackAuthorityDigest(policy), replacement);
   });
   it('should canonicalize observation cache keys without mutating configuration', () => {
     const policy = intakeFixture().policy;

@@ -529,8 +529,8 @@ describe('openclaw v2 intake slice', () => {
     value.github!.notifications!.runtimes = ['codex'];
     assert.equal(openclawIntakeJobs(value).length, 0);
     value.github!.notifications!.runtimes = ['openclaw'];
-    value.github!.notifications!.issueAssignment!.enabled = false;
-    assert.equal(openclawIntakeJobs(value).length, 0);
+    value.github!.notifications!.issueAssignment!.paused = true;
+    assert.equal(openclawIntakeJobs(value)[0]!.enabled, false);
     value.automations = [job];
     assert.throws(() => openclawIntakeJobs(value), { code: 'intake-automation-id-reserved' });
   });

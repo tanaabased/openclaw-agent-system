@@ -729,7 +729,9 @@ describe('agent/codex-dispatch', () => {
 
   async function workflow(enabled: boolean) {
     const configured = structuredClone(manifest);
-    Object.assign(configured.github.notifications['issue-assignment'], { enabled });
+    configured.github.notifications['issue-assignment'].allowed = enabled
+      ? manifest.github.notifications['issue-assignment'].allowed
+      : [];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
   }
 
@@ -752,43 +754,37 @@ describe('agent/codex-dispatch', () => {
     assert.equal((rejected as { request?: unknown }).request, undefined);
   });
 
-  it('should finish disabled intake reports without polling assessments or duplicating resumed work', async () => {
-    const prepared = await prepare();
-    created();
-    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
-    await next();
-    assert.match(String((await report()).response), /1 issue started/);
-    deps.native!.find = async () => {
-      throw new Error('intake must not poll the retained assessment');
-    };
-    await workflow(false);
-    const disabled = {
-      ...deps,
-      connect: async () => {
-        throw new Error('disabled intake must not authenticate');
-      },
-    };
-    for (const repeated of [false, true]) {
+  for (const pause of ['native', 'manifest'] as const)
+    it(`should retain an accepted occurrence through ${pause} pause and block a fresh run`, async () => {
+      const routed = await next();
+      const activation = deps.activation!;
+      let paused = false;
+      deps.activation = async (...args) => {
+        if (paused && !args[3]) throw new Error('intake-automation-paused');
+        return activation(...args);
+      };
+      if (pause === 'manifest') {
+        const configured = structuredClone(manifest);
+        Object.assign(configured.github.notifications['issue-assignment'], { paused: true });
+        await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+      }
+      paused = true;
+      const prepared = await request('prepare', {
+        id: routed.id,
+        digest: routed.digest,
+        title: 'repair contained behavior',
+        assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+      });
+      assert.equal(prepared.status, 'prepared');
       now += 60000;
-      const scan = await runCodexIntake(pluginData, false, disabled);
-      assert.equal('code' in scan && scan.code, 'intake-policy-disabled');
-      assert.equal((await next()).status, 'idle');
-      const reported = await report();
-      assert.equal(reported.status, 'report');
-      assert.match(String(reported.response), /intake-policy-disabled/);
-      assert.doesNotMatch(String(reported.response), /1 issue started|plan-ready/);
-      assert.equal(String(reported.response).includes('DONT_NOTIFY'), repeated);
-    }
-    await workflow(true);
-    now += 60000;
-    await runCodexIntake(pluginData, true, deps);
-    assert.deepEqual(await next(), { status: 'idle', changed: false });
-    assert.doesNotMatch(String((await report()).response), /1 issue started|plan-ready/);
-    const records = (await request('inspect')).records as { id: string; phase: string }[];
-    assert.equal(records.length, 1);
-    assert.equal(records[0]!.id, prepared.id);
-    assert.equal(records[0]!.phase, 'assessing');
-  });
+      await assert.rejects(next(), /intake-automation-paused/u);
+      paused = false;
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+      await next();
+      const records = (await request('inspect')).records as { id: string }[];
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.id, routed.id);
+    });
 
   it('should retain an admitted creation when intake is disabled during preparation', async () => {
     const selected = await next();
