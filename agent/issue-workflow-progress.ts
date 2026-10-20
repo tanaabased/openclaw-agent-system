@@ -15,7 +15,7 @@ export interface IssueWorkflowState {
   blocker?: string;
   retry?: unknown;
   result?: { code?: string; outcome?: string };
-  progression?: { stage: string };
+  progression?: { stage: string; workOwner?: string };
   autoDecision?: { ended?: boolean; code?: string };
   decisionTurn?: { status: string; inactive?: boolean };
   delivery?: Delivery;

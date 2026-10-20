@@ -2037,6 +2037,43 @@ describe('agent/openclaw issue dispatch', () => {
         id: input.id,
         implementationResult: { outcome: 'done', summary: 'Done.', fullResult: 'Validated.' },
       });
+      const originalInput = structuredClone((await record()).work!.implementation);
+      messages.push({
+        role: 'user',
+        content: 'Continue with a follow-up commit.',
+        idempotencyKey: 'followup:user',
+        __openclaw: { id: 'followup-input', idempotencyKey: 'followup:user', senderIsOwner: true },
+      });
+      const followup = { ...who, runId: 'followup' };
+      const handoff = {
+        action: 'handoff' as const,
+        id: input.id,
+        permission: 'implementation-and-publication' as const,
+      };
+      const preview = await service.run(manifest, root, followup, handoff, true);
+      assert.ok('digest' in preview && typeof preview.digest === 'string');
+      const handedOff = await service.run(
+        manifest,
+        root,
+        followup,
+        { ...handoff, digest: preview.digest },
+        true,
+      );
+      assert.equal(handedOff.status, 'handed-off', JSON.stringify(handedOff));
+      assert.deepEqual((await record()).work!.implementation, originalInput);
+      assert.equal(
+        (
+          await service.run(
+            manifest,
+            root,
+            followup,
+            { action: 'implementation-context', id: input.id },
+            true,
+          )
+        ).status,
+        'verified',
+      );
+      assert.equal((await record()).work!.caller!.runId, 'followup');
       assessmentReply(input.id);
       service = new OpenClawDispatch(service.dependencies);
       await workPass('recover-direct-delivery');
@@ -2044,6 +2081,65 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal((await record()).work?.deliveryTurn?.runId, `${input.id}:delivery`);
       assert.equal(sends().length, 2);
       assert.equal(creates().length, 1);
+    });
+
+  for (const legacy of [false, true])
+    it(`should recover ${legacy ? 'legacy' : 'current'} interrupted operator work without another approval or assessment`, async () => {
+      const id = await readyWork('plan');
+      const who = { ...assessor(id), runId: 'operator-implementation' };
+      messages.push({
+        role: 'user',
+        content: 'Implement the plan.',
+        idempotencyKey: `${who.runId}:user`,
+        __openclaw: {
+          id: 'operator-input',
+          idempotencyKey: `${who.runId}:user`,
+          senderIsOwner: true,
+        },
+      });
+      const verified = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'implementation-context', id },
+        true,
+      );
+      assert.equal(verified.status, 'verified');
+      assert.equal((await record()).work?.turn?.origin, 'input');
+      assert.equal((await record()).work?.turn?.runId, who.runId);
+      if (legacy) {
+        const scope = await service.scope(manifest, root);
+        await scope.journal.exclusive(async (state, save) => {
+          delete state.records[0]!.work!.turn;
+          await save();
+        });
+      }
+      messages.push({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Interrupted before result.' }],
+        stopReason: 'stop',
+        __openclaw: {
+          id: 'operator-reply',
+          runId: who.runId,
+          mirrorOrigin: 'codex-app-server',
+          runTerminal: true,
+        },
+      });
+      service = new OpenClawDispatch(service.dependencies);
+      let recovered = await workPass('recover-operator-work');
+      if (legacy) {
+        assert.equal(recovered.status, 'implementation-incomplete', JSON.stringify(recovered));
+        assert.ok('nextAction' in recovered && recovered.nextAction === 'next');
+        recovered = await workPass('continue-recovered-operator-work');
+      }
+      assert.equal(recovered.status, 'implementation-pending', JSON.stringify(recovered));
+      const saved = await record();
+      assert.equal(saved.work?.previousTurns?.[0]?.turn.runId, who.runId);
+      assert.equal(saved.work?.turn?.runId, `${id}:implementation:resume:1`);
+      assert.equal(saved.progression?.via, 'operator');
+      assert.deepEqual(saved.result, plan);
+      assert.equal(creates().length, 1);
+      assert.equal(sends().length, 2);
     });
 
   for (const outcome of ['interrupted', 'clarification-needed'] as const)

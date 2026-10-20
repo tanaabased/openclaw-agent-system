@@ -104,8 +104,7 @@ export async function operatorInputEvent(
   input: Omit<Parameters<typeof nativeInputEvent>[0], 'requireOwner'> & { senderIsOwner: boolean },
 ) {
   if (!input.senderIsOwner) throw new Error('dispatch-operator-input-unverified');
-  const { runId, inputEventId } = await nativeInputEvent({ ...input, requireOwner: true });
-  return { runId, inputEventId };
+  return nativeInputEvent({ ...input, requireOwner: true });
 }
 
 /** user input custody is journaled by idempotency key; run metadata is optional. */

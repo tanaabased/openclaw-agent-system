@@ -18,7 +18,7 @@ export function consumedInputEvent(messages: unknown[], turn: OpenClawTurn) {
   if (inputs.length !== 1) throw new Error('dispatch-turn-delivery-unverified');
   const entry = inputs[0]!;
   const eventId =
-    turn.origin === 'assessment'
+    turn.origin === 'assessment' || turn.origin === 'input'
       ? issueInputEventId(entry, turn.runId)
       : issueInputEvent(entry, turn);
   if (!eventId) throw new Error('dispatch-turn-input-mismatch');

@@ -116,9 +116,10 @@ export default async function openClawWorkAction(input: {
       };
     if (action.digest !== digest) throw new Error('dispatch-handoff-stale');
     record.work ??= { assessmentDigest };
-    if (action.permission !== 'publication') record.progression = input.progression;
+    if (action.permission !== 'publication')
+      record.progression = { ...input.progression, workOwner: 'issue' };
     // legacy permission spelling is accepted; implementation includes ordinary pr delivery.
-    if (action.permission !== 'publication') record.work.implementation = source;
+    if (action.permission !== 'publication') record.work.implementation ??= source;
     else record.work.publication = source;
     record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
     await input.save();
@@ -139,14 +140,14 @@ export default async function openClawWorkAction(input: {
         id: record.id,
         presentation: implementationPresentation(record.work.result),
       };
-    record.progression = input.progression;
+    record.progression = { ...input.progression, workOwner: 'issue' };
     record.work ??= { assessmentDigest };
     record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
     record.work.implementation ??= source;
     record.work.caller = source;
-    if (!record.work.turn && record.resultTurnId === source.runId && input.message) {
+    if (!record.work.turn && input.message) {
       record.work.turn = {
-        origin: 'assessment',
+        origin: record.resultTurnId === source.runId ? 'assessment' : 'input',
         runId: source.runId,
         message: input.message,
         status: 'consumed',

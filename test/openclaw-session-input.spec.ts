@@ -90,7 +90,11 @@ describe('agent/openclaw-session-input', () => {
     });
   }
   it('should resolve an out-of-page owner input from a native consumption receipt', async () => {
-    assert.deepEqual(await verify(), { runId: turn.runId, inputEventId: 'input-event' });
+    assert.deepEqual(await verify(), {
+      runId: turn.runId,
+      inputEventId: 'input-event',
+      message: turn.message,
+    });
     assert.deepEqual(
       await verify({
         exact: [
@@ -115,6 +119,7 @@ describe('agent/openclaw-session-input', () => {
     assert.deepEqual(await verify({ recent: [native], exact: [native] }), {
       runId: turn.runId,
       inputEventId: 'input-event',
+      message: turn.message,
     });
     await assert.rejects(verify({ senderIsOwner: false }), /dispatch-operator-input-unverified/);
   });

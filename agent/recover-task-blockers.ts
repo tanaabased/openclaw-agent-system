@@ -2,6 +2,14 @@ import type { AssessmentResult } from './assessment-result.ts';
 
 const obsolete = new Set([
   'dispatch-policy-changed',
+  'dispatch-assignment-actor-not-allowed',
+  'dispatch-assignment-actor-type-changed',
+  'dispatch-repository-owner-not-allowed',
+  'dispatch-repository-owner-changed',
+  'dispatch-repository-name-changed',
+  'dispatch-repository-archived',
+  'dispatch-repository-disabled',
+
   'dispatch-activation-required',
   'workflow-schedule-reconciliation-required',
   'continuation-authority-changed',

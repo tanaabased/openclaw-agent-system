@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import reactivate, {
   revalidateFeedbackAssignment,
 } from '../agent/assignment-feedback-reactivation.ts';
-import revalidateAssignment from '../agent/dispatch-assignment.ts';
+import { inspectActiveIssue } from '../agent/dispatch-assignment.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { FeedbackSourceState } from '../agent/feedback-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -94,7 +94,7 @@ describe('assignment feedback reactivation', () => {
       h.provider.repository,
     );
     await assert.rejects(
-      revalidateAssignment(h.input.policy, h.input.intake, h.provider.client),
+      inspectActiveIssue(h.input.intake, h.provider.client),
       /dispatch-assignment-removed/,
     );
     h.record.feedback!.events[0]!.phase = 'published';

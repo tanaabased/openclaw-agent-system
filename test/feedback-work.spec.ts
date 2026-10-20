@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 
-import { beginFeedbackWork, feedbackMode } from '../agent/feedback-work.ts';
+import { beginFeedbackWork, feedbackMode, feedbackWorkStarted } from '../agent/feedback-work.ts';
 import { feedbackSourceEventSchema, type FeedbackSourceEvent } from '../agent/feedback-state.ts';
 import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
@@ -26,6 +26,13 @@ const skill = {
   digest: 'd'.repeat(64),
 };
 describe('agent/feedback-work', () => {
+  it('should stop historical feedback from suppressing current issue recovery', () => {
+    const record = { progression: { workOwner: 'issue' }, feedback: { events: [{ work: {} }] } };
+    assert.equal(feedbackWorkStarted(record), false);
+    record.progression.workOwner = 'feedback';
+    assert.equal(feedbackWorkStarted(record), true);
+    assert.equal(feedbackWorkStarted({ feedback: record.feedback }), true);
+  });
   it('should preserve old feedback records and leave plan decisions without implementation state', async () => {
     const event = eventFixture();
     assert.ok(Value.Check(feedbackSourceEventSchema, event));
@@ -101,7 +108,12 @@ describe('agent/feedback-work', () => {
       resolveSkill: async () => skill,
     });
     assert.deepEqual(record.result, { outcome: 'clarification-needed' });
-    assert.deepEqual(record.progression, { stage: 'implementation', via: 'auto', enteredAt: 20 });
+    assert.deepEqual(record.progression, {
+      stage: 'implementation',
+      via: 'auto',
+      enteredAt: 20,
+      workOwner: event.id,
+    });
     assert.deepEqual(event.work?.decision, decision);
     assert.ok(Value.Check(feedbackSourceEventSchema, event));
     policy.issueAssignment!.mode = 'plan';

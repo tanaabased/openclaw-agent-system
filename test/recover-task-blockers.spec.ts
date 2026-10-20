@@ -33,6 +33,13 @@ describe('agent/recover-task-blockers', () => {
   });
   it('should clear obsolete stage gates while preserving exact submission receipts', () => {
     for (const code of [
+      'dispatch-assignment-actor-not-allowed',
+      'dispatch-assignment-actor-type-changed',
+      'dispatch-repository-owner-not-allowed',
+      'dispatch-repository-owner-changed',
+      'dispatch-repository-name-changed',
+      'dispatch-repository-archived',
+      'dispatch-repository-disabled',
       'dispatch-operator-followup-required',
       'dispatch-handoff-user-turn-required',
       'dispatch-implementation-authorization-required',

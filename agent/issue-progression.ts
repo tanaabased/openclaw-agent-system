@@ -11,6 +11,9 @@ export const issueProgressionSchema = Type.Object(
       Type.Literal('operator'),
       Type.Literal('legacy'),
     ]),
+    workOwner: Type.Optional(
+      Type.Union([Type.Literal('issue'), Type.String({ pattern: '^[a-f0-9]{64}$' })]),
+    ),
     enteredAt: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: false },

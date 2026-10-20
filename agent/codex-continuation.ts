@@ -556,7 +556,7 @@ export default async function runCodexContinuation(
               record.stageReceipt.resultDigest !== automationHash(record.result)
             )
               throw new Error('continuation-assessment-changed');
-            record.progression = transition.progression;
+            record.progression = { ...transition.progression, workOwner: 'issue' };
             work.assessmentDigest = automationHash(record.result);
             work.attempt = {
               id: automationHash({
@@ -591,7 +591,7 @@ export default async function runCodexContinuation(
             )
               continue;
             if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
-            record.progression = transition.progression;
+            record.progression = { ...transition.progression, workOwner: 'issue' };
             work.assessmentDigest = automationHash(record.result);
             if (liveMode === 'auto')
               work.assessmentSelectionDigest = automationHash(record.assessment);
@@ -819,6 +819,8 @@ export default async function runCodexContinuation(
             routingDigest: automationHash(record.request),
             evidenceDigest: work.assessmentDigest!,
           };
+          if (input.action === 'context' && record.progression)
+            record.progression.workOwner = 'issue';
           await save();
           if (input.action === 'context')
             return {

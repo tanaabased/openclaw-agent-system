@@ -1,3 +1,4 @@
+import { nativeInputEvent } from './openclaw-session-input.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
@@ -28,7 +29,10 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
     return 'deliveryTurn' as const;
   if (feedbackWorkStarted(record)) return;
   if (progress.action === 'delivery') return 'deliveryTurn' as const;
-  if (progress.action === 'implementation' && work?.turn?.status === 'completed')
+  if (
+    progress.action === 'implementation' &&
+    (work?.turn?.status === 'completed' || (!work?.turn && work?.implementation))
+  )
     return 'turn' as const;
   if (
     ['assessment', 'implementation'].includes(progress.action) &&
@@ -56,6 +60,25 @@ export default async function advanceOpenClawWork(input: {
   const expected = record.request;
   if (!slot || !expected || !('key' in expected))
     return { status: 'implementation-idle', id: record.id };
+  // Older direct handoffs retained custody without a coordinator turn. Adopt it before any send.
+  if (slot === 'turn' && !record.work?.turn && record.work?.implementation) {
+    const source = record.work.implementation;
+    const native = await nativeInputEvent({
+      request,
+      sessionKey: expected.key,
+      sessionId: record.sessionCreation!.sessionId!,
+      runId: source.runId,
+      retained: [source],
+    });
+    record.work.turn = {
+      origin: 'input',
+      runId: native.runId,
+      message: native.message,
+      status: 'consumed',
+      consumedByEventId: native.inputEventId,
+    };
+    await save();
+  }
   if (input.reconcileOnly && (!record.work?.[slot] || record.work[slot]!.status === 'completed'))
     return { status: 'implementation-idle', id: record.id };
   if (!record.work?.[slot] || record.work[slot]!.status === 'completed') {

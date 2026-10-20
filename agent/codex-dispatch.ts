@@ -502,7 +502,8 @@ export async function runCodexDispatch(
             'Apply this handoff when the live workflow or explicit user request permits implementation. It records the transition and preserves the assessment and checkout. Implementation includes ordinary PR delivery; honor explicit restrictions and native denials.',
         };
       if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
-      if (transition.status === 'ready') record.progression = transition.progression;
+      if (transition.status === 'ready')
+        record.progression = { ...transition.progression, workOwner: 'issue' };
       record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
       const response = notice(record, intake);
       await save();

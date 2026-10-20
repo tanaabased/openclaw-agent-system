@@ -109,6 +109,52 @@ describe('agent/workflow-status', () => {
     event.work.result.outcome = 'blocked';
     assert.equal(workflowStatus({ ...record, delivery }), 'blocked');
   });
+  it('should report current issue work instead of historical completed feedback in both runtimes', () => {
+    const delivery = {
+      pullRequest: { pullRequestNumber: 7 },
+      reconciled: true,
+      pushedHead: 'old',
+      announcement: { receipt: {} },
+    };
+    const record = {
+      phase: 'complete',
+      progression: { stage: 'implementation', workOwner: 'issue' },
+      delivery,
+      feedback: {
+        events: [
+          {
+            id: 'old-feedback',
+            phase: 'published',
+            work: { head: 'old', result: { outcome: 'done' } },
+          },
+        ],
+      },
+    };
+    assert.equal(workflowStatus({ ...record, continuation: { phase: 'running' } }), 'running');
+    assert.equal(workflowStatus({ ...record, work: { implementation: {} } }), 'running');
+    assert.equal(workflowStatus({ ...record, continuation: { phase: 'cancelled' } }), 'cancelled');
+    assert.equal(
+      workflowStatus({ ...record, work: { code: 'dispatch-turn-cancelled' } }),
+      'blocked',
+    );
+    assert.equal(
+      workflowStatus({ ...record, continuation: { phase: 'clarification-needed' } }),
+      'clarification-needed',
+    );
+  });
+  it('should select the feedback that owns work rather than the last historical event', () => {
+    const record = {
+      phase: 'complete',
+      progression: { stage: 'implementation', workOwner: 'current' },
+      feedback: {
+        events: [
+          { id: 'current', phase: 'running', work: {} },
+          { id: 'older', phase: 'blocked', work: { result: { outcome: 'blocked' } } },
+        ],
+      },
+    };
+    assert.equal(workflowStatus(record), 'running');
+  });
   it('should report the current implementation stage instead of the completed assessment', () => {
     const assessment = { phase: 'complete', result: { outcome: 'plan-ready' } };
     assert.equal(workflowStatus(assessment), 'plan-ready');

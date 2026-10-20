@@ -3,6 +3,7 @@ import issueWorkflowProgress, { type IssueWorkflowState } from './issue-workflow
 interface State extends IssueWorkflowState {
   feedback?: {
     events: Array<{
+      id?: string;
       phase: string;
       retry?: unknown;
       work?: { head?: string; result?: { outcome: string } };
@@ -14,9 +15,12 @@ interface State extends IssueWorkflowState {
 /** feedback overlays its own work; issue status uses the coordinator's shared progress facts. */
 export default function workflowStatus(record: State) {
   const progress = issueWorkflowProgress(record);
-  if (record.retirement || record.retired || record.reset || progress.status === 'obsolete')
+  if (progress.action === 'stopped' || record.progression?.workOwner === 'issue')
     return progress.status;
-  const feedback = record.feedback?.events.findLast((event) => event.work);
+  const feedback = record.feedback?.events.findLast(
+    (event) =>
+      event.work && (!record.progression?.workOwner || event.id === record.progression.workOwner),
+  );
   if (!feedback) return progress.status;
   const delivery = feedback.workDelivery ?? record.delivery ?? record.work?.delivery;
   if (feedback.phase === 'blocked' || feedback.work?.result?.outcome === 'blocked')
