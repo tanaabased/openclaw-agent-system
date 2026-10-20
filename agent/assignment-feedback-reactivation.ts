@@ -5,7 +5,7 @@ import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { inspectActiveIssue } from './dispatch-assignment.ts';
+import { inspectActiveIssue, inspectContinuedIssue } from './dispatch-assignment.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { admitFeedback, discoverFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
@@ -24,7 +24,14 @@ export async function inspectFeedbackAssignment(
   client: GitHubNotificationIntakeClient,
   record: SharedDispatchRecord,
 ) {
-  const current = await inspectActiveIssue(intake, client, Boolean(record.feedbackReactivation));
+  const current = record.feedbackReactivation
+    ? await inspectActiveIssue(intake, client, true)
+    : await inspectContinuedIssue(
+        intake,
+        client,
+        policy.policy.issueAssignment?.allowed ?? [],
+        record,
+      );
   if (record.feedbackReactivation) {
     const history = await client.listAssignmentEvents(
       intake.repository.owner.login,

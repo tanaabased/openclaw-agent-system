@@ -56,6 +56,8 @@ export default async function reconcileOpenClawLifecycle(input: {
 }) {
   const { service, manifest, workspace, authority } = input;
   const current = await service.scope(manifest, workspace);
+  current.policy.policy.issueAssignment!.allowed =
+    manifest.github?.notifications?.issueAssignment?.allowed ?? [];
   const owner = await service.dependencies.coordinator(manifest, workspace);
   const feedbackBudget = new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
@@ -76,7 +78,16 @@ export default async function reconcileOpenClawLifecycle(input: {
   const fresh = async () => {
     authority.signal?.throwIfAborted();
     await authority.assertCurrent?.();
-    const selected = await service.scope(manifest, workspace);
+    const loaded = await service.dependencies.intake.dependencies.manifestService.loadForAgentId(
+      manifest.agent.id,
+      'service',
+    );
+    if (loaded.status !== 'loaded' || loaded.scope.workspaceDir !== workspace)
+      throw new Error('retirement-workflow-changed');
+    const selected = await service.scope(loaded.manifest, workspace);
+    current.policy.policy = selected.policy.policy;
+    current.policy.policy.issueAssignment!.allowed =
+      loaded.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
     if (
       selected.workspace !== current.workspace ||
       (await service.dependencies.coordinator(manifest, workspace)) !== owner

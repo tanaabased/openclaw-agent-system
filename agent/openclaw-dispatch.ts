@@ -1,3 +1,4 @@
+import workflowRecovery from './workflow-recovery.ts';
 import advanceOpenClawDecision, { openClawDecisionPending } from './openclaw-auto-decision.ts';
 import advanceOpenClawWork, { openClawWorkSlot } from './openclaw-continuation.ts';
 import issueProgression from './issue-progression.ts';
@@ -61,7 +62,7 @@ import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
 import feedbackResponse from '../channels/github/presentation/feedback-response.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingAssignments, { issueKey } from './dispatch-pending.ts';
-import { inspectActiveIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
@@ -234,7 +235,8 @@ export default class OpenClawDispatch {
       fresh.manifest.agent.id !== manifest.agent.id
     )
       throw new Error('dispatch-workspace-binding-changed');
-    if (record.retired || record.retirement) throw new Error('dispatch-issue-inactive');
+    if (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
+      throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
     if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
@@ -277,13 +279,11 @@ export default class OpenClawDispatch {
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
     signal?: AbortSignal,
   ) {
-    const { current, intake } = await this.validateLocal(
-      manifest,
-      workspace,
-      record,
-      work,
-      feedback,
-    );
+    const {
+      current,
+      intake,
+      manifest: liveManifest,
+    } = await this.validateLocal(manifest, workspace, record, work, feedback);
     const client =
       connection ??
       (await this.dependencies.connect(
@@ -292,9 +292,31 @@ export default class OpenClawDispatch {
       ));
     const repo =
       (record.sessionCreation?.verified || record.effective?.status === 'verified') && !feedback
-        ? (await inspectActiveIssue(intake, client)).repo
+        ? (
+            await inspectContinuedIssue(
+              intake,
+              client,
+              liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+              record,
+              (this.dependencies.now ?? Date.now)(),
+            )
+          ).repo
         : feedback
-          ? await revalidateFeedbackAssignment(current.policy, intake, client, record)
+          ? await revalidateFeedbackAssignment(
+              {
+                ...current.policy,
+                policy: {
+                  ...current.policy.policy,
+                  issueAssignment: {
+                    ...current.policy.policy.issueAssignment!,
+                    allowed: liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+                  },
+                },
+              },
+              intake,
+              client,
+              record,
+            )
           : (await inspectAdmittedIssue(intake, client)).repo;
     const worktreeInput = {
       agentId: manifest.agent.id,
@@ -989,6 +1011,9 @@ export default class OpenClawDispatch {
               intakeId: record.intakeId,
               phase: record.phase,
               workflowStatus: workflowStatus(record),
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               threadId: record.threadId,
               effective: record.effective,
               sessionCreation: record.sessionCreation,
@@ -1438,6 +1463,9 @@ export default class OpenClawDispatch {
               id: record.id,
               ...workflowFailure(error, record.blocker),
               workflowStatus: workflowStatus(record),
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               nextAction: 'next',
             };
           }
@@ -1761,7 +1789,7 @@ export default class OpenClawDispatch {
                   )
                 : undefined;
             await childAuthority.assertCurrent();
-            return issueAssessmentAction({
+            const outcome = await issueAssessmentAction({
               selection,
               evidence,
               request,
@@ -1776,6 +1804,12 @@ export default class OpenClawDispatch {
               save,
               assertCurrent: childAuthority.assertCurrent,
             });
+            return {
+              ...outcome,
+              assignmentObservation: record.assignmentObservation,
+              assignmentWarning:
+                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
+            };
           });
         }
         if (input.action === 'prepare') {

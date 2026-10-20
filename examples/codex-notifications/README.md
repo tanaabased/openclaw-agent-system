@@ -19,6 +19,16 @@ make status complete and the next scan idle without a separate completion transi
 Interrupt before the announcement or card and confirm recovery finishes those steps
 without repeating implementation or creating another PR.
 
+For removal-authority verification in the desktop, remove an admitted assignment
+through an actor outside the live `issue-assignment.allowed` list. Confirm inspection
+reports missing assignment and unresolved authority, preserves the exact chat,
+checkout and implementation stage, and permits only already authorized work. Verify
+reassignment clears the warning without creating another owner. An approved removal
+must instead queue normal retirement; removing that actor from the live list before
+cleanup must prevent stale removal authority from reclaiming resources. Controlled
+source tests cover actor/evidence permutations; these headless checks do not establish
+the desktop journey.
+
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 ## Setup
