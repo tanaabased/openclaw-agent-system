@@ -99,6 +99,30 @@ for (const scenario of [
     return args as Extract<Action, { action: A }>;
   }
 
+  async function publishProgressionSummary(input: ChatCompletionRequest) {
+    assert.equal((await action(input, 'summary')).operation, 'compose');
+    append(input, 'summary-compose', {
+      status: 'composition-ready',
+      digest,
+      selection: { skill: { path: '/tmp/SUMMARY.md' } },
+    });
+    const read = await response(input);
+    assert.ok('toolCalls' in read);
+    assert.equal(read.toolCalls?.[0]?.name, 'read');
+    append(input, 'summary-skill', { text: 'Selected reply guidance' });
+    const candidate = await action(input, 'summary');
+    assert.equal(candidate.operation, 'candidate');
+    assert.equal(candidate.digest, digest);
+    append(input, 'summary-candidate', { status: 'candidate-recorded' });
+    assert.equal((await action(input, 'summary')).digest, undefined);
+    append(input, 'summary-preview', { status: 'publication-ready', digest: 'e'.repeat(64) });
+    assert.equal((await action(input, 'summary')).digest, 'e'.repeat(64));
+    append(input, 'summary-publish', {
+      status: 'published',
+      presentation: 'Published retained plan.',
+    });
+  }
+
   describe(`examples/${scenario.id} model fixture`, () => {
     if (scenario.id === 'openclaw-intake')
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
@@ -444,6 +468,10 @@ for (const scenario of [
       append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
       assert.equal('content' in nextResponse && nextResponse.content, presentation);
+      if (scenario.id === 'openclaw-progression') {
+        await publishProgressionSummary(input);
+        assert.deepEqual(await response(input), { content: 'Published retained plan.' });
+      }
       if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
         assert.deepEqual(await action(input, 'present'), {
           action: 'present',
@@ -508,6 +536,16 @@ for (const scenario of [
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
     if (scenario.id === 'openclaw-progression') {
+      it('should finish response-only recovery without repeating assessment or implementation', async () => {
+        const input = request(`recover only the pending public assessment summary with id ${id}`);
+        await action(input, 'present');
+        append(input, 'recovery-present', {
+          status: 'presented',
+          presentation: 'Retained assessment.',
+        });
+        await publishProgressionSummary(input);
+        assert.deepEqual(await response(input), { content: 'Published retained plan.' });
+      });
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(
@@ -543,8 +581,19 @@ for (const scenario of [
             status: 'verified',
             runtime: 'openclaw',
             publicationAuthorized: true,
+            pendingPublicResponse: {
+              kind: 'assessment-summary',
+              revision: direct ? 2 : 1,
+              state: 'pending',
+            },
             project: { path: '/tmp/owned' },
           });
+          await action(automatic, 'present');
+          append(automatic, 'recovery-present', {
+            status: 'presented',
+            presentation: 'The retained plan.',
+          });
+          await publishProgressionSummary(automatic);
           const question = await action(automatic, 'implementation-result');
           assert.equal(question.implementationResult.outcome, 'clarification-needed');
           append(automatic, 'work-result', {
@@ -801,6 +850,17 @@ for (const scenario of [
           assert.ok('toolCalls' in selected);
           assert.equal(selected.toolCalls?.[0]?.name, 'read');
           append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+          const branch = await response(input);
+          assert.ok('toolCalls' in branch);
+          assert.deepEqual(JSON.parse(branch.toolCalls![0]!.arguments).argv, [
+            'branch',
+            '--show-current',
+          ]);
+          append(input, 'feedback-branch', {
+            exitCode: 0,
+            truncated: false,
+            stdout: 'fixture-pr-branch\n',
+          });
           for (const stage of [
             'feedback-fetch',
             'feedback-incorporate',
@@ -812,6 +872,18 @@ for (const scenario of [
             const step = await response(input);
             assert.ok('toolCalls' in step);
             assert.equal(step.toolCalls?.[0]?.name, 'agent_system_git');
+            if (stage === 'feedback-fetch')
+              assert.deepEqual(JSON.parse(step.toolCalls![0]!.arguments).argv, [
+                'fetch',
+                'origin',
+                'fixture-pr-branch',
+              ]);
+            if (stage === 'feedback-incorporate')
+              assert.deepEqual(JSON.parse(step.toolCalls![0]!.arguments).argv, [
+                'merge',
+                '--ff-only',
+                'FETCH_HEAD',
+              ]);
             append(input, stage, { exitCode: 0, truncated: false });
           }
           assert.equal((await action(input, 'feedback')).operation, 'implementation-result');

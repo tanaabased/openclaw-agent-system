@@ -59,6 +59,16 @@ async function fixture() {
     cancelled = false,
     posts = 0,
     lose = false;
+  let historical:
+    | {
+        runId?: string;
+        truncated?: boolean;
+        runTerminal?: boolean;
+        sessionId?: string;
+        cancelled?: boolean;
+        code?: string;
+      }
+    | undefined;
   const user = (run: string, text: string) => ({
     role: 'user',
     content: text,
@@ -78,20 +88,42 @@ async function fixture() {
         },
       };
     if (method === 'chat.history') {
-      const run = Array.isArray(params.inputRunIds)
-        ? String(params.inputRunIds[0])
-        : (record.summaryRecovery?.turn.runId ?? 'new');
+      const run = params.messageId
+        ? String(params.messageId).replace(/:input$/, '')
+        : Array.isArray(params.inputRunIds)
+          ? String(params.inputRunIds[0])
+          : (record.summaryRecovery?.turn.runId ?? 'new');
       const entry = user(run, recoveryMessage || 'Continue');
       const reply = {
         role: 'assistant',
         stopReason: 'stop',
         content: [{ type: 'text', text: 'Outcome retained.' }],
-        __openclaw: { id: 'terminal', runId: run, runTerminal: true },
+        __openclaw: {
+          id: 'terminal',
+          runId: run,
+          runTerminal: true,
+          ...(run === record.resultTurnId ? historical : {}),
+        },
       };
       return {
-        sessionId: 'incarnation',
-        messages: params.messageId ? [user('new', 'Continue')] : ended ? [entry, reply] : [entry],
-        inputReceipts: [],
+        sessionId:
+          run === record.resultTurnId ? (historical?.sessionId ?? 'incarnation') : 'incarnation',
+        messages: params.messageId
+          ? [entry]
+          : ended || (historical && run === record.resultTurnId)
+            ? [entry, reply]
+            : [entry],
+        inputReceipts:
+          historical?.cancelled && run === record.resultTurnId
+            ? [
+                {
+                  runId: run,
+                  state: 'consumed',
+                  consumedByEventId: run + ':input',
+                  cancelled: true,
+                },
+              ]
+            : [],
         pendingInputs: { total: 0 },
         sessionInfo: { hasActiveRun: active, activeLeafEntryId: 'leaf' },
       };
@@ -99,8 +131,9 @@ async function fixture() {
     if (method === 'agent.wait')
       return {
         runId: params.runId,
-        status: params.runId === 'source' ? sourceStatus : ended ? 'ok' : 'timeout',
+        status: params.runId === record.resultTurnId ? sourceStatus : ended ? 'ok' : 'timeout',
         ...(cancelled ? { stopReason: 'aborted' } : {}),
+        ...(historical?.code ? { code: historical.code } : {}),
       };
     if (method === 'chat.send') {
       assert.equal(record.summaryRecovery!.turn.status, 'attempted');
@@ -128,6 +161,10 @@ async function fixture() {
     });
   return {
     record,
+    history: (value: NonNullable<typeof historical> = {}) => {
+      historical = value;
+      active = true;
+    },
     run,
     authority,
     restart: () => {
@@ -193,6 +230,34 @@ describe('agent/public-response recovery', () => {
     f.sourceStatus('error');
     await f.authority();
     assert.equal(f.record.resultTurnId, 'source');
+    f.cancel();
+    await assert.rejects(f.authority(), /turn-cancelled/);
+  });
+  it('should recover a revised source after native wait state is lost while the recovery turn is active', async () => {
+    const f = await fixture();
+    f.record.resultTurnId = 'revised-source';
+    f.sourceStatus('timeout');
+    f.history();
+    await f.authority();
+    assert.equal(f.record.resultTurnId, 'revised-source');
+  });
+  it('should reject foreign incomplete cancelled or denied history during recovery', async () => {
+    for (const history of [
+      { runId: 'foreign' },
+      { truncated: true },
+      { runTerminal: false },
+      { sessionId: 'replacement' },
+      { cancelled: true },
+      { code: 'approval-denied' },
+    ]) {
+      const f = await fixture();
+      f.sourceStatus('timeout');
+      f.history(history);
+      await assert.rejects(f.authority());
+    }
+    const f = await fixture();
+    f.sourceStatus('timeout');
+    f.history();
     f.cancel();
     await assert.rejects(f.authority(), /turn-cancelled/);
   });
