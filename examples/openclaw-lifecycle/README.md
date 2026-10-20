@@ -1,6 +1,6 @@
 # OpenClaw Issue Lifecycle Example
 
-Normally admit one disposable issue, retain its native chat, worktree and assessment across restart and equivalent permission reordering, reactivate it from an approved comment after unassignment, suppress replayed replies, and retire closed work with native archival and worktree removal while preserving the assessment.
+Normally admit one disposable issue, retain its native chat, worktree and assessment across restart and equivalent permission reordering, reactivate it from an approved comment after unassignment, suppress replayed replies, and retire closed work after operator worktree cleanup while preserving the assessment. The worktree example covers removal itself; this scenario checks that retirement reconciles cleanup performed outside its own transaction.
 
 `openclaw-intake` owns activation compatibility, concurrent admission and repeat-scan duplicate prevention. Assessment presentation and ordinary feedback belong to `openclaw-issue`; implementation and PR delivery belong to `openclaw-pr`; scheduler drift belongs to `openclaw-automations`.
 
@@ -251,18 +251,22 @@ jq -es --arg id "$(jq -er .id "$TMPDIR/notification-feedback.json")" '[.[].recor
 jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].stageReceipt == .[1].stageReceipt' "$TMPDIR/notification-feedback.json" "$TMPDIR/notification-replayed.json"
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
-# should retire a closed fixture through normal intake and preserve its plan
+# should retire a closed fixture after external worktree cleanup and preserve its plan
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
+repository_id=$(openclaw agent-system tool worktree -- list | jq -er --arg path "$worktree" '.[] | select(.path == $path) | .repositoryId')
+work_id="issue-$(jq -er .id "$TMPDIR/notification-issue.json")"
+openclaw agent-system tool worktree -- remove "$repository_id" "$work_id"
 # allow the bounded lifecycle observation interval to elapse; this fixture has zero cleanup grace.
 sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-retired.json"
-jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
+jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.worktreeRemovalObserved.source == "external-cleanup" and .retirement.worktreeRemovalAttemptedAt == null and .retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived == true or .session.archivedAt != null'
 worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
 test ! -e "$worktree"

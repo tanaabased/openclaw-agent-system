@@ -94,7 +94,11 @@ OpenClaw archives the exact idle session and removes its managed worktree after
 verifying a clean checkout and retained branch or tag. It protects pinned sessions,
 automation owners, shared worktrees, unresolved activity, and unpreserved changes.
 Each successful cleanup step is retained so interrupted cleanup can reconcile on a
-later poll. Branches, issue content, and assessment history are preserved.
+later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
+them. If the managed inventory and recorded path both confirm an already-removed
+worktree, retirement records observed external cleanup after its ownership checks;
+this does not claim to have removed or preserved the missing checkout. Ambiguous
+session identity remains a blocker.
 
 Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree
