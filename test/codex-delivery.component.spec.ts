@@ -731,7 +731,10 @@ describe('agent/codex-delivery', () => {
     assert.match(String(presented.instruction), /complete presentation Markdown.*final reply/u);
     assert.match(String(presented.instruction), /including the PR card and all notices/u);
     assert.match(String(presented.instruction), /card generation, not visible delivery/u);
-    assert.match(JSON.stringify(presented.presentation), /feedback delivery is not available/);
+    assert.match(
+      JSON.stringify(presented.presentation),
+      /Feedback is configured.*active intake could not be verified/,
+    );
     assert.equal(creates, 1);
     attached = false;
     await request('reconcile');

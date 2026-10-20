@@ -24,8 +24,10 @@ only the requested work. The agent keeps the same worktree and returns a quoted
 card linking the issue and PR. If publication is interrupted, continue in that chat
 so it can reconcile the existing attempt without creating another PR.
 
-Once intake is installed, set `issue-assignment.feedback` to enable comment intake. Approved
-mentions in issue comments, PR conversation comments, submitted reviews, and inline
+Once intake is installed, feedback inherits the issue workflow’s approved assigners.
+Use explicit author policy to add or replace that list; see
+[feedback permissions](../../MANIFEST.md#feedback-permissions). Approved mentions
+in issue comments, PR conversation comments, submitted reviews, and inline
 replies return to the original issue chat. The agent retains its complete private
 answer and composes a separate public reply with the configured feedback skill.
 Inline replies return to their original review thread; other replies return to the

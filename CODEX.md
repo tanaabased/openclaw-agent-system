@@ -192,9 +192,11 @@ assignment and review requests; the removed global setting requires an explicit 
 
 ### Issue Feedback
 
-Set `issue-assignment.feedback: true` to inherit approved assigners, or use
-`{ inherit: true, allowed: [...] }` to add pinned contributors. Reconcile Install
-after changing permissions; an older saved schedule cannot authorize feedback.
+An active issue workflow supplies feedback and inherits approved assigners by
+default. Use `{ inherit: true, allowed: [...] }` to add pinned contributors, or
+`{ inherit: false, allowed: [...] }` to replace them. An empty replacement list
+approves nobody. Author and reply-policy changes apply live; the parent workflow
+needs its installed intake schedule, with no separate feedback activation.
 Approved comments must address the configured GitHub account outside quoted text.
 The initial read establishes a baseline without replaying historical comments.
 Subsequent issue comments, submitted PR reviews and inline replies route to the
@@ -364,8 +366,8 @@ URL with native `attach_artifact`, read `list_artifacts`, then call `reconcile`
 and `compose` to load the configured reply skill for the verified delivery event.
 Submit its short description with `candidate`, inspect the returned preview, and
 execute `announce` with that preview's digest. Managed publication authority covers
-this one announcement on the originating issue, including when feedback intake is
-disabled; native denial still stops it. The host adds the verified PR URL and its
+this one announcement on the originating issue, including when the feedback author
+list is empty; native denial still stops it. The host adds the verified PR URL and its
 current draft/ready status. Call `present` and reproduce its complete private PR card,
 public quote, and announcement outcome in the final reply. The runtime
 generates the cards; successful generation alone does not prove they were displayed.

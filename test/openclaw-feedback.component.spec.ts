@@ -45,7 +45,7 @@ describe('agent/openclaw-feedback', () => {
     published = undefined;
     messages = [];
     const fixture = intakeFixture();
-    fixture.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
+    fixture.policy.issueAssignment!.allowed.push(actor);
     source = {
       nodeId: 'C',
       databaseId: 42,
@@ -634,6 +634,10 @@ describe('agent/openclaw-feedback', () => {
     await assert.rejects(action('publish', { digest }), /workflow-policy-held/);
     assert.equal(writes, 0);
     input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
+    input.policy.issueAssignment!.enabled = false;
+    await assert.rejects(action('publish', { digest }), /workflow-policy-held/);
+    assert.equal(writes, 0);
+    input.policy.issueAssignment!.enabled = true;
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
     assert.match(event.result!.privateText, /Full private/);

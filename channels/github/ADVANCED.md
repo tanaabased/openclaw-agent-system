@@ -37,8 +37,10 @@ clarification request preserves implementation authority for the next admitted a
 No separate repair policy or author list is required.
 
 Discovery retains bounded observations independently of reply eligibility.
-Feedback observed while disabled stays in GitHub history and is not queued for
-later dispatch. When the runtime observes feedback reenabled, it saves an admission
+Feedback follows its parent workflow and inherits approved assigners unless an
+explicit author policy replaces them. Activity observed while the parent is paused
+or no authors are approved stays in GitHub history and is not queued for later
+dispatch. When the runtime observes acceptance resume, it saves an admission
 cutoff for the issue and its PR using the previous policy-check time. Approved
 comments or revisions after that cutoff become new feedback, including those
 between the last check and reenabling. This overlap avoids missing comments posted

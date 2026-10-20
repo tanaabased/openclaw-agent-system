@@ -4,7 +4,7 @@ import advanceOpenClawWork, { openClawWorkSlot } from './openclaw-continuation.t
 import issueProgression from './issue-progression.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import { observeFeedbackPolicy } from './feedback-source.ts';
-import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
@@ -1412,7 +1412,7 @@ export default class OpenClawDispatch {
               startedAt: now,
               admission: {
                 observedAt: now,
-                enabled: workflowFeedbackEnabled(
+                enabled: workflowFeedbackAccepting(
                   manifest.github?.notifications,
                   'issue-assignment',
                 ),

@@ -1,5 +1,5 @@
 import { notificationAuthorityDigest } from './notification-authority.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -450,10 +450,10 @@ export async function inspectCodexDispatchActivation(
       (pausedRecovery ||
         selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
         (capability === 'feedback'
-          ? feedbackIdentities(
-              selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
-              selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
-            ).length === 0
+          ? !workflowFeedbackAvailable(
+              selected.loaded.manifest.github.notifications,
+              'issue-assignment',
+            )
           : capability !== 'assessment-summary' &&
             !['work', 'auto'].includes(
               selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',

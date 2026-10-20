@@ -12,10 +12,10 @@ import {
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
-import { workflowFeedbackEnabled } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
-  return workflowFeedbackEnabled(manifest.github?.notifications, 'issue-assignment');
+  return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');
 }
 export interface OpenClawFeedbackScan {
   id: string;

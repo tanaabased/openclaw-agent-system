@@ -129,7 +129,7 @@ const externalGitHubNotificationPolicySchema = Type.Object(
 
 export const externalGitHubNotificationsSchema = externalGitHubNotificationPolicySchema;
 
-type ExternalGitHubNotifications = Static<typeof externalGitHubNotificationsSchema>;
+export type ExternalGitHubNotifications = Static<typeof externalGitHubNotificationsSchema>;
 
 export interface GitHubIdentityPin {
   login: string;
@@ -146,6 +146,7 @@ export interface GitHubApprovedActor extends GitHubIdentityPin {
 }
 
 export type GitHubFeedbackPolicy =
+  // booleans remain compatibility input until the existing workspaces adopt explicit author policy.
   boolean | ({ inherit: boolean; allowed: GitHubIdentityPin[] } & AssessmentConfiguration);
 
 export interface GitHubNotificationPolicy {
