@@ -939,6 +939,26 @@ export default class OpenClawDispatch {
       !(operator && ['inspect', 'retry'].includes(input.action))
     )
       throw new Error('dispatch-intake-caller-required');
+    if (!childAction && !operator) {
+      await current.journal.exclusive(async (state, save) => {
+        const accepted = state.openclawOccurrence;
+        if (
+          accepted &&
+          accepted.sessionKey === caller.sessionKey &&
+          accepted.sessionId === caller.sessionId &&
+          accepted.runId === caller.runId
+        )
+          return;
+        const code = await this.dependencies.intake.readiness(manifest, current.workspace);
+        if (code) throw new Error(code);
+        state.openclawOccurrence = {
+          sessionKey: caller.sessionKey,
+          sessionId: caller.sessionId,
+          runId: caller.runId,
+        };
+        await save();
+      });
+    }
     if (input.action === 'next')
       await reconcileOpenClawLifecycle({ service: this, manifest, workspace, authority });
     const snapshot = await current.journal.read();
@@ -1758,7 +1778,7 @@ export default class OpenClawDispatch {
                     client,
                   );
                   if (!provider) throw new Error('assessment-summary-provider-unavailable');
-                  return { client: provider };
+                  return { client: provider, authorLogin: provider.identity.login };
                 },
               });
             }
@@ -2027,6 +2047,7 @@ export default class OpenClawDispatch {
                 id: record.id,
                 presentation: assessmentPresentation(record.result, record, intake, workspace, {
                   debug: manifest.debug,
+                  includeDetails: action.includeDetails,
                 }),
                 instructions:
                   'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',

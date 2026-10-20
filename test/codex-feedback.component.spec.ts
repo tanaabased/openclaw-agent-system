@@ -570,7 +570,18 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
     assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
   });
-  it('should hold feedback while its parent is paused and resume the same admitted event', async () => {
+  it('should require occurrence activation before feedback discovery despite retained-work access', async () => {
+    const before = await store.read();
+    const activation = deps.activation!;
+    deps.activation = async (...args) => {
+      if (!args[3]) throw new Error('intake-automation-paused');
+      return activation(...args);
+    };
+    await assert.rejects(call('next'), /intake-automation-paused/u);
+    assert.deepEqual(await store.read(), before);
+  });
+
+  it('should keep the same admitted feedback event available through parent pause', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
@@ -582,7 +593,7 @@ describe('agent/codex-feedback', () => {
     ];
     await writeFile(path, JSON.stringify(manifest));
     const paused = await call('context', ref, true);
-    assert.equal(paused.status, 'policy-held', JSON.stringify(paused));
+    assert.equal(paused.status, 'verified', JSON.stringify(paused));
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
     manifest.github.notifications['issue-assignment'].enabled = true;
     await writeFile(path, JSON.stringify(manifest));
@@ -599,7 +610,7 @@ describe('agent/codex-feedback', () => {
     const saved = await call('result', { ...ref, result: { privateText } }, true);
     assert.equal(saved.status, 'recorded');
     assert.ok('presentation' in saved && saved.presentation?.includes(privateText));
-    assert.ok(saved.presentation?.startsWith('> ## 💬 From '));
+    assert.ok(saved.presentation?.includes('[Comment ↗]'));
     assert.ok(saved.presentation?.includes('#issuecomment-42)'));
     const composition = await call('compose', ref, true);
     assert.equal(composition.status, 'composition-ready');
@@ -676,7 +687,7 @@ describe('agent/codex-feedback', () => {
     const context = await call('context', ref, true);
     assert.equal('publication' in context && context.publication, 'private-only');
     assert.ok('presentation' in context && typeof context.presentation === 'string');
-    assert.match(context.presentation, /^> ## 💬 From /u);
+    assert.match(context.presentation, /\[Comment ↗\]/u);
     assert.ok(context.presentation.includes('> @receiver explain this'));
     assert.ok(context.presentation.includes('#issuecomment-42)'));
     const result = await call(
@@ -727,7 +738,7 @@ describe('agent/codex-feedback', () => {
     const completed = await call('next');
     assert.equal(completed.status, 'published');
     assert.ok('presentation' in completed && completed.presentation);
-    assert.match(completed.presentation, /^> ## 💬 From /u);
+    assert.match(completed.presentation, /\[Comment ↗\]/u);
     assert.ok(completed.presentation.includes('#issuecomment-42)'));
     assert.ok(
       completed.presentation.indexOf('#issuecomment-42)') <
@@ -903,12 +914,12 @@ describe('agent/codex-feedback', () => {
         assert.ok(completed.presentation.includes(`[Inline guidance](<${overlayPath}>)`));
         assert.ok(
           completed.presentation.indexOf('Feedback reply instructions') >
-            completed.presentation.indexOf('Published reply'),
+            completed.presentation.indexOf('[Reply ↗]'),
         );
       }
       assert.ok(
         completed.presentation.includes(
-          '> ## 📤 To [@contributor](https://github.com/contributor)',
+          `from [@${account.login}](https://github.com/${account.login})*`,
         ),
       );
       assert.ok(!published!.includes('Use concise phrasing.'));
@@ -1058,7 +1069,7 @@ describe('agent/codex-feedback', () => {
     const reply = await call('compose', ref, true);
     assert.equal('code' in reply && reply.code, 'feedback-skill-unavailable');
     assert.ok('presentation' in reply && reply.presentation?.includes('Useful evidence'));
-    assert.ok(reply.presentation?.startsWith('> ## 💬 From '));
+    assert.ok(reply.presentation?.includes('[Comment ↗]'));
     assert.equal(creates, 0);
   });
   it('should permit harmless file references while keeping the existing publisher', async () => {

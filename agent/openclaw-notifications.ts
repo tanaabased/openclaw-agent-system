@@ -114,8 +114,7 @@ export default class OpenClawNotifications {
       return blocked('github-notification-runtime-unsupported');
     const runtimeBlocker = githubNotificationRuntimeBlocker(policy, 'openclaw');
     if (runtimeBlocker) return blocked('github-notification-workflow-unsupported');
-    if (!policy.issueAssignment || policy.issueAssignment.enabled === false)
-      return blocked('github-notification-disabled');
+    if (!policy.issueAssignment) return blocked('github-notification-disabled');
     if (selector?.itemType === 'pull-request')
       return blocked('github-notification-selector-unsupported');
     try {

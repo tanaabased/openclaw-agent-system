@@ -29,6 +29,18 @@ function fixture(): AgentManifest {
 
 describe('assignment intake policy', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should retain ${runtime} authority and scheduler identity across pause and resume`, () => {
+      const manifest = fixture();
+      const jobs = runtime === 'codex' ? codexIntakeJobs : openclawIntakeJobs;
+      const active = jobs(manifest)[0]!;
+      const authority = assignmentIntakePolicy(manifest, runtime)!.digest;
+      manifest.github!.notifications!.issueAssignment!.paused = true;
+      assert.deepEqual(jobs(manifest)[0], { ...active, enabled: false });
+      assert.equal(assignmentIntakePolicy(manifest, runtime)!.digest, authority);
+      manifest.github!.notifications!.issueAssignment!.paused = false;
+      assert.deepEqual(jobs(manifest)[0], active);
+      assert.equal(assignmentIntakePolicy(manifest, runtime)!.digest, authority);
+    });
     it(`should not restore ${runtime} feedback grants from retained assignment actors`, () => {
       const manifest = fixture();
       const state = {

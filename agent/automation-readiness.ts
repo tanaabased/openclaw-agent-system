@@ -24,6 +24,7 @@ export default async function notificationAutomationReadiness(
   if (!declared) return 'intake-policy-disabled';
   const record = (await store.read()).records.find(({ id }) => id === declared.id);
   if (!record) return 'intake-activation-required';
+  if (!declared.enabled) return 'intake-automation-paused';
   if (record.removed || record.pending || !record.nativeId || !record.nativeHash)
     return 'intake-automation-update-required';
   if (record.hash !== effectiveAutomation(declared, context).hash)
@@ -53,7 +54,7 @@ export default async function notificationAutomationReadiness(
     native.agentId !== manifest.agent.id
   )
     return 'automation-ownership-conflict';
-  if (native.enabled !== true) return 'intake-automation-update-required';
+  if (native.enabled !== true) return 'intake-automation-paused';
   if (nativeAutomationHash(native) !== record.nativeHash)
     return 'intake-automation-update-required';
 }

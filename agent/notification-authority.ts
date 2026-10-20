@@ -29,6 +29,8 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
   value.allowedRepositoryOwners = ordered(value.allowedRepositoryOwners);
   for (const workflow of [value.issueAssignment, value.reviewRequest]) {
     if (!workflow) continue;
+    delete workflow.paused;
+    delete workflow.enabled;
     workflow.allowed = ordered(workflow.allowed);
     if (workflow.feedback && typeof workflow.feedback === 'object')
       workflow.feedback.allowed = ordered(workflow.feedback.allowed);
@@ -52,7 +54,7 @@ function feedbackAuthority(policy: GitHubNotificationPolicy) {
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
     allowedRepositoryOwners: policy.allowedRepositoryOwners,
-    enabled: policy.issueAssignment?.enabled !== false,
+    enabled: Boolean(policy.issueAssignment),
     authors: feedbackIdentities(
       policy.issueAssignment?.allowed ?? [],
       policy.issueAssignment?.feedback,

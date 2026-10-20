@@ -137,6 +137,22 @@ export default async function runCodexFeedback(
       : undefined;
     if (occurrence && schedule && occurrence.automationId !== schedule.current.automationId)
       throw new Error('feedback-occurrence-mismatch');
+    if (occurrence)
+      await store.exclusive(async (state, save) =>
+        acceptCodexIntakeOccurrence(
+          state,
+          occurrence,
+          () =>
+            (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'intake',
+            ),
+          save,
+        ),
+      );
     const snapshot = input.action === 'next' ? await store.read() : undefined;
     if (snapshot?.run?.id === occurrence?.id && (snapshot?.run?.actions ?? 0) >= 12)
       return { status: 'budget-exhausted' };
@@ -727,7 +743,7 @@ export default async function runCodexFeedback(
                 body,
                 destination,
                 presentation:
-                  feedbackReplyPresentation(source.author!.login, body) +
+                  feedbackReplyPresentation(provider.comments.identity.login, body) +
                   `\n\n[Reply destination ↗](${destination})`,
                 authority: schedule!.saved,
                 instruction: operatorPublication
@@ -819,7 +835,7 @@ export default async function runCodexFeedback(
                   ]?.path ?? current.manifestPath,
                 workspace: current.workspace,
                 privateText: event.result.privateText,
-                publicReply: { recipient: source.author!.login, text: body },
+                publicReply: { author: provider.comments.identity.login, text: body },
                 publication: {
                   url: `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#${root ? 'discussion_r' : 'issuecomment-'}${event.receipt!.databaseId}`,
                 },
@@ -929,3 +945,4 @@ export default async function runCodexFeedback(
     await connection?.close();
   }
 }
+import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';

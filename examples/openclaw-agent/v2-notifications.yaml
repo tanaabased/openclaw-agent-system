@@ -8,6 +8,6 @@ github:
       - login: example
         node-id: O_example
     issue-assignment:
-      enabled: false
+      paused: true
     review-request:
-      enabled: false
+      paused: true

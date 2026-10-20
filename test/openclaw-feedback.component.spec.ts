@@ -615,7 +615,11 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(result.status, 'published');
     assert.equal(destination, 'item:3');
     assert.match(String(result.presentation), /Full private evidence/);
-    assert.match(String(result.presentation), /To.*operator/);
+    assert.match(
+      String(result.presentation),
+      /\[Reply ↗\]\(https:\/\/github.com\/owner\/repo\/issues\/3#issuecomment-99\) from \[@receiver\]/,
+    );
+    assert.ok(!String(result.presentation).includes('Reply published'));
     assert.equal(writes, 1);
     await action('publish', { digest });
     assert.equal(writes, 1);
@@ -653,7 +657,7 @@ describe('agent/openclaw-feedback', () => {
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
   });
-  it('should block changed source and explicit revocation while retaining an admitted reply after default changes', async () => {
+  it('should block changed source and explicit revocation while retaining an admitted reply through pause', async () => {
     await start();
     const digest = await compose();
     const original = structuredClone(source);
@@ -677,9 +681,6 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(writes, 0);
     input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
     input.policy.issueAssignment!.enabled = false;
-    await assert.rejects(action('publish', { digest }), /workflow-policy-held/);
-    assert.equal(writes, 0);
-    input.policy.issueAssignment!.enabled = true;
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
     assert.match(event.result!.privateText, /Full private/);

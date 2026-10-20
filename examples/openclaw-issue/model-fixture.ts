@@ -12,12 +12,17 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const prefix = 'call_notifications_';
 const identity = 'Name: Notification Tanaabot';
+const fullAssessment =
+  'Disposable issues remain open after evidence capture. Keep cleanup after evidence capture. Add the cleanup rule to the repository documentation and review the resulting diff. Documentation-only change: existing notification checks are sufficient; no test changes or runtime changes are proposed.';
+const reviewSummary =
+  'Today you finish a test run with disposable issues still open. The guide would explain when to close them, so you can keep the evidence you need and leave a clean issue list. Documentation changes; existing tests will run, with no test changes proposed.';
 const dispatchStages = [
   ...Array.from({ length: 8 }, (_, index) =>
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
   'context',
   'result',
+  'detail-readback',
   'report',
   'refresh-context',
   'refresh-result',
@@ -97,15 +102,33 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const summary = (id: string, saved: Record<string, unknown>): FixtureResponse | undefined => {
+  const summary = (
+    id: string,
+    saved: Record<string, unknown>,
+    source: Record<string, unknown>,
+  ): FixtureResponse | undefined => {
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    const args = { action: 'summary', id };
-    const composed = result('summary-compose');
-    if (!composed)
+    const details = result('detail-readback');
+    if (!details)
       return {
-        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
+        ...dispatch('detail-readback', { action: 'present', id, includeDetails: true }),
         content: saved.presentation,
       };
+    assert.equal(details.status, 'presented');
+    assert.ok(String(details.presentation).includes('Managed Git confirmed this worktree.'));
+    assert.ok(String(details.presentation).includes('Verified the managed worktree.'));
+    if (typeof source.fullAssessment === 'string') {
+      assert.ok(String(details.presentation).includes(source.fullAssessment));
+      if (typeof source.reviewSummary === 'string') {
+        assert.ok(saved.presentation.includes(source.reviewSummary));
+        assert.ok(!saved.presentation.includes(source.fullAssessment));
+      }
+    }
+    assert.ok(!saved.presentation.includes('Managed Git confirmed this worktree.'));
+    assert.ok(!saved.presentation.includes('Verified the managed worktree.'));
+    const args = { action: 'summary', id };
+    const composed = result('summary-compose');
+    if (!composed) return dispatch('summary-compose', { ...args, operation: 'compose' });
     const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
     if (
       composed.status !== 'composition-ready' ||
@@ -274,7 +297,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         },
       });
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return summary(refreshId, saved);
+    return summary(refreshId, saved, fresh.previousResult as Record<string, unknown>);
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
@@ -379,12 +402,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       result: {
         version: 1,
         outcome: 'plan-ready',
-        summary: 'Document disposable issue cleanup.',
-        assessment: 'The admitted issue requests a small documentation change.',
-        planSummary: 'Describe closing disposable test issues after capturing evidence.',
+        summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
+        assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
         plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment:
-          'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation was performed.',
+        fullAssessment,
+        reviewSummary,
         evidence: [
           {
             source: project.path,
@@ -399,7 +421,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       },
     });
   if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  return summary(id, saved);
+  return summary(id, saved, { fullAssessment, reviewSummary });
 }
 
 function response(request: ChatCompletionRequest) {

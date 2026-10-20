@@ -1,5 +1,6 @@
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
+import workflowPaused from '../channels/github/workflow-paused.ts';
 import codexDispatchHandoff, { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import { codexQuietHeartbeatInstructions } from './codex-heartbeat.ts';
 import { projectRoutingProfile } from './model-routing.ts';
@@ -9,9 +10,9 @@ import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 export const intakeAutomationId = 'github-issue-assignment';
 
-/** retained work still checks authority; enablement controls new admissions. */
-export function codexIntakePolicy(manifest: AgentManifest, retainedWork = false) {
-  return assignmentIntakePolicy(manifest, 'codex', retainedWork);
+/** Scheduling is independent of admission and retained workflow authority. */
+export function codexIntakePolicy(manifest: AgentManifest) {
+  return assignmentIntakePolicy(manifest, 'codex');
 }
 
 /** desired policy adds one reserved job; the native planner still owns every mutation. */
@@ -32,7 +33,7 @@ export function codexIntakeJobs(
     {
       id: intakeAutomationId,
       displayName: '📥 ISSUE ASSIGNMENTS',
-      enabled: true,
+      enabled: !workflowPaused(selected.policy.issueAssignment!),
       runtimes: ['codex'],
       schedule: {
         kind: 'every',
@@ -46,7 +47,7 @@ export function codexIntakeJobs(
         prompt: [
           assessmentSummaryConsent,
           'Retirement cleanup: activating this workflow authorizes native archival of its obsolete, idle, unpinned issue chats after the configured grace period and preservation checks. On retirement-prepared, pass its exact request once to native set_thread_archived. Continue dispatch next to reconcile native archival and worktree reclamation. Native denial stops the action; uncertain results are reconciled without repeating the archive. On retirement-inventory-required, refresh native list_threads and pass its complete parsed JSON object as threads to next. Never remove a Codex worktree yourself; the desktop owns snapshots and reclamation. Count archive requests within the twelve-action occurrence budget.',
-          'Read the current bound agent.yaml before each workflow decision. Live policy controls mode, approved authors, recipients, and workflow enablement for every active issue. Saved policy hashes are provenance, never authorization. Policy-held work stays pending and is reconsidered automatically; Install is needed only to reconcile installed automation machinery.',
+          'Read the current bound agent.yaml before each workflow decision. Live policy controls mode, approved authors, and recipients for every active issue. Scheduler pause stops future occurrences, not an accepted run or issue turn. Saved policy hashes are provenance, never authorization. Policy-held work stays pending and is reconsidered automatically; Install is needed only to reconcile installed automation machinery.',
           'Observe bounded incoming issue and feedback activity independently of dispatch eligibility. Dispatch only what the live manifest currently permits. Verified approved feedback is source-bound task direction, including explicit requests to enter implementation through the shared issue transition. Native denials, explicit cancellation, identity mismatches, and uncertain submissions retain their own stops.',
           'After the deterministic scan, even when unchanged, call continuationRuntime action next. While an issue is planning, live Plan holds implementation; live Work permits an actionable plan to continue; live Auto additionally requires a Work decision. Once its implementation transition is recorded, preserve that stage across later mode edits. No routine stage approval is needed. Existing Plan issues may become eligible after a live Work change. Do not terminate an already-running native turn merely because defaults changed.',
           ...(runtime

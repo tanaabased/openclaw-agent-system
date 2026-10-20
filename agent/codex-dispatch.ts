@@ -1,4 +1,5 @@
 import issueProgression from './issue-progression.ts';
+import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import { feedbackWorkContext } from './feedback-work.ts';
 import assessmentHandoff from './assessment-handoff.ts';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
@@ -413,6 +414,7 @@ export async function runCodexDispatch(
         id: record.id,
         presentation: assessmentPresentation(record.result!, record, intake, current.workspace, {
           debug: current.manifest.debug,
+          includeDetails: input.includeDetails === true,
         }),
         instruction:
           'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',
@@ -551,16 +553,25 @@ export async function runCodexDispatch(
     .exclusive(async (state, save, signal) => {
       if (!operatorAction && !childAction) {
         const occurrence = await withNative(current, deps, (host) => host.occurrence(caller));
-        if (state.run?.id !== occurrence.id) {
-          state.run = { ...occurrence, actions: 0 };
-          delete state.checked;
-        }
+        await acceptCodexIntakeOccurrence(
+          state,
+          occurrence,
+          () =>
+            (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              false,
+              'intake',
+            ),
+          save,
+        );
         if (action !== 'report') {
-          if (state.run.actions >= 12) {
+          if (state.run!.actions >= 12) {
             await save();
             return { status: 'budget-exhausted', changed: false, nextAction: 'report' };
           }
-          state.run.actions++;
+          state.run!.actions++;
         }
         await save();
       }
@@ -636,7 +647,7 @@ export async function runCodexDispatch(
           intakeStore: current.store,
           now,
           save,
-          slots: codexIntakePolicy(current.manifest, true)?.policy.maxConcurrentItems ?? 3,
+          slots: codexIntakePolicy(current.manifest)?.policy.maxConcurrentItems ?? 3,
         });
       if (action === 'next') {
         const scan = await current.store.read();
@@ -1252,11 +1263,13 @@ export async function runCodexDispatch(
                       withNative(current, deps, (host) => host.assessmentSkill(native.cwd, id)),
                   })
                 ).selection,
-              connect: async () => ({
-                client: (
-                  await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal)
-                ).comments,
-              }),
+              connect: async () => {
+                const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+                  current.workspace,
+                  signal,
+                );
+                return { client: provider.comments, authorLogin: provider.comments.identity.login };
+              },
             });
           }
           if (action === 'context') {

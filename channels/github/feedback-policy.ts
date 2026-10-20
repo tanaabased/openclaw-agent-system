@@ -29,7 +29,7 @@ export function workflowFeedbackAvailable(
 ) {
   const selected =
     workflow === 'issue-assignment' ? policy?.issueAssignment : policy?.reviewRequest;
-  return Boolean(selected && selected.enabled !== false);
+  return Boolean(selected);
 }
 
 /** retained admission windows describe eligible sources, not a separate enable switch. */
