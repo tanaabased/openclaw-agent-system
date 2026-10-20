@@ -284,7 +284,7 @@ export default class GitHubAccountKeyService {
     client: { execute(argv: string[], stdin?: string): Promise<AgentSystemCliResult> },
   ): Promise<void> {
     const result = await client.execute(
-      ['api', '--method', 'POST', category.endpoint, '--input', '-'],
+      ['api', '--include', '--method', 'POST', category.endpoint, '--input', '-'],
       JSON.stringify({ key: key.key, title: key.title }),
     );
     if (result.exitCode !== 0 || result.timedOut || result.truncated) {

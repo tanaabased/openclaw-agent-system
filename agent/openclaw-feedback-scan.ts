@@ -1,18 +1,18 @@
-import feedbackOwnPublications from './feedback-own-publications.ts';
-import { GitHubAccountClientError } from '../core/github-account-client.ts';
-import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
-import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
-import { automationHash } from './automation-hash.ts';
-import { discoverFeedback } from './feedback-source.ts';
-import { feedbackSession } from './openclaw-feedback.ts';
-import {
-  type default as OpenClawDispatch,
-  openClawDispatchFailureCode,
-} from './openclaw-dispatch.ts';
-import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
+import { GitHubAccountClientError } from '../core/github-account-client.ts';
+import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import { automationHash } from './automation-hash.ts';
+import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
+import feedbackOwnPublications from './feedback-own-publications.ts';
+import { discoverFeedback } from './feedback-source.ts';
+import {
+  type default as OpenClawDispatchContext,
+  openClawDispatchFailureCode,
+} from './openclaw-dispatch-context.ts';
+import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
+import { feedbackSession } from './openclaw-feedback.ts';
 
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
   return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');
@@ -25,7 +25,7 @@ export interface OpenClawFeedbackScan {
 
 /** provider reads stay outside the journal lock; only unchanged owners accept the snapshot. */
 export async function scanOpenClawFeedback(input: {
-  service: OpenClawDispatch;
+  service: Pick<OpenClawDispatchContext, 'scope' | 'dependencies' | 'validate'>;
   state: OpenClawDispatchState;
   manifest: AgentManifest;
   workspace: string;

@@ -1,8 +1,29 @@
-import prepareDispatchReport from './codex-dispatch-report.ts';
+import {
+  type default as IntakeRecordStore,
+  type IntakeRecord,
+  type IntakeState,
+} from '../channels/github/intake/record-store.ts';
+
+import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
+import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
+import { type AssessmentResult } from './assessment-result.ts';
 import requireDispatchCheck from './codex-dispatch-check.ts';
-import type { DispatchState } from './codex-dispatch-state.ts';
-import type IntakeRecordStore from '../channels/github/intake/record-store.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import {
+  code,
+  issueUrl,
+  repository,
+  type CodexDispatchTransaction,
+} from './codex-dispatch-context.ts';
+import prepareDispatchReport from './codex-dispatch-report.ts';
+import { type DispatchState, type DispatchRecord } from './codex-dispatch-state.ts';
+
+import codexHostAccess from './codex-host-access.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
+import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
+import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import workflowFailure from './workflow-failure.ts';
+import workflowRecovery from './workflow-recovery.ts';
+import workflowStatus from './workflow-status.ts';
 
 export default async function reportDispatch(
   input: Record<string, unknown>,
@@ -91,4 +112,194 @@ export default async function reportDispatch(
   run.response = report.response;
   await save();
   return { status: 'report', response: report.response };
+}
+function remediation(value: string) {
+  const recovery = workflowRecovery(value);
+  if (recovery) return recovery.next;
+  if (value === 'dispatch-native-receipt-reused')
+    return "This native receipt belongs to another assessment, including a retired attempt. Reconcile only the receipt returned by this prepared request's create_thread call, or omit receipt to recover its actual creation. Do not create again or reuse history.";
+  if (value.startsWith('dispatch-assessment-skill-'))
+    return 'Check issue-assignment.assessment.skill against the enabled Codex skills. Use a qualified plugin:skill id to resolve ambiguity, and restore the selected skill if it changed. Retry this retained assignment or resume its existing chat; do not create a replacement chat.';
+  if (value.startsWith('dispatch-assessment-guidance-'))
+    return 'Correct issue-assignment.assessment.guidance: use nonempty text or a readable UTF-8 file within the bound agent workspace, without symlinks, up to 32 KiB. Retry the retained assignment after restoring the guidance; live edits apply without Install.';
+  if (value === 'dispatch-configured-project-missing')
+    return 'The explicitly configured local repository path is missing. Correct or remove its git.worktrees.repositories.local override, keep the repository registered as a saved Codex project, and let the next scheduled occurrence retry this retained assignment.';
+  if (value.includes('project'))
+    return 'Add the exact repository checkout as one saved Git-backed Codex project, resolve any path or origin conflict, then let the next scheduled occurrence retry this retained assignment.';
+  if (value.includes('activation'))
+    return 'Authorize Install to reconcile the updated assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
+  if (value === 'dispatch-mode-unsupported')
+    return 'Set issue-assignment mode to plan, work, or auto, then retry with the live manifest. Other modes cannot dispatch issue assessments.';
+  if (value.includes('routing') || value.includes('model'))
+    return 'Inspect the retained routing evidence and configured profiles. Repair the selection or native model access; do not substitute a model or recreate the chat.';
+  if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
+    return 'Restore current issue assignment, repository access, and configured authority before retrying. Retain the existing chat and evidence.';
+  if (value.includes('result'))
+    return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat to finish the assessment and submit its structured result; do not launch a replacement.';
+  return 'Inspect this operation and the retained native creation receipt, chat, and worktree. Resolve the reported condition, then reconcile the existing creation; never repeat an uncertain create or change credentials without evidence of an authentication failure.';
+}
+function blocker(
+  record: DispatchRecord,
+  value: string,
+  error?: unknown,
+  repositoryId?: number,
+): AssessmentResult {
+  const preparation = record.repositoryPreparation;
+  const path =
+    error instanceof RepositoryPreparationError
+      ? error.path
+      : (preparation?.checkout ?? preparation?.path);
+  const detail = path
+    ? ' Repository: ' +
+      githubNotificationMarkdownText(
+        preparation?.identity ??
+          (error instanceof RepositoryPreparationError ? (error.identity ?? '') : ''),
+      ) +
+      '. Path: ' +
+      githubNotificationMarkdownText(path) +
+      '.'
+    : '';
+  const action =
+    value === 'dispatch-project-registration-unavailable'
+      ? 'No supported native project registration action is available. Add this exact checkout as the primary folder of one saved local Codex project, then let the next scheduled occurrence verify it and resume the retained assignment.'
+      : value === 'repository-preparation-changed'
+        ? 'This assignment or interrupted clone is pinned to its retained repository location. Restore the previous working-directory and roots. For a normal checkout outside the managed roots, you can instead set git.worktrees.repositories.local.' +
+          (repositoryId === undefined
+            ? 'github-<repository-database-id>'
+            : 'github-' + repositoryId) +
+          ' to ' +
+          githubNotificationMarkdownText(JSON.stringify(preparation?.path ?? path)) +
+          '. If the base checkout location changed, restore the previous worktree root too. Verify the retained checkout, then let the next scheduled occurrence resume this assignment. New assignments may use a different configured location; do not delete the retained journal or checkout.'
+        : value === 'repository-clone-interrupted'
+          ? 'Inspect this retained temporary clone. Repair it, or remove only this confirmed preparation-owned temporary directory, then retry; the runtime will not clone over it.'
+          : value.startsWith('repository-')
+            ? 'Resolve the repository path or identity conflict, or restore access. Use an explicit local repository mapping for same-name repositories. Do not overwrite user work or change storage to bypass the failure.'
+            : remediation(value);
+  return {
+    version: 1,
+    outcome: 'operator-setup-blocker',
+    code: value,
+    summary: 'The issue assessment needs setup or recovery.',
+    remediation:
+      (workflowRecovery(value, workflowFailure(error, value).providerDiagnostic)?.next ?? action) +
+      detail,
+    evidence: [{ source: 'Agent System dispatch', status: 'observed', detail: value }],
+    progress: record.result?.progress ?? {
+      completed: record.threadId ? ['Retained native issue chat ' + record.threadId + '.'] : [],
+      remaining: ['Finish assessment in the verified issue worktree.'],
+    },
+  };
+}
+export function notice(record: DispatchRecord, intake?: IntakeRecord) {
+  const failure =
+    !record.effective && record.result?.outcome === 'operator-setup-blocker'
+      ? record.result
+      : undefined;
+  return {
+    id: record.id,
+    status: record.handoff ? 'handed-off' : record.phase,
+    workflowStatus: workflowStatus(record),
+    assignmentObservation: record.assignmentObservation,
+    assignmentWarning:
+      record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
+    changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
+    threadId: record.threadId,
+    ...(failure
+      ? {
+          code: failure.code,
+          ...codexIssueNotice({
+            event: 'failure',
+            changed: true,
+            code: failure.code,
+            ...(intake
+              ? {
+                  issue: {
+                    label: repository(intake) + '#' + intake.issue.number,
+                    url: issueUrl(intake),
+                  },
+                }
+              : {}),
+            actionMarkdown: failure.remediation,
+            facts:
+              failure.code === 'dispatch-project-registration-unavailable' &&
+              record.repositoryPreparation?.checkout
+                ? [
+                    {
+                      label: 'Project name',
+                      value: intake
+                        ? githubNotificationMarkdownText(intake.repository.name)
+                        : 'Repository',
+                    },
+                    {
+                      label: 'Folder path',
+                      value: githubNotificationMarkdownText(record.repositoryPreparation.checkout),
+                    },
+                  ]
+                : [],
+          }),
+        }
+      : {}),
+    nextAction: 'next',
+    instruction: failure
+      ? 'Continue next for unrelated eligible assignments, then report this intake obstacle with any issues already started. Do not repeat an uncertain creation.'
+      : 'Continue checking pending assignments while this run has capacity. Assessment progress belongs only in the issue.',
+  };
+}
+
+export async function failDispatch(
+  record: DispatchRecord,
+  error: unknown,
+  tx: Pick<CodexDispatchTransaction, 'state' | 'admitted' | 'now' | 'save'>,
+) {
+  const { state, admitted, now, save } = tx;
+
+  if (error instanceof WorkflowPolicyHeld)
+    return { status: 'policy-held', id: record.id, reason: error.reason, nextAction: 'next' };
+  if (['dispatch-policy-disabled', 'dispatch-activation-required'].includes(code(error)))
+    throw error;
+  const previousCode =
+    record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined;
+  if (codexHostAccess(error) || record.phase === 'complete') throw error;
+  // Native worktree setup returns a client receipt before the child is readable.
+  if (
+    code(error) === 'dispatch-creation-unresolved' &&
+    record.phase === 'creating' &&
+    record.clientThreadId &&
+    !record.threadId &&
+    !record.receiptThreadId &&
+    now < record.createdAt + 300000
+  ) {
+    record.retryAfter = record.createdAt + 300000;
+    await save();
+    return { id: record.id, status: 'creating', changed: false };
+  }
+  record.result = blocker(
+    record,
+    code(error),
+    error,
+    admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
+  );
+  record.retryAfter = now + 300000;
+  scheduleDispatchRetry(record, code(error), error, now);
+  record.phase = dispatchFailurePhase(record, code(error), error);
+  if (
+    record.phase === 'retrying' &&
+    record.retryAfter &&
+    record.result.outcome === 'operator-setup-blocker'
+  )
+    record.result.remediation =
+      'Automatic recovery will retry at or after ' +
+      new Date(record.retryAfter).toISOString() +
+      '. Preserve the retained request; no new stage approval is needed.';
+  // an item failure does not end the shared intake occurrence.
+  if (state.run) delete state.run.stopped;
+  const result = notice(
+    record,
+    admitted.records.find((entry) => entry.id === record.intakeId),
+  );
+  Object.assign(result, workflowFailure(error, 'dispatch-operation-failed'));
+  result.changed = previousCode !== code(error);
+  if ('notify' in result) result.notify = result.changed;
+  await save();
+  return result;
 }
