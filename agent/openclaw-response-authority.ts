@@ -56,7 +56,6 @@ export default async function openClawResponseAuthority(input: {
     const history = sessionObject(
       await request('chat.history', {
         sessionKey: caller.sessionKey,
-        sessionId: caller.sessionId,
         inputRunIds: [record.resultTurnId],
         limit: 200,
         maxChars: 100000,

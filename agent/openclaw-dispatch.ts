@@ -345,7 +345,7 @@ export default class OpenClawDispatch {
           manifest,
           workspace,
           record,
-          workAction,
+          workAction || input.action === 'summary',
           false,
           undefined,
           authority.signal

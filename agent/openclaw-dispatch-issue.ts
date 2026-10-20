@@ -60,7 +60,7 @@ export default class OpenClawDispatchIssue {
   ) {
     if (openClawResponseEligible(record)) {
       try {
-        await this.context.validate(manifest, workspace, record);
+        await this.context.validate(manifest, workspace, record, true);
         return (
           (await this.context.dependencies.credential.use(authority, (request) =>
             continueOpenClawResponse({
@@ -71,7 +71,7 @@ export default class OpenClawDispatchIssue {
               save,
               assertCurrent: async () => {
                 await authority.assertCurrent?.();
-                await this.context.validate(manifest, workspace, record);
+                await this.context.validate(manifest, workspace, record, true);
               },
             }),
           )) ?? { status: 'assessment-pending' as const, id: record.id }
@@ -616,7 +616,7 @@ export default class OpenClawDispatchIssue {
         assertCurrent: async () => {
           signal.throwIfAborted();
           await authority.assertCurrent?.();
-          await this.context.validateLocal(manifest, workspace, record);
+          await this.context.validateLocal(manifest, workspace, record, input.action === 'summary');
           signal.throwIfAborted();
         },
       };
@@ -656,7 +656,7 @@ export default class OpenClawDispatchIssue {
                 manifest,
                 workspace,
                 record,
-                false,
+                true,
                 false,
                 undefined,
                 signal,

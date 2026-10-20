@@ -2810,8 +2810,13 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
-  for (const loseResponse of [false, true]) {
-    it(`should retain one assessment summary in openclaw after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+  for (const { recover, loseResponse } of [
+    { recover: false, loseResponse: false },
+    { recover: false, loseResponse: true },
+    { recover: true, loseResponse: false },
+    { recover: true, loseResponse: true },
+  ]) {
+    it(`should retain one assessment summary in openclaw ${recover ? 'after handoff and restart' : 'in the assessment turn'} after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
       const input = await next();
       await prepare(input);
       await assess(input.id);
@@ -2820,6 +2825,27 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok(
         'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
       );
+      let who = assessor(input.id);
+      if (recover) {
+        manifest.github!.notifications!.issueAssignment!.mode = 'work';
+        inputReceipts = [];
+        const work = await service.run(manifest, root, who, {
+          action: 'implementation-context',
+          id: input.id,
+        });
+        assert.equal(work.status, 'verified', JSON.stringify(work));
+        assert.ok((await record()).handoff);
+        await assert.rejects(context(input.id), /dispatch-assessment-handed-off/);
+        await assert.rejects(submit(input.id), /dispatch-assessment-handed-off/);
+        assessmentReply(input.id);
+        who = assessor(input.id, 'summary-recovery');
+        messages.push({
+          role: 'user',
+          content: 'Recover the pending public summary.',
+          __openclaw: { id: 'summary-input', idempotencyKey: 'summary-recovery:user' },
+        });
+        service = new OpenClawDispatch(service.dependencies);
+      }
       let writes = 0;
       let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
       service.dependencies.feedbackConnect = async () => ({
@@ -2855,15 +2881,24 @@ describe('agent/openclaw issue dispatch', () => {
         digest?: string,
         publicText?: string,
       ) =>
-        service.run(manifest, root, assessor(input.id), {
+        service.run(manifest, root, who, {
           action: 'summary',
           id: input.id,
           operation,
           digest,
           publicText,
         });
+      if (recover) {
+        waitResult = { status: 'error', code: 'approval-denied' };
+        await assert.rejects(summary('compose'), /assessment-summary-native-approval-denied/);
+        waitResult = { status: 'timeout' };
+        const terminal = messages.findIndex((entry) => entry.role === 'assistant');
+        const [reply] = messages.splice(terminal, 1);
+        await assert.rejects(summary('compose'), /dispatch-assessment-continuation-not-ready/);
+        messages.splice(terminal, 0, reply!);
+      }
       const composed = await summary('compose');
-      assert.equal(composed.status, 'composition-ready');
+      assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
       assert.ok('digest' in composed);
       assert.equal(
         (
