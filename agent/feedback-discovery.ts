@@ -25,6 +25,7 @@ export default async function feedbackDiscovery(input: {
   const resumed = new Set(Object.keys(progress.reads));
   const verified = new Set<string>();
   async function read<T>(key: string, fetch: () => Promise<T>, page?: number): Promise<T> {
+    budget.operation = key;
     budget.check();
     // re-read the continuation boundary before trusting a persisted page offset.
     if (page !== undefined && resumed.has(key)) {
@@ -49,6 +50,7 @@ export default async function feedbackDiscovery(input: {
     const value = await fetch();
     progress.reads[key] = JSON.stringify(value);
     await save();
+    budget.completed++;
     return value;
   }
   const since = new Date(Math.max(0, progress.since - 2000)).toISOString();
@@ -121,6 +123,7 @@ export default async function feedbackDiscovery(input: {
       state.watermarks[nodeId] = progress.startedAt;
       delete state.discovery![nodeId];
       await save();
+      budget.completed++;
     },
   };
 }

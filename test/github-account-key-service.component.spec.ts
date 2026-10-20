@@ -121,6 +121,72 @@ describe('tools/github/account-key-service', () => {
     ]);
   });
 
+  for (const status of [403, 429, undefined]) {
+    it(`should retain ${status ?? 'unknown'} key creation evidence without replaying the write`, async () => {
+      const requests: string[][] = [];
+      const service = new GitHubAccountKeyService({
+        client: {
+          connect: async () => ({
+            execute: async (argv) => {
+              requests.push(argv);
+              if (!argv.includes('POST')) return cliResult('[[]]');
+              const body = '{"message":"PRIVATE_RESPONSE op://vault/item/key"}';
+              return {
+                ...cliResult(
+                  status !== undefined && argv.includes('--include')
+                    ? [
+                        `HTTP/2 ${status}`,
+                        'Retry-After: 120',
+                        'X-RateLimit-Remaining: 4500',
+                        'X-RateLimit-Resource: core',
+                        'X-RateLimit-Reset: 2000000000',
+                        'X-Private-Header: PRIVATE_HEADER',
+                        '',
+                        body,
+                      ].join('\n')
+                    : body,
+                ),
+                exitCode: 1,
+                stderr: 'PRIVATE_STDERR',
+              };
+            },
+          }),
+        },
+      });
+      const manifest: AgentManifest = {
+        schemaVersion: 1,
+        agent: { id: 'tanaabot' },
+        github: {
+          username: 'tanaabot',
+          token: 'TOKEN',
+          sshKeys: [{ source: publicKey, type: 'auto' }],
+        },
+      };
+
+      await assert.rejects(
+        service.reconcile({ manifest, workspaceDir: temporaryDirectory }),
+        (error: unknown) => {
+          assert.ok(error instanceof GitHubAccountKeyError);
+          assert.equal(error.code, 'github-account-key-create-failed');
+          const evidence = error.providerDiagnostic;
+          assert.equal(evidence?.classification, status === undefined ? 'unknown' : 'rate-limit');
+          assert.equal(evidence?.httpStatus, status ?? null);
+          assert.equal(evidence?.httpStatusSource, status === undefined ? undefined : 'structured');
+          assert.equal(evidence?.retryAfterMs, status === undefined ? null : 120000);
+          assert.equal(evidence?.resetAt, status === undefined ? null : 2000000000000);
+          assert.equal(evidence?.quotaScope, status === undefined ? null : 'core');
+          assert.doesNotMatch(`${error.message} ${JSON.stringify(evidence)}`, /PRIVATE_|op:\/\//u);
+          assert.equal(error.cause, undefined);
+          return true;
+        },
+      );
+      assert.deepEqual(
+        requests.map((argv) => (argv.includes('POST') ? 'create' : 'list')),
+        ['list', 'create', 'list'],
+      );
+    });
+  }
+
   it('should add only missing keys and verify both github collections', async () => {
     await writeFile(join(temporaryDirectory, 'auth.pub'), publicKey, 'utf8');
     const remote = new Map<string, string[]>([
@@ -141,7 +207,7 @@ describe('tools/github/account-key-service', () => {
                 const input = JSON.parse(stdin) as { key: string; title: string };
                 inputs.push(input);
                 remote.get(endpoint)?.push(input.key);
-                return cliResult('{}');
+                return cliResult('HTTP/2 201 Created\nContent-Type: application/json\n\n{}');
               }
               return cliResult(
                 JSON.stringify([remote.get(endpoint)?.map((key) => ({ key })) ?? []]),
@@ -165,8 +231,8 @@ describe('tools/github/account-key-service', () => {
     const creates = requests.filter((argv) => argv.includes('POST'));
     assert.equal(creates.length, 2);
     assert.deepEqual(creates, [
-      ['api', '--method', 'POST', '/user/keys', '--input', '-'],
-      ['api', '--method', 'POST', '/user/ssh_signing_keys', '--input', '-'],
+      ['api', '--include', '--method', 'POST', '/user/keys', '--input', '-'],
+      ['api', '--include', '--method', 'POST', '/user/ssh_signing_keys', '--input', '-'],
     ]);
     assert.equal(inputs[0]?.title, 'Scenario authentication key');
     assert.equal(inputs[1]?.title, 'agent-system-tanaabot-ssh-signing-e9d94502af18');

@@ -51,7 +51,7 @@ import {
 import { githubNotificationCommentPresentation } from '../channels/github/presentation/comment.ts';
 import { githubNotificationAttributedReplyText } from '../channels/github/publication/publication-contract.ts';
 import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
-import type { CodexDispatchDependencies } from './codex-dispatch.ts';
+import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 
 const requestSchema = Type.Object(
   {
