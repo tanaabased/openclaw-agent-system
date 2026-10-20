@@ -4,6 +4,7 @@ import {
   feedbackMode,
   feedbackDecisionSchema,
   feedbackWorkInstructions,
+  feedbackWorkContext,
 } from './feedback-work.ts';
 import { implementationResultSchema } from './implementation-result.ts';
 import openClawDelivery, { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
@@ -359,10 +360,7 @@ export default async function openClawFeedback(input: {
       discussion: await provider.getItemContext(owner, name, event.number),
       assessment: record.result,
       previousImplementation: record.work?.result,
-      previousFeedbackWork: record.feedback?.events
-        .filter((item) => item.id !== event.id && item.work?.result)
-        .slice(-1)
-        .map((item) => ({ eventId: item.id, result: item.work!.result })),
+      previousFeedbackWork: feedbackWorkContext(record, event.id),
       work: event.work,
       worktree: record.worktree,
       resultSchema: implementationResultSchema,
@@ -491,6 +489,8 @@ export default async function openClawFeedback(input: {
       decisionSchema: feedbackDecisionSchema,
       work: event.work,
       assessment: record.result,
+      previousImplementation: record.work?.result,
+      previousFeedbackWork: feedbackWorkContext(record, event.id),
       discussion: await provider.getItemContext(owner, name, event.number),
       workInstructions: feedbackWorkInstructions,
       workAuthorized: feedbackMode(record, await livePolicy()) === 'work',

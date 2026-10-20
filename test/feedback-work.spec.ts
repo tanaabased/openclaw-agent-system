@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 
-import { beginFeedbackWork, feedbackMode, feedbackWorkStarted } from '../agent/feedback-work.ts';
+import {
+  beginFeedbackWork,
+  feedbackMode,
+  feedbackWorkContext,
+  feedbackWorkStarted,
+} from '../agent/feedback-work.ts';
+import issueProgression from '../agent/issue-progression.ts';
 import { feedbackSourceEventSchema, type FeedbackSourceEvent } from '../agent/feedback-state.ts';
 import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
@@ -26,6 +32,79 @@ const skill = {
   digest: 'd'.repeat(64),
 };
 describe('agent/feedback-work', () => {
+  it('should preserve earlier plan revisions and partial work before interpreting another message', () => {
+    const revision = {
+      ...eventFixture(),
+      result: { privateText: 'Use the smaller approach and retain the existing PR.' },
+    };
+    const partial = {
+      ...eventFixture(),
+      id: 'c'.repeat(64),
+      work: {
+        selection: {} as never,
+        decision: {
+          mode: 'work' as const,
+          reasons: ['Requested.'],
+          plan: 'Change only the parser.',
+        },
+        result: {
+          outcome: 'clarification-needed' as const,
+          summary: 'Choose a value.',
+          fullResult: 'Parser changes are retained.',
+          questions: ['Which value?'],
+        },
+      },
+    };
+    const current = {
+      ...eventFixture(),
+      id: 'd'.repeat(64),
+      result: { privateText: 'Current answer.' },
+    };
+    const record = { feedback: { events: [revision, partial, current] } };
+    const before = structuredClone(record);
+    const context = feedbackWorkContext(record, current.id);
+    assert.equal(context.length, 2);
+    assert.equal(context[0]!.privateText, revision.result.privateText);
+    assert.deepEqual(context[1]!.decision, partial.work.decision);
+    assert.deepEqual(context[1]!.result, partial.work.result);
+    assert.deepEqual(feedbackWorkContext(record).slice(0, 2), context);
+    assert.deepEqual(record, before);
+    assert.deepEqual(feedbackWorkContext({}), []);
+  });
+  for (const scenario of ['implementation request', 'clarification answer', 'follow-up repair'])
+    it(`should enter the same task stage for a direct or approved ${scenario}`, async () => {
+      const record: Parameters<typeof beginFeedbackWork>[0]['record'] = {
+        createdAt: 1,
+        result: { outcome: 'plan-ready' },
+        ...(scenario !== 'implementation request'
+          ? {
+              progression: { stage: 'implementation' as const, via: 'work' as const, enteredAt: 5 },
+            }
+          : {}),
+      };
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.mode = 'plan';
+      const direct = issueProgression(record, { mode: 'plan', operator: true, now: 20 });
+      const event = eventFixture();
+      await beginFeedbackWork({
+        record,
+        event,
+        policy,
+        workspace: '/unused',
+        now: 20,
+        decision: {
+          mode: 'work',
+          reasons: ['The approved author requests this work.'],
+          plan: 'Update the existing task.',
+        },
+        resolveSkill: async () => skill,
+      });
+      assert.equal(direct.status, 'ready');
+      assert.deepEqual(record.progression, {
+        ...(direct.status === 'ready' ? direct.progression : {}),
+        workOwner: event.id,
+      });
+    });
   it('should stop historical feedback from suppressing current issue recovery', () => {
     const record = { progression: { workOwner: 'issue' }, feedback: { events: [{ work: {} }] } };
     assert.equal(feedbackWorkStarted(record), false);

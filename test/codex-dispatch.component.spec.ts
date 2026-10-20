@@ -2759,6 +2759,99 @@ describe('agent/codex-dispatch', () => {
     assert.equal(retained.progression!.stage, 'implementation');
   });
 
+  it('should include a github plan revision in direct planning context without entering work', async () => {
+    const work = await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.feedback = {
+        baseline: {},
+        events: [
+          {
+            id: 'a'.repeat(64),
+            sourceId: 'plan-comment',
+            nodeId: 'issue',
+            number: 3,
+            itemType: 'issue',
+            source: '{}',
+            revision: 'b'.repeat(64),
+            createdAt: 1,
+            policyDigest: 'c'.repeat(64),
+            phase: 'published',
+            result: { privateText: 'Keep the smaller approach.' },
+          },
+        ],
+      };
+      await save();
+    });
+    const response = await request('context', { id: work.id }, { threadId: native!.id });
+    assert.equal(response.status, 'verified');
+    assert.deepEqual(response.feedbackWork, [
+      {
+        eventId: 'a'.repeat(64),
+        privateText: 'Keep the smaller approach.',
+        decision: undefined,
+        result: undefined,
+      },
+    ]);
+    assert.equal((await store.read()).records[0]!.progression, undefined);
+  });
+
+  it('should supply retained plan revisions and partial feedback work to direct input', async () => {
+    const work = await workIssue();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const decision = {
+      mode: 'work' as const,
+      reasons: ['Approved revised plan.'],
+      plan: 'Use the smaller parser change.',
+    };
+    const partial = {
+      outcome: 'clarification-needed' as const,
+      summary: 'Need a value.',
+      fullResult: 'Partial work is retained.',
+      questions: ['Which value?'],
+    };
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      const event = {
+        id: 'a'.repeat(64),
+        sourceId: 'comment',
+        nodeId: 'issue',
+        number: 3,
+        itemType: 'issue' as const,
+        source: '{}',
+        revision: 'b'.repeat(64),
+        createdAt: 1,
+        policyDigest: 'c'.repeat(64),
+        phase: 'published' as const,
+      };
+      record.feedback = {
+        baseline: {},
+        events: [
+          { ...event, result: { privateText: 'Keep the smaller approach.' } },
+          {
+            ...event,
+            id: 'd'.repeat(64),
+            work: { selection: record.assessment!, decision, result: partial },
+            result: { privateText: 'Which value?' },
+          },
+        ],
+      };
+      await save();
+    });
+    native!.status = 'active';
+    native!.turnStatus = 'inProgress';
+    const response = await work.run('context', {}, true);
+    assert.equal(response.status, 'verified', JSON.stringify(response));
+    assert.ok('feedbackWork' in response && response.feedbackWork);
+    assert.equal(response.feedbackWork[0]!.privateText, 'Keep the smaller approach.');
+    assert.deepEqual(response.feedbackWork[1]!.decision, decision);
+    assert.deepEqual(response.feedbackWork[1]!.result, partial);
+    assert.equal(response.feedbackWork[1]!.privateText, 'Which value?');
+    assert.deepEqual((await store.read()).records[0]!.result, result);
+  });
+
   it('should not replay the initial plan after feedback has begun implementation', async () => {
     const work = await workIssue();
     const current = await selectCodexIntake(pluginData, deps);

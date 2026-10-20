@@ -244,6 +244,27 @@ describe('agent/codex-feedback', () => {
     manifest.github.notifications['issue-assignment'].mode = mode;
     await writeFile(path, JSON.stringify(manifest));
   }
+  for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
+    it(`should retain planning input without implementation for ${message.toLowerCase()}`, async () => {
+      const ref = await prepare(commenter, `@receiver ${message}`);
+      sent = true;
+      turn = 'feedback';
+      const context = await call('context', ref, true);
+      assert.equal(context.status, 'verified');
+      assert.equal('mode' in context && context.mode, 'plan');
+      const original = (await store.read()).records[0]!.result;
+      const saved = await call(
+        'result',
+        { ...ref, result: { privateText: 'Retained plan response.' }, reply: false },
+        true,
+      );
+      assert.equal(saved.status, 'recorded');
+      const record = (await store.read()).records[0]!;
+      assert.deepEqual(record.result, original);
+      assert.equal(record.progression, undefined);
+      assert.equal(record.feedback!.events[0]!.work, undefined);
+      assert.equal(creates, 0);
+    });
   it('should keep plan feedback in planning and use live work policy without install', async () => {
     const ref = await prepare();
     sent = true;
@@ -310,7 +331,12 @@ describe('agent/codex-feedback', () => {
     turn = 'feedback';
     await call('context', ref, true);
     const original = (await store.read()).records[0]!.result;
-    await call('implementation-context', ref, true);
+    const decision = {
+      mode: 'work',
+      reasons: ['Approved revised plan.'],
+      plan: 'Use the smaller parser change.',
+    };
+    await call('implementation-context', { ...ref, decision }, true);
     const result = {
       outcome: 'clarification-needed',
       summary: 'Need a value.',
@@ -345,10 +371,16 @@ describe('agent/codex-feedback', () => {
     sent = true;
     ended = false;
     turn = 'feedback-answer';
+    const context = await call('context', { id, eventId: next.eventId }, true);
+    assert.ok('previousFeedbackWork' in context && context.previousFeedbackWork);
+    assert.deepEqual(context.previousFeedbackWork[0]!.decision, decision);
+    assert.deepEqual(context.previousFeedbackWork[0]!.result, result);
+    assert.equal(context.previousFeedbackWork[0]!.privateText, 'Which value?');
     const resumed = await call('implementation-context', { id, eventId: next.eventId }, true);
     assert.equal(resumed.status, 'verified');
     assert.ok('previousFeedbackWork' in resumed && resumed.previousFeedbackWork);
     assert.deepEqual(resumed.previousFeedbackWork[0]!.result, result);
+    assert.deepEqual(resumed.previousFeedbackWork, context.previousFeedbackWork);
   });
   it('should require a reasoned auto work decision and bind done feedback to its commit', async () => {
     await feedbackMode('auto');
@@ -441,13 +473,13 @@ describe('agent/codex-feedback', () => {
       [['e'.repeat(64), undefined]],
     );
   });
-  async function prepare(author = commenter) {
+  async function prepare(author = commenter, body = '@receiver explain this') {
     await call('next');
     comments.push({
       nodeId: 'comment',
       databaseId: 42,
       author,
-      body: '@receiver explain this',
+      body,
       bodyTruncated: false,
       createdAt: '2026-10-13T01:00:00Z',
       updatedAt: '2026-10-13T01:00:00Z',

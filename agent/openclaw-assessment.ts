@@ -1,5 +1,6 @@
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 import assessmentHandoff from './assessment-handoff.ts';
+import { feedbackWorkContext } from './feedback-work.ts';
 import { assessmentSummaryInstructions } from './assessment-summary-state.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
@@ -187,6 +188,7 @@ export async function issueAssessmentAction(input: {
       executionEffort: 'unverified',
       evidence: JSON.parse(input.evidence ?? record.turnEvidence?.evidence ?? record.context!),
       assessment: input.selection ?? record.assessment,
+      feedbackWork: feedbackWorkContext(record),
       currentTurnId: caller.runId,
       ...(record.result
         ? {
@@ -207,6 +209,7 @@ export async function issueAssessmentAction(input: {
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       instructions:
+        'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
         (input.policy?.issueAssignment?.mode === 'auto'
           ? 'Trusted mode: auto. Include decision.mode plan or work with bounded reasons based on the assessment and plan; work requires plan-ready. '
           : '') +

@@ -719,6 +719,35 @@ for (const scenario of [
         );
       });
     }
+    if (scenario.id === 'openclaw-issue')
+      it('should answer paired github and direct questions using retained responses without work', async () => {
+        const privateText = 'The retained plan documents disposable issue cleanup after evidence.';
+        const github = request(
+          `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${'e'.repeat(64)}`,
+        );
+        assert.equal((await action(github, 'feedback')).operation, 'context');
+        append(github, 'feedback-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          publication: 'allowed',
+          source: { body: '@tanaabot explain the plan using the earlier explanation.' },
+          previousFeedbackWork: [{ eventId: 'd'.repeat(64), privateText }],
+        });
+        assert.equal((await action(github, 'feedback')).operation, 'result');
+        const direct = request(
+          `Explain retained plan for managed issue ${id}: explain the plan using the earlier explanation.`,
+        );
+        assert.equal((await action(direct, 'context')).id, id);
+        append(direct, 'direct-question-context', {
+          status: 'verified',
+          mode: 'plan',
+          feedbackWork: [
+            { eventId: 'd'.repeat(64), privateText },
+            { eventId: 'e'.repeat(64), privateText },
+          ],
+        });
+        assert.deepEqual(await response(direct), { content: privateText });
+      });
     if (scenario.id !== 'openclaw-progression')
       it('should keep feedback private retention skill selection candidate and publication as distinct stages', async () => {
         const eventId = 'e'.repeat(64);
@@ -730,6 +759,8 @@ for (const scenario of [
           status: 'verified',
           runtime: 'openclaw',
           publication: 'allowed',
+          previousFeedbackWork: [],
+          source: { body: '@tanaabot explain the plan.' },
         });
         if (scenario.id === 'openclaw-pr') {
           const last = input.messages.at(-1)!;
@@ -738,12 +769,16 @@ for (const scenario of [
             runtime: 'openclaw',
             publication: 'allowed',
             mode: 'work',
+            previousFeedbackWork: [],
+            previousImplementation: { outcome: 'done' },
           });
           assert.equal((await action(input, 'feedback')).operation, 'implementation-context');
           append(input, 'feedback-work-context', {
             status: 'verified',
             worktree: '/tmp/worktree',
             implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
+            previousFeedbackWork: [],
+            previousImplementation: { outcome: 'done' },
           });
           const selected = await response(input);
           assert.ok('toolCalls' in selected);
