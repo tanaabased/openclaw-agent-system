@@ -17,6 +17,7 @@ import GitCommandError from '../tools/git/command-error.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import { scanOpenClawFeedback } from '../agent/openclaw-feedback-scan.ts';
 import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
+import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
@@ -4589,23 +4590,233 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events.length, 1);
   });
-  it('should retain pending discovery when interrupted before reading comments', async () => {
+  it('should expose exhausted prerequisite budgets without claiming an attempted feedback read', async () => {
     await feedbackOwner();
-    const controller = new AbortController();
+    const current = await service.scope(manifest, root);
+    service.dependencies.connect = async () => {
+      throw new Error('no provider opportunity remains');
+    };
+    for (let poll = 0; poll < 3; poll++) {
+      let clock = 0;
+      const budget = new DiscoveryBudget(20000, undefined, () => clock);
+      clock = 20000;
+      await scanOpenClawFeedback({
+        service,
+        state: await current.journal.read(),
+        manifest,
+        workspace: root,
+        sourceThreadId: coordinator.sessionKey,
+        authority: {},
+        now: service.dependencies.now!(),
+        budget,
+        checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
+      });
+    }
+    const feedback = (await record()).feedback!;
+    assert.equal(feedback.scannedTime, undefined);
+    assert.equal(feedback.discoveryPending, true);
+    assert.equal(feedback.code, 'feedback-discovery-no-progress');
+    assert.equal(
+      feedback.discoveryStalls![(await record()).id]!.operation,
+      'occurrence-budget-before-feedback',
+    );
+  });
+
+  it('should report repeated discovery interruptions and recover through the coordinator after restart', async () => {
+    await feedbackOwner();
+    const validate = service.validate.bind(service);
+    for (let poll = 0; poll < 3; poll++) {
+      const controller = new AbortController();
+      service.validate = async (...args) => {
+        const result = await validate(...args);
+        controller.abort();
+        return result;
+      };
+      const check = await service.check(manifest, root, controller.signal);
+      assert.ok('more' in check && check.more);
+      assert.equal((await record()).feedback!.discoveryPending, true);
+      if (poll === 0) {
+        await service.run(manifest, root, coordinator, { action: 'report' });
+      }
+      // reload the persisted journal through a new service, not a retained scan object.
+      service = new OpenClawDispatch({ ...service.dependencies });
+    }
+    coordinator.runId = 'stalled-report';
+    const report = await service.run(manifest, root, coordinator, { action: 'report' });
+    assert.ok('response' in report && /feedback-discovery-no-progress/.test(report.response));
+    service.validate = validate;
+    // a recent incomplete attempt must not suppress the coordinator's bounded recovery.
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.discoveryPending, false);
+    assert.equal((await record()).feedback!.events.length, 1);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events.length, 1);
+    assert.ok((await record()).feedback!.events[0]!.turn);
+  });
+  it('should rotate issue and pr discovery, report the stalled pr read, and admit its exact source once', async () => {
+    const { comments } = await feedbackOwner();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const owner = state.records[0]!;
+      owner.work!.delivery = {
+        id: 'd'.repeat(64),
+        title: 'Delivery',
+        body: 'Closes #3',
+        creationAttempted: true,
+        reconciled: true,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        binding: {
+          repositoryId: fixture.repository.nodeId,
+          issueId: fixture.item.nodeId,
+          threadId: owner.threadId!,
+          sessionId: owner.sessionCreation!.sessionId!,
+          worktree: owner.worktree!,
+          branch: 'issue-3',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: fixture.client.identity.nodeId,
+          policyDigest: owner.manifestDigest,
+        },
+      };
+      await save();
+    });
+    let paused = true;
+    const reads: number[] = [];
+    const connect = service.dependencies.feedbackConnect!;
+    service.dependencies.feedbackConnect = async (...args) => ({
+      ...(await connect(...args)),
+      getItem: async (_o, _n, number) =>
+        number === 7
+          ? {
+              ...fixture.item,
+              nodeId: 'PR_7',
+              number: 7,
+              itemType: 'pull-request',
+              pullRequest: {
+                baseRef: 'main',
+                baseRepositoryDatabaseId: fixture.repository.databaseId,
+                baseRepositoryNodeId: fixture.repository.nodeId,
+                draft: false,
+                headRef: 'issue-3',
+                headSha: 'a'.repeat(40),
+                merged: false,
+              },
+            }
+          : fixture.item,
+      listIssueComments: async (_o, _n, number) => {
+        reads.push(number);
+        if (number === 7 && paused) throw new DiscoveryPaused();
+        return { comments: number === 7 ? comments : [], truncated: false };
+      },
+      reviews: {
+        listReviews: async () => ({ values: [], nextPage: 1 }),
+        listComments: async () => ({ values: [], nextPage: 1 }),
+        getReview: async () => {
+          throw new Error('no reviews');
+        },
+        getComment: async () => {
+          throw new Error('no review comments');
+        },
+        getReviewComments: async () => [],
+      },
+    });
+    for (let poll = 0; poll < 3; poll++) {
+      await service.check(manifest, root);
+      service = new OpenClawDispatch({ ...service.dependencies });
+    }
+    assert.deepEqual(reads, [3, 7, 7, 3, 7]);
+    const stalled = (await record()).feedback!;
+    assert.deepEqual(stalled.discovery!.PR_7!.reads, {});
+    assert.equal(stalled.watermarks?.PR_7, undefined);
+    assert.equal(stalled.discoveryStalls!.PR_7!.operation, 'comments');
+    assert.equal(stalled.code, 'feedback-discovery-no-progress');
+    coordinator.runId = 'pr-obstacle';
+    const report = await service.run(manifest, root, coordinator, { action: 'report' });
+    assert.ok('response' in report && report.response.includes('owner/repo/pull/7'));
+    const before = reads.length;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const after = reads.length;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.ok(after > before);
+    assert.equal(reads.length, after, 'one bounded recovery scan per native run');
+    coordinator.runId = 'same-pr-obstacle';
+    const unchanged = await service.run(manifest, root, coordinator, { action: 'report' });
+    assert.ok('response' in unchanged && unchanged.response === '');
+    paused = false;
+    coordinator.runId = 'pr-recovery';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.equal(event.sourceId, comments[0]!.nodeId);
+    assert.equal(event.nodeId, 'PR_7');
+    assert.equal(event.itemType, 'pull-request');
+    assert.deepEqual(JSON.parse(event.source), comments[0]);
+    assert.ok(event.turn);
+    assert.equal((await record()).feedback!.code, undefined);
+    const recovery = await service.run(manifest, root, coordinator, { action: 'report' });
+    assert.ok(
+      'response' in recovery && recovery.response.includes('feedback-discovery-no-progress'),
+    );
+    coordinator.runId = 'healthy-pr-report';
+    const healthy = await service.run(manifest, root, coordinator, { action: 'report' });
+    assert.ok('response' in healthy && healthy.response === '');
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal((await record()).feedback!.events.length, 1);
+    assert.equal((await record()).feedback!.events[0]!.turn!.runId, event.turn.runId);
+  });
+
+  it('should continue feedback discovery for another owner after an unrelated identity failure', async () => {
+    await assignments(2, 2);
+    const first = await next();
+    await prepare(first);
+    await assess(first.id);
+    const second = await next();
+    await prepare(second);
+    await assess(second.id);
+    await completeAssessment(first.id);
+    await completeAssessment(second.id);
+    manifest.github!.notifications!.issueAssignment!.feedback = true;
     const validate = service.validate.bind(service);
     service.validate = async (...args) => {
-      const result = await validate(...args);
-      controller.abort();
-      return result;
+      if (args[2].id === first.id) throw new Error('dispatch-issue-identity-changed');
+      return validate(...args);
     };
-    const check = await service.check(manifest, root, controller.signal);
-    assert.ok('more' in check && check.more);
-    assert.ok('outcome' in check && check.outcome === 'paused');
-    assert.equal((await record()).feedback!.discoveryPending, true);
-    service.validate = validate;
+    const source: GitHubCanonicalIssueComment = {
+      nodeId: 'C_sibling',
+      databaseId: 123,
+      author: fixture.client.identity,
+      body: '@receiver explain this',
+      bodyTruncated: false,
+      createdAt: '2026-10-07T10:03:00Z',
+      updatedAt: '2026-10-07T10:03:00Z',
+    };
+    const connect = service.dependencies.feedbackConnect!;
+    service.dependencies.feedbackConnect = async (...args) => ({
+      ...(await connect(...args)),
+      listIssueComments: async () => ({ comments: [source], truncated: false }),
+      getIssueComment: async () => source,
+    });
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      for (const owner of state.records)
+        owner.feedback = { startedAt: baseline, baseline: {}, events: [] };
+      await save();
+    });
     await service.check(manifest, root);
-    assert.equal((await record()).feedback!.discoveryPending, false);
+    const state = await current.journal.read();
+    assert.equal(
+      state.records.find((r) => r.id === first.id)!.feedback!.code,
+      'dispatch-issue-identity-changed',
+    );
+    const sibling = state.records.find((r) => r.id === second.id)!;
+    assert.equal(sibling.feedback!.discoveryPending, false);
+    assert.equal(sibling.feedback!.events[0]!.sourceId, source.nodeId);
+    coordinator.runId = 'sibling-feedback';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const fresh = (await current.journal.read()).records.find((r) => r.id === second.id)!;
+    assert.ok(fresh.feedback!.events[0]!.turn);
   });
+
   it('should reactivate scoped feedback even when assignment membership was checked recently', async () => {
     const { comments } = await feedbackOwner(false);
     const comment = comments.pop()!;
@@ -4821,6 +5032,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, before);
     comments[0]!.body = 'mention removed';
     active = false;
+    coordinator.runId = 'source-revocation-poll';
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.phase, 'blocked');
     assert.equal(sends().length, before);
@@ -4930,6 +5142,7 @@ describe('agent/openclaw issue dispatch', () => {
       };
       return provider;
     };
+    coordinator.runId = 'concurrent-discovery-poll';
     const scan = service.run(manifest, root, coordinator, { action: 'next' });
     await started.promise;
     const { journal } = await service.scope(manifest, root);

@@ -15,7 +15,12 @@ Both runtimes save bounded discovery progress and resume on later polls. Ordinar
 comments are fetched by update time; unchanged history does not trigger feedback.
 OpenClaw keeps discovery inside one condition budget and wakes the coordinator for
 saved actionable work or a one-time progress/recovery card. After upgrading, run
-Install to reconcile the changed condition before relying on scheduled intake.
+Install to reconcile the changed condition before relying on scheduled intake. Repeated
+checks that cannot complete a required feedback operation report
+`feedback-discovery-no-progress` with the affected issue or PR and pending operation.
+Later bounded checks retry automatically; if the obstacle persists, inspect that
+operation and provider access or latency. Preserve the checkpoint; no reset
+or replay is needed.
 
 The live bound `agent.yaml` governs the next automatic operation for every active
 issue. Mode, author, feedback, recipient, and guidance edits take effect without

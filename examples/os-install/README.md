@@ -47,8 +47,19 @@ printf '%s\n' "$output" | jq -e 'any(.findings[]; .code == "session-dispatch-cre
 openclaw-gateway start
 
 # should enroll dispatch while skipping unavailable reviews without activating issue intake
+set -o pipefail
+install_diagnostics() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    jq '{status, code, outcomes: [.outcomes[]? | {component, status, code}], warnings: [.warnings[]? | {component, code}]}' "$TMPDIR/review-install.json" >&2 || true
+    cat "$TMPDIR/review-install.stderr" >&2 || true
+  fi
+  exit "$status"
+}
+trap install_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system install --yes --json 2>"$TMPDIR/review-install.stderr" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")'
+openclaw agent-system install --yes --json >"$TMPDIR/review-install.json" 2>"$TMPDIR/review-install.stderr"
+jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")' "$TMPDIR/review-install.json"
 test "$(grep -Fc 'code=github-notification-runtime-unsupported' "$TMPDIR/review-install.stderr")" -eq 1
 grep -F 'field=/github/notifications/review-request' "$TMPDIR/review-install.stderr"
 openclaw agent-system tool git -- --version | grep -F 'git version'
