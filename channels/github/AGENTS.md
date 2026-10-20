@@ -37,6 +37,10 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 - After a ready assessment, enter permitted implementation in the same native turn through
   its verified implementation context. Keep coordinator continuation as recovery for
   interrupted or older issues, not a required wake-up between skills.
+- After a completed implementation, follow the host-owned PR delivery handoff in the
+  same turn. Keep publication, announcement, and card orchestration outside replaceable
+  implementation skills. Both runtimes share push and PR recovery; native adapters own
+  execution identity and chat attachment. Resume missing effects from retained receipts.
 - Recover older implementation stages from native continuation attempts or retained
   implementation handoffs, preserving the issue, assessment, and execution receipts.
   A plan, default mode, or publication-only request is not evidence of implementation.

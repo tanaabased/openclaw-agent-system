@@ -3784,7 +3784,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(after.threadId, before.threadId);
       assert.equal(after.worktree, before.worktree);
       assert.equal(creates().length, 1);
-      await service.run(
+      const saved = await service.run(
         manifest,
         root,
         who,
@@ -3799,6 +3799,13 @@ describe('agent/openclaw issue dispatch', () => {
         },
         false,
       );
+      assert.ok('handoff' in saved && saved.handoff);
+      assert.equal(saved.handoff.next, 'delivery');
+      assert.deepEqual('request' in saved.handoff && saved.handoff.request, {
+        action: 'delivery',
+        id,
+        operation: 'prepare',
+      });
       assert.equal((await record()).work?.result?.outcome, 'done');
     });
   }

@@ -504,7 +504,10 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
               'Committed the requested cleanup note change through managed Git in the verified issue worktree.',
           },
         });
-      if (saved.status !== 'recorded') return;
+      const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
+      if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
+      if (!result('delivery-prepare'))
+        return dispatch('delivery-prepare', { ...handoff.request, title, body });
     }
     if (!retry) {
       const prepared = result('delivery-prepare');

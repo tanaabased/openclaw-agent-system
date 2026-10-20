@@ -1,9 +1,10 @@
 import { retainedIssueProgression } from './issue-progression.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
+import publishIssueDelivery from './publish-issue-delivery.ts';
 import deliveryAnnouncement, {
   announcementPresentation,
-  announcementRecoveryInstructions,
+  deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
@@ -212,21 +213,6 @@ export default async function openClawDelivery(input: {
     contentUpdate: Object.keys(contentUpdate).length ? contentUpdate : undefined,
     signal: input.signal,
     expectedPullRequest: delivery.pullRequest,
-    async beforeCreate() {
-      await assertCurrent();
-      if (input.existingOnly) throw new Error('feedback-delivery-owner-changed');
-      if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
-      delivery.creationAttempted = true;
-      await save();
-    },
-    async onCreateRejected() {
-      delivery.creationAttempted = false;
-      await save();
-    },
-    async checkpoint(receipt) {
-      delivery.pullRequest = receipt;
-      await save();
-    },
   };
   if (
     action.operation === 'compose' ||
@@ -268,27 +254,20 @@ export default async function openClawDelivery(input: {
     delivery.reconciled = false;
     work.delivery = delivery;
     await save();
-    const ref = `refs/heads/${branch}`;
-    const remoteHead = (await git(['ls-remote', '--heads', 'origin', ref])).split(/\s/u)[0] ?? '';
-    if (remoteHead && remoteHead !== head) {
-      if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
-        throw new Error('delivery-remote-head-diverged');
-      await git(['merge-base', '--is-ancestor', remoteHead, head]);
-    }
-    publication.expectedPullRequest = await provider.inspect({
-      ...publication,
-      headSha: remoteHead,
+    await publishIssueDelivery({
+      delivery,
+      publication: { ...publication, headSha: head },
+      provider,
+      git,
+      authorize: async () => {
+        await assertCurrent();
+        await input.reauthorize();
+      },
+      beforeCreate: async () => {
+        if (input.existingOnly) throw new Error('feedback-delivery-owner-changed');
+      },
+      save,
     });
-    if (remoteHead !== head) await git(['push', '--set-upstream', 'origin', `${head}:${ref}`]);
-    if ((await git(['ls-remote', '--heads', 'origin', ref])).split(/\s/u)[0] !== head)
-      throw new Error('delivery-push-unverified');
-    delivery.pushedHead = head;
-    await save();
-    // only the exact pre-push observation may lag behind a verified fast-forward.
-    if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
-    await provider.publish(publication);
-    delete delivery.contentUpdate;
-    delivery.reconciled = true;
     if (work.code === 'implementation-delivery-incomplete') delete work.code;
     await save();
   } else {
@@ -305,9 +284,7 @@ export default async function openClawDelivery(input: {
     pullRequest: receipt,
     workflowStatus: workflowStatus({ phase: 'complete', delivery }),
     url,
-    instructions:
-      announcementRecoveryInstructions(delivery.announcement) +
-      ' Then call delivery present and reproduce its full private PR card and announcement outcome. A failed announcement retains the PR; never recreate it.',
+    instructions: deliveryCompletionInstructions('openclaw', delivery),
   };
 }
 

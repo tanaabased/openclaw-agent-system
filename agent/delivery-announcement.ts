@@ -76,6 +76,27 @@ export function announcementRecoveryInstructions(state?: DeliveryAnnouncementSta
   return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce with its preview digest.';
 }
 
+/** native attachment is the only host-specific step after verified publication. */
+export function deliveryCompletionInstructions(
+  runtime: 'codex' | 'openclaw',
+  delivery: Delivery & { attached?: boolean },
+) {
+  const attachment =
+    runtime === 'openclaw'
+      ? ''
+      : delivery.attached
+        ? 'Native PR attachment is confirmed. '
+        : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
+  return (
+    attachment +
+    announcementRecoveryInstructions(delivery.announcement) +
+    ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Continue in this same turn; an attachment, announcement, or card failure never requires recreating the PR. ' +
+    (runtime === 'codex'
+      ? 'For automatic workflows, use continuationRuntime action:delivery with the nested delivery operation.'
+      : 'Use agent_system_dispatch action delivery with the requested operation.')
+  );
+}
+
 /** the native delivery owner supplies authority and serializes state with the PR receipt. */
 export default async function deliveryAnnouncement(input: {
   operation: 'compose' | 'candidate' | 'announce';

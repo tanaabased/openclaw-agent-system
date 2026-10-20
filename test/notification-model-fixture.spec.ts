@@ -571,7 +571,13 @@ for (const scenario of [
           append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
         }
         await action(input, 'implementation-result');
-        append(input, 'work-result', { status: 'recorded' });
+        append(input, 'work-result', {
+          status: 'recorded',
+          handoff: {
+            next: 'delivery',
+            request: { action: 'delivery', id, operation: 'prepare' },
+          },
+        });
         assert.equal((await action(input, 'delivery')).operation, 'prepare');
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).digest, digest);
@@ -634,7 +640,13 @@ for (const scenario of [
         assert.doesNotMatch(args.stdin, /new file mode/);
         for (const stage of ['apply', 'add', 'commit'])
           append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
-        append(input, 'work-result', { status: 'recorded' });
+        append(input, 'work-result', {
+          status: 'recorded',
+          handoff: {
+            next: 'delivery',
+            request: { action: 'delivery', id, operation: 'prepare' },
+          },
+        });
         const prepared = await action(input, 'delivery');
         assert.equal(prepared.operation, 'prepare');
         assert.match(prepared.title!, /cleanup and verification/);

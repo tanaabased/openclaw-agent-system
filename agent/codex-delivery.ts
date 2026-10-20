@@ -6,10 +6,11 @@ import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
+import publishIssueDelivery from './publish-issue-delivery.ts';
 import workflowFailure from './workflow-failure.ts';
 import deliveryAnnouncement, {
   announcementPresentation,
-  announcementRecoveryInstructions,
+  deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
@@ -28,12 +29,7 @@ import { nativeObject } from './automation-gateway.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import dispatchHistory from './codex-dispatch-history.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
-import {
-  dispatchGit,
-  githubOrigin,
-  verifyDispatchWorktree,
-  type DispatchGit,
-} from './codex-dispatch-project.ts';
+import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch.ts';
 import type { CodexDeliveryState } from './codex-delivery-state.ts';
@@ -605,22 +601,6 @@ export default async function runCodexDelivery(
               ];
               await save();
             },
-            beforeCreate: async () => {
-              await authorizePublication();
-              if (feedbackEvent?.work?.pullRequest)
-                throw new Error('feedback-delivery-owner-changed');
-              if (delivery.creationAttempted) throw new Error('delivery-creation-uncertain');
-              delivery.creationAttempted = true;
-              await save();
-            },
-            onCreateRejected: async () => {
-              delivery.creationAttempted = false;
-              await save();
-            },
-            checkpoint: async (receipt) => {
-              delivery.pullRequest = receipt;
-              await save();
-            },
           };
           const provider = new IssueDeliveryProvider(
             {
@@ -638,56 +618,29 @@ export default async function runCodexDelivery(
             },
             deps.delay,
           );
-          const remoteRef = `refs/heads/${branch}`;
-          const remote = (
-            await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal)
-          ).trim();
-          const remoteHead = remote.split(/\s/u)[0] ?? '';
-          if (remote && remoteHead !== head) {
-            if (!previous?.pullRequest || remoteHead !== previous.pushedHead)
-              throw new Error('delivery-remote-head-diverged');
-            await git(found.cwd, ['merge-base', '--is-ancestor', remoteHead!, head], signal);
-          }
-          publication.expectedPullRequest = await provider.inspect({
-            ...publication,
-            headSha: remoteHead,
+          await publishIssueDelivery({
+            delivery,
+            publication: { ...publication, headSha: head },
+            provider,
+            git: (argv) => git(found.cwd, argv, signal),
+            push: async (head, ref, remotes) => {
+              const transport = remotes.flatMap((remote) => {
+                const preferred = preferGitHubSshWorktreeRemote(remote);
+                return preferred === remote ? [] : ['-c', `url.${preferred}.insteadOf=${remote}`];
+              });
+              await git(
+                found.cwd,
+                [...transport, 'push', '--set-upstream', 'origin', `${head}:${ref}`],
+                signal,
+              );
+            },
+            authorize: authorizePublication,
+            beforeCreate: async () => {
+              if (feedbackEvent?.work?.pullRequest)
+                throw new Error('feedback-delivery-owner-changed');
+            },
+            save,
           });
-          const pushUrls = (
-            await git(found.cwd, ['remote', 'get-url', '--push', '--all', 'origin'], signal)
-          )
-            .trim()
-            .split(/\r?\n/u);
-          const repository =
-            `${intake.repository.owner.login}/${intake.repository.name}`.toLowerCase();
-          if (pushUrls.some((value) => githubOrigin(value) !== repository))
-            throw new Error('delivery-push-destination-mismatch');
-          if (remoteHead !== head) {
-            const transport = pushUrls.flatMap((remote) => {
-              const preferred = preferGitHubSshWorktreeRemote(remote);
-              return preferred === remote ? [] : ['-c', `url.${preferred}.insteadOf=${remote}`];
-            });
-            await authorizePublication();
-            await git(
-              found.cwd,
-              [...transport, 'push', '--set-upstream', 'origin', `${head}:${remoteRef}`],
-              signal,
-            );
-          }
-          if (
-            (await git(found.cwd, ['ls-remote', '--heads', 'origin', remoteRef], signal))
-              .trim()
-              .split(/\s/u)[0] !== head
-          )
-            throw new Error('delivery-push-unverified');
-          delivery.pushedHead = head;
-          await save();
-          await authorizePublication();
-          // only the exact pre-push observation may lag behind a verified fast-forward.
-          if (remoteHead && remoteHead !== head) publication.previousHeadSha = remoteHead;
-          await provider.publish(publication);
-          delete delivery.contentUpdate;
-          delivery.reconciled = true;
-          await save();
           return {
             status: 'published',
             notices: notices(delivery.attached),
@@ -695,12 +648,7 @@ export default async function runCodexDelivery(
             pullRequest: delivery.pullRequest,
             workflowStatus: workflowStatus({ phase: 'complete', delivery }),
             url: url(delivery.pullRequest!.pullRequestNumber),
-            instruction:
-              (delivery.attached
-                ? 'Native PR attachment is confirmed. '
-                : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ') +
-              announcementRecoveryInstructions(delivery.announcement) +
-              ' Then call delivery present and reproduce its complete private card. For automatic workflows, use continuationRuntime action:delivery with the nested delivery operation. An attachment, announcement, or card failure never requires recreating the PR.',
+            instruction: deliveryCompletionInstructions('codex', delivery),
           };
         } catch (error) {
           signal.throwIfAborted();

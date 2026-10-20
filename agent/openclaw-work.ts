@@ -1,3 +1,4 @@
+import implementationHandoff from './implementation-handoff.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
 
@@ -173,8 +174,9 @@ export default async function openClawWorkAction(input: {
         })),
       publicationAuthorized: true,
       deliveryOnly: record.work.result?.outcome === 'done',
+      handoff: implementationHandoff(record.id, record.work.result?.outcome, 'openclaw'),
       instructions:
-        'When deliveryOnly is true, reconcile the recorded result and finish managed PR delivery without repeating implementation. Otherwise use the returned implementation skill and guidance in the existing worktree. Read feedbackWork for later resolved plans and partial implementation; it supplements the preserved original assessment. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or denial. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. A done result permits managed PR delivery without a separate publication grant; honor explicit user restrictions. Do not use Codex runtime commands.',
+        'When deliveryOnly is true, reconcile the recorded result and finish managed PR delivery without repeating implementation. Otherwise use the returned implementation skill and guidance in the existing worktree. Read feedbackWork for later resolved plans and partial implementation; it supplements the preserved original assessment. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or denial. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. Follow the recorded result’s host-owned handoff immediately; it owns PR delivery for built-in and custom implementation skills without a separate publication grant. Honor explicit user restrictions. Do not use Codex runtime commands.',
     };
   }
   if (!record.work?.caller || automationHash(record.work.caller) !== automationHash(source))
@@ -195,6 +197,7 @@ export default async function openClawWorkAction(input: {
     status: 'recorded',
     id: record.id,
     outcome: action.implementationResult.outcome,
+    handoff: implementationHandoff(record.id, action.implementationResult.outcome, 'openclaw'),
     presentation: implementationPresentation(action.implementationResult),
   };
 }

@@ -2710,16 +2710,15 @@ describe('agent/codex-dispatch', () => {
       assert.equal(started.continuation!.binding!.turnId, turnId);
       assert.equal(started.progression!.via, mode);
       assert.equal((await work.run('next')).status, 'idle');
-      assert.equal(
-        (
-          await work.run(
-            'result',
-            { result: { outcome: 'done', summary: 'Done.', fullResult: 'Validated.' } },
-            true,
-          )
-        ).status,
-        'recorded',
+      const saved = await work.run(
+        'result',
+        { result: { outcome: 'done', summary: 'Done.', fullResult: 'Validated.' } },
+        true,
       );
+      assert.equal(saved.status, 'recorded');
+      const handoff = 'handoff' in saved && saved.handoff;
+      assert.ok(handoff && 'request' in handoff && handoff.request);
+      const deliveryRequest = handoff.request;
       let delivered = false;
       work.continuation.deliver = async (_data, _input, deliveryDeps) => {
         await deliveryDeps?.authorizeSchedule?.();
@@ -2727,7 +2726,7 @@ describe('agent/codex-dispatch', () => {
         throw new Error('direct-delivery-boundary');
       };
       await assert.rejects(
-        work.run('delivery', { delivery: { action: 'prepare' } }, true),
+        work.run(deliveryRequest.action, deliveryRequest, true),
         /direct-delivery-boundary/,
       );
       assert.equal(delivered, true);
@@ -4005,11 +4004,18 @@ describe('agent/codex-dispatch', () => {
     const work = await workIssue();
     await work.run('next');
     work.receive();
-    await work.run(
+    const saved = await work.run(
       'result',
       { result: { outcome: 'done', summary: 'Done.', fullResult: 'Full evidence.' } },
       true,
     );
+    assert.ok('handoff' in saved && saved.handoff);
+    assert.equal(saved.handoff.next, 'delivery');
+    assert.deepEqual('request' in saved.handoff && saved.handoff.request, {
+      action: 'delivery',
+      id: work.id,
+      delivery: { action: 'prepare' },
+    });
     native!.status = 'idle';
     native!.turnStatus = 'completed';
     const delivery = await work.run('next');

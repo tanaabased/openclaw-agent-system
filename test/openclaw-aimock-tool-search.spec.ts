@@ -160,7 +160,13 @@ describe('scripts/aimock-tool-search', () => {
         '/tmp/owned',
       );
     }
-    await step('work-result', 'agent_system_dispatch', { status: 'recorded' });
+    await step('work-result', 'agent_system_dispatch', {
+      status: 'recorded',
+      handoff: {
+        next: 'delivery',
+        request: { action: 'delivery', id, operation: 'prepare' },
+      },
+    });
     await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
     assert.equal(
       (
