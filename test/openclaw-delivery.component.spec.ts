@@ -620,13 +620,13 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 0);
     assert.equal(pushes, 0);
   });
-  it('should tolerate the previously verified head briefly lagging after a followup push', async () => {
+  it('should recover the previously verified head after an interrupted followup push', async () => {
     let preview = await request('prepare', { title: 'Initial', body: 'Initial body.' });
     assert.ok('digest' in preview);
     await request('publish', { digest: preview.digest, title: 'Initial', body: 'Initial body.' });
     head = 'b'.repeat(40);
     const connect = input.connect;
-    let lagged = false;
+    let lagged = 0;
     input.connect = async () => {
       const connection = await connect();
       const execute = connection.account.execute;
@@ -637,11 +637,11 @@ describe('agent/openclaw-delivery', () => {
           execute: async (...args) => {
             const result = await execute(...args);
             if (
-              !lagged &&
+              lagged < 5 &&
               remote === head &&
               args[0].some((value) => value.includes('headSha:.head.sha'))
             ) {
-              lagged = true;
+              lagged++;
               return {
                 ...result,
                 stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: 'a'.repeat(40) }),
@@ -654,12 +654,26 @@ describe('agent/openclaw-delivery', () => {
     };
     preview = await request('prepare', { title: 'Updated', body: 'Updated body.' });
     assert.ok('digest' in preview);
+    await assert.rejects(
+      request('publish', {
+        digest: preview.digest,
+        title: 'Updated',
+        body: 'Updated body.',
+      }),
+      /The pull request head does not match the verified push/,
+    );
+    input.record = record = JSON.parse(JSON.stringify(record));
+    assert.deepEqual(record.work!.delivery!.pendingPush, { previousHead: 'a'.repeat(40), head });
+    preview = await request('prepare', { title: 'Updated', body: 'Updated body.' });
+    assert.ok('digest' in preview);
     const recovered = await request('publish', {
       digest: preview.digest,
       title: 'Updated',
       body: 'Updated body.',
     });
     assert.equal(recovered.status, 'published');
+    assert.equal(lagged, 5);
+    assert.equal(record.work!.delivery!.pendingPush, undefined);
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
     assert.equal(patches, 1);

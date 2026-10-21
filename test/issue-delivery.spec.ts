@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import publishIssueDelivery from '../agent/publish-issue-delivery.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';
@@ -105,5 +106,98 @@ describe('github delivery head observation', () => {
       (error) => openClawDispatchFailureCode(error) === 'github-delivery-binding-head-changed',
     );
     assert.deepEqual(f.delays, []);
+  });
+});
+
+describe('shared delivery push recovery', () => {
+  function publicationFixture() {
+    const f = fixture();
+    const publication: IssueDeliveryInput & { headSha: string } = { ...f.input };
+    delete publication.previousHeadSha;
+    let remote = f.input.previousHeadSha;
+    let pushes = 0;
+    let saved = '';
+    const input: Parameters<typeof publishIssueDelivery>[0] = {
+      delivery: {
+        creationAttempted: true,
+        pushedHead: remote,
+        pullRequest: f.input.expectedPullRequest,
+        reconciled: true,
+      },
+      publication,
+      provider: {
+        inspect: (value) => f.provider.inspect(value),
+        async publish(value) {
+          await f.provider.inspect(value);
+          return f.input.expectedPullRequest;
+        },
+      },
+      async git(argv) {
+        if (argv[0] === 'ls-remote') return `${remote}\trefs/heads/task`;
+        if (argv[0] === 'remote') return 'https://github.com/owner/repo.git';
+        if (argv[0] === 'merge-base') return '';
+        if (argv[0] === 'push') {
+          // the pending transition must survive a process interruption after push.
+          assert.deepEqual(JSON.parse(saved).pendingPush, {
+            previousHead: remote,
+            head: publication.headSha,
+          });
+          remote = publication.headSha;
+          pushes++;
+          return '';
+        }
+        throw new Error(`unexpected git operation: ${argv[0]}`);
+      },
+      async authorize() {},
+      async save() {
+        saved = JSON.stringify(input.delivery);
+      },
+    };
+    return {
+      ...f,
+      input,
+      pushes: () => pushes,
+      restore: () => {
+        input.delivery = JSON.parse(saved);
+      },
+    };
+  }
+
+  it('should retain the exact pre-push head across restart and reconcile without pushing twice', async () => {
+    const f = publicationFixture();
+    const pending = (error: unknown) =>
+      openClawDispatchFailureCode(error) === 'github-delivery-head-not-observed';
+    await assert.rejects(publishIssueDelivery(f.input), pending);
+    f.restore();
+    assert.equal(f.pushes(), 1);
+    assert.equal(f.input.delivery.reconciled, false);
+    // the same stale provider response remains recoverable on the next invocation.
+    await assert.rejects(publishIssueDelivery(f.input), pending);
+    assert.deepEqual(f.delays, [250, 500, 1000, 250, 500, 1000]);
+    f.restore();
+    f.observed.headSha = f.input.publication.headSha;
+    await publishIssueDelivery(f.input);
+    assert.equal(f.pushes(), 1);
+    assert.equal(f.input.delivery.reconciled, true);
+    assert.equal(f.input.delivery.pendingPush, undefined);
+    assert.deepEqual(f.input.delivery.pullRequest, {
+      pullRequestNodeId: 'PR_7',
+      pullRequestNumber: 7,
+    });
+  });
+
+  it('should reject an unrelated provider head even with a retained pending push', async () => {
+    const f = publicationFixture();
+    await assert.rejects(publishIssueDelivery(f.input));
+    f.restore();
+    f.observed.headSha = 'c'.repeat(40);
+    const reads = f.reads();
+    await assert.rejects(
+      publishIssueDelivery(f.input),
+      (error) => openClawDispatchFailureCode(error) === 'github-delivery-binding-head-changed',
+    );
+    assert.equal(f.reads(), reads + 1);
+    assert.equal(f.pushes(), 1);
+    assert.equal(f.input.delivery.reconciled, false);
   });
 });
