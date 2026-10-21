@@ -1,3 +1,4 @@
+import readInstallationConfig, { parseInstallationConfig } from '../core/installation-config.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
@@ -142,6 +143,8 @@ describe('agent/codex-dispatch', () => {
     ];
     gitCalls = [];
     deps = {
+      readInstallationConfig: async () =>
+        parseInstallationConfig(undefined, '/installation/config.yaml'),
       codexHome,
       assertActive: async () => {},
       now: () => now,
@@ -1204,6 +1207,54 @@ describe('agent/codex-dispatch', () => {
       connect: async () => fixture.client,
     });
   }
+
+  it('should share scheduled and operator grace and reject legacy cleanup in both paths', async () => {
+    const prepared = await prepare();
+    created();
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    const directory = join(root, 'tanaab', 'agent-system');
+    const path = join(directory, 'config.yaml');
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 17}', { mode: 0o600 });
+    deps.readInstallationConfig = () => readInstallationConfig({ XDG_CONFIG_HOME: root });
+    fixture.item.state = 'closed';
+    const operator = { threadId: 'operator' };
+    const preview = await request('retire', { id: prepared.id }, operator);
+    const queued = await request('retire', { id: prepared.id, digest: preview.digest }, operator);
+    assert.equal((queued.retirement as { eligibleAt: number }).eligibleAt, now + 17 * 60_000);
+    now += 60_000;
+    await next();
+    const selected = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(
+      selected.store.location.root,
+      selected.store.location.scope,
+    );
+    const deadline = (await journal.read()).records[0]!.retirement!.eligibleAt;
+    assert.equal(deadline, now + 17 * 60_000);
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    configured.github.notifications.cleanup = { enabled: false, 'grace-minutes': 2 };
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    const held = await request('retire', { id: prepared.id }, operator);
+    assert.equal(held.code, 'retirement-cleanup-migration-required');
+    now = deadline;
+    await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const blocked = (await store.read()).records[0]!;
+    assert.equal(blocked.retirement?.code, 'retirement-cleanup-migration-required');
+    assert.equal(blocked.retired, undefined);
+    assert.equal(blocked.retirement?.eligibleAt, deadline);
+    delete configured.github.notifications.cleanup;
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 0}');
+    now += 60_000;
+    await next();
+    const resumed = (await store.read()).records[0]!;
+    assert.notEqual(resumed.retirement?.code, 'retirement-cleanup-migration-required');
+    assert.equal(resumed.retirement?.eligibleAt, deadline);
+  });
 
   it('should queue manual retirement without losing evidence or restarting its grace period', async () => {
     const first = await prepare();

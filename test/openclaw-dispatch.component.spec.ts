@@ -1,3 +1,4 @@
+import readInstallationConfig, { parseInstallationConfig } from '../core/installation-config.ts';
 import assert from 'node:assert/strict';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -160,6 +161,8 @@ describe('agent/openclaw issue dispatch', () => {
     histories.clear();
     config = {};
     service = new OpenClawDispatch({
+      readInstallationConfig: async () =>
+        parseInstallationConfig(undefined, '/installation/config.yaml'),
       root: join(root, 'dispatch'),
       config: () => config,
       intake,
@@ -490,6 +493,48 @@ describe('agent/openclaw issue dispatch', () => {
       assert.deepEqual(state, before);
     });
     assert.equal(calls.length, 0);
+  });
+
+  it('should consume shared settings and hold legacy cleanup while retaining the original deadline', async () => {
+    const { items } = await assignments(1, 1);
+    const selected = await next();
+    await prepare(selected);
+    await assess(selected.id);
+    await completeAssessment(selected.id);
+    const directory = join(root, 'tanaab', 'agent-system');
+    const path = join(directory, 'config.yaml');
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 17}', { mode: 0o600 });
+    service.dependencies.readInstallationConfig = () =>
+      readInstallationConfig({ XDG_CONFIG_HOME: root });
+    items[0]!.state = 'closed';
+    service.dependencies.now = () => baseline + 180_001;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const original = await record();
+    assert.equal(original.retirement?.eligibleAt, baseline + 180_001 + 17 * 60_000);
+    manifest.cleanupMigration = {
+      declaration: { enabled: false, 'grace-minutes': 3 },
+      sourcePath: '/agent/overlay.yaml',
+    };
+    service.dependencies.now = () => original.retirement!.eligibleAt;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const blocked = await record();
+    assert.equal(blocked.retired, undefined);
+    assert.equal(blocked.retirement?.code, 'retirement-cleanup-migration-required');
+    assert.ok(blocked.retirement?.diagnostic?.includes('/agent/overlay.yaml'));
+    assert.ok(blocked.retirement?.diagnostic?.includes(path));
+    assert.equal(blocked.retirement?.eligibleAt, original.retirement!.eligibleAt);
+    assert.equal(
+      calls.some((call) => call.method === 'sessions.patch' && call.params.archived),
+      false,
+    );
+    delete manifest.cleanupMigration;
+    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 0}');
+    service.dependencies.now = () => original.retirement!.eligibleAt + 60_000;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const resumed = await record();
+    assert.notEqual(resumed.retirement?.code, 'retirement-cleanup-migration-required');
+    assert.equal(resumed.retirement?.eligibleAt, original.retirement!.eligibleAt);
   });
 
   it('should retire only the closed owner after its deadline and preserve active sibling work', async () => {
@@ -3845,7 +3890,7 @@ describe('agent/openclaw issue dispatch', () => {
       if (change === 'policy') manifest.github!.notifications!.issueAssignment!.feedback = true;
       if (change === 'models') manifest.models!.medium!.effort = 'medium';
       if (change === 'cleanup')
-        manifest.github!.notifications!.cleanup = { enabled: false, graceMinutes: 60 };
+        manifest.cleanupMigration = { declaration: { enabled: false, 'grace-minutes': 60 } };
       if (change === 'stale-readback') {
         const manifests = service.dependencies.intake.dependencies.manifestService;
         const load = manifests.loadForAgentId.bind(manifests);
@@ -5567,7 +5612,7 @@ describe('agent/openclaw issue dispatch', () => {
     const before = sends().length;
     manifest.github!.notifications!.intervalMinutes += 1;
     manifest.github!.notifications!.maxConcurrentItems += 1;
-    manifest.github!.notifications!.cleanup = { enabled: true, graceMinutes: 30 };
+    manifest.cleanupMigration = { declaration: { enabled: true, 'grace-minutes': 30 } };
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.phase, 'running');
     manifest.github!.notifications!.issueAssignment!.allowed = [

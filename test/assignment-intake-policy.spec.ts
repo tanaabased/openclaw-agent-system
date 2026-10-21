@@ -28,6 +28,18 @@ function fixture(): AgentManifest {
 }
 
 describe('assignment intake policy', () => {
+  it('should retain old opt-out hash provenance without carrying cleanup into live authority', () => {
+    const manifest = fixture();
+    const active = assignmentIntakePolicy(manifest, 'openclaw')!;
+    manifest.cleanupMigration = { declaration: { enabled: false, 'grace-minutes': 17 } };
+    const migration = assignmentIntakePolicy(manifest, 'openclaw')!;
+    assert.equal(migration.digest, active.digest);
+    assert.notEqual(migration.legacyDigest, active.legacyDigest);
+    assert.equal(Object.hasOwn(migration.policy, 'cleanup'), false);
+    delete manifest.cleanupMigration;
+    assert.deepEqual(assignmentIntakePolicy(manifest, 'openclaw'), active);
+  });
+
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should retain ${runtime} authority and scheduler identity across pause and resume`, () => {
       const manifest = fixture();
@@ -73,7 +85,7 @@ describe('assignment intake policy', () => {
       policy.issueAssignment!.feedback = true;
       policy.issueAssignment!.allowed = [];
       policy.maxConcurrentItems = 8;
-      policy.cleanup = { enabled: false, graceMinutes: 30 };
+      manifest.cleanupMigration = { declaration: { enabled: false, 'grace-minutes': 30 } };
       manifest.debug = true;
       assert.deepEqual(jobs(manifest)[0], before);
       assert.equal(assignmentIntakePolicy(manifest, runtime)?.policy.maxConcurrentItems, 8);

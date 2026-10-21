@@ -42,6 +42,8 @@ export const retirementSchema = Type.Object(
     reactivationAfter: Type.Optional(time),
     removalEventId: Type.Optional(text),
     eligibleAt: time,
+    deadlinePending: Type.Optional(Type.Literal(true)),
+    diagnostic: Type.Optional(text),
     activityId: Type.Optional(text),
     sessionUnavailableObserved: Type.Optional(
       Type.Object(
@@ -86,7 +88,7 @@ export default function assignmentRetirement(input: {
   reason?: Retirement['reason'];
   intakeId: string;
   now: number;
-  graceMinutes: number;
+  graceMinutes?: number;
   activityId?: string;
   reactivate?: boolean;
 }): Retirement | undefined {
@@ -106,7 +108,28 @@ export default function assignmentRetirement(input: {
       ? { reactivationAfter: input.now }
       : {}),
     eligibleAt:
-      !previous || activity ? input.now + input.graceMinutes * 60_000 : previous.eligibleAt,
+      !previous || activity || previous.deadlinePending
+        ? input.graceMinutes === undefined
+          ? (previous?.eligibleAt ?? input.now)
+          : input.now + input.graceMinutes * 60_000
+        : previous.eligibleAt,
+    deadlinePending:
+      (!previous || activity || previous.deadlinePending) && input.graceMinutes === undefined
+        ? true
+        : undefined,
     ...(input.activityId ? { activityId: input.activityId } : {}),
   };
+}
+
+/** historical terminal status alone does not prove that resources were reclaimed. */
+export function unverifiedLegacyRetirement(record: {
+  retired?: unknown;
+  retirement?: Retirement;
+}): boolean {
+  return Boolean(
+    record.retired &&
+    (record.retirement?.worktreeRemovedAt === undefined ||
+      (record.retirement.archivedAt === undefined &&
+        !record.retirement.sessionUnavailableObserved)),
+  );
 }

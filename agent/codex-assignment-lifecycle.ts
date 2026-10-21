@@ -1,3 +1,4 @@
+import cleanupConfiguration from './cleanup-configuration.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
@@ -21,6 +22,10 @@ export default async function reconcileCodexLifecycle(
   inventory?: unknown,
 ) {
   const current = await selectCodexIntake(pluginData, deps);
+  let cleanupManifest = current.manifest;
+  const readConfiguration = () =>
+    cleanupConfiguration(cleanupManifest, deps.readInstallationConfig);
+  const configuration = await readConfiguration();
   const retained = await current.store.read();
   if (!retained?.records.length) return;
   current.policy = retainedIntakePolicy(current.manifest, retained, 'codex');
@@ -62,6 +67,8 @@ export default async function reconcileCodexLifecycle(
       let needsInventory = false;
       const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
       await reconcileAssignmentLifecycle({
+        configuration,
+        readConfiguration,
         records: state.records,
         admitted: admitted.records,
         policy: current.policy!,
@@ -71,6 +78,7 @@ export default async function reconcileCodexLifecycle(
         save,
         fresh: async () => {
           const selected = await selectCodexIntake(pluginData, deps);
+          cleanupManifest = selected.manifest;
           const live = retainedIntakePolicy(selected.manifest, admitted, 'codex');
           current.policy!.policy = live.policy;
           current.policy!.policy.issueAssignment!.allowed =
