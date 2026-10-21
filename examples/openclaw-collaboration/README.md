@@ -47,6 +47,9 @@ openclaw config get tools.agentToAgent --json | jq -e '.enabled == true and .all
 ## Cleanup
 
 ```bash
-# should stop the strict mock provider
-openclaw-aimock stop
+# should report strict mock failures while stopping the provider
+cleanup_status=0
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics || cleanup_status=$?
+openclaw-aimock stop || cleanup_status=$?
+test "$cleanup_status" -eq 0
 ```

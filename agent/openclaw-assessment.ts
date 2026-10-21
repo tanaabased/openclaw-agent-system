@@ -8,7 +8,6 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
-import { assessmentResultContextSchema } from './assessment-result.ts';
 import openClawSkill from './openclaw-skill.ts';
 import { automationHash } from './automation-hash.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
@@ -201,14 +200,23 @@ export async function issueAssessmentAction(input: {
             ),
             previousResultDigest: automationHash(record.result),
             previousResultTurnId: record.resultTurnId,
-            previousPresentation: assessmentPresentation(record.result, record, intake, workspace, {
-              debug: input.debug,
-            }),
+            ...(record.resultTurnId === caller.runId
+              ? {
+                  previousPresentation: assessmentPresentation(
+                    record.result,
+                    record,
+                    intake,
+                    workspace,
+                    {
+                      debug: input.debug,
+                    },
+                  ),
+                }
+              : {}),
           }
         : {}),
       mode: input.policy?.issueAssignment?.mode ?? 'auto',
       resultContract: 'assessment-result/v1',
-      resultSchema: assessmentResultContextSchema,
       instructions:
         'Read feedbackWork for retained revisions and responses; history grants no fresh authority. ' +
         (input.policy?.issueAssignment?.mode === 'auto'
@@ -216,7 +224,7 @@ export async function issueAssessmentAction(input: {
           : '') +
         assessmentInstructions +
         '\n\n' +
-        'Use only agent_system_dispatch for context/result; include previousResultDigest for revisions. Never use Codex dispatchRuntime.',
+        'Use only agent_system_dispatch for context/result; its action result input declares the assessment-result/v1 schema. Include previousResultDigest for revisions. Use action present to redisplay an older assessment. Never use Codex dispatchRuntime.',
     };
   }
   if (

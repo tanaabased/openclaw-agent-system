@@ -9,7 +9,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { issueKey } from '../agent/dispatch-pending.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
-import type { AssessmentResult } from '../agent/assessment-result.ts';
+import { assessmentResultSchema, type AssessmentResult } from '../agent/assessment-result.ts';
 import type { AssessmentSelection } from '../agent/assessment-selection.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
@@ -3242,7 +3242,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.match(String(sends()[0]!.params.message), /action context/);
     const verified = await context(input.id);
     assert.ok('runtime' in verified && verified.runtime === 'openclaw');
-    assert.ok('evidence' in verified && 'resultSchema' in verified && 'assessment' in verified);
+    assert.ok('evidence' in verified && 'resultContract' in verified && 'assessment' in verified);
     const recorded = await submit(input.id);
     assert.ok('presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!));
     assert.equal(recorded.status, 'recorded');
@@ -3405,9 +3405,9 @@ describe('agent/openclaw issue dispatch', () => {
       const reloaded = await context(input.id);
       assert.ok('previousPresentation' in reloaded);
       assert.equal(reloaded.previousPresentation, recorded.presentation);
-      assert.ok('previousResult' in reloaded && 'resultSchema' in reloaded);
+      assert.ok('previousResult' in reloaded && 'resultContract' in reloaded);
       assert.deepEqual(reloaded.previousResult, plan);
-      assert.equal(Value.Check(reloaded.resultSchema, plan), true);
+      assert.equal(Value.Check(assessmentResultSchema, plan), true);
       // native tool search includes both content and details in its model-facing envelope.
       const transported = JSON.stringify(
         {
@@ -3548,6 +3548,7 @@ describe('agent/openclaw issue dispatch', () => {
       'previousResult' in fresh &&
         fresh.previousResult?.fullAssessment === clarification.fullAssessment,
     );
+    assert.equal('previousPresentation' in fresh, false);
     await assert.rejects(submit(input.id, plan, undefined, who), /assessment-result-conflict/);
     assert.deepEqual((await record()).result, clarification);
     assert.equal(
