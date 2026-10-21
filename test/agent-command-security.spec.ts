@@ -68,6 +68,20 @@ function context(agentId = 'tanaabot') {
 }
 
 describe('agent/command-security', () => {
+  it('should block notification reset before resolving agent credentials', async () => {
+    for (const alias of ['as', 'agent-system']) {
+      const { handler } = setup();
+      const result = (await handler(
+        {
+          toolName: 'exec',
+          params: { command: `openclaw ${alias} notifications reset --all --purge --yes` },
+        } as never,
+        context() as never,
+      )) as { block?: boolean; blockReason?: string };
+      assert.equal(result.block, true);
+      assert.match(result.blockReason!, /operator-only/u);
+    }
+  });
   it('should block scheduled runner selection before an agent command executes', async () => {
     const { handler } = setup();
     const result = (await handler(
