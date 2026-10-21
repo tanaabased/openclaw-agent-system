@@ -409,6 +409,7 @@ describe('agent/automation-service', () => {
 
   it('should install the derived v2 job and group, detect drift and converge without duplicates', async () => {
     const sessions = new Map<string, Record<string, unknown>>();
+    let saveCategory = true;
     const original = service.dependencies.request!;
     service.dependencies.request = async (method, params) => {
       if (!method.startsWith('sessions.')) return original(method, params);
@@ -427,7 +428,7 @@ describe('agent/automation-service', () => {
         const row = sessions.get(key)!;
         if (params.autoLabel)
           Object.assign(row, { autoLabel: params.autoLabel, displayName: params.autoLabel });
-        if (params.category) row.category = params.category;
+        if (params.category && saveCategory) row.category = params.category;
         return { ok: true };
       }
       throw Error('unexpected session operation');
@@ -524,6 +525,17 @@ describe('agent/automation-service', () => {
     await service.notificationResetToggle(manifest, root, expected, false);
     sessions.get(installedKey)!.archived = true;
     let attempted = false;
+    saveCategory = false;
+    await assert.rejects(
+      service.notificationResetReplace(manifest, root, expected, attempted, async () => {
+        assert.fail('do not retarget the schedule before group readback');
+      }),
+      /automation-thread-readback-diverged/u,
+    );
+    assert.equal(native[0]!.enabled, false);
+    assert.equal(native[0]!.sessionTarget, `session:${installedKey}`);
+    assert.equal(sessions.size, 3);
+    saveCategory = true;
     afterWriteFailure = true;
     await assert.rejects(
       service.notificationResetReplace(manifest, root, expected, attempted, async () => {
@@ -542,6 +554,8 @@ describe('agent/automation-service', () => {
     );
     assert.notEqual(replacement.sessionKey, installedKey);
     assert.equal(sessions.size, 3);
+    assert.equal(sessions.get(replacement.sessionKey)!.category, 'Agent System');
+    assert.equal(sessions.get(replacement.sessionKey)!.workspaceDir, root);
     assert.equal(
       await notificationAutomationReadiness(
         service,

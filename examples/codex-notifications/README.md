@@ -57,6 +57,10 @@ In that disposable setup, invoke `$agent-system-notifications-reset` from an ope
 chat. Decline one preview and verify no changes. Confirm a new preview and verify
 that the schedule pauses, local tracking clears, the baseline advances, the old
 intake chat is archived, and a different chat receives the restored schedule.
+Before restoration, verify the replacement appears under `AGENT SYSTEM` with its
+bound workspace unchanged. Exercise both an existing section and an absent section;
+refresh native inventory after each sidebar action. An unverified move must keep
+reset incomplete and intake paused, without repeating the native action.
 If native archival removes the old heartbeat, verify reset creates one paused
 replacement with the retained cadence, prompt, and notification preference before
 restoring its prior status. Interrupt after native creation but before readback;

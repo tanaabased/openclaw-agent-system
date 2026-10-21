@@ -234,7 +234,7 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal(enabled, true);
   });
 
-  it('should finish codex reset only after native pause and restoration readback', async () => {
+  it('should finish codex reset only after native pause, sidebar placement and restoration readback', async () => {
     const workspace = join(root, 'workspace');
     const codexHome = join(root, 'codex');
     const pluginData = join(root, 'plugin');
@@ -365,6 +365,7 @@ describe('agent/notification reset runtime adapters', () => {
         },
       }),
     };
+    const sections: { sectionId: string; name: string; itemKeys: string[] }[] = [];
     const run = () =>
       runCodexNotificationReset(
         pluginData,
@@ -374,6 +375,7 @@ describe('agent/notification reset runtime adapters', () => {
           purge: true,
           nativeInventory: {
             schemaVersion: 4,
+            sections,
             pinnedThreads: [],
             unavailableHosts: [],
             unavailableSources: [],
@@ -398,6 +400,28 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal('request' in archive && archive.request?.tool, 'set_thread_archived');
     assert.equal((await run()).status, 'incomplete');
     archived = true;
+    const grouping = await run();
+    assert.equal(grouping.status, 'native-action');
+    assert.deepEqual('request' in grouping && grouping.request, {
+      tool: 'create_sidebar_section',
+      arguments: { name: 'AGENT SYSTEM' },
+    });
+    assert.equal(saved.definition.status, 'PAUSED');
+    assert.equal((await run()).status, 'incomplete');
+    sections.push({
+      sectionId: 'group',
+      name: 'AGENT SYSTEM',
+      itemKeys: ['codex:thread:local:old'],
+    });
+    const placing = await run();
+    assert.equal(placing.status, 'native-action');
+    assert.deepEqual('request' in placing && placing.request, {
+      tool: 'move_thread_to_sidebar_section',
+      arguments: { threadId: 'replacement', hostId: 'local', source: 'codex', sectionId: 'group' },
+    });
+    assert.equal(saved.definition.status, 'PAUSED');
+    assert.equal((await run()).status, 'incomplete');
+    sections[0]!.itemKeys.push('codex:thread:local:replacement');
     const restoring = await run();
     assert.equal(restoring.status, 'native-action');
     assert.equal('request' in restoring && restoring.request?.arguments.status, 'ACTIVE');
