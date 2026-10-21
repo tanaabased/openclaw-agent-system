@@ -434,11 +434,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
-  const revision = /(?:Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
+  const revision = /(Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,
   );
   const id =
-    revision?.[1] ??
+    revision?.[2] ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
@@ -487,17 +487,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       ...(revision ? { previousResultDigest: context.previousResultDigest } : {}),
       result: {
         version: 1,
-        outcome: prompt.startsWith('Clarify ordinary') ? 'clarification-needed' : 'plan-ready',
+        outcome: revision?.[1] === 'Clarify' ? 'clarification-needed' : 'plan-ready',
         summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
         assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        ...(prompt.startsWith('Clarify ordinary')
+        ...(revision?.[1] === 'Clarify'
           ? { questions: ['Should cleanup close the issue only after evidence capture?'] }
           : {
               plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
             }),
         fullAssessment: revision
           ? String((context.previousResult as Record<string, unknown>).fullAssessment) +
-            (prompt.startsWith('Clarify ordinary')
+            (revision?.[1] === 'Clarify'
               ? '\n\nShould cleanup close the issue only after evidence capture? The ordering is unresolved.'
               : '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.')
           : fullAssessment,

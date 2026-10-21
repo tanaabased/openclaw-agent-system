@@ -876,7 +876,9 @@ for (const scenario of [
           fullAssessment: 'Original findings and uncertainty.',
         };
         for (const stage of ['Clarify', 'Answer']) {
-          const input = request(`${stage} ordinary assessment for managed issue ${id}`);
+          const input = request(
+            `[Wed 2026-10-21 17:32 UTC] ${stage} ordinary assessment for managed issue ${id}`,
+          );
           input.messages.push({
             role: 'user',
             content:
