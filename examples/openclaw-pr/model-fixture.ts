@@ -268,8 +268,14 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (feedback) {
     const [, id, eventId] = feedback;
     const args = { action: 'feedback', id, eventId };
+    const resume = prompt.includes('Resume the retained feedback reply only.');
     const context = result('feedback-context');
-    if (!context) return dispatch('feedback-context', { ...args, operation: 'context' });
+    if (!context)
+      return dispatch('feedback-context', {
+        ...args,
+        operation: 'context',
+        ...(resume ? { resume: true } : {}),
+      });
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
@@ -277,190 +283,198 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     )
       return;
     const initial = context.issueStage === 'planning';
-    if (initial) {
-      assert.equal(context.mode, 'plan');
-      assert.equal(context.previousImplementation, undefined);
-      assert.deepEqual(context.previousFeedbackWork, []);
-    } else {
-      assert.equal(context.mode, 'work');
-      assert.equal((context.previousImplementation as { outcome?: string }).outcome, 'done');
-      assert.equal((context.previousFeedbackWork as unknown[]).length, 1);
-    }
-    const work = result('feedback-work-context');
-    if (!work)
-      return dispatch('feedback-work-context', { ...args, operation: 'implementation-context' });
-    const implementation = work.implementation as { skill?: { path?: string } } | undefined;
-    if (
-      work.status !== 'verified' ||
-      typeof work.worktree !== 'string' ||
-      !implementation?.skill?.path
-    )
-      return;
-    assert.equal(work.issueStage, 'implementation');
-    assert.equal((work.work as { decision?: unknown }).decision, undefined);
-    assert.deepEqual(work.previousFeedbackWork, context.previousFeedbackWork);
-    assert.deepEqual(work.previousImplementation, context.previousImplementation);
-    if (
-      openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') === undefined
-    )
-      return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
-    const branch = result('feedback-branch');
-    if (!initial) {
-      if (!branch)
-        return call('feedback-branch', 'agent_system_git', {
-          argv: ['branch', '--show-current'],
-          cwd: work.worktree,
-        });
+    if (!resume) {
+      if (initial) {
+        assert.equal(context.mode, 'plan');
+        assert.equal(context.previousImplementation, undefined);
+        assert.deepEqual(context.previousFeedbackWork, []);
+      } else {
+        assert.equal(context.mode, 'work');
+        assert.equal((context.previousImplementation as { outcome?: string }).outcome, 'done');
+        assert.equal((context.previousFeedbackWork as unknown[]).length, 1);
+      }
+      const work = result('feedback-work-context');
+      if (!work)
+        return dispatch('feedback-work-context', { ...args, operation: 'implementation-context' });
+      const implementation = work.implementation as { skill?: { path?: string } } | undefined;
       if (
-        branch.exitCode !== 0 ||
-        branch.truncated !== false ||
-        typeof branch.stdout !== 'string' ||
-        !branch.stdout.trim()
+        work.status !== 'verified' ||
+        typeof work.worktree !== 'string' ||
+        !implementation?.skill?.path
       )
         return;
-    }
-    const file = `notification-fixture-${id}.md`;
-    const patch = initial
-      ? `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`
-      : `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep feedback changes on the original PR.\n`;
-    const steps = [
-      ...(!initial
-        ? [
-            {
-              stage: 'feedback-fetch',
-              argv: ['fetch', 'origin', (branch!.stdout as string).trim()],
-            },
-            { stage: 'feedback-incorporate', argv: ['merge', '--ff-only', 'FETCH_HEAD'] },
-          ]
-        : []),
-      { stage: 'feedback-apply', argv: ['apply', '-'], stdin: patch },
-      { stage: 'feedback-check', argv: ['diff', '--check'] },
-      { stage: 'feedback-add', argv: ['add', '--', file] },
-      {
-        stage: 'feedback-commit',
-        argv: ['commit', '-m', 'document feedback update continuity', '--', file],
-      },
-    ];
-    for (const step of steps) {
-      const executed = result(step.stage);
-      if (!executed)
-        return call(step.stage, 'agent_system_git', {
-          argv: step.argv,
-          cwd: work.worktree,
-          ...('stdin' in step ? { stdin: step.stdin } : {}),
-        });
-      if (executed.exitCode !== 0 || executed.truncated !== false) return;
-    }
-    const completed = result('feedback-work-result');
-    if (!completed)
-      return dispatch('feedback-work-result', {
-        ...args,
-        operation: 'implementation-result',
-        implementationResult: {
-          outcome: 'done',
-          summary: initial
-            ? 'Implemented the cleanup note.'
-            : 'Added the feedback continuity note.',
-          fullResult: initial
-            ? 'Created the cleanup note, checked the diff, and committed the requested implementation.'
-            : 'Updated the original note, checked the diff, and committed the feedback change.',
+      assert.equal(work.issueStage, 'implementation');
+      assert.equal((work.work as { decision?: unknown }).decision, undefined);
+      assert.deepEqual(work.previousFeedbackWork, context.previousFeedbackWork);
+      assert.deepEqual(work.previousImplementation, context.previousImplementation);
+      if (
+        openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') ===
+        undefined
+      )
+        return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
+      const branch = result('feedback-branch');
+      if (!initial) {
+        if (!branch)
+          return call('feedback-branch', 'agent_system_git', {
+            argv: ['branch', '--show-current'],
+            cwd: work.worktree,
+          });
+        if (
+          branch.exitCode !== 0 ||
+          branch.truncated !== false ||
+          typeof branch.stdout !== 'string' ||
+          !branch.stdout.trim()
+        )
+          return;
+      }
+      const file = `notification-fixture-${id}.md`;
+      const patch = initial
+        ? `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`
+        : `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep feedback changes on the original PR.\n`;
+      const steps = [
+        ...(!initial
+          ? [
+              {
+                stage: 'feedback-fetch',
+                argv: ['fetch', 'origin', (branch!.stdout as string).trim()],
+              },
+              { stage: 'feedback-incorporate', argv: ['merge', '--ff-only', 'FETCH_HEAD'] },
+            ]
+          : []),
+        { stage: 'feedback-apply', argv: ['apply', '-'], stdin: patch },
+        { stage: 'feedback-check', argv: ['diff', '--check'] },
+        { stage: 'feedback-add', argv: ['add', '--', file] },
+        {
+          stage: 'feedback-commit',
+          argv: ['commit', '-m', 'document feedback update continuity', '--', file],
         },
-      });
-    if (completed.status !== 'recorded') return;
-    const title = 'Document disposable notification fixture cleanup';
-    const body = 'Document closing disposable test issues after their evidence is captured.';
-    const delivery = result('feedback-delivery-prepare');
-    if (!delivery)
-      return dispatch('feedback-delivery-prepare', {
-        ...args,
-        operation: 'delivery',
-        deliveryOperation: 'prepare',
-        ...(initial ? { title, body } : {}),
-      });
-    if (delivery.status !== 'prepared' || typeof delivery.digest !== 'string') return;
-    let delivered = result('feedback-delivery-publish');
-    if (!delivered)
-      return dispatch('feedback-delivery-publish', {
-        ...args,
-        operation: 'delivery',
-        deliveryOperation: 'publish',
-        digest: delivery.digest,
-        ...(initial ? { title, body } : {}),
-      });
-    for (
-      let index = 0;
-      index < 3 && delivered.code === 'github-delivery-linkage-unverified';
-      index++
-    ) {
-      const prepared = result(`feedback-link-prepare-${index}`);
-      if (!prepared)
-        return dispatch(`feedback-link-prepare-${index}`, {
+      ];
+      for (const step of steps) {
+        const executed = result(step.stage);
+        if (!executed)
+          return call(step.stage, 'agent_system_git', {
+            argv: step.argv,
+            cwd: work.worktree,
+            ...('stdin' in step ? { stdin: step.stdin } : {}),
+          });
+        if (executed.exitCode !== 0 || executed.truncated !== false) return;
+      }
+      const completed = result('feedback-work-result');
+      if (!completed)
+        return dispatch('feedback-work-result', {
+          ...args,
+          operation: 'implementation-result',
+          implementationResult: {
+            outcome: 'done',
+            summary: initial
+              ? 'Implemented the cleanup note.'
+              : 'Added the feedback continuity note.',
+            fullResult: initial
+              ? 'Created the cleanup note, checked the diff, and committed the requested implementation.'
+              : 'Updated the original note, checked the diff, and committed the feedback change.',
+          },
+        });
+      if (completed.status !== 'recorded') return;
+      const title = 'Document disposable notification fixture cleanup';
+      const body = 'Document closing disposable test issues after their evidence is captured.';
+      const delivery = result('feedback-delivery-prepare');
+      if (!delivery)
+        return dispatch('feedback-delivery-prepare', {
           ...args,
           operation: 'delivery',
           deliveryOperation: 'prepare',
           ...(initial ? { title, body } : {}),
         });
-      if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-      const published = result(`feedback-link-publish-${index}`);
-      if (!published)
-        return dispatch(`feedback-link-publish-${index}`, {
+      if (delivery.status !== 'prepared' || typeof delivery.digest !== 'string') return;
+      let delivered = result('feedback-delivery-publish');
+      if (!delivered)
+        return dispatch('feedback-delivery-publish', {
           ...args,
           operation: 'delivery',
           deliveryOperation: 'publish',
-          digest: prepared.digest,
+          digest: delivery.digest,
           ...(initial ? { title, body } : {}),
         });
-      delivered = published;
+      for (
+        let index = 0;
+        index < 3 && delivered.code === 'github-delivery-linkage-unverified';
+        index++
+      ) {
+        const prepared = result(`feedback-link-prepare-${index}`);
+        if (!prepared)
+          return dispatch(`feedback-link-prepare-${index}`, {
+            ...args,
+            operation: 'delivery',
+            deliveryOperation: 'prepare',
+            ...(initial ? { title, body } : {}),
+          });
+        if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+        const published = result(`feedback-link-publish-${index}`);
+        if (!published)
+          return dispatch(`feedback-link-publish-${index}`, {
+            ...args,
+            operation: 'delivery',
+            deliveryOperation: 'publish',
+            digest: prepared.digest,
+            ...(initial ? { title, body } : {}),
+          });
+        delivered = published;
+      }
+      if (delivered.status !== 'published') return;
+      if (initial) {
+        const composed = result('feedback-delivery-compose');
+        if (!composed)
+          return dispatch('feedback-delivery-compose', {
+            ...args,
+            operation: 'delivery',
+            deliveryOperation: 'compose',
+          });
+        const selection = composed.selection as { skill?: { path?: string } } | undefined;
+        if (
+          composed.status !== 'composition-ready' ||
+          typeof composed.digest !== 'string' ||
+          !selection?.skill?.path
+        )
+          return;
+        if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
+          return call('delivery-skill', 'read', { path: selection.skill.path });
+        const candidate = result('feedback-delivery-candidate');
+        if (!candidate)
+          return dispatch('feedback-delivery-candidate', {
+            ...args,
+            operation: 'delivery',
+            deliveryOperation: 'candidate',
+            digest: composed.digest,
+            publicText: 'Adds the disposable issue cleanup note.',
+          });
+        if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
+          return;
+        const announced = result('feedback-delivery-announce');
+        if (!announced)
+          return dispatch('feedback-delivery-announce', {
+            ...args,
+            operation: 'delivery',
+            deliveryOperation: 'announce',
+            digest: candidate.digest,
+          });
+        if (announced.status !== 'announced') return;
+      }
+      const saved = result('feedback-result');
+      if (!saved)
+        return dispatch('feedback-result', {
+          ...args,
+          operation: 'result',
+          privateText: initial
+            ? 'Implemented the retained plan from approved feedback without an extra decision, checked the diff, and published its linked PR in the same chat and worktree.'
+            : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.',
+        });
+      if (saved.status !== 'recorded') return;
+      if (!initial)
+        return {
+          content:
+            'The pushed repair and private reply are retained. Awaiting the explicit reply-only continuation.',
+        };
     }
-    if (delivered.status !== 'published') return;
-    if (initial) {
-      const composed = result('feedback-delivery-compose');
-      if (!composed)
-        return dispatch('feedback-delivery-compose', {
-          ...args,
-          operation: 'delivery',
-          deliveryOperation: 'compose',
-        });
-      const selection = composed.selection as { skill?: { path?: string } } | undefined;
-      if (
-        composed.status !== 'composition-ready' ||
-        typeof composed.digest !== 'string' ||
-        !selection?.skill?.path
-      )
-        return;
-      if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
-        return call('delivery-skill', 'read', { path: selection.skill.path });
-      const candidate = result('feedback-delivery-candidate');
-      if (!candidate)
-        return dispatch('feedback-delivery-candidate', {
-          ...args,
-          operation: 'delivery',
-          deliveryOperation: 'candidate',
-          digest: composed.digest,
-          publicText: 'Adds the disposable issue cleanup note.',
-        });
-      if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
-        return;
-      const announced = result('feedback-delivery-announce');
-      if (!announced)
-        return dispatch('feedback-delivery-announce', {
-          ...args,
-          operation: 'delivery',
-          deliveryOperation: 'announce',
-          digest: candidate.digest,
-        });
-      if (announced.status !== 'announced') return;
-    }
-    const saved = result('feedback-result');
-    if (!saved)
-      return dispatch('feedback-result', {
-        ...args,
-        operation: 'result',
-        privateText: initial
-          ? 'Implemented the retained plan from approved feedback without an extra decision, checked the diff, and published its linked PR in the same chat and worktree.'
-          : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.',
-      });
-    if (saved.status !== 'recorded') return;
     const composition = result('feedback-compose');
     if (!composition) return dispatch('feedback-compose', { ...args, operation: 'compose' });
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;

@@ -82,6 +82,7 @@ export const dispatchParameters = Type.Union([
     action: Type.Literal('feedback'),
     id,
     eventId: id,
+    resume: Type.Optional(Type.Boolean()),
     operation: Type.Union([
       Type.Literal('context'),
       Type.Literal('implementation-context'),

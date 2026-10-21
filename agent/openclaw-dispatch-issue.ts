@@ -219,6 +219,7 @@ export default class OpenClawDispatchIssue {
     action: OpenClawFeedbackAction | undefined,
     save: () => Promise<void>,
     authority: DispatchAuthority,
+    operator = false,
   ) {
     const now = (this.context.dependencies.now ?? Date.now)();
     if (!action && event.retry && !dispatchRetryDue(event, now))
@@ -257,6 +258,7 @@ export default class OpenClawDispatchIssue {
         )
         .use({ ...authority, assertCurrent }, async (request) => {
           const common = {
+            operator,
             record,
             event,
             caller,
@@ -328,6 +330,13 @@ export default class OpenClawDispatchIssue {
           return openClawFeedback({ ...common, action });
         });
     } catch (error) {
+      if (action?.resume)
+        return {
+          status: 'blocked' as const,
+          id: record.id,
+          eventId: event.id,
+          code: openClawDispatchFailureCode(error),
+        };
       if (error instanceof WorkflowPolicyHeld) {
         event.policyHeld = error.reason;
         await save();
@@ -390,6 +399,7 @@ export default class OpenClawDispatchIssue {
     input: Static<typeof dispatchParameters>,
     record: OpenClawDispatchRecord,
     tx: OpenClawDispatchTransaction,
+    operator = false,
   ) {
     const { manifest, current, caller, save, authority, transactionSignal } = tx;
     const feedbackChild = input.action === 'feedback' && input.operation !== 'reconcile';
@@ -402,15 +412,26 @@ export default class OpenClawDispatchIssue {
         feedbackChild &&
         (caller.sessionKey !== record.threadId ||
           caller.sessionId !== record.sessionCreation?.sessionId ||
-          caller.runId !== event.turn?.runId)
+          (caller.runId !== event.turn?.runId &&
+            !(operator && input.operation === 'context' && input.resume)))
       )
         throw new Error('feedback-owner-caller-required');
-      return this.feedback(manifest, current.workspace, record, event, caller, input, save, {
-        ...authority,
-        signal: authority.signal
-          ? AbortSignal.any([authority.signal, transactionSignal])
-          : transactionSignal,
-      });
+      return this.feedback(
+        manifest,
+        current.workspace,
+        record,
+        event,
+        caller,
+        input,
+        save,
+        {
+          ...authority,
+          signal: authority.signal
+            ? AbortSignal.any([authority.signal, transactionSignal])
+            : transactionSignal,
+        },
+        operator,
+      );
     }
     const feedbackSource = record.feedback?.events.find(
       (event) => event.turn?.runId === caller.runId,

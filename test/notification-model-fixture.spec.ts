@@ -819,7 +819,7 @@ for (const scenario of [
       for (const initial of scenario.id === 'openclaw-pr' ? [true, false] : [false])
         it(`should keep feedback ${initial ? 'initial implementation' : 'continuation'} private retention skill selection candidate and publication as distinct stages`, async () => {
           const eventId = 'e'.repeat(64);
-          const input = request(
+          let input = request(
             `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${eventId}`,
           );
           assert.equal((await action(input, 'feedback')).operation, 'context');
@@ -933,6 +933,21 @@ for (const scenario of [
             status: 'recorded',
             presentation: 'Full private response',
           });
+          if (scenario.id === 'openclaw-pr' && !initial) {
+            assert.ok('content' in (await response(input)));
+            input = request(
+              `Resume the retained feedback reply only. Use operation context, id ${id}, eventId ${eventId}.`,
+            );
+            const resumed = await action(input, 'feedback');
+            assert.equal(resumed.operation, 'context');
+            assert.equal(resumed.resume, true);
+            append(input, 'feedback-context', {
+              status: 'verified',
+              runtime: 'openclaw',
+              publication: 'allowed',
+              mode: 'work',
+            });
+          }
           assert.equal((await action(input, 'feedback')).operation, 'compose');
           append(input, 'feedback-compose', {
             status: 'composition-ready',

@@ -361,6 +361,8 @@ OpenClaw delivery reconciliation can finish incomplete provider checkpoints when
 If initial PR creation is still uncertain, reconcile it before changing its text.
 Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. Implementation context also exposes pending summaries without moving work back to planning.
 
+In OpenClaw, an explicit operator request in the owning chat can finish a retained feedback reply after its handler stops. The agent uses feedback context with `resume: true` to verify the current operator input and old terminal run, retaining the answer, pushed work and uncertain publication receipts. A manual stop alone never restarts work; real denials remain stops.
+
 A stale publication preview returns a refreshed operation without writing. Inspect
 it and retry once within the existing authorization; repeated staleness needs
 investigation. Workflow activation or an operator request already covering that
