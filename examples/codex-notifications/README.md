@@ -70,6 +70,10 @@ Include a prepared creation with no saved chat or checkout. Reset must inspect
 active and archived native chats before treating that request as absent; a found
 unrecorded chat or incomplete search must leave the reset paused with its recovery
 inventory intact.
+Also retain a retired record whose chat and checkout were already removed. Reset
+must reconcile it only after complete active and archived native inventories omit
+the chat and the checkout is absent. A still-listed chat, remaining checkout, or
+incomplete inventory must preserve the recovery barrier.
 
 Native same-turn verification also requires the desktop: run one Work issue and one
 Auto issue whose recorded decision selects Work. Confirm implementation context

@@ -14,6 +14,7 @@ import {
 import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
+import codexResetRemoved from './codex-reset-removed.ts';
 import { connectCodexThreads, codexThreadAdapter } from './codex-thread-client.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
@@ -127,13 +128,20 @@ export default async function runCodexNotificationReset(
           if (entry.threadId) throw new Error('notification-reset-native-identity-unresolved');
           continue;
         }
-        const thread = await native.find({
-          sourceThreadId: entry.sourceThreadId,
-          prompt: entry.request.prompt,
-          createdAfter: entry.createdAt,
-          threadId: entry.threadId,
-          observationOnly: true,
-        });
+        let thread;
+        try {
+          thread = await native.find({
+            sourceThreadId: entry.sourceThreadId,
+            prompt: entry.request.prompt,
+            createdAfter: entry.createdAt,
+            threadId: entry.threadId,
+            observationOnly: true,
+          });
+        } catch (error) {
+          if (await codexResetRemoved(request, entry, error)) continue;
+          throw error;
+        }
+        if (!thread && (await codexResetRemoved(request, entry))) continue;
         if (!entry.threadId && !entry.worktree && !entry.receiptThreadId && !thread) continue;
         if (!entry.threadId || !entry.worktree)
           throw new Error('notification-reset-native-creation-unresolved');
@@ -311,13 +319,20 @@ export default async function runCodexNotificationReset(
       }
       return withNative(async ({ request }) => {
         const native = codexDispatchNative(request);
-        const thread = await native.find({
-          sourceThreadId: entry.sourceThreadId,
-          prompt: entry.request!.prompt,
-          createdAfter: entry.createdAt,
-          threadId: entry.threadId,
-          observationOnly: true,
-        });
+        let thread;
+        try {
+          thread = await native.find({
+            sourceThreadId: entry.sourceThreadId,
+            prompt: entry.request!.prompt,
+            createdAfter: entry.createdAt,
+            threadId: entry.threadId,
+            observationOnly: true,
+          });
+        } catch (error) {
+          if (await codexResetRemoved(request, entry, error)) return { status: 'done' };
+          throw error;
+        }
+        if (!thread && (await codexResetRemoved(request, entry))) return { status: 'done' };
         if (!thread) throw new Error('notification-reset-native-identity-changed');
         if (thread.archived) return { status: 'done' };
         const ui = input.nativeInventory;
