@@ -462,6 +462,7 @@ export default async function runCodexDelivery(
         body: input.body ?? previous?.body,
         creationAttempted: previous?.creationAttempted ?? false,
         ...(previous?.pushedHead ? { pushedHead: previous.pushedHead } : {}),
+        ...(previous?.pendingPush ? { pendingPush: previous.pendingPush } : {}),
         ...(previous?.pullRequest ? { pullRequest: previous.pullRequest } : {}),
         reconciled: false,
         attached: previous?.attached ?? false,

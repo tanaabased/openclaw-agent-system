@@ -129,7 +129,7 @@ describe('openclaw v2 intake slice', () => {
     await f.service.run(f.value, root, 'activate');
     f.value.github.notifications.intervalMinutes = 15;
     f.value.github.notifications.maxConcurrentItems = 8;
-    f.value.github.notifications.cleanup = { enabled: true, graceMinutes: 30 };
+
     f.provider.events.push(...intakeFixture().events);
     f.setNow(baseline + 120000);
     assert.equal((await f.service.run(f.value, root, 'scan', digest)).status, 'ready');

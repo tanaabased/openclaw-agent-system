@@ -1,4 +1,40 @@
-export default function retirementNotice(code: string) {
+export default function retirementNotice(code: string, diagnostic?: string) {
+  if (code === 'retirement-cleanup-migration-required')
+    return {
+      severity: 'warning' as const,
+      title: 'Cleanup configuration needs migration',
+      summary: 'The legacy per-agent cleanup block holds automatic resource cleanup.',
+      next:
+        diagnostic ??
+        'Choose the installation cleanup.grace-minutes, then deliberately remove github.notifications.cleanup from agent.yaml and overlays. Removing enabled: false opts this agent into normal safe cleanup.',
+    };
+  if (
+    code === 'retirement-configuration-invalid' ||
+    code === 'retirement-configuration-unavailable'
+  )
+    return {
+      severity: 'warning' as const,
+      title: 'Shared cleanup configuration unavailable',
+      summary: 'Cleanup remains pending; no default is substituted for broken configuration.',
+      next:
+        diagnostic ??
+        'Inspect the installation config.yaml selected by host XDG_CONFIG_HOME or HOME. Restore a readable private file with schema-version: 1 and cleanup.grace-minutes, or deliberately remove it to use the 60-minute default.',
+    };
+  if (code === 'retirement-legacy-unverified')
+    return {
+      severity: 'warning' as const,
+      title: 'Historical retirement has no cleanup proof',
+      summary:
+        'An earlier terminal record does not prove that its native resources were reclaimed.',
+      next: 'Inspect the exact retained native chat and worktree. Preserve them until native/operator recovery establishes ownership and preservation; automatic cleanup will not sweep historical records.',
+    };
+  if (code === 'retirement-configuration-changed')
+    return {
+      severity: 'info' as const,
+      title: 'Cleanup settings changed during verification',
+      summary: 'The pending resource effect was deferred.',
+      next: 'Intake will reread the shared settings on its next pass. Existing deadlines and uncertain effect receipts remain intact.',
+    };
   if (code === 'retirement-native-archive-unverified')
     return {
       severity: 'info' as const,

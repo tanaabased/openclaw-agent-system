@@ -3,11 +3,14 @@ import { automationHash } from './automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 
 /** historical projection retained for provenance, never for policy authorization. */
-export function legacyNotificationAuthority(policy: GitHubNotificationPolicy) {
+export function legacyNotificationAuthority(
+  policy: GitHubNotificationPolicy,
+  cleanupEnabled = true,
+) {
   return {
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
-    cleanup: { enabled: policy.cleanup?.enabled ?? true },
+    cleanup: { enabled: cleanupEnabled },
     allowedRepositoryOwners: policy.allowedRepositoryOwners,
     issueAssignment: policy.issueAssignment,
     reviewRequest: policy.reviewRequest,
@@ -24,7 +27,13 @@ function ordered<T>(values: readonly T[]): T[] {
 }
 
 export function notificationAuthority(policy: GitHubNotificationPolicy) {
-  const value = structuredClone(legacyNotificationAuthority(policy));
+  const value = structuredClone({
+    schemaVersion: policy.schemaVersion,
+    runtimes: policy.runtimes,
+    allowedRepositoryOwners: policy.allowedRepositoryOwners,
+    issueAssignment: policy.issueAssignment,
+    reviewRequest: policy.reviewRequest,
+  });
   value.runtimes = ordered(value.runtimes);
   value.allowedRepositoryOwners = ordered(value.allowedRepositoryOwners);
   for (const workflow of [value.issueAssignment, value.reviewRequest]) {

@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import type readInstallationConfig from '../core/installation-config.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -45,6 +46,7 @@ import openclawTurnContext from './openclaw-turn-context.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 
 export interface OpenClawDispatchDependencies {
+  readInstallationConfig?: typeof readInstallationConfig;
   root: string;
   config(): OpenClawConfig;
   intake: OpenClawIntake;

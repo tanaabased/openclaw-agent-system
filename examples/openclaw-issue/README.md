@@ -20,6 +20,11 @@ openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
+# should select shared installation cleanup grace
+install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
+cp "$GITHUB_WORKSPACE/examples/openclaw-issue/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/keys" "$HOME/.ssh"
 GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"

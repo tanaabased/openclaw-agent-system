@@ -111,9 +111,9 @@ provider evidence or a relevant live actor-list change can resolve removal autho
 Removal authority is checked again before cleanup. Completed or uncertain native
 cleanup effects keep their receipts and are not automatically undone or repeated.
 
-Automatic cleanup defaults to enabled, with a 60-minute grace period under
-`github.notifications.cleanup`. The deadline starts when intake first observes the
-change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
+Automatic cleanup uses one [installation-wide grace period](../../CONFIG.md#shared-cleanup),
+defaulting to 60 minutes for both runtimes. There is no disable switch or per-agent
+override. The deadline starts when intake first observes the change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
 verified reassignment before archival reactivates the existing conversation. A fresh
 assignment after archival or retirement can start another attempt without erasing
 prior receipts. An admitted new comment from a configured feedback author can also
@@ -143,8 +143,10 @@ Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree
 snapshotting and reclamation; intake marks work retired only after observing both
 archival and removal. If desktop settings retain the checkout, cleanup stays pending
-without blocking other intake. Disabling cleanup preserves resources and marks
-inactive work retired.
+without blocking other intake. Unresolved cleanup remains pending, never complete.
+Legacy cleanup declarations hold reclamation until [explicit migration](../../UPGRADING.md#shared-cleanup-policy);
+historical retirement without native cleanup evidence is reported and preserved,
+not swept automatically.
 Run Install after an upgrade when Doctor reports changed automation machinery.
 Policy-only edits apply live.
 

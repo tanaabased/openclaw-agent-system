@@ -1,10 +1,45 @@
 # Global Configuration
 
-Set plugin-wide options under `plugins.entries.agent-system.config` in OpenClaw
-configuration. Workspace declarations belong in the [manifest](./MANIFEST.md).
+Installation housekeeping is shared by OpenClaw and standalone Codex. OpenClaw-only
+plugin options remain under `plugins.entries.agent-system.config`. Workspace
+declarations belong in the [manifest](./MANIFEST.md).
 
+- [Shared cleanup](#shared-cleanup)
 - [`collaboration`](#collaboration)
 - [`opCache`](#opcache)
+
+## Shared cleanup
+
+Choose automatic retirement grace once in
+`<XDG_CONFIG_HOME>/tanaab/agent-system/config.yaml`, or
+`<HOME>/.config/tanaab/agent-system/config.yaml` when `XDG_CONFIG_HOME` is unset.
+Roots must be absolute. Both host processes must use the same configuration root;
+`CODEX_HOME`, plugin-data directories, and manifest environment declarations do not
+select this file. Keep its directory owner-only (`700`) and the regular file private
+(`600`); symlinks are not supported. Reading settings creates no files or directories.
+
+```yaml
+schema-version: 1
+cleanup:
+  grace-minutes: 60
+```
+
+| Field                   | Required | Default | Contract                          |
+| ----------------------- | -------- | ------- | --------------------------------- |
+| `cleanup.grace-minutes` | no       | `60`    | Integer from `0` through `43200`. |
+| `schema-version`        | yes      | none    | `1` when the file exists.         |
+
+A missing file or omitted grace uses 60 minutes. An unreadable, unsafe, malformed,
+or unsupported file holds cleanup with a diagnostic instead of using a fallback.
+There is no enable/disable switch or per-agent override. Legacy manifest cleanup
+blocks require [deliberate migration](./UPGRADING.md#shared-cleanup-policy).
+
+Both runtimes reread settings each lifecycle pass and before resource effects;
+a change during final verification defers the effect to the next pass. Existing
+deadlines survive settings edits, polls, and restarts. New deadlines and genuine
+activity resets use the current grace. Cleanup still requires the owning runtime's
+[ownership and preservation checks](./channels/github/ADVANCED.md#assignment-lifecycle);
+zero grace never bypasses them.
 
 ## `collaboration`
 

@@ -193,6 +193,19 @@ export async function loadDiscoveredManifest(
     );
   }
 
+  if (parsed.manifest.cleanupMigration) {
+    const migration = parsed.manifest.cleanupMigration;
+    const fieldPath = '/github/notifications/cleanup';
+    migration.sourcePath = manifestSourceForField(sources, fieldPath)?.path;
+    migration.sources = [
+      fieldPath,
+      ...Object.keys(migration.declaration).map((key) => `${fieldPath}/${key}`),
+    ].flatMap((fieldPath) => {
+      const sourcePath = manifestSourceForField(sources, fieldPath)?.path;
+      return sourcePath ? [{ fieldPath, sourcePath }] : [];
+    });
+  }
+
   if (expectedAgentId && parsed.manifest.agent.id !== expectedAgentId) {
     return invalidManifestResult(
       scope,

@@ -1,3 +1,7 @@
+import {
+  cleanupConfigurationDiagnostic,
+  type CleanupConfiguration,
+} from './cleanup-configuration.ts';
 import { automationHash } from './automation-hash.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -20,7 +24,7 @@ export default async function recoverDispatch(
     issueUrl: string;
     caller: string;
     now: number;
-    graceMinutes: number;
+    readConfiguration(): Promise<CleanupConfiguration>;
     save(): Promise<void>;
     fresh(): Promise<void>;
     revalidate(): Promise<unknown>;
@@ -66,7 +70,19 @@ export default async function recoverDispatch(
       item.state !== 'closed'
     )
       throw new Error('dispatch-retire-closed-issue-required');
-    const digest = automationHash({ record, manifest: manifestDigest });
+    const configuration = await context.readConfiguration();
+    if (configuration.status === 'blocked')
+      return {
+        status: 'retirement-pending',
+        id: record.id,
+        code: configuration.code,
+        diagnostic: cleanupConfigurationDiagnostic(configuration),
+      };
+    const digest = automationHash({
+      record,
+      manifest: manifestDigest,
+      configuration: configuration.digest,
+    });
     await fresh();
     if (input.digest === undefined)
       return {
@@ -79,13 +95,19 @@ export default async function recoverDispatch(
           'Queue this closed issue for retirement, preserving its evidence and any existing grace deadline. The owning intake performs configured cleanup after verifying native inactivity and preservation. A paused intake must resume before cleanup can proceed.',
       };
     if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    const verifiedConfiguration = await context.readConfiguration();
+    if (
+      verifiedConfiguration.status !== 'ready' ||
+      verifiedConfiguration.digest !== configuration.digest
+    )
+      throw new Error('retirement-configuration-changed');
     record.reservationVersion = 1;
     record.retirement = assignmentRetirement({
       previous: record.retirement,
       reason: 'issue-closed',
       intakeId: record.intakeId,
       now,
-      graceMinutes: context.graceMinutes,
+      graceMinutes: configuration.graceMinutes,
     });
     await save();
     return { status: 'retirement-pending', id: record.id, retirement: record.retirement };
