@@ -58,6 +58,48 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 }
 
 describe('scripts/aimock-tool-search', () => {
+  it('should retain truncated history while validating only the current tool exchange', () => {
+    const input = request('Previous turn');
+    const search = {
+      toolCalls: [{ id: 'call_aimock_discover_old', name: 'tool_search', arguments: '{}' }],
+    };
+    const call = {
+      toolCalls: [
+        { id: 'call_read', name: 'tool_call', arguments: '{"id":"openclaw:read","args":{}}' },
+      ],
+    };
+    append(input, search, searchResult(['read']));
+    append(input, call, {
+      tool: { id: 'openclaw:read', name: 'read' },
+      result: { content: [{ type: 'text', text: 'old result' }] },
+    });
+    const truncated = '{\n\n⚠️ [... middle content omitted — showing head and tail ...]\n\n}';
+    input.messages[2]!.content = truncated;
+    input.messages.at(-1)!.content = truncated;
+    const history = structuredClone(input.messages);
+    input.messages.push({ role: 'user', content: 'Current turn' });
+    assert.deepEqual(normalizeToolSearchRequest(input).messages, input.messages);
+
+    append(input, search, searchResult(['read']));
+    append(input, call, {
+      tool: { id: 'openclaw:read', name: 'read' },
+      result: { content: [{ type: 'text', text: 'current result' }] },
+    });
+    const normalized = normalizeToolSearchRequest(input);
+    assert.deepEqual(normalized.messages.slice(0, history.length), history);
+    assert.equal(normalized.messages.at(-2)!.tool_calls![0]!.function.name, 'read');
+    assert.equal(normalized.messages.at(-1)!.content, 'current result');
+
+    const missingDiscovery = structuredClone(input);
+    missingDiscovery.messages.splice(history.length + 1, 2);
+    assert.throws(() => normalizeToolSearchRequest(missingDiscovery), /discovered tool/u);
+    for (const index of [history.length + 2, input.messages.length - 1]) {
+      const malformed = structuredClone(input);
+      malformed.messages[index]!.content = truncated;
+      assert.throws(() => normalizeToolSearchRequest(malformed), SyntaxError);
+    }
+  });
+
   it('should carry notification assessment and operator delivery through wrapped tools and retained history', async () => {
     // test the pinned host's actual projection without importing it into plugin runtime code.
     const hostRequire = createRequire(
