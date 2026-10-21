@@ -1,4 +1,3 @@
-import { lstat } from 'node:fs/promises';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { nativeObject } from './automation-gateway.ts';
@@ -14,6 +13,7 @@ import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
+import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import closeResetPullRequest from '../channels/github/provider/reset-pull-request.ts';
 import NotificationResetStore, {
@@ -223,16 +223,12 @@ export default async function runCodexNotificationReset(
         return { status: 'done' };
       }
       if (resource.kind === 'worktree') {
-        const exists = await lstat(entry.worktree!).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return undefined;
-          throw error;
-        });
-        if (!exists) return { status: 'done' };
+        if (await waitForCodexWorktreeRemoval(entry.worktree!)) return { status: 'done' };
         return {
           status: 'incomplete',
           code: 'notification-reset-native-worktree-removal-required',
           instruction:
-            'remove this managed worktree through its owning Codex chat using native worktree controls, then rerun the same reset; its recovery inventory is retained',
+            'the managed worktree remains after waiting 30 seconds for native cleanup; retry the same reset if cleanup is still running, or use native worktree controls in its owning Codex chat if it is stuck; its recovery inventory is retained',
         };
       }
       return withNative(async ({ request }) => {

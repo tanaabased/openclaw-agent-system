@@ -11,6 +11,7 @@ import NotificationResetStore, {
   assertNotificationManagement,
 } from '../agent/notification-reset-state.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import waitForCodexWorktreeRemoval from '../agent/codex-worktree-removal.ts';
 import IntakeRecordStore from '../channels/github/intake/record-store.ts';
 
 describe('agent/notification reset recovery', () => {
@@ -149,6 +150,57 @@ describe('agent/notification reset recovery', () => {
     assert.equal((await run(true)).status, 'complete');
     assert.equal(events.filter((event) => event === 'first').length, 1);
     assert.equal(events.filter((event) => event === 'clear').length, 1);
+  });
+
+  it('should retain a timed out checkout and finish recovery without archiving the chat again', async () => {
+    snapshot.resources = [
+      {
+        id: 'chat',
+        kind: 'chat',
+        description: 'chat',
+        identity: 'owner',
+        details: [],
+        state: 'pending',
+      },
+      {
+        id: 'checkout',
+        kind: 'worktree',
+        description: '/managed',
+        identity: 'owner',
+        details: [],
+        state: 'pending',
+      },
+    ];
+    let removed = false;
+    let elapsed = 0;
+    adapter.purge = async (_record, resource) => {
+      events.push(resource.id);
+      if (resource.kind === 'chat') return { status: 'done' };
+      const done = await waitForCodexWorktreeRemoval('/managed', {
+        stat: async () => {
+          if (removed) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        },
+        now: () => elapsed,
+        sleep: async (ms) => {
+          assert.equal((await store.read())?.phase, 'purge');
+          assert.ok(!events.includes('restore'));
+          elapsed += ms;
+        },
+      });
+      return done ? { status: 'done' } : { status: 'incomplete' };
+    };
+    assert.equal((await run(true)).status, 'incomplete');
+    const retained = (await store.read())!;
+    assert.equal(retained.phase, 'purge');
+    assert.deepEqual(
+      retained.resources.map(({ state }) => state),
+      ['done', 'attempted'],
+    );
+    removed = true;
+    assert.equal((await run(true)).status, 'complete');
+    assert.equal(events.filter((event) => event === 'chat').length, 1);
+    assert.equal(events.filter((event) => event === 'clear').length, 1);
+    assert.equal(await store.read(), undefined);
   });
 
   it('should not reissue an unverified native mutation', async () => {

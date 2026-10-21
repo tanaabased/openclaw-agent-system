@@ -21,6 +21,12 @@ without repeating implementation or creating another PR.
 
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
+For native purge verification, reset a disposable managed issue with purge selected.
+After native chat archival, confirm purge waits for checkout removal and completes
+without manual cleanup when removal finishes within 30 seconds. If removal stays
+pending, confirm purge reports incomplete and retains its recovery record; repeating
+the same reset after native removal must finish without repeating chat archival.
+
 ## Setup
 
 ```bash

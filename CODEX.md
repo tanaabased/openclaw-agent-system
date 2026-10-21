@@ -435,8 +435,9 @@ Native denial remains a stop.
 
 Purge prepares native chat archival and closes verified open unmerged PRs. Supply
 the current native `list_threads` result as `nativeInventory` when requested so
-pinned and shared resources remain protected. Codex owns managed worktree removal:
-if a checkout remains, the operation reports incomplete and retains its recovery
+pinned and shared resources remain protected. Codex owns managed worktree removal.
+After archival, purge waits up to 30 seconds per checkout for native cleanup.
+If a checkout remains, the operation reports incomplete and retains its recovery
 record until native worktree controls remove it. It never edits app databases or
 deletes a managed checkout behind the desktop's back. Repeat the same reset to
 reconcile completion; do not discard its recovery file. There are no separate
