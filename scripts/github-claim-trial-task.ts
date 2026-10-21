@@ -96,6 +96,7 @@ const provider = new ProviderClaimClient(client);
 let issueNumber: number | undefined;
 let source: ClaimSource | undefined;
 let cleanupVerified = false;
+let retainedClaimId: number | undefined;
 const evidence: Record<string, unknown> = {
   packageRoot,
   runId: process.env.GITHUB_RUN_ID,
@@ -279,6 +280,8 @@ try {
     lostResponseReconciled: true,
     rotationDetached: true,
   };
+  retainedClaimId = accepted[0]!.databaseId;
+  evidence.retainedClaim = `${issue.html_url}#issuecomment-${retainedClaimId}`;
 } finally {
   const cleanupErrors: unknown[] = [];
   try {
@@ -291,7 +294,8 @@ try {
             if (
               metadata &&
               comment.author?.nodeId === receiver.node_id &&
-              metadata.assignmentEventId === source.assignmentEventId
+              metadata.assignmentEventId === source.assignmentEventId &&
+              comment.databaseId !== retainedClaimId
             ) {
               try {
                 await provider.remove(source, comment.databaseId, comment.body);
@@ -313,6 +317,11 @@ try {
       assert.equal(close.exitCode, 0);
       const closed = await api(actorToken, `repos/${repository}/issues/${issueNumber}`);
       assert.equal(closed.state, 'closed');
+      const remaining = await api(actorToken, `repos/${repository}/issues/${issueNumber}/comments`);
+      assert.deepEqual(
+        remaining.map((comment: { id: number }) => comment.id),
+        retainedClaimId ? [retainedClaimId] : [],
+      );
       cleanupVerified = cleanupErrors.length === 0;
     }
   } catch (error) {
