@@ -91,6 +91,10 @@ export default function registerGitHubNotificationsCli(
     )
     .option('--all', 'select all configured agents.')
     .option(
+      '--fresh',
+      'restart interrupted reset checks, retaining cleanup inventory and native receipts.',
+    )
+    .option(
       '--purge',
       'also archive managed issue chats and remove managed checkouts; leave github unchanged.',
     )
@@ -116,6 +120,7 @@ export default function registerGitHubNotificationsCli(
             agents: Array.isArray(values.agent) ? values.agent : [],
             all: values.all === true,
             purge: values.purge === true,
+            fresh: values.fresh === true,
             yes: values.yes === true,
             preview: values.preview === true,
             confirmation: typeof values.confirmation === 'string' ? values.confirmation : undefined,

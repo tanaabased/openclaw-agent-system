@@ -217,6 +217,84 @@ describe('agent/notification reset recovery', () => {
     assert.equal((await run()).status, 'complete');
   });
 
+  it('should start fresh checks without losing inventory, completed effects or the prior schedule', async () => {
+    snapshot.resources = ['first', 'second'].map((id) => ({
+      id,
+      kind: 'chat',
+      description: id,
+      identity: id,
+      details: [],
+      state: 'pending',
+    }));
+    adapter.purge = async (_record, resource) => {
+      events.push(resource.id);
+      if (resource.id === 'second') throw new Error('interrupted');
+      return { status: 'done' };
+    };
+    await assert.rejects(run(true), /interrupted/u);
+    const original = (await store.read())!;
+    const preview = await previewNotificationReset(store, adapter, true, true);
+    assert.equal((await store.read())!.id, original.id);
+    assert.equal(preview.restarting, true);
+    adapter.snapshot = async () => {
+      throw new Error('cleared live tracking is not the cleanup inventory');
+    };
+    adapter.purge = async (record, resource) => {
+      assert.notEqual(record.id, original.id);
+      assert.equal(record.fresh, true);
+      assert.equal(record.inventory, original.inventory);
+      assert.equal(record.automation, original.automation);
+      assert.equal(resource.id, 'second');
+      assert.equal(resource.state, 'attempted');
+      return { status: 'done' };
+    };
+    assert.equal((await resetNotifications({ store, adapter, preview })).status, 'complete');
+    assert.equal(events.filter((event) => event === 'first').length, 1);
+    assert.equal(events.filter((event) => event === 'clear').length, 2);
+  });
+
+  it('should retain uncertain native actions even when explicitly starting fresh', async () => {
+    adapter.pause = async () => ({
+      status: 'native-action',
+      request: { tool: 'automation_update', arguments: { id: 'job', status: 'PAUSED' } },
+    });
+    await run();
+    const result = await resetNotifications({
+      store,
+      adapter,
+      preview: await previewNotificationReset(store, adapter, false, true),
+    });
+    assert.equal(result.status, 'incomplete');
+    assert.equal('request' in result, false);
+  });
+
+  it('should report preserved cleanup targets without deleting them or claiming they were purged', async () => {
+    snapshot.resources = [
+      {
+        id: 'checkout',
+        kind: 'worktree',
+        description: '/managed',
+        identity: 'owner',
+        details: [],
+        state: 'pending',
+      },
+    ];
+    adapter.idle = async (record) => {
+      record.resources[0]!.state = 'preserved';
+      record.warnings = ['notification-reset-unresolved-session-preserved: /managed'];
+      return { status: 'done' };
+    };
+    adapter.purge = async () => {
+      throw new Error('preserved checkout must not be removed');
+    };
+    const result = await run(true);
+    assert.equal(result.status, 'complete');
+    assert.equal(result.resources[0]!.state, 'preserved');
+    assert.deepEqual(result.warnings, [
+      'notification-reset-unresolved-session-preserved: /managed',
+    ]);
+  });
+
   it('should retain a failed coordinator replacement and restore only after verified retargeting', async () => {
     adapter.coordinator = async () => {
       throw new Error('replacement failed');

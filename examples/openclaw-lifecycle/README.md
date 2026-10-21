@@ -310,11 +310,11 @@ openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(
 
 # should reset local management with a fresh coordinator and restore the installed intake setting
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
-openclaw agent-system notifications reset --agent lifecycle-tanaabot --preview --json > "$TMPDIR/reset-preview.json"
-jq -e '.status == "confirmation-required" and any(.targets[0].resources[]; .kind == "coordinator")' "$TMPDIR/reset-preview.json"
+openclaw agent-system notifications reset --agent lifecycle-tanaabot --fresh --preview --json > "$TMPDIR/reset-preview.json"
+jq -e '.status == "confirmation-required" and .targets[0].fresh == true and any(.targets[0].resources[]; .kind == "coordinator")' "$TMPDIR/reset-preview.json"
 old_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator") | .description' "$TMPDIR/reset-preview.json")
 confirmation=$(jq -er .confirmation "$TMPDIR/reset-preview.json")
-openclaw agent-system notifications reset --agent lifecycle-tanaabot --confirmation "$confirmation" --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'
+openclaw agent-system notifications reset --agent lifecycle-tanaabot --fresh --confirmation "$confirmation" --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$old_coordinator" '{key:$key}')" --json | jq -e '.session.archived == true'
 openclaw agent-system automations list --agent lifecycle-tanaabot --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
 jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json

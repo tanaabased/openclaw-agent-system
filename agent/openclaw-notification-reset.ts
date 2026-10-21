@@ -7,6 +7,7 @@ import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-servic
 import type { ConnectedGitHubAccountClient } from '../core/github-account-client.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import automationThreadGateway from './automation-thread-gateway.ts';
+import observeResetUnresolved from './openclaw-reset-unresolved.ts';
 import { listNativeAutomations, nativeObject } from './automation-gateway.ts';
 import { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
 import { observeRetiringSession } from './openclaw-assignment-lifecycle.ts';
@@ -100,6 +101,11 @@ export default class OpenClawNotificationReset {
         const owners = new Set(records.map(({ sourceThreadId }) => sourceThreadId));
         for (const entry of records) {
           if (entry.request && !entry.threadId) {
+            if (record.fresh) {
+              if (!(await observeResetUnresolved(request, record, entry, manifest.agent.id)))
+                return false;
+              continue;
+            }
             if ('key' in entry.request && entry.request.agentId === manifest.agent.id) {
               const resolved = await request('sessions.resolve', {
                 key: entry.request.key,
@@ -335,6 +341,8 @@ export default class OpenClawNotificationReset {
       purge: async (record, resource) => {
         if (!(await observe(record, true)))
           return { status: 'waiting', code: 'notification-reset-turns-active' };
+        if (record.resources.find(({ id }) => id === resource.id)?.state === 'preserved')
+          return { status: 'done' };
         const retained = inventory(record);
         const entry = retained.records.find(({ id }) => id === resource.identity);
         if (!entry) throw new Error('notification-reset-resource-identity-missing');
@@ -438,9 +446,9 @@ export default class OpenClawNotificationReset {
     };
     return { store, adapter };
   }
-  async preview(manifest: AgentManifest, workspace: string, purge: boolean) {
+  async preview(manifest: AgentManifest, workspace: string, purge: boolean, fresh = false) {
     const { store, adapter } = await this.target(manifest, workspace, purge);
-    return previewNotificationReset(store, adapter, purge);
+    return previewNotificationReset(store, adapter, purge, fresh);
   }
   async run(manifest: AgentManifest, workspace: string, preview: NotificationResetPreview) {
     const { store, adapter } = await this.target(manifest, workspace, preview.purge);

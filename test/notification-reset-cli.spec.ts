@@ -47,9 +47,9 @@ describe('channels/github/cli/reset', () => {
         loadForCommandDirectory: async () => loaded('one'),
       },
       service: {
-        preview: async (manifest, _workspace, purge) => {
+        preview: async (manifest, _workspace, purge, fresh) => {
           calls.push(`preview:${manifest.agent.id}`);
-          return { ...preview(manifest.agent.id), purge };
+          return { ...preview(manifest.agent.id), purge, fresh };
         },
         run: async (manifest) => {
           calls.push(`run:${manifest.agent.id}`);
@@ -112,6 +112,26 @@ describe('channels/github/cli/reset', () => {
     assert.deepEqual(JSON.parse(f.stdout.join('')), { results: [] });
     assert.deepEqual(f.calls, []);
   });
+  it('should offer fresh recovery interactively and pass the selected preview to execution', async () => {
+    const f = fixture();
+    f.options.json = false;
+    f.options.yes = false;
+    f.options.input = Object.assign(new Readable({ read() {} }), { isTTY: true });
+    let confirmations = 0;
+    f.options.prompt = {
+      multiselect: async (input) =>
+        input.options.filter(({ value }) => value === 'one').map(({ value }) => value),
+      confirm: async () => ++confirmations !== 1,
+    };
+    const run = f.options.service.run;
+    f.options.service.run = async (...args) => {
+      assert.equal(args[2].fresh, true);
+      return run(...args);
+    };
+    await reset(f.options);
+    assert.equal(confirmations, 2);
+    assert.deepEqual(f.calls, ['preview:one', 'preview:one', 'run:one']);
+  });
   it('should reset selected agents independently and preserve machine-readable failures', async () => {
     const f = fixture();
     f.options.service.run = async (manifest) => {
@@ -148,7 +168,7 @@ describe('channels/github/cli/reset', () => {
       confirm: async () => false,
     };
     await reset(f.options);
-    assert.deepEqual(f.calls, ['preview:one']);
+    assert.deepEqual(f.calls, ['preview:one', 'preview:one']);
   });
   it('should wait for turns and continue without another confirmation', async () => {
     const f = fixture();

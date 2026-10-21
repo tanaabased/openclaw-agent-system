@@ -182,6 +182,88 @@ describe('agent/notification reset runtime adapters', () => {
     assert.ok((await new OpenClawDispatchStore(root, scope).read()).resetGeneration);
   });
 
+  it('should finish a retained openclaw reset with obsolete creation metadata after fresh is selected', async () => {
+    const scope = 'c'.repeat(64);
+    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    await seed(intake);
+    const journal = new OpenClawDispatchStore(root, scope);
+    await journal.exclusive(async (state, save) => {
+      state.records.push({
+        id: 'd'.repeat(64),
+        intakeId: 'e'.repeat(64),
+        issueKey: 'f'.repeat(64),
+        sourceThreadId: 'coordinator',
+        phase: 'creating',
+        createdAt: 2,
+        manifestDigest: 'manifest',
+        context: '{}',
+        routing: '{}',
+        routingNote: 'fixture',
+        worktree: join(root, 'old-checkout'),
+        request: {
+          task: 'old request',
+          label: 'issue',
+          cwd: join(root, 'old-checkout'),
+          model: 'fixture',
+          runtime: 'subagent',
+          visible: true,
+          cleanup: 'keep',
+        },
+      });
+      await save();
+    });
+    let enabled = true;
+    const native = coordinator();
+    const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
+    const service = new OpenClawNotificationReset({
+      root,
+      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      automations: {
+        notificationResetReplace: native.replace,
+        notificationResetSnapshot: async () => ({
+          id: 'intake',
+          nativeId: 'job',
+          enabled,
+          hash: 'configuration',
+          sessionKey: 'coordinator',
+        }),
+        notificationResetToggle: async (_manifest, _workspace, expected, restore) => {
+          enabled = restore ? expected.enabled : false;
+        },
+      },
+      credential: {
+        use: async (_authority, run) =>
+          run(async (method, params) => {
+            if (method === 'sessions.list' && params.workspaceDir === join(root, 'old-checkout'))
+              return { sessions: [] };
+            return native.request(method);
+          }),
+      },
+      worktrees: {
+        inspectGitHub: async () => {
+          throw new Error('ordinary reset preserves checkout');
+        },
+        cleanupGitHub: async () => {
+          throw new Error('ordinary reset preserves checkout');
+        },
+      },
+      connect: async () => {
+        throw new Error('no provider effects');
+      },
+    });
+    await assert.rejects(
+      service.run(manifest, root, await service.preview(manifest, root, false)),
+      /notification-reset-session-creation-unresolved/u,
+    );
+    assert.equal(enabled, false);
+    const fresh = await service.preview(manifest, root, false, true);
+    assert.equal(fresh.continuing, true);
+    assert.equal(fresh.restarting, true);
+    assert.equal((await service.run(manifest, root, fresh)).status, 'complete');
+    assert.equal(enabled, true);
+    assert.deepEqual((await journal.read()).records, []);
+  });
+
   it('should wait for manual pause after a failed openclaw pause without repeating the write', async () => {
     const scope = 'b'.repeat(64);
     const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });

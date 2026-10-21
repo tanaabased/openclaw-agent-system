@@ -22,7 +22,12 @@ const resource = Type.Object({
   identity: Type.String({ minLength: 1, maxLength: 65536 }),
   custody: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
   details: Type.Array(Type.String({ maxLength: 16000 }), { maxItems: 1000 }),
-  state: Type.Union([Type.Literal('pending'), Type.Literal('attempted'), Type.Literal('done')]),
+  state: Type.Union([
+    Type.Literal('pending'),
+    Type.Literal('attempted'),
+    Type.Literal('done'),
+    Type.Literal('preserved'),
+  ]),
 });
 const schema = Type.Object(
   {
@@ -33,6 +38,8 @@ const schema = Type.Object(
     workspace: text,
     scope: text,
     purge: Type.Boolean(),
+    fresh: Type.Optional(Type.Boolean()),
+    warnings: Type.Optional(Type.Array(text)),
     createdAt: Type.Integer({ minimum: 0 }),
     phase: Type.Union([
       Type.Literal('pause'),

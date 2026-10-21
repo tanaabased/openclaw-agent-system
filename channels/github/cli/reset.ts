@@ -20,6 +20,7 @@ export interface ResetNotificationsOptions {
   all: boolean;
   yes: boolean;
   purge: boolean;
+  fresh?: boolean;
   json: boolean;
   preview?: boolean;
   confirmation?: string;
@@ -76,11 +77,25 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
   for (const agentId of agents) {
     const loaded = await loadCommandManifest({ ...options, agentId });
     if (!loaded) return;
-    const preview = await options.service.preview(
+    let preview = await options.service.preview(
       loaded.manifest,
       loaded.scope.workspaceDir,
       options.purge,
+      options.fresh,
     );
+    if (preview.continuing && !options.fresh && !options.yes && !options.preview) {
+      const resume = await prompt.confirm({
+        message: `${agentId}: resume the interrupted reset? choose no to start fresh and recheck retained cleanup targets`,
+        initialValue: true,
+      });
+      if (!resume)
+        preview = await options.service.preview(
+          loaded.manifest,
+          loaded.scope.workspaceDir,
+          options.purge,
+          true,
+        );
+    }
     targets.push({ loaded, preview });
   }
   const confirmation = automationHash(
@@ -89,7 +104,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
   if (
     options.confirmation &&
     options.confirmation !== confirmation &&
-    targets.some(({ preview }) => !preview.continuing)
+    targets.some(({ preview }) => !preview.continuing || preview.restarting)
   )
     throw new Error('notification-reset-preview-changed');
   if (!options.json)
@@ -98,7 +113,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
       styles.bold(options.purge ? 'notification reset and purge' : 'notification reset'),
       'pause intake, wait for managed turns, clear routing and feedback state, establish a fresh assignment baseline, replace the intake chat, then restore its prior schedule state',
       ...targets.flatMap(({ preview }) => [
-        `${preview.agentId}: ${preview.workspace}${preview.continuing ? ' (finish interrupted reset)' : ''}`,
+        `${preview.agentId}: ${preview.workspace}${preview.fresh ? ' (fresh reset; retain cleanup inventory and unverified actions)' : preview.continuing ? ' (finish interrupted reset)' : ''}`,
         ...preview.resources.flatMap((resource) => [
           `  ${resource.kind}: ${['chat', 'coordinator'].includes(resource.kind) ? `***${resource.description.slice(-4)}` : resource.description}`,
           ...resource.details.map((detail) => `    ${detail}`),
@@ -116,6 +131,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
           workspace: preview.workspace,
           purge: preview.purge,
           continuing: preview.continuing,
+          fresh: preview.fresh,
           resources: preview.resources,
         })),
       });
@@ -143,6 +159,11 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
           preview,
         );
         if (result.status !== 'waiting') {
+          if (result.warnings?.length)
+            writeCliDiagnosticNotices(
+              options,
+              result.warnings.map((message) => ({ severity: 'warning', message })),
+            );
           results.push(result);
           if (result.status !== 'complete') options.setExitCode(1);
           break;

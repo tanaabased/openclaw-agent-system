@@ -47,6 +47,8 @@ export interface NotificationResetPreview extends NotificationResetSnapshot {
   operationId?: string;
   purge: boolean;
   continuing: boolean;
+  fresh?: boolean;
+  restarting?: boolean;
   fingerprint: string;
 }
 
@@ -55,6 +57,7 @@ export async function previewNotificationReset(
   store: NotificationResetStore,
   adapter: NotificationResetAdapter,
   purge: boolean,
+  fresh = false,
 ): Promise<NotificationResetPreview> {
   return store.exclusive(async (retained) => {
     const snapshot = retained ?? (await adapter.snapshot());
@@ -63,8 +66,10 @@ export async function previewNotificationReset(
       ...snapshot,
       purge,
       continuing: Boolean(retained),
+      fresh,
+      restarting: fresh && Boolean(retained) && !retained?.fresh,
       ...(retained ? { operationId: retained.id } : {}),
-      fingerprint: automationHash(snapshot),
+      fingerprint: automationHash([snapshot, fresh]),
     };
   });
 }
@@ -81,21 +86,32 @@ export default async function resetNotifications(input: {
     const record = await adapter.fence(async () => {
       const snapshot = retained ?? (await adapter.snapshot());
       if (
-        automationHash(snapshot) !== preview.fingerprint ||
+        automationHash([snapshot, preview.fresh === true]) !== preview.fingerprint ||
         snapshot.scope !== store.scope ||
         snapshot.agentId !== preview.agentId ||
         snapshot.workspace !== preview.workspace ||
         (retained && retained.purge !== preview.purge)
       )
         throw new Error('notification-reset-preview-changed');
-      const record: NotificationResetRecord = retained ?? {
-        ...snapshot,
-        version: 1,
-        id: randomUUID(),
-        purge: preview.purge,
-        createdAt: (input.now ?? Date.now)(),
-        phase: 'pause',
-      };
+      const restart = preview.fresh === true && !retained?.fresh;
+      const record: NotificationResetRecord =
+        retained && !restart
+          ? retained
+          : {
+              ...snapshot,
+              ...retained,
+              version: 1,
+              id: randomUUID(),
+              purge: preview.purge,
+              fresh: preview.fresh === true,
+              createdAt: (input.now ?? Date.now)(),
+              // submitted coordinator actions must be reconciled, never issued again.
+              phase:
+                retained && ['coordinator', 'restore'].includes(retained.phase)
+                  ? retained.phase
+                  : 'pause',
+            };
+      if (restart && record.phase === 'pause') delete record.baselineAt;
       await save(record);
       return record;
     });
@@ -122,6 +138,7 @@ export default async function resetNotifications(input: {
         phase: record.phase,
         intakePaused: record.phase !== 'pause',
         resources: record.resources,
+        ...(record.warnings?.length ? { warnings: record.warnings } : {}),
       };
     };
     if (record.phase !== 'pause' && record.phase !== 'restore' && record.phase !== 'coordinator') {
@@ -139,6 +156,7 @@ export default async function resetNotifications(input: {
     }
     if (record.phase !== 'restore' && record.phase !== 'coordinator') {
       const effect = await adapter.idle(record);
+      await save(record);
       if (effect.status !== 'done') return pending(effect);
       if (record.phase === 'drain') {
         record.phase = 'clear';
@@ -152,7 +170,12 @@ export default async function resetNotifications(input: {
     }
     if (record.phase === 'purge') {
       for (const resource of record.resources) {
-        if (resource.state === 'done' || resource.kind === 'coordinator') continue;
+        if (
+          resource.state === 'done' ||
+          resource.state === 'preserved' ||
+          resource.kind === 'coordinator'
+        )
+          continue;
         if (resource.kind === 'pull-request') {
           resource.state = 'done';
           await save(record);
@@ -163,8 +186,10 @@ export default async function resetNotifications(input: {
         resource.state = 'attempted';
         await save(record);
         const effect = await adapter.purge(record, { ...resource, state: previous });
+        await save(record);
         if (effect.status !== 'done') return pending(effect);
-        resource.state = 'done';
+        if (record.resources.find(({ id }) => id === resource.id)?.state !== 'preserved')
+          resource.state = 'done';
         await save(record);
       }
       record.phase = 'baseline';
@@ -197,6 +222,7 @@ export default async function resetNotifications(input: {
       workspace: record.workspace,
       resources: record.resources,
       automationRestored: true,
+      ...(record.warnings?.length ? { warnings: record.warnings } : {}),
     };
   });
 }

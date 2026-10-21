@@ -34,6 +34,7 @@ const schema = Type.Object(
     all: Type.Optional(Type.Boolean()),
     yes: Type.Optional(Type.Boolean()),
     purge: Type.Optional(Type.Boolean()),
+    fresh: Type.Optional(Type.Boolean()),
     confirmation: Type.Optional(Type.String()),
     nativeInventory: Type.Optional(Type.Unknown()),
   },
@@ -392,9 +393,18 @@ export default async function runCodexNotificationReset(
       });
     },
   };
-  const preview = await previewNotificationReset(store, adapter, input.purge === true);
+  const preview = await previewNotificationReset(
+    store,
+    adapter,
+    input.purge === true,
+    input.fresh === true,
+  );
   const confirmation = automationHash([preview.purge, preview.fingerprint]);
-  if (input.confirmation && !preview.continuing && input.confirmation !== confirmation)
+  if (
+    input.confirmation &&
+    (!preview.continuing || preview.restarting) &&
+    input.confirmation !== confirmation
+  )
     throw new Error('notification-reset-preview-changed');
   if (!input.yes)
     return {
@@ -404,6 +414,7 @@ export default async function runCodexNotificationReset(
       workspace: preview.workspace,
       purge: preview.purge,
       continuing: preview.continuing,
+      fresh: preview.fresh,
       resources: preview.resources,
       instruction:
         'confirm the selection, then repeat notifications reset with yes:true; intake pauses and managed turns must finish before reset',

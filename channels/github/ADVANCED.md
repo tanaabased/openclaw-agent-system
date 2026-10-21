@@ -253,20 +253,21 @@ replay; a new approved assignment after the baseline can start new work.
 
 **Options:**
 
-| Option or argument        | Required | Default | Description                                                                                                    |
-| ------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------- |
-| `--agent <id>`            | no       | none    | Repeat to preselect multiple agents.                                                                           |
-| `--all`                   | no       | false   | Select all configured agents with managed manifests; conflicts with `--agent`.                                 |
-| `--confirmation <digest>` | no       | none    | Require the read-only preview to remain unchanged before starting.                                             |
-| `--json`                  | no       | false   | Emit structured results; requires explicit targets and `--preview` or `--yes`.                                 |
-| `--preview`               | no       | false   | Show the explicit selection and inventory without changing state or requiring confirmation.                    |
-| `--purge`                 | no       | false   | Also archive managed issue chats and remove owned checkouts, including modified, untracked, and ignored files. |
-| `--yes`                   | no       | false   | Confirm explicit targets without prompting; does not override ownership or activity checks.                    |
+| Option or argument        | Required | Default | Description                                                                                                        |
+| ------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `--agent <id>`            | no       | none    | Repeat to preselect multiple agents.                                                                               |
+| `--all`                   | no       | false   | Select all configured agents with managed manifests; conflicts with `--agent`.                                     |
+| `--confirmation <digest>` | no       | none    | Require the read-only preview to remain unchanged before starting.                                                 |
+| `--fresh`                 | no       | false   | Start fresh reset checks while retaining the interrupted operation's cleanup inventory and native action receipts. |
+| `--json`                  | no       | false   | Emit structured results; requires explicit targets and `--preview` or `--yes`.                                     |
+| `--preview`               | no       | false   | Show the explicit selection and inventory without changing state or requiring confirmation.                        |
+| `--purge`                 | no       | false   | Also archive managed issue chats and remove owned checkouts, including modified, untracked, and ignored files.     |
+| `--yes`                   | no       | false   | Confirm explicit targets without prompting; does not override ownership or activity checks.                        |
 
 **Usage:**
 
 ```sh
-openclaw agent-system notifications reset [--agent <id> ... | --all] [--purge] [--preview] [--confirmation <digest>] [--yes] [--json]
+openclaw agent-system notifications reset [--agent <id> ... | --all] [--purge] [--fresh] [--preview] [--confirmation <digest>] [--yes] [--json]
 
 # select agents interactively and confirm the reset
 openclaw agent-system notifications reset
@@ -282,6 +283,9 @@ openclaw agent-system notifications reset --all --yes
 
 # review the destructive resource inventory before purging one agent
 openclaw agent-system notifications reset --agent agent-one --purge
+
+# restart checks for an interrupted purge without discarding its cleanup targets
+openclaw agent-system notifications reset --agent agent-one --purge --fresh
 ```
 
 Ordinary reset preserves issue conversations and checkouts while replacing the intake
@@ -291,11 +295,19 @@ protected or shared resources. It reports incomplete cleanup when
 ownership, native activity, or an earlier creation cannot be verified.
 
 A private recovery record retains the exact scope, resource inventory, and prior
-intake setting before effects begin. Repeat the same reset after interruption to
-finish it; changing `--purge` while that operation is unfinished is rejected.
+intake setting before effects begin. Interactive recovery offers resume or start
+fresh; unattended recovery resumes unless `--fresh` is supplied. Fresh rechecks
+native activity and restarts local reset phases, preserving completed cleanup and
+unverified native actions. Once fresh recovery begins, repeated calls resume it.
+Changing `--purge` while an operation is unfinished is rejected.
 The record is removed only after completion. Do not delete it to force a fresh
 reset. If automatic pause fails, pause intake in the scheduler; the command waits
 for that change and for managed turns to finish. It never aborts turns.
+
+On OpenClaw, fresh recovery checks native sessions for old creation requests with
+no recorded chat. An empty inventory permits cleanup. Existing conversations with
+unproven ownership and their checkout are preserved and reported in warnings and
+resource results; reset completion does not claim those resources were purged.
 
 For an archived or missing intake chat without a tracking reset, run Doctor and
 then Install. Doctor only reports the missing coordinator; Install creates a fresh
