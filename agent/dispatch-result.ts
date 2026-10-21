@@ -2,6 +2,7 @@ import type { GitHubNotificationPolicy } from '../channels/github/config-schema.
 import { parseAssessmentResult } from './assessment-result.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import { automationHash } from './automation-hash.ts';
+import type { AssessmentSelection } from './assessment-selection.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { validateWorkflowResult } from './workflow-result.ts';
 import { defaultAssessmentSkill } from '../manifest/assessment-schema.ts';
@@ -17,6 +18,7 @@ export default function recordDispatchResult(input: {
   policy: GitHubNotificationPolicy | undefined;
   result: unknown;
   previousResultDigest?: string;
+  assessmentInputs?: { selection: AssessmentSelection; evidence: string };
 }) {
   const { record, intake } = input;
   const result = parseAssessmentResult(input.result);
@@ -30,9 +32,11 @@ export default function recordDispatchResult(input: {
     worktree: input.worktree,
     dispatchDigest: automationHash(record.request),
     policyDigest: notificationAuthorityDigest(input.policy),
-    selectionDigest: automationHash(record.assessment ?? { skill: defaultAssessmentSkill }),
+    selectionDigest: automationHash(
+      input.assessmentInputs?.selection ?? record.assessment ?? { skill: defaultAssessmentSkill },
+    ),
     routingDigest: automationHash({ routing: record.routing, effective: record.effective }),
-    evidenceDigest: automationHash(JSON.parse(record.context!)),
+    evidenceDigest: automationHash(JSON.parse(input.assessmentInputs?.evidence ?? record.context!)),
   };
   validateWorkflowResult(
     {
@@ -54,7 +58,11 @@ export default function recordDispatchResult(input: {
     record.assessmentRevision = (record.assessmentRevision ?? 0) + 1;
   record.assessmentRevision ??= 1;
   record.result = result;
-  record.stageReceipt = { binding, resultDigest: automationHash(result) };
+  record.stageReceipt = {
+    binding,
+    resultDigest: automationHash(result),
+    ...(input.assessmentInputs ? { selection: input.assessmentInputs.selection } : {}),
+  };
   record.resultTurnId = input.turnId;
   record.phase = 'complete';
   return result;

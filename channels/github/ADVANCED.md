@@ -389,7 +389,8 @@ another push. Recovery instructions skip confirmed attachments and announcements
 Explicit notification version `1` and recognizable retired keys in unversioned
 declarations are rejected with `github-notification-v1-retired`; current-format
 declarations may omit the version and default to `2`. The polling channel, its Work/guided engine,
-reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
+reply-staging tool, and task-PR tool have been removed. Independent review requests remain unavailable. Assessment skills and optional inline/file
+guidance use the shared [assessment selection](../../MANIFEST.md#assessment-selection) contract.
 Retirement does not imply feature parity.
 
 The channel id `agent-system-github` remains registered as a read-only readiness
