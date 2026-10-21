@@ -66,6 +66,14 @@ function operatorDecision(
       severity: 'error',
     };
   }
+  if (invocations.some(({ surface }) => surface === 'instance')) {
+    return {
+      blockReason:
+        'Installation identity is shared across agents. Ask the operator to use the instance CLI; agent command tools cannot rename or rotate it.',
+      code: 'agent-instance-operator-only',
+      severity: 'error',
+    };
+  }
   if (invocations.some(({ surface }) => surface === 'notification-reset')) {
     return {
       blockReason:

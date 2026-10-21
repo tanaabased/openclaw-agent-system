@@ -13,7 +13,7 @@ import type {
 import { resolveToolExecutable } from '../api/cli-runner.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
-import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
+import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import readItemContext from '../channels/github/provider/read-item-context.ts';
 import { githubResponseIdentity } from '../channels/github/provider/work-event-normalization.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -93,10 +93,11 @@ export default async function connectCodexGitHubAccount(
   } catch {
     throw new IntakeError('intake-github-identity-invalid');
   }
-  const api = new GitHubWorkEventApiClient({ identity, execute });
-  const client = Object.assign(new GitHubWorkItemClient(api), {
+  const account = { identity, execute };
+  const api = new GitHubWorkEventApiClient(account);
+  const client = Object.assign(new GitHubWorkEventClient(account), {
     getItemContext: (owner: string, name: string, number: number) =>
       readItemContext(api, owner, name, number, 'issue', true),
   });
-  return { client, account: { identity, execute } };
+  return { client, account };
 }

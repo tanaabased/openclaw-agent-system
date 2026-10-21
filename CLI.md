@@ -25,6 +25,9 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 - [`openclaw agent-system doctor`](#openclaw-agent-system-doctor)
 - [`openclaw agent-system env`](#openclaw-agent-system-env)
 - [`openclaw agent-system install`](#openclaw-agent-system-install)
+- [`openclaw agent-system instance inspect`](#openclaw-agent-system-instance-inspect)
+- [`openclaw agent-system instance rename`](#openclaw-agent-system-instance-rename)
+- [`openclaw agent-system instance rotate`](#openclaw-agent-system-instance-rotate)
 - [`openclaw agent-system tool`](#openclaw-agent-system-tool)
 - [`openclaw agent-system validate`](#openclaw-agent-system-validate)
 
@@ -719,6 +722,64 @@ Installation:
 - Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
 
 Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
+
+## `openclaw agent-system instance inspect`
+
+Inspect this installation's persisted UUID and readable name without changing state.
+Install creates them once and preserves them on later runs; Doctor reports missing
+or invalid identity. Identity belongs to the runtime installation, outside `agent.yaml`.
+
+### Options
+
+| Option or argument | Required | Default | Description                                                          |
+| ------------------ | -------- | ------- | -------------------------------------------------------------------- |
+| `--json`           | no       | off     | Return the full UUID and readable name. Human output masks the UUID. |
+
+### Usage
+
+```sh
+openclaw agent-system instance inspect --json
+```
+
+## `openclaw agent-system instance rename`
+
+Customize the readable name while preserving the UUID and existing ownership.
+Names normalize to lowercase hyphenated text, up to 48 characters. Generated names
+use an adjective and animal; names need not be unique because the UUID selects ownership.
+
+### Options
+
+| Option or argument | Required | Default | Description                          |
+| ------------------ | -------- | ------- | ------------------------------------ |
+| `<name>`           | yes      | none    | Readable instance name.              |
+| `--json`           | no       | off     | Write the complete identity receipt. |
+
+### Usage
+
+```sh
+openclaw agent-system instance rename 'Office Laptop' --json
+```
+
+## `openclaw agent-system instance rotate`
+
+Explicitly replace the UUID, preserving the readable name and detaching old claim
+receipts. Use this after copying an installation onto another machine. Rotation
+neither transfers active work nor edits existing GitHub claims; the original owner
+keeps its work. A repeated request using the old UUID fails as stale.
+
+### Options
+
+| Option or argument   | Required | Default | Description                                       |
+| -------------------- | -------- | ------- | ------------------------------------------------- |
+| `--expected-id <id>` | yes      | none    | Full current UUID from `instance inspect --json`. |
+| `--json`             | no       | off     | Write the new complete identity receipt.          |
+
+### Usage
+
+```sh
+current_id=$(openclaw agent-system instance inspect --json | jq -r .instanceId)
+openclaw agent-system instance rotate --expected-id "$current_id" --json
+```
 
 ## `openclaw agent-system tool`
 

@@ -1,3 +1,4 @@
+import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { openClawResponseEligible } from './openclaw-response-continuation.ts';
 import { randomUUID } from 'node:crypto';
 
@@ -692,6 +693,25 @@ export default class OpenClawDispatchCoordinator {
     delete record.failureStage;
     try {
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
+      if (!this.context.dependencies.claims)
+        await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
+      const claim = await this.context.dependencies.claims?.select({
+        intake,
+        client,
+        caller,
+        hasCapacity: capacity.available > 0,
+      });
+      if (claim && claim.status !== 'owned') {
+        if (claim.status === 'recovery-required') throw new Error(claim.code);
+        await save();
+        return {
+          status: 'claim-waiting' as const,
+          id: record.id,
+          claim,
+          nextAction: 'next' as const,
+        };
+      }
+      if (claim) record.claimId = claim.winnerId;
       const evidence = await client.getItemContext(
         repo.owner.login,
         repo.name,

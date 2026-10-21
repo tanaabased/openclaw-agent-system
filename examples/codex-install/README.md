@@ -79,6 +79,13 @@ else
 fi
 test -z "$diagnostics"
 
+# should inspect missing identity without creating private state
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" instance inspect --plugin-data "$root/plugin-data" <<<'{}' | jq -e '.status == "missing"'
+test ! -e "$root/plugin-data/instance"
+
 # should expose codex tools diagnostics through standalone setup with runner debug
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -100,14 +107,26 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
 inspection=$(node "$runtime" setup inspect --plugin-data "$plugin_data")
 printf '%s\n' "$inspection" \
-  | jq -e '.status == "inspected" and [.findings[] | [.stepId, .code]] == [["codex-tools-debug", "setup-healthy"], ["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
+  | jq -e '.status == "inspected" and [.findings[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-healthy"], ["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
 installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
 printf '%s\n' "$installed" \
-  | jq -e '.status == "installed" and [.outcomes[] | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
+  | jq -e '.status == "installed" and [.outcomes[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
 test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-shared"
 test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-only"
 test ! -e "$GITHUB_WORKSPACE/examples/codex-install/workspace/.openclaw-checked"
 test ! -e "$GITHUB_WORKSPACE/examples/codex-install/workspace/.openclaw-only"
+
+# should preserve installed identity while allowing explicit name changes and id rotation
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+node "$runtime" instance inspect --plugin-data "$plugin_data" <<<'{}' > "$root/identity.json"
+node "$runtime" setup install --plugin-data "$plugin_data" | jq -e 'any(.outcomes[]; .component == "instance-identity" and .status == "unchanged")'
+original=$(jq -er .instanceId "$root/identity.json")
+node "$runtime" instance rename --plugin-data "$plugin_data" <<<'{"name":"CI Laptop"}' | jq -e --arg id "$original" '.status == "renamed" and .instanceId == $id and .displayName == "ci-laptop"'
+jq -nc --arg id "$original" '{expectedInstanceId:$id}' | node "$runtime" instance rotate --plugin-data "$plugin_data" | jq -e --arg id "$original" '.status == "rotated" and .instanceId != $id and .displayName == "ci-laptop"'
+node "$runtime" setup inspect --plugin-data "$plugin_data" | jq -e 'any(.findings[]; .code == "instance-identity-ready")'
 
 # should report a blocked setup check when an exited parent leaves inherited pipes open
 root="$TMPDIR/agent-system-codex-install"
@@ -115,7 +134,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" binding bind --plugin-data "$root/timeout-data" --workspace "$GITHUB_WORKSPACE/examples/codex-install/timeout" --confirm
 node "$runtime" setup inspect --plugin-data "$root/timeout-data" \
-  | jq -e '.status == "inspected" and [.findings[].code] == ["setup-blocked"]'
+  | jq -e '.status == "inspected" and [.findings[] | select(.component == "setup") | .code] == ["setup-blocked"]'
 
 # should load the bound workspace through a packaged hook path containing spaces
 root="$TMPDIR/agent-system-codex-install"

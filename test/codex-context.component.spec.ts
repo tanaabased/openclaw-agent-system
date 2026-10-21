@@ -25,11 +25,11 @@ afterEach(async () => {
 });
 
 function envelope(context: string): Record<string, unknown> {
-  const start = context.indexOf('{');
-  const end = context.lastIndexOf('}');
+  const start = context.indexOf('\n{\n');
+  const end = context.lastIndexOf('\n}\n');
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
-  return JSON.parse(context.slice(start, end + 1)) as Record<string, unknown>;
+  return JSON.parse(context.slice(start, end + 2)) as Record<string, unknown>;
 }
 
 describe('agent/codex-context', () => {
@@ -104,6 +104,10 @@ describe('agent/codex-context', () => {
       },
       setupRuntime: {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'setup'],
+        pluginData,
+      },
+      instanceRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'instance'],
         pluginData,
       },
       binding: { status: 'unbound' },

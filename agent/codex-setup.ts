@@ -1,4 +1,6 @@
 import { delimiter } from 'node:path';
+import { codexInstanceStore } from './codex-assignment-claims.ts';
+import instanceIdentity from './instance-identity.ts';
 
 import { inspectCodexIntake } from './codex-intake.ts';
 import { inspectCodexAutomations } from './codex-automations.ts';
@@ -181,6 +183,9 @@ export async function inspectCodexSetup(
     intake: await inspectCodexIntake(pluginData, dependencies),
     findings: [
       ...(await lifecycle.inspect(context)),
+      ...(await instanceIdentity(codexInstanceStore(pluginData)).inspect!(context)).map(
+        (finding) => ({ ...finding, component: 'instance-identity' }),
+      ),
       ...pauseWarnings(selected).map((warning) => ({ ...warning, status: 'warning' as const })),
       ...notificationDiagnostics.map<AgentSystemLifecycleFinding>((diagnostic) => ({
         component: 'github-notifications',
@@ -207,6 +212,11 @@ export async function installCodexSetup(
     'codex',
   );
   const result = await lifecycle.reconcile(context);
+  await context.assertCurrent();
+  const instance = await instanceIdentity(codexInstanceStore(pluginData)).reconcile!(context);
+  result.outcomes.push(
+    ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),
+  );
   const automations = await inspectCodexAutomations(
     pluginData,
     dependencies.automationInputs,

@@ -19,6 +19,30 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'instance-install-required': [
+      'This installation has no saved identity.',
+      'Run Install to create its persistent UUID and readable name before claiming assignments.',
+    ],
+    'claim-disabled-pending': [
+      'This assignment has a retained claim from the pilot, and claim election is disabled.',
+      'Inspect its original owner and native work before resolving this assignment. Do not delete claim receipts or start replacement work.',
+    ],
+    'claim-winner-missing': [
+      'The retained winning claim is missing or its metadata was edited.',
+      'Inspect the original owner and native work before restoring its claim. Do not create replacement work or take ownership by deleting state.',
+    ],
+    'claim-winner-changed': [
+      'The visible winner differs from the retained owner.',
+      'Reconcile the original winning comment and native work before resuming; automatic takeover is disabled.',
+    ],
+    'claim-instance-rotated': [
+      'This assignment belongs to the installation identity that was rotated.',
+      'Keep its retained native work with the original owner. Rotation does not transfer existing assignments; this installation can claim new assignments.',
+    ],
+    'claim-publication-unconfirmed': [
+      'The claim publication has no confirmed provider receipt.',
+      'Reconcile the original comment when GitHub is readable; do not post another claim for this attempt.',
+    ],
     'dispatch-capacity-observation-required': [
       'The historical creation has no native inactivity observation.',
       'The next owning intake run will inspect native receipts. Its action:reconcile can also observe this retired record. Preserve the request; do not create another chat for this issue.',

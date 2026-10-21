@@ -68,6 +68,25 @@ function context(agentId = 'tanaabot') {
 }
 
 describe('agent/command-security', () => {
+  it('should reserve shared installation identity changes for the operator', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      for (const action of ['rename other-machine', 'rotate --expected-id private-marker']) {
+        const { handler, logs } = setup();
+        const result = (await handler(
+          {
+            toolName: 'exec',
+            params: { command: `openclaw ${alias} instance ${action}` },
+          } as never,
+          context() as never,
+        )) as { block?: boolean; blockReason?: string };
+        assert.equal(result.block, true);
+        assert.match(result.blockReason!, /operator/u);
+        assert.ok(
+          ![...logs.error, ...logs.warn, result.blockReason].join('').includes('private-marker'),
+        );
+      }
+    }
+  });
   it('should block notification reset before resolving agent credentials', async () => {
     for (const alias of ['as', 'agent-system']) {
       const { handler } = setup();

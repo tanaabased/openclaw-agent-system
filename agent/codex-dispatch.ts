@@ -1,5 +1,6 @@
 import cleanupConfiguration from './cleanup-configuration.ts';
 import { nativeObject } from './automation-gateway.ts';
+import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
@@ -35,6 +36,10 @@ export async function runCodexDispatch(
   deps: CodexDispatchDependencies = {},
 ) {
   validateDispatchRequest(action, input);
+  deps = {
+    ...deps,
+    claimStore: deps.claimStore ?? codexInstanceStore(pluginData),
+  };
   if (action === 'next') {
     const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
     if (retirement) return retirement;

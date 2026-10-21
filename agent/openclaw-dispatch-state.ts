@@ -73,6 +73,8 @@ export const openclawDispatchRecordSchema = Type.Object(
     ),
     feedback: Type.Optional(openclawFeedbackSchema),
     request: Type.Optional(Type.Union([legacyCreationSchema, sessionCreationRequestSchema])),
+    claimId: Type.Optional(Type.Integer({ minimum: 1 })),
+    claimAccepted: Type.Optional(Type.Boolean()),
     sessionCreation: Type.Optional(
       Type.Object(
         {
@@ -227,6 +229,8 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
       runtime: 'openclaw',
       recordSchema: openclawDispatchRecordSchema,
       validRecord: (record) => {
+        if (record.claimAccepted && (!record.claimId || !record.sessionCreation?.verified))
+          return false;
         if (record.request && 'key' in record.request) {
           return Boolean(
             (!record.feedback ||

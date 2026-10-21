@@ -5,6 +5,8 @@ import codexRuntimeRequest from './codex-runtime-request.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
+import { codexInstanceStore } from './codex-assignment-claims.ts';
+import { operateInstanceIdentity } from './instance-identity.ts';
 
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
@@ -244,6 +246,18 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
+  if (command === 'instance') {
+    const action = args[1] ?? '';
+    const pluginData = parsePluginData(args.slice(2));
+    writeJson(
+      await operateInstanceIdentity(
+        codexInstanceStore(pluginData),
+        action,
+        JSON.parse(await readStandardInput()),
+      ),
+    );
+    return;
+  }
   if (command === 'feedback') {
     const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
     writeJson(await runCodexFeedback(pluginData, request));

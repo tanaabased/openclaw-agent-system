@@ -487,3 +487,19 @@ Declare V2 authority explicitly and run Install to reconcile its owning schedule
 Old checkpoints and conversations do not establish V2 activation or completion.
 Keep the prior package and configuration backup if an old conversation still needs
 its V1 runtime; this package does not resume V1 work.
+
+## Installation identity and assignment claims
+
+Install creates or preserves a UUID and readable name for each OpenClaw or standalone
+Codex installation. Doctor inspects that identity without changing it. Use the
+[OpenClaw instance commands](../../CLI.md#openclaw-agent-system-instance-inspect) or
+[Codex identity actions](../../CODEX.md#workspace-setup) to inspect, rename, or explicitly
+rotate it. Rotation does not transfer existing work.
+
+Assignment claim election is disabled internally in both runtimes. There is no
+configuration switch to enable it, and installation identity alone does not prevent
+two installations from starting the same assignment. Existing verified native work
+keeps its retained custody. An assignment with a saved pilot claim is held before
+new native work is prepared; preserve its receipts and inspect the original owner
+before resolving it. The claim engine remains internal groundwork for a later
+dispatcher integration.

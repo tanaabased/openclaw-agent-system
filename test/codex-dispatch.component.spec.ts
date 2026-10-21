@@ -1,5 +1,11 @@
 import readInstallationConfig, { parseInstallationConfig } from '../core/installation-config.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
+import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
+import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
+import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import type { ClaimClient } from '../agent/assignment-claim.ts';
+import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import runCodexContinuation, {
@@ -238,6 +244,259 @@ describe('agent/codex-dispatch', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  async function claiming() {
+    const comments: GitHubCanonicalIssueComment[] = [];
+    const client: ClaimClient = {
+      verify: async () => {},
+      list: async () => structuredClone(comments),
+      async create(source, body) {
+        const id = comments.length + 1;
+        comments.push({
+          databaseId: id,
+          nodeId: 'C_' + id,
+          body,
+          bodyTruncated: false,
+          author: { nodeId: source.receivingNodeId, login: 'receiver', type: 'User' },
+          createdAt: new Date(now).toISOString(),
+          updatedAt: new Date(now).toISOString(),
+        });
+        return id;
+      },
+      async update(_source, id, previous, body) {
+        const comment = comments.find((comment) => comment.databaseId === id)!;
+        assert.equal(comment.body, previous);
+        comment.body = body;
+      },
+      async remove(_source, id) {
+        comments.splice(
+          comments.findIndex((comment) => comment.databaseId === id),
+          1,
+        );
+      },
+    };
+    const store = codexInstanceStore(pluginData);
+    await store.identity();
+    deps.claims = new CodexAssignmentClaims(store, () => client);
+    return { store, client, comments };
+  }
+
+  it('should prepare and reconcile without claims or creating installation state', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const records = (await request('inspect')).records as Array<{
+      claimId?: number;
+      effective?: unknown;
+    }>;
+    assert.ok(records[0]!.effective);
+    assert.equal(records[0]!.claimId, undefined);
+    assert.equal(await codexInstanceStore(pluginData).inspect(), undefined);
+  });
+
+  it('should hold a saved pilot claim without preparing work or changing its receipt', async () => {
+    const { store, comments } = await claiming();
+    assert.equal((await next()).status, 'claim-waiting');
+    const before = await store.file.read();
+    delete deps.claims;
+    now += 300000;
+    const held = await next();
+    assert.equal(held.code, 'claim-disabled-pending');
+    assert.deepEqual(gitCalls, []);
+    assert.equal(await store.file.read(), before);
+    assert.equal(comments.length, 1);
+    assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
+  });
+
+  it('should hold a selected pilot claim if claims are disabled before preparation', async () => {
+    const { store } = await claiming();
+    await next();
+    now += 300000;
+    const selected = await next();
+    const before = await store.file.read();
+    delete deps.claims;
+    const held = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    });
+    assert.equal(held.code, 'claim-disabled-pending');
+    assert.equal(await store.file.read(), before);
+    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    assert.equal(records[0]!.request, undefined);
+  });
+
+  it('should recover existing native work without accepting its pilot claim while dormant', async () => {
+    const { store, comments } = await claiming();
+    await next();
+    now += 300000;
+    const prepared = await prepare();
+    created();
+    const before = await store.file.read();
+    delete deps.claims;
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const records = (await request('inspect')).records as Array<{
+      claimAccepted?: boolean;
+      effective?: unknown;
+    }>;
+    assert.ok(records[0]!.effective);
+    assert.equal(records[0]!.claimAccepted, undefined);
+    assert.equal(await store.file.read(), before);
+    assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
+  });
+
+  it('should claim through the native github connection before preparing and accepting a verified chat', async () => {
+    const comments: Array<GitHubCanonicalIssueComment & { bodyLength: number; issueUrl: string }> =
+      [];
+    const bin = join(root, 'bin');
+    await mkdir(bin);
+    await writeFile(join(bin, 'gh'), '', { mode: 0o700 });
+    const previousPath = process.env.PATH;
+    let connection: Awaited<ReturnType<typeof connectCodexGitHubAccount>>;
+    try {
+      process.env.PATH = bin;
+      connection = await connectCodexGitHubAccount(
+        workspace,
+        new AbortController().signal,
+        async (argv, options) => {
+          assert.equal(options.cwd, workspace);
+          assert.deepEqual(options.env, { GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat' });
+          assert.deepEqual(argv.slice(-2), ['--hostname', 'github.com']);
+          const endpoint = argv.slice(1).find((arg) => arg.startsWith('/'));
+          let value: unknown;
+          if (endpoint === '/user') value = fixture.client.identity;
+          else if (endpoint === '/repos/owner/repo') value = fixture.repository;
+          else if (endpoint === '/repos/owner/repo/issues/3') {
+            value = {
+              ...fixture.item,
+              isPullRequest: false,
+              title: 'Repair contained behavior',
+              body: 'The acceptance criteria require a safe plan.',
+              commentCount: comments.length,
+              labels: [],
+            };
+          } else if (endpoint === '/repos/owner/repo/issues/3/events') value = fixture.events;
+          else if (endpoint === '/repos/owner/repo/issues/3/issue-field-values?per_page=100')
+            value = [
+              { name: 'complexity', value: 'medium' },
+              { name: 'work size', value: 8 },
+            ];
+          else if (endpoint === '/repos/owner/repo/issues/3/comments') {
+            if (argv.includes('POST')) {
+              const { body } = JSON.parse(options.input) as { body: string };
+              const comment = {
+                databaseId: comments.length + 1,
+                nodeId: 'C_' + (comments.length + 1),
+                author: fixture.client.identity,
+                body,
+                bodyTruncated: false,
+                bodyLength: body.length,
+                issueUrl: 'https://api.github.com/repos/owner/repo/issues/3',
+                createdAt: new Date(now).toISOString(),
+                updatedAt: new Date(now).toISOString(),
+              };
+              comments.push(comment);
+              value = { ...comment, user: comment.author };
+            } else
+              value = comments.map((comment) => ({
+                ...comment,
+                authorLogin: comment.author!.login,
+              }));
+          } else if (endpoint === '/repos/owner/repo/issues/comments/1') {
+            if (argv.includes('PATCH')) {
+              comments[0]!.body = (JSON.parse(options.input) as { body: string }).body;
+              comments[0]!.bodyLength = comments[0]!.body.length;
+            }
+            value = comments[0];
+          } else throw new Error('unexpected native github request: ' + endpoint);
+          return {
+            code: 0,
+            killed: false,
+            signal: null,
+            stdout: 'HTTP/2 200\n\n' + JSON.stringify(value),
+            stderr: '',
+            termination: 'exit',
+          };
+        },
+      );
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+    deps.connect = async () => connection.client;
+    deps.claims = new CodexAssignmentClaims(codexInstanceStore(pluginData));
+    await codexInstanceStore(pluginData).identity();
+    const first = await next();
+    assert.equal(first.status, 'claim-waiting', JSON.stringify(first));
+    assert.equal((await next()).status, 'idle');
+    assert.deepEqual(gitCalls, []);
+    assert.equal(comments.length, 1);
+    now += 300000;
+    const prepared = await prepare();
+    assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
+    const unresolved = await request('reconcile', { id: prepared.id });
+    assert.equal(unresolved.code, 'dispatch-creation-unresolved');
+    assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    assert.match(comments[0]!.body, /Assignment accepted/u);
+    const record = (await request('inspect')).records as Array<{ claimAccepted: boolean }>;
+    assert.equal(record[0]!.claimAccepted, true);
+    assert.equal(comments.length, 1);
+  });
+
+  it('should leave a claim owned by openclaw without preparing any codex repository or chat', async () => {
+    const { client, comments } = await claiming();
+    const selected = await selectCodexIntake(pluginData, deps);
+    const intake = (await selected.store.read())!.records[0]!;
+    const other = new OpenClawAssignmentClaims(
+      new AssignmentClaimStore(join(root, 'openclaw-instance')),
+      () => client,
+    );
+    const caller = {
+      sessionKey: 'agent:receiver:main',
+      sessionId: 'native-session',
+      runId: 'first',
+      toolCallId: 'tool-first',
+    };
+    await other.select({ intake, client: fixture.client as never, caller, hasCapacity: true });
+    assert.equal((await next()).status, 'claim-waiting');
+    now += 300000;
+    const loser = await next();
+    assert.equal((loser.claim as { status: string }).status, 'other-owner');
+    assert.deepEqual(gitCalls, []);
+    assert.equal(
+      (
+        await other.select({
+          intake,
+          client: fixture.client as never,
+          caller: { ...caller, runId: 'second' },
+          hasCapacity: true,
+        })
+      ).status,
+      'owned',
+    );
+    assert.equal(comments.length, 1);
+  });
+
+  it('should stop preparation when the selected winner disappears', async () => {
+    const { comments } = await claiming();
+    await next();
+    now += 300000;
+    const selected = await next();
+    assert.equal(selected.status, 'routing-required');
+    comments.length = 0;
+    const stopped = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair behavior',
+      assessment: { complexity: 'medium', reason: 'Contained change.' },
+    });
+    assert.equal(stopped.code, 'claim-winner-missing');
+    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    assert.equal(records[0]!.request, undefined);
   });
 
   it('should release a blocked owner only after native terminal evidence and retain it on unreadable history', async () => {
