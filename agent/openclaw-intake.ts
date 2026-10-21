@@ -34,9 +34,14 @@ export interface OpenClawIntakeDependencies {
 /** V2 admission only. No sessions, assessment results, V1 files or publication. */
 export default class OpenClawIntake {
   constructor(readonly dependencies: OpenClawIntakeDependencies) {}
-  async select(manifest: AgentManifest, workspaceDir: string) {
+  async select(
+    manifest: AgentManifest,
+    workspaceDir: string,
+    options: { resolvePolicy?: boolean } = {},
+  ) {
     const workspace = await realpath(workspaceDir);
-    const selected = assignmentIntakePolicy(manifest, 'openclaw');
+    const selected =
+      options.resolvePolicy === false ? undefined : assignmentIntakePolicy(manifest, 'openclaw');
     const store = new IntakeRecordStore(
       intakeLocation({
         runtime: 'openclaw',

@@ -39,6 +39,11 @@ const dispatchStages = [
   'feedback-preview',
   'feedback-publish',
   'direct-question-context',
+  'manual-compose',
+  'manual-candidate',
+  'manual-preview',
+  'manual-publish',
+  'manual-reconcile',
 ];
 
 function currentTurn(request: ChatCompletionRequest) {
@@ -166,6 +171,63 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (duplicate.status !== 'published') return;
     return { content: published.presentation };
   };
+  const directTarget = /Direct reply draft target: (https:\/\/github\.com\/[^\s]+)/u.exec(
+    prompt,
+  )?.[1];
+  if (directTarget) {
+    const composed = result('manual-compose');
+    if (!composed)
+      return dispatch('manual-compose', {
+        action: 'reply',
+        operation: 'compose',
+        target: directTarget,
+        privateText:
+          'The disposable manual reply fixture is ready. No implementation or test result is claimed.',
+      });
+    assert.equal(composed.status, 'composition-ready');
+    assert.equal(composed.compositionContext, 'feedback/v1');
+    assert.equal(composed.factsProvenance, 'operator-supplied');
+    const selection = composed.selection as { skill: { path: string } };
+    if (openClawAIMockToolResultText(messages, prefix + 'manual-skill') === undefined)
+      return call('manual-skill', 'read', { path: selection.skill.path });
+    const candidate = result('manual-candidate');
+    if (!candidate)
+      return dispatch('manual-candidate', {
+        action: 'reply',
+        operation: 'candidate',
+        id: composed.id,
+        digest: composed.digest,
+        publicText:
+          'The disposable manual reply fixture is ready. No implementation or test result is claimed.',
+      });
+    assert.equal(candidate.status, 'candidate-recorded');
+    return { content: String(candidate.presentation) };
+  }
+  const directDraft = /Direct reply publish draft: ([a-f0-9]{64})/u.exec(prompt)?.[1];
+  if (directDraft) {
+    const preview = result('manual-preview');
+    if (!preview)
+      return dispatch('manual-preview', { action: 'reply', operation: 'publish', id: directDraft });
+    assert.equal(preview.status, 'publication-ready');
+    const published = result('manual-publish');
+    if (!published)
+      return dispatch('manual-publish', {
+        action: 'reply',
+        operation: 'publish',
+        id: directDraft,
+        digest: preview.digest,
+      });
+    assert.equal(published.status, 'published');
+    const reconciled = result('manual-reconcile');
+    if (!reconciled)
+      return dispatch('manual-reconcile', {
+        action: 'reply',
+        operation: 'reconcile',
+        id: directDraft,
+      });
+    assert.equal(reconciled.status, 'published');
+    return { content: String(reconciled.presentation) };
+  }
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
