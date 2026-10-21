@@ -1,4 +1,4 @@
-import assignmentRetirement from './assignment-retirement.ts';
+import assignmentRetirement, { type Retirement } from './assignment-retirement.ts';
 import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -12,10 +12,12 @@ export interface RetirementNativeObservation {
   archived: boolean;
   idle: boolean;
   activityId?: string;
+  unavailableSession?: NonNullable<Retirement['sessionUnavailableObserved']>['session'];
 }
 export interface RetirementCleanupResult {
   archived: boolean;
   worktreeRemoved: boolean;
+  unavailableSession?: NonNullable<Retirement['sessionUnavailableObserved']>['session'];
   code?: string;
 }
 
@@ -152,7 +154,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       }
       if (record.retirement && record.nativeInactive === false && native?.idle)
         record.retirement.eligibleAt = now + configuration.graceMinutes * 60_000;
-      if (native && (record.retirement || native.archived)) record.nativeInactive = native.idle;
+      if (native && !native.unavailableSession && (record.retirement || native.archived))
+        record.nativeInactive = native.idle;
       if (reason === 'issue-closed' || native?.archived) delete record.feedbackReactivation;
       const successor = latest.get(record.issueKey);
       if (
@@ -160,6 +163,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         (record.retirement || record.feedbackReactivation || wasMissing) &&
         !record.assignmentObservation &&
         native &&
+        !native.unavailableSession &&
         !native.archived &&
         !record.retirement?.archivedAt &&
         !record.retirement?.archiveAttempt &&
@@ -178,6 +182,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       const reactivate = async () => {
         if (
           native &&
+          !native.unavailableSession &&
           !native.archived &&
           reason !== 'issue-closed' &&
           record.retirement?.reason !== 'chat-archived' &&
@@ -190,7 +195,12 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         ) {
           await input.fresh();
           const verifiedNative = await input.observe(record);
-          if (!verifiedNative || verifiedNative.archived || (await provider()) === 'issue-closed')
+          if (
+            !verifiedNative ||
+            verifiedNative.unavailableSession ||
+            verifiedNative.archived ||
+            (await provider()) === 'issue-closed'
+          )
             throw new Error('retirement-observation-changed');
           delete record.retirement;
           return true;
@@ -210,6 +220,11 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         activityId: native?.activityId,
       });
       if (!record.retirement) continue;
+      if (native?.unavailableSession)
+        record.retirement.sessionUnavailableObserved = {
+          at: now,
+          session: native.unavailableSession,
+        };
       delete record.retirement.code;
       // reopening cancels closure-driven reclamation, but is not itself a fresh assignment.
       if (!reason && !native?.archived && record.retirement.reason === 'issue-closed') {
@@ -221,7 +236,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         continue;
       }
       if (configuration.enabled && now < record.retirement.eligibleAt) continue;
-      if (record.request && !native?.idle) {
+      if (record.request && !native?.idle && !native?.unavailableSession) {
         record.retirement.code = 'retirement-native-work-unresolved';
         continue;
       }
@@ -259,12 +274,15 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           const otherNative = await input.observe(other);
           const otherReason = await provider(otherIntake, other);
           if (
-            !otherNative?.idle ||
+            !otherNative ||
+            (!otherNative.idle && !otherNative.unavailableSession) ||
             (other.retirement.reason === 'assignment-removed' &&
               otherReason !== 'assignment-removed') ||
-            otherNative.activityId !== other.retirement.activityId ||
+            (!otherNative.unavailableSession &&
+              otherNative.activityId !== other.retirement.activityId) ||
             (!otherReason && !otherNative.archived) ||
             (!otherNative.archived &&
+              !otherNative.unavailableSession &&
               otherReason !== 'issue-closed' &&
               input.reactivate &&
               (await input.reactivate(other, otherIntake)))
@@ -280,7 +298,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
             (currentReason !== 'assignment-removed' ||
               eventId !== record.assignmentObservation?.event?.nodeId)) ||
           (!currentReason && !currentNative?.archived) ||
-          (record.request && !currentNative?.idle) ||
+          (record.request && !currentNative?.idle && !currentNative?.unavailableSession) ||
+          currentNative?.unavailableSession !== native?.unavailableSession ||
           currentNative?.activityId !== native?.activityId
         )
           throw new Error('retirement-observation-changed');
@@ -296,7 +315,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       if (result.archived) record.retirement.archivedAt ??= now;
       if (result.worktreeRemoved) record.retirement.worktreeRemovedAt ??= now;
       if (result.code) record.retirement.code = result.code;
-      if (result.archived && result.worktreeRemoved) record.retired = { at: now, by: input.owner };
+      if ((result.archived || result.unavailableSession) && result.worktreeRemoved)
+        record.retired = { at: now, by: input.owner };
     } catch (error) {
       if (record.retirement)
         record.retirement.code = workflowFailure(error, 'retirement-check-unavailable').code;

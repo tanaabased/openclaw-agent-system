@@ -218,9 +218,26 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
                 record.feedback.events.every((event) => {
                   const prefix = `${record.id}:feedback:${event.id}`;
                   const previous = event.previousTurnIds ?? [];
-                  const expected = (index: number) => prefix + (index ? `:resume:${index}` : '');
+                  const resumptions = event.ownerResumptions ?? [];
+                  const expected = (index: number): string =>
+                    resumptions.find((entry) => entry.index === index)?.runId ??
+                    prefix + (index ? `:resume:${index}` : '');
                   return (
                     previous.length === (event.resumed ?? 0) &&
+                    new Set(resumptions.map((entry) => entry.index)).size === resumptions.length &&
+                    new Set([...previous, ...(event.turn ? [event.turn.runId] : [])]).size ===
+                      previous.length + (event.turn ? 1 : 0) &&
+                    resumptions.every(
+                      (entry) =>
+                        entry.index <= previous.length &&
+                        validIssueTurn(entry.previousTurn, expected(entry.index - 1)) &&
+                        (entry.previousTurn.cancelled ||
+                          entry.previousTurn.status === 'completed') &&
+                        (entry.index !== previous.length ||
+                          !event.turn ||
+                          (event.turn.origin === 'input' &&
+                            event.turn.consumedByEventId === entry.inputEventId)),
+                    ) &&
                     previous.every((id, index) => id === expected(index)) &&
                     (!event.turn || validIssueTurn(event.turn, expected(previous.length)))
                   );

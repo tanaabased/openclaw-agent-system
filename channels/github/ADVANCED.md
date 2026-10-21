@@ -32,9 +32,10 @@ runtimes retain this stage across restart and recover older implementation recei
 in place; existing lifecycle and native execution checks still apply.
 
 Verified comments from approved feedback authors are task direction in Codex and
-OpenClaw, like direct input in the issue chat. In Plan, an explicit request to
-implement can enter Work through the same recorded transition. Work permits
-appropriate implementation; Auto may choose Plan or Work. Authors need not also be
+OpenClaw, like direct input in the issue chat. In Plan or Auto, an explicit request
+to implement can enter Work through the same recorded transition without an
+additional Work decision. Work permits appropriate implementation; autonomous Auto
+selection still chooses Plan or Work with a reasoned decision. Authors need not also be
 issue assignees. Quoted and linked material cannot independently direct the agent. Questions need not produce code.
 Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
@@ -119,8 +120,16 @@ Each successful cleanup step is retained so interrupted cleanup can reconcile on
 later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
 them. If the managed inventory and recorded path both confirm an already-removed
 worktree, retirement records observed external cleanup after its ownership checks;
-this does not claim to have removed or preserved the missing checkout. Ambiguous
-session identity remains a blocker.
+this does not claim to have removed or preserved the missing checkout. For work
+already pending retirement, a null session lookup, an explicit lookup access denial,
+or a legacy creation attempt with no child identity can also proceed through the
+same grace, ownership, and worktree preservation checks. This is an inferred
+unavailable-session outcome, not proof of deletion or rejected creation; it is
+recorded separately without inventing archival. Existing worktrees are removed only
+when the normal checks pass; already-absent worktrees are observed, not removed again.
+Timeouts, temporary read failures, conflicting identities, and known active work
+remain blockers. Retirement retains the record and history; it does not reassign
+the issue automatically.
 
 Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree
@@ -359,6 +368,8 @@ preserve text edited on GitHub. Interrupted updates reconcile the same operation
 OpenClaw delivery reconciliation can finish incomplete provider checkpoints when the retained commit is already remote; a missing push requires the prepared publication path. Newer local or uncommitted work is not included by reconciliation.
 If initial PR creation is still uncertain, reconcile it before changing its text.
 Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. Implementation context also exposes pending summaries without moving work back to planning.
+
+In OpenClaw, an explicit operator request in the owning chat can finish a retained feedback reply after its handler stops. The agent uses feedback context with `resume: true` to verify the current operator input and old terminal run, retaining the answer, pushed work and uncertain publication receipts. A manual stop alone never restarts work; real denials remain stops.
 
 A stale publication preview returns a refreshed operation without writing. Inspect
 it and retry once within the existing authorization; repeated staleness needs

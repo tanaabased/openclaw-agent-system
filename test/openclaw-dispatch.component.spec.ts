@@ -61,6 +61,7 @@ describe('agent/openclaw issue dispatch', () => {
   let preparedWorktrees: number;
   let multiple: boolean;
   let cronJobs: unknown[];
+  let describeError: GatewayClientRequestError | undefined;
   const sessions = new Map<string, Record<string, unknown>>();
   const histories = new Map<
     string,
@@ -141,6 +142,7 @@ describe('agent/openclaw issue dispatch', () => {
     session = null;
     calls = [];
     cronJobs = [];
+    describeError = undefined;
     lost = false;
     absent = false;
     active = false;
@@ -289,8 +291,10 @@ describe('agent/openclaw issue dispatch', () => {
                   params.archived;
                 return { ok: true };
               }
-              if (method === 'sessions.describe')
+              if (method === 'sessions.describe') {
+                if (describeError) throw describeError;
                 return { session: multiple ? sessions.get(String(params.key)) : session };
+              }
               if (method === 'chat.send') {
                 const feedbackTurn = (
                   await record(String(params.sessionKey))
@@ -706,6 +710,245 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, { ...coordinator, runId: 'repeat' }, { action: 'next' });
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
     assert.equal(creates().length, 1);
+  });
+
+  for (const shape of ['current', 'legacy', 'rejected', 'denied'] as const) {
+    for (const tree of ['existing', 'absent'] as const) {
+      it(`should retire ${shape} unavailable sessions with an ${tree} worktree without invented archival`, async () => {
+        await prepare(await next());
+        const current = await service.scope(manifest, root);
+        if (shape === 'legacy' || shape === 'rejected') {
+          await current.journal.exclusive(async (state, save) => {
+            const saved = state.records[0]!;
+            const request = saved.request!;
+            assert.ok('key' in request);
+            const creation = saved.sessionCreation!;
+            saved.request = {
+              task: 'retained task',
+              label: request.label,
+              cwd: request.cwd,
+              model: request.model,
+              runtime: 'subagent',
+              visible: true,
+              cleanup: 'keep',
+            };
+            saved.creationCall = {
+              sessionId: creation.sourceSessionId,
+              runId: creation.sourceRunId,
+              toolCallId: creation.sourceToolCallId,
+            };
+            if (shape === 'legacy') {
+              saved.native = {
+                sessionKey: request.key,
+                sessionId: creation.sessionId!,
+                sourceSessionId: creation.sourceSessionId,
+                toolCallId: creation.sourceToolCallId,
+                runId: 'historical-child',
+              };
+            } else {
+              delete saved.threadId;
+              delete saved.effective;
+            }
+            delete saved.sessionCreation;
+            delete saved.firstTurn;
+            delete saved.feedback;
+            saved.phase = 'blocked';
+            await save();
+          });
+        }
+        const before = structuredClone(await record());
+        session = null;
+        if (shape === 'denied')
+          describeError = new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'private' });
+        let removed = tree === 'absent';
+        let removals = 0;
+        const inspect = service.dependencies.worktrees.inspectGitHub;
+        service.dependencies.worktrees.inspectGitHub = async (...args) =>
+          removed ? undefined : inspect(...args);
+        if (removed) await rm(before.worktree!, { recursive: true });
+        service.dependencies.worktrees.cleanupGitHub = async (input) => {
+          if (!input.verifyOnly) {
+            const persisted = await record();
+            assert.ok(persisted.retirement?.sessionUnavailableObserved);
+            assert.equal(persisted.retirement?.archivedAt, undefined);
+            assert.equal(persisted.retirement?.worktreeRemovalAttemptedAt !== undefined, true);
+            removals++;
+            await rm(input.worktree.path, { recursive: true });
+            removed = true;
+          }
+          return {
+            ...input.worktree,
+            repositoryId: 'github-10',
+            workId: 'issue-20',
+            status: input.verifyOnly ? 'preserved' : 'removed',
+          };
+        };
+        fixture.item.state = 'closed';
+        await service.run(manifest, root, coordinator, { action: 'next' });
+        assert.equal((await record()).retired, undefined);
+        assert.equal(removals, 0);
+        const deadline = (await record()).retirement!.eligibleAt;
+        service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline });
+        await service.run(manifest, root, { ...coordinator, runId: 'recover' }, { action: 'next' });
+        const after = await record();
+        assert.ok(after.retired);
+        assert.equal(openClawCapacity([after], 1).occupied, 0);
+        assert.deepEqual(after.retirement?.sessionUnavailableObserved, {
+          at: deadline,
+          session:
+            shape === 'rejected'
+              ? 'identity-unresolved'
+              : shape === 'denied'
+                ? 'access-denied'
+                : 'not-found',
+        });
+        assert.equal(after.retirement?.archivedAt, undefined);
+        assert.equal(after.retirement?.archiveAttempt, undefined);
+        assert.deepEqual(after.request, before.request);
+        assert.deepEqual(after.native, before.native);
+        assert.deepEqual(after.creationCall, before.creationCall);
+        assert.deepEqual(after.sessionCreation, before.sessionCreation);
+        assert.equal(after.threadId, before.threadId);
+        assert.equal(after.nativeInactive, before.nativeInactive);
+        assert.equal(removals, tree === 'existing' ? 1 : 0);
+        if (tree === 'absent') {
+          assert.equal(after.retirement?.worktreeRemovalAttemptedAt, undefined);
+          assert.equal(after.retirement?.worktreeRemovalObserved?.source, 'external-cleanup');
+        }
+        await assert.rejects(stat(before.worktree!), { code: 'ENOENT' });
+        service.dependencies.now = () => deadline + 60_000;
+        await service.run(manifest, root, { ...coordinator, runId: 'repeat' }, { action: 'next' });
+        assert.equal(removals, tree === 'existing' ? 1 : 0);
+        assert.equal(creates().length, 1);
+        assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 0);
+      });
+    }
+  }
+
+  for (const refusal of ['dirty', 'unpreserved'] as const) {
+    it(`should retain an unavailable session worktree when preservation is ${refusal}`, async () => {
+      await prepare(await next());
+      session = null;
+      let removals = 0;
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        if (!input.verifyOnly) removals++;
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: refusal,
+        };
+      };
+      fixture.item.state = 'closed';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const deadline = (await record()).retirement!.eligibleAt;
+      service.dependencies.now = () => deadline;
+      await service.run(manifest, root, { ...coordinator, runId: 'blocked' }, { action: 'next' });
+      const after = await record();
+      assert.equal(after.retired, undefined);
+      assert.equal(after.retirement?.code, `retirement-worktree-${refusal}`);
+      assert.equal(after.retirement?.archivedAt, undefined);
+      assert.equal(removals, 0);
+      assert.ok((await stat(after.worktree!)).isDirectory());
+    });
+  }
+
+  it('should stop inferred cleanup if the session becomes accessible during preservation', async () => {
+    await prepare(await next());
+    const original = session;
+    session = null;
+    let removals = 0;
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (input.verifyOnly) session = original;
+      else removals++;
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: input.verifyOnly ? 'preserved' : 'removed',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'changed' }, { action: 'next' });
+    assert.equal((await record()).retired, undefined);
+    assert.equal((await record()).retirement?.code, 'retirement-observation-changed');
+    assert.equal(removals, 0);
+  });
+
+  it('should reconcile lost unavailable-session cleanup without repeating removal', async () => {
+    await prepare(await next());
+    session = null;
+    const inspect = service.dependencies.worktrees.inspectGitHub;
+    let removed = false;
+    let removals = 0;
+    service.dependencies.worktrees.inspectGitHub = async (...args) =>
+      removed ? undefined : inspect(...args);
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (!input.verifyOnly) {
+        removals++;
+        await rm(input.worktree.path, { recursive: true });
+        removed = true;
+        throw new Error('lost-cleanup-response');
+      }
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: 'preserved',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'lost' }, { action: 'next' });
+    assert.equal((await record()).retirement?.code, 'lost-cleanup-response');
+    assert.equal((await record()).retired, undefined);
+    service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline + 60_000 });
+    await service.run(manifest, root, { ...coordinator, runId: 'reconcile' }, { action: 'next' });
+    const after = await record();
+    assert.ok(after.retired);
+    assert.equal(after.retirement?.worktreeRemovalObserved?.source, 'retirement-attempt');
+    assert.equal(after.retirement?.archivedAt, undefined);
+    assert.equal(removals, 1);
+    assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 0);
+  });
+
+  it('should keep transient session read failures pending without removing work', async () => {
+    await prepare(await next());
+    describeError = new GatewayClientRequestError({ code: 'UNAVAILABLE', message: 'temporary' });
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    service.dependencies.worktrees.cleanupGitHub = async () => {
+      throw new Error('must-not-clean');
+    };
+    await service.run(manifest, root, { ...coordinator, runId: 'outage' }, { action: 'next' });
+    const after = await record();
+    assert.equal(after.retired, undefined);
+    assert.equal(after.retirement?.sessionUnavailableObserved, undefined);
+    assert.equal(after.retirement?.code, 'session-dispatch-describe-unavailable-unverified');
+    assert.ok((await stat(after.worktree!)).isDirectory());
+  });
+
+  it('should not bypass automation ownership when the session is missing', async () => {
+    await prepare(await next());
+    service.dependencies.worktrees.cleanupGitHub = async () => {
+      throw new Error('must-not-clean');
+    };
+    cronJobs = [{ sessionTarget: `session:${(await record()).threadId}` }];
+    session = null;
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'owned' }, { action: 'next' });
+    assert.equal((await record()).retirement?.code, 'retirement-automation-owner');
+    assert.equal((await record()).retired, undefined);
   });
 
   it('should preserve a session targeted by a native automation', async () => {
@@ -2941,13 +3184,14 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
-  for (const { recover, loseResponse } of [
+  for (const { recover, loseResponse, preparationFailure } of [
     { recover: false, loseResponse: false },
     { recover: false, loseResponse: true },
     { recover: true, loseResponse: false },
     { recover: true, loseResponse: true },
+    { recover: true, loseResponse: false, preparationFailure: true },
   ]) {
-    it(`should retain one assessment summary in openclaw ${recover ? 'after handoff and restart' : 'in the assessment turn'} after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+    it(`should retain one assessment summary in openclaw ${recover ? 'after handoff and restart' : 'in the assessment turn'} after ${preparationFailure ? 'candidate connection failure' : loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
       const input = await next();
       await prepare(input);
       await assess(input.id);
@@ -2957,6 +3201,36 @@ describe('agent/openclaw issue dispatch', () => {
         'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
       );
       let who = assessor(input.id);
+      if (preparationFailure) {
+        const composed = await service.run(manifest, root, who, {
+          action: 'summary',
+          id: input.id,
+          operation: 'compose',
+        });
+        assert.ok('digest' in composed);
+        const use = service.dependencies.credential.use;
+        service.dependencies.credential.use = async () => {
+          throw new Error('session-dispatch-connect-failed');
+        };
+        try {
+          await assert.rejects(
+            service.run(manifest, root, who, {
+              action: 'summary',
+              id: input.id,
+              operation: 'candidate',
+              digest: composed.digest,
+              publicText: 'Retained summary after connection recovery.',
+            }),
+            /session-dispatch-connect-failed/,
+          );
+        } finally {
+          service.dependencies.credential.use = use;
+        }
+        assert.deepEqual((await record()).result, plan);
+        assert.ok(
+          (await record()).assessmentSummaries?.every((entry) => !entry.attempt && !entry.receipt),
+        );
+      }
       if (recover) {
         manifest.github!.notifications!.issueAssignment!.mode = 'work';
         inputReceipts = [];
@@ -4367,23 +4641,80 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
-  it('should keep plan feedback in planning even when native metadata says owner', async () => {
+  it('should answer question-only plan feedback without implementation despite owner metadata', async () => {
     const { id } = await feedbackOwner(false);
     consumeSend = true;
     await service.check(manifest, root);
     await service.run(manifest, root, coordinator, { action: 'reconcile', id });
     await service.run(manifest, root, coordinator, { action: 'next' });
-    const event = (await record()).feedback!.events[0]!;
+    const before = await record();
+    const event = before.feedback!.events[0]!;
     assert.ok(event.turn);
-    const result = await service.run(
+    const who = assessor(id, event.turn.runId);
+    const context = await service.run(
       manifest,
       root,
-      assessor(id, event.turn.runId),
-      { action: 'implementation-context', id },
+      who,
+      { action: 'feedback', operation: 'context', id, eventId: event.id },
       true,
     );
-    assert.equal(result.status, 'policy-held');
-    assert.equal((await record()).progression, undefined);
+    assert.equal(context.status, 'verified');
+    assert.ok('source' in context);
+    assert.equal((context.source as GitHubCanonicalIssueComment).body, '@receiver explain this');
+    const answer = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'feedback',
+        operation: 'result',
+        id,
+        eventId: event.id,
+        privateText: 'The retained plan describes the proposed change; no implementation started.',
+        reply: false,
+      },
+      true,
+    );
+    assert.equal(answer.status, 'recorded');
+    const after = await record();
+    assert.equal(after.progression, undefined);
+    assert.equal(after.feedback!.events[0]!.work, undefined);
+    assert.deepEqual(after.work, before.work);
+    assert.deepEqual(after.result, before.result);
+  });
+
+  it('should enter work from explicit approved plan feedback without an extra decision', async () => {
+    const { id, comments } = await feedbackOwner(false);
+    comments[0]!.body = '@receiver Please implement the agreed plan.';
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const before = await record();
+    const event = before.feedback!.events[0]!;
+    assert.ok(event.turn);
+    const who = assessor(id, event.turn.runId);
+    const request = {
+      action: 'feedback' as const,
+      operation: 'implementation-context' as const,
+      id,
+      eventId: event.id,
+    };
+    await assert.rejects(
+      service.run(manifest, root, { ...who, runId: 'unbound-native-owner' }, request, true),
+      /feedback-owner-caller-required/,
+    );
+    const result = await service.run(manifest, root, who, request, true);
+    assert.equal(result.status, 'verified');
+    const after = await record();
+    assert.equal(after.progression?.stage, 'implementation');
+    assert.equal(after.progression?.via, 'operator');
+    assert.equal(after.progression?.workOwner, event.id);
+    assert.equal(after.feedback!.events[0]!.work!.decision, undefined);
+    assert.deepEqual(after.result, before.result);
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.equal(creates().length, 1);
   });
 
   it('should preserve a legacy publication-only request without promoting implementation', async () => {
@@ -5115,6 +5446,97 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(events[0]!.sourceId, comment.nodeId);
     assert.ok(events[0]!.turn);
   });
+  for (const aborted of [false, true])
+    it(`should resume feedback through operator dispatch with aborted handler ${aborted}`, async () => {
+      const { id, comments } = await feedbackOwner();
+      comments[0]!.author = { login: 'pirog', nodeId: 'U_operator', type: 'User' };
+      manifest.github!.notifications!.issueAssignment!.feedback = {
+        inherit: false,
+        allowed: [{ login: 'pirog', nodeId: 'U_operator' }],
+      };
+      consumeSend = true;
+      await service.check(manifest, root);
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const event = (await record()).feedback!.events[0]!;
+      assert.ok(event.turn);
+      const who = assessor(id, event.turn.runId);
+      const args = { action: 'feedback' as const, id, eventId: event.id };
+      assert.equal(
+        (await service.run(manifest, root, who, { ...args, operation: 'context' })).status,
+        'verified',
+      );
+      assert.equal(
+        (
+          await service.run(manifest, root, who, {
+            ...args,
+            operation: 'result',
+            privateText: 'Saved answer.',
+          })
+        ).status,
+        'recorded',
+      );
+      const use = service.dependencies.credential.use;
+      service.dependencies.credential.use = (authority, operation) =>
+        use(authority, (request) =>
+          operation(async (method, params) =>
+            method === 'agent.wait' && params.runId === event.turn!.runId
+              ? {
+                  runId: event.turn!.runId,
+                  status: aborted ? 'error' : 'ok',
+                  ...(aborted ? { stopReason: 'aborted' } : {}),
+                }
+              : request(method, params),
+          ),
+        );
+      if (aborted) {
+        const stopped = await service.run(manifest, root, coordinator, {
+          ...args,
+          operation: 'reconcile',
+        });
+        assert.ok(
+          'code' in stopped && stopped.code === 'dispatch-turn-cancelled',
+          JSON.stringify(stopped),
+        );
+      } else
+        messages.push({
+          role: 'assistant',
+          stopReason: 'stop',
+          content: [{ type: 'text', text: 'Saved reply awaiting publication.' }],
+          __openclaw: {
+            id: 'finished-feedback-reply',
+            runId: event.turn!.runId,
+            runTerminal: true,
+          },
+        });
+      const resume = { ...who, runId: 'operator-reply-resume' };
+      messages.push({
+        role: 'user',
+        content: 'Finish the saved reply.',
+        __openclaw: {
+          id: 'operator-resume-input',
+          idempotencyKey: 'operator-reply-resume:user',
+          senderIsOwner: true,
+        },
+      });
+      const before = (await record()).feedback!.events[0]!;
+      await assert.rejects(
+        service.run(manifest, root, resume, { ...args, operation: 'context', resume: true }, false),
+        /feedback-owner-caller-required/,
+      );
+      assert.deepEqual((await record()).feedback!.events[0], before);
+      const resumed = await service.run(
+        manifest,
+        root,
+        resume,
+        { ...args, operation: 'context', resume: true },
+        true,
+      );
+      assert.equal(resumed.status, 'verified', JSON.stringify(resumed));
+      const after = (await record()).feedback!.events[0]!;
+      assert.equal(after.turn!.runId, resume.runId);
+      assert.deepEqual(after.result, before.result);
+      assert.equal(Boolean(after.ownerResumptions![0]!.previousTurn.cancelled), aborted);
+    });
   it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
     const { id } = await feedbackOwner();
     consumeSend = true;
