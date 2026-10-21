@@ -92,10 +92,18 @@ export default function registerGitHubNotificationsCli(
     .option('--all', 'select all configured agents.')
     .option(
       '--purge',
-      'also archive managed chats, close unmerged pull requests, and remove managed checkouts.',
+      'also archive managed issue chats and remove managed checkouts; leave github unchanged.',
+    )
+    .option('--preview', 'preview the explicit selection without changing state.')
+    .option(
+      '--confirmation <digest>',
+      'require the previously previewed selection to remain unchanged.',
     )
     .option('--yes', 'confirm the explicit selection without prompting.')
-    .option('--json', 'write structured json output; requires explicit targets and --yes.')
+    .option(
+      '--json',
+      'write structured json output; requires explicit targets and --preview or --yes.',
+    )
     .action(async () => {
       const values = reset.opts();
       const json = values.json === true;
@@ -109,6 +117,8 @@ export default function registerGitHubNotificationsCli(
             all: values.all === true,
             purge: values.purge === true,
             yes: values.yes === true,
+            preview: values.preview === true,
+            confirmation: typeof values.confirmation === 'string' ? values.confirmation : undefined,
             json,
             manifestService: options.manifestService,
             workspaceDir: options.cwd(),

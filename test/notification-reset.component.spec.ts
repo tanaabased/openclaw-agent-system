@@ -55,6 +55,7 @@ describe('agent/notification reset recovery', () => {
       baseline: async () => {
         events.push('baseline');
       },
+      coordinator: async () => ({ status: 'done' }),
       restore: async () => {
         events.push('restore');
         return { status: 'done' };
@@ -214,6 +215,40 @@ describe('agent/notification reset recovery', () => {
     assert.equal('request' in repeated, false);
     adapter.pause = async () => ({ status: 'done' });
     assert.equal((await run()).status, 'complete');
+  });
+
+  it('should retain a failed coordinator replacement and restore only after verified retargeting', async () => {
+    adapter.coordinator = async () => {
+      throw new Error('replacement failed');
+    };
+    await assert.rejects(run(), /replacement failed/u);
+    assert.equal((await store.read())?.phase, 'coordinator');
+    assert.ok(!events.includes('restore'));
+    adapter.coordinator = async () => ({ status: 'done', automation: '{"target":"fresh"}' });
+    adapter.restore = async (record) => {
+      assert.equal(record.automation, '{"target":"fresh"}');
+      return { status: 'done' };
+    };
+    assert.equal((await run()).status, 'complete');
+    assert.equal(events.filter((value) => value === 'clear').length, 1);
+    assert.equal(events.filter((value) => value === 'baseline').length, 1);
+  });
+
+  it('should discard remote effects from an old purge recovery without calling the provider', async () => {
+    snapshot.resources = [
+      {
+        id: 'pr',
+        kind: 'pull-request',
+        description: 'old PR',
+        identity: 'old',
+        details: [],
+        state: 'attempted',
+      },
+    ];
+    adapter.purge = async () => {
+      throw new Error('remote mutation forbidden');
+    };
+    assert.equal((await run(true)).status, 'complete');
   });
 
   it('should preserve a finished baseline across a failed restore', async () => {

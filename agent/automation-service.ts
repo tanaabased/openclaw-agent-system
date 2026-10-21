@@ -238,6 +238,67 @@ export default class AutomationService {
     });
   }
 
+  /** replace only the reset coordinator while its native schedule remains paused. */
+  async notificationResetReplace(
+    manifest: AgentManifest,
+    workspace: string,
+    expected: Awaited<ReturnType<AutomationService['notificationResetSnapshot']>>,
+    attempted: boolean,
+    beforeUpdate: () => Promise<void>,
+  ) {
+    const { context, store } = await this.scope(manifest, workspace);
+    return store.withLock(async () => {
+      const { native } = await this.resolveOwned(manifest, workspace, expected.id);
+      if (
+        native.id !== expected.nativeId ||
+        native.enabled ||
+        !expected.sessionKey ||
+        nativeAutomationHash({
+          ...native,
+          enabled: false,
+          sessionTarget: `session:${expected.sessionKey}`,
+        }) !== expected.hash
+      )
+        throw new Error('notification-reset-automation-changed');
+      const job = openclawIntakeJobs(manifest).find(({ id }) => id === expected.id);
+      if (!job) throw new Error('notification-reset-coordinator-missing');
+      context.threads = await this.threads(context, store).resolve([job], true);
+      const target = context.threads.get(job.id)?.id;
+      if (!target || target === expected.sessionKey)
+        throw new Error('notification-reset-coordinator-not-replaced');
+      const sessionTarget = `session:${target}`;
+      if (native.sessionTarget !== sessionTarget) {
+        if (native.sessionTarget !== `session:${expected.sessionKey}` || attempted)
+          throw new Error('notification-reset-native-action-unverified');
+        await beforeUpdate();
+        await this.dependencies.request!('cron.update', {
+          id: native.id,
+          expectedConfigRevision: native.configRevision,
+          patch: { sessionTarget },
+        });
+      }
+      const after = nativeAutomation(
+        await this.dependencies.request!('cron.get', { id: native.id }),
+      );
+      if (
+        after.enabled ||
+        after.sessionTarget !== sessionTarget ||
+        nativeAutomationHash({ ...after, sessionTarget: `session:${expected.sessionKey}` }) !==
+          expected.hash
+      )
+        throw new Error('notification-reset-automation-unverified');
+      const ledger = await store.read();
+      const record = ledger.records.find(({ id }) => id === job.id)!;
+      const effective = effectiveAutomation(job, context);
+      record.hash = effective.hash;
+      record.triggerHash = effective.triggerHash;
+      // retain the restored setting; the temporary pause is not installed drift.
+      record.nativeHash = nativeAutomationHash({ ...after, enabled: expected.enabled });
+      await store.write(ledger);
+      return { ...expected, sessionKey: target, hash: nativeAutomationHash(after) };
+    });
+  }
+
   async run(manifest: AgentManifest, workspaceDir: string, id: string) {
     const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
     if (!job) throw new AutomationError('automation-id-missing');

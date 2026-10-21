@@ -12,7 +12,12 @@ import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const resource = Type.Object({
   id: text,
-  kind: Type.Union([Type.Literal('chat'), Type.Literal('pull-request'), Type.Literal('worktree')]),
+  kind: Type.Union([
+    Type.Literal('chat'),
+    Type.Literal('coordinator'),
+    Type.Literal('pull-request'),
+    Type.Literal('worktree'),
+  ]),
   description: text,
   identity: Type.String({ minLength: 1, maxLength: 65536 }),
   custody: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
@@ -36,10 +41,13 @@ const schema = Type.Object(
       Type.Literal('purge'),
       Type.Literal('baseline'),
       Type.Literal('restore'),
+      Type.Literal('coordinator'),
     ]),
     automation: Type.String({ minLength: 1, maxLength: 128000 }),
     inventory: Type.String({ minLength: 1, maxLength: 12 * 1024 * 1024 }),
     resources: Type.Array(resource, { maxItems: 3000 }),
+    coordinatorArchiveAttempted: Type.Optional(Type.Boolean()),
+    coordinatorUpdateAttempted: Type.Optional(Type.Boolean()),
     baselineAt: Type.Optional(Type.Integer({ minimum: 0 })),
     pauseAttempted: Type.Optional(Type.Boolean()),
     nativeRequest: Type.Optional(Type.String({ maxLength: 128000 })),

@@ -183,21 +183,24 @@ export function codexThreadAdapter(
       throw new AutomationError('automation-thread-response-invalid');
     if ((await realpath(thread.cwd).catch(() => '')) !== workspace)
       throw new AutomationError('automation-thread-workspace-mismatch');
-    if (
+    const archived =
       thread.archived === true ||
+      (typeof thread.path === 'string' &&
+        thread.path.split(/[\\/]/u).includes('archived_sessions'));
+    if (
       thread.ephemeral === true ||
-      thread.canAcceptDirectInput === false ||
+      (thread.canAcceptDirectInput === false && !archived) ||
       (Array.isArray(thread.environments) &&
         thread.environments.some(
           (environment) => !nativeObject(environment) || environment.environmentId !== 'local',
         )) ||
       typeof thread.path !== 'string' ||
-      thread.path.split(/[\\/]/u).includes('archived_sessions') ||
       !['idle', 'active', 'running', 'completed', 'notLoaded'].includes(String(thread.status.type))
     )
       throw new AutomationError('automation-thread-unavailable');
     return {
       id,
+      archived,
       ...(typeof thread.name === 'string' ? { name: thread.name } : {}),
       ...(typeof thread.model === 'string' ? { model: thread.model } : {}),
       ...(typeof thread.reasoningEffort === 'string' ? { effort: thread.reasoningEffort } : {}),

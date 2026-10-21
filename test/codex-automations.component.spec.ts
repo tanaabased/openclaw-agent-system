@@ -8,6 +8,8 @@ import { parse, stringify } from 'smol-toml';
 import { automationHash } from '../agent/automation-hash.ts';
 import {
   acknowledgeCodexAutomation,
+  replaceCodexNotificationCoordinator,
+  codexNotificationResetAutomation,
   cancelCodexAutomation,
   inspectCodexAutomations,
   listCodexAutomations,
@@ -22,7 +24,12 @@ import {
   readCodexAutomations,
   type NativeAutomation,
 } from '../agent/codex-automation-state.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import {
+  bindCodexWorkspace,
+  inspectCodexWorkspaceBinding,
+} from '../agent/codex-workspace-binding.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
+import { inspectCodexIntake } from '../agent/codex-intake.ts';
 import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
 
 const capture = (name: string) =>
@@ -205,6 +212,125 @@ describe('agent/codex-automations', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should preserve intake on coordinator repair and retarget a reset only while paused', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        'schema-version': 1,
+        agent: { id: 'fixture' },
+        models: {
+          default: { model: 'openai/gpt-6-astra', effort: 'high' },
+          low: { model: 'openai/gpt-6-luna', effort: 'medium' },
+          medium: { model: 'openai/gpt-6.1-sol', effort: 'high' },
+          high: { model: 'openai/gpt-6-astra', effort: 'high' },
+        },
+        github: {
+          username: 'receiver',
+          notifications: {
+            'schema-version': 2,
+            runtimes: ['codex'],
+            'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+            'issue-assignment': {
+              mode: 'plan',
+              allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
+            },
+          },
+        },
+      }),
+    );
+    const conversations = new Map<
+      string,
+      { id: string; name?: string; archived?: boolean; model?: string; effort?: string }
+    >();
+    const provider = intakeFixture();
+    provider.events.length = 0;
+    let creates = 0;
+    const dependencies = {
+      ...deps(),
+      intake: { connect: async () => provider.client },
+      threadAdapter: {
+        async lookup(id: string) {
+          return conversations.get(id) ?? null;
+        },
+        async create(
+          _record: unknown,
+          save: (id: string) => Promise<void>,
+          _fresh: boolean,
+          settings?: { model?: string; effort?: string },
+        ) {
+          const id = `intake-${++creates}`;
+          await save(id);
+          conversations.set(id, { id, ...settings });
+          return id;
+        },
+        async rename(id: string, name: string) {
+          conversations.get(id)!.name = name;
+        },
+      },
+    };
+    const inspect = () => inspectCodexAutomations(pluginData, {}, dependencies);
+    const binding = await inspectCodexWorkspaceBinding(pluginData);
+    assert.ok(
+      binding.status === 'bound' &&
+        binding.preview.status === 'ready' &&
+        binding.preview.manifest.status === 'loaded',
+      JSON.stringify(binding),
+    );
+    let first = await inspect();
+    await syncCodexAutomationThreads(pluginData, first.digest, {}, dependencies);
+    async function reconcile() {
+      for (let iteration = 0; iteration < 5; iteration++) {
+        const plan = await inspect();
+        if (plan.status === 'aligned') return;
+        const action = plan.actions[0]!;
+        assert.ok(action, JSON.stringify(plan.findings));
+        await prepareCodexAutomation(pluginData, plan.digest, {}, dependencies);
+        await nativeWrite(action.expected, action.id ?? `intake-job-${creates}-${iteration}`);
+        await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
+      }
+      assert.fail('did not converge');
+    }
+    await reconcile();
+    const before = await inspectCodexIntake(pluginData, dependencies);
+    conversations.get('intake-1')!.archived = true;
+    first = await inspect();
+    assert.ok(first.findings.some(({ code }) => code === 'automation-thread-replacement-required'));
+    assert.equal(creates, 1);
+    await syncCodexAutomationThreads(pluginData, first.digest, {}, dependencies);
+    await reconcile();
+    assert.equal(creates, 2);
+    assert.equal(
+      (await inspectCodexIntake(pluginData, dependencies)).baselineAt,
+      before.baselineAt,
+    );
+    const saved = await codexNotificationResetAutomation(pluginData, dependencies);
+    assert.equal(saved.definition.kind, 'heartbeat');
+    conversations.get('intake-2')!.archived = true;
+    await assert.rejects(
+      replaceCodexNotificationCoordinator(pluginData, saved, dependencies),
+      /notification-reset-automation-changed/u,
+    );
+    assert.equal(creates, 2);
+    await nativeWrite({ ...saved.definition, status: 'PAUSED' }, saved.id);
+    const effect = await replaceCodexNotificationCoordinator(pluginData, saved, dependencies);
+    assert.equal(effect.status, 'native-action');
+    assert.equal(effect.request?.arguments.status, 'PAUSED');
+    const definition = {
+      ...saved.definition,
+      targetThreadId: 'intake-3',
+      status: 'PAUSED' as const,
+    };
+    await nativeWrite(definition, saved.id);
+    const completed = await replaceCodexNotificationCoordinator(pluginData, saved, dependencies);
+    assert.equal(completed.status, 'done');
+    assert.equal(creates, 3);
+    const updated = JSON.parse(completed.automation!);
+    assert.equal(updated.definition.targetThreadId, 'intake-3');
+    assert.equal(updated.definition.status, 'ACTIVE');
+    await nativeWrite(updated.definition, saved.id);
+    assert.equal((await inspect()).status, 'aligned');
   });
 
   it('should create per-automation conversations and migrate only after retiring the old active schedule', async () => {

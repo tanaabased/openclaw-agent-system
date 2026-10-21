@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
@@ -15,7 +15,7 @@ import { intakeFixture, account } from './github-intake-fixture.ts';
 describe('agent/notification reset runtime adapters', () => {
   let root: string;
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'notification-reset-adapters-'));
+    root = await realpath(await mkdtemp(join(tmpdir(), 'notification-reset-adapters-')));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -34,18 +34,69 @@ describe('agent/notification reset runtime adapters', () => {
       }),
     );
 
+  function coordinator(active = () => false) {
+    let archived = false;
+    let missing = false;
+    let replacements = 0;
+    const row = () => ({
+      key: 'coordinator',
+      agentId: 'receiver',
+      sessionId: 'source',
+      workspaceDir: root,
+      archived,
+    });
+    return {
+      missing: () => {
+        missing = true;
+      },
+      replacements: () => replacements,
+      archived: () => archived,
+      async request(method: string) {
+        if (method === 'sessions.resolve')
+          return missing ? { ok: false } : { ok: true, key: 'coordinator', agentId: 'receiver' };
+        if (method === 'sessions.list') return { sessions: [row()] };
+        if (method === 'sessions.describe') return { session: row() };
+        if (method === 'sessions.patch') {
+          archived = true;
+          return {};
+        }
+        if (method === 'cron.list') return { jobs: [], hasMore: false };
+        if (method === 'chat.history')
+          return { sessionInfo: { hasActiveRun: active() }, pendingInputs: { total: 0 } };
+        throw new Error(method);
+      },
+      async replace(
+        _manifest: unknown,
+        _workspace: string,
+        expected: {
+          id: string;
+          nativeId: string;
+          enabled: boolean;
+          hash: string;
+          sessionKey?: string;
+        },
+      ) {
+        assert.ok(archived || missing);
+        replacements++;
+        return { ...expected, sessionKey: 'replacement' };
+      },
+    };
+  }
+
   it('should pause openclaw once, wait for the coordinator, reset and restore', async () => {
     const scope = 'a'.repeat(64);
     const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
     await seed(intake);
     let enabled = true;
     let active = true;
+    const native = coordinator(() => active);
     const toggles: boolean[] = [];
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
       intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
       automations: {
+        notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
           id: 'intake',
           nativeId: 'job',
@@ -59,11 +110,7 @@ describe('agent/notification reset runtime adapters', () => {
         },
       },
       credential: {
-        use: async (_authority, run) =>
-          run(async (method) => {
-            assert.equal(method, 'chat.history');
-            return { sessionInfo: { hasActiveRun: active }, pendingInputs: { total: 0 } };
-          }),
+        use: async (_authority, run) => run(native.request),
       },
       worktrees: {
         inspectGitHub: async () => {
@@ -86,6 +133,8 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal((await run()).status, 'complete');
     assert.deepEqual(toggles, [false, true]);
     assert.ok((await intake.read())!.baselineAt > 1);
+    assert.equal(native.archived(), true);
+    assert.equal(native.replacements(), 1);
     assert.ok((await new OpenClawDispatchStore(root, scope).read()).resetGeneration);
   });
 
@@ -95,16 +144,20 @@ describe('agent/notification reset runtime adapters', () => {
     await seed(intake);
     let enabled = true;
     let attempts = 0;
+    const native = coordinator();
+    native.missing();
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
       intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
       automations: {
+        notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
           id: 'intake',
           nativeId: 'job',
           enabled,
           hash: 'configuration',
+          sessionKey: 'coordinator',
         }),
         notificationResetToggle: async (_manifest, _workspace, expected, restore) => {
           if (!restore) {
@@ -115,9 +168,7 @@ describe('agent/notification reset runtime adapters', () => {
         },
       },
       credential: {
-        use: async () => {
-          throw new Error('no conversations');
-        },
+        use: async (_authority, run) => run(native.request),
       },
       worktrees: {
         inspectGitHub: async () => undefined,
@@ -166,15 +217,37 @@ describe('agent/notification reset runtime adapters', () => {
       },
     };
     let finished = false;
+    let archived = false;
     const deps = {
       codexHome,
       caller: 'operator',
       automation: async () => structuredClone(saved),
+      replaceCoordinator: async (_pluginData: string, before: SavedAutomation) => {
+        assert.equal(saved.definition.status, 'PAUSED');
+        assert.equal(archived, true);
+        if (saved.definition.kind !== 'heartbeat') throw new Error('heartbeat required');
+        saved.definition.targetThreadId = 'replacement';
+        return {
+          status: 'done' as const,
+          automation: JSON.stringify({
+            ...before,
+            definition: { ...before.definition, targetThreadId: 'replacement' },
+          }),
+        };
+      },
       threads: async () => ({
         close: async () => {},
         request: async (method: string) =>
           method === 'thread/read'
-            ? { thread: { id: 'coordinator', status: { type: 'notLoaded' } } }
+            ? {
+                thread: {
+                  id: 'coordinator',
+                  cwd: current.workspace,
+                  path: '/sessions/coordinator',
+                  archived,
+                  status: { type: 'notLoaded' },
+                },
+              }
             : {
                 data: [
                   { id: 'turn', status: 'interrupted', ...(finished ? { completedAt: 100 } : {}) },
@@ -183,13 +256,31 @@ describe('agent/notification reset runtime adapters', () => {
       }),
     };
     const run = () =>
-      runCodexNotificationReset(pluginData, { agent: ['receiver'], yes: true }, deps);
+      runCodexNotificationReset(
+        pluginData,
+        {
+          agent: ['receiver'],
+          yes: true,
+          nativeInventory: {
+            schemaVersion: 4,
+            pinnedThreads: [],
+            unavailableHosts: [],
+            unavailableSources: [],
+          },
+        },
+        deps,
+      );
     assert.equal((await run()).status, 'native-action');
     assert.equal((await run()).status, 'incomplete');
     saved.definition.status = 'PAUSED';
     assert.equal((await run()).status, 'waiting');
     assert.equal((await current.store.read())!.baselineAt, 1);
     finished = true;
+    const archive = await run();
+    assert.equal(archive.status, 'native-action');
+    assert.equal('request' in archive && archive.request?.tool, 'set_thread_archived');
+    assert.equal((await run()).status, 'incomplete');
+    archived = true;
     const restoring = await run();
     assert.equal(restoring.status, 'native-action');
     assert.equal('request' in restoring && restoring.request?.arguments.status, 'ACTIVE');
@@ -200,7 +291,7 @@ describe('agent/notification reset runtime adapters', () => {
       runCodexNotificationReset(
         pluginData,
         { all: true, yes: true },
-        { ...deps, caller: 'coordinator' },
+        { ...deps, caller: 'replacement' },
       ),
       /notification-reset-operator-required/u,
     );
@@ -307,6 +398,8 @@ describe('agent/notification reset runtime adapters', () => {
       });
       await save();
     });
+    const native = coordinator();
+    native.missing();
     let pinned = true;
     let shared = true;
     let archived = false;
@@ -318,11 +411,13 @@ describe('agent/notification reset runtime adapters', () => {
       root,
       intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
       automations: {
+        notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
           id: 'intake',
           nativeId: 'job',
           enabled,
           hash: 'configuration',
+          sessionKey: 'coordinator',
         }),
         notificationResetToggle: async (_manifest, _workspace, expected, restore) => {
           enabled = restore ? expected.enabled : false;
@@ -331,6 +426,7 @@ describe('agent/notification reset runtime adapters', () => {
       credential: {
         use: async (_authority, run) =>
           run(async (method, params) => {
+            if (method === 'sessions.resolve') return { ok: false };
             if (method === 'chat.history')
               return {
                 sessionId: 'issue-session',

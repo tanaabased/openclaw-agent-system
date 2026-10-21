@@ -20,6 +20,7 @@ export interface NotificationResetSnapshot {
 export interface NotificationResetEffect {
   status: 'done' | 'waiting' | 'native-action' | 'incomplete';
   code?: string;
+  automation?: string;
   request?: { tool: string; arguments: Record<string, unknown> };
   instruction?: string;
 }
@@ -35,6 +36,10 @@ export interface NotificationResetAdapter {
     resource: NotificationResetResource,
   ): Promise<NotificationResetEffect>;
   baseline(record: NotificationResetRecord): Promise<void>;
+  coordinator(
+    record: NotificationResetRecord,
+    save: (record: NotificationResetRecord) => Promise<void>,
+  ): Promise<NotificationResetEffect>;
   restore(record: NotificationResetRecord): Promise<NotificationResetEffect>;
 }
 
@@ -119,7 +124,7 @@ export default async function resetNotifications(input: {
         resources: record.resources,
       };
     };
-    if (record.phase !== 'pause' && record.phase !== 'restore') {
+    if (record.phase !== 'pause' && record.phase !== 'restore' && record.phase !== 'coordinator') {
       const effect = await adapter.pause({ ...record, pauseAttempted: true });
       if (effect.status !== 'done') return pending(effect);
     }
@@ -132,7 +137,7 @@ export default async function resetNotifications(input: {
       record.phase = 'drain';
       await save(record);
     }
-    if (record.phase !== 'restore') {
+    if (record.phase !== 'restore' && record.phase !== 'coordinator') {
       const effect = await adapter.idle(record);
       if (effect.status !== 'done') return pending(effect);
       if (record.phase === 'drain') {
@@ -147,7 +152,12 @@ export default async function resetNotifications(input: {
     }
     if (record.phase === 'purge') {
       for (const resource of record.resources) {
-        if (resource.state === 'done') continue;
+        if (resource.state === 'done' || resource.kind === 'coordinator') continue;
+        if (resource.kind === 'pull-request') {
+          resource.state = 'done';
+          await save(record);
+          continue;
+        }
         // persist intent before submission so an uncertain result is observed before retry.
         const previous = resource.state;
         resource.state = 'attempted';
@@ -164,6 +174,16 @@ export default async function resetNotifications(input: {
       record.baselineAt ??= (input.now ?? Date.now)();
       await save(record);
       await adapter.baseline(record);
+      record.phase = 'coordinator';
+      await save(record);
+    }
+    if (record.phase === 'coordinator') {
+      const replacement = await adapter.coordinator(record, save);
+      if (replacement.status !== 'done') return pending(replacement);
+      if (replacement.automation) record.automation = replacement.automation;
+      for (const resource of record.resources) {
+        if (resource.kind === 'coordinator') resource.state = 'done';
+      }
       record.phase = 'restore';
       await save(record);
     }

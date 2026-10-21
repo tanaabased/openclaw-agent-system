@@ -1,3 +1,4 @@
+import { automationHash } from '../../../agent/automation-hash.ts';
 import type { Readable } from 'node:stream';
 import { createClackPrompter } from 'openclaw/plugin-sdk/setup-runtime';
 import type OpenClawNotificationReset from '../../../agent/openclaw-notification-reset.ts';
@@ -20,6 +21,8 @@ export interface ResetNotificationsOptions {
   yes: boolean;
   purge: boolean;
   json: boolean;
+  preview?: boolean;
+  confirmation?: string;
   listAgents(): Promise<string[]>;
   service: Pick<OpenClawNotificationReset, 'preview' | 'run'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
@@ -42,14 +45,17 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
     [environment.CI, environment.NONINTERACTIVE].some((value) =>
       /^(1|true|yes|on)$/iu.test(value ?? ''),
     );
-  if ((unattended && !options.yes) || (options.yes && !options.all && !options.agents.length))
+  if (
+    (unattended && !options.yes && !options.preview) ||
+    ((options.yes || options.preview) && !options.all && !options.agents.length)
+  )
     throw new Error('notification-reset-requires-explicit-target-and-yes');
   const available = [...new Set(await options.listAgents())].sort();
   if (options.agents.some((id) => !available.includes(id)))
     throw new Error('notification-reset-agent-unknown');
   let agents = options.all ? available : [...new Set(options.agents)];
   const prompt = options.prompt ?? createClackPrompter(process.stderr);
-  if (!options.yes) {
+  if (!options.yes && !options.preview) {
     const selected = await prompt.multiselect({
       message: 'reset notifications for which agents?',
       options: [
@@ -77,20 +83,44 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
     );
     targets.push({ loaded, preview });
   }
+  const confirmation = automationHash(
+    targets.map(({ preview }) => [preview.agentId, preview.purge, preview.fingerprint]),
+  );
+  if (
+    options.confirmation &&
+    options.confirmation !== confirmation &&
+    targets.some(({ preview }) => !preview.continuing)
+  )
+    throw new Error('notification-reset-preview-changed');
   if (!options.json)
     writeCliLines(options.output, [
       '',
       styles.bold(options.purge ? 'notification reset and purge' : 'notification reset'),
-      'pause intake, wait for managed turns, clear routing and feedback state, establish a fresh assignment baseline, then restore intake',
+      'pause intake, wait for managed turns, clear routing and feedback state, establish a fresh assignment baseline, replace the intake chat, then restore its prior schedule state',
       ...targets.flatMap(({ preview }) => [
         `${preview.agentId}: ${preview.workspace}${preview.continuing ? ' (finish interrupted reset)' : ''}`,
         ...preview.resources.flatMap((resource) => [
-          `  ${resource.kind}: ${resource.kind === 'chat' ? `***${resource.description.slice(-4)}` : resource.description}`,
+          `  ${resource.kind}: ${['chat', 'coordinator'].includes(resource.kind) ? `***${resource.description.slice(-4)}` : resource.description}`,
           ...resource.details.map((detail) => `    ${detail}`),
         ]),
       ]),
       '',
     ]);
+  if (options.preview) {
+    if (options.json)
+      writeCliJson(options.output, {
+        status: 'confirmation-required',
+        confirmation,
+        targets: targets.map(({ preview }) => ({
+          agentId: preview.agentId,
+          workspace: preview.workspace,
+          purge: preview.purge,
+          continuing: preview.continuing,
+          resources: preview.resources,
+        })),
+      });
+    return;
+  }
   if (
     !options.yes &&
     !(await prompt.confirm({

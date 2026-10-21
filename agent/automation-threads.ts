@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
@@ -13,6 +14,8 @@ import type { AutomationRuntime, ResolvedAutomation } from '../manifest/automati
 const recordSchema = Type.Object(
   {
     key: Type.String(),
+    generation: Type.Optional(Type.String()),
+    retiredId: Type.Optional(Type.String()),
     nativeId: Type.Optional(Type.String({ minLength: 1 })),
     phase: Type.Union([
       Type.Literal('creating'),
@@ -34,6 +37,7 @@ const ledgerSchema = Type.Object(
 export interface AutomationThread {
   id: string;
   name?: string;
+  archived?: boolean;
   model?: string;
   effort?: string;
   group?: string;
@@ -155,6 +159,7 @@ export default class AutomationThreads {
           record?: ThreadRecord;
           native: AutomationThread | null;
           settings?: AutomationThreadSettings;
+          replace?: boolean;
         }
       >();
       const nativeNames = new Map<string, string>();
@@ -164,8 +169,17 @@ export default class AutomationThreads {
         const record = ledger.records.find((r) => r.key === selection.key);
         const id = record?.nativeId ?? selection.exact;
         const native = id ? await this.adapter.lookup(id) : null;
-        if (record && record.phase === 'ready' && !native)
+        const replace = Boolean(
+          record?.phase === 'ready' &&
+          (!native || native.archived) &&
+          selection.managed &&
+          job.id === 'github-issue-assignment',
+        );
+        if (replace && !apply) throw new AutomationError('automation-thread-replacement-required');
+        if (record && record.phase === 'ready' && !native && !replace)
           throw new AutomationError('automation-thread-recovery-required');
+        if (native?.archived && !replace)
+          throw new AutomationError('automation-thread-unavailable');
         if (!selection.managed && !native) throw new AutomationError('automation-thread-missing');
         if (record && record.phase !== 'ready' && !apply)
           throw new AutomationError('automation-thread-recovery-required');
@@ -181,7 +195,7 @@ export default class AutomationThreads {
           this.options.runtime === 'codex' && selection.managed && override
             ? { model: override.model, effort: override.effort }
             : undefined;
-        prepared.set(selection.key, { selection, record, native, settings });
+        prepared.set(selection.key, { selection, record, native, settings, replace });
       }
       if (this.options.runtime === 'codex') {
         const active = new Set<string>();
@@ -200,9 +214,16 @@ export default class AutomationThreads {
         const { selection, settings } = entry;
         let { record, native } = entry;
         let outcome: 'created' | 'bound' | 'reused' = record ? 'reused' : 'bound';
-        if (!native || (record && record.phase !== 'ready')) {
+        if (entry.replace || !native || (record && record.phase !== 'ready')) {
           if (!apply) throw new AutomationError('automation-thread-sync-required');
-          const fresh = !record;
+          const fresh = !record || entry.replace === true;
+          if (entry.replace && record) {
+            record.retiredId = record.nativeId;
+            delete record.nativeId;
+            record.generation = randomUUID();
+            record.phase = 'creating';
+            await save();
+          }
           if (!record) {
             record = { key, phase: 'creating' };
             ledger.records.push(record);
@@ -220,7 +241,7 @@ export default class AutomationThreads {
             settings,
           );
           native = await this.adapter.lookup(id);
-          if (!native || native.id !== id)
+          if (!native || native.archived || native.id !== id)
             throw new AutomationError('automation-thread-readback-diverged');
           record.nativeId = native.id;
           record.phase = 'ready';
