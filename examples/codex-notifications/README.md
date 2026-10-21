@@ -6,6 +6,16 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For two-installation claiming, use the same branch on both machines with distinct
+installation identities and the same native GitHub account. Let ordinary scheduled
+intake process one authorized Big Test Bucket assignment through the default claim
+provider. Verify that the first occurrence posts a claim without preparing work,
+a later occurrence creates exactly one issue chat and worktree across both machines,
+and only verified creation changes the winning comment to accepted. Retain that
+comment and both machines' native receipts before closing the fixture. Component
+coverage exercises the native GitHub connection with controlled CLI responses;
+it does not replace this desktop trial.
+
 For pause parity, use that disposable native setup to compare UI Pause/Resume with
 `paused: true`/`paused: false` followed by Install. Record the same automation and
 intake chat IDs, baseline, pending event IDs, and delivery receipts before and

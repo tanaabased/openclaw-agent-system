@@ -1,5 +1,6 @@
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
+import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import type { ClaimClient } from '../agent/assignment-claim.ts';
@@ -279,9 +280,89 @@ describe('agent/codex-dispatch', () => {
     return { store, client, comments };
   }
 
-  it('should wait for a distinct native occurrence before repository preparation and accept only a verified chat', async () => {
-    const { comments } = await claiming();
-    assert.equal((await next()).status, 'claim-waiting');
+  it('should claim through the native github connection before preparing and accepting a verified chat', async () => {
+    const comments: Array<GitHubCanonicalIssueComment & { bodyLength: number; issueUrl: string }> =
+      [];
+    const bin = join(root, 'bin');
+    await mkdir(bin);
+    await writeFile(join(bin, 'gh'), '', { mode: 0o700 });
+    const previousPath = process.env.PATH;
+    let connection: Awaited<ReturnType<typeof connectCodexGitHubAccount>>;
+    try {
+      process.env.PATH = bin;
+      connection = await connectCodexGitHubAccount(
+        workspace,
+        new AbortController().signal,
+        async (argv, options) => {
+          assert.equal(options.cwd, workspace);
+          assert.deepEqual(options.env, { GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat' });
+          assert.deepEqual(argv.slice(-2), ['--hostname', 'github.com']);
+          const endpoint = argv.slice(1).find((arg) => arg.startsWith('/'));
+          let value: unknown;
+          if (endpoint === '/user') value = fixture.client.identity;
+          else if (endpoint === '/repos/owner/repo') value = fixture.repository;
+          else if (endpoint === '/repos/owner/repo/issues/3') {
+            value = {
+              ...fixture.item,
+              isPullRequest: false,
+              title: 'Repair contained behavior',
+              body: 'The acceptance criteria require a safe plan.',
+              commentCount: comments.length,
+              labels: [],
+            };
+          } else if (endpoint === '/repos/owner/repo/issues/3/events') value = fixture.events;
+          else if (endpoint === '/repos/owner/repo/issues/3/issue-field-values?per_page=100')
+            value = [
+              { name: 'complexity', value: 'medium' },
+              { name: 'work size', value: 8 },
+            ];
+          else if (endpoint === '/repos/owner/repo/issues/3/comments') {
+            if (argv.includes('POST')) {
+              const { body } = JSON.parse(options.input) as { body: string };
+              const comment = {
+                databaseId: comments.length + 1,
+                nodeId: 'C_' + (comments.length + 1),
+                author: fixture.client.identity,
+                body,
+                bodyTruncated: false,
+                bodyLength: body.length,
+                issueUrl: 'https://api.github.com/repos/owner/repo/issues/3',
+                createdAt: new Date(now).toISOString(),
+                updatedAt: new Date(now).toISOString(),
+              };
+              comments.push(comment);
+              value = { ...comment, user: comment.author };
+            } else
+              value = comments.map((comment) => ({
+                ...comment,
+                authorLogin: comment.author!.login,
+              }));
+          } else if (endpoint === '/repos/owner/repo/issues/comments/1') {
+            if (argv.includes('PATCH')) {
+              comments[0]!.body = (JSON.parse(options.input) as { body: string }).body;
+              comments[0]!.bodyLength = comments[0]!.body.length;
+            }
+            value = comments[0];
+          } else throw new Error('unexpected native github request: ' + endpoint);
+          return {
+            code: 0,
+            killed: false,
+            signal: null,
+            stdout: 'HTTP/2 200\n\n' + JSON.stringify(value),
+            stderr: '',
+            termination: 'exit',
+          };
+        },
+      );
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+    deps.connect = async () => connection.client;
+    delete deps.claims;
+    await codexInstanceStore(pluginData).identity();
+    const first = await next();
+    assert.equal(first.status, 'claim-waiting', JSON.stringify(first));
     assert.equal((await next()).status, 'idle');
     assert.deepEqual(gitCalls, []);
     assert.equal(comments.length, 1);
