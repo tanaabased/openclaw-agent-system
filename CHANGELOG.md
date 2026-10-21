@@ -29,6 +29,7 @@
 - Fixed Codex session hooks failing when the plugin path contains spaces.
 - Fixed compromised private-state locks crashing the Gateway. [#234](https://github.com/tanaabased/openclaw-agent-system/pull/234)
 - Fixed implicit model fallback inheritance while preserving configured fallback lists. [#222](https://github.com/tanaabased/openclaw-agent-system/issues/222)
+- Fixed OpenClaw retirement getting stuck on unavailable sessions while retaining normal worktree preservation checks. [#413](https://github.com/tanaabased/openclaw-agent-system/issues/413)
 - Fixed safe validation explanations being replaced by generic tool rejection messages. [#15](https://github.com/tanaabased/openclaw-agent-system/issues/15)
 - Rejected unsupported native OpenClaw notification retirement waits before polling or requesting refreshes. [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328)
 - Rejected notification timeouts above `2147483` seconds before they overflow the native timer.

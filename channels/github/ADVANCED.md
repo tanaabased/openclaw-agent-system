@@ -120,8 +120,16 @@ Each successful cleanup step is retained so interrupted cleanup can reconcile on
 later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
 them. If the managed inventory and recorded path both confirm an already-removed
 worktree, retirement records observed external cleanup after its ownership checks;
-this does not claim to have removed or preserved the missing checkout. Ambiguous
-session identity remains a blocker.
+this does not claim to have removed or preserved the missing checkout. For work
+already pending retirement, a null session lookup, an explicit lookup access denial,
+or a legacy creation attempt with no child identity can also proceed through the
+same grace, ownership, and worktree preservation checks. This is an inferred
+unavailable-session outcome, not proof of deletion or rejected creation; it is
+recorded separately without inventing archival. Existing worktrees are removed only
+when the normal checks pass; already-absent worktrees are observed, not removed again.
+Timeouts, temporary read failures, conflicting identities, and known active work
+remain blockers. Retirement retains the record and history; it does not reassign
+the issue automatically.
 
 Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree

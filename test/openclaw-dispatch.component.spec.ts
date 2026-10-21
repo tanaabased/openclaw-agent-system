@@ -57,6 +57,7 @@ describe('agent/openclaw issue dispatch', () => {
   let preparedWorktrees: number;
   let multiple: boolean;
   let cronJobs: unknown[];
+  let describeError: GatewayClientRequestError | undefined;
   const sessions = new Map<string, Record<string, unknown>>();
   const histories = new Map<
     string,
@@ -137,6 +138,7 @@ describe('agent/openclaw issue dispatch', () => {
     session = null;
     calls = [];
     cronJobs = [];
+    describeError = undefined;
     lost = false;
     absent = false;
     active = false;
@@ -285,8 +287,10 @@ describe('agent/openclaw issue dispatch', () => {
                   params.archived;
                 return { ok: true };
               }
-              if (method === 'sessions.describe')
+              if (method === 'sessions.describe') {
+                if (describeError) throw describeError;
                 return { session: multiple ? sessions.get(String(params.key)) : session };
+              }
               if (method === 'chat.send') {
                 const feedbackTurn = (
                   await record(String(params.sessionKey))
@@ -702,6 +706,245 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, { ...coordinator, runId: 'repeat' }, { action: 'next' });
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
     assert.equal(creates().length, 1);
+  });
+
+  for (const shape of ['current', 'legacy', 'rejected', 'denied'] as const) {
+    for (const tree of ['existing', 'absent'] as const) {
+      it(`should retire ${shape} unavailable sessions with an ${tree} worktree without invented archival`, async () => {
+        await prepare(await next());
+        const current = await service.scope(manifest, root);
+        if (shape === 'legacy' || shape === 'rejected') {
+          await current.journal.exclusive(async (state, save) => {
+            const saved = state.records[0]!;
+            const request = saved.request!;
+            assert.ok('key' in request);
+            const creation = saved.sessionCreation!;
+            saved.request = {
+              task: 'retained task',
+              label: request.label,
+              cwd: request.cwd,
+              model: request.model,
+              runtime: 'subagent',
+              visible: true,
+              cleanup: 'keep',
+            };
+            saved.creationCall = {
+              sessionId: creation.sourceSessionId,
+              runId: creation.sourceRunId,
+              toolCallId: creation.sourceToolCallId,
+            };
+            if (shape === 'legacy') {
+              saved.native = {
+                sessionKey: request.key,
+                sessionId: creation.sessionId!,
+                sourceSessionId: creation.sourceSessionId,
+                toolCallId: creation.sourceToolCallId,
+                runId: 'historical-child',
+              };
+            } else {
+              delete saved.threadId;
+              delete saved.effective;
+            }
+            delete saved.sessionCreation;
+            delete saved.firstTurn;
+            delete saved.feedback;
+            saved.phase = 'blocked';
+            await save();
+          });
+        }
+        const before = structuredClone(await record());
+        session = null;
+        if (shape === 'denied')
+          describeError = new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'private' });
+        let removed = tree === 'absent';
+        let removals = 0;
+        const inspect = service.dependencies.worktrees.inspectGitHub;
+        service.dependencies.worktrees.inspectGitHub = async (...args) =>
+          removed ? undefined : inspect(...args);
+        if (removed) await rm(before.worktree!, { recursive: true });
+        service.dependencies.worktrees.cleanupGitHub = async (input) => {
+          if (!input.verifyOnly) {
+            const persisted = await record();
+            assert.ok(persisted.retirement?.sessionUnavailableObserved);
+            assert.equal(persisted.retirement?.archivedAt, undefined);
+            assert.equal(persisted.retirement?.worktreeRemovalAttemptedAt !== undefined, true);
+            removals++;
+            await rm(input.worktree.path, { recursive: true });
+            removed = true;
+          }
+          return {
+            ...input.worktree,
+            repositoryId: 'github-10',
+            workId: 'issue-20',
+            status: input.verifyOnly ? 'preserved' : 'removed',
+          };
+        };
+        fixture.item.state = 'closed';
+        await service.run(manifest, root, coordinator, { action: 'next' });
+        assert.equal((await record()).retired, undefined);
+        assert.equal(removals, 0);
+        const deadline = (await record()).retirement!.eligibleAt;
+        service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline });
+        await service.run(manifest, root, { ...coordinator, runId: 'recover' }, { action: 'next' });
+        const after = await record();
+        assert.ok(after.retired);
+        assert.equal(openClawCapacity([after], 1).occupied, 0);
+        assert.deepEqual(after.retirement?.sessionUnavailableObserved, {
+          at: deadline,
+          session:
+            shape === 'rejected'
+              ? 'identity-unresolved'
+              : shape === 'denied'
+                ? 'access-denied'
+                : 'not-found',
+        });
+        assert.equal(after.retirement?.archivedAt, undefined);
+        assert.equal(after.retirement?.archiveAttempt, undefined);
+        assert.deepEqual(after.request, before.request);
+        assert.deepEqual(after.native, before.native);
+        assert.deepEqual(after.creationCall, before.creationCall);
+        assert.deepEqual(after.sessionCreation, before.sessionCreation);
+        assert.equal(after.threadId, before.threadId);
+        assert.equal(after.nativeInactive, before.nativeInactive);
+        assert.equal(removals, tree === 'existing' ? 1 : 0);
+        if (tree === 'absent') {
+          assert.equal(after.retirement?.worktreeRemovalAttemptedAt, undefined);
+          assert.equal(after.retirement?.worktreeRemovalObserved?.source, 'external-cleanup');
+        }
+        await assert.rejects(stat(before.worktree!), { code: 'ENOENT' });
+        service.dependencies.now = () => deadline + 60_000;
+        await service.run(manifest, root, { ...coordinator, runId: 'repeat' }, { action: 'next' });
+        assert.equal(removals, tree === 'existing' ? 1 : 0);
+        assert.equal(creates().length, 1);
+        assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 0);
+      });
+    }
+  }
+
+  for (const refusal of ['dirty', 'unpreserved'] as const) {
+    it(`should retain an unavailable session worktree when preservation is ${refusal}`, async () => {
+      await prepare(await next());
+      session = null;
+      let removals = 0;
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        if (!input.verifyOnly) removals++;
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: refusal,
+        };
+      };
+      fixture.item.state = 'closed';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const deadline = (await record()).retirement!.eligibleAt;
+      service.dependencies.now = () => deadline;
+      await service.run(manifest, root, { ...coordinator, runId: 'blocked' }, { action: 'next' });
+      const after = await record();
+      assert.equal(after.retired, undefined);
+      assert.equal(after.retirement?.code, `retirement-worktree-${refusal}`);
+      assert.equal(after.retirement?.archivedAt, undefined);
+      assert.equal(removals, 0);
+      assert.ok((await stat(after.worktree!)).isDirectory());
+    });
+  }
+
+  it('should stop inferred cleanup if the session becomes accessible during preservation', async () => {
+    await prepare(await next());
+    const original = session;
+    session = null;
+    let removals = 0;
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (input.verifyOnly) session = original;
+      else removals++;
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: input.verifyOnly ? 'preserved' : 'removed',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'changed' }, { action: 'next' });
+    assert.equal((await record()).retired, undefined);
+    assert.equal((await record()).retirement?.code, 'retirement-observation-changed');
+    assert.equal(removals, 0);
+  });
+
+  it('should reconcile lost unavailable-session cleanup without repeating removal', async () => {
+    await prepare(await next());
+    session = null;
+    const inspect = service.dependencies.worktrees.inspectGitHub;
+    let removed = false;
+    let removals = 0;
+    service.dependencies.worktrees.inspectGitHub = async (...args) =>
+      removed ? undefined : inspect(...args);
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (!input.verifyOnly) {
+        removals++;
+        await rm(input.worktree.path, { recursive: true });
+        removed = true;
+        throw new Error('lost-cleanup-response');
+      }
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: 'preserved',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'lost' }, { action: 'next' });
+    assert.equal((await record()).retirement?.code, 'lost-cleanup-response');
+    assert.equal((await record()).retired, undefined);
+    service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline + 60_000 });
+    await service.run(manifest, root, { ...coordinator, runId: 'reconcile' }, { action: 'next' });
+    const after = await record();
+    assert.ok(after.retired);
+    assert.equal(after.retirement?.worktreeRemovalObserved?.source, 'retirement-attempt');
+    assert.equal(after.retirement?.archivedAt, undefined);
+    assert.equal(removals, 1);
+    assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 0);
+  });
+
+  it('should keep transient session read failures pending without removing work', async () => {
+    await prepare(await next());
+    describeError = new GatewayClientRequestError({ code: 'UNAVAILABLE', message: 'temporary' });
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    service.dependencies.worktrees.cleanupGitHub = async () => {
+      throw new Error('must-not-clean');
+    };
+    await service.run(manifest, root, { ...coordinator, runId: 'outage' }, { action: 'next' });
+    const after = await record();
+    assert.equal(after.retired, undefined);
+    assert.equal(after.retirement?.sessionUnavailableObserved, undefined);
+    assert.equal(after.retirement?.code, 'session-dispatch-describe-unavailable-unverified');
+    assert.ok((await stat(after.worktree!)).isDirectory());
+  });
+
+  it('should not bypass automation ownership when the session is missing', async () => {
+    await prepare(await next());
+    service.dependencies.worktrees.cleanupGitHub = async () => {
+      throw new Error('must-not-clean');
+    };
+    cronJobs = [{ sessionTarget: `session:${(await record()).threadId}` }];
+    session = null;
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(manifest, root, { ...coordinator, runId: 'owned' }, { action: 'next' });
+    assert.equal((await record()).retirement?.code, 'retirement-automation-owner');
+    assert.equal((await record()).retired, undefined);
   });
 
   it('should preserve a session targeted by a native automation', async () => {
