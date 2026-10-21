@@ -1,10 +1,10 @@
 # OpenClaw Issue Lifecycle Example
 
-Normally admit one disposable issue, retain its native chat, worktree and assessment across restart and equivalent permission reordering, reactivate it from an approved comment after unassignment, suppress replayed replies, and retire closed work after operator worktree cleanup while preserving the assessment. The worktree example covers removal itself; this scenario checks that retirement reconciles cleanup performed outside its own transaction.
+Normally admit disposable issues, retain its native chat, worktree and assessment across restart and equivalent permission reordering, reactivate it from an approved comment after unassignment, suppress replayed replies, and retire closed work after operator worktree cleanup while preserving the assessment. The worktree example covers removal itself; this scenario checks that retirement reconciles cleanup performed outside its own transaction.
 
 `openclaw-intake` owns activation compatibility, concurrent admission and repeat-scan duplicate prevention. Assessment presentation and ordinary feedback belong to `openclaw-issue`; implementation and PR delivery belong to `openclaw-pr`; scheduler drift belongs to `openclaw-automations`.
 
-Strict AIMock reuses the issue assessment protocol without the intake release barrier. This job owns its one issue, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issue or revoking its key.
+Strict AIMock reuses the issue assessment protocol without the intake release barrier. This job owns its two issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issue or revoking its key.
 
 ## Setup
 
@@ -284,6 +284,43 @@ openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversat
 worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
+
+# should admit another disposable issue for unavailable-session retirement
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System unavailable session $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-lifecycle/issue.md" > "$TMPDIR/notification-unavailable-issue.json"
+number=$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --timeout 600 --json > "$TMPDIR/notification-unavailable-plan.json"
+conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-unavailable-plan.json")
+jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-unavailable-before.json"
+run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-unavailable-before.json")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+
+# should leave a managed checkout after deleting its exact completed session
+conversation=$(jq -er .threadId "$TMPDIR/notification-unavailable-before.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-unavailable-before.json")
+openclaw gateway call sessions.delete --params "$(jq -nc --arg key "$conversation" --arg id "$session_id" '{key:$key,expectedSessionId:$id,deleteTranscript:true}')" --json | jq -e '.deleted == true'
+test -d "$(jq -er .worktree "$TMPDIR/notification-unavailable-before.json")"
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session == null'
+
+# should remove the preserved checkout during ordinary retirement without inventing archival
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
+number=$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")
+openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
+# allow the bounded observation interval to elapse; cleanup grace is zero.
+sleep 61
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+id=$(jq -er .id "$TMPDIR/notification-unavailable-before.json")
+jq -es --arg id "$id" '[.[].records[] | select(.id == $id)] | if length == 1 then .[0] else error("one retained record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-unavailable-after.json"
+jq -e --slurpfile before "$TMPDIR/notification-unavailable-before.json" '.retired.at != null and .retirement.sessionUnavailableObserved.session == "not-found" and .retirement.archivedAt == null and .retirement.archiveAttempt == null and .retirement.worktreeRemovalAttemptedAt != null and .retirement.worktreeRemovedAt != null and .request == $before[0].request and .sessionCreation == $before[0].sessionCreation and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-unavailable-after.json"
+worktree=$(jq -er .worktree "$TMPDIR/notification-unavailable-after.json")
+test ! -e "$worktree"
+openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
 ```
 
 ## Cleanup
@@ -295,13 +332,15 @@ Cleanup requires a terminal Gateway stop before changing external fixtures. Ever
 openclaw-gateway stop --timeout 340
 touch "$TMPDIR/notification-gateway-stopped"
 
-# should close only the disposable issue created by this run
+# should close only the disposable issues created by this run
 test -f "$TMPDIR/notification-gateway-stopped"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
-if test -s "$TMPDIR/notification-issue.json"; then
-  number=$(jq -er .number "$TMPDIR/notification-issue.json")
-  openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-fi
+for fixture in "$TMPDIR/notification-issue.json" "$TMPDIR/notification-unavailable-issue.json"; do
+  if test -s "$fixture"; then
+    number=$(jq -er .number "$fixture")
+    openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
+  fi
+done
 
 # should remove only this run's ssh authentication key
 test -f "$TMPDIR/notification-gateway-stopped"
