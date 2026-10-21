@@ -71,40 +71,47 @@ describe('agent/feedback-work', () => {
     assert.deepEqual(record, before);
     assert.deepEqual(feedbackWorkContext({}), []);
   });
-  for (const scenario of ['implementation request', 'clarification answer', 'follow-up repair'])
-    it(`should enter the same task stage for a direct or approved ${scenario}`, async () => {
-      const record: Parameters<typeof beginFeedbackWork>[0]['record'] = {
-        createdAt: 1,
-        result: { outcome: 'plan-ready' },
-        ...(scenario !== 'implementation request'
-          ? {
-              progression: { stage: 'implementation' as const, via: 'work' as const, enteredAt: 5 },
-            }
-          : {}),
-      };
-      const policy = intakeFixture().policy;
-      policy.issueAssignment!.mode = 'plan';
-      const direct = issueProgression(record, { mode: 'plan', operator: true, now: 20 });
-      const event = eventFixture();
-      await beginFeedbackWork({
-        record,
-        event,
-        policy,
-        workspace: '/unused',
-        now: 20,
-        decision: {
-          mode: 'work',
-          reasons: ['The approved author requests this work.'],
-          plan: 'Update the existing task.',
-        },
-        resolveSkill: async () => skill,
+  for (const mode of ['plan', 'auto'] as const)
+    for (const scenario of ['implementation request', 'clarification answer', 'follow-up repair'])
+      it(`should use the same inputs and transition for direct or approved ${scenario} in ${mode}`, async () => {
+        const record: Parameters<typeof beginFeedbackWork>[0]['record'] = {
+          createdAt: 1,
+          result: {
+            outcome: scenario === 'clarification answer' ? 'clarification-needed' : 'plan-ready',
+            decision: { mode: 'plan' },
+          },
+          ...(scenario !== 'implementation request'
+            ? {
+                progression: {
+                  stage: 'implementation' as const,
+                  via: 'work' as const,
+                  enteredAt: 5,
+                },
+              }
+            : {}),
+        };
+        const original = structuredClone(record.result);
+        const policy = intakeFixture().policy;
+        policy.issueAssignment!.mode = mode;
+        const direct = issueProgression(record, { mode, operator: true, now: 20 });
+        const event = eventFixture();
+        await beginFeedbackWork({
+          record,
+          event,
+          policy,
+          workspace: '/unused',
+          now: 20,
+          resolveSkill: async () => skill,
+        });
+        assert.equal(direct.status, 'ready');
+        assert.deepEqual(record.progression, {
+          ...(direct.status === 'ready' ? direct.progression : {}),
+          workOwner: event.id,
+        });
+        assert.deepEqual(record.result, original);
+        assert.equal(event.work?.decision, undefined);
+        assert.equal(policy.issueAssignment!.mode, mode);
       });
-      assert.equal(direct.status, 'ready');
-      assert.deepEqual(record.progression, {
-        ...(direct.status === 'ready' ? direct.progression : {}),
-        workOwner: event.id,
-      });
-    });
 
   it('should treat an omitted issue mode as auto for new feedback work', () => {
     const { policy } = intakeFixture();
@@ -157,15 +164,7 @@ describe('agent/feedback-work', () => {
       now: 20,
       resolveSkill: async () => skill,
     };
-    await assert.rejects(beginFeedbackWork(input), { reason: 'implementation-direction-required' });
-    await beginFeedbackWork({
-      ...input,
-      decision: {
-        mode: 'work',
-        reasons: ['The approved author explicitly requests implementation.'],
-        plan: 'Implement the agreed change.',
-      },
-    });
+    await beginFeedbackWork(input);
     assert.equal(record.progression?.via, 'operator');
     assert.equal(record.progression?.stage, 'implementation');
     assert.equal(policy.issueAssignment!.mode, 'plan');
