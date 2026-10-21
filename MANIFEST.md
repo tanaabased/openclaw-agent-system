@@ -477,11 +477,11 @@ manual delivery remains available after implementation handoff. Configured Codex
 feedback resumes the owning chat for explanation and bounded replies, including on its
 verified delivery PR. Codex Auto conditionally continues a recorded Work decision
 through the same implementation and delivery stages. Review requests remain unavailable.
-OpenClaw v2 supports the default assessment skill in Plan, Work, and Auto modes.
+OpenClaw v2 supports default and enabled host-discovered assessment skills in Plan, Work, and Auto modes.
 Eligible Work and Auto assessments continue in the same issue chat through implementation
-and managed PR delivery. Independent review requests and replacement assessment
-skills remain unavailable and warn without stopping supported issue intake. No
-replacement skill is silently selected. Declarations are checked by enrollment, intake, and
+and managed PR delivery. Independent review requests remain unavailable and warn
+without stopping supported issue intake. Invalid explicit assessment skills block
+the affected assessment; no replacement is silently selected. Declarations are checked by enrollment, intake, and
 automation lifecycle owners. A Codex-only declaration does not activate OpenClaw
 intake. Binding and passive discovery never activate work.
 OpenClaw also derives an `Agent System: github-issue-assignment`
@@ -703,12 +703,16 @@ internal result for saving and display. Integrated results are not adapted a sec
 time. The full assessment remains the source of truth for either approach; summaries
 and status must preserve its conditions, uncertainty, and unresolved decisions.
 
-Selection and guidance are captured when native creation is prepared. Continuation
-uses the saved guidance; a fresh assessment observes later guidance-file edits without
-reinstallation. Manifest changes follow the existing Install reconciliation contract.
-Missing, disabled, ambiguous, or changed skills and invalid guidance stop the affected
+In OpenClaw, each refreshed, unsubmitted assessment context resolves current skill
+content and guidance from the bound workspace without Install or a new issue chat.
+Submitted turns retain their consumed instructions and complete results; recovery
+returns those inputs rather than rewriting history. A later answer can revise the
+assessment in the same conversation. Missing, disabled, ambiguous, or unreadable
+explicit skills and invalid guidance stop the affected
 assessment with an actionable diagnostic instead of silently changing its procedure.
 Currently, skill resolution supports host-discovered local `SKILL.md` sources.
+OpenClaw matches exact catalog names or skill keys, plus built-in Agent System
+aliases; qualified IDs must be exposed by that catalog, never inferred from paths.
 
 #### Implementation and review selection
 

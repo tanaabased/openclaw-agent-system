@@ -423,9 +423,17 @@ for (const scenario of [
           runtime: 'openclaw',
           id,
           project: { path: '/fixture' },
-          assessment: {},
+          assessment:
+            scenario.id === 'openclaw-issue'
+              ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
+              : {},
           resultContract: 'assessment-result/v1',
         });
+        if (scenario.id === 'openclaw-issue') {
+          const read = await response(input);
+          assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+          append(input, 'assessment-skill', 'Generic Assessment');
+        }
         const next = await response(input);
         assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_git');
       }
@@ -450,10 +458,21 @@ for (const scenario of [
         runtime: 'openclaw',
         id,
         project: { path: '/tmp/managed-worktree' },
-        assessment: { skill: {} },
+        assessment: {
+          skill:
+            scenario.id === 'openclaw-issue'
+              ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
+              : {},
+        },
         resultContract: 'assessment-result/v1',
       };
       append(input, 'context', context);
+      if (scenario.id === 'openclaw-issue') {
+        const read = await response(input);
+        assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+        assert.deepEqual(JSON.parse(read.toolCalls![0]!.arguments), { path: '/fixture/SKILL.md' });
+        append(input, 'assessment-skill', 'Generic Assessment');
+      }
       const git = await response(input);
       assert.ok('toolCalls' in git);
       assert.equal(git.toolCalls?.[0]?.name, 'agent_system_git');
@@ -850,6 +869,55 @@ for (const scenario of [
           ],
         });
         assert.deepEqual(await response(direct), { content: privateText });
+      });
+    if (scenario.id === 'openclaw-issue')
+      it('should adapt ordinary clarification and an answer using retained full output', async () => {
+        let previous: Record<string, unknown> = {
+          fullAssessment: 'Original findings and uncertainty.',
+        };
+        for (const stage of ['Clarify', 'Answer']) {
+          const input = request(
+            `[Wed 2026-10-21 17:32 UTC] ${stage} ordinary assessment for managed issue ${id}`,
+          );
+          input.messages.push({
+            role: 'user',
+            content:
+              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+          });
+          assert.equal((await action(input, 'context')).id, id);
+          append(input, 'context', {
+            status: 'verified',
+            runtime: 'openclaw',
+            id,
+            project: { path: '/tmp/managed-worktree' },
+            assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },
+            previousResult: previous,
+            previousResultDigest: digest,
+            resultContract: 'assessment-result/v1',
+          });
+          const read = await response(input);
+          assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+          append(input, 'assessment-skill', 'Generic Assessment');
+          await response(input);
+          append(input, 'git', { exitCode: 0, stdout: '/tmp/managed-worktree', truncated: false });
+          const submission = await action(input, 'result');
+          assert.equal(submission.previousResultDigest, digest);
+          assert.equal(
+            submission.result.outcome,
+            stage === 'Clarify' ? 'clarification-needed' : 'plan-ready',
+          );
+          assert.ok(submission.result.fullAssessment!.startsWith(String(previous.fullAssessment)));
+          if (stage === 'Clarify') {
+            assert.equal(submission.result.outcome, 'clarification-needed');
+            assert.ok('questions' in submission.result);
+            assert.deepEqual(submission.result.questions, [
+              'Should cleanup close the issue only after evidence capture?',
+            ]);
+          }
+          append(input, 'result', { status: 'recorded', presentation: 'Retained native review.' });
+          assert.deepEqual(await response(input), { content: 'Retained native review.' });
+          previous = submission.result;
+        }
       });
     if (scenario.id !== 'openclaw-progression')
       for (const initial of scenario.id === 'openclaw-pr' ? [true, false] : [false])

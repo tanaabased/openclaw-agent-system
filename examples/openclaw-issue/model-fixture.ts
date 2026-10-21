@@ -434,12 +434,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
-  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
+  const revision = /(Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,
-  )?.[1];
+  );
+  const id =
+    revision?.[2] ??
+    /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
-    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
+    (!revision &&
+      !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.'))
   )
     return;
   const context = result('context');
@@ -464,6 +468,13 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     context.resultContract !== 'assessment-result/v1'
   )
     return;
+  const method = (context.assessment as { skill?: { name?: string; path?: string } }).skill;
+  if (method?.name === 'generic-assessment') {
+    if (!method.path) return;
+    const methodText = openClawAIMockToolResultText(messages, prefix + 'assessment-skill');
+    if (methodText === undefined) return call('assessment-skill', 'read', { path: method.path });
+    if (!methodText.includes('Generic Assessment')) return;
+  }
   const git = result('git');
   if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
   if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
@@ -473,13 +484,23 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return dispatch('result', {
       action: 'result',
       id,
+      ...(revision ? { previousResultDigest: context.previousResultDigest } : {}),
       result: {
         version: 1,
-        outcome: 'plan-ready',
+        outcome: revision?.[1] === 'Clarify' ? 'clarification-needed' : 'plan-ready',
         summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
         assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment,
+        ...(revision?.[1] === 'Clarify'
+          ? { questions: ['Should cleanup close the issue only after evidence capture?'] }
+          : {
+              plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
+            }),
+        fullAssessment: revision
+          ? String((context.previousResult as Record<string, unknown>).fullAssessment) +
+            (revision?.[1] === 'Clarify'
+              ? '\n\nShould cleanup close the issue only after evidence capture? The ordering is unresolved.'
+              : '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.')
+          : fullAssessment,
         reviewSummary,
         evidence: [
           {
@@ -495,6 +516,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       },
     });
   if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+  if (revision) return { content: saved.presentation };
   return summary(id, saved, { fullAssessment, reviewSummary });
 }
 
@@ -537,6 +559,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
+    { id: prefix + 'assessment-skill', name: 'read' },
     { id: prefix + 'feedback-skill', name: 'read' },
     { id: prefix + 'summary-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>

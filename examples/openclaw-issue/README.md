@@ -6,6 +6,9 @@ Notification installation compatibility and concurrent admission belong to `open
 
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and receipts remain real. Scoped refreshes admit only this run’s issue, and the 24-hour schedule avoids unrelated recurring scans. Only Tanaabot receives assignments. Failed activation preserves its status and redacted diagnostics; cleanup stops the Gateway before closing fixtures or revoking the disposable key.
 
+The assessment selects an ordinary workspace skill with no Agent System commands or
+required headings. Strict AIMock reads that selected method and supplies the adapted
+result; this proves installed selection and retention, not genuine model adaptation.
 The assessment fixture also requests retained evidence through the bound presentation
 route. Its default reply shows the user-journey review and documentation/test impact;
 the full engineering assessment and investigation remain saved and readable on request.
@@ -107,7 +110,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 30
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 300000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-jq -e '.assessmentTurn.status == "completed" and .result.outcome == "plan-ready"' "$TMPDIR/notification-dispatch-before.json"
+jq -e '.assessmentTurn.status == "completed" and .result.outcome == "plan-ready" and .stageReceipt.selection.skill.name == "generic-assessment" and (.assessmentHistory | length) == 1 and .assessmentHistory[0].receipt == .stageReceipt' "$TMPDIR/notification-dispatch-before.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-assessment-history.json"
 jq -e --arg run "$run_id" --slurpfile record "$TMPDIR/notification-dispatch-before.json" '($record[0].result.fullAssessment | type == "string" and length > 0) and ([.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop")] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | contains("Model routing") and contains($record[0].result.summary) and contains($record[0].result.reviewSummary) and (contains($record[0].result.fullAssessment) | not) and (contains($record[0].result.evidence[0].detail) | not) else error("one stopped assessment response required") end)' "$TMPDIR/notification-assessment-history.json"
 jq -e --arg conversation "$conversation" --arg issue "$(jq -er .node_id "$TMPDIR/notification-issue.json")" --arg repository "$(jq -er .node_id "$TMPDIR/notification-repository.json")" '.result.outcome == "plan-ready" and (.result.fullAssessment | length > 0) and (.result.plan | length > 0) and .stageReceipt.binding.threadId == $conversation and .stageReceipt.binding.subjectId == $issue and .stageReceipt.binding.repositoryId == $repository and .stageReceipt.binding.worktree == .worktree and .stageReceipt.binding.turnId == .assessmentTurn.runId and .resultTurnId == .assessmentTurn.runId and .sessionCreation.verified == true' "$TMPDIR/notification-dispatch-before.json"
@@ -225,6 +228,43 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]] | length == 1 and .[0].progression == null and .[0].work == null and (.[0].feedback.events | length) == 2 and all(.[0].feedback.events[]; .phase == "published" and .turn.status == "completed")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-followup-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
+
+
+# should retain ordinary clarification and the later answer in the same native owner
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
+conversation=$(jq -er .threadId "$TMPDIR/notification-followup.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-followup.json")
+receipt=$(jq -er .id "$TMPDIR/notification-followup.json")
+for stage in Clarify Answer; do
+  leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+  run_id="notification-ordinary-$stage"
+  params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" --arg stage "$stage" --arg run "$run_id" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:($stage + " ordinary assessment for managed issue " + $receipt + ": cleanup only after evidence capture."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:$run}')"
+  node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e --arg run "$run_id" '.runId == $run'
+  node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+  jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-ordinary-$stage.json"
+done
+node --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read = name => JSON.parse(readFileSync(process.env.TMPDIR + '/notification-' + name + '.json', 'utf8'));
+const initial = read('dispatch-before'), question = read('ordinary-Clarify'), answer = read('ordinary-Answer');
+assert.equal(question.result.outcome, 'clarification-needed');
+assert.deepEqual(question.result.questions, ['Should cleanup close the issue only after evidence capture?']);
+assert.equal(answer.result.outcome, 'plan-ready');
+for (const record of [question, answer]) {
+  assert.equal(record.threadId, initial.threadId);
+  assert.equal(record.worktree, initial.worktree);
+  assert.equal(record.work, undefined);
+  assert.deepEqual(record.assessmentHistory[0].result, initial.result);
+  assert.equal(record.stageReceipt.selection.skill.name, 'generic-assessment');
+}
+assert.equal(answer.assessmentHistory.length, 3);
+assert.deepEqual(answer.assessmentHistory[1].result, question.result);
+assert.ok(answer.result.fullAssessment.startsWith(question.result.fullAssessment));
+assert.equal(answer.resultTurnId, 'notification-ordinary-Answer');
+assert.equal(answer.stageReceipt.binding.turnId, answer.resultTurnId);
+NODE
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
 ```

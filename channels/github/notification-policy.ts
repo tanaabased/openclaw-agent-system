@@ -6,7 +6,6 @@ import type {
 import { feedbackIdentities } from './feedback-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
-import { defaultAssessmentSkill } from '../../manifest/assessment-schema.ts';
 
 /** report compatibility at manifest entry points, never on each scheduled poll. */
 export function githubPauseCompatibilityDiagnostics(
@@ -140,7 +139,6 @@ export function githubNotificationRuntimeDiagnostics(
 ): GitHubNotificationRuntimeDiagnostic[] {
   if (declaration?.schemaVersion !== 2 || !declaration.runtimes.includes(runtime)) return [];
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
-  const issue = declaration.issueAssignment;
   const review = declaration.reviewRequest;
   if (
     review &&
@@ -154,27 +152,6 @@ export function githubNotificationRuntimeDiagnostics(
         'Remove the review-request declaration or wait for its execution adapter; supported issue assignment can continue.',
       status: 'warning',
       workflow: 'review-request',
-    });
-  if (
-    runtime !== 'openclaw' ||
-    !issue ||
-    (issue.paused === undefined && issue.enabled === undefined && !issue.allowed.length)
-  )
-    return diagnostics;
-  if (
-    issue.assessment?.skill &&
-    ![defaultAssessmentSkill, defaultAssessmentSkill.split(':').at(-1)!].includes(
-      issue.assessment.skill,
-    )
-  )
-    diagnostics.push({
-      code: 'github-notification-runtime-unsupported',
-      fieldPath: '/github/notifications/issue-assignment/assessment/skill',
-      message: 'OpenClaw V2 does not support replacement assessment skills.',
-      remediation:
-        'Choose the default assessment skill explicitly to enable issue assignment; no skill is substituted automatically.',
-      status: 'warning',
-      workflow: 'issue-assignment',
     });
   return diagnostics;
 }

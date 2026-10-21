@@ -261,10 +261,7 @@ describe('openclaw v2 intake slice', () => {
     const reconciled = await registry.reconcile(context);
     assert.deepEqual(
       new Set(validated.diagnostics.map(({ fieldPath }) => fieldPath)),
-      new Set([
-        '/github/notifications/review-request',
-        '/github/notifications/issue-assignment/assessment/skill',
-      ]),
+      new Set(['/github/notifications/review-request']),
     );
     assert.deepEqual(
       reconciled.warnings.map(getCliDiagnosticContext),

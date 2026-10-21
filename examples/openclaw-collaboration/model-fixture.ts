@@ -3,6 +3,23 @@ import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copil
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
+function currentTurn(request: ChatCompletionRequest) {
+  return request.messages.slice(
+    Math.max(
+      0,
+      request.messages.findLastIndex(
+        ({ role, content }) =>
+          role === 'user' &&
+          !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+      ),
+    ),
+  );
+}
+
+function hasCurrentResult(request: ChatCompletionRequest): boolean {
+  return currentTurn(request).some(({ role }) => role === 'tool');
+}
+
 function userContains(request: ChatCompletionRequest, marker: string): boolean {
   const prompt = request.messages
     .filter(({ role }) => role === 'user')
@@ -13,10 +30,9 @@ function userContains(request: ChatCompletionRequest, marker: string): boolean {
 
 function result(request: ChatCompletionRequest, callId: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(openClawAIMockToolResultText(request.messages, callId) ?? 'null') as Record<
-      string,
-      unknown
-    > | null;
+    return JSON.parse(
+      openClawAIMockToolResultText(currentTurn(request), callId) ?? 'null',
+    ) as Record<string, unknown> | null;
   } catch {
     return null;
   }
@@ -27,26 +43,26 @@ const historyCallId = 'call_collaboration_history';
 const fixtures: Fixture[] = [
   {
     match: {
-      hasToolResult: false,
       systemMessage: ['Name: Beta'],
-      predicate: (request) => userContains(request, 'collaboration-ready'),
+      predicate: (request) =>
+        !hasCurrentResult(request) && userContains(request, 'collaboration-ready'),
     },
     response: { content: 'collaboration-ready' },
   },
   {
     match: {
-      hasToolResult: false,
       systemMessage: ['Name: Beta'],
-      predicate: (request) => userContains(request, 'collaboration-ping'),
+      predicate: (request) =>
+        !hasCurrentResult(request) && userContains(request, 'collaboration-ping'),
     },
     response: { content: 'collaboration-pong' },
   },
   {
     match: {
-      hasToolResult: false,
       systemMessage: ['Name: Alpha'],
       toolName: 'sessions_send',
-      predicate: (request) => userContains(request, 'collaboration-send'),
+      predicate: (request) =>
+        !hasCurrentResult(request) && userContains(request, 'collaboration-send'),
     },
     response: {
       toolCalls: [
@@ -64,7 +80,6 @@ const fixtures: Fixture[] = [
   },
   {
     match: {
-      hasToolResult: true,
       systemMessage: ['Name: Alpha'],
       predicate: (request) => {
         const reply = result(request, sendCallId);
@@ -79,10 +94,10 @@ const fixtures: Fixture[] = [
   },
   {
     match: {
-      hasToolResult: false,
       systemMessage: ['Name: Alpha'],
       toolName: 'sessions_history',
-      predicate: (request) => userContains(request, 'collaboration-read'),
+      predicate: (request) =>
+        !hasCurrentResult(request) && userContains(request, 'collaboration-read'),
     },
     response: {
       toolCalls: [
@@ -96,7 +111,6 @@ const fixtures: Fixture[] = [
   },
   {
     match: {
-      hasToolResult: true,
       systemMessage: ['Name: Alpha'],
       predicate: (request) => {
         const history = result(request, historyCallId);
