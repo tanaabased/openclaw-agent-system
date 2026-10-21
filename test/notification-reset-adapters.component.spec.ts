@@ -9,6 +9,7 @@ import { selectCodexIntake } from '../agent/codex-intake.ts';
 import type { SavedAutomation } from '../agent/codex-automation-state.ts';
 import IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import { intakeFixture, account } from './github-intake-fixture.ts';
 
@@ -87,8 +88,42 @@ describe('agent/notification reset runtime adapters', () => {
     const scope = 'a'.repeat(64);
     const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
     await seed(intake);
+    const journal = new OpenClawDispatchStore(root, scope);
+    await journal.exclusive(async (state, save) => {
+      state.records.push({
+        id: 'd'.repeat(64),
+        intakeId: 'e'.repeat(64),
+        issueKey: 'f'.repeat(64),
+        sourceThreadId: 'coordinator',
+        phase: 'creating',
+        createdAt: 2,
+        manifestDigest: 'manifest',
+        context: '{}',
+        routing: '{}',
+        routingNote: 'fixture',
+        worktree: root,
+        request: {
+          key: 'agent:receiver:issue:missing',
+          idempotencyKey: 'creation',
+          agentId: 'receiver',
+          label: 'issue',
+          category: 'issues',
+          cwd: root,
+          model: 'fixture',
+          thinkingLevel: 'low',
+        },
+        sessionCreation: {
+          attempted: true,
+          sourceSessionId: 'source',
+          sourceRunId: 'run',
+          sourceToolCallId: 'call',
+        },
+      });
+      await save();
+    });
     let enabled = true;
     let active = true;
+    let missingSession: unknown = { ok: true, key: 'agent:receiver:issue:missing' };
     const native = coordinator(() => active);
     const toggles: boolean[] = [];
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
@@ -110,7 +145,12 @@ describe('agent/notification reset runtime adapters', () => {
         },
       },
       credential: {
-        use: async (_authority, run) => run(native.request),
+        use: async (_authority, run) =>
+          run(async (method, params) => {
+            if (method === 'sessions.resolve' && params.key === 'agent:receiver:issue:missing')
+              return missingSession;
+            return native.request(method);
+          }),
       },
       worktrees: {
         inspectGitHub: async () => {
@@ -130,6 +170,10 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal((await intake.read())!.baselineAt, 1);
     assert.deepEqual(toggles, [false]);
     active = false;
+    await assert.rejects(run(), /notification-reset-session-creation-unresolved/u);
+    missingSession = { ok: false, candidates: ['ambiguous'] };
+    await assert.rejects(run(), /notification-reset-session-creation-unresolved/u);
+    missingSession = { ok: false, candidates: [] };
     assert.equal((await run()).status, 'complete');
     assert.deepEqual(toggles, [false, true]);
     assert.ok((await intake.read())!.baselineAt > 1);
@@ -216,8 +260,49 @@ describe('agent/notification reset runtime adapters', () => {
         notificationPolicy: null,
       },
     };
+    const journal = new CodexDispatchStore(pluginData, current.store.location.scope);
+    await journal.exclusive(async (state, save) => {
+      for (const [index, retired] of [false, true].entries())
+        state.records.push({
+          id: String(index + 1).repeat(64),
+          intakeId: 'e'.repeat(64),
+          issueKey: 'f'.repeat(64),
+          sourceThreadId: 'coordinator',
+          phase: 'creating',
+          createdAt: 2000,
+          manifestDigest: 'manifest',
+          context: '{}',
+          routing: '{}',
+          routingNote: 'fixture',
+          project: {
+            id: 'project',
+            path: workspace,
+            commonDir: join(workspace, '.git'),
+            ref: 'main',
+            commit: 'a'.repeat(40),
+          },
+          ...(retired ? { retired: { at: 3000, by: 'operator' } } : {}),
+          request: {
+            title: 'issue',
+            prompt: 'fixture issue',
+            model: 'fixture',
+            thinking: 'low',
+            target: {
+              type: 'project',
+              projectId: 'project',
+              environment: {
+                type: 'worktree',
+                startingState: { type: 'branch', branchName: 'main' },
+              },
+            },
+          },
+        });
+      await save();
+    });
     let finished = false;
     let archived = false;
+    let creation: 'unavailable' | 'found' | 'absent' = 'unavailable';
+    const searched = new Set<boolean>();
     const deps = {
       codexHome,
       caller: 'operator',
@@ -237,22 +322,47 @@ describe('agent/notification reset runtime adapters', () => {
       },
       threads: async () => ({
         close: async () => {},
-        request: async (method: string) =>
-          method === 'thread/read'
-            ? {
-                thread: {
-                  id: 'coordinator',
-                  cwd: current.workspace,
-                  path: '/sessions/coordinator',
-                  archived,
-                  status: { type: 'notLoaded' },
-                },
-              }
-            : {
-                data: [
-                  { id: 'turn', status: 'interrupted', ...(finished ? { completedAt: 100 } : {}) },
-                ],
+        request: async (method: string, params: Record<string, unknown>) => {
+          if (method === 'thread/list') {
+            if (creation === 'unavailable') throw new Error('native inventory unavailable');
+            searched.add(Boolean(params.archived));
+            return {
+              data:
+                creation === 'found' && params.archived ? [{ id: 'unrecorded', createdAt: 2 }] : [],
+            };
+          }
+          if (method === 'thread/read')
+            return {
+              thread: {
+                id: params.threadId,
+                cwd: current.workspace,
+                path: '/sessions/' + params.threadId,
+                archived,
+                status: { type: 'notLoaded' },
               },
+            };
+          if (method === 'thread/items/list')
+            return {
+              data: [
+                {
+                  turnId: 'turn',
+                  item: {
+                    type: 'functionCallOutput',
+                    name: 'create_thread',
+                    namespace: 'codex_app',
+                    output:
+                      '<codex_delegation>\n  <source_thread_id>coordinator</source_thread_id>\n  <input>fixture issue</input>\n</codex_delegation>',
+                  },
+                },
+              ],
+            };
+          assert.equal(method, 'thread/turns/list');
+          return {
+            data: [
+              { id: 'turn', status: 'interrupted', ...(finished ? { completedAt: 100 } : {}) },
+            ],
+          };
+        },
       }),
     };
     const run = () =>
@@ -261,6 +371,7 @@ describe('agent/notification reset runtime adapters', () => {
         {
           agent: ['receiver'],
           yes: true,
+          purge: true,
           nativeInventory: {
             schemaVersion: 4,
             pinnedThreads: [],
@@ -276,7 +387,13 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal((await run()).status, 'waiting');
     assert.equal((await current.store.read())!.baselineAt, 1);
     finished = true;
+    await assert.rejects(run(), /native inventory unavailable/u);
+    creation = 'found';
+    await assert.rejects(run(), /notification-reset-native-creation-unresolved/u);
+    assert.equal((await current.store.read())!.baselineAt, 1);
+    creation = 'absent';
     const archive = await run();
+    assert.deepEqual(searched, new Set([false, true]));
     assert.equal(archive.status, 'native-action');
     assert.equal('request' in archive && archive.request?.tool, 'set_thread_archived');
     assert.equal((await run()).status, 'incomplete');
@@ -394,6 +511,26 @@ describe('agent/notification reset runtime adapters', () => {
           sourceToolCallId: 'call',
           sessionId: 'issue-session',
           verified: true,
+        },
+      });
+      const original = state.records[0]!;
+      assert.ok(original.request && 'key' in original.request);
+      state.records.push({
+        ...original,
+        id: 'f'.repeat(64),
+        issueKey: 'a'.repeat(64),
+        phase: 'creating',
+        threadId: undefined,
+        effective: undefined,
+        request: {
+          ...original.request,
+          key: 'agent:receiver:issue:absent',
+        },
+        sessionCreation: {
+          attempted: true,
+          sourceSessionId: 'source',
+          sourceRunId: 'run',
+          sourceToolCallId: 'missing-call',
         },
       });
       await save();

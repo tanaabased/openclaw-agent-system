@@ -127,8 +127,6 @@ export default async function runCodexNotificationReset(
           if (entry.threadId) throw new Error('notification-reset-native-identity-unresolved');
           continue;
         }
-        if (!entry.threadId || !entry.worktree)
-          throw new Error('notification-reset-native-creation-unresolved');
         const thread = await native.find({
           sourceThreadId: entry.sourceThreadId,
           prompt: entry.request.prompt,
@@ -136,6 +134,9 @@ export default async function runCodexNotificationReset(
           threadId: entry.threadId,
           observationOnly: true,
         });
+        if (!entry.threadId && !entry.worktree && !entry.receiptThreadId && !thread) continue;
+        if (!entry.threadId || !entry.worktree)
+          throw new Error('notification-reset-native-creation-unresolved');
         if (!thread || thread.cwd !== entry.worktree)
           throw new Error('notification-reset-native-identity-changed');
         if (!['idle', 'notLoaded'].includes(thread.status) || !thread.turnEnded) return false;

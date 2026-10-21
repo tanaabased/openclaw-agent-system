@@ -99,8 +99,23 @@ export default class OpenClawNotificationReset {
           : undefined;
         const owners = new Set(records.map(({ sourceThreadId }) => sourceThreadId));
         for (const entry of records) {
-          if (entry.request && !entry.threadId)
+          if (entry.request && !entry.threadId) {
+            if ('key' in entry.request && entry.request.agentId === manifest.agent.id) {
+              const resolved = await request('sessions.resolve', {
+                key: entry.request.key,
+                agentId: manifest.agent.id,
+                allowMissing: true,
+              });
+              if (
+                nativeObject(resolved) &&
+                resolved.ok === false &&
+                (resolved.candidates === undefined ||
+                  (Array.isArray(resolved.candidates) && resolved.candidates.length === 0))
+              )
+                continue;
+            }
             throw new Error('notification-reset-session-creation-unresolved');
+          }
           if (!entry.threadId) continue;
           const current = await observeRetiringSession(request, entry, manifest.agent.id);
           if (!current) throw new Error('notification-reset-session-unverified');

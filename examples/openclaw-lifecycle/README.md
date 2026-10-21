@@ -6,6 +6,11 @@ Normally admit disposable issues, retain its native chat, worktree and assessmen
 
 Strict AIMock reuses the issue assessment protocol without the intake release barrier. This job owns its two issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issue or revoking its key.
 
+For operator reset recovery, retain a prepared session request whose exact native
+key is absent. After the coordinator drains, reset must confirm that absence and
+finish; a resolved or ambiguous key must retain the recovery inventory. The
+component suite covers these lookup outcomes and purge of the owned checkout.
+
 ## Setup
 
 ```bash

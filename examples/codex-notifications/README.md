@@ -66,6 +66,10 @@ checkout removal while the GitHub issue, assignment, comments, and open PR remai
 unchanged. Interrupt after archival and verify the same reset resumes without
 creating two replacements. These are native desktop checks; headless tests do not
 establish app archival, approval, or worktree-removal behavior.
+Include a prepared creation with no saved chat or checkout. Reset must inspect
+active and archived native chats before treating that request as absent; a found
+unrecorded chat or incomplete search must leave the reset paused with its recovery
+inventory intact.
 
 Native same-turn verification also requires the desktop: run one Work issue and one
 Auto issue whose recorded decision selects Work. Confirm implementation context
