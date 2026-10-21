@@ -299,8 +299,6 @@ export default async function runCodexNotificationReset(
     },
     restore: (record) => toggle(record, true),
     purge: async (record, resource) => {
-      if (!(await observe(record)))
-        return { status: 'waiting', code: 'notification-reset-turns-active' };
       const inventory = parse(record);
       const entry = inventory.records.find(({ id }) => id === resource.identity);
       if (!entry) throw new Error('notification-reset-resource-identity-missing');
@@ -335,6 +333,8 @@ export default async function runCodexNotificationReset(
         if (!thread && (await codexResetRemoved(request, entry))) return { status: 'done' };
         if (!thread) throw new Error('notification-reset-native-identity-changed');
         if (thread.archived) return { status: 'done' };
+        if (!(await observe(record)))
+          return { status: 'waiting', code: 'notification-reset-turns-active' };
         const ui = input.nativeInventory;
         if (
           !nativeObject(ui) ||
