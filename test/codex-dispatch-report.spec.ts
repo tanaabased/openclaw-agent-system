@@ -23,6 +23,118 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should keep native retirement progress healthy through completion without a recovery alert', () => {
+    const record = {
+      id: 'retiring',
+      intakeId: 'assignment',
+      phase: 'complete',
+      retirement: {
+        reason: 'issue-closed',
+        at: 1,
+        eligibleAt: 2,
+        checkedAt: 3,
+        intakeId: 'assignment',
+      },
+    } as DispatchRecord;
+    const current = { ...input, state: { ...state, records: [record], intakeHealth: '' } };
+    for (const code of [
+      'retirement-native-archive-unverified',
+      'retirement-native-reclamation-pending',
+    ]) {
+      record.retirement!.code = code;
+      const report = prepareDispatchReport(current);
+      assert.equal(report.health, '');
+      assert.match(report.response, /DONT_NOTIFY/);
+      assert.match(report.response, /retirement in progress/);
+      assert.match(report.response, /No action is needed/);
+      assert.match(report.response, /\*\*Retirement pending:\*\* 1/);
+      assert.doesNotMatch(report.response, /⚠️|needs attention|Intake resumed/);
+      current.state.intakeHealth = report.health;
+    }
+    const blocked = {
+      ...record,
+      id: 'blocked',
+      retirement: { ...record.retirement!, code: 'retirement-worktree-dirty' },
+    };
+    const mixed = prepareDispatchReport({
+      ...current,
+      state: { ...current.state, records: [record, blocked] },
+    });
+    assert.notEqual(mixed.health, '');
+    assert.match(mixed.response, /NOTIFY/);
+    assert.match(mixed.response, /⚠️/);
+    assert.match(mixed.response, /retirement-worktree-dirty/);
+
+    record.retired = { at: 4, by: 'operator' };
+    const completed = prepareDispatchReport(current);
+    assert.equal(completed.health, '');
+    assert.match(completed.response, /DONT_NOTIFY/);
+    assert.match(completed.response, /\*\*Retirement pending:\*\* 0/);
+    assert.doesNotMatch(completed.response, /Intake resumed|problem has cleared/);
+  });
+
+  it('should report retirement blockers once without turning grace or inventory waits into warnings', () => {
+    const record = {
+      id: 'retiring',
+      intakeId: 'assignment',
+      phase: 'complete',
+      retirement: {
+        reason: 'issue-closed',
+        at: 1,
+        eligibleAt: 2,
+        checkedAt: 3,
+        intakeId: 'assignment',
+        code: 'retirement-worktree-shared',
+      },
+    } as DispatchRecord;
+    const current = {
+      ...input,
+      state: { ...state, records: [record] },
+      intake: {
+        ...intake,
+        records: [
+          {
+            id: 'assignment',
+            scope: 'scope',
+            receiving: { nodeId: 'user' },
+            repository: { nodeId: 'repo', owner: { login: 'owner' }, name: 'repo' },
+            issue: { nodeId: 'issue', number: 32 },
+          } as IntakeRecord,
+        ],
+      },
+    };
+    record.issueKey = issueKey(current.intake.records[0]!);
+    const first = prepareDispatchReport(current);
+    assert.match(first.response, /owner\/repo#32/);
+    assert.match(first.response, /retirement-worktree-shared/);
+    assert.match(first.response, /retirement cleanup/);
+    assert.match(first.response, /<decision>NOTIFY<\/decision>/);
+    assert.match(
+      prepareDispatchReport({ ...current, state: { ...current.state, intakeHealth: first.health } })
+        .response,
+      /DONT_NOTIFY/,
+    );
+    record.retirement!.code = 'retirement-worktree-dirty';
+    assert.notEqual(prepareDispatchReport(current).health, first.health);
+    record.retirement!.eligibleAt = Date.parse(input.currentTimeIso) + 1;
+    assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
+    record.retirement!.eligibleAt = 2;
+    for (const code of [
+      'retirement-native-inventory-required',
+      'retirement-native-archive-pending',
+      'retirement-awaiting-reactivation',
+    ]) {
+      record.retirement!.code = code;
+      assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
+    }
+    record.retired = { at: 4, by: 'operator' };
+    const recovered = prepareDispatchReport({
+      ...current,
+      state: { ...current.state, intakeHealth: first.health },
+    });
+    assert.equal(recovered.health, '');
+    assert.match(recovered.response, /<decision>NOTIFY<\/decision>/);
+  });
   it('should report a deferred assignment without saying unrelated intake is paused', () => {
     const current = {
       ...intake,

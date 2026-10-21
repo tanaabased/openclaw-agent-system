@@ -87,7 +87,7 @@ export default class OpenClawNotificationReset {
           if (entry.request && !entry.threadId)
             throw new Error('notification-reset-session-creation-unresolved');
           if (!entry.threadId) continue;
-          const current = await observeRetiringSession(request, entry);
+          const current = await observeRetiringSession(request, entry, manifest.agent.id);
           if (!current) throw new Error('notification-reset-session-unverified');
           if (!current.idle) return false;
           if (protect) {
@@ -215,7 +215,7 @@ export default class OpenClawNotificationReset {
         if (!entry) throw new Error('notification-reset-resource-identity-missing');
         if (resource.kind === 'chat') {
           await deps.credential.use({}, async (request) => {
-            const current = await observeRetiringSession(request, entry);
+            const current = await observeRetiringSession(request, entry, manifest.agent.id);
             if (!current?.idle) throw new Error('notification-reset-turns-active');
             if (!current.archived)
               await request('sessions.patch', {
@@ -226,7 +226,7 @@ export default class OpenClawNotificationReset {
                   : {}),
                 archived: true,
               });
-            const after = await observeRetiringSession(request, entry);
+            const after = await observeRetiringSession(request, entry, manifest.agent.id);
             if (!after?.archived || !after.idle)
               throw new Error('notification-reset-archive-unverified');
           });

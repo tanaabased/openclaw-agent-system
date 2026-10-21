@@ -31,7 +31,7 @@ import dispatchHistory from './codex-dispatch-history.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import { revalidateDispatchAssignment } from './codex-dispatch.ts';
+import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import type { CodexDeliveryState } from './codex-delivery-state.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import codexHostAccess from './codex-host-access.ts';
@@ -40,7 +40,7 @@ import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-cli
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
 import workflowInstructions from '../channels/github/presentation/workflow-instructions.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';
@@ -196,7 +196,11 @@ export default async function runCodexDelivery(
             ...(!attached ? ['delivery-attachment-pending'] : []),
           ]),
         ]
-          .filter((code) => code !== 'delivery-ssh-transport')
+          .filter(
+            (code) =>
+              code !== 'delivery-ssh-transport' &&
+              (code !== 'delivery-linkage-retried' || current.manifest.debug),
+          )
           .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
       if (input.action === 'present' || input.action === 'reconcile') {
@@ -227,13 +231,7 @@ export default async function runCodexDelivery(
         }
         let commentFlow: 'codex' | 'unavailable' | 'unverified' = 'unavailable';
         const policy = current.manifest.github?.notifications;
-        if (
-          policy?.schemaVersion === 2 &&
-          feedbackIdentities(
-            policy.issueAssignment?.allowed ?? [],
-            policy.issueAssignment?.feedback,
-          ).length
-        ) {
+        if (workflowFeedbackAvailable(policy, 'issue-assignment')) {
           commentFlow = 'unverified';
           try {
             const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -364,7 +362,7 @@ export default async function runCodexDelivery(
         )
           throw new Error('delivery-continuation-stopped');
         const transition = issueProgression(record, {
-          mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
+          mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
           now: (deps.now ?? Date.now)(),
         });
         if (
@@ -390,6 +388,7 @@ export default async function runCodexDelivery(
         { connect: async () => connected.client },
         signal,
         true,
+        record,
       );
       const policyDigest =
         previous?.binding.policyDigest ??
@@ -525,6 +524,7 @@ export default async function runCodexDelivery(
             8000,
           ),
           authorId: connected.account.identity.nodeId,
+          authorLogin: connected.account.identity.login,
           select: async (retained) => {
             if (!native.assessmentSkill) throw new Error('delivery-announcement-skill-unavailable');
             return (

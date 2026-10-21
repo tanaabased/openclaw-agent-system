@@ -340,6 +340,9 @@ export async function verifyWorkspaceArchive(
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
   );
   const parser = extract();
+  // subscribe before the metadata await so an early stream failure cannot be missed.
+  const iterator = parser[Symbol.asyncIterator]();
+  const entries = { [Symbol.asyncIterator]: () => iterator };
   let manifest: WorkspaceBackupManifest | undefined;
   let inventory = new Map<string, BackupEntry>();
   const seen = new Set<string>();
@@ -358,7 +361,7 @@ export async function verifyWorkspaceArchive(
   try {
     if (!(await handle.stat()).isFile())
       throw new BackupError('backup-archive-not-file', 'The archive must be a regular file.');
-    for await (const entry of parser) {
+    for await (const entry of entries) {
       signal?.throwIfAborted();
       const header = entry.header;
       if (!Number.isSafeInteger(header.size) || header.size! < 0)
@@ -539,6 +542,8 @@ export async function readWorkspaceArchiveMetadata(archive: string): Promise<{
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
   );
   const parser = extract();
+  const iterator = parser[Symbol.asyncIterator]();
+  const entries = { [Symbol.asyncIterator]: () => iterator };
   const reading = pipeline(
     handle.createReadStream(),
     createGunzip(),
@@ -548,7 +553,7 @@ export async function readWorkspaceArchiveMetadata(archive: string): Promise<{
   try {
     if (!(await handle.stat()).isFile())
       throw new BackupError('backup-archive-not-file', 'Not a regular archive.');
-    for await (const entry of parser) {
+    for await (const entry of entries) {
       if (
         entry.header.name !== 'manifest.json' ||
         entry.header.type !== 'file' ||

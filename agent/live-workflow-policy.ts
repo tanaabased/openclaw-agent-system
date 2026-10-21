@@ -12,13 +12,12 @@ export default function liveWorkflowPolicy(
   const policy = manifest.github?.notifications;
   // admission rules apply once; live mode governs the first implementation transition.
   if (effect === 'implementation')
-    return (policy?.issueAssignment?.mode ?? 'plan') === 'plan'
+    return (policy?.issueAssignment?.mode ?? 'auto') === 'plan'
       ? 'implementation-disabled'
       : undefined;
   if (effect !== 'assignment') return;
   if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
-  if (!policy.issueAssignment || policy.issueAssignment.enabled === false)
-    return 'issue-workflow-disabled';
+  if (!policy.issueAssignment) return 'issue-workflow-disabled';
   if (
     !policy.allowedRepositoryOwners.some((owner) =>
       githubIdentityMatches(owner, intake.repository.owner),

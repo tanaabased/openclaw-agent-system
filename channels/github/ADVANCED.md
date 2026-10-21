@@ -2,7 +2,8 @@
 
 ## Configuration Reference
 
-GitHub notifications require `github.notifications.schema-version: 2`. See the
+`github.notifications.schema-version` is optional and defaults to `2`; only
+numeric `2` is supported when explicit. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
 authority, runtime selection, and current support. OpenClaw supports
 Plan, Work, and Auto issue assignment with configured feedback
@@ -14,7 +15,12 @@ Both runtimes save bounded discovery progress and resume on later polls. Ordinar
 comments are fetched by update time; unchanged history does not trigger feedback.
 OpenClaw keeps discovery inside one condition budget and wakes the coordinator for
 saved actionable work or a one-time progress/recovery card. After upgrading, run
-Install to reconcile the changed condition before relying on scheduled intake.
+Install to reconcile the changed condition before relying on scheduled intake. Repeated
+checks that cannot complete a required feedback operation report
+`feedback-discovery-no-progress` with the affected issue or PR and pending operation.
+Later bounded checks retry automatically; if the obstacle persists, inspect that
+operation and provider access or latency. Preserve the checkpoint; no reset
+or replay is needed.
 
 The live bound `agent.yaml` governs the next automatic operation for every active
 issue. Mode, author, feedback, recipient, and guidance edits take effect without
@@ -26,26 +32,48 @@ runtimes retain this stage across restart and recover older implementation recei
 in place; existing lifecycle and native execution checks still apply.
 
 Verified comments from approved feedback authors are task direction in Codex and
-OpenClaw, like direct input in the issue chat. In Plan, an explicit request to
-implement can enter Work through the same recorded transition. Work permits
-appropriate implementation; Auto may choose Plan or Work. Authors need not also be
+OpenClaw, like direct input in the issue chat. In Plan or Auto, an explicit request
+to implement can enter Work through the same recorded transition without an
+additional Work decision. Work permits appropriate implementation; autonomous Auto
+selection still chooses Plan or Work with a reasoned decision. Authors need not also be
 issue assignees. Quoted and linked material cannot independently direct the agent. Questions need not produce code.
 Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
 uncertain pushes are reconciled, and the original announcement is reused. A
 clarification request preserves implementation authority for the next admitted answer.
+Direct and GitHub follow-ups receive retained plan revisions, private responses,
+and partial work before interpreting the new message; that history supplies context,
+not new authority.
 No separate repair policy or author list is required.
 
 Discovery retains bounded observations independently of reply eligibility.
-Feedback observed while disabled stays in GitHub history and is not queued for
-later dispatch. When the runtime observes feedback reenabled, it saves an admission
+Feedback follows its parent workflow and inherits approved assigners unless an
+explicit author policy replaces them. Activity observed while no authors are
+approved stays in GitHub history and is not queued for later dispatch. When the runtime observes acceptance resume, it saves an admission
 cutoff for the issue and its PR using the previous policy-check time. Approved
 comments or revisions after that cutoff become new feedback, including those
 between the last check and reenabling. This overlap avoids missing comments posted
 just after a configuration edit; a longer polling gap means a longer overlap.
 Older records without a policy-check timestamp use their last saved scan time,
 or the current check when neither timestamp is available. Work already admitted
-before a pause remains recoverable, and publication receipts suppress duplicates. Reenabling sends no automatic retrospective assessment.
+before an author-policy change remains recoverable, and publication receipts
+suppress duplicates. Reenabling sends no automatic retrospective assessment.
+
+Set `paused: true` on `issue-assignment` and run Install to pause its native
+schedule; `paused: false` resumes the same job and conversation. Native UI pause
+has the same execution boundary: future occurrences stop, while an accepted
+occurrence and running issue turns may finish. Pause does not change authorization,
+feedback eligibility, discovery checkpoints, queues, or completed effect receipts.
+Eligible activity arriving during the pause is discovered after resume. The
+readiness account and dispatch enrollment remain configured. Install follows the
+manifest, so it can reverse a UI-only pause when the manifest still requests an
+active schedule.
+
+The deprecated `enabled` alias is inverse: `enabled: false` means `paused: true`,
+and `enabled: true` means `paused: false`. Validate, Doctor, and Install warn with
+the exact replacement. Consistent pairs are accepted; contradictory pairs fail
+validation. Omission keeps the existing scheduling default. `review-request`
+accepts the same declaration but still has no execution adapter.
 
 Install reconciles changes to installed scheduling machinery. Policy-only edits do
 not change the orchestration definition. Native execution facts, explicit task
@@ -60,10 +88,20 @@ capabilities are reported for their stage without disabling discovery.
 ## Assignment lifecycle
 
 The existing intake run checks retained assignments in both runtimes. Verified issue
-closure, removal of the receiving assignee, or manual chat archival moves work from
+closure, removal of the receiving assignee by a live `issue-assignment.allowed` actor,
+or manual chat archival moves work from
 **Active** to **Retirement pending** immediately. This stops new assessment,
 continuation, and feedback dispatch for that record. Native work already running
 still occupies a slot until inactivity is verified.
+
+When GitHub no longer shows the assignment but its removal actor is unapproved or
+cannot be verified, inspection and issue context report unresolved removal authority.
+The existing chat, worktree and implementation stage remain intact; already admitted
+work may continue only within its existing mode and permissions. Plan stays Plan.
+No automatic reassignment occurs. Verified reassignment clears the warning; recovered
+provider evidence or a relevant live actor-list change can resolve removal authority.
+Removal authority is checked again before cleanup. Completed or uncertain native
+cleanup effects keep their receipts and are not automatically undone or repeated.
 
 Automatic cleanup defaults to enabled, with a 60-minute grace period under
 `github.notifications.cleanup`. The deadline starts when intake first observes the
@@ -79,7 +117,19 @@ OpenClaw archives the exact idle session and removes its managed worktree after
 verifying a clean checkout and retained branch or tag. It protects pinned sessions,
 automation owners, shared worktrees, unresolved activity, and unpreserved changes.
 Each successful cleanup step is retained so interrupted cleanup can reconcile on a
-later poll. Branches, issue content, and assessment history are preserved.
+later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
+them. If the managed inventory and recorded path both confirm an already-removed
+worktree, retirement records observed external cleanup after its ownership checks;
+this does not claim to have removed or preserved the missing checkout. For work
+already pending retirement, a null session lookup, an explicit lookup access denial,
+or a legacy creation attempt with no child identity can also proceed through the
+same grace, ownership, and worktree preservation checks. This is an inferred
+unavailable-session outcome, not proof of deletion or rejected creation; it is
+recorded separately without inventing archival. Existing worktrees are removed only
+when the normal checks pass; already-absent worktrees are observed, not removed again.
+Timeouts, temporary read failures, conflicting identities, and known active work
+remain blockers. Retirement retains the record and history; it does not reassign
+the issue automatically.
 
 Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree
@@ -364,10 +414,15 @@ blocked rather than risking a second creation. Native denial, reassignment, or a
 changed session/worktree stops the operation without discarding the work.
 
 In Codex and OpenClaw, authorized follow-up commits can fast-forward the same PR
-branch from its last verified push. The PR receipt and original announcement stay
+branch when the observed remote commits are incorporated locally, including collaborator updates. The same open PR, destination and ancestry are verified before a non-force push. The PR receipt and original announcement stay
 with the delivery. Explicit title/body changes update that PR; commit-only pushes
 preserve text edited on GitHub. Interrupted updates reconcile the same operation.
+OpenClaw delivery reconciliation can finish incomplete provider checkpoints when the retained commit is already remote; a missing push requires the prepared publication path. Newer local or uncommitted work is not included by reconciliation.
 If initial PR creation is still uncertain, reconcile it before changing its text.
+Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. Implementation context also exposes pending summaries without moving work back to planning.
+
+In OpenClaw, an explicit operator request in the owning chat can finish a retained feedback reply after its handler stops. The agent uses feedback context with `resume: true` to verify the current operator input and old terminal run, retaining the answer, pushed work and uncertain publication receipts. A manual stop alone never restarts work; real denials remain stops.
+
 A stale publication preview returns a refreshed operation without writing. Inspect
 it and retry once within the existing authorization; repeated staleness needs
 investigation. Workflow activation or an operator request already covering that
@@ -377,8 +432,12 @@ If showing an already-created PR is interrupted or temporarily busy, ask the sam
 issue chat to show its card again. Saved plans and PR cards remain readable in
 the owning chat without fresh publication permission, a matching working commit,
 or GitHub access. They show retained evidence, not a fresh provider verification.
-Native chat identity is still checked. Presentation does not push, create a PR, or
-post an announcement. In Codex, attachment reconciliation retries only attachment
+Native chat identity is still checked. New assessments show a concise user-journey
+review with documentation/test impact; the full assessment and engineering plan stay
+saved for the agent. Ask for the full assessment, evidence, or investigation in that
+same issue chat to inspect them. Older results without a separate review retain their
+complete display. The bound `present` request accepts `includeDetails: true` in both runtimes.
+Presentation does not push, create a PR, or post an announcement. In Codex, attachment reconciliation retries only attachment
 inspection. Recipient identities remain pinned; GitHub authorizes recipient changes. If announcing fails, the PR
 remains delivered. Ask the same chat to recover its announcement; uncertain writes
 reconcile the saved text and receipt without posting a duplicate. Announcement
@@ -387,8 +446,9 @@ another push. Recovery instructions skip confirmed attachments and announcements
 
 ## V1 Retirement
 
-Unversioned notification declarations are rejected with
-`github-notification-v1-retired`. The polling channel, its Work/guided engine,
+Explicit notification version `1` and recognizable retired keys in unversioned
+declarations are rejected with `github-notification-v1-retired`; current-format
+declarations may omit the version and default to `2`. The polling channel, its Work/guided engine,
 reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
 Retirement does not imply feature parity.
 
@@ -399,9 +459,9 @@ activates V2 intake. Install adopts an old account only when its matching
 Agent System-managed binding establishes ownership; conflicting accounts require
 operator resolution. Historical receipts and grants remain untouched.
 
-Install manages each agent's channel account from its enabled OpenClaw notification
+Install manages each agent's channel account from its declared OpenClaw notification
 workflows. Removing or disabling those workflows requires another Install to disable
-that account. Other agents and operator-owned entries are preserved. With no enabled
+that account. Other agents and operator-owned entries are preserved. With no declared
 accounts, the channel is inactive; its schema remains registered for compatibility.
 
 The channel reports setup or synchronization needs, unsupported workflows, scheduler

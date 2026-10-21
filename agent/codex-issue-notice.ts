@@ -1,3 +1,4 @@
+import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import {
@@ -28,6 +29,8 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  const retirement = code.startsWith('retirement-') ? retirementNotice(code) : undefined;
+  if (retirement) return retirement;
   if (code === 'intake-manifest-unavailable')
     return {
       severity: 'error',

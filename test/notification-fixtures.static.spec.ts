@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-intake', 'openclaw-lifecycle']) {
@@ -19,8 +20,15 @@ for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-intake', 'openclaw-
       assert.equal(parsed.manifest?.github?.notifications?.schemaVersion, 2);
       assert.deepEqual(parsed.manifest?.github?.notifications?.runtimes, ['openclaw']);
       assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.mode, 'plan');
-      assert.equal(parsed.manifest?.github?.notifications?.issueAssignment?.feedback, true);
-      assert.equal(parsed.manifest?.github?.notifications?.reviewRequest?.enabled, true);
+      const expectedActors = [
+        { login: actorLogin, nodeId: '__ACTOR_NODE_ID__' },
+        ...(['openclaw-intake', 'openclaw-lifecycle'].includes(id)
+          ? [{ login: ownerLogin, nodeId: '__RECEIVER_NODE_ID__' }]
+          : []),
+      ];
+      const workflow = parsed.manifest.github!.notifications!.issueAssignment!;
+      assert.deepEqual(feedbackIdentities(workflow.allowed, workflow.feedback), expectedActors);
+      assert.equal(parsed.manifest?.github?.notifications?.reviewRequest?.paused, false);
       assert.equal(parsed.manifest?.models?.default.model, 'aimock/gpt-5.5');
       assert.equal(parsed.manifest?.github?.username, ownerLogin);
       assert.equal(parsed.manifest?.github?.token, 'GH_TOKEN_TANAABOT');
@@ -28,12 +36,7 @@ for (const id of ['openclaw-issue', 'openclaw-pr', 'openclaw-intake', 'openclaw-
         parsed.manifest?.github?.notifications?.issueAssignment?.allowed?.map(
           ({ login, nodeId }) => ({ login, nodeId }),
         ),
-        [
-          { login: actorLogin, nodeId: '__ACTOR_NODE_ID__' },
-          ...(['openclaw-intake', 'openclaw-lifecycle'].includes(id)
-            ? [{ login: ownerLogin, nodeId: '__RECEIVER_NODE_ID__' }]
-            : []),
-        ],
+        expectedActors,
       );
       const actor = parseAgentManifest(
         await readFile(`examples/${scenario.id}/${actorFolder}/agent.yaml`, 'utf8'),

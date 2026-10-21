@@ -38,14 +38,13 @@ github:
         node-id: __OWNER_NODE_ID__
     issue-assignment:
       mode: plan
-      feedback: true
       allowed:
         - login: emoriwan
           node-id: __ACTOR_NODE_ID__
         - login: tanaabot
           node-id: __RECEIVER_NODE_ID__
     review-request:
-      enabled: true
+      paused: false
       allowed:
         - login: emoriwan
           node-id: __ACTOR_NODE_ID__

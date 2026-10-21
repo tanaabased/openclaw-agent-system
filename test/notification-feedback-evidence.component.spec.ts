@@ -4,6 +4,62 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+describe('examples/openclaw-pr retained feedback evidence', () => {
+  it('should permit only terminal acknowledgement on the earlier feedback event', async () => {
+    const source = await readFile('examples/openclaw-pr/README.md', 'utf8');
+    const code = [...source.matchAll(/jq -e --slurp '([^']+)'/gu)]
+      .map((match) => match[1]!)
+      .find((text) => text.includes('initial-feedback-receipts-changed'));
+    assert.ok(code);
+    const before = {
+      id: 'initial',
+      source: 'exact source',
+      revision: 'exact revision',
+      phase: 'published',
+      receipt: { nodeId: 'reply' },
+      result: { privateText: 'Private answer.', publicText: 'Public answer.' },
+      work: { head: 'original head' },
+      turn: {
+        runId: 'initial-run',
+        message: 'exact input',
+        status: 'consumed',
+        consumedByEventId: 'input',
+      },
+    };
+    const after = {
+      ...before,
+      turn: {
+        ...before.turn,
+        status: 'completed',
+        replyEventId: 'terminal',
+        executionModel: 'fixture/model',
+      },
+    };
+    const execute = (event: unknown) =>
+      spawnSync('jq', ['-e', '--slurp', code], {
+        input: [{ feedback: { events: [before] } }, { feedback: { events: [event] } }]
+          .map((v) => JSON.stringify(v))
+          .join('\n'),
+        encoding: 'utf8',
+      });
+    const valid = execute(after);
+    assert.equal(valid.status, 0, valid.stderr);
+    for (const changed of [
+      { ...after, source: 'edited source' },
+      { ...after, revision: 'different revision' },
+      { ...after, receipt: { nodeId: 'different reply' } },
+      { ...after, result: { ...after.result, publicText: 'changed answer' } },
+      { ...after, work: { head: 'changed head' } },
+      { ...after, turn: { ...after.turn, runId: 'replacement-run' } },
+      { ...after, turn: { ...after.turn, consumedByEventId: 'different input' } },
+      { ...after, turn: { ...after.turn, failed: true } },
+      { ...after, turn: { ...after.turn, replyEventId: null } },
+      before,
+    ])
+      assert.notEqual(execute(changed).status, 0);
+  });
+});
+
 for (const [scenario, itemType] of [
   ['openclaw-issue', 'issue'],
   ['openclaw-pr', 'pull-request'],
@@ -21,7 +77,8 @@ for (const [scenario, itemType] of [
         role: 'assistant',
         __openclaw: { runId: 'current' },
         stopReason: 'stop',
-        content: 'Private explanation. Public answer. Reply published',
+        content:
+          'Private explanation. Public answer.\n> *[Reply ↗](https://github.com/owner/repo/issues/3#issuecomment-99) from [@tanaabot](https://github.com/tanaabot)*',
       };
       const write = (name: string, value: unknown) =>
         writeFile(join(root, `notification-${name}.json`), JSON.stringify(value));
@@ -39,6 +96,9 @@ for (const [scenario, itemType] of [
           assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
+              ...(scenario === 'openclaw-pr'
+                ? [{ itemType: 'issue', turn: { runId: 'earlier' } }]
+                : []),
               {
                 itemType,
                 source: JSON.stringify({ nodeId: 'source' }),
@@ -63,6 +123,7 @@ for (const [scenario, itemType] of [
           },
           {
             node_id: 'reply',
+            html_url: 'https://github.com/owner/repo/issues/3#issuecomment-99',
             user: { login: 'tanaabot' },
             body: 'Public answer.',
           },

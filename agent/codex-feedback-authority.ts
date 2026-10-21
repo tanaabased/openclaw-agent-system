@@ -22,7 +22,7 @@ export default async function authorizeCodexFeedback(input: {
   provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
 }) {
   const { current, record, event, intake, provider } = input;
-  const policy = assignmentIntakePolicy(current.manifest, 'codex', true);
+  const policy = assignmentIntakePolicy(current.manifest, 'codex');
   if (!policy) throw new WorkflowPolicyHeld('feedback-disabled');
   const owner = intake.repository.owner.login,
     name = intake.repository.name;

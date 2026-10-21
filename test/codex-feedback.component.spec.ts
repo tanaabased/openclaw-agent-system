@@ -72,11 +72,10 @@ describe('agent/codex-feedback', () => {
             'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
             'issue-assignment': {
               mode: 'plan',
-              allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
-              feedback: {
-                inherit: true,
-                allowed: [{ login: commenter.login, 'node-id': commenter.nodeId }],
-              },
+              allowed: [
+                { login: 'receiver', 'node-id': 'U_receiver' },
+                { login: commenter.login, 'node-id': commenter.nodeId },
+              ],
             },
           },
         },
@@ -244,14 +243,36 @@ describe('agent/codex-feedback', () => {
     manifest.github.notifications['issue-assignment'].mode = mode;
     await writeFile(path, JSON.stringify(manifest));
   }
+  for (const mode of ['plan', 'auto'] as const)
+    for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
+      it(`should retain ${mode} input without implementation for ${message.toLowerCase()}`, async () => {
+        await feedbackMode(mode);
+        const ref = await prepare(commenter, `@receiver ${message}`);
+        sent = true;
+        turn = 'feedback';
+        const context = await call('context', ref, true);
+        assert.equal(context.status, 'verified');
+        assert.equal('mode' in context && context.mode, mode);
+        const original = (await store.read()).records[0]!.result;
+        const saved = await call(
+          'result',
+          { ...ref, result: { privateText: 'Retained plan response.' }, reply: false },
+          true,
+        );
+        assert.equal(saved.status, 'recorded');
+        const record = (await store.read()).records[0]!;
+        assert.deepEqual(record.result, original);
+        assert.equal(record.progression, undefined);
+        assert.equal(record.feedback!.events[0]!.work, undefined);
+        assert.equal(creates, 0);
+      });
   it('should keep plan feedback in planning and use live work policy without install', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
     const context = await call('context', ref, true);
     assert.equal('mode' in context && context.mode, 'plan');
-    const held = await call('implementation-context', ref, true);
-    assert.equal('reason' in held && held.reason, 'implementation-direction-required');
+    assert.equal((await store.read()).records[0]!.progression, undefined);
     await feedbackMode('work');
     const active = await call('implementation-context', ref, true);
     assert.equal(active.status, 'verified');
@@ -283,26 +304,29 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
     assert.equal(creates, 0);
   });
-  it('should accept explicit implementation direction from approved feedback in plan', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
-    const result = await call(
-      'implementation-context',
-      {
-        ...ref,
-        decision: {
-          mode: 'work',
-          reasons: ['Approved author asks to implement.'],
-          plan: 'Implement the requested change.',
-        },
-      },
-      true,
-    );
-    assert.equal(result.status, 'verified');
-    assert.equal((await store.read()).records[0]!.progression?.via, 'operator');
-  });
+  for (const mode of ['plan', 'auto'] as const)
+    it(`should enter work from approved direction in ${mode} without an extra decision`, async () => {
+      await feedbackMode(mode);
+      await store.exclusive(async (state, save) => {
+        state.records[0]!.result!.decision = { mode: 'plan', reasons: ['Wait for direction.'] };
+        await save();
+      });
+      const ref = await prepare(commenter, '@receiver Please implement the agreed plan.');
+      sent = true;
+      turn = 'feedback';
+      const context = await call('context', ref, true);
+      assert.equal('mode' in context && context.mode, mode);
+      const original = (await store.read()).records[0]!.result;
+      const result = await call('implementation-context', ref, true);
+      assert.equal(result.status, 'verified');
+      const record = (await store.read()).records[0]!;
+      assert.equal(record.progression?.via, 'operator');
+      assert.equal(record.progression?.stage, 'implementation');
+      assert.equal(record.feedback!.events[0]!.work!.decision, undefined);
+      assert.deepEqual(record.result, original);
+      assert.equal((await call('implementation-context', ref, true)).status, 'verified');
+      assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
+    });
   it('should retain feedback clarification and completed work without overwriting the initial result', async () => {
     await feedbackMode('work');
     const ref = await prepare();
@@ -310,7 +334,12 @@ describe('agent/codex-feedback', () => {
     turn = 'feedback';
     await call('context', ref, true);
     const original = (await store.read()).records[0]!.result;
-    await call('implementation-context', ref, true);
+    const decision = {
+      mode: 'work',
+      reasons: ['Approved revised plan.'],
+      plan: 'Use the smaller parser change.',
+    };
+    await call('implementation-context', { ...ref, decision }, true);
     const result = {
       outcome: 'clarification-needed',
       summary: 'Need a value.',
@@ -345,10 +374,16 @@ describe('agent/codex-feedback', () => {
     sent = true;
     ended = false;
     turn = 'feedback-answer';
+    const context = await call('context', { id, eventId: next.eventId }, true);
+    assert.ok('previousFeedbackWork' in context && context.previousFeedbackWork);
+    assert.deepEqual(context.previousFeedbackWork[0]!.decision, decision);
+    assert.deepEqual(context.previousFeedbackWork[0]!.result, result);
+    assert.equal(context.previousFeedbackWork[0]!.privateText, 'Which value?');
     const resumed = await call('implementation-context', { id, eventId: next.eventId }, true);
     assert.equal(resumed.status, 'verified');
     assert.ok('previousFeedbackWork' in resumed && resumed.previousFeedbackWork);
     assert.deepEqual(resumed.previousFeedbackWork[0]!.result, result);
+    assert.deepEqual(resumed.previousFeedbackWork, context.previousFeedbackWork);
   });
   it('should require a reasoned auto work decision and bind done feedback to its commit', async () => {
     await feedbackMode('auto');
@@ -356,8 +391,19 @@ describe('agent/codex-feedback', () => {
     sent = true;
     turn = 'feedback';
     await call('context', ref, true);
-    const held = await call('implementation-context', ref, true);
-    assert.equal('reason' in held && held.reason, 'auto-decision-required');
+    const held = await call(
+      'implementation-context',
+      {
+        ...ref,
+        decision: {
+          mode: 'plan',
+          reasons: ['Scope needs review.'],
+          plan: 'Review scope first.',
+        },
+      },
+      true,
+    );
+    assert.equal('reason' in held && held.reason, 'auto-wait');
     const selected = await call(
       'implementation-context',
       {
@@ -441,13 +487,13 @@ describe('agent/codex-feedback', () => {
       [['e'.repeat(64), undefined]],
     );
   });
-  async function prepare(author = commenter) {
+  async function prepare(author = commenter, body = '@receiver explain this') {
     await call('next');
     comments.push({
       nodeId: 'comment',
       databaseId: 42,
       author,
-      body: '@receiver explain this',
+      body,
       bodyTruncated: false,
       createdAt: '2026-10-13T01:00:00Z',
       updatedAt: '2026-10-13T01:00:00Z',
@@ -524,7 +570,18 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
     assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
   });
-  it('should keep approved feedback usable when new assignment intake is disabled', async () => {
+  it('should require occurrence activation before feedback discovery despite retained-work access', async () => {
+    const before = await store.read();
+    const activation = deps.activation!;
+    deps.activation = async (...args) => {
+      if (!args[3]) throw new Error('intake-automation-paused');
+      return activation(...args);
+    };
+    await assert.rejects(call('next'), /intake-automation-paused/u);
+    assert.deepEqual(await store.read(), before);
+  });
+
+  it('should keep the same admitted feedback event available through parent pause', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
@@ -535,8 +592,14 @@ describe('agent/codex-feedback', () => {
       { login: 'elsewhere', 'node-id': 'O_elsewhere' },
     ];
     await writeFile(path, JSON.stringify(manifest));
+    const paused = await call('context', ref, true);
+    assert.equal(paused.status, 'verified', JSON.stringify(paused));
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
+    manifest.github.notifications['issue-assignment'].enabled = true;
+    await writeFile(path, JSON.stringify(manifest));
     const context = await call('context', ref, true);
     assert.equal(context.status, 'verified', JSON.stringify(context));
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
   });
 
   async function recordReply(
@@ -547,7 +610,7 @@ describe('agent/codex-feedback', () => {
     const saved = await call('result', { ...ref, result: { privateText } }, true);
     assert.equal(saved.status, 'recorded');
     assert.ok('presentation' in saved && saved.presentation?.includes(privateText));
-    assert.ok(saved.presentation?.startsWith('> ## 💬 From '));
+    assert.ok(saved.presentation?.includes('[Comment ↗]'));
     assert.ok(saved.presentation?.includes('#issuecomment-42)'));
     const composition = await call('compose', ref, true);
     assert.equal(composition.status, 'composition-ready');
@@ -624,7 +687,7 @@ describe('agent/codex-feedback', () => {
     const context = await call('context', ref, true);
     assert.equal('publication' in context && context.publication, 'private-only');
     assert.ok('presentation' in context && typeof context.presentation === 'string');
-    assert.match(context.presentation, /^> ## 💬 From /u);
+    assert.match(context.presentation, /\[Comment ↗\]/u);
     assert.ok(context.presentation.includes('> @receiver explain this'));
     assert.ok(context.presentation.includes('#issuecomment-42)'));
     const result = await call(
@@ -675,7 +738,7 @@ describe('agent/codex-feedback', () => {
     const completed = await call('next');
     assert.equal(completed.status, 'published');
     assert.ok('presentation' in completed && completed.presentation);
-    assert.match(completed.presentation, /^> ## 💬 From /u);
+    assert.match(completed.presentation, /\[Comment ↗\]/u);
     assert.ok(completed.presentation.includes('#issuecomment-42)'));
     assert.ok(
       completed.presentation.indexOf('#issuecomment-42)') <
@@ -796,8 +859,11 @@ describe('agent/codex-feedback', () => {
       const path = join(root, 'workspace', 'agent.yaml');
       const manifest = JSON.parse(await readFile(path, 'utf8'));
       manifest.debug = !debug;
-      manifest.github.notifications['issue-assignment'].feedback.skill = 'custom:latin';
-      manifest.github.notifications['issue-assignment'].feedback.guidance = 'Base guidance.';
+      manifest.github.notifications['issue-assignment'].feedback = {
+        inherit: true,
+        skill: 'custom:latin',
+        guidance: 'Base guidance.',
+      };
       await writeFile(path, JSON.stringify(manifest));
       const overlayPath = join(root, 'workspace', 'agent.local.yaml');
       await writeFile(
@@ -848,12 +914,12 @@ describe('agent/codex-feedback', () => {
         assert.ok(completed.presentation.includes(`[Inline guidance](<${overlayPath}>)`));
         assert.ok(
           completed.presentation.indexOf('Feedback reply instructions') >
-            completed.presentation.indexOf('Published reply'),
+            completed.presentation.indexOf('[Reply ↗]'),
         );
       }
       assert.ok(
         completed.presentation.includes(
-          '> ## 📤 To [@contributor](https://github.com/contributor)',
+          `from [@${account.login}](https://github.com/${account.login})*`,
         ),
       );
       assert.ok(!published!.includes('Use concise phrasing.'));
@@ -1003,7 +1069,7 @@ describe('agent/codex-feedback', () => {
     const reply = await call('compose', ref, true);
     assert.equal('code' in reply && reply.code, 'feedback-skill-unavailable');
     assert.ok('presentation' in reply && reply.presentation?.includes('Useful evidence'));
-    assert.ok(reply.presentation?.startsWith('> ## 💬 From '));
+    assert.ok(reply.presentation?.includes('[Comment ↗]'));
     assert.equal(creates, 0);
   });
   it('should permit harmless file references while keeping the existing publisher', async () => {

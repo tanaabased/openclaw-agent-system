@@ -32,9 +32,17 @@ export default function prepareDispatchReport(input: {
   const active = state.records.filter(
     (record) => !record.retired && !record.retirement && !record.reset,
   );
-  const retirementPending = state.records.filter(
-    (record) => record.retirement && !record.retired,
-  ).length;
+  const retiring = state.records.filter((record) => record.retirement && !record.retired);
+  const retirementProblems = retiring.filter(
+    (record) =>
+      record.retirement!.code &&
+      (record.retirement!.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
+      ![
+        'retirement-awaiting-reactivation',
+        'retirement-native-inventory-required',
+        'retirement-native-archive-pending',
+      ].includes(record.retirement!.code),
+  );
   const managing = active.filter((record) => record.effective && record.threadId);
   const waitingIssues = new Set(
     pendingDispatchAssignments(state, intake)
@@ -64,7 +72,7 @@ export default function prepareDispatchReport(input: {
       ['blocked', 'waiting', 'retrying'].includes(record.phase) &&
       record.result?.outcome === 'operator-setup-blocker',
   );
-  const failures = [
+  const observations = [
     ...(intake.blocker
       ? [
           {
@@ -101,6 +109,11 @@ export default function prepareDispatchReport(input: {
       code: record.feedback!.code!,
       operation: 'feedback',
     })),
+    ...retirementProblems.map((record) => ({
+      id: record.id,
+      code: record.retirement!.code!,
+      operation: 'retirement cleanup',
+    })),
     ...problems.map((record) => ({
       id: record.id,
       operation: 'assignment preparation',
@@ -111,15 +124,13 @@ export default function prepareDispatchReport(input: {
     id: record.id,
     code: record.capacityObservation?.code ?? 'dispatch-capacity-observation-required',
   }));
-  const health = failures.length || history.length ? automationHash({ failures, history }) : '';
-  const recovered = !health && Boolean(state.intakeHealth);
-  const notices = failures.map((failure) => ({
+  const notices = observations.map((failure) => ({
     ...failure,
     ...codexIssueNotice({
       event: 'failure',
       code: failure.code,
       providerDiagnostic: 'providerDiagnostic' in failure ? failure.providerDiagnostic : undefined,
-      changed: health !== state.intakeHealth,
+      changed: false,
     }),
     ...(failure.id.startsWith('deferred-')
       ? {
@@ -129,6 +140,12 @@ export default function prepareDispatchReport(input: {
         }
       : {}),
   }));
+  // Pending native cleanup is progress, not an intake failure or later recovery.
+  const failures = observations.filter(
+    (entry, index) => !entry.code.startsWith('retirement-') || notices[index]!.severity !== 'info',
+  );
+  const health = failures.length || history.length ? automationHash({ failures, history }) : '';
+  const recovered = !health && Boolean(state.intakeHealth);
   const severity = notices.some((notice) => notice.severity === 'error')
     ? 'error'
     : notices.some((notice) => notice.severity === 'warning')
@@ -151,7 +168,7 @@ export default function prepareDispatchReport(input: {
   const title =
     automationNotice && notices.length === 1
       ? `${automationNotice.emoji} ${automationNotice.title}`
-      : notices.length
+      : notices.length && severity !== 'info'
         ? !intake.blocker
           ? '⚠️ Intake checked — some items need attention'
           : severity === 'error'
@@ -163,9 +180,11 @@ export default function prepareDispatchReport(input: {
             ? `💡 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
             : recovered
               ? '💡 Intake resumed'
-              : pending
-                ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-                : '💡 Intake checked';
+              : notices.length
+                ? '💡 Intake checked — retirement in progress'
+                : pending
+                  ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+                  : '💡 Intake checked';
   const lines = ['## ' + title, ''];
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
   for (const record of started)
@@ -185,7 +204,7 @@ export default function prepareDispatchReport(input: {
     );
   if (sent.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
-    const record = active.find((entry) => entry.id === notice.id);
+    const record = state.records.find((entry) => entry.id === notice.id);
     if (notice.id === 'scan' && intakeAutomationNotice(notice.code)) {
       lines.push(
         `- **What happened:** ${notice.summary}`,
@@ -197,7 +216,7 @@ export default function prepareDispatchReport(input: {
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
       `  **Operation:** ${notice.operation}`,
-      `  **Action:** ${notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
+      `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
       ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
       `  **Diagnostic:** \`${notice.code}\``,
     );
@@ -235,7 +254,7 @@ export default function prepareDispatchReport(input: {
   lines.push(
     `**Active:** ${managing.length} issues · **Pending:** ${pending}`,
     `**Queued feedback:** ${queuedFeedback.length} item${queuedFeedback.length === 1 ? '' : 's'} across ${queuedOwners} issue${queuedOwners === 1 ? '' : 's'}`,
-    `**Retirement pending:** ${retirementPending}`,
+    `**Retirement pending:** ${retiring.length}`,
     `**Slots:** ${occupied}/${input.slots} occupied`,
   );
   if (pending && !notices.length)

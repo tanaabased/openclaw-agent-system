@@ -1,5 +1,7 @@
+import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 import assessmentHandoff from './assessment-handoff.ts';
+import { feedbackWorkContext } from './feedback-work.ts';
 import { assessmentSummaryInstructions } from './assessment-summary-state.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
@@ -156,8 +158,10 @@ export async function issueAssessmentAction(input: {
       if (
         record.assessmentTurn.status !== 'completed' &&
         !issueTurnReply(history.messages, record.assessmentTurn.runId)
-      )
-        throw new Error('dispatch-assessment-continuation-not-ready');
+      ) {
+        if (!record.result) throw new Error('dispatch-assessment-continuation-not-ready');
+        await openClawResponseAuthority({ request, record, caller, config: input.config });
+      }
     }
     inputEventId = meta.id;
   }
@@ -187,13 +191,14 @@ export async function issueAssessmentAction(input: {
       executionEffort: 'unverified',
       evidence: JSON.parse(input.evidence ?? record.turnEvidence?.evidence ?? record.context!),
       assessment: input.selection ?? record.assessment,
+      feedbackWork: feedbackWorkContext(record),
       currentTurnId: caller.runId,
       ...(record.result
         ? {
             previousResult: record.result,
             handoff: assessmentHandoff(
               record,
-              input.policy?.issueAssignment?.mode ?? 'plan',
+              input.policy?.issueAssignment?.mode ?? 'auto',
               'openclaw',
             ),
             previousResultDigest: automationHash(record.result),
@@ -203,10 +208,11 @@ export async function issueAssessmentAction(input: {
             }),
           }
         : {}),
-      mode: input.policy?.issueAssignment?.mode ?? 'plan',
+      mode: input.policy?.issueAssignment?.mode ?? 'auto',
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       instructions:
+        'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
         (input.policy?.issueAssignment?.mode === 'auto'
           ? 'Trusted mode: auto. Include decision.mode plan or work with bounded reasons based on the assessment and plan; work requires plan-ready. '
           : '') +
@@ -219,12 +225,7 @@ export async function issueAssessmentAction(input: {
   )
     throw new Error('dispatch-assessment-context-required');
   const candidate = sessionObject(input.result);
-  if (
-    typeof candidate.fullAssessment !== 'string' ||
-    !candidate.fullAssessment.trim() ||
-    (candidate.outcome === 'plan-ready' &&
-      (typeof candidate.planSummary !== 'string' || !candidate.planSummary.trim()))
-  )
+  if (typeof candidate.fullAssessment !== 'string' || !candidate.fullAssessment.trim())
     throw new Error('assessment-result-incomplete');
   if (input.policy?.issueAssignment?.mode === 'auto' && !candidate.decision)
     throw new Error('assessment-decision-required');
@@ -250,7 +251,7 @@ export async function issueAssessmentAction(input: {
     id: record.id,
     outcome: result.outcome,
     previousResultDigest: automationHash(result),
-    handoff: assessmentHandoff(record, input.policy?.issueAssignment?.mode ?? 'plan', 'openclaw'),
+    handoff: assessmentHandoff(record, input.policy?.issueAssignment?.mode ?? 'auto', 'openclaw'),
     presentation,
     instruction: assessmentSummaryInstructions('openclaw'),
   };

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import codexHeartbeat from '../agent/codex-heartbeat.ts';
+import codexHeartbeat, { codexHeartbeatEnvelope } from '../agent/codex-heartbeat.ts';
 
 const request = {
   automationId: 'native-intake-job',
@@ -88,6 +88,30 @@ describe('agent/codex-heartbeat', () => {
     assert.equal(escaped.status, 'quiet');
     if (escaped.status === 'quiet')
       assert.match(escaped.response, /<automation_id>native&lt;&amp;&gt;job<\/automation_id>/u);
+  });
+
+  it('should preserve markdown card bodies verbatim for both notification decisions', () => {
+    const message = [
+      '> ## ⚠️ Intake warning',
+      '>',
+      '> **Recovery:** Check [access](https://example.com/help?a=1&b=2).',
+      '> Run `check <scope>` before retrying.',
+    ].join('\n');
+    for (const [notify, decision] of [
+      [true, 'NOTIFY'],
+      [false, 'DONT_NOTIFY'],
+    ] as const) {
+      assert.equal(
+        codexHeartbeatEnvelope('native<&>job', message, notify),
+        [
+          '<heartbeat>',
+          '  <automation_id>native&lt;&amp;&gt;job</automation_id>',
+          `  <decision>${decision}</decision>`,
+          `  <message>${message}</message>`,
+          '</heartbeat>',
+        ].join('\n'),
+      );
+    }
   });
 
   it('should offer five concise messages per daypart with a distinct emoji for every message', () => {

@@ -319,7 +319,8 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     }
     const pluginData = parsePluginData(args.slice(2));
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
-    else if (action === 'scan') writeJson(await runCodexIntake(pluginData));
+    else if (action === 'scan')
+      writeJson(await runCodexIntake(pluginData, false, { threadId: process.env.CODEX_THREAD_ID }));
     else if (action === 'failure-response') {
       const input = JSON.parse(await readStandardInput()) as Record<string, unknown>;
       if (

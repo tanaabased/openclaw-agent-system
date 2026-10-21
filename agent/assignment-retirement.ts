@@ -3,6 +3,32 @@ import { Type, type Static } from 'typebox';
 const time = Type.Integer({ minimum: 0 });
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 
+export const assignmentObservationSchema = Type.Object(
+  {
+    missing: Type.Literal(true),
+    observedAt: time,
+    code: Type.Union([
+      Type.Literal('assignment-removal-unapproved'),
+      Type.Literal('assignment-removal-evidence-unavailable'),
+      Type.Literal('assignment-removal-evidence-conflicting'),
+      Type.Literal('assignment-removal-approved'),
+    ]),
+    event: Type.Optional(
+      Type.Object(
+        {
+          nodeId: text,
+          databaseId: time,
+          createdAt: text,
+          actor: Type.Object({ login: text, nodeId: text }, { additionalProperties: false }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type AssignmentObservation = Static<typeof assignmentObservationSchema>;
+
 export const retirementSchema = Type.Object(
   {
     reason: Type.Union([
@@ -14,11 +40,37 @@ export const retirementSchema = Type.Object(
     intakeId: text,
     checkedAt: time,
     reactivationAfter: Type.Optional(time),
+    removalEventId: Type.Optional(text),
     eligibleAt: time,
     activityId: Type.Optional(text),
+    sessionUnavailableObserved: Type.Optional(
+      Type.Object(
+        {
+          at: time,
+          session: Type.Union([
+            Type.Literal('not-found'),
+            Type.Literal('identity-unresolved'),
+            Type.Literal('access-denied'),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     archivedAt: Type.Optional(time),
     archiveAttempt: Type.Optional(
       Type.Object({ at: time, turnId: text }, { additionalProperties: false }),
+    ),
+    worktreeRemovalObserved: Type.Optional(
+      Type.Object(
+        {
+          at: time,
+          source: Type.Union([
+            Type.Literal('retirement-attempt'),
+            Type.Literal('external-cleanup'),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
     ),
     worktreeRemovedAt: Type.Optional(time),
     worktreeRemovalAttemptedAt: Type.Optional(time),

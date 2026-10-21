@@ -99,6 +99,18 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'The assignment actor is outside the configured assigners.',
       'Review the assigner policy in agent.yaml or await an eligible assignment, then retry. Live policy changes apply without Install.',
     ],
+    'assignment-removal-unapproved': [
+      'GitHub assignment is missing; its removal actor is not approved. Prior admitted work remains eligible in its existing mode and stage unless another lifecycle or native stop applies.',
+      'Verified reassignment or a relevant live issue-assignment.allowed change can resolve removal authority. No automatic reassignment occurs.',
+    ],
+    'assignment-removal-evidence-unavailable': [
+      'GitHub assignment is missing; removal authority could not be verified. Prior admitted work remains eligible in its existing mode and stage unless another lifecycle or native stop applies.',
+      'Recover provider evidence or verify reassignment. Chat, worktree and prior stage are preserved; no automatic reassignment occurs.',
+    ],
+    'assignment-removal-evidence-conflicting': [
+      'GitHub assignment is missing, but assignment events conflict with membership or retained admission. Prior admitted work remains eligible in its existing mode and stage unless another lifecycle or native stop applies.',
+      'Reconcile provider evidence or verify reassignment before authorizing retirement. No automatic reassignment occurs.',
+    ],
     'dispatch-assignment-actor-changed': [
       'The retained assignment actor no longer matches GitHub.',
       'Inspect the exact assignment event and retained admission before resuming; preserve the existing work.',

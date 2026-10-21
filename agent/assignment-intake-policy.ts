@@ -7,15 +7,9 @@ import type { AgentManifest } from '../manifest/types.ts';
 export default function assignmentIntakePolicy(
   manifest: AgentManifest,
   runtime: 'codex' | 'openclaw',
-  retainedWork = false,
 ) {
   const policy = manifest.github?.notifications;
-  if (
-    policy?.schemaVersion !== 2 ||
-    !policy.runtimes.includes(runtime) ||
-    (!retainedWork && policy.issueAssignment?.enabled === false) ||
-    !policy.issueAssignment
-  )
+  if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime) || !policy.issueAssignment)
     return;
   const username = manifest.github?.username;
   if (typeof username !== 'string') throw new IntakeError('intake-literal-identity-required');

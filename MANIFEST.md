@@ -464,8 +464,9 @@ identifiers remain literal and are never casing-converted. See
 
 ### `github.notifications`
 
-Notification policy requires `schema-version: 2`. Unversioned V1 declarations
-are rejected with `github-notification-v1-retired`; the outer workspace manifest
+Notification policy defaults to `schema-version: 2`; numeric `2` is the only
+accepted explicit value. Retired V1 declarations are rejected with
+`github-notification-v1-retired`; the outer workspace manifest
 remains `schema-version: 1`. See [V1 retirement](./channels/github/ADVANCED.md#v1-retirement) before upgrading an old installation.
 
 **Current support:** v2 parsing, defaults, identity validation, Codex issue-assignment
@@ -538,7 +539,7 @@ See [Codex intake](./CODEX.md#github-notification-policy) for inspection and rec
 | `max-concurrent-items`      | no       | `3`                 | Positive integer execution limit across notification work within each runtime; not an intake-record limit.                          |
 | `review-request`            | no       | absent              | Requests to start an independent PR review; not direct PR assignment.                                                               |
 | `runtimes`                  | no       | `[openclaw, codex]` | Nonempty unique selection of `openclaw` and/or `codex`. Each runtime owns its reconciliation; no cross-runtime claiming is implied. |
-| `schema-version`            | yes      | none                | Exactly `2`. Unversioned V1 declarations are rejected.                                                                              |
+| `schema-version`            | no       | `2`                 | Only numeric `2` is supported. Retired V1 declarations are rejected.                                                                |
 
 Each workflow accepts `allowed`, an optional list of actor identity records.
 Omission or `[]` grants no authority for that trigger. An absent trigger is not
@@ -597,7 +598,7 @@ including CODEOWNERS requests. Completed reviews are not requested again.
 
 #### Issue modes
 
-`issue-assignment.mode` is optional and defaults to `plan`. Assessment includes
+`issue-assignment.mode` is optional and defaults to `auto`. Assessment includes
 investigation and initial planning; workspace preparation belongs to runtime dispatch.
 
 | Mode   | Authorized journey                                                                                                                                                                                      |
@@ -617,39 +618,42 @@ revoking its stage; an answer resumes through the owning context without renewed
 
 #### Feedback permissions
 
-Set `feedback` independently beneath `issue-assignment` and `review-request`.
-Issue feedback covers the admitted issue and its verified linked delivery PRs in
-all issue modes. Review feedback belongs to the independent reviewer conversation.
-Neither scope grants the other scope or permission to start new work.
+Feedback belongs to its parent workflow. An active issue-assignment workflow
+supplies feedback on the admitted issue and its verified linked delivery PRs in
+all issue modes. Omit `feedback` to approve the parent's current `allowed` actors.
+Review-request feedback uses its own parent's actors when that execution adapter
+is delivered; independent reviewer execution remains unavailable.
 
-| Value                             | Meaning                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| omitted or `false`                | No feedback authority (default).                                          |
-| `true`                            | Inherit that workflow's current `allowed` identities.                     |
-| `{allowed: [...]}`                | Use exactly the supplied identities.                                      |
-| `{inherit: true, allowed: [...]}` | Combine the workflow's `allowed` identities with the supplied identities. |
+| Value                              | Meaning                                               |
+| ---------------------------------- | ----------------------------------------------------- |
+| omitted                            | Inherit the parent's current approved actors.         |
+| `{inherit: true, allowed: [...]}`  | Combine parent actors with the supplied authors.      |
+| `{inherit: false, allowed: [...]}` | Approve exactly the supplied authors.                 |
+| `{inherit: false, allowed: []}`    | Approve nobody while retaining parent-owned feedback. |
 
-In object form, `inherit` is an optional boolean defaulting to `false`; `allowed`
-is an optional list of `{login, node-id}` records defaulting to `[]`. Feedback
-identities do not accept `operator-owner`. Matching identities are deduplicated by
-immutable node ID, with case-insensitive login comparison; conflicting pins are
-rejected. Inheritance follows the current reconciled policy rather than copying
-an old list. A workflow's `enabled` switch controls new intake; it does not erase
-permissions for retained work.
+Object configuration accepts optional `skill` and `guidance` using the
+[assessment selection](#assessment-selection) shapes. Set `inherit: true` when
+customizing replies while keeping parent authors. The default reply skill is
+`agent-system:agent-system-feedback-reply`; missing or changed selected skills
+stop composition rather than silently falling back. Identities use `{login,
+node-id}` pins, never `operator-owner`. Matching pins are deduplicated;
+conflicting immutable IDs or logins are rejected.
 
-Top-level v2 `feedback` is rejected, including disabled declarations. Remove it
-and explicitly choose feedback permissions beneath each intended workflow.
-Use `true` only when assigners/requesters should also provide feedback; otherwise
-use an explicit list. Migration never copies the old list into both scopes.
-Codex supports feedback in the owning issue chat; independent reviewer intake and
-OpenClaw v2 feedback execution still require their execution adapters.
+The parent's enabled state governs feedback availability. Author and reply-policy
+edits apply live without another feedback activation or Install. An empty
+replacement list grants no author authority. Parent pause/resume preserves
+admitted work and receipts, using the existing admission cutoff described in the
+[channel guide](./channels/github/ADVANCED.md#configuration-reference). It does not
+replay historical feedback or request a retrospective assessment.
 
-Object-form feedback also accepts optional `skill` and `guidance` using the
-[assessment selection](#assessment-selection) value shapes. Both workflows default
-to `agent-system:agent-system-feedback-reply`; each may replace that skill or add
-inline or contained-file guidance independently. These composition fields grant
-no feedback authority: choose `inherit` or `allowed` explicitly. Missing or changed
-selected skills stop composition instead of silently falling back.
+For the bounded V2 transition, legacy `true` still inherits and `false` still
+approves nobody. Convert `true` to omission or `{inherit: true}`; convert `false`
+to `{inherit: false, allowed: []}`. Existing objects without `inherit` retain their
+replacement-list meaning, including empty or guidance-only objects; add
+`inherit: false` to preserve their authors. Validation warns about these legacy
+forms without changing their grants. Keep them accepted until pirog, EMORI and
+Smutlord have adopted and verified explicit policy. No V3 schema or retained issue
+state reset is required. Top-level V2 `feedback` remains rejected.
 
 #### Assessment selection
 
@@ -735,7 +739,7 @@ Closure or lost authority is a stop reason, not a successful review.
 
 This declaration prepares the agreed self-assignment policy; Install activates it.
 Keep `review-request` absent or disabled until its execution adapter is available.
-Issue feedback is optional; see [Codex issue feedback](./CODEX.md#issue-feedback).
+Issue feedback follows its parent; see [Codex issue feedback](./CODEX.md#issue-feedback).
 
 ```yaml
 schema-version: 1

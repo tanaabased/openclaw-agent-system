@@ -43,6 +43,7 @@ export default function lifecycleDetails(
         (_match, outcome: string, id: string) =>
           `; mode: persistent; thread: ${maskedId(id)}; outcome: ${outcome}`,
       )
+      .replace('removal-pending', 'pause pending; native job retained')
       .replace(' (independent)', '; mode: independent')
       .replace(`Automation ${item.stepId}: healthy`, () => `name: ${name}`)
       .replace(`Automation ${item.stepId}:`, () => `name: ${name}; condition:`)

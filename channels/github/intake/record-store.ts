@@ -135,6 +135,8 @@ export class IntakeError extends Error {
 }
 
 export function intakeRemediation(code: string): string {
+  if (code === 'intake-automation-paused')
+    return 'Intake scheduling is paused. Resume the native job, or set paused: false and run Install. Accepted runs and existing issue work retain their authority.';
   if (code === 'intake-manifest-unavailable')
     return 'Restore a readable, valid agent.yaml in the bound workspace, then retry. No rebind or Install is required for a policy-only repair.';
   if (code === 'intake-automation-update-required')

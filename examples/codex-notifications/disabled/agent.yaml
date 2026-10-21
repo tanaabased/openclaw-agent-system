@@ -1,10 +1,14 @@
 schema-version: 1
 agent:
   id: codex-disabled-notifications
+models:
+  default: { model: openai/gpt-6-luna, effort: medium }
+  low: { model: openai/gpt-6-luna, effort: medium }
+  medium: { model: openai/gpt-6-luna, effort: medium }
+  high: { model: openai/gpt-6-luna, effort: medium }
 github:
   username: example-agent
   notifications:
-    schema-version: 2
     allowed-repository-owners:
       - login: example-owner
         node-id: O_example

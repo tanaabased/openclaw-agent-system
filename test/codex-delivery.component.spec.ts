@@ -17,7 +17,12 @@ import runCodexDelivery, {
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
+import {
+  account,
+  baseline,
+  intakeFixture,
+  removeFixtureAssignment,
+} from './github-intake-fixture.ts';
 
 const id = 'd'.repeat(64);
 const firstHead = 'a'.repeat(40);
@@ -597,7 +602,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(saved.reconciled, true);
     assert.equal(saved.announcement!.attempted, true);
     assert.equal(saved.announcement!.receipt, undefined);
-    assert.match(String((await request('present')).presentation), /announcement pending/);
+    assert.match(String((await request('present')).presentation), /announcement unconfirmed/);
     announcement.lost = false;
     assert.equal((await request('announce')).status, 'announced');
     assert.equal(announcement.posts, 1);
@@ -726,7 +731,10 @@ describe('agent/codex-delivery', () => {
     assert.match(String(presented.instruction), /complete presentation Markdown.*final reply/u);
     assert.match(String(presented.instruction), /including the PR card and all notices/u);
     assert.match(String(presented.instruction), /card generation, not visible delivery/u);
-    assert.match(JSON.stringify(presented.presentation), /feedback delivery is not available/);
+    assert.match(
+      JSON.stringify(presented.presentation),
+      /Feedback is configured.*active intake could not be verified/,
+    );
     assert.equal(creates, 1);
     attached = false;
     await request('reconcile');
@@ -847,7 +855,12 @@ describe('agent/codex-delivery', () => {
       1,
     );
     const presented = await request('present');
-    assert.match(String(presented.presentation), /Issue link verified after retry/);
+    assert.doesNotMatch(String(presented.presentation), /Issue link verified after retry/);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
+    assert.match(
+      String((await request('present')).presentation),
+      /Issue link verified after retry/,
+    );
     assert.match(String(presented.presentation), /PR attachment needs a check/);
     assert.equal(creates, 1);
   });
@@ -1046,7 +1059,7 @@ describe('agent/codex-delivery', () => {
     dirty = true;
     await assert.rejects(request('prepare'), /uncommitted-work/);
     dirty = false;
-    fixture.item.assignees = [];
+    removeFixtureAssignment(fixture);
     await assert.rejects(request('prepare'), /dispatch-assignment-removed/);
     assert.equal(creates, 0);
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
@@ -1143,7 +1156,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
   });
-  it('should update only a known ancestor on the same pr and reject unrelated remote heads', async () => {
+  it('should update the same pr when collaborator work is incorporated', async () => {
     await publish();
     const operationId = (await store.read()).records[0]!.delivery!.id;
     head = 'b'.repeat(40);
@@ -1156,7 +1169,10 @@ describe('agent/codex-delivery', () => {
       ),
     );
     remote = 'c'.repeat(40);
-    await assert.rejects(publish(), /remote-head-diverged/);
+    pr!.headSha = remote;
+    await publish();
+    assert.equal(remote, head);
+    assert.equal(creates, 1);
   });
   for (const interruption of ['before', 'after'] as const)
     it(`should recover metadata updates interrupted ${interruption} the provider write`, async () => {

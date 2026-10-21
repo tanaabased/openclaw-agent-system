@@ -1,5 +1,5 @@
 import { notificationAuthorityDigest } from './notification-authority.ts';
-import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -412,6 +412,12 @@ export async function inspectCodexDispatchActivation(
         ? 'intake-automation-update-required'
         : 'intake-activation-required'
       : 'dispatch-activation-required';
+  if (!retainedWork && !pausedRecovery && job?.enabled === false)
+    throw new CodexAutomationError('intake-automation-paused');
+  const saved = await readCodexAutomations(selected.codexHome);
+  const actual = saved.find((entry) => entry.id === record?.nativeId);
+  if (!retainedWork && !pausedRecovery && actual?.definition.status === 'PAUSED')
+    throw new CodexAutomationError('intake-automation-paused');
   const matchesPrompt = (prompt: string) => {
     const marker = '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId);
     return job?.payload.kind === 'prompt' && prompt === job.payload.prompt + marker;
@@ -429,8 +435,6 @@ export async function inspectCodexDispatchActivation(
         !matchesPrompt(record.definition.prompt)))
   )
     throw new CodexAutomationError(activationCode);
-  const saved = await readCodexAutomations(selected.codexHome);
-  const actual = saved.find((entry) => entry.id === record.nativeId);
   if (
     !retainedWork &&
     (!actual ||
@@ -450,10 +454,10 @@ export async function inspectCodexDispatchActivation(
       (pausedRecovery ||
         selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
         (capability === 'feedback'
-          ? feedbackIdentities(
-              selected.loaded.manifest.github.notifications.issueAssignment?.allowed ?? [],
-              selected.loaded.manifest.github.notifications.issueAssignment?.feedback,
-            ).length === 0
+          ? !workflowFeedbackAvailable(
+              selected.loaded.manifest.github.notifications,
+              'issue-assignment',
+            )
           : capability !== 'assessment-summary' &&
             !['work', 'auto'].includes(
               selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',

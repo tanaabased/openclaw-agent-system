@@ -21,7 +21,10 @@ export default function retainedIntakePolicy(
           ...manifest.github?.notifications,
           runtimes: [runtime],
           issueAssignment: {
-            mode: 'plan',
+            mode: 'auto',
+            ...(!manifest.github?.notifications?.issueAssignment
+              ? { feedback: { inherit: false, allowed: [] } }
+              : {}),
             ...manifest.github?.notifications?.issueAssignment,
             allowed:
               manifest.github?.notifications?.issueAssignment?.allowed ??
@@ -36,6 +39,5 @@ export default function retainedIntakePolicy(
       },
     },
     runtime,
-    true,
   )!;
 }

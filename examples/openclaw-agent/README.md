@@ -4,8 +4,9 @@ This scenario runs the prepared Agent System package in the default Gateway with
 
 The readiness turn uses a GitHub-shaped session key after the installed agent's
 manifest declares notification V2. It must reach the mock model using passive
-manifest discovery. Both intake triggers are disabled; this tests passive loading
-without activating notification work. The routing turn also requests issue-session dispatch while intake is inactive and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
+manifest discovery. Both workflows declare paused schedules, and their intake has
+not been installed; this tests passive loading without activating notification work.
+The routing turn also requests issue-session dispatch before intake activation and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
 passing it does not establish dispatch recovery or single-execution guarantees.
 
 Runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The passive-loading check changes the checked-in manifest after installation on the disposable runner.
@@ -67,13 +68,13 @@ openclaw agent \
   --timeout 120 \
   | grep -F 'routing-default-ready'
 
-# should keep disabled native intake inactive through the public notification commands
+# should require installation before public commands can use the declared native intake
 if openclaw agent-system notifications status --agent data --json > "$TMPDIR/notification-status.json"; then exit 1; fi
-jq -e '.status == "degraded" and .code == "github-notification-disabled" and .schemaVersion == 2' "$TMPDIR/notification-status.json"
+jq -e '.status == "degraded" and .code == "intake-activation-required" and .schemaVersion == 2' "$TMPDIR/notification-status.json"
 if openclaw agent-system notifications refresh --agent data --json > "$TMPDIR/notification-refresh.json"; then exit 1; fi
-jq -e '.status == "failed" and .code == "github-notification-disabled"' "$TMPDIR/notification-refresh.json"
+jq -e '.status == "failed" and .code == "intake-activation-required"' "$TMPDIR/notification-refresh.json"
 if openclaw agent-system notifications wait --agent data --for baseline-ready --timeout 1 --json > "$TMPDIR/notification-wait.json"; then exit 1; fi
-jq -e '.status == "failed" and .code == "github-notification-disabled"' "$TMPDIR/notification-wait.json"
+jq -e '.status == "failed" and .code == "intake-activation-required"' "$TMPDIR/notification-wait.json"
 
 # should omit temporary dispatch invocation tracing from runtime logs
 if grep -Fq 'dispatch-invocation ' "$TMPDIR/agent-file.jsonl"; then exit 1; fi

@@ -1,40 +1,74 @@
-import DiscoveryBudget from './discovery-budget.ts';
-import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
 import { lstat } from 'node:fs/promises';
+import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
+import DiscoveryBudget from './discovery-budget.ts';
 
-import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
-import { sessionObject } from './openclaw-session-create.ts';
-import type OpenClawDispatch from './openclaw-dispatch.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type { AgentManifest } from '../manifest/types.ts';
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import observeUnavailableRetirementSession from './openclaw-retirement-unavailable.ts';
+import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
+import workflowFailure from './workflow-failure.ts';
+
+function retirementObject(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    const type =
+      value === null
+        ? 'null'
+        : value === undefined
+          ? 'missing'
+          : Array.isArray(value)
+            ? 'array'
+            : typeof value;
+    throw new Error('dispatch-session-response-invalid-' + field + '-' + type);
+  }
+  return value as Record<string, unknown>;
+}
 
 /** observe the exact native session, including archived sessions and pending inputs. */
 export async function observeRetiringSession(
   request: DispatchRequest,
   record: OpenClawDispatchRecord,
+  agentId: string,
 ) {
   if (!record.request) return undefined;
-  const expected = record.request;
-  if (!('key' in expected) || !record.sessionCreation?.sessionId)
+  const intent = record.request;
+  const expected =
+    'key' in intent
+      ? { key: intent.key, sessionId: record.sessionCreation?.sessionId }
+      : record.native;
+  if (
+    !expected?.sessionId ||
+    !('key' in intent
+      ? record.sessionCreation?.attempted && intent.agentId === agentId
+      : record.creationCall &&
+        record.creationCall.sessionId === record.native?.sourceSessionId &&
+        record.creationCall.toolCallId === record.native?.toolCallId) ||
+    (record.threadId &&
+      record.threadId !== ('key' in expected ? expected.key : expected.sessionKey)) ||
+    record.worktree !== intent.cwd
+  )
     throw new Error('retirement-session-identity-unresolved');
-  const row = sessionObject(
-    sessionObject(await request('sessions.describe', { key: expected.key })).session,
+  const key = 'key' in expected ? expected.key : expected.sessionKey;
+  const row = retirementObject(
+    retirementObject(await request('sessions.describe', { key }), 'sessions-describe').session,
+    'sessions-describe-session',
   );
   if (
-    row.key !== expected.key ||
-    row.agentId !== expected.agentId ||
-    row.sessionId !== record.sessionCreation.sessionId ||
+    row.key !== key ||
+    row.agentId !== agentId ||
+    row.sessionId !== expected.sessionId ||
     (row.spawnedCwd ?? row.workspaceDir) !== record.worktree
   )
     throw new Error('retirement-session-identity-changed');
-  const history = sessionObject(
-    await request('chat.history', { sessionKey: expected.key, limit: 1 }),
+  const history = retirementObject(
+    await request('chat.history', { sessionKey: key, limit: 1 }),
+    'chat-history',
   );
   if (history.sessionId !== row.sessionId || !Array.isArray(history.messages))
     throw new Error('retirement-session-history-unavailable');
-  const info = sessionObject(history.sessionInfo);
-  const pending = sessionObject(history.pendingInputs);
+  const info = retirementObject(history.sessionInfo, 'chat-history-session-info');
+  const pending = retirementObject(history.pendingInputs, 'chat-history-pending-inputs');
   const last = history.messages.at(-1);
   return {
     row,
@@ -42,20 +76,22 @@ export async function observeRetiringSession(
     idle: info.hasActiveRun === false && pending.total === 0,
     ...(typeof info.activeLeafEntryId === 'string'
       ? { activityId: info.activeLeafEntryId }
-      : last && typeof sessionObject(last).id === 'string'
-        ? { activityId: String(sessionObject(last).id) }
+      : last && typeof retirementObject(last, 'chat-history-last-message').id === 'string'
+        ? { activityId: String(retirementObject(last, 'chat-history-last-message').id) }
         : {}),
   };
 }
 
 export default async function reconcileOpenClawLifecycle(input: {
-  service: OpenClawDispatch;
+  service: Pick<OpenClawDispatchContext, 'scope' | 'dependencies'>;
   manifest: AgentManifest;
   workspace: string;
   authority: DispatchAuthority;
 }) {
   const { service, manifest, workspace, authority } = input;
   const current = await service.scope(manifest, workspace);
+  current.policy.policy.issueAssignment!.allowed =
+    manifest.github?.notifications?.issueAssignment?.allowed ?? [];
   const owner = await service.dependencies.coordinator(manifest, workspace);
   const feedbackBudget = new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
@@ -76,12 +112,37 @@ export default async function reconcileOpenClawLifecycle(input: {
   const fresh = async () => {
     authority.signal?.throwIfAborted();
     await authority.assertCurrent?.();
-    const selected = await service.scope(manifest, workspace);
+    const loaded = await service.dependencies.intake.dependencies.manifestService.loadForAgentId(
+      manifest.agent.id,
+      'service',
+    );
+    if (loaded.status !== 'loaded' || loaded.scope.workspaceDir !== workspace)
+      throw new Error('retirement-workflow-changed');
+    const selected = await service.scope(loaded.manifest, workspace);
+    current.policy.policy = selected.policy.policy;
+    current.policy.policy.issueAssignment!.allowed =
+      loaded.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
     if (
       selected.workspace !== current.workspace ||
       (await service.dependencies.coordinator(manifest, workspace)) !== owner
     )
       throw new Error('retirement-workflow-changed');
+  };
+  const observe = async (request: DispatchRequest, record: OpenClawDispatchRecord) => {
+    try {
+      const observed = await observeRetiringSession(request, record, manifest.agent.id);
+      return observed && { ...observed, unavailableSession: undefined };
+    } catch (error) {
+      const unavailableSession = await observeUnavailableRetirementSession({
+        record,
+        agentId: manifest.agent.id,
+        owner,
+        request,
+        code: workflowFailure(error, 'retirement-native-observation-unavailable').code,
+      });
+      if (!unavailableSession) throw error;
+      return { row: undefined, archived: false, idle: false, unavailableSession };
+    }
   };
   return current.journal.exclusive(async (state, save) => {
     await reconcileAssignmentLifecycle({
@@ -94,9 +155,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       fresh,
       save,
       observe: (record) =>
-        service.dependencies.credential.use(authority, (request) =>
-          observeRetiringSession(request, record),
-        ),
+        service.dependencies.credential.use(authority, (request) => observe(request, record)),
       reactivate: async (record, intake) => {
         const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
         return reactivateAssignmentFeedback({
@@ -132,24 +191,38 @@ export default async function reconcileOpenClawLifecycle(input: {
             code: 'retirement-worktree-cleanup-unavailable',
           };
         return service.dependencies.credential.use(authority, async (request) => {
-          const observed = await observeRetiringSession(request, record);
+          const observed = await observe(request, record);
           if (
             !observed ||
-            !observed.idle ||
-            observed.row.pinned === true ||
-            record.threadId === owner
+            (!observed.idle && !observed.unavailableSession) ||
+            observed.row?.pinned === true ||
+            observed.row?.key === owner
           )
             throw new Error('retirement-native-resource-protected');
-          const jobs = sessionObject(await request('cron.list', { includeDisabled: true }));
+          const jobs = retirementObject(
+            await request('cron.list', { includeDisabled: true }),
+            'cron-list',
+          );
           if (!Array.isArray(jobs.jobs))
             throw new Error('retirement-automation-ownership-unavailable');
           for (const other of shared) {
-            const peer = await observeRetiringSession(request, other);
-            if (!peer?.idle || peer.row.pinned === true || other.threadId === owner)
+            const peer = await observe(request, other);
+            if (
+              !peer ||
+              (!peer.idle && !peer.unavailableSession) ||
+              peer.row?.pinned === true ||
+              peer.row?.key === owner
+            )
               throw new Error('retirement-native-resource-protected');
           }
           const owners = new Set(
-            [record, ...shared].flatMap((entry) => [entry.threadId, `session:${entry.threadId}`]),
+            [record, ...shared].flatMap((entry) => {
+              const key =
+                entry.request && 'key' in entry.request
+                  ? entry.request.key
+                  : entry.native?.sessionKey;
+              return key ? [key, `session:${key}`] : [];
+            }),
           );
           const owns = (value: unknown): boolean =>
             (typeof value === 'string' && owners.has(value)) ||
@@ -187,7 +260,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             if (proof.status !== 'preserved')
               throw new Error('retirement-worktree-' + proof.status);
           } else if (!record.retirement?.worktreeRemovedAt) {
-            // absence alone does not prove that the expected worktree was safely reclaimed.
+            // native custody and managed inventory are checked before observing external removal.
             const absent =
               record.worktree &&
               (await lstat(record.worktree).then(
@@ -197,32 +270,51 @@ export default async function reconcileOpenClawLifecycle(input: {
                   throw error;
                 },
               ));
-            if (!record.retirement?.worktreeRemovalAttemptedAt || !absent)
-              throw new Error('retirement-worktree-observation-required');
-            record.retirement.worktreeRemovedAt = now;
+            if (!absent) throw new Error('retirement-worktree-observation-required');
+            await recheck();
+            record.retirement!.worktreeRemovalObserved = {
+              at: now,
+              source: record.retirement!.worktreeRemovalAttemptedAt
+                ? 'retirement-attempt'
+                : 'external-cleanup',
+            };
+            record.retirement!.worktreeRemovedAt = now;
             await save();
           }
           await recheck();
-          if (!observed.archived) {
-            await request('sessions.patch', {
-              key: record.threadId,
-              expectedSessionId: record.sessionCreation!.sessionId,
-              ...(typeof observed.row.lifecycleRevision === 'string'
-                ? { expectedLifecycleRevision: observed.row.lifecycleRevision }
-                : {}),
-              archived: true,
-            });
-          }
-          const archived = await observeRetiringSession(request, record);
-          if (!archived?.archived || !archived.idle)
-            throw new Error('retirement-archive-unverified');
-          record.retirement!.archivedAt ??= now;
-          await save();
-          for (const other of shared) {
-            const peer = await observeRetiringSession(request, other);
-            if (!peer?.archived || !peer.idle)
-              return {
+          if (observed.unavailableSession) {
+            record.retirement!.sessionUnavailableObserved = {
+              at: now,
+              session: observed.unavailableSession,
+            };
+          } else {
+            if (!observed.archived) {
+              await request('sessions.patch', {
+                key: observed.row.key,
+                expectedSessionId: observed.row.sessionId,
+                ...(typeof observed.row.lifecycleRevision === 'string'
+                  ? { expectedLifecycleRevision: observed.row.lifecycleRevision }
+                  : {}),
                 archived: true,
+              });
+            }
+            const archived = await observe(request, record);
+            if (!archived?.archived || !archived.idle)
+              throw new Error('retirement-archive-unverified');
+            record.retirement!.archivedAt ??= now;
+          }
+          await save();
+          const settled = {
+            archived: !observed.unavailableSession,
+            ...(observed.unavailableSession
+              ? { unavailableSession: observed.unavailableSession }
+              : {}),
+          };
+          for (const other of shared) {
+            const peer = await observe(request, other);
+            if (!peer || (!peer.unavailableSession && (!peer.archived || !peer.idle)))
+              return {
+                ...settled,
                 worktreeRemoved: false,
                 code: 'retirement-shared-archive-pending',
               };
@@ -240,7 +332,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             record.retirement!.worktreeRemovedAt = now;
             await save();
           }
-          return { archived: true, worktreeRemoved: true };
+          return { ...settled, worktreeRemoved: true };
         });
       },
     });

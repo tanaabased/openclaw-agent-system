@@ -6,6 +6,46 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For pause parity, use that disposable native setup to compare UI Pause/Resume with
+`paused: true`/`paused: false` followed by Install. Record the same automation and
+intake chat IDs, baseline, pending event IDs, and delivery receipts before and
+after each path. Let an accepted occurrence and issue turn finish while paused;
+confirm the next occurrence does not start. Create one approved assignment and
+issue/PR comment during the pause, then verify discovery after resume with one
+chat and one reply per source. Retain the native occurrence receipts and actual UI
+observation separately from component results; headless planning is not UI proof.
+
+For report presentation verification, use an explicitly authorized disposable native
+desktop setup with updated installed instructions, or operator-provided captures.
+Observe one healthy status report and one warning report without manufacturing a
+production intake failure. For each, retain separately:
+
+1. The runtime's complete returned `response`.
+2. The actual final assistant text from native history or export, compared exactly
+   with that response.
+3. A screenshot or direct observation of the displayed card: heading, emphasis,
+   link or recovery text where present, one card only, and notification behavior.
+
+Record app/version, plugin revision, time, notification decision, and redacted source
+identifiers with each capture. Preserve `DONT_NOTIFY`; do not flip it to make a card
+visible. If generated and final text differ, retain the exact diff. If they match
+but display is literal, retain a minimal unchanged native-heartbeat reproduction
+with expected/actual display and captures for the identified upstream host. Keep
+results and the upstream destination in issue or PR context. These headless checks,
+a model echo, and an HTML preview cannot prove native final-text preservation or
+desktop rendering; missing native captures leave that acceptance unverified.
+
+For comment-card display verification on both native Codex and OpenClaw, capture
+incoming comments, outgoing replies, inline reviews, public plan summaries, and PR
+announcements. Compare the exact returned/final text with the published prose;
+observe body first, no added heading/top padding, visible space before the italic
+footer, and no literal HTML. Open each label and author link to verify the exact
+comment and profile. Verify an unlinked draft before publication, a verified footer
+instead of a success card afterward, and visible publication obstacles with debug
+off. Preserve private plans, review code context, individual finding links, private
+PR cards and native attachments. Use the capture metadata and evidence limits above;
+this headless scenario does not prove either host's displayed spacing.
+
 For coordinator replacement verification, retain an active issue, reconcile the automation to a new intake chat, and continue that same issue. Verify its original creation source remains intact, new sends record the replacement coordinator, and both old and new send receipts reconcile without duplicate messages. Rename the issue chat and change its live assessment or implementation guidance before a subsequent context request; neither requires another issue admission or Install. Controlled tests cover these transitions; the desktop run remains the native transport proof.
 
 Native same-turn verification also requires the desktop: run one Work issue and one
@@ -19,7 +59,39 @@ make status complete and the next scan idle without a separate completion transi
 Interrupt before the announcement or card and confirm recovery finishes those steps
 without repeating implementation or creating another PR.
 
-Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Completed native descendants should not count as independent worktree owners; running, unrelated, pinned, and automation-owned chats must still protect the checkout. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
+For message parity, compare a question, plan revision, clarification answer,
+implementation request, and repair sent directly and through approved issue/linked-PR
+comments in the same task state. Compare explicit implementation in Plan and Auto
+without an extra decision object, including an older Auto Plan decision. Verify
+that both receive the retained plans and
+partial work before interpreting the message. Questions in Plan must not start
+implementation; an authorized repair must retain the conversation, checkout, and PR.
+Check the full private answer in the native chat and the public reply at its exact
+GitHub source. Controlled component pairs cover state and context; headless checks
+and OpenClaw-hosted Codex do not establish standalone desktop display or interpretation.
+
+For removal-authority verification in the desktop, remove an admitted assignment
+through an actor outside the live `issue-assignment.allowed` list. Confirm inspection
+reports missing assignment and unresolved authority, preserves the exact chat,
+checkout and implementation stage, and permits only already authorized work. Verify
+reassignment clears the warning without creating another owner. An approved removal
+must instead queue normal retirement; removing that actor from the live list before
+cleanup must prevent stale removal authority from reclaiming resources. Controlled
+source tests cover actor/evidence permutations; these headless checks do not establish
+the desktop journey.
+
+For saved-plan readback verification in the native issue chat, request the full
+assessment, evidence, and investigation. Confirm the bound `present` request with
+`includeDetails: true` shows those notes and the complete plan without changing the
+saved result or its digest. For a result with `reviewSummary`, the default reply must
+show the user journey and documentation/test impact without the engineering source.
+Implementation context must still receive the complete saved assessment and plan; a
+different chat must not read them.
+
+Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
+
+The disabled-workflow fixture omits the notification schema version to exercise
+the packaged default; the active fixture retains explicit version `2`.
 
 For native purge verification, reset a disposable managed issue with purge selected.
 After native chat archival, confirm purge waits for checkout removal and completes
@@ -163,6 +235,13 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(node "$runtime" dispatch --plugin-data "$root/notification-data" --input - 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and (.message | contains("--plugin-data")) and (.message | contains("stdin")) and (.message | contains("--input"))'
 
+# should reject missing or unowned retained assessments
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(printf '%s\n' '{"action":"present","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","includeDetails":true}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-assessment-caller-mismatch"'
+
 # should reject packaged continuation without newly reconciled work authority
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -190,7 +269,7 @@ if output=$(printf '%s\n' '{"action":"announce","id":"missing"}' | node "$runtim
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid"'
 
 
-# should accept separate feedback and stage selections while leaving disabled workflows inactive
+# should retain a paused declaration and diagnose its inverse compatibility alias
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -198,9 +277,9 @@ plugin_data="$root/disabled-notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/disabled" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
 printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
-  | jq -e '.status == "aligned" and .actions == [] and (.conversations // []) == []'
+  | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-policy-disabled"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-automation-paused"'
 test ! -d "$CODEX_HOME/automations"
 
 # should plan intake conversation setup without a global scanner rule or reload acknowledgment

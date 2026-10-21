@@ -18,7 +18,12 @@ import {
 } from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
-import { validateGitHubNotificationPolicy } from '../channels/github/notification-policy.ts';
+import { externalGitHubNotificationsSchema } from '../channels/github/config-schema.ts';
+import {
+  githubFeedbackCompatibilityDiagnostics,
+  githubPauseCompatibilityDiagnostics,
+  validateGitHubNotificationPolicy,
+} from '../channels/github/notification-policy.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import { decodeBackup, externalBackupSchema } from './backup-schema.ts';
@@ -175,12 +180,10 @@ function modelTierGroupDiagnostics(value: unknown): ManifestDiagnostic[] {
 function globalFeedbackDiagnostics(value: unknown): ManifestDiagnostic[] {
   const github = isRecord(value) && value.github;
   const notifications = isRecord(github) && github.notifications;
-  if (
-    !isRecord(notifications) ||
-    notifications['schema-version'] !== 2 ||
-    !Object.hasOwn(notifications, 'feedback')
-  )
-    return [];
+  if (!isRecord(notifications) || !Object.hasOwn(notifications, 'feedback')) return [];
+  const policy = { ...notifications };
+  delete policy.feedback;
+  if (!Value.Check(externalGitHubNotificationsSchema, policy)) return [];
   return [
     {
       code: 'github-notification-global-feedback-removed',
@@ -362,6 +365,8 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
 
 /** validate and normalize an effective document before any external values are resolved. */
 export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
+  const notifications =
+    isRecord(value) && isRecord(value.github) ? value.github.notifications : undefined;
   const agentKey = isRecord(value) && Object.hasOwn(value, 'setup-agent') ? 'setup-agent' : 'setup';
   const declarations = (['setup-host', agentKey] as const).flatMap((key) => {
     if (!isRecord(value) || !Object.hasOwn(value, key)) return [];
@@ -406,11 +411,17 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,
     ]),
-    ...(isRecord(value) &&
-    isRecord(value.github) &&
-    isRecord(value.github.notifications) &&
-    (value.github.notifications['schema-version'] === undefined ||
-      value.github.notifications['schema-version'] === 1)
+    ...(isRecord(notifications) &&
+    (notifications['schema-version'] === 1 ||
+      (notifications['schema-version'] === undefined &&
+        [
+          'approved-actors',
+          'approved-issue-assigners',
+          'assignment-types',
+          'initial-mode',
+          'max-concurrent-issues',
+          'pull-request',
+        ].some((key) => Object.hasOwn(notifications, key))))
       ? [
           {
             code: 'github-notification-v1-retired',
@@ -452,8 +463,11 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const host = declarations.find(({ key }) => key === 'setup-host');
   const agent = declarations.find(({ key }) => key === agentKey);
   const manifest = decodeManifest(value);
-  const notificationDiagnostics = validateGitHubNotificationPolicy(manifest.github);
-  if (notificationDiagnostics.length > 0) {
+  const notificationDiagnostics = [
+    ...validateGitHubNotificationPolicy(manifest.github),
+    ...githubPauseCompatibilityDiagnostics(value.github?.notifications),
+  ];
+  if (notificationDiagnostics.some(({ severity }) => severity === 'error')) {
     return { status: 'invalid', diagnostics: notificationDiagnostics };
   }
 
@@ -473,8 +487,10 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
           setupFileFieldPath: `/${agentKey}` as '/setup' | '/setup-agent',
         }
       : {}),
-    diagnostics:
-      isRecord(value) && Object.hasOwn(value, 'setup')
+    diagnostics: [
+      ...notificationDiagnostics,
+      ...githubFeedbackCompatibilityDiagnostics(value.github?.notifications),
+      ...(isRecord(value) && Object.hasOwn(value, 'setup')
         ? [
             {
               code: 'manifest-setup-deprecated',
@@ -483,9 +499,10 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
                 agentKey === 'setup'
                   ? 'Top-level setup is deprecated; use setup-agent instead.'
                   : 'Top-level setup is deprecated and ignored because setup-agent is declared.',
-              severity: 'warning',
+              severity: 'warning' as const,
             },
           ]
-        : [],
+        : []),
+    ],
   };
 }

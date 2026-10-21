@@ -48,7 +48,10 @@ Then use $agent-system-doctor to check readiness.
 ## Skills
 
 Standalone Codex supports workspace context, [applicable setup steps](./MANIFEST.md#setup), and [repository automations](#repository-automations).
-Git and GitHub use native host commands and authorization.
+Git and GitHub use native host commands and authorization. The managed GitHub
+[self-unassignment guard](./tools/github/README.md#assignment-protection) does not
+intercept standalone Codex's host `gh`, absolute binaries, HTTP/SDKs, or unrelated
+integrations; it is not a universal GitHub restriction.
 
 - [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
 - [Doctor](./skills/doctor/SKILL.md) — Inspect readiness without applying repairs.
@@ -103,14 +106,17 @@ and applicable identity pins. Repository read access is sufficient. The first
 successful activation establishes a historical baseline; reinstall and restart
 retain it and deduplicate assignments by event identity.
 
-To stop issue assignments on this machine, set `enabled: false` under
+To pause future issue-intake occurrences on this machine, set `paused: true` under
 `github.notifications.issue-assignment`, then authorize Install to pause and verify
-the owned schedule. Stale scheduled runs cannot admit or dispatch new work. Existing
-chats, assessment results, and checkpoints remain; an already-issued chat creation
-can finish and be reconciled. Re-enable through Install to revalidate access and
-resume the same schedule and chat. The retained baseline permits eligible assignments
-to catch up without repeating recorded events. You choose which machine runs each
-workflow; two active machines do not coordinate or deduplicate work between them.
+the owned schedule. Native UI pause stops the same future work. An accepted
+occurrence and already-running issue turns may finish; authorization, feedback,
+checkpoints, and completed receipts remain unchanged. Set `paused: false` and run
+Install to resume the same schedule and chat. Eligible assignments and comments
+that arrived during the pause can then be discovered without repeating completed
+effects. Install can reverse a UI-only pause if the manifest still requests active
+intake. Legacy `enabled` is an inverse alias with a deprecation warning.
+You choose which machine runs each workflow; two active machines do not coordinate
+or deduplicate work between them.
 
 Use `$agent-system-doctor` to inspect admitted issues, assigning actors, event IDs,
 baseline, checkpoint, and blockers without contacting GitHub. Scheduled scans use
@@ -189,9 +195,11 @@ assignment and review requests; the removed global setting requires an explicit 
 
 ### Issue Feedback
 
-Set `issue-assignment.feedback: true` to inherit approved assigners, or use
-`{ inherit: true, allowed: [...] }` to add pinned contributors. Reconcile Install
-after changing permissions; an older saved schedule cannot authorize feedback.
+An active issue workflow supplies feedback and inherits approved assigners by
+default. Use `{ inherit: true, allowed: [...] }` to add pinned contributors, or
+`{ inherit: false, allowed: [...] }` to replace them. An empty replacement list
+approves nobody. Author and reply-policy changes apply live; the parent workflow
+needs its installed intake schedule, with no separate feedback activation.
 Approved comments must address the configured GitHub account outside quoted text.
 The initial read establishes a baseline without replaying historical comments.
 Subsequent issue comments, submitted PR reviews and inline replies route to the
@@ -302,6 +310,13 @@ there must match argv. Preparation validates and returns the exact draft and dig
 without publication. Only the explicit publication operation may perform its
 authorized external write. Saved action-on-stdin commands remain compatible.
 
+A saved assessment summary can resume in a newer verified turn, including after
+implementation has begun. Its source assessment remains unchanged; recovery finishes
+only the missing response. Summary-only native continuations use the existing issue
+chat and exact send receipts. A native denial remains a blocker across turns, and an
+uncertain GitHub post is observed rather than reposted. Private recovery notices name
+the affected response and preserve the complete private result and draft.
+
 Native continuation intent is retained before sending. An uncertain send is
 reconciled, never repeated blindly. A recorded implementation can resume delivery
 without reimplementing or creating another PR. A stopped implementation remains
@@ -361,8 +376,8 @@ URL with native `attach_artifact`, read `list_artifacts`, then call `reconcile`
 and `compose` to load the configured reply skill for the verified delivery event.
 Submit its short description with `candidate`, inspect the returned preview, and
 execute `announce` with that preview's digest. Managed publication authority covers
-this one announcement on the originating issue, including when feedback intake is
-disabled; native denial still stops it. The host adds the verified PR URL and its
+this one announcement on the originating issue, including when the feedback author
+list is empty; native denial still stops it. The host adds the verified PR URL and its
 current draft/ready status. Call `present` and reproduce its complete private PR card,
 public quote, and announcement outcome in the final reply. The runtime
 generates the cards; successful generation alone does not prove they were displayed.
@@ -451,8 +466,10 @@ result while preserving its chat and worktree; only a
 new assignment event after reset permits a fresh dispatch. Reassignment alone does
 not create another chat, and reset never authorizes implementation.
 
-Closed issues, unassigned work, and manually archived chats leave Active on the next
-intake check. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
+Closed issues, work unassigned by a live approved actor, and manually archived chats
+leave Active on the next intake check. Unapproved or unverifiable removal reports
+the missing assignment while preserving the existing chat, checkout and work stage;
+admitted work remains eligible within its existing permissions, without reassignment. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
 for grace periods, reactivation, and cleanup protections. Intake prepares eligible
 Codex chats for native archival; the desktop owns worktree snapshots and reclamation.
 Retirement completes after archival and checkout removal are observed. The explicit

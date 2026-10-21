@@ -7,10 +7,11 @@ linked PR. Standalone Codex additionally supports declared automatic implementat
 
 ## Configuration
 
-Use `github.notifications.schema-version: 2` in `agent.yaml`. Declare the runtime,
+In `agent.yaml`, omit `github.notifications.schema-version` or set it to numeric
+`2` (the default and only supported value). Declare the runtime,
 pinned repository owners, and allowed assignment actors explicitly. For OpenClaw,
-use the default assessment skill; Plan stops after assessment, Work continues an
-actionable plan, and Auto chooses Plan or Work. See the
+use the default assessment skill; omitted mode defaults to Auto, Plan stops after
+assessment, Work continues an actionable plan, and Auto chooses Plan or Work. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for a complete example,
 fields, defaults, and runtime limitations.
 
@@ -24,8 +25,10 @@ only the requested work. The agent keeps the same worktree and returns a quoted
 card linking the issue and PR. If publication is interrupted, continue in that chat
 so it can reconcile the existing attempt without creating another PR.
 
-Once intake is installed, set `issue-assignment.feedback` to enable comment intake. Approved
-mentions in issue comments, PR conversation comments, submitted reviews, and inline
+Once intake is installed, feedback inherits the issue workflow’s approved assigners.
+Use explicit author policy to add or replace that list; see
+[feedback permissions](../../MANIFEST.md#feedback-permissions). Approved mentions
+in issue comments, PR conversation comments, submitted reviews, and inline
 replies return to the original issue chat. The agent retains its complete private
 answer and composes a separate public reply with the configured feedback skill.
 Inline replies return to their original review thread; other replies return to the

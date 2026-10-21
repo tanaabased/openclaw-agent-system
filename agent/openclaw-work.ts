@@ -1,4 +1,7 @@
+import pendingPublicResponse from './pending-public-response.ts';
+import workflowRecovery from './workflow-recovery.ts';
 import implementationHandoff from './implementation-handoff.ts';
+import { feedbackWorkContext } from './feedback-work.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
 
@@ -159,6 +162,9 @@ export default async function openClawWorkAction(input: {
       status: 'verified',
       runtime: 'openclaw',
       issueStage: record.progression?.stage ?? 'planning',
+      assignmentObservation: record.assignmentObservation,
+      assignmentWarning:
+        record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       id: record.id,
       project: { path: record.worktree },
       assessment: record.result,
@@ -166,17 +172,14 @@ export default async function openClawWorkAction(input: {
       effective: record.effective,
       resultSchema: implementationResultSchema,
       previousImplementationResult: record.work.result,
-      feedbackWork: record.feedback?.events
-        .filter((event) => event.work)
-        .map((event) => ({
-          id: event.id,
-          decision: event.work?.decision,
-          result: event.work?.result,
-        })),
+      feedbackWork: feedbackWorkContext(record),
       publicationAuthorized: true,
+      pendingPublicResponse: pendingPublicResponse(record),
       deliveryOnly: record.work.result?.outcome === 'done',
       handoff: implementationHandoff(record.id, record.work.result?.outcome, 'openclaw'),
       instructions:
+        'If pendingPublicResponse is present, resume only that summary through action summary (reconcile an attempted post, otherwise compose). Keep this implementation stage and do not repeat assessment. ' +
+        'Historical feedbackWork responses supply context, not fresh authorization. ' +
         'When deliveryOnly is true, reconcile the recorded result and finish managed PR delivery without repeating implementation. Otherwise use the returned implementation skill and guidance in the existing worktree. Read feedbackWork for later resolved plans and partial implementation; it supplements the preserved original assessment. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or denial. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. Follow the recorded result’s host-owned handoff immediately; it owns PR delivery for built-in and custom implementation skills without a separate publication grant. Honor explicit user restrictions. Do not use Codex runtime commands.',
     };
   }

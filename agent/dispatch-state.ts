@@ -10,7 +10,7 @@ import mergeStateSnapshot, {
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { retirementSchema } from './assignment-retirement.ts';
+import { assignmentObservationSchema, retirementSchema } from './assignment-retirement.ts';
 
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSummarySchema } from './assessment-summary-state.ts';
@@ -89,6 +89,7 @@ export const dispatchRecordProperties = {
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
   lifecycleCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  assignmentObservation: Type.Optional(assignmentObservationSchema),
   retirement: Type.Optional(retirementSchema),
   feedbackReactivation: Type.Optional(
     Type.Object(
@@ -133,10 +134,20 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       scope: hash,
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
+      openclawOccurrence: Type.Optional(
+        Type.Object(
+          { sessionKey: text, sessionId: text, runId: text },
+          { additionalProperties: false },
+        ),
+      ),
       openclawPasses: Type.Optional(Type.Array(openclawIntakePassSchema)),
       continuationRun: Type.Optional(
         Type.Object(
-          { id: text, actions: Type.Integer({ minimum: 0, maximum: 12 }) },
+          {
+            id: text,
+            actions: Type.Integer({ minimum: 0, maximum: 12 }),
+            responses: Type.Optional(Type.Array(text, { maxItems: 12 })),
+          },
           { additionalProperties: false },
         ),
       ),
@@ -166,6 +177,9 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       ),
       discoveryCycleAt: Type.Optional(Type.Integer({ minimum: 0 })),
       discoveryCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      discoveryRun: Type.Optional(
+        Type.Pick(openclawIntakePassSchema, ['sessionKey', 'sessionId', 'runId']),
+      ),
       discoveryProgress: Type.Optional(
         Type.Object(
           {

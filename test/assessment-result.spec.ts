@@ -127,6 +127,13 @@ describe('agent/assessment-result', () => {
         implement: true,
       },
       { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'x'.repeat(32001) },
+      ...[' ', 42, 'x'.repeat(32001)].map((reviewSummary) => ({
+        ...common,
+        outcome: 'plan-ready',
+        assessment: 'Observed.',
+        plan: 'Do it.',
+        reviewSummary,
+      })),
       ...[' ', 42, 'x'.repeat(32001)].map((fullAssessment) => ({
         ...common,
         outcome: 'plan-ready',
@@ -154,7 +161,16 @@ describe('agent/assessment-result', () => {
         remediation: 'Retry the incomplete assessment in this chat.',
       },
     ]) {
-      const input = { ...common, ...outcome, fullAssessment };
+      const input = {
+        ...common,
+        ...outcome,
+        fullAssessment,
+        reviewSummary: 'User journey and documentation/test impact.',
+      };
+      assert.equal(
+        Value.Check(JSON.parse(JSON.stringify(assessmentResultContextSchema)), input),
+        true,
+      );
       assert.deepEqual(parseAssessmentResult(input), input);
     }
   });

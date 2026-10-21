@@ -1,9 +1,59 @@
 import resolvePullRequestRecipients from './pull-request-recipients.ts';
-import type { GitHubNotificationsDeclaration } from './config-schema.ts';
+import type {
+  ExternalGitHubNotifications,
+  GitHubNotificationsDeclaration,
+} from './config-schema.ts';
 import { feedbackIdentities } from './feedback-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
 import { defaultAssessmentSkill } from '../../manifest/assessment-schema.ts';
+
+/** report compatibility at manifest entry points, never on each scheduled poll. */
+export function githubPauseCompatibilityDiagnostics(
+  declaration: ExternalGitHubNotifications | undefined,
+): ManifestDiagnostic[] {
+  return (['issue-assignment', 'review-request'] as const).flatMap((path) => {
+    const workflow = declaration?.[path];
+    if (workflow?.enabled === undefined) return [];
+    const conflict = workflow.paused !== undefined && workflow.paused === workflow.enabled;
+    return [
+      {
+        code: conflict
+          ? 'github-notification-pause-conflict'
+          : 'github-notification-enabled-deprecated',
+        fieldPath: `/github/notifications/${path}/enabled`,
+        severity: conflict ? ('error' as const) : ('warning' as const),
+        message: conflict
+          ? `enabled: ${workflow.enabled} conflicts with paused: ${workflow.paused}. Use paused: ${!workflow.enabled} or remove enabled.`
+          : `enabled: ${workflow.enabled} is deprecated. Replace it with paused: ${!workflow.enabled}; pause controls future scheduled occurrences only.`,
+      },
+    ];
+  });
+}
+
+/** preserve old author grants while explaining their explicit replacement. */
+export function githubFeedbackCompatibilityDiagnostics(
+  declaration: ExternalGitHubNotifications | undefined,
+): ManifestDiagnostic[] {
+  const diagnostics: ManifestDiagnostic[] = [];
+  for (const path of ['issue-assignment', 'review-request'] as const) {
+    const feedback = declaration?.[path]?.feedback;
+    if (feedback === undefined || (typeof feedback === 'object' && feedback.inherit !== undefined))
+      continue;
+    diagnostics.push({
+      code: 'github-notification-feedback-legacy',
+      fieldPath: `/github/notifications/${path}/feedback`,
+      severity: 'warning',
+      message:
+        feedback === true
+          ? 'Boolean feedback is deprecated. Omit feedback to inherit approved parent actors, or use {inherit: true} with reply configuration.'
+          : feedback === false
+            ? 'Boolean feedback is deprecated. Preserve this opt-out with {inherit: false, allowed: []}; feedback belongs to its parent workflow.'
+            : 'Feedback without explicit inherit retains its legacy replacement authors. Set inherit: false to preserve this list, or explicitly choose inherit: true to add parent actors.',
+    });
+  }
+  return diagnostics;
+}
 
 /** validate portable policy without consulting providers, credentials, or installed state. */
 export function validateGitHubNotificationPolicy(
@@ -92,17 +142,24 @@ export function githubNotificationRuntimeDiagnostics(
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
   const issue = declaration.issueAssignment;
   const review = declaration.reviewRequest;
-  if (review?.enabled ?? Boolean(review?.allowed.length))
+  if (
+    review &&
+    (review.paused !== undefined || review.enabled !== undefined || review.allowed.length)
+  )
     diagnostics.push({
       code: 'github-notification-runtime-unsupported',
       fieldPath: '/github/notifications/review-request',
       message: `${runtime === 'openclaw' ? 'OpenClaw' : 'Codex'} V2 does not support review requests. Issue assignment is independent.`,
       remediation:
-        'Disable review requests or wait for its execution adapter; supported issue assignment can continue.',
+        'Remove the review-request declaration or wait for its execution adapter; supported issue assignment can continue.',
       status: 'warning',
       workflow: 'review-request',
     });
-  if (runtime !== 'openclaw' || !issue || !(issue.enabled ?? Boolean(issue.allowed.length)))
+  if (
+    runtime !== 'openclaw' ||
+    !issue ||
+    (issue.paused === undefined && issue.enabled === undefined && !issue.allowed.length)
+  )
     return diagnostics;
   if (
     issue.assessment?.skill &&

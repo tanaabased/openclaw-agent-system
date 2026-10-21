@@ -89,10 +89,15 @@ export default async function openClawDelivery(input: {
       (await git(['status', '--porcelain=v1']))
     )
       throw new Error('delivery-uncommitted-work');
-    head = await git(['rev-parse', '--verify', 'HEAD']);
+    head =
+      action.operation === 'reconcile' && previous
+        ? previous.pushedHead && previous.reconciled
+          ? previous.pushedHead
+          : previous.binding.head
+        : await git(['rev-parse', '--verify', 'HEAD']);
     if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
     const count = Number(
-      await git(['rev-list', '--count', `refs/remotes/origin/${input.base}..HEAD`]),
+      await git(['rev-list', '--count', `refs/remotes/origin/${input.base}..${head}`]),
     );
     if (!Number.isSafeInteger(count) || count < 1)
       throw new Error('delivery-committed-work-required');
@@ -230,6 +235,7 @@ export default async function openClawDelivery(input: {
       provider,
       client: new GitHubIssueCommentClient(new GitHubWorkEventApiClient(connection.account), 8000),
       authorId: connection.account.identity.nodeId,
+      authorLogin: connection.account.identity.login,
       select: (state) => {
         if (!input.selectAnnouncement) throw new Error('delivery-announcement-skill-unavailable');
         return input.selectAnnouncement(state);
@@ -271,9 +277,34 @@ export default async function openClawDelivery(input: {
     if (work.code === 'implementation-delivery-incomplete') delete work.code;
     await save();
   } else {
-    if (!previous?.pullRequest || !previous.reconciled)
-      throw new Error('delivery-reconciliation-required');
-    await provider.inspect(publication);
+    if (!previous) throw new Error('delivery-reconciliation-required');
+    if (previous.reconciled) await provider.inspect(publication);
+    else {
+      const remote = (await git(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`])).split(
+        /\s/u,
+      )[0];
+      // reconciliation never pushes newer local work or recreates an uncertain PR.
+      if (remote !== head) throw new Error('delivery-publication-required');
+      await publishIssueDelivery({
+        delivery: previous,
+        publication: { ...publication, headSha: head },
+        provider,
+        git,
+        push: async () => {
+          throw new Error('delivery-publication-required');
+        },
+        authorize: async () => {
+          await assertCurrent();
+          await input.reauthorize();
+        },
+        beforeCreate: async () => {
+          if (input.existingOnly) throw new Error('feedback-delivery-owner-changed');
+        },
+        save,
+      });
+      if (work.code === 'implementation-delivery-incomplete') delete work.code;
+      await save();
+    }
   }
   const receipt = delivery.pullRequest!;
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;

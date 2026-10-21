@@ -52,8 +52,6 @@ interface AssignmentScanResult {
 export default async function scanAssignments(
   input: AssignmentScanInput,
 ): Promise<AssignmentScanResult> {
-  if (input.policy.issueAssignment?.enabled === false)
-    throw new IntakeError('intake-policy-disabled');
   if (input.selector?.itemType === 'pull-request')
     throw new IntakeError('intake-selector-unsupported');
   return input.store.exclusive(async (previous, persist, signal) => {

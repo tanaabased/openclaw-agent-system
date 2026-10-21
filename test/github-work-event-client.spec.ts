@@ -276,36 +276,67 @@ describe('channels/github/provider/work-event-client', () => {
     assert.ok(requests[1]?.some((value) => value.includes('sha:.head.sha')));
   });
 
-  it('should map assignment authority from the github assigner', async () => {
-    const requests: string[][] = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv) {
-        requests.push(argv);
-        return response([
-          {
-            actor: { login: 'pirog', nodeId: 'U_assigner', type: 'User' },
-            assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
-            createdAt: '2026-08-11T12:05:00Z',
-            databaseId: 8,
-            event: 'assigned',
-            nodeId: 'EV_assign',
-          },
-        ]);
-      },
-    });
+  for (const kind of ['assigned', 'unassigned'] as const) {
+    it(`should map ${kind} authority from the github assigner`, async () => {
+      const requests: string[][] = [];
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute(argv) {
+          requests.push(argv);
+          return response([
+            {
+              actor: { login: 'pirog', nodeId: 'U_assigner', type: 'User' },
+              assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+              createdAt: '2026-08-11T12:05:00Z',
+              databaseId: 8,
+              event: kind,
+              nodeId: 'EV_assign',
+            },
+          ]);
+        },
+      });
 
-    const page = await client.listAssignmentEvents('tanaabased', 'example', 7);
+      const page = await client.listAssignmentEvents('tanaabased', 'example', 7);
 
-    assert.deepEqual(page.events[0]?.actor, {
-      login: 'pirog',
-      nodeId: 'U_assigner',
-      type: 'User',
+      assert.deepEqual(page.events[0]?.actor, {
+        login: 'pirog',
+        nodeId: 'U_assigner',
+        type: 'User',
+      });
+      const projection =
+        requests[0]?.find((value) => value.includes('createdAt:.created_at')) ?? '';
+      assert.match(projection, /actor:\{login:\.assigner\.login/u);
+      assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
     });
-    const projection = requests[0]?.find((value) => value.includes('createdAt:.created_at')) ?? '';
-    assert.match(projection, /actor:\{login:\.assigner\.login/u);
-    assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
-  });
+  }
+
+  for (const actor of [
+    null,
+    { login: 'approved', type: 'User' },
+    { nodeId: 'U_approved', type: 'User' },
+  ]) {
+    it('should reject unassignment evidence without a complete responsible actor', async () => {
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute() {
+          return response([
+            {
+              actor,
+              assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+              createdAt: '2026-08-11T12:05:00Z',
+              databaseId: 8,
+              event: 'unassigned',
+              nodeId: 'EV_unassign',
+            },
+          ]);
+        },
+      });
+      await assert.rejects(
+        client.listAssignmentEvents('tanaabased', 'example', 7),
+        /assignment actor/,
+      );
+    });
+  }
 
   it('should fetch bounded issue context with the newest comment page', async () => {
     const requests: string[][] = [];
