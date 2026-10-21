@@ -15,6 +15,7 @@ import {
   effectiveAutomation,
 } from '../agent/automation-projection.ts';
 import AutomationService from '../agent/automation-service.ts';
+import notificationAutomationReadiness from '../agent/automation-readiness.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import AgentSystemLifecycleRegistry, {
   AgentSystemLifecycleError,
@@ -541,8 +542,28 @@ describe('agent/automation-service', () => {
     );
     assert.notEqual(replacement.sessionKey, installedKey);
     assert.equal(sessions.size, 3);
+    assert.equal(
+      await notificationAutomationReadiness(
+        service,
+        manifest,
+        root,
+        undefined,
+        service.dependencies.request,
+      ),
+      'intake-automation-paused',
+    );
     await service.notificationResetToggle(manifest, root, replacement, true);
     assert.equal(native[0]!.enabled, true);
+    assert.equal(
+      await notificationAutomationReadiness(
+        service,
+        manifest,
+        root,
+        undefined,
+        service.dependencies.request,
+      ),
+      undefined,
+    );
     assert.equal(
       (await service.inspect(manifest, root)).every((finding) => finding.status === 'healthy'),
       true,

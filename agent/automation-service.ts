@@ -292,7 +292,8 @@ export default class AutomationService {
       const effective = effectiveAutomation(job, context);
       record.hash = effective.hash;
       record.triggerHash = effective.triggerHash;
-      record.nativeHash = nativeAutomationHash(after);
+      // retain the restored setting; the temporary pause is not installed drift.
+      record.nativeHash = nativeAutomationHash({ ...after, enabled: expected.enabled });
       await store.write(ledger);
       return { ...expected, sessionKey: target, hash: nativeAutomationHash(after) };
     });
