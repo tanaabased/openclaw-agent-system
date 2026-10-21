@@ -99,6 +99,30 @@ for (const scenario of [
     return args as Extract<Action, { action: A }>;
   }
 
+  async function publishProgressionSummary(input: ChatCompletionRequest) {
+    assert.equal((await action(input, 'summary')).operation, 'compose');
+    append(input, 'summary-compose', {
+      status: 'composition-ready',
+      digest,
+      selection: { skill: { path: '/tmp/SUMMARY.md' } },
+    });
+    const read = await response(input);
+    assert.ok('toolCalls' in read);
+    assert.equal(read.toolCalls?.[0]?.name, 'read');
+    append(input, 'summary-skill', { text: 'Selected reply guidance' });
+    const candidate = await action(input, 'summary');
+    assert.equal(candidate.operation, 'candidate');
+    assert.equal(candidate.digest, digest);
+    append(input, 'summary-candidate', { status: 'candidate-recorded' });
+    assert.equal((await action(input, 'summary')).digest, undefined);
+    append(input, 'summary-preview', { status: 'publication-ready', digest: 'e'.repeat(64) });
+    assert.equal((await action(input, 'summary')).digest, 'e'.repeat(64));
+    append(input, 'summary-publish', {
+      status: 'published',
+      presentation: 'Published retained plan.',
+    });
+  }
+
   describe(`examples/${scenario.id} model fixture`, () => {
     if (scenario.id === 'openclaw-intake')
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
@@ -444,6 +468,10 @@ for (const scenario of [
       append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
       assert.equal('content' in nextResponse && nextResponse.content, presentation);
+      if (['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
+        await publishProgressionSummary(input);
+        assert.deepEqual(await response(input), { content: 'Published retained plan.' });
+      }
       if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
         assert.deepEqual(await action(input, 'present'), {
           action: 'present',
@@ -507,6 +535,17 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
+    if (['openclaw-pr', 'openclaw-progression'].includes(scenario.id))
+      it('should finish response-only recovery without repeating assessment or implementation', async () => {
+        const input = request(`recover only the pending public assessment summary with id ${id}`);
+        await action(input, 'present');
+        append(input, 'recovery-present', {
+          status: 'presented',
+          presentation: 'Retained assessment.',
+        });
+        await publishProgressionSummary(input);
+        assert.deepEqual(await response(input), { content: 'Published retained plan.' });
+      });
     if (scenario.id === 'openclaw-progression') {
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
@@ -543,8 +582,19 @@ for (const scenario of [
             status: 'verified',
             runtime: 'openclaw',
             publicationAuthorized: true,
+            pendingPublicResponse: {
+              kind: 'assessment-summary',
+              revision: direct ? 2 : 1,
+              state: 'pending',
+            },
             project: { path: '/tmp/owned' },
           });
+          await action(automatic, 'present');
+          append(automatic, 'recovery-present', {
+            status: 'presented',
+            presentation: 'The retained plan.',
+          });
+          await publishProgressionSummary(automatic);
           const question = await action(automatic, 'implementation-result');
           assert.equal(question.implementationResult.outcome, 'clarification-needed');
           append(automatic, 'work-result', {
@@ -766,94 +816,163 @@ for (const scenario of [
         assert.deepEqual(await response(direct), { content: privateText });
       });
     if (scenario.id !== 'openclaw-progression')
-      it('should keep feedback private retention skill selection candidate and publication as distinct stages', async () => {
-        const eventId = 'e'.repeat(64);
-        const input = request(
-          `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${eventId}`,
-        );
-        assert.equal((await action(input, 'feedback')).operation, 'context');
-        append(input, 'feedback-context', {
-          status: 'verified',
-          runtime: 'openclaw',
-          publication: 'allowed',
-          previousFeedbackWork: [],
-          source: { body: '@tanaabot explain the plan.' },
-        });
-        if (scenario.id === 'openclaw-pr') {
-          const last = input.messages.at(-1)!;
-          last.content = JSON.stringify({
+      for (const initial of scenario.id === 'openclaw-pr' ? [true, false] : [false])
+        it(`should keep feedback ${initial ? 'initial implementation' : 'continuation'} private retention skill selection candidate and publication as distinct stages`, async () => {
+          const eventId = 'e'.repeat(64);
+          let input = request(
+            `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${eventId}`,
+          );
+          assert.equal((await action(input, 'feedback')).operation, 'context');
+          append(input, 'feedback-context', {
             status: 'verified',
             runtime: 'openclaw',
             publication: 'allowed',
-            mode: 'work',
             previousFeedbackWork: [],
-            previousImplementation: { outcome: 'done' },
+            source: { body: '@tanaabot explain the plan.' },
           });
-          assert.equal((await action(input, 'feedback')).operation, 'implementation-context');
-          append(input, 'feedback-work-context', {
-            status: 'verified',
-            worktree: '/tmp/worktree',
-            implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
-            previousFeedbackWork: [],
-            previousImplementation: { outcome: 'done' },
-          });
-          const selected = await response(input);
-          assert.ok('toolCalls' in selected);
-          assert.equal(selected.toolCalls?.[0]?.name, 'read');
-          append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
-          for (const stage of [
-            'feedback-apply',
-            'feedback-check',
-            'feedback-add',
-            'feedback-commit',
-          ]) {
-            const step = await response(input);
-            assert.ok('toolCalls' in step);
-            assert.equal(step.toolCalls?.[0]?.name, 'agent_system_git');
-            append(input, stage, { exitCode: 0, truncated: false });
+          if (scenario.id === 'openclaw-pr') {
+            const last = input.messages.at(-1)!;
+            last.content = JSON.stringify({
+              status: 'verified',
+              runtime: 'openclaw',
+              publication: 'allowed',
+              mode: initial ? 'plan' : 'work',
+              issueStage: initial ? 'planning' : 'implementation',
+              previousFeedbackWork: initial
+                ? []
+                : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
+              ...(initial ? {} : { previousImplementation: { outcome: 'done' } }),
+            });
+            const entry = await action(input, 'feedback');
+            assert.equal(entry.operation, 'implementation-context');
+            assert.equal(entry.decision, undefined);
+            append(input, 'feedback-work-context', {
+              status: 'verified',
+              worktree: '/tmp/worktree',
+              issueStage: 'implementation',
+              work: {},
+              implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
+              previousFeedbackWork: initial
+                ? []
+                : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
+              ...(initial ? {} : { previousImplementation: { outcome: 'done' } }),
+            });
+            const selected = await response(input);
+            assert.ok('toolCalls' in selected);
+            assert.equal(selected.toolCalls?.[0]?.name, 'read');
+            append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+            if (!initial) {
+              const branch = await response(input);
+              assert.ok('toolCalls' in branch);
+              assert.deepEqual(JSON.parse(branch.toolCalls![0]!.arguments).argv, [
+                'branch',
+                '--show-current',
+              ]);
+              append(input, 'feedback-branch', {
+                exitCode: 0,
+                truncated: false,
+                stdout: 'fixture-pr-branch\n',
+              });
+            }
+            for (const stage of [
+              ...(!initial ? ['feedback-fetch', 'feedback-incorporate'] : []),
+              'feedback-apply',
+              'feedback-check',
+              'feedback-add',
+              'feedback-commit',
+            ]) {
+              const step = await response(input);
+              assert.ok('toolCalls' in step);
+              assert.equal(step.toolCalls?.[0]?.name, 'agent_system_git');
+              if (stage === 'feedback-fetch')
+                assert.deepEqual(JSON.parse(step.toolCalls![0]!.arguments).argv, [
+                  'fetch',
+                  'origin',
+                  'fixture-pr-branch',
+                ]);
+              if (stage === 'feedback-incorporate')
+                assert.deepEqual(JSON.parse(step.toolCalls![0]!.arguments).argv, [
+                  'merge',
+                  '--ff-only',
+                  'FETCH_HEAD',
+                ]);
+              append(input, stage, { exitCode: 0, truncated: false });
+            }
+            assert.equal((await action(input, 'feedback')).operation, 'implementation-result');
+            append(input, 'feedback-work-result', { status: 'recorded' });
+            assert.equal((await action(input, 'feedback')).deliveryOperation, 'prepare');
+            append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });
+            const delivered = await action(input, 'feedback');
+            assert.equal(delivered.deliveryOperation, 'publish');
+            assert.equal(delivered.digest, digest);
+            append(input, 'feedback-delivery-publish', { status: 'published' });
+            if (initial) {
+              assert.equal((await action(input, 'feedback')).deliveryOperation, 'compose');
+              append(input, 'feedback-delivery-compose', {
+                status: 'composition-ready',
+                digest,
+                selection: { skill: { path: '/skills/reply/SKILL.md' } },
+              });
+              const selected = await response(input);
+              assert.ok('toolCalls' in selected && selected.toolCalls?.[0]?.name === 'read');
+              append(input, 'delivery-skill', { content: 'Reply skill instructions.' });
+              assert.equal((await action(input, 'feedback')).deliveryOperation, 'candidate');
+              append(input, 'feedback-delivery-candidate', {
+                status: 'announcement-prepared',
+                digest,
+              });
+              assert.equal((await action(input, 'feedback')).deliveryOperation, 'announce');
+              append(input, 'feedback-delivery-announce', { status: 'announced' });
+            }
           }
-          assert.equal((await action(input, 'feedback')).operation, 'implementation-result');
-          append(input, 'feedback-work-result', { status: 'recorded' });
-          assert.equal((await action(input, 'feedback')).deliveryOperation, 'prepare');
-          append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });
-          const delivered = await action(input, 'feedback');
-          assert.equal(delivered.deliveryOperation, 'publish');
-          assert.equal(delivered.digest, digest);
-          append(input, 'feedback-delivery-publish', { status: 'published' });
-        }
-        const retained = await action(input, 'feedback');
-        assert.equal(retained.operation, 'result');
-        if (scenario.id !== 'openclaw-pr')
-          assert.match(retained.privateText!, /implementation remains unstarted/);
-        append(input, 'feedback-result', {
-          status: 'recorded',
-          presentation: 'Full private response',
+          const retained = await action(input, 'feedback');
+          assert.equal(retained.operation, 'result');
+          if (scenario.id !== 'openclaw-pr')
+            assert.match(retained.privateText!, /implementation remains unstarted/);
+          append(input, 'feedback-result', {
+            status: 'recorded',
+            presentation: 'Full private response',
+          });
+          if (scenario.id === 'openclaw-pr' && !initial) {
+            assert.ok('content' in (await response(input)));
+            input = request(
+              `Resume the retained feedback reply only. Use operation context, id ${id}, eventId ${eventId}.`,
+            );
+            const resumed = await action(input, 'feedback');
+            assert.equal(resumed.operation, 'context');
+            assert.equal(resumed.resume, true);
+            append(input, 'feedback-context', {
+              status: 'verified',
+              runtime: 'openclaw',
+              publication: 'allowed',
+              mode: 'work',
+            });
+          }
+          assert.equal((await action(input, 'feedback')).operation, 'compose');
+          append(input, 'feedback-compose', {
+            status: 'composition-ready',
+            digest,
+            selection: { skill: { path: '/tmp/SKILL.md' } },
+          });
+          const read = await response(input);
+          assert.ok('toolCalls' in read);
+          assert.equal(read.toolCalls?.[0]?.name, 'read');
+          append(input, 'feedback-skill', { text: 'Selected reply method' });
+          const candidate = await action(input, 'feedback');
+          assert.equal(candidate.operation, 'candidate');
+          if (scenario.id !== 'openclaw-pr')
+            assert.match(candidate.publicText!, /Implementation has not started/);
+          append(input, 'feedback-candidate', { status: 'candidate-recorded' });
+          assert.equal((await action(input, 'feedback')).digest, undefined);
+          append(input, 'feedback-preview', { status: 'publication-ready', digest });
+          assert.equal((await action(input, 'feedback')).digest, digest);
+          append(input, 'feedback-publish', {
+            status: 'published',
+            presentation: 'Complete private and public presentation',
+          });
+          assert.deepEqual(await response(input), {
+            content: 'Complete private and public presentation',
+          });
         });
-        assert.equal((await action(input, 'feedback')).operation, 'compose');
-        append(input, 'feedback-compose', {
-          status: 'composition-ready',
-          digest,
-          selection: { skill: { path: '/tmp/SKILL.md' } },
-        });
-        const read = await response(input);
-        assert.ok('toolCalls' in read);
-        assert.equal(read.toolCalls?.[0]?.name, 'read');
-        append(input, 'feedback-skill', { text: 'Selected reply method' });
-        const candidate = await action(input, 'feedback');
-        assert.equal(candidate.operation, 'candidate');
-        if (scenario.id !== 'openclaw-pr')
-          assert.match(candidate.publicText!, /Implementation has not started/);
-        append(input, 'feedback-candidate', { status: 'candidate-recorded' });
-        assert.equal((await action(input, 'feedback')).digest, undefined);
-        append(input, 'feedback-preview', { status: 'publication-ready', digest });
-        assert.equal((await action(input, 'feedback')).digest, digest);
-        append(input, 'feedback-publish', {
-          status: 'published',
-          presentation: 'Complete private and public presentation',
-        });
-        assert.deepEqual(await response(input), {
-          content: 'Complete private and public presentation',
-        });
-      });
   });
 }

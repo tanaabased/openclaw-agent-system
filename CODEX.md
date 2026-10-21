@@ -310,6 +310,13 @@ there must match argv. Preparation validates and returns the exact draft and dig
 without publication. Only the explicit publication operation may perform its
 authorized external write. Saved action-on-stdin commands remain compatible.
 
+A saved assessment summary can resume in a newer verified turn, including after
+implementation has begun. Its source assessment remains unchanged; recovery finishes
+only the missing response. Summary-only native continuations use the existing issue
+chat and exact send receipts. A native denial remains a blocker across turns, and an
+uncertain GitHub post is observed rather than reposted. Private recovery notices name
+the affected response and preserve the complete private result and draft.
+
 Native continuation intent is retained before sending. An uncertain send is
 reconciled, never repeated blindly. A recorded implementation can resume delivery
 without reimplementing or creating another PR. A stopped implementation remains

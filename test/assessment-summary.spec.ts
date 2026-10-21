@@ -98,12 +98,14 @@ function fixture() {
     action: AssessmentSummaryRequest,
     turnId = 'turn',
     authorityDigest = 'e'.repeat(64),
+    recovery = false,
   ) =>
     assessmentSummary({
       record,
       intake,
       action,
       turnId,
+      recovery,
       authorityDigest,
       presentation: result.reviewSummary,
       authorize: async () => {
@@ -202,6 +204,49 @@ function fixture() {
 }
 
 describe('agent/assessment-summary', () => {
+  it('should resume composition in an authorized newer turn without repeating the assessment', async () => {
+    const f = fixture();
+    f.retain();
+    const source = structuredClone(f.record.stageReceipt);
+    f.record.handoff = { at: 2, by: 'issue', turnId: 'implementation' };
+    const composed = await f.run({ operation: 'compose' }, 'recovery', undefined, true);
+    assert.equal(composed.status, 'composition-ready');
+    assert.ok('digest' in composed);
+    assert.equal(
+      (
+        await f.run(
+          {
+            operation: 'candidate',
+            digest: composed.digest,
+            publicText: 'The proposal would restore your result.',
+          },
+          'recovery',
+          undefined,
+          true,
+        )
+      ).status,
+      'candidate-recorded',
+    );
+    const preview = await f.run({ operation: 'publish' }, 'recovery', undefined, true);
+    assert.ok('digest' in preview);
+    assert.equal(
+      (await f.run({ operation: 'publish', digest: preview.digest }, 'recovery', undefined, true))
+        .status,
+      'published',
+    );
+    assert.deepEqual(f.record.stageReceipt, source);
+    assert.equal(f.record.resultTurnId, 'turn');
+    assert.equal(f.writes, 1);
+  });
+  it('should preserve a retained native denial across recovery turns', async () => {
+    const f = fixture();
+    f.retain();
+    await f.compose();
+    f.record.assessmentSummaries![0]!.code = 'assessment-summary-native-approval-denied';
+    const result = await f.run({ operation: 'compose' }, 'recovery', undefined, true);
+    assert.ok('code' in result && result.code === 'assessment-summary-native-approval-denied');
+    assert.equal(f.writes, 0);
+  });
   it('retries a definitive rejection without treating it as an uncertain write', async () => {
     const f = fixture();
     f.retain();

@@ -1,3 +1,6 @@
+import codexCapacity from './codex-capacity.ts';
+import { code as responseFailureCode } from './codex-dispatch-context.ts';
+import continueCodexResponse from './codex-response-continuation.ts';
 import { Value } from 'typebox/value';
 
 import advanceCodexAutoDecision from './codex-auto-decision.ts';
@@ -122,6 +125,32 @@ export default async function runCodexContinuation(
       const decisionPending = decision.decisionPending;
       if (input.action !== 'next' && decisionPending) return decisionPending;
       await prepareCodexWork(state, context);
+      if (input.action === 'next') {
+        for (const record of state.records) {
+          if (state.continuationRun?.responses?.includes(record.id)) continue;
+          if (
+            !record.summaryRecovery &&
+            codexCapacity(state.records, current.policy!.policy.maxConcurrentItems).available === 0
+          )
+            continue;
+          let response;
+          try {
+            response = await continueCodexResponse(record, context);
+          } catch (error) {
+            response = {
+              status: 'pending' as const,
+              id: record.id,
+              code: responseFailureCode(error),
+              nextAction: 'next',
+            };
+          }
+          if (response) {
+            if (state.continuationRun) (state.continuationRun.responses ??= []).push(record.id);
+            await save();
+            return response;
+          }
+        }
+      }
       const candidates =
         input.action === 'next'
           ? state.records.filter(

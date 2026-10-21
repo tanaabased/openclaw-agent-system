@@ -1,3 +1,4 @@
+import pendingPublicResponse from './pending-public-response.ts';
 import type { Static } from 'typebox';
 
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
@@ -288,6 +289,13 @@ export default class OpenClawDispatch {
               blocker: record.blocker,
               failureStage: record.failureStage,
               outcome: record.result?.outcome,
+              pendingPublicResponse: pendingPublicResponse(record),
+              summaryRecovery: record.summaryRecovery && {
+                revision: record.summaryRecovery.revision,
+                runId: record.summaryRecovery.turn.runId,
+                status: record.summaryRecovery.turn.status,
+                code: record.summaryRecovery.code,
+              },
               retirement: record.retirement,
               retired: record.retired,
               feedback: record.feedback,
@@ -309,7 +317,7 @@ export default class OpenClawDispatch {
         if (input.action === 'next') return this.coordinator.next(tx);
         const record = state.records.find((entry) => entry.id === input.id);
         if (!record) throw new Error('dispatch-receipt-missing');
-        const feedback = await this.issue.routeFeedback(input, record, tx);
+        const feedback = await this.issue.routeFeedback(input, record, tx, operator);
         if (feedback !== undefined) return feedback;
         if (input.action === 'retry') {
           if (record.request) throw new Error('dispatch-native-recovery-required');
@@ -337,7 +345,7 @@ export default class OpenClawDispatch {
           manifest,
           workspace,
           record,
-          workAction,
+          workAction || input.action === 'summary',
           false,
           undefined,
           authority.signal

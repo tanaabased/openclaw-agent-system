@@ -1,4 +1,4 @@
-import { githubNotificationQuote } from './card.ts';
+import publicResponsePresentation from './public-response.ts';
 import { githubCommentCard } from './comment.ts';
 import workflowInstructions, {
   type WorkflowInstructionsSelection,
@@ -47,9 +47,12 @@ export default function feedbackResponse(
     );
   if (input.publication && 'withheld' in input.publication)
     sections.push(
-      githubNotificationQuote(
-        `## ⚠️ Public reply withheld\n\nPublic reply withheld: \`${input.publication.withheld}\`.`,
-      ),
+      publicResponsePresentation({
+        kind: 'Public reply',
+        code: input.publication.withheld,
+        attempted: /unconfirmed/.test(input.publication.withheld),
+        withheld: /private-only|not-required|self-publication/.test(input.publication.withheld),
+      }),
     );
   const instructions = workflowInstructions(
     'Feedback reply',

@@ -302,6 +302,7 @@ describe('agent/openclaw issue dispatch', () => {
                   current.decisionTurn,
                   current.work?.turn,
                   current.work?.deliveryTurn,
+                  current.summaryRecovery?.turn,
                 ].find((turn) => turn?.runId === params.idempotencyKey);
                 const turn =
                   workTurn ??
@@ -1120,6 +1121,26 @@ describe('agent/openclaw issue dispatch', () => {
     return { items, events };
   }
 
+  async function retainConfirmedSummary(id: string) {
+    const journal = (await service.scope(manifest, root)).journal;
+    await journal.exclusive(async (state, save) => {
+      const entry = state.records.find((record) => record.id === id)!;
+      // these unrelated workflow fixtures represent a fully delivered assessment.
+      entry.assessmentSummaries = [
+        {
+          revision: entry.assessmentRevision!,
+          resultDigest: automationHash(entry.result),
+          binding: entry.stageReceipt!.binding,
+          turnId: entry.resultTurnId!,
+          authorityDigest: 'a'.repeat(64),
+          selection: entry.assessment!,
+          publicText: 'The proposed change restores the result.',
+          receipt: { nodeId: 'SUMMARY_' + id, databaseId: 901 },
+        },
+      ];
+      await save();
+    });
+  }
   async function completeAssessment(id: string) {
     assert.equal((await context(id)).status, 'verified');
     assert.equal((await submit(id)).status, 'recorded');
@@ -1134,6 +1155,7 @@ describe('agent/openclaw issue dispatch', () => {
     });
     const completed = await assess(id);
     assert.equal(completed.status, 'assessment-completed', JSON.stringify(completed));
+    await retainConfirmedSummary(id);
   }
   it('should use an available slot for the next assignment after an item validation failure', async () => {
     const { items } = await assignments(2, 1);
@@ -2333,6 +2355,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assessmentReply(input.id);
     assert.equal((await assess(input.id)).status, 'assessment-completed');
+    await retainConfirmedSummary(input.id);
     manifest.github!.notifications!.issueAssignment!.mode = mode;
     return input.id;
   }
@@ -2615,6 +2638,7 @@ describe('agent/openclaw issue dispatch', () => {
         result: { ...plan, decision: { mode: decision, reasons: ['Bounded assessment.'] } },
       });
       assert.equal(result.status, 'recorded', JSON.stringify(result));
+      await retainConfirmedSummary(id);
       active = false;
       messages.push({
         role: 'assistant',
@@ -3029,8 +3053,14 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
-  for (const loseResponse of [false, true]) {
-    it(`should retain one assessment summary in openclaw after ${loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+  for (const { recover, loseResponse, preparationFailure } of [
+    { recover: false, loseResponse: false },
+    { recover: false, loseResponse: true },
+    { recover: true, loseResponse: false },
+    { recover: true, loseResponse: true },
+    { recover: true, loseResponse: false, preparationFailure: true },
+  ]) {
+    it(`should retain one assessment summary in openclaw ${recover ? 'after handoff and restart' : 'in the assessment turn'} after ${preparationFailure ? 'candidate connection failure' : loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
       const input = await next();
       await prepare(input);
       await assess(input.id);
@@ -3039,6 +3069,57 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok(
         'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
       );
+      let who = assessor(input.id);
+      if (preparationFailure) {
+        const composed = await service.run(manifest, root, who, {
+          action: 'summary',
+          id: input.id,
+          operation: 'compose',
+        });
+        assert.ok('digest' in composed);
+        const use = service.dependencies.credential.use;
+        service.dependencies.credential.use = async () => {
+          throw new Error('session-dispatch-connect-failed');
+        };
+        try {
+          await assert.rejects(
+            service.run(manifest, root, who, {
+              action: 'summary',
+              id: input.id,
+              operation: 'candidate',
+              digest: composed.digest,
+              publicText: 'Retained summary after connection recovery.',
+            }),
+            /session-dispatch-connect-failed/,
+          );
+        } finally {
+          service.dependencies.credential.use = use;
+        }
+        assert.deepEqual((await record()).result, plan);
+        assert.ok(
+          (await record()).assessmentSummaries?.every((entry) => !entry.attempt && !entry.receipt),
+        );
+      }
+      if (recover) {
+        manifest.github!.notifications!.issueAssignment!.mode = 'work';
+        inputReceipts = [];
+        const work = await service.run(manifest, root, who, {
+          action: 'implementation-context',
+          id: input.id,
+        });
+        assert.equal(work.status, 'verified', JSON.stringify(work));
+        assert.ok((await record()).handoff);
+        await assert.rejects(context(input.id), /dispatch-assessment-handed-off/);
+        await assert.rejects(submit(input.id), /dispatch-assessment-handed-off/);
+        assessmentReply(input.id);
+        who = assessor(input.id, 'summary-recovery');
+        messages.push({
+          role: 'user',
+          content: 'Recover the pending public summary.',
+          __openclaw: { id: 'summary-input', idempotencyKey: 'summary-recovery:user' },
+        });
+        service = new OpenClawDispatch(service.dependencies);
+      }
       let writes = 0;
       let receipt: { nodeId: string; databaseId: number; body: string } | undefined;
       service.dependencies.feedbackConnect = async () => ({
@@ -3074,15 +3155,24 @@ describe('agent/openclaw issue dispatch', () => {
         digest?: string,
         publicText?: string,
       ) =>
-        service.run(manifest, root, assessor(input.id), {
+        service.run(manifest, root, who, {
           action: 'summary',
           id: input.id,
           operation,
           digest,
           publicText,
         });
+      if (recover) {
+        waitResult = { status: 'error', code: 'approval-denied' };
+        await assert.rejects(summary('compose'), /assessment-summary-native-approval-denied/);
+        waitResult = { status: 'timeout' };
+        const terminal = messages.findIndex((entry) => entry.role === 'assistant');
+        const [reply] = messages.splice(terminal, 1);
+        await assert.rejects(summary('compose'), /dispatch-assessment-continuation-not-ready/);
+        messages.splice(terminal, 0, reply!);
+      }
       const composed = await summary('compose');
-      assert.equal(composed.status, 'composition-ready');
+      assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
       assert.ok('digest' in composed);
       assert.equal(
         (
@@ -3143,6 +3233,7 @@ describe('agent/openclaw issue dispatch', () => {
     assessmentReply(input.id);
     service = new OpenClawDispatch(service.dependencies);
     assert.equal((await assess(input.id)).status, 'assessment-completed');
+    await retainConfirmedSummary(input.id);
     await acknowledgeReport();
     assert.equal((await service.check(manifest, root)).changed, false);
     assert.equal(
@@ -3158,6 +3249,30 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal((await assess(input.id)).status, 'assessment-completed');
     assert.equal(sends().length, 1);
+    assert.equal(creates().length, 1);
+  });
+
+  it('should reconcile an uncertain summary-only native send after restart without sending again', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await context(input.id);
+    await submit(input.id);
+    assessmentReply(input.id);
+    await assess(input.id);
+    loseSend = true;
+    const started = await workPass('summary-recovery');
+    assert.equal(started.status, 'assessment-pending');
+    const retained = await record();
+    assert.equal(retained.summaryRecovery?.turn.status, 'attempted');
+    assert.ok(retained.summaryRecovery?.code);
+    loseSend = false;
+    service = new OpenClawDispatch(service.dependencies);
+    await workPass('summary-receipt-recovery');
+    assert.equal((await record()).summaryRecovery?.turn.status, 'accepted');
+    assert.equal((await record()).summaryRecovery?.code, undefined);
+    assert.equal(sends().length, 2);
+    assert.deepEqual((await record()).result, retained.result);
     assert.equal(creates().length, 1);
   });
 
@@ -3237,15 +3352,19 @@ describe('agent/openclaw issue dispatch', () => {
           { action: 'next' },
         )
       ).status,
-      'idle',
+      'assessment-pending',
     );
     const completed = await record();
+    assert.match(
+      completed.summaryRecovery!.turn.message,
+      /recover only the pending public assessment summary/,
+    );
     assert.deepEqual(completed.result, saved.result);
     assert.deepEqual(completed.stageReceipt, saved.stageReceipt);
     assert.equal(completed.threadId, saved.threadId);
     assert.equal(completed.worktree, saved.worktree);
     assert.equal(creates().length, 1);
-    assert.equal(sends().length, 1);
+    assert.equal(sends().length, 2);
     assert.equal(preparedWorktrees, 1);
   });
 
@@ -4391,23 +4510,80 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
-  it('should keep plan feedback in planning even when native metadata says owner', async () => {
+  it('should answer question-only plan feedback without implementation despite owner metadata', async () => {
     const { id } = await feedbackOwner(false);
     consumeSend = true;
     await service.check(manifest, root);
     await service.run(manifest, root, coordinator, { action: 'reconcile', id });
     await service.run(manifest, root, coordinator, { action: 'next' });
-    const event = (await record()).feedback!.events[0]!;
+    const before = await record();
+    const event = before.feedback!.events[0]!;
     assert.ok(event.turn);
-    const result = await service.run(
+    const who = assessor(id, event.turn.runId);
+    const context = await service.run(
       manifest,
       root,
-      assessor(id, event.turn.runId),
-      { action: 'implementation-context', id },
+      who,
+      { action: 'feedback', operation: 'context', id, eventId: event.id },
       true,
     );
-    assert.equal(result.status, 'policy-held');
-    assert.equal((await record()).progression, undefined);
+    assert.equal(context.status, 'verified');
+    assert.ok('source' in context);
+    assert.equal((context.source as GitHubCanonicalIssueComment).body, '@receiver explain this');
+    const answer = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'feedback',
+        operation: 'result',
+        id,
+        eventId: event.id,
+        privateText: 'The retained plan describes the proposed change; no implementation started.',
+        reply: false,
+      },
+      true,
+    );
+    assert.equal(answer.status, 'recorded');
+    const after = await record();
+    assert.equal(after.progression, undefined);
+    assert.equal(after.feedback!.events[0]!.work, undefined);
+    assert.deepEqual(after.work, before.work);
+    assert.deepEqual(after.result, before.result);
+  });
+
+  it('should enter work from explicit approved plan feedback without an extra decision', async () => {
+    const { id, comments } = await feedbackOwner(false);
+    comments[0]!.body = '@receiver Please implement the agreed plan.';
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const before = await record();
+    const event = before.feedback!.events[0]!;
+    assert.ok(event.turn);
+    const who = assessor(id, event.turn.runId);
+    const request = {
+      action: 'feedback' as const,
+      operation: 'implementation-context' as const,
+      id,
+      eventId: event.id,
+    };
+    await assert.rejects(
+      service.run(manifest, root, { ...who, runId: 'unbound-native-owner' }, request, true),
+      /feedback-owner-caller-required/,
+    );
+    const result = await service.run(manifest, root, who, request, true);
+    assert.equal(result.status, 'verified');
+    const after = await record();
+    assert.equal(after.progression?.stage, 'implementation');
+    assert.equal(after.progression?.via, 'operator');
+    assert.equal(after.progression?.workOwner, event.id);
+    assert.equal(after.feedback!.events[0]!.work!.decision, undefined);
+    assert.deepEqual(after.result, before.result);
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.equal(creates().length, 1);
   });
 
   it('should preserve a legacy publication-only request without promoting implementation', async () => {
@@ -4612,6 +4788,7 @@ describe('agent/openclaw issue dispatch', () => {
       await service.dependencies.intake.run(manifest, root, 'activate');
     }
     const { id, who } = await operatorFollowup();
+    await retainConfirmedSummary(id);
     if (implementation) {
       const handoff = {
         action: 'handoff' as const,
@@ -5138,6 +5315,97 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(events[0]!.sourceId, comment.nodeId);
     assert.ok(events[0]!.turn);
   });
+  for (const aborted of [false, true])
+    it(`should resume feedback through operator dispatch with aborted handler ${aborted}`, async () => {
+      const { id, comments } = await feedbackOwner();
+      comments[0]!.author = { login: 'pirog', nodeId: 'U_operator', type: 'User' };
+      manifest.github!.notifications!.issueAssignment!.feedback = {
+        inherit: false,
+        allowed: [{ login: 'pirog', nodeId: 'U_operator' }],
+      };
+      consumeSend = true;
+      await service.check(manifest, root);
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const event = (await record()).feedback!.events[0]!;
+      assert.ok(event.turn);
+      const who = assessor(id, event.turn.runId);
+      const args = { action: 'feedback' as const, id, eventId: event.id };
+      assert.equal(
+        (await service.run(manifest, root, who, { ...args, operation: 'context' })).status,
+        'verified',
+      );
+      assert.equal(
+        (
+          await service.run(manifest, root, who, {
+            ...args,
+            operation: 'result',
+            privateText: 'Saved answer.',
+          })
+        ).status,
+        'recorded',
+      );
+      const use = service.dependencies.credential.use;
+      service.dependencies.credential.use = (authority, operation) =>
+        use(authority, (request) =>
+          operation(async (method, params) =>
+            method === 'agent.wait' && params.runId === event.turn!.runId
+              ? {
+                  runId: event.turn!.runId,
+                  status: aborted ? 'error' : 'ok',
+                  ...(aborted ? { stopReason: 'aborted' } : {}),
+                }
+              : request(method, params),
+          ),
+        );
+      if (aborted) {
+        const stopped = await service.run(manifest, root, coordinator, {
+          ...args,
+          operation: 'reconcile',
+        });
+        assert.ok(
+          'code' in stopped && stopped.code === 'dispatch-turn-cancelled',
+          JSON.stringify(stopped),
+        );
+      } else
+        messages.push({
+          role: 'assistant',
+          stopReason: 'stop',
+          content: [{ type: 'text', text: 'Saved reply awaiting publication.' }],
+          __openclaw: {
+            id: 'finished-feedback-reply',
+            runId: event.turn!.runId,
+            runTerminal: true,
+          },
+        });
+      const resume = { ...who, runId: 'operator-reply-resume' };
+      messages.push({
+        role: 'user',
+        content: 'Finish the saved reply.',
+        __openclaw: {
+          id: 'operator-resume-input',
+          idempotencyKey: 'operator-reply-resume:user',
+          senderIsOwner: true,
+        },
+      });
+      const before = (await record()).feedback!.events[0]!;
+      await assert.rejects(
+        service.run(manifest, root, resume, { ...args, operation: 'context', resume: true }, false),
+        /feedback-owner-caller-required/,
+      );
+      assert.deepEqual((await record()).feedback!.events[0], before);
+      const resumed = await service.run(
+        manifest,
+        root,
+        resume,
+        { ...args, operation: 'context', resume: true },
+        true,
+      );
+      assert.equal(resumed.status, 'verified', JSON.stringify(resumed));
+      const after = (await record()).feedback!.events[0]!;
+      assert.equal(after.turn!.runId, resume.runId);
+      assert.deepEqual(after.result, before.result);
+      assert.equal(Boolean(after.ownerResumptions![0]!.previousTurn.cancelled), aborted);
+    });
   it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
     const { id } = await feedbackOwner();
     consumeSend = true;
