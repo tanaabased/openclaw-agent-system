@@ -7,15 +7,16 @@ import {
 } from './command-authority.ts';
 import { automationHash } from './automation-hash.ts';
 import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
-import { codexNotificationResetAutomation } from './codex-automations.ts';
+import {
+  codexNotificationResetAutomation,
+  replaceCodexNotificationCoordinator,
+} from './codex-automations.ts';
 import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
-import { connectCodexThreads } from './codex-thread-client.ts';
+import { connectCodexThreads, codexThreadAdapter } from './codex-thread-client.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
-import connectCodexGitHubAccount from './codex-github-client.ts';
-import closeResetPullRequest from '../channels/github/provider/reset-pull-request.ts';
 import NotificationResetStore, {
   type NotificationResetRecord,
 } from './notification-reset-state.ts';
@@ -31,6 +32,7 @@ const schema = Type.Object(
     all: Type.Optional(Type.Boolean()),
     yes: Type.Optional(Type.Boolean()),
     purge: Type.Optional(Type.Boolean()),
+    confirmation: Type.Optional(Type.String()),
     nativeInventory: Type.Optional(Type.Unknown()),
   },
   { additionalProperties: false },
@@ -40,7 +42,7 @@ interface Dependencies extends CodexIntakeDependencies {
   caller?: string;
   threads?: typeof connectCodexThreads;
   automation?: typeof codexNotificationResetAutomation;
-  github?: typeof connectCodexGitHubAccount;
+  replaceCoordinator?: typeof replaceCodexNotificationCoordinator;
 }
 
 /** a bound Codex workspace has one agent; all means that binding, never other installations. */
@@ -96,6 +98,7 @@ export default async function runCodexNotificationReset(
       const sources = new Set(parse(record).records.map(({ sourceThreadId }) => sourceThreadId));
       if ('targetThreadId' in saved.definition) sources.add(saved.definition.targetThreadId);
       for (const threadId of sources) {
+        if (!(await codexThreadAdapter(request, current.workspace).lookup(threadId))) continue;
         const { thread } = await request('thread/read', { threadId, includeTurns: false });
         if (!nativeObject(thread) || thread.id !== threadId || !nativeObject(thread.status))
           throw new Error('notification-reset-coordinator-observation-unavailable');
@@ -179,14 +182,29 @@ export default async function runCodexNotificationReset(
       if (state.agentId !== current.agentId || state.workspaceDir !== current.workspace)
         throw new Error('notification-reset-scope-changed');
       const contents = { intake: state, records: (await journal.read()).records };
+      const saved = await automation();
+      if (saved.definition.kind !== 'heartbeat')
+        throw new Error('notification-reset-coordinator-missing');
       return {
         runtime: 'codex',
         agentId: current.agentId,
         workspace: current.workspace,
         scope: current.store.location.scope,
-        automation: JSON.stringify(await automation()),
+        automation: JSON.stringify(saved),
         inventory: JSON.stringify(contents),
-        resources: input.purge ? notificationResetResources(contents) : [],
+        resources: [
+          {
+            id: `coordinator:${saved.definition.targetThreadId}`,
+            kind: 'coordinator',
+            description: saved.definition.targetThreadId,
+            identity: saved.id,
+            details: [
+              'archive the intake conversation and create a fresh coordinator; reconnect the paused schedule',
+            ],
+            state: 'pending',
+          },
+          ...(input.purge ? notificationResetResources(contents) : []),
+        ],
       };
     },
     pause: (record) => toggle(record, false),
@@ -205,6 +223,71 @@ export default async function runCodexNotificationReset(
     baseline: async (record) => {
       await current.store.reset(record.baselineAt!);
     },
+    coordinator: async (record) => {
+      const before = JSON.parse(record.automation) as SavedAutomation;
+      if (before.definition.kind !== 'heartbeat')
+        throw new Error('notification-reset-coordinator-missing');
+      const id = before.definition.targetThreadId;
+      const archive = await withNative(async ({ request }) => {
+        const thread = await codexThreadAdapter(request, current.workspace).lookup(id);
+        if (!thread || thread.archived) return;
+        if ((await automation()).definition.status !== 'PAUSED')
+          throw new Error('notification-reset-pause-required');
+        const ui = input.nativeInventory;
+        if (
+          !nativeObject(ui) ||
+          ui.schemaVersion !== 4 ||
+          !Array.isArray(ui.pinnedThreads) ||
+          !Array.isArray(ui.unavailableHosts) ||
+          ui.unavailableHosts.includes('local') ||
+          !Array.isArray(ui.unavailableSources) ||
+          ui.unavailableSources.includes('codex')
+        )
+          return {
+            status: 'incomplete' as const,
+            code: 'notification-reset-native-inventory-required',
+            instruction:
+              'read native list_threads and supply its complete result as nativeInventory when repeating this reset',
+          };
+        if (ui.pinnedThreads.some((row) => !nativeObject(row) || row.id === id))
+          throw new Error('notification-reset-resource-protected');
+        const jobs = await readCodexAutomations(current.codexHome);
+        if (
+          jobs.some(
+            (job) =>
+              job.id !== before.id &&
+              'targetThreadId' in job.definition &&
+              job.definition.targetThreadId === id,
+          )
+        )
+          throw new Error('notification-reset-resource-protected');
+        const { thread: observed } = await request('thread/read', {
+          threadId: id,
+          includeTurns: false,
+        });
+        if (
+          !nativeObject(observed) ||
+          !nativeObject(observed.status) ||
+          !['idle', 'notLoaded'].includes(String(observed.status.type))
+        )
+          return { status: 'waiting' as const, code: 'notification-reset-turns-active' };
+        return {
+          status: 'native-action' as const,
+          request: {
+            tool: 'set_thread_archived',
+            arguments: { threadId: id, archived: true, hostId: 'local' },
+          },
+          instruction:
+            'archive this intake chat once, then repeat the same reset to verify and replace it',
+        };
+      });
+      if (archive) return archive;
+      return (deps.replaceCoordinator ?? replaceCodexNotificationCoordinator)(
+        pluginData,
+        before,
+        deps,
+      );
+    },
     restore: (record) => toggle(record, true),
     purge: async (record, resource) => {
       if (!(await observe(record)))
@@ -214,14 +297,8 @@ export default async function runCodexNotificationReset(
       if (!entry) throw new Error('notification-reset-resource-identity-missing');
       const item = inventory.intake.records.find(({ id }) => id === entry.intakeId);
       if (!item) throw new Error('notification-reset-intake-identity-missing');
-      if (resource.kind === 'pull-request') {
-        const { account } = await (deps.github ?? connectCodexGitHubAccount)(
-          current.workspace,
-          AbortSignal.timeout(30000),
-        );
-        await closeResetPullRequest(account, item, entry.delivery!.pullRequest!);
-        return { status: 'done' };
-      }
+      if (resource.kind === 'pull-request')
+        throw new Error('notification-reset-remote-effect-forbidden');
       if (resource.kind === 'worktree') {
         if (await waitForCodexWorktreeRemoval(entry.worktree!)) return { status: 'done' };
         return {
@@ -293,9 +370,13 @@ export default async function runCodexNotificationReset(
     },
   };
   const preview = await previewNotificationReset(store, adapter, input.purge === true);
+  const confirmation = automationHash([preview.purge, preview.fingerprint]);
+  if (input.confirmation && !preview.continuing && input.confirmation !== confirmation)
+    throw new Error('notification-reset-preview-changed');
   if (!input.yes)
     return {
       status: 'confirmation-required',
+      confirmation,
       agentId: preview.agentId,
       workspace: preview.workspace,
       purge: preview.purge,

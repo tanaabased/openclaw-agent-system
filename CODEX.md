@@ -451,20 +451,20 @@ through native host approval. If access is denied, it reports the reason and kee
 the work intact; it does not delete locks or loosen directory permissions. Native
 approval requests retain their native UI.
 
-For a workspace-wide notification reset, use `notificationResetRuntime` from an
+For a workspace-wide notification reset, invoke `$agent-system-notifications-reset`, which uses `notificationResetRuntime` from an
 operator chat. Send `{"agent":["<bound-agent-id>"]}` on stdin to inspect the scope,
-then add `"yes":true` after confirmation. `"all":true` selects only the current
+then add `"yes":true` and the returned `confirmation` token after approval. `"all":true` selects only the current
 binding; it never discovers or changes other Codex installations. Add `"purge":true`
 to include the retained resource inventory.
 
 Reset clears management and feedback state, establishes a fresh assignment
-baseline, and preserves work unless purge was selected. It prepares native
+baseline, archives the old intake chat, and binds a fresh coordinator. Existing issue chats and checkouts remain unless purge was selected. It prepares native
 `automation_update` requests to pause and restore intake. Execute each request once
 and repeat the same reset to verify saved state. It waits for managed turns without
 aborting them. An unverified native mutation is not issued again automatically.
 Native denial remains a stop.
 
-Purge prepares native chat archival and closes verified open unmerged PRs. Supply
+Reset and purge never change GitHub issues, assignments, comments, or pull requests. Purge additionally prepares managed issue chat archival and checkout cleanup. Supply
 the current native `list_threads` result as `nativeInventory` when requested so
 pinned and shared resources remain protected. Codex owns managed worktree removal.
 After archival, purge waits up to 30 seconds per checkout for native cleanup.

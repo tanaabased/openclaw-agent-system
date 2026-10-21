@@ -46,7 +46,22 @@ off. Preserve private plans, review code context, individual finding links, priv
 PR cards and native attachments. Use the capture metadata and evidence limits above;
 this headless scenario does not prove either host's displayed spacing.
 
-For coordinator replacement verification, retain an active issue, reconcile the automation to a new intake chat, and continue that same issue. Verify its original creation source remains intact, new sends record the replacement coordinator, and both old and new send receipts reconcile without duplicate messages. Rename the issue chat and change its live assessment or implementation guidance before a subsequent context request; neither requires another issue admission or Install. Controlled tests cover these transitions; the desktop run remains the native transport proof.
+For coordinator replacement verification, retain an active issue, archive the intake
+chat through native controls, run Doctor, then Install. Doctor must report
+`automation-thread-replacement-required` without creating a chat. Install must bind
+a different coordinator while preserving the baseline, issue records, assessment,
+and completed delivery receipts. Continue that same issue: its original creation
+source remains intact and new sends record the replacement coordinator.
+
+In that disposable setup, invoke `$agent-system-notifications-reset` from an operator
+chat. Decline one preview and verify no changes. Confirm a new preview and verify
+that the schedule pauses, local tracking clears, the baseline advances, the old
+intake chat is archived, and a different chat receives the restored schedule.
+Repeat with purge on disposable managed work: verify issue chat archival and native
+checkout removal while the GitHub issue, assignment, comments, and open PR remain
+unchanged. Interrupt after archival and verify the same reset resumes without
+creating two replacements. These are native desktop checks; headless tests do not
+establish app archival, approval, or worktree-removal behavior.
 
 Native same-turn verification also requires the desktop: run one Work issue and one
 Auto issue whose recorded decision selects Work. Confirm implementation context

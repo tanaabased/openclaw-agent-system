@@ -247,30 +247,35 @@ as described above. An uncertain native enqueue is reported rather than retried.
 
 Reset notification management for selected agents. The operator sees the scope,
 confirms once, and the command pauses intake, waits for managed turns, clears
-routing and feedback records, establishes a fresh assignment baseline, and
-restores the previous intake setting. Existing assignments and comments do not
+routing and feedback records, establishes a fresh assignment baseline, archives
+the old intake chat, creates a fresh coordinator, and restores the previous intake setting. Existing assignments and comments do not
 replay; a new approved assignment after the baseline can start new work.
 
 **Options:**
 
-| Option or argument | Required | Default | Description                                                                                                                               |
-| ------------------ | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `--agent <id>`     | no       | none    | Repeat to preselect multiple agents.                                                                                                      |
-| `--all`            | no       | false   | Select all configured agents with managed manifests; conflicts with `--agent`.                                                            |
-| `--json`           | no       | false   | Emit structured results; requires explicit targets and `--yes`.                                                                           |
-| `--purge`          | no       | false   | Also archive managed chats, close linked open unmerged PRs, and remove owned checkouts, including modified, untracked, and ignored files. |
-| `--yes`            | no       | false   | Confirm explicit targets without prompting; does not override ownership or activity checks.                                               |
+| Option or argument        | Required | Default | Description                                                                                                    |
+| ------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `--agent <id>`            | no       | none    | Repeat to preselect multiple agents.                                                                           |
+| `--all`                   | no       | false   | Select all configured agents with managed manifests; conflicts with `--agent`.                                 |
+| `--confirmation <digest>` | no       | none    | Require the read-only preview to remain unchanged before starting.                                             |
+| `--json`                  | no       | false   | Emit structured results; requires explicit targets and `--preview` or `--yes`.                                 |
+| `--preview`               | no       | false   | Show the explicit selection and inventory without changing state or requiring confirmation.                    |
+| `--purge`                 | no       | false   | Also archive managed issue chats and remove owned checkouts, including modified, untracked, and ignored files. |
+| `--yes`                   | no       | false   | Confirm explicit targets without prompting; does not override ownership or activity checks.                    |
 
 **Usage:**
 
 ```sh
-openclaw agent-system notifications reset [--agent <id> ... | --all] [--purge] [--yes] [--json]
+openclaw agent-system notifications reset [--agent <id> ... | --all] [--purge] [--preview] [--confirmation <digest>] [--yes] [--json]
 
 # select agents interactively and confirm the reset
 openclaw agent-system notifications reset
 
 # preselect two agents while retaining the selection and confirmation prompts
 openclaw agent-system notifications reset --agent agent-one --agent agent-two
+
+# preview one agent without changing state
+openclaw agent-system notifications reset --agent agent-one --preview --json
 
 # reset all managed agents without prompting
 openclaw agent-system notifications reset --all --yes
@@ -279,9 +284,10 @@ openclaw agent-system notifications reset --all --yes
 openclaw agent-system notifications reset --agent agent-one --purge
 ```
 
-Ordinary reset preserves conversations, checkouts, commits, branches, pull requests,
-and GitHub assignments. Purge retains repositories, named and remote branches,
-merged PRs, and protected or shared resources. It reports incomplete cleanup when
+Ordinary reset preserves issue conversations and checkouts while replacing the intake
+conversation. Both modes leave GitHub issues, assignments, comments, and all pull
+requests unchanged. Purge retains repositories, named and remote branches, and
+protected or shared resources. It reports incomplete cleanup when
 ownership, native activity, or an earlier creation cannot be verified.
 
 A private recovery record retains the exact scope, resource inventory, and prior
@@ -290,6 +296,12 @@ finish it; changing `--purge` while that operation is unfinished is rejected.
 The record is removed only after completion. Do not delete it to force a fresh
 reset. If automatic pause fails, pause intake in the scheduler; the command waits
 for that change and for managed turns to finish. It never aborts turns.
+
+For an archived or missing intake chat without a tracking reset, run Doctor and
+then Install. Doctor only reports the missing coordinator; Install creates a fresh
+chat and retargets intake while preserving existing issue records and receipts.
+`$agent-system-notifications-reset` guides the explicit reset and confirmation;
+OpenClaw-hosted agents hand the operator the terminal command.
 
 Selected agents run independently. A failure for one agent does not undo completed
 resets for the others. This command covers the installed issue workflow; it does

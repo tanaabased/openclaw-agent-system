@@ -6,7 +6,7 @@ import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import type { ConnectedGitHubAccountClient } from '../core/github-account-client.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
-import closeResetPullRequest from '../channels/github/provider/reset-pull-request.ts';
+import automationThreadGateway from './automation-thread-gateway.ts';
 import { listNativeAutomations, nativeObject } from './automation-gateway.ts';
 import { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
 import { observeRetiringSession } from './openclaw-assignment-lifecycle.ts';
@@ -24,7 +24,10 @@ import { notificationResetResources, type ResetInventory } from './notification-
 interface Dependencies {
   root: string;
   intake: Pick<OpenClawIntake, 'select'>;
-  automations: Pick<AutomationService, 'notificationResetSnapshot' | 'notificationResetToggle'>;
+  automations: Pick<
+    AutomationService,
+    'notificationResetSnapshot' | 'notificationResetToggle' | 'notificationResetReplace'
+  >;
   credential: Pick<SessionDispatchCredential, 'use'>;
   worktrees: Pick<TrustedGitWorktreeService, 'inspectGitHub' | 'cleanupGitHub'>;
   connect(
@@ -63,6 +66,18 @@ export default class OpenClawNotificationReset {
         return true;
       return deps.credential.use({}, async (request) => {
         for (const key of sources) {
+          const gateway = async (method: string, params: Record<string, unknown>) => {
+            const result = await request(method, params);
+            if (!nativeObject(result))
+              throw new Error('notification-reset-native-response-invalid');
+            return result;
+          };
+          const source = await automationThreadGateway(gateway, {
+            agentId: manifest.agent.id,
+            workspaceDir: workspace,
+            scope,
+          }).lookup(key);
+          if (!source) continue;
           const response = await request('chat.history', { sessionKey: key, limit: 1 });
           if (
             !nativeObject(response) ||
@@ -143,18 +158,28 @@ export default class OpenClawNotificationReset {
             observed ? { path: observed.path, branch: observed.branch } : { missing: true },
           );
         }
+        const automation = await deps.automations.notificationResetSnapshot(
+          manifest,
+          workspace,
+          openclawIntakeAutomationId,
+        );
+        if (automation.sessionKey)
+          resources.unshift({
+            id: `coordinator:${automation.sessionKey}`,
+            kind: 'coordinator',
+            description: automation.sessionKey,
+            identity: automation.nativeId,
+            details: [
+              'archive the intake conversation and create a fresh coordinator; reconnect the paused schedule',
+            ],
+            state: 'pending',
+          });
         return {
           runtime: 'openclaw',
           agentId: manifest.agent.id,
           workspace,
           scope,
-          automation: JSON.stringify(
-            await deps.automations.notificationResetSnapshot(
-              manifest,
-              workspace,
-              openclawIntakeAutomationId,
-            ),
-          ),
+          automation: JSON.stringify(automation),
           inventory: JSON.stringify(contents),
           resources,
         };
@@ -198,6 +223,91 @@ export default class OpenClawNotificationReset {
       baseline: async (record) => {
         await intake.reset(record.baselineAt!);
       },
+      coordinator: async (record, save) => {
+        const expected = JSON.parse(record.automation);
+        if (!expected.sessionKey) throw new Error('notification-reset-coordinator-missing');
+        await deps.credential.use({}, async (transport) => {
+          const request = async (method: string, params: Record<string, unknown>) => {
+            const result = await transport(method, params);
+            if (!nativeObject(result))
+              throw new Error('notification-reset-native-response-invalid');
+            return result;
+          };
+          const adapter = automationThreadGateway(request, {
+            agentId: manifest.agent.id,
+            workspaceDir: workspace,
+            scope,
+          });
+          const existing = await adapter.lookup(expected.sessionKey);
+          if (!existing || existing.archived) return;
+          const paused = await deps.automations.notificationResetSnapshot(
+            manifest,
+            workspace,
+            expected.id,
+          );
+          if (
+            paused.enabled ||
+            paused.nativeId !== expected.nativeId ||
+            paused.hash !== expected.hash
+          )
+            throw new Error('notification-reset-automation-changed');
+          const response = await request('sessions.describe', { key: expected.sessionKey });
+          const row = response.session;
+          if (
+            !nativeObject(row) ||
+            row.key !== expected.sessionKey ||
+            row.agentId !== manifest.agent.id ||
+            typeof row.sessionId !== 'string'
+          )
+            throw new Error('notification-reset-coordinator-observation-unavailable');
+          const jobs = await listNativeAutomations(request);
+          if (
+            row.pinned === true ||
+            jobs.some(
+              (job) =>
+                job.id !== expected.nativeId &&
+                job.sessionTarget === `session:${expected.sessionKey}`,
+            )
+          )
+            throw new Error('notification-reset-resource-protected');
+          const history = await request('chat.history', {
+            sessionKey: expected.sessionKey,
+            limit: 1,
+          });
+          if (
+            !nativeObject(history.sessionInfo) ||
+            history.sessionInfo.hasActiveRun !== false ||
+            !nativeObject(history.pendingInputs) ||
+            history.pendingInputs.total !== 0
+          )
+            throw new Error('notification-reset-turns-active');
+          if (record.coordinatorArchiveAttempted)
+            throw new Error('notification-reset-native-action-unverified');
+          record.coordinatorArchiveAttempted = true;
+          await save(record);
+          await request('sessions.patch', {
+            key: expected.sessionKey,
+            expectedSessionId: row.sessionId,
+            ...(typeof row.lifecycleRevision === 'string'
+              ? { expectedLifecycleRevision: row.lifecycleRevision }
+              : {}),
+            archived: true,
+          });
+          if (!(await adapter.lookup(expected.sessionKey))?.archived)
+            throw new Error('notification-reset-archive-unverified');
+        });
+        const updated = await deps.automations.notificationResetReplace(
+          manifest,
+          workspace,
+          expected,
+          record.coordinatorUpdateAttempted === true,
+          async () => {
+            record.coordinatorUpdateAttempted = true;
+            await save(record);
+          },
+        );
+        return { status: 'done', automation: JSON.stringify(updated) };
+      },
       restore: async (record) => {
         await deps.automations.notificationResetToggle(
           manifest,
@@ -234,11 +344,9 @@ export default class OpenClawNotificationReset {
         }
         const item = retained.intake.records.find(({ id }) => id === entry.intakeId);
         if (!item) throw new Error('notification-reset-intake-identity-missing');
+        if (resource.kind === 'pull-request')
+          throw new Error('notification-reset-remote-effect-forbidden');
         const connected = await deps.connect(manifest, workspace);
-        if (resource.kind === 'pull-request') {
-          await closeResetPullRequest(connected.account, item, entry.work!.delivery!.pullRequest!);
-          return { status: 'done' };
-        }
         const repository = await connected.client.getRepository(
           item.repository.owner.login,
           item.repository.name,

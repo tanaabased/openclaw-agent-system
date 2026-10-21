@@ -500,6 +500,53 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]!.enabled, true);
     assert.equal(native.length, 1);
     assert.equal(sessions.size, 1);
+    const oldKey = String(native[0]!.sessionTarget).slice(8);
+    sessions.get(oldKey)!.archived = true;
+    const beforeRepair = calls.length;
+    const broken = await service.inspect(manifest, root);
+    assert.ok(broken.some((finding) => finding.code === 'automation-thread-replacement-required'));
+    assert.ok(
+      !calls
+        .slice(beforeRepair)
+        .some(({ method }) => ['sessions.create', 'cron.update'].includes(method)),
+    );
+    await service.reconcile(manifest, root);
+    const installedKey = String(native[0]!.sessionTarget).slice(8);
+    assert.notEqual(installedKey, oldKey);
+    assert.equal(sessions.get(oldKey)!.archived, true);
+    assert.equal(sessions.size, 2);
+    const expected = await service.notificationResetSnapshot(
+      manifest,
+      root,
+      'github-issue-assignment',
+    );
+    await service.notificationResetToggle(manifest, root, expected, false);
+    sessions.get(installedKey)!.archived = true;
+    let attempted = false;
+    afterWriteFailure = true;
+    await assert.rejects(
+      service.notificationResetReplace(manifest, root, expected, attempted, async () => {
+        attempted = true;
+      }),
+    );
+    assert.equal(native[0]!.enabled, false);
+    const replacement = await service.notificationResetReplace(
+      manifest,
+      root,
+      expected,
+      attempted,
+      async () => {
+        assert.fail('do not repeat uncertain update');
+      },
+    );
+    assert.notEqual(replacement.sessionKey, installedKey);
+    assert.equal(sessions.size, 3);
+    await service.notificationResetToggle(manifest, root, replacement, true);
+    assert.equal(native[0]!.enabled, true);
+    assert.equal(
+      (await service.inspect(manifest, root)).every((finding) => finding.status === 'healthy'),
+      true,
+    );
   });
 
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {

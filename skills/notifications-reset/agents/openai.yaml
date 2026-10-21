@@ -1,0 +1,9 @@
+interface:
+  display_name: 'Agent System Notifications Reset'
+  short_description: 'Preview and reset local notification management'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-notifications-reset to preview and confirm a local notification reset through the owning runtime.'
+policy:
+  allow_implicit_invocation: true

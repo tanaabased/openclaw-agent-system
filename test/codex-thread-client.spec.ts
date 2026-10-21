@@ -113,13 +113,24 @@ describe('agent/codex-thread-client', () => {
     );
     assert.equal(calls, 1);
   });
-  it('should reject archived and wrong-workspace native targets', async () => {
+  it('should expose archival for owned replacement while rejecting wrong-workspace and unavailable targets', async () => {
     const cwd = await realpath('.');
+    const archived = {
+      id: 'native',
+      cwd,
+      path: '/archived_sessions/rollout.jsonl',
+      canAcceptDirectInput: false,
+      status: { type: 'idle' },
+    };
+    assert.equal(
+      (await codexThreadAdapter(async () => ({ thread: archived }), cwd).lookup('native'))
+        ?.archived,
+      true,
+    );
     for (const thread of [
-      { id: 'native', cwd: '/missing', path: '/sessions/rollout.jsonl', status: { type: 'idle' } },
-      { id: 'native', cwd, path: '/archived_sessions/rollout.jsonl', status: { type: 'idle' } },
-    ]) {
+      { ...archived, cwd: '/missing' },
+      { ...archived, path: '/sessions/rollout.jsonl' },
+    ])
       await assert.rejects(codexThreadAdapter(async () => ({ thread }), cwd).lookup('native'));
-    }
   });
 });

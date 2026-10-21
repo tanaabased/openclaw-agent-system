@@ -53,7 +53,7 @@ export default function automationThreadGateway(
       row = rows.find((item) => item.key === key);
       if (row || rows.length < 100) break;
     }
-    if (!row || row.archived === true || typeof row.sessionId !== 'string')
+    if (!row || typeof row.sessionId !== 'string')
       throw new AutomationError('automation-thread-unavailable');
     if (
       typeof row.workspaceDir !== 'string' ||
@@ -62,6 +62,7 @@ export default function automationThreadGateway(
       throw new AutomationError('automation-thread-workspace-mismatch');
     return {
       id: key,
+      archived: row.archived === true,
       ...(typeof row.displayName === 'string' ? { name: row.displayName } : {}),
       ...(typeof row.category === 'string' ? { group: row.category } : {}),
       sessionId: row.sessionId,
@@ -73,7 +74,8 @@ export default function automationThreadGateway(
     lookup,
     async create(record, saveId) {
       const key =
-        record.nativeId ?? `agent:${context.agentId}:automation:${context.scope}:${record.key}`;
+        record.nativeId ??
+        `agent:${context.agentId}:automation:${context.scope}:${record.key}${record.generation ? `:${record.generation}` : ''}`;
       if (!record.nativeId) await saveId(key);
       if (!(await lookup(key)))
         await request('sessions.create', {

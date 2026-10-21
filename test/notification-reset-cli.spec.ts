@@ -81,6 +81,28 @@ describe('channels/github/cli/reset', () => {
     }
   });
 
+  it('should preview explicit targets without prompting or running reset and reject changed confirmation', async () => {
+    const f = fixture();
+    f.options.preview = true;
+    f.options.yes = false;
+    await reset(f.options);
+    assert.deepEqual(f.calls, ['preview:one', 'preview:two']);
+    const result = JSON.parse(f.stdout.join(''));
+    assert.equal(result.status, 'confirmation-required');
+    assert.equal(result.targets.length, 2);
+    const original = f.options.service.preview;
+    f.options.service.preview = async (...args) => ({
+      ...(await original(...args)),
+      continuing: false,
+      fingerprint: 'changed',
+    });
+    f.options.preview = false;
+    f.options.yes = true;
+    f.options.confirmation = result.confirmation;
+    await assert.rejects(reset(f.options), /notification-reset-preview-changed/u);
+    assert.ok(f.calls.every((call) => call.startsWith('preview:')));
+  });
+
   it('should return an empty structured result when there are no managed agents', async () => {
     const f = fixture();
     f.options.all = true;

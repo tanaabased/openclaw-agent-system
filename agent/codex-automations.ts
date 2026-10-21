@@ -347,6 +347,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     result.actions = [];
     const synchronizable = new Set([
       'automation-thread-sync-required',
+      'automation-thread-replacement-required',
       'automation-thread-name-drift',
       'automation-missing',
       'automation-drift',
@@ -512,6 +513,7 @@ export async function syncCodexAutomationThreads(
       'automation-thread-sync-required',
       'automation-thread-name-drift',
       'automation-thread-recovery-required',
+      'automation-thread-replacement-required',
       'automation-healthy',
       'automation-disabled',
       'automation-disabled-retained',
@@ -592,6 +594,63 @@ export async function codexNotificationResetAutomation(
     throw new Error('notification-reset-automation-changed');
   return saved;
 }
+/** reset owns the pause and exact native retarget; no provider effects or unrelated jobs. */
+export async function replaceCodexNotificationCoordinator(
+  pluginData: string,
+  before: SavedAutomation,
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const initial = await snapshot(pluginData, dependencies);
+  return withJournal(initial, async () => {
+    const selected = await snapshot(pluginData, dependencies);
+    if (selected.ledger.pending || selected.scope !== initial.scope)
+      throw new Error('notification-reset-automation-operation-pending');
+    if (before.definition.kind !== 'heartbeat')
+      throw new Error('notification-reset-coordinator-missing');
+    const record = selected.ledger.records.find(({ id }) => id === intakeAutomationId);
+    const actual = (await readCodexAutomations(selected.codexHome)).find(
+      ({ id }) => id === before.id,
+    );
+    if (
+      !record ||
+      record.nativeId !== before.id ||
+      !actual ||
+      actual.definition.kind !== 'heartbeat' ||
+      actual.definition.status !== 'PAUSED' ||
+      !savedMatches(
+        actual,
+        {
+          ...before.definition,
+          targetThreadId: actual.definition.targetThreadId,
+          status: 'PAUSED',
+        },
+        selected.workspace,
+      )
+    )
+      throw new Error('notification-reset-automation-changed');
+    const jobs = selected.jobs.filter(({ id }) => id === intakeAutomationId);
+    const target = (await resolveThreads({ ...selected, jobs }, true)).get(intakeAutomationId)?.id;
+    if (!target || target === before.definition.targetThreadId)
+      throw new Error('notification-reset-coordinator-not-replaced');
+    const definition = { ...before.definition, targetThreadId: target };
+    if (actual.definition.targetThreadId !== target) {
+      if (actual.definition.targetThreadId !== before.definition.targetThreadId)
+        throw new Error('notification-reset-automation-changed');
+      return {
+        status: 'native-action' as const,
+        request: {
+          tool: 'automation_update',
+          arguments: { ...definition, status: 'PAUSED', id: before.id, mode: 'update' },
+        },
+        instruction: 'retarget this paused schedule once, then repeat the same reset to verify it',
+      };
+    }
+    record.definition = definition;
+    await selected.file.write(JSON.stringify(selected.ledger));
+    return { status: 'done' as const, automation: JSON.stringify({ ...before, definition }) };
+  });
+}
+
 /** no native occurrence or history API is available; never silently create a manual substitute. */
 export async function codexAutomationRunGap(
   pluginData: string,
