@@ -23,7 +23,7 @@ export interface ClaimClient {
   remove(source: ClaimSource, commentId: number, previousBody: string): Promise<void>;
 }
 
-function key(source: ClaimSource) {
+export function assignmentClaimKey(source: ClaimSource) {
   return createHash('sha256')
     .update(
       JSON.stringify([
@@ -63,7 +63,7 @@ export async function claimAssignment(input: {
           claim?.assignmentEventId === source.assignmentEventId,
       )
       .sort((a, b) => a.comment.databaseId - b.comment.databaseId);
-    let record = state.claims[key(source)];
+    let record = state.claims[assignmentClaimKey(source)];
     if (record && record.instanceId !== state.instanceId)
       return { status: 'recovery-required', code: 'claim-instance-rotated' };
     const retainedWinner = record?.winnerId;
@@ -73,7 +73,7 @@ export async function claimAssignment(input: {
       return { status: 'recovery-required', code: 'claim-winner-changed' };
     if (!record) {
       if (claims.length) {
-        state.claims[key(source)] = {
+        state.claims[assignmentClaimKey(source)] = {
           instanceId: state.instanceId,
           firstPass: passId,
           attempted: false,
@@ -88,7 +88,7 @@ export async function claimAssignment(input: {
         firstPass: passId,
         attempted: true,
       };
-      state.claims[key(source)] = record;
+      state.claims[assignmentClaimKey(source)] = record;
       await save();
       await client.verify(source);
       signal.throwIfAborted();
@@ -170,7 +170,7 @@ export async function acceptAssignmentClaim(input: {
 }) {
   if (!input.nativeReceipt) throw new Error('claim-native-receipt-required');
   return input.store.exclusive(async (state, save, signal) => {
-    const record = state.claims[key(input.source)];
+    const record = state.claims[assignmentClaimKey(input.source)];
     if (
       !record ||
       record.instanceId !== state.instanceId ||

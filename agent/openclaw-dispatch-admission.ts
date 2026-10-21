@@ -1,3 +1,4 @@
+import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import type { Static } from 'typebox';
 
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
@@ -42,6 +43,8 @@ export default class OpenClawDispatchAdmission {
     } = tx;
     const { client, intake, worktreeInput } = verified;
     const claims = this.context.dependencies.claims;
+    if (!claims && !record.sessionCreation?.attempted && !record.sessionCreation?.verified)
+      await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
     if (claims && !record.sessionCreation?.verified) {
       const claim = await claims.select({
         intake,

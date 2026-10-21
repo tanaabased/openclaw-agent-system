@@ -1,3 +1,4 @@
+import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
@@ -84,7 +85,7 @@ export async function recover(
     delete record.stageReceipt;
   }
   await save();
-  if (record.claimId && !record.claimAccepted) {
+  if (deps.claims && record.claimId && !record.claimAccepted) {
     const { client } = await revalidateDispatchAssignment(
       current,
       intake,
@@ -93,7 +94,7 @@ export async function recover(
       true,
       record,
     );
-    await deps.claims!.accept(intake, client, record);
+    await deps.claims.accept(intake, client, record);
     record.claimAccepted = true;
     await save();
   }
@@ -107,7 +108,11 @@ async function selectClaim(
   tx: CodexDispatchTransaction,
 ) {
   const { state, deps, current, save } = tx;
-  const claim = await deps.claims!.select({
+  if (!deps.claims) {
+    await assertDormantAssignmentUnclaimed(deps.claimStore, intake);
+    return;
+  }
+  const claim = await deps.claims.select({
     intake,
     client,
     threadId: tx.caller,
@@ -213,7 +218,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       !record.retirement &&
       !record.handoff &&
       record.request &&
-      (!record.effective || (record.claimId && !record.claimAccepted)) &&
+      (!record.effective || (deps.claims && record.claimId && !record.claimAccepted)) &&
       record.phase !== 'complete' &&
       (record.phase !== 'blocked' ||
         (record.result?.outcome === 'operator-setup-blocker' &&
@@ -297,7 +302,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     .find(
       ({ record, intake }) =>
         !record?.request &&
-        record?.claimPass !== state.run!.id &&
+        (!deps.claims || record?.claimPass !== state.run!.id) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;

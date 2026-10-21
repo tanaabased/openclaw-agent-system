@@ -1,3 +1,4 @@
+import type AssignmentClaimStore from './assignment-claim-store.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -49,6 +50,7 @@ import retainedIntakePolicy from './retained-intake-policy.ts';
 export interface OpenClawDispatchDependencies {
   readInstallationConfig?: typeof readInstallationConfig;
   root: string;
+  claimStore?: AssignmentClaimStore;
   claims?: OpenClawAssignmentClaims;
   config(): OpenClawConfig;
   intake: OpenClawIntake;

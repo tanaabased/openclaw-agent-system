@@ -1163,12 +1163,71 @@ describe('agent/openclaw issue dispatch', () => {
         throw new Error('unexpected-own-claim-removal');
       },
     };
+    service.dependencies.claimStore = new AssignmentClaimStore(join(root, 'instance'));
     service.dependencies.claims = new OpenClawAssignmentClaims(
-      new AssignmentClaimStore(join(root, 'instance')),
+      service.dependencies.claimStore,
       () => client,
     );
     return comments;
   }
+
+  it('should create a session without claims or initializing installation state', async () => {
+    const store = new AssignmentClaimStore(join(root, 'instance'));
+    service.dependencies.claimStore = store;
+    const selected = await next();
+    assert.equal((await prepare(selected)).status, 'session-created');
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).claimId, undefined);
+    assert.equal(await store.inspect(), undefined);
+  });
+
+  it('should hold a pending pilot assignment when claim election becomes dormant', async () => {
+    const comments = enableClaims();
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const store = service.dependencies.claimStore!;
+    const before = await store.file.read();
+    delete service.dependencies.claims;
+    coordinator.runId = 'second-native-occurrence';
+    const held = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.ok('code' in held && held.code === 'claim-disabled-pending');
+    assert.equal(preparedWorktrees, 0);
+    assert.equal(creates().length, 0);
+    assert.equal(await store.file.read(), before);
+    assert.equal(comments.length, 1);
+  });
+
+  it('should hold a selected pilot assignment before native preparation while dormant', async () => {
+    enableClaims();
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    coordinator.runId = 'second-native-occurrence';
+    const selected = await next();
+    delete service.dependencies.claims;
+    const held = await prepare(selected);
+    assert.ok('code' in held && held.code === 'claim-disabled-pending');
+    assert.equal(preparedWorktrees, 0);
+    assert.equal(creates().length, 0);
+  });
+
+  it('should reconcile existing native creation without accepting the pilot claim while dormant', async () => {
+    const comments = enableClaims();
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    coordinator.runId = 'second-native-occurrence';
+    const selected = await next();
+    lost = true;
+    assert.equal((await prepare(selected)).status, 'waiting');
+    const store = service.dependencies.claimStore!;
+    const before = await store.file.read();
+    delete service.dependencies.claims;
+    const recovered = await service.run(manifest, root, coordinator, {
+      action: 'reconcile',
+      id: selected.id,
+    });
+    assert.equal(recovered.status, 'session-created');
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).claimAccepted, undefined);
+    assert.equal(await store.file.read(), before);
+    assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
+  });
 
   it('should wait for another native occurrence before creating and accepting one session', async () => {
     const comments = enableClaims();

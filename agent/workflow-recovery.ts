@@ -23,6 +23,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'This installation has no saved identity.',
       'Run Install to create its persistent UUID and readable name before claiming assignments.',
     ],
+    'claim-disabled-pending': [
+      'This assignment has a retained claim from the pilot, and claim election is disabled.',
+      'Inspect its original owner and native work before resolving this assignment. Do not delete claim receipts or start replacement work.',
+    ],
     'claim-winner-missing': [
       'The retained winning claim is missing or its metadata was edited.',
       'Inspect the original owner and native work before restoring its claim. Do not create replacement work or take ownership by deleting state.',

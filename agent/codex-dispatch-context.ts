@@ -1,3 +1,4 @@
+import type AssignmentClaimStore from './assignment-claim-store.ts';
 import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
 import type CodexAssignmentClaims from './codex-assignment-claims.ts';
 import type {
@@ -26,6 +27,7 @@ type Client = GitHubNotificationIntakeClient & GitHubNotificationItemContextClie
 export type CodexDispatchSelection = Awaited<ReturnType<typeof selectCodexIntake>>;
 export type CodexDispatchNative = ReturnType<typeof codexDispatchNative>;
 export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
+  claimStore?: AssignmentClaimStore;
   claims?: Pick<CodexAssignmentClaims, 'select' | 'accept'>;
   connect?: (workspace: string, signal: AbortSignal) => Promise<Client>;
   activation?: typeof inspectCodexDispatchActivation;

@@ -13,8 +13,6 @@ import createIntakeTool from '../tools/intake/tool.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import instanceIdentity from '../agent/instance-identity.ts';
-import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
-import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
@@ -309,11 +307,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   );
   const dispatchV2 = createDispatchTool({
     api,
-    claims: new OpenClawAssignmentClaims(instanceStore, (connection) => {
-      if (!(connection instanceof GitHubWorkEventClient))
-        throw new Error('claim-provider-binding-required');
-      return new GitHubAssignmentClaimClient(connection);
-    }),
+    // Claim election stays dormant until the next dispatcher integration.
+    claimStore: instanceStore,
     config: readRuntimeConfig,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
     intake: intakeV2,

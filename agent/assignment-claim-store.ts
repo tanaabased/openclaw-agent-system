@@ -186,13 +186,23 @@ export default class AssignmentClaimStore {
   }
 
   /** inspection must never create an identity or repair private state. */
-  async inspect() {
+  private async read() {
     const contents = await this.file.read();
     if (contents === undefined) return undefined;
     const state: unknown = JSON.parse(contents);
     if (!Value.Check(schema, state) || state.retiredInstanceIds.includes(state.instanceId))
       throw new Error('assignment-claim-state-invalid');
-    return { instanceId: state.instanceId, displayName: state.displayName };
+    return state;
+  }
+
+  async inspect() {
+    const state = await this.read();
+    return state && { instanceId: state.instanceId, displayName: state.displayName };
+  }
+
+  /** dormant dispatch may inspect pilot receipts but must never create or mutate them. */
+  async assertUnclaimed(key: string) {
+    if ((await this.read())?.claims[key]) throw new Error('claim-disabled-pending');
   }
 
   rename(name: string) {

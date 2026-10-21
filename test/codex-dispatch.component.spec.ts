@@ -149,7 +149,6 @@ describe('agent/codex-dispatch', () => {
     ];
     gitCalls = [];
     deps = {
-      claims: { select: async () => ({ status: 'owned', winnerId: 1 }), accept: async () => {} },
       readInstallationConfig: async () =>
         parseInstallationConfig(undefined, '/installation/config.yaml'),
       codexHome,
@@ -283,6 +282,71 @@ describe('agent/codex-dispatch', () => {
     return { store, client, comments };
   }
 
+  it('should prepare and reconcile without claims or creating installation state', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const records = (await request('inspect')).records as Array<{
+      claimId?: number;
+      effective?: unknown;
+    }>;
+    assert.ok(records[0]!.effective);
+    assert.equal(records[0]!.claimId, undefined);
+    assert.equal(await codexInstanceStore(pluginData).inspect(), undefined);
+  });
+
+  it('should hold a saved pilot claim without preparing work or changing its receipt', async () => {
+    const { store, comments } = await claiming();
+    assert.equal((await next()).status, 'claim-waiting');
+    const before = await store.file.read();
+    delete deps.claims;
+    now += 300000;
+    const held = await next();
+    assert.equal(held.code, 'claim-disabled-pending');
+    assert.deepEqual(gitCalls, []);
+    assert.equal(await store.file.read(), before);
+    assert.equal(comments.length, 1);
+    assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
+  });
+
+  it('should hold a selected pilot claim if claims are disabled before preparation', async () => {
+    const { store } = await claiming();
+    await next();
+    now += 300000;
+    const selected = await next();
+    const before = await store.file.read();
+    delete deps.claims;
+    const held = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    });
+    assert.equal(held.code, 'claim-disabled-pending');
+    assert.equal(await store.file.read(), before);
+    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    assert.equal(records[0]!.request, undefined);
+  });
+
+  it('should recover existing native work without accepting its pilot claim while dormant', async () => {
+    const { store, comments } = await claiming();
+    await next();
+    now += 300000;
+    const prepared = await prepare();
+    created();
+    const before = await store.file.read();
+    delete deps.claims;
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const records = (await request('inspect')).records as Array<{
+      claimAccepted?: boolean;
+      effective?: unknown;
+    }>;
+    assert.ok(records[0]!.effective);
+    assert.equal(records[0]!.claimAccepted, undefined);
+    assert.equal(await store.file.read(), before);
+    assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
+  });
+
   it('should claim through the native github connection before preparing and accepting a verified chat', async () => {
     const comments: Array<GitHubCanonicalIssueComment & { bodyLength: number; issueUrl: string }> =
       [];
@@ -362,7 +426,7 @@ describe('agent/codex-dispatch', () => {
       else process.env.PATH = previousPath;
     }
     deps.connect = async () => connection.client;
-    delete deps.claims;
+    deps.claims = new CodexAssignmentClaims(codexInstanceStore(pluginData));
     await codexInstanceStore(pluginData).identity();
     const first = await next();
     assert.equal(first.status, 'claim-waiting', JSON.stringify(first));

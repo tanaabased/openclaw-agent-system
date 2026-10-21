@@ -1,3 +1,4 @@
+import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { openClawResponseEligible } from './openclaw-response-continuation.ts';
 import { randomUUID } from 'node:crypto';
 
@@ -692,6 +693,8 @@ export default class OpenClawDispatchCoordinator {
     delete record.failureStage;
     try {
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
+      if (!this.context.dependencies.claims)
+        await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
       const claim = await this.context.dependencies.claims?.select({
         intake,
         client,
