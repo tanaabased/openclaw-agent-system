@@ -57,6 +57,10 @@ In that disposable setup, invoke `$agent-system-notifications-reset` from an ope
 chat. Decline one preview and verify no changes. Confirm a new preview and verify
 that the schedule pauses, local tracking clears, the baseline advances, the old
 intake chat is archived, and a different chat receives the restored schedule.
+If native archival removes the old heartbeat, verify reset creates one paused
+replacement with the retained cadence, prompt, and notification preference before
+restoring its prior status. Interrupt after native creation but before readback;
+resuming must adopt that exact schedule, not create another.
 Repeat with purge on disposable managed work: verify issue chat archival and native
 checkout removal while the GitHub issue, assignment, comments, and open PR remain
 unchanged. Interrupt after archival and verify the same reset resumes without

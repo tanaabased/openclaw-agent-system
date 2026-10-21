@@ -331,6 +331,58 @@ describe('agent/codex-automations', () => {
     assert.equal(updated.definition.status, 'ACTIVE');
     await nativeWrite(updated.definition, saved.id);
     assert.equal((await inspect()).status, 'aligned');
+
+    // desktop archival removes the heartbeat; recovery must create once and adopt exact readback.
+    const retained = await codexNotificationResetAutomation(pluginData, dependencies);
+    conversations.get('intake-3')!.archived = true;
+    await rm(join(codexHome, 'automations', saved.id), { recursive: true });
+    const replacement = await replaceCodexNotificationCoordinator(
+      pluginData,
+      retained,
+      dependencies,
+    );
+    assert.equal(replacement.status, 'native-action');
+    assert.equal(replacement.request?.arguments.mode, 'create');
+    assert.equal(replacement.request?.arguments.status, 'PAUSED');
+    assert.equal(creates, 4);
+    assert.deepEqual(
+      await replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
+      replacement,
+    );
+    assert.equal(creates, 4);
+    const replacementDefinition = {
+      ...retained.definition,
+      targetThreadId: 'intake-4',
+      status: 'PAUSED' as const,
+    };
+    await nativeWrite({ ...replacementDefinition, rrule: 'FREQ=DAILY' }, 'replacement');
+    await assert.rejects(
+      replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
+      /notification-reset-automation-changed/u,
+    );
+    await nativeWrite(replacementDefinition, 'replacement');
+    await nativeWrite(replacementDefinition, 'duplicate');
+    await assert.rejects(
+      replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
+      /notification-reset-automation-changed/u,
+    );
+    await rm(join(codexHome, 'automations', 'duplicate'), { recursive: true });
+    const recovered = await replaceCodexNotificationCoordinator(pluginData, retained, dependencies);
+    assert.equal(recovered.status, 'done');
+    const replacementSaved = JSON.parse(recovered.automation!);
+    assert.equal(replacementSaved.id, 'replacement');
+    assert.equal(replacementSaved.definition.status, 'ACTIVE');
+    assert.deepEqual(
+      await replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
+      recovered,
+    );
+    assert.equal(creates, 4);
+    await nativeWrite(replacementSaved.definition, replacementSaved.id);
+    assert.equal((await inspect()).status, 'aligned');
+    assert.equal(
+      (await inspectCodexIntake(pluginData, dependencies)).baselineAt,
+      before.baselineAt,
+    );
   });
 
   it('should create per-automation conversations and migrate only after retiring the old active schedule', async () => {

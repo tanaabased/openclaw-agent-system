@@ -594,7 +594,7 @@ export async function codexNotificationResetAutomation(
     throw new Error('notification-reset-automation-changed');
   return saved;
 }
-/** reset owns the pause and exact native retarget; no provider effects or unrelated jobs. */
+/** reset owns paused schedule replacement after native archival; no unrelated jobs. */
 export async function replaceCodexNotificationCoordinator(
   pluginData: string,
   before: SavedAutomation,
@@ -608,24 +608,31 @@ export async function replaceCodexNotificationCoordinator(
     if (before.definition.kind !== 'heartbeat')
       throw new Error('notification-reset-coordinator-missing');
     const record = selected.ledger.records.find(({ id }) => id === intakeAutomationId);
-    const actual = (await readCodexAutomations(selected.codexHome)).find(
-      ({ id }) => id === before.id,
-    );
+    const matches = pendingTargets(await readCodexAutomations(selected.codexHome), selected.scope, {
+      manifestId: intakeAutomationId,
+      mode: 'update',
+      id: before.id,
+      expected: before.definition,
+      removed: false,
+    });
+    const actual = matches[0];
     if (
       !record ||
-      record.nativeId !== before.id ||
-      !actual ||
-      actual.definition.kind !== 'heartbeat' ||
-      actual.definition.status !== 'PAUSED' ||
-      !savedMatches(
-        actual,
-        {
-          ...before.definition,
-          targetThreadId: actual.definition.targetThreadId,
-          status: 'PAUSED',
-        },
-        selected.workspace,
-      )
+      record.removed ||
+      matches.length > 1 ||
+      (record.nativeId !== before.id && record.nativeId !== actual?.id) ||
+      (actual &&
+        (actual.definition.kind !== 'heartbeat' ||
+          actual.definition.status !== 'PAUSED' ||
+          !savedMatches(
+            actual,
+            {
+              ...before.definition,
+              targetThreadId: actual.definition.targetThreadId,
+              status: 'PAUSED',
+            },
+            selected.workspace,
+          )))
     )
       throw new Error('notification-reset-automation-changed');
     const jobs = selected.jobs.filter(({ id }) => id === intakeAutomationId);
@@ -633,8 +640,23 @@ export async function replaceCodexNotificationCoordinator(
     if (!target || target === before.definition.targetThreadId)
       throw new Error('notification-reset-coordinator-not-replaced');
     const definition = { ...before.definition, targetThreadId: target };
+    // native chat archival can delete its heartbeat; the reset journal retains the create request.
+    if (!actual)
+      return {
+        status: 'native-action' as const,
+        request: {
+          tool: 'automation_update',
+          arguments: { ...definition, status: 'PAUSED', mode: 'create' },
+        },
+        instruction: 'create this paused schedule once, then repeat the same reset to verify it',
+      };
+    if (actual.definition.kind !== 'heartbeat')
+      throw new Error('notification-reset-automation-changed');
     if (actual.definition.targetThreadId !== target) {
-      if (actual.definition.targetThreadId !== before.definition.targetThreadId)
+      if (
+        actual.id !== before.id ||
+        actual.definition.targetThreadId !== before.definition.targetThreadId
+      )
         throw new Error('notification-reset-automation-changed');
       return {
         status: 'native-action' as const,
@@ -645,9 +667,13 @@ export async function replaceCodexNotificationCoordinator(
         instruction: 'retarget this paused schedule once, then repeat the same reset to verify it',
       };
     }
+    record.nativeId = actual.id;
     record.definition = definition;
     await selected.file.write(JSON.stringify(selected.ledger));
-    return { status: 'done' as const, automation: JSON.stringify({ ...before, definition }) };
+    return {
+      status: 'done' as const,
+      automation: JSON.stringify({ ...before, id: actual.id, definition }),
+    };
   });
 }
 
