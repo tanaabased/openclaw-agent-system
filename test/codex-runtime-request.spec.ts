@@ -27,6 +27,14 @@ describe('agent/codex-runtime-request', () => {
     }
   });
   it('should expose nested publication and summary operations', () => {
+    for (const operation of ['compose', 'candidate', 'publish', 'reconcile']) {
+      assert.deepEqual(
+        parse('feedback', ['reply', operation, '--plugin-data', '/private/plugin'], {
+          target: 'https://github.com/owner/repo/issues/3',
+        }).request,
+        { action: 'reply', operation, target: 'https://github.com/owner/repo/issues/3' },
+      );
+    }
     assert.deepEqual(
       parse('continuation', ['delivery', 'publish', '--plugin-data', '/private/plugin'], {
         id: 'receipt',
@@ -46,6 +54,17 @@ describe('agent/codex-runtime-request', () => {
     );
   });
   it('should reject hidden action substitution before runtime or credential access', () => {
+    assert.throws(
+      () =>
+        parse('feedback', ['reply', 'compose', '--plugin-data', '/private/plugin'], {
+          operation: 'publish',
+        }),
+      /workflow-command-action-mismatch/,
+    );
+    assert.throws(
+      () => parse('feedback', ['reply', '--plugin-data', '/private/plugin'], {}),
+      /workflow-command-operation-required/,
+    );
     for (const [route, args, request] of [
       ['delivery', ['prepare', '--plugin-data', '/private/plugin'], { action: 'publish' }],
       [

@@ -4,7 +4,7 @@ import type { GitHubNotificationPolicy } from '../channels/github/config-schema.
 
 /** the conversation owner selects composition independently of feedback admission. */
 export default function selectFeedbackStage(input: {
-  policy: GitHubNotificationPolicy;
+  policy?: GitHubNotificationPolicy;
   workflow: 'issue-assignment' | 'review-request';
   workspace: string;
   observedAt: number;
@@ -12,8 +12,8 @@ export default function selectFeedbackStage(input: {
 }) {
   const feedback =
     input.workflow === 'issue-assignment'
-      ? input.policy.issueAssignment?.feedback
-      : input.policy.reviewRequest?.feedback;
+      ? input.policy?.issueAssignment?.feedback
+      : input.policy?.reviewRequest?.feedback;
   return selectWorkflowStage({
     ...input,
     stage: 'feedback',

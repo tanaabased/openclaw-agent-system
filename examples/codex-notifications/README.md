@@ -90,6 +90,17 @@ different chat must not read them.
 
 Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the [shared installation grace period](../../CONFIG.md#shared-cleanup). Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
+For direct reply verification in a fresh native Codex task, invoke
+`agent-system-feedback-reply` for a selected disposable comment or response URL
+without activating intake. Verify one native skill selection/read, the invoking
+agent's default or configured guidance, and a retained draft with no GitHub write.
+Explicitly request publication in a later turn; verify the exact issue/thread,
+author and permalink, then reconcile without another post. In the managed issue
+chat, repeat for a retained source and verify the existing owner, selected inputs,
+results and receipts are reused. Invalid managed context must not become manual
+authority. The packaged checks below establish command/binding boundaries, not
+this desktop skill-invocation journey.
+
 The disabled-workflow fixture omits the notification schema version to exercise
 the packaged default; the active fixture retains explicit version `2`.
 
@@ -185,6 +196,17 @@ printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_dat
 node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
+test ! -d "$CODEX_HOME/automations"
+
+# should expose direct reply without intake activation while requiring an actual native caller
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+if output=$(printf '%s\n' '{"action":"reply","operation":"compose","target":"https://github.com/tanaabased/big-test-bucket/issues/1","privateText":"A supplied response."}' | env -u CODEX_THREAD_ID node "$runtime" feedback reply compose --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "reply-native-caller-required"'
+if output=$(printf '%s\n' '{"action":"reply","operation":"publish"}' | node "$runtime" feedback reply compose --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-command-action-mismatch"'
 test ! -d "$CODEX_HOME/automations"
 
 # should expose the legacy cleanup migration condition without rejecting unrelated manifest work
