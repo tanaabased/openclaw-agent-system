@@ -65,6 +65,8 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(mixed.response, /⚠️/);
     assert.match(mixed.response, /retirement-worktree-dirty/);
 
+    record.retirement!.archivedAt = 4;
+    record.retirement!.worktreeRemovedAt = 4;
     record.retired = { at: 4, by: 'operator' };
     const completed = prepareDispatchReport(current);
     assert.equal(completed.health, '');
@@ -127,6 +129,8 @@ describe('agent/codex-dispatch-report', () => {
       record.retirement!.code = code;
       assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
     }
+    record.retirement!.archivedAt = 4;
+    record.retirement!.worktreeRemovedAt = 4;
     record.retired = { at: 4, by: 'operator' };
     const recovered = prepareDispatchReport({
       ...current,
@@ -349,7 +353,7 @@ describe('agent/codex-dispatch-report', () => {
     record.feedback!.events = [{ phase: 'queued' } as never];
     assert.match(report().response, /dispatch-issue-closed/);
   });
-  it('should keep obsolete reservations quiet unless they obstruct new work or occupy capacity', () => {
+  it('should report unverified historical retirement separately from obstructing reservations', () => {
     const record = {
       id: 'legacy',
       intakeId: 'old',
@@ -374,8 +378,17 @@ describe('agent/codex-dispatch-report', () => {
         intake: currentIntake,
         state: { ...state, records: [structuredClone(record)] },
       });
-    assert.match(report().response, /DONT_NOTIFY/);
-    assert.doesNotMatch(report().response, /Historical reservations/);
+    const unverified = report();
+    assert.match(unverified.response, /retirement-legacy-unverified/);
+    assert.match(
+      prepareDispatchReport({
+        ...input,
+        intake: currentIntake,
+        state: { ...state, records: [structuredClone(record)], intakeHealth: unverified.health },
+      }).response,
+      /DONT_NOTIFY/,
+    );
+    assert.doesNotMatch(unverified.response, /Historical reservations/);
     assert.ok(record.request);
     currentIntake.records = [successor];
     const first = report();
@@ -401,7 +414,15 @@ describe('agent/codex-dispatch-report', () => {
       intake: currentIntake,
       state: { ...state, records: [record, laterRetired] },
     });
-    assert.match(finished.response, /DONT_NOTIFY/);
+    assert.match(finished.response, /retirement-legacy-unverified/);
+    assert.match(
+      prepareDispatchReport({
+        ...input,
+        intake: currentIntake,
+        state: { ...state, records: [record, laterRetired], intakeHealth: finished.health },
+      }).response,
+      /DONT_NOTIFY/,
+    );
     assert.doesNotMatch(finished.response, /Historical reservations/);
     currentIntake.records = [];
     record.reservationVersion = 1;

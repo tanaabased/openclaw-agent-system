@@ -1,4 +1,6 @@
 import { lstat } from 'node:fs/promises';
+
+import cleanupConfiguration from './cleanup-configuration.ts';
 import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 
@@ -89,6 +91,10 @@ export default async function reconcileOpenClawLifecycle(input: {
   authority: DispatchAuthority;
 }) {
   const { service, manifest, workspace, authority } = input;
+  let cleanupManifest = manifest;
+  const readConfiguration = () =>
+    cleanupConfiguration(cleanupManifest, service.dependencies.readInstallationConfig);
+  const configuration = await readConfiguration();
   const current = await service.scope(manifest, workspace);
   current.policy.policy.issueAssignment!.allowed =
     manifest.github?.notifications?.issueAssignment?.allowed ?? [];
@@ -118,6 +124,7 @@ export default async function reconcileOpenClawLifecycle(input: {
     );
     if (loaded.status !== 'loaded' || loaded.scope.workspaceDir !== workspace)
       throw new Error('retirement-workflow-changed');
+    cleanupManifest = loaded.manifest;
     const selected = await service.scope(loaded.manifest, workspace);
     current.policy.policy = selected.policy.policy;
     current.policy.policy.issueAssignment!.allowed =
@@ -146,6 +153,8 @@ export default async function reconcileOpenClawLifecycle(input: {
   };
   return current.journal.exclusive(async (state, save) => {
     await reconcileAssignmentLifecycle({
+      configuration,
+      readConfiguration,
       records: state.records,
       admitted: current.admitted.records,
       policy: current.policy,

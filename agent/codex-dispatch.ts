@@ -1,3 +1,4 @@
+import cleanupConfiguration from './cleanup-configuration.ts';
 import { nativeObject } from './automation-gateway.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
@@ -184,7 +185,11 @@ export async function runCodexDispatch(
           issueUrl: issueUrl(intake),
           caller,
           now,
-          graceMinutes: current.policy?.policy.cleanup?.graceMinutes ?? 60,
+          readConfiguration: async () =>
+            cleanupConfiguration(
+              (await selectCodexIntake(pluginData, deps)).manifest,
+              deps.readInstallationConfig,
+            ),
           save,
           fresh,
           revalidate: () =>

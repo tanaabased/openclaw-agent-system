@@ -1245,12 +1245,12 @@ describe('agent/codex-delivery', () => {
       assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
       assert.equal(announcement.posts, 1);
     });
-  it('should wait for the verified followup head without repeating the push', async () => {
+  it('should recover the verified followup head across calls without repeating the push', async () => {
     await publish();
     const previous = head;
     head = 'b'.repeat(40);
     const connect = deps.connect!;
-    let lagged = false;
+    let lagged = 0;
     deps.connect = async (...args) => {
       const connection = await connect(...args);
       const execute = connection.account.execute;
@@ -1261,11 +1261,11 @@ describe('agent/codex-delivery', () => {
           execute: async (...parameters) => {
             const result = await execute(...parameters);
             if (
-              !lagged &&
+              lagged < 5 &&
               remote === head &&
               parameters[0].some((value) => value.includes('headSha:'))
             ) {
-              lagged = true;
+              lagged++;
               return {
                 ...result,
                 stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: previous }),
@@ -1276,8 +1276,14 @@ describe('agent/codex-delivery', () => {
         },
       };
     };
+    await assert.rejects(publish(), /The pull request head does not match the verified push/);
+    assert.deepEqual((await store.read()).records[0]!.delivery!.pendingPush, {
+      previousHead: previous,
+      head,
+    });
     assert.equal((await publish()).status, 'published');
-    assert.ok(lagged);
+    assert.equal(lagged, 5);
+    assert.equal((await store.read()).records[0]!.delivery!.pendingPush, undefined);
     assert.equal(creates, 1);
     assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
   });

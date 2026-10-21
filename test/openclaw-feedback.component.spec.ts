@@ -809,7 +809,6 @@ describe('agent/openclaw-feedback', () => {
     const digest = await compose();
     input.policy.issueAssignment!.mode = 'work';
     input.policy.issueAssignment!.implementation = { skill: 'custom:implementation' };
-    input.policy.cleanup = { enabled: false, graceMinutes: 5 };
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
   });

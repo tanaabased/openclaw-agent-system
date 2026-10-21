@@ -475,6 +475,11 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
     status: 'valid',
     manifest: {
       ...manifest,
+      ...(value.github?.notifications?.cleanup === undefined
+        ? {}
+        : {
+            cleanupMigration: { declaration: { ...value.github.notifications.cleanup } },
+          }),
       ...(host?.setup?.status === 'valid' ? { setupHost: host.setup.setup } : {}),
       ...(agent?.setup?.status === 'valid' ? { setup: agent.setup.setup } : {}),
     },
@@ -489,6 +494,16 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       : {}),
     diagnostics: [
       ...notificationDiagnostics,
+      ...(value.github?.notifications?.cleanup === undefined
+        ? []
+        : [
+            {
+              code: 'retirement-cleanup-migration-required',
+              fieldPath: '/github/notifications/cleanup',
+              severity: 'warning' as const,
+              message: `Legacy cleanup declaration ${JSON.stringify(value.github.notifications.cleanup)} holds automatic cleanup. Choose cleanup.grace-minutes in the installation config.yaml, then deliberately remove every github.notifications.cleanup block, including overlays. Removing enabled: false opts this agent into normal safe cleanup.`,
+            },
+          ]),
       ...githubFeedbackCompatibilityDiagnostics(value.github?.notifications),
       ...(isRecord(value) && Object.hasOwn(value, 'setup')
         ? [

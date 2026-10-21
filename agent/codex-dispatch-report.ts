@@ -1,3 +1,5 @@
+import { unverifiedLegacyRetirement } from './assignment-retirement.ts';
+import retirementNotice from './retirement-notice.ts';
 import codexFeedbackProblem from './codex-feedback-problem.ts';
 import workflowStatus from './workflow-status.ts';
 import discoveryNotice from './discovery-notice.ts';
@@ -33,15 +35,17 @@ export default function prepareDispatchReport(input: {
     (record) => !record.retired && !record.retirement && !record.reset,
   );
   const retiring = state.records.filter((record) => record.retirement && !record.retired);
-  const retirementProblems = retiring.filter(
+  const retirementProblems = state.records.filter(
     (record) =>
-      record.retirement!.code &&
-      (record.retirement!.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
-      ![
-        'retirement-awaiting-reactivation',
-        'retirement-native-inventory-required',
-        'retirement-native-archive-pending',
-      ].includes(record.retirement!.code),
+      unverifiedLegacyRetirement(record) ||
+      (!record.retired &&
+        record.retirement?.code &&
+        (record.retirement.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
+        ![
+          'retirement-awaiting-reactivation',
+          'retirement-native-inventory-required',
+          'retirement-native-archive-pending',
+        ].includes(record.retirement.code)),
   );
   const managing = active.filter((record) => record.effective && record.threadId);
   const waitingIssues = new Set(
@@ -111,8 +115,11 @@ export default function prepareDispatchReport(input: {
     })),
     ...retirementProblems.map((record) => ({
       id: record.id,
-      code: record.retirement!.code!,
+      code: unverifiedLegacyRetirement(record)
+        ? 'retirement-legacy-unverified'
+        : record.retirement!.code!,
       operation: 'retirement cleanup',
+      diagnostic: record.retirement?.diagnostic,
     })),
     ...problems.map((record) => ({
       id: record.id,
@@ -132,6 +139,14 @@ export default function prepareDispatchReport(input: {
       providerDiagnostic: 'providerDiagnostic' in failure ? failure.providerDiagnostic : undefined,
       changed: false,
     }),
+    ...(failure.code.startsWith('retirement-')
+      ? retirementNotice(
+          failure.code,
+          'diagnostic' in failure && typeof failure.diagnostic === 'string'
+            ? failure.diagnostic
+            : undefined,
+        )
+      : {}),
     ...(failure.id.startsWith('deferred-')
       ? {
           severity: 'warning' as const,

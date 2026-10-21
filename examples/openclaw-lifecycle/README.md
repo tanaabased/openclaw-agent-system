@@ -16,6 +16,11 @@ openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
+# should select one shared installation grace for both agent workspaces
+install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
+cp "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/keys" "$HOME/.ssh"
 GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
@@ -266,10 +271,23 @@ jq -es --arg id "$(jq -er .id "$TMPDIR/notification-feedback.json")" '[.[].recor
 jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].stageReceipt == .[1].stageReceipt' "$TMPDIR/notification-feedback.json" "$TMPDIR/notification-replayed.json"
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
-# should retire a closed fixture after external worktree cleanup and preserve its plan
+# should hold legacy opt-outs without archiving the closed fixture
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
+sed 's/    interval-minutes: 1440/    interval-minutes: 1440\n    cleanup: {enabled: false}/' "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml" > "$TMPDIR/legacy-cleanup.yaml"
+mv "$TMPDIR/legacy-cleanup.yaml" "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml"
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+sleep 61
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
+jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and (.[0] | .retirement.code == "retirement-cleanup-migration-required" and .retired == null and .retirement.archivedAt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived != true and .session.archivedAt == null'
+
+# should resolve migration explicitly before retiring externally cleaned work
+sed '/    cleanup: {enabled: false}/d' "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml" > "$TMPDIR/migrated-cleanup.yaml"
+mv "$TMPDIR/migrated-cleanup.yaml" "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
 worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
 repository_id=$(openclaw agent-system tool worktree -- list | jq -er --arg path "$worktree" '.[] | select(.path == $path) | .repositoryId')

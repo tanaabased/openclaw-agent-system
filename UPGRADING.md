@@ -47,6 +47,30 @@ If Node's executable path changed, also align the managed service's runtime;
 [OpenClaw updates](https://docs.openclaw.ai/cli/update) for installation-method
 and service-runtime details.
 
+## Shared cleanup policy
+
+`github.notifications.cleanup` is no longer active configuration. Every explicit
+legacy block, including `{}`, default values, and `enabled: false`, holds that
+agent's automatic cleanup while unrelated issue work remains usable.
+
+1. Inspect each agent's `agent.yaml` and sibling overlays for cleanup declarations.
+2. Choose one installation grace using [shared cleanup settings](./CONFIG.md#shared-cleanup).
+   Conflicting agent values are not imported or combined automatically. Omission
+   means 60 minutes; there is no replacement disable switch.
+3. Deliberately remove every legacy `github.notifications.cleanup` block. Removing
+   `enabled: false` opts that agent into normal safe automatic cleanup.
+4. Inspect the manifest diagnostics and retained retirement state on the next
+   intake check. Resolve `retirement-cleanup-migration-required` or shared-file
+   diagnostics before expecting resource reclamation. No re-admission or new chat
+   is required for this configuration change.
+
+Existing deadlines and uncertain cleanup receipts remain intact. Retirement first
+observed while settings are blocked starts its grace only after configuration is
+usable. Older terminal records without verified native completion are reported as
+`retirement-legacy-unverified` and preserved; this upgrade does not sweep or revive
+historically retired resources. Exact native/operator recovery is required for those
+resources, subject to ownership and work preservation.
+
 ## Managed collaboration
 
 Ordinary install defaults to `auto` (registered managed agents). `all` now includes
