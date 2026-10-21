@@ -118,10 +118,11 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 status=0
-node "$runtime" notifications reset --plugin-data "$root/uncreated-reset-data" > "$root/reset-result.json" <<'JSON' || status=$?
+node "$runtime" notifications reset --plugin-data "$root/uncreated-reset-data" > "$root/reset-stdout.txt" 2> "$root/reset-result.json" <<'JSON' || status=$?
 {"yes":true}
 JSON
 test "$status" -ne 0
+test ! -s "$root/reset-stdout.txt"
 jq -e '.code == "notification-reset-explicit-bound-agent-required"' "$root/reset-result.json"
 test ! -e "$root/uncreated-reset-data"
 

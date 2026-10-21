@@ -287,9 +287,9 @@ openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(
 
 # should reset retired management state and restore the installed intake setting
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
-openclaw agent-system notifications reset --agent tanaabot --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'
+openclaw agent-system notifications reset --agent lifecycle-tanaabot --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'
 jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-openclaw agent-system notifications status --agent tanaabot --json | jq -e '.baseline.status == "ready" and (.items | length) == 0'
+openclaw agent-system notifications status --agent lifecycle-tanaabot --json | jq -e '.baseline.status == "ready" and (.items | length) == 0'
 
 # should admit another disposable issue for unavailable-session retirement
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
