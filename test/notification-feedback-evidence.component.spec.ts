@@ -93,6 +93,7 @@ for (const [scenario, itemType] of [
             ? ['summary', ...(scenario === 'openclaw-lifecycle' ? ['refreshed-summary'] : [])]
             : [];
         await write('feedback', {
+          ...(itemType === 'issue' ? { claimId: 90 } : {}),
           assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
@@ -111,17 +112,30 @@ for (const [scenario, itemType] of [
         });
         await write('feedback-source', { node_id: 'source' });
         const replies = [
-          ...summaries.map((node_id) => ({
+          ...(itemType === 'issue'
+            ? [
+                {
+                  id: 90,
+                  node_id: 'claim',
+                  user: { login: 'tanaabot' },
+                  body: 'Assignment accepted on test-machine.',
+                },
+              ]
+            : []),
+          ...summaries.map((node_id, index) => ({
+            id: 91 + index,
             node_id,
             user: { login: 'tanaabot' },
             body: 'Proposed plan.',
           })),
           {
+            id: 98,
             node_id: 'source',
             user: { login: 'emoriwan' },
             body: 'Question',
           },
           {
+            id: 99,
             node_id: 'reply',
             html_url: 'https://github.com/owner/repo/issues/3#issuecomment-99',
             user: { login: 'tanaabot' },
@@ -138,7 +152,12 @@ for (const [scenario, itemType] of [
         assert.equal(valid.status, 0, valid.stderr);
         await write('feedback-replies', [
           ...replies,
-          { node_id: 'unexpected-reply', user: { login: 'tanaabot' }, body: 'Public answer.' },
+          {
+            id: 100,
+            node_id: 'unexpected-reply',
+            user: { login: 'tanaabot' },
+            body: 'Public answer.',
+          },
         ]);
         assert.notEqual(execute().status, 0);
         await write('feedback-replies', replies);
