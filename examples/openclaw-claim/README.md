@@ -8,6 +8,8 @@ Strict AIMock supplies model responses through one shared model fixture; GitHub,
 
 ```bash
 # should prepare the packed plugin and strict notification fixture
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 touch "$TMPDIR/notification-assessments-held"
 openclaw-aimock prepare --scenario openclaw-intake
@@ -16,6 +18,8 @@ openclaw config set skills.workshop.autonomous.mode off
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
 # should prepare the agent with provider-verified identity pins
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-claim/tanaabot/keys" "$HOME/.ssh"
 GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
 GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id' > "$TMPDIR/notification-actor-node"
@@ -33,14 +37,18 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 
 # should install emori in its fixture workspace
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 set -o pipefail
 registration_diagnostics() {
   registration_status=$?
   if test "$registration_status" -ne 0; then
-    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
+    node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" emori || true
   fi
   exit "$registration_status"
 }
@@ -49,11 +57,13 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-claim/emori"
 openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
 
 # should install tanaabot and activate native intake with explicit dispatch enrollment
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 set -o pipefail
 activation_diagnostics() {
   activation_status=$?
   if test "$activation_status" -ne 0; then
-    node --import tsx "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
+    node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/registration-evidence.ts" tanaabot || true
     gateway_log=$(openclaw-gateway log-path) || true
     gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
     openclaw config get gateway --json | jq -c '{reloadMode: (.reload.mode // "hybrid")}' || true
@@ -71,9 +81,12 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 touch "$TMPDIR/notification-activation-ready"
 
 # should prepare a second installation without copying private identity or dispatch state
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 declare -px OPENCLAW_PROFILE OPENCLAW_CONFIG_PATH OPENCLAW_STATE_DIR OPENCLAW_WORKSPACE SETUP_OPENCLAW_STATE_DIR XDG_CONFIG_HOME DBUS_SESSION_BUS_ADDRESS > "$TMPDIR/claim-primary.env"
 printf '%s\n' "$GITHUB_WORKSPACE/examples/openclaw-claim/tanaabot" > "$TMPDIR/claim-primary.workspace"
-openclaw config get models --json > "$TMPDIR/claim-models.json"
+set -o pipefail
+openclaw config get models --json | jq -e '.providers.aimock.apiKey = "test"' > "$TMPDIR/claim-models.json"
 mkdir -p "$TMPDIR/claim-secondary/tanaabot/keys"
 # separate workspaces are part of the two-installation contract
 cp "$GITHUB_WORKSPACE/examples/openclaw-claim/tanaabot/agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-claim/tanaabot/IDENTITY.md" "$TMPDIR/claim-secondary/tanaabot/"
@@ -93,6 +106,8 @@ openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 
 # should activate independent intake before the shared assignment exists
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 set -o pipefail
 set -a
 source "$TMPDIR/claim-secondary.env"
@@ -107,6 +122,8 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 ```bash
 # should assign one disposable issue after both safe baselines
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 source "$TMPDIR/claim-primary.env"
 cd "$GITHUB_WORKSPACE/examples/openclaw-claim/emori"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System dual native claim flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-claim/issue.md" > "$TMPDIR/notification-issue-1.json"
@@ -115,6 +132,8 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
 # should run both first occurrences without preparing native work
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 for instance in primary secondary; do
   (
@@ -123,8 +142,8 @@ for instance in primary secondary; do
     source "$TMPDIR/claim-$instance.env"
     set +a
     cd "$(cat "$TMPDIR/claim-$instance.workspace")"
-    run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-    node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+    run_id=$(node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+    node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
     jq -es '[.[].records[]] | length == 1 and all(.[]; .request == null and .threadId == null and .worktree == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
     openclaw agent-system tool worktree -- list | jq -e 'length == 0'
     jq '{instanceId,displayName}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json" > "$TMPDIR/claim-$instance.identity.json"
@@ -143,6 +162,8 @@ cd "$(cat "$TMPDIR/claim-primary.workspace")"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e '[.[] | select(.user.login == "tanaabot" and (.body | startswith("Assignment claim registered on ")))] | select(length >= 1 and length <= 2)' > "$TMPDIR/claim-before.json"
 
 # should let only one installation prepare native work on later occurrences
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 for instance in primary secondary; do
   (
@@ -151,8 +172,8 @@ for instance in primary secondary; do
     source "$TMPDIR/claim-$instance.env"
     set +a
     cd "$(cat "$TMPDIR/claim-$instance.workspace")"
-    run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-    node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+    run_id=$(node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+    node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
     jq -es --arg instance "$instance" '[.[].records[]] | if length == 1 then .[0] + {instance:$instance} else error("one admitted record per installation required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/claim-$instance-record.json"
     openclaw agent-system tool worktree -- list > "$TMPDIR/claim-$instance-worktree.json"
   ) > "$TMPDIR/claim-$instance-second.log" 2>&1 &
@@ -181,6 +202,8 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 jq -e --slurpfile owner "$TMPDIR/claim-native-owner.json" --slurpfile identity "$TMPDIR/claim-$winner.identity.json" '.id == $owner[0].claimId and (.body | contains($identity[0].instanceId))' "$TMPDIR/claim-accepted.json"
 
 # should complete a real assessment turn only in the winning session
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 winner=$(jq -er .instance "$TMPDIR/claim-native-owner.json")
 set -a
 source "$TMPDIR/claim-$winner.env"
@@ -189,10 +212,12 @@ cd "$(cat "$TMPDIR/claim-$winner.workspace")"
 receipt=$(jq -er .id "$TMPDIR/claim-native-owner.json")
 touch "$TMPDIR/notification-assessment-released-$receipt"
 assessment_run=$(jq -er .assessmentTurn.runId "$TMPDIR/claim-native-owner.json")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 300000
+node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 300000
 jq -es '[.[].records[]] | length == 1 and all(.[]; .result.outcome == "plan-ready" and .resultTurnId == .assessmentTurn.runId)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should preserve the sole native owner after restarting both installations
+test ! -e "$TMPDIR/claim-stage-failed"
+trap 'touch "$TMPDIR/claim-stage-failed"' ERR
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 for instance in primary secondary; do
   (
@@ -203,8 +228,8 @@ for instance in primary secondary; do
     openclaw-gateway restart
     jq '{instanceId,displayName}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json" | diff - "$TMPDIR/claim-$instance.identity.json"
     cd "$(cat "$TMPDIR/claim-$instance.workspace")"
-    run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-    node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+    run_id=$(node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+    node --import "$GITHUB_WORKSPACE/node_modules/tsx/dist/loader.mjs" "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
     jq -es --arg instance "$instance" '[.[].records[]] | if length == 1 then .[0] + {instance:$instance} else error("one retained record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/claim-$instance-after.json"
     openclaw agent-system tool worktree -- list | jq -S 'sort_by(.path)' > "$TMPDIR/claim-$instance-worktree-after.json"
     jq -S 'sort_by(.path)' "$TMPDIR/claim-$instance-worktree.json" | diff - "$TMPDIR/claim-$instance-worktree-after.json"
@@ -228,7 +253,7 @@ jq -n --slurpfile primary "$TMPDIR/claim-primary.identity.json" --slurpfile seco
 
 ## Cleanup
 
-Stop both Gateways before changing the shared fixture or its SSH key. Every wait is bounded. The winning claim remains on the closed issue.
+A failed setup or test blocks dependent steps while cleanup still runs. Stop both Gateways before changing the shared fixture or its SSH key. Every wait is bounded. The winning claim remains on the closed issue.
 
 ```bash
 # should stop both isolated gateways before changing external fixture state
