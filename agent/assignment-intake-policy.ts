@@ -23,6 +23,8 @@ export default function assignmentIntakePolicy(
     policy,
     username,
     digest: digest(notificationAuthority),
-    legacyDigest: digest(legacyNotificationAuthority),
+    legacyDigest: digest((policy) =>
+      legacyNotificationAuthority(policy, manifest.cleanupMigration?.declaration.enabled ?? true),
+    ),
   };
 }

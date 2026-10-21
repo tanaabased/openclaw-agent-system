@@ -157,7 +157,6 @@ describe('assignment feedback reactivation', () => {
     assert.equal(await h.run(), true);
     h.provider.policy.intervalMinutes += 1;
     h.provider.policy.maxConcurrentItems += 1;
-    h.provider.policy.cleanup = { enabled: false, graceMinutes: 30 };
     h.provider.policy.issueAssignment!.mode = 'work';
     await revalidateFeedbackAssignment(h.input.policy, h.input.intake, h.provider.client, h.record);
     assert.equal(await h.run(), true);

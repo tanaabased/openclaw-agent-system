@@ -1,3 +1,4 @@
+import { unverifiedLegacyRetirement } from './assignment-retirement.ts';
 import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
@@ -33,14 +34,24 @@ export default function openclawIntakeReport(input: {
     (record) => record.retirement && !record.retired && !record.reset,
   );
   const retirementPending = retiring.length;
-  const retirementNotices = retiring
-    .filter((record) => record.retirement?.code)
-    .map((record) => ({
-      record,
-      notice:
-        retirementNotice(record.retirement!.code!) ??
-        retirementNotice('retirement-check-unavailable')!,
-    }));
+  const retirementNotices = state.records
+    .filter(
+      (record) =>
+        !record.reset &&
+        (unverifiedLegacyRetirement(record) || (!record.retired && record.retirement?.code)),
+    )
+    .map((record) => {
+      const code = unverifiedLegacyRetirement(record)
+        ? 'retirement-legacy-unverified'
+        : record.retirement!.code!;
+      return {
+        record,
+        code,
+        notice:
+          retirementNotice(code, record.retirement?.diagnostic) ??
+          retirementNotice('retirement-check-unavailable')!,
+      };
+    });
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
   const capacity = dispatchCapacity(state.records, input.slots);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
@@ -49,7 +60,7 @@ export default function openclawIntakeReport(input: {
   const failures = [
     ...retirementNotices
       .filter(({ notice }) => notice.severity !== 'info')
-      .map(({ record }) => ({ id: record.id, code: record.retirement!.code! })),
+      .map(({ record, code }) => ({ id: record.id, code })),
     ...(observation.status === 'blocked'
       ? [{ id: 'intake', code: observation.code ?? 'intake-check-incomplete' }]
       : []),

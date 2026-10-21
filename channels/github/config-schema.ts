@@ -155,7 +155,6 @@ export interface GitHubNotificationPolicy {
   runtimes: Array<'openclaw' | 'codex'>;
   intervalMinutes: number;
   maxConcurrentItems: number;
-  cleanup?: { enabled: boolean; graceMinutes: number };
   allowedRepositoryOwners: GitHubIdentityPin[];
   issueAssignment?: {
     paused?: boolean;
@@ -212,10 +211,6 @@ export function decodeGitHubNotifications(
     runtimes: value.runtimes ?? ['openclaw', 'codex'],
     intervalMinutes: value['interval-minutes'] ?? 5,
     maxConcurrentItems: value['max-concurrent-items'] ?? 3,
-    cleanup: {
-      enabled: value.cleanup?.enabled ?? true,
-      graceMinutes: value.cleanup?.['grace-minutes'] ?? 60,
-    },
     allowedRepositoryOwners: value['allowed-repository-owners'].map(decodeIdentity),
     ...(value['issue-assignment'] === undefined
       ? {}

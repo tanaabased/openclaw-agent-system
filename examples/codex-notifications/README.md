@@ -88,7 +88,7 @@ show the user journey and documentation/test impact without the engineering sour
 Implementation context must still receive the complete saved assessment and plan; a
 different chat must not read them.
 
-Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the configured grace period. Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
+Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the [shared installation grace period](../../CONFIG.md#shared-cleanup). Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
 
 The disabled-workflow fixture omits the notification schema version to exercise
 the packaged default; the active fixture retains explicit version `2`.
@@ -102,6 +102,11 @@ mkdir -p "$root/package"
 tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
 codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
 codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
+
+# should choose grace in the shared isolated installation rather than agent manifests
+install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
+cp "$GITHUB_WORKSPACE/examples/codex-notifications/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
 ```
 
 ## Testing
@@ -162,6 +167,17 @@ node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
+
+# should expose the legacy cleanup migration condition without rejecting unrelated manifest work
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+sed 's/    schema-version: 2/    schema-version: 2\n    cleanup: {enabled: false, grace-minutes: 30}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/legacy-agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" "$root/original-agent.yaml"
+cp "$root/legacy-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and any(.manifest.diagnostics[]; .code == "retirement-cleanup-migration-required")'
+cp "$root/original-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and all(.manifest.diagnostics[]; .code != "retirement-cleanup-migration-required")'
 
 # should reject removed global feedback before binding or activation
 root="$TMPDIR/agent-system-codex-notifications"
@@ -312,7 +328,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/before-timing.json"
-sed 's/    schema-version: 2/    schema-version: 2\n    interval-minutes: 17\n    max-concurrent-items: 8\n    cleanup: {enabled: true, grace-minutes: 30}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/timing-agent.yaml"
+sed 's/    schema-version: 2/    schema-version: 2\n    interval-minutes: 17\n    max-concurrent-items: 8/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/timing-agent.yaml"
 mv "$root/timing-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/after-timing.json"
 jq -es '.[0].actions[0].expected.prompt as $before | .[1].actions[0].expected | (.prompt != null and .prompt == $before) and (.rrule | contains("INTERVAL=17"))' "$root/before-timing.json" "$root/after-timing.json"

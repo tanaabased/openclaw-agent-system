@@ -30,8 +30,6 @@ github:
   notifications:
     runtimes: [openclaw]
     interval-minutes: 1440
-    cleanup:
-      grace-minutes: 0
     allowed-repository-owners:
       - login: tanaabased
         node-id: __OWNER_NODE_ID__

@@ -1,4 +1,11 @@
-import assignmentRetirement, { type Retirement } from './assignment-retirement.ts';
+import {
+  cleanupConfigurationDiagnostic,
+  type CleanupConfiguration,
+} from './cleanup-configuration.ts';
+import assignmentRetirement, {
+  unverifiedLegacyRetirement,
+  type Retirement,
+} from './assignment-retirement.ts';
 import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -29,6 +36,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   client: GitHubNotificationIntakeClient;
   owner: string;
   now: number;
+  configuration: CleanupConfiguration;
+  readConfiguration(): Promise<CleanupConfiguration>;
   observe(record: R): Promise<RetirementNativeObservation | undefined>;
   cleanup(
     record: R,
@@ -42,7 +51,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   save(): Promise<void>;
 }) {
   const { now, client, policy } = input;
-  const configuration = policy.policy.cleanup ?? { enabled: true, graceMinutes: 60 };
+  const configuration = input.configuration;
+  const graceMinutes = configuration.status === 'ready' ? configuration.graceMinutes : undefined;
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
   const selected = input.records
     .filter((record) => !record.reset && !record.retired && record.sourceThreadId === input.owner)
@@ -128,8 +138,10 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         reason === 'assignment-removed' &&
         removal &&
         record.retirement!.removalEventId !== record.assignmentObservation?.event?.nodeId
-      )
-        record.retirement!.eligibleAt = now + configuration.graceMinutes * 60_000;
+      ) {
+        if (graceMinutes === undefined) record.retirement!.deadlinePending = true;
+        else record.retirement!.eligibleAt = now + graceMinutes * 60_000;
+      }
       // provider closure or approved removal can stop scheduling without a native observation.
       if (reason)
         record.retirement = assignmentRetirement({
@@ -137,7 +149,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           reason,
           intakeId: latest.get(record.issueKey)?.id ?? record.intakeId,
           now,
-          graceMinutes: configuration.graceMinutes,
+          graceMinutes,
         });
       if (reason === 'assignment-removed')
         record.retirement!.removalEventId = record.assignmentObservation!.event!.nodeId;
@@ -152,8 +164,10 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           ).code;
         continue;
       }
-      if (record.retirement && record.nativeInactive === false && native?.idle)
-        record.retirement.eligibleAt = now + configuration.graceMinutes * 60_000;
+      if (record.retirement && record.nativeInactive === false && native?.idle) {
+        if (graceMinutes === undefined) record.retirement.deadlinePending = true;
+        else record.retirement.eligibleAt = now + graceMinutes * 60_000;
+      }
       if (native && !native.unavailableSession && (record.retirement || native.archived))
         record.nativeInactive = native.idle;
       if (reason === 'issue-closed' || native?.archived) delete record.feedbackReactivation;
@@ -216,7 +230,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
             : reason,
         intakeId: successor?.id ?? record.intakeId,
         now,
-        graceMinutes: configuration.graceMinutes,
+        graceMinutes,
         activityId: native?.activityId,
       });
       if (!record.retirement) continue;
@@ -235,15 +249,15 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement.code = 'retirement-awaiting-reactivation';
         continue;
       }
-      if (configuration.enabled && now < record.retirement.eligibleAt) continue;
-      if (record.request && !native?.idle && !native?.unavailableSession) {
-        record.retirement.code = 'retirement-native-work-unresolved';
+      if (configuration.status === 'blocked') {
+        record.retirement.code = configuration.code;
+        record.retirement.diagnostic = cleanupConfigurationDiagnostic(configuration);
         continue;
       }
-      if (!configuration.enabled) {
-        await input.fresh();
-        if ((await provider()) !== reason) throw new Error('retirement-observation-changed');
-        record.retired = { at: now, by: input.owner };
+      delete record.retirement.diagnostic;
+      if (now < record.retirement.eligibleAt) continue;
+      if (record.request && !native?.idle && !native?.unavailableSession) {
+        record.retirement.code = 'retirement-native-work-unresolved';
         continue;
       }
       const shared = input.records.filter(
@@ -258,16 +272,27 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement.worktreeRemovedAt = reclaimed.retirement.worktreeRemovedAt;
       const fresh = async () => {
         await input.fresh();
+        const current = await input.readConfiguration();
+        if (current.status === 'blocked') {
+          record.retirement!.diagnostic = cleanupConfigurationDiagnostic(current);
+          throw new Error(current.code);
+        }
+        if (current.digest !== configuration.digest)
+          throw new Error('retirement-configuration-changed');
         // pending owners can archive independently; active or unknown owners still fence reclamation.
         if (shared.length > 12) throw new Error('retirement-worktree-shared');
         for (const other of shared) {
-          if (other.retired) continue;
+          if (other.retired) {
+            if (unverifiedLegacyRetirement(other)) throw new Error('retirement-worktree-shared');
+            continue;
+          }
           const otherIntake = input.admitted.find((item) => item.id === other.intakeId);
           if (
             other.sourceThreadId !== input.owner ||
             other.reset ||
             !otherIntake ||
             !other.retirement ||
+            other.retirement.deadlinePending ||
             now < other.retirement.eligibleAt
           )
             throw new Error('retirement-worktree-shared');

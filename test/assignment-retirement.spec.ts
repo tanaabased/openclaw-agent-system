@@ -1,3 +1,4 @@
+import { parseInstallationConfig, type InstallationConfig } from '../core/installation-config.ts';
 import assert from 'node:assert/strict';
 import assignmentRetirement from '../agent/assignment-retirement.ts';
 import reconcile from '../agent/reconcile-assignment-lifecycle.ts';
@@ -38,10 +39,21 @@ function setup() {
   let activityId = 'turn-1';
   let failure = false;
   let beforeRecheck = () => {};
+  const settings: {
+    value:
+      | InstallationConfig
+      | {
+          status: 'blocked';
+          code: 'retirement-cleanup-migration-required';
+          legacy: { declaration: { enabled: boolean } };
+        };
+  } = { value: parseInstallationConfig(undefined, '/installation/config.yaml') };
   const records = [record];
   const admissions = [admitted];
   const run = () =>
     reconcile({
+      configuration: settings.value,
+      readConfiguration: async () => settings.value,
       records,
       admitted: admissions,
       policy: {
@@ -68,6 +80,7 @@ function setup() {
     });
   return {
     fixture,
+    settings,
     record,
     admitted,
     records,
@@ -101,11 +114,16 @@ describe('assignment retirement', () => {
       const h = setup();
       h.record.worktree = '/managed/issue';
       h.fixture.item.state = 'closed';
-      h.fixture.policy.cleanup = { enabled: true, graceMinutes: 0 };
+      h.settings.value = parseInstallationConfig(
+        'schema-version: 1\ncleanup: {grace-minutes: 0}',
+        '/installation/config.yaml',
+      );
       if (shared)
         h.records.push({ ...h.record, id: 'active-peer', sourceThreadId: 'different-owner' });
       let removals = 0;
       await reconcile({
+        configuration: h.settings.value,
+        readConfiguration: async () => h.settings.value,
         records: h.records,
         admitted: h.admissions,
         policy: {
@@ -175,7 +193,11 @@ describe('assignment retirement', () => {
           now: baseline,
           graceMinutes: 0,
         });
-      h.fixture.policy.cleanup = { enabled: false, graceMinutes: 0 };
+      h.settings.value = {
+        status: 'blocked',
+        code: 'retirement-cleanup-migration-required',
+        legacy: { declaration: { enabled: false } },
+      };
       await h.run();
       h.advance(120);
       await h.run();
@@ -363,16 +385,98 @@ describe('assignment retirement', () => {
     await h.run();
     assert.equal(h.cleanups(), 1);
   });
-  it('should use a configurable grace period and preserve resources when cleanup is disabled', async () => {
+  it('should hold legacy cleanup declarations without falsely reporting retirement', async () => {
     const h = setup();
-    h.fixture.policy.cleanup = { enabled: false, graceMinutes: 30 };
+    h.settings.value = {
+      status: 'blocked',
+      code: 'retirement-cleanup-migration-required',
+      legacy: { declaration: { enabled: false } },
+    };
     h.fixture.item.state = 'closed';
     await h.run();
     h.advance(30);
     await h.run();
-    assert.ok(h.record.retired);
+    assert.equal(h.record.retired, undefined);
+    assert.equal(h.record.retirement?.code, 'retirement-cleanup-migration-required');
     assert.equal(h.cleanups(), 0);
   });
+  it('should begin a full shared grace only after migration is resolved', async () => {
+    const h = setup();
+    h.settings.value = {
+      status: 'blocked',
+      code: 'retirement-cleanup-migration-required',
+      legacy: { declaration: { enabled: false } },
+    };
+    h.fixture.item.state = 'closed';
+    await h.run();
+    h.advance(120);
+    await h.run();
+    assert.equal(h.record.retirement?.deadlinePending, true);
+    h.settings.value = parseInstallationConfig(
+      'schema-version: 1\ncleanup: {grace-minutes: 17}',
+      '/installation/config.yaml',
+    );
+    h.advance(1);
+    await h.run();
+    assert.equal(h.record.retirement?.eligibleAt, baseline + 138 * 60_000);
+    assert.equal(h.cleanups(), 0);
+    h.advance(17);
+    await h.run();
+    assert.equal(h.cleanups(), 1);
+    assert.ok(h.record.retired);
+  });
+
+  it('should preserve an existing deadline through a configuration hold and grace edits', async () => {
+    const h = setup();
+    h.fixture.item.state = 'closed';
+    await h.run();
+    const deadline = h.record.retirement!.eligibleAt;
+    h.settings.value = { status: 'blocked', code: 'retirement-configuration-invalid' };
+    h.advance(60);
+    await h.run();
+    assert.equal(h.record.retirement?.eligibleAt, deadline);
+    assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
+    assert.equal(h.cleanups(), 0);
+    h.settings.value = parseInstallationConfig(
+      'schema-version: 1\ncleanup: {grace-minutes: 43200}',
+      '/installation/config.yaml',
+    );
+    h.advance(1);
+    await h.run();
+    assert.equal(h.record.retirement?.eligibleAt, deadline);
+    assert.equal(h.cleanups(), 1);
+  });
+
+  it('should defer a resource effect when settings change at its final recheck', async () => {
+    const h = setup();
+    h.fixture.item.state = 'closed';
+    await h.run();
+    h.advance(60);
+    h.beforeRecheck(() => {
+      h.settings.value = parseInstallationConfig(
+        'schema-version: 1\ncleanup: {grace-minutes: 0}',
+        '/installation/config.yaml',
+      );
+    });
+    await h.run();
+    assert.equal(h.cleanups(), 0);
+    assert.equal(h.record.retirement?.code, 'retirement-configuration-changed');
+    h.advance(1);
+    await h.run();
+    assert.equal(h.cleanups(), 1);
+  });
+
+  it('should preserve historically retired resources without enqueueing a cleanup sweep', async () => {
+    const h = setup();
+    h.record.retired = { at: baseline, by: 'intake' };
+    h.fixture.item.state = 'closed';
+    h.advance(120);
+    await h.run();
+    assert.equal(h.cleanups(), 0);
+    assert.equal(h.record.retirement, undefined);
+    assert.deepEqual(h.record.retired, { at: baseline, by: 'intake' });
+  });
+
   it('should suppress old admission while pending but admit fresh work after manual archival', async () => {
     const h = setup();
     h.setArchived();
@@ -405,6 +509,11 @@ describe('assignment retirement', () => {
       assert.equal(h.record.retirement?.code, 'retirement-worktree-shared');
       assert.equal(h.cleanups(), 0);
       assert.equal(h.record.retired, undefined);
+      other.retirement = {
+        ...h.record.retirement!,
+        archivedAt: baseline + 3_600_000,
+        worktreeRemovedAt: baseline + 3_600_000,
+      };
       other.retired = { at: baseline + 3_600_000, by: 'other-intake' };
       other.nativeInactive = true;
       h.advance(1);
@@ -423,6 +532,8 @@ describe('assignment retirement', () => {
     let now = baseline;
     const run = () =>
       reconcile({
+        configuration: h.settings.value,
+        readConfiguration: async () => h.settings.value,
         records: h.records,
         admitted: h.admissions,
         policy: {
@@ -458,7 +569,14 @@ describe('assignment retirement', () => {
     assert.equal(removals, 1);
     assert.ok(h.records.every((record) => record.retired));
   });
-  for (const condition of ['busy', 'unknown', 'grace', 'reactivated'] as const) {
+  for (const condition of [
+    'busy',
+    'unknown',
+    'grace',
+    'reactivated',
+    'migration',
+    'legacy',
+  ] as const) {
     it(`should keep a shared checkout when a pending peer is ${condition}`, async () => {
       const h = setup();
       h.fixture.item.state = 'closed';
@@ -466,9 +584,13 @@ describe('assignment retirement', () => {
       await h.run();
       const other = { ...structuredClone(h.record), id: 'second' };
       if (condition === 'grace') other.retirement!.eligibleAt += 60_000;
+      if (condition === 'migration') other.retirement!.deadlinePending = true;
+      if (condition === 'legacy') other.retired = { at: baseline, by: 'old-owner' };
       h.records.push(other);
       let cleanups = 0;
       await reconcile({
+        configuration: h.settings.value,
+        readConfiguration: async () => h.settings.value,
         records: h.records,
         admitted: h.admissions,
         policy: {
@@ -496,12 +618,20 @@ describe('assignment retirement', () => {
         },
       });
       assert.equal(cleanups, 0);
-      assert.ok(h.records.every((record) => !record.retired));
+      assert.ok(
+        h.records
+          .filter((record) => condition !== 'legacy' || record.id !== 'second')
+          .every((record) => !record.retired),
+      );
     });
   }
-  it('should retain observation of busy work even when automatic cleanup is disabled', async () => {
+  it('should retain observation of busy work while cleanup migration is unresolved', async () => {
     const h = setup();
-    h.fixture.policy.cleanup = { enabled: false, graceMinutes: 60 };
+    h.settings.value = {
+      status: 'blocked',
+      code: 'retirement-cleanup-migration-required',
+      legacy: { declaration: { enabled: false } },
+    };
     removeFixtureAssignment(h.fixture);
     h.setBusy(true);
     await h.run();
@@ -509,7 +639,8 @@ describe('assignment retirement', () => {
     h.setBusy(false);
     h.advance(1);
     await h.run();
-    assert.ok(h.record.retired);
+    assert.equal(h.record.retired, undefined);
+    assert.equal(h.record.retirement?.code, 'retirement-cleanup-migration-required');
     assert.equal(h.record.nativeInactive, true);
     assert.equal(h.cleanups(), 0);
   });
