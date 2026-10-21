@@ -15,6 +15,10 @@ import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lo
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import type { ClaimClient } from '../agent/assignment-claim.ts';
+import { claimBody } from '../channels/github/provider/assignment-claim.ts';
 import { scanOpenClawFeedback } from '../agent/openclaw-feedback-scan.ts';
 import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
@@ -824,6 +828,133 @@ describe('agent/openclaw issue dispatch', () => {
     return (key ? records.find((record) => record.threadId === key) : records[0])!;
   }
   const creates = () => calls.filter(({ method }) => method === 'sessions.create');
+
+  function enableClaims() {
+    const comments: GitHubCanonicalIssueComment[] = [];
+    const client: ClaimClient = {
+      async verify() {},
+      async list() {
+        return structuredClone(comments);
+      },
+      async create(source, body) {
+        comments.push({
+          databaseId: 1,
+          nodeId: 'claim',
+          body,
+          bodyTruncated: false,
+          author: { nodeId: source.receivingNodeId, login: 'receiver', type: 'User' },
+          createdAt: new Date(baseline).toISOString(),
+          updatedAt: new Date(baseline).toISOString(),
+        });
+        return 1;
+      },
+      async update(_source, id, previous, body) {
+        assert.equal((await record()).sessionCreation?.verified, true);
+        assert.equal(comments[0]!.databaseId, id);
+        assert.equal(comments[0]!.body, previous);
+        comments[0]!.body = body;
+      },
+      async remove() {
+        throw new Error('unexpected-own-claim-removal');
+      },
+    };
+    service.dependencies.claims = new OpenClawAssignmentClaims(
+      new AssignmentClaimStore(join(root, 'instance')),
+      () => client,
+    );
+    return comments;
+  }
+
+  it('should wait for another native occurrence before creating and accepting one session', async () => {
+    const comments = enableClaims();
+    const first = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(first.status, 'claim-waiting');
+    assert.equal(comments.length, 1);
+    assert.equal(preparedWorktrees, 0);
+    assert.equal(creates().length, 0);
+    coordinator.toolCallId = 'another-tool-call';
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'pass-completed',
+    );
+    assert.equal(creates().length, 0);
+    coordinator.runId = 'second-native-occurrence';
+    const routed = await next();
+    assert.equal((await prepare(routed)).status, 'session-created');
+    assert.equal(preparedWorktrees, 1);
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).claimAccepted, true);
+    assert.match(comments[0]!.body, /^Assignment accepted on /u);
+    service = new OpenClawDispatch(service.dependencies);
+    coordinator.runId = 'third-native-occurrence';
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'assessment-required',
+    );
+    assert.equal(creates().length, 1);
+  });
+
+  it('should stop before native preparation when the selected claim disappears', async () => {
+    const comments = enableClaims();
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    coordinator.runId = 'second-native-occurrence';
+    const routed = await next();
+    comments.length = 0;
+    const result = await prepare(routed);
+    assert.ok('code' in result && result.code === 'claim-winner-missing');
+    assert.equal(preparedWorktrees, 0);
+    assert.equal(creates().length, 0);
+  });
+
+  it('should leave native preparation to another installation with the winning claim', async () => {
+    const comments = enableClaims();
+    comments.push({
+      databaseId: 1,
+      nodeId: 'other-claim',
+      author: { ...fixture.client.identity, type: 'User' },
+      body: claimBody(
+        {
+          instanceId: '11111111-1111-4111-8111-111111111111',
+          assignmentEventId: fixture.events[0]!.nodeId,
+        },
+        'other-machine',
+      ),
+      bodyTruncated: false,
+      createdAt: new Date(baseline).toISOString(),
+      updatedAt: new Date(baseline).toISOString(),
+    });
+    for (const runId of ['first-native-occurrence', 'second-native-occurrence']) {
+      const result = await service.run(
+        manifest,
+        root,
+        { ...coordinator, runId },
+        { action: 'next' },
+      );
+      assert.equal(result.status, 'claim-waiting');
+    }
+    assert.equal(comments.length, 1);
+    assert.equal(preparedWorktrees, 0);
+    assert.equal(creates().length, 0);
+  });
+
+  it('should reconcile uncertain native creation before accepting the retained claim', async () => {
+    const comments = enableClaims();
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    coordinator.runId = 'second-native-occurrence';
+    const routed = await next();
+    lost = true;
+    assert.equal((await prepare(routed)).status, 'waiting');
+    assert.match(comments[0]!.body, /^Assignment claim registered on /u);
+    service = new OpenClawDispatch(service.dependencies);
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'reconcile', id: routed.id }))
+        .status,
+      'session-created',
+    );
+    assert.equal(creates().length, 1);
+    assert.equal(preparedWorktrees, 1);
+    assert.match(comments[0]!.body, /^Assignment accepted on /u);
+  });
 
   async function assignments(count: number, limit: number) {
     multiple = true;

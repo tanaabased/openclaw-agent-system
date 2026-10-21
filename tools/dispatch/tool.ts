@@ -54,6 +54,7 @@ export default function createDispatchTool(input: {
   api: OpenClawPluginApi;
   config: OpenClawDispatchDependencies['config'];
   root: string;
+  claims?: OpenClawDispatchDependencies['claims'];
   intake: OpenClawIntake;
   connect: OpenClawDispatchDependencies['connect'];
   automations: AutomationService;
@@ -74,6 +75,7 @@ export default function createDispatchTool(input: {
   };
   const service = new OpenClawDispatch({
     root: input.root,
+    claims: input.claims,
     config: input.config,
     credential: input.credential,
     intake: input.intake,

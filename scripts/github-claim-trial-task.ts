@@ -7,6 +7,8 @@ import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
+import providerErrorMessage from '../utils/provider-error-message.ts';
+
 import type { ClaimClient, ClaimSource } from '../agent/assignment-claim.ts';
 import type * as StoreModule from '../agent/assignment-claim-store.ts';
 import type * as ClaimModule from '../agent/assignment-claim.ts';
@@ -78,7 +80,11 @@ async function api(token: string, path: string, body?: object) {
     ['api', path, ...(body ? ['--method', 'POST', '--input', '-'] : [])],
     body && JSON.stringify(body),
   );
-  assert.equal(result.exitCode, 0, `github fixture operation failed: ${path}`);
+  assert.equal(
+    result.exitCode,
+    0,
+    `github fixture operation failed: ${path}; ${providerErrorMessage(result.stderr, [token]) ?? 'no provider diagnostic'}`,
+  );
   return JSON.parse(result.stdout);
 }
 const receiverToken = process.env.GH_TOKEN_TANAABOT;

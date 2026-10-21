@@ -41,6 +41,28 @@ export default class OpenClawDispatchAdmission {
       now,
     } = tx;
     const { client, intake, worktreeInput } = verified;
+    const claims = this.context.dependencies.claims;
+    if (claims && !record.sessionCreation?.verified) {
+      const claim = await claims.select({
+        intake,
+        client,
+        caller,
+        hasCapacity:
+          Boolean(record.request) ||
+          dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available > 0,
+      });
+      if (claim.status !== 'owned') {
+        if (claim.status === 'recovery-required') throw new Error(claim.code);
+        return {
+          status: 'claim-waiting' as const,
+          id: record.id,
+          claim,
+          nextAction: 'next' as const,
+        };
+      }
+      record.claimId = claim.winnerId;
+      await save();
+    }
     if (input.action === 'prepare') {
       const pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
       if (!pass?.selected.includes(record.id)) throw new Error('dispatch-pass-selection-required');
@@ -149,7 +171,7 @@ export default class OpenClawDispatchAdmission {
           await save();
         });
       }
-      return (working ? advanceIssueTurn : createIssueSession)({
+      const result = await (working ? advanceIssueTurn : createIssueSession)({
         config: this.context.dependencies.config(),
         credential: this.context.guardedCredential(() =>
           this.context.validate(manifest, workspace, record, false, false, client, signal),
@@ -160,6 +182,12 @@ export default class OpenClawDispatchAdmission {
         assessment,
         presentation: { intake, workspace: current.workspace, debug: manifest.debug },
       });
+      if (claims && record.claimId && !record.claimAccepted && record.sessionCreation?.verified) {
+        await claims.accept(intake, client, record);
+        record.claimAccepted = true;
+        await save();
+      }
+      return result;
     }
     throw new Error('dispatch-action-invalid');
   }

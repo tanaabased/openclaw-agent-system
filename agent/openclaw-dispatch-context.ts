@@ -30,6 +30,7 @@ import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation
 import { automationHash } from './automation-hash.ts';
 import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
 import { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import OpenClawDispatchStore, {
   type OpenClawDispatchState,
@@ -45,6 +46,7 @@ import retainedIntakePolicy from './retained-intake-policy.ts';
 
 export interface OpenClawDispatchDependencies {
   root: string;
+  claims?: OpenClawAssignmentClaims;
   config(): OpenClawConfig;
   intake: OpenClawIntake;
   connect(

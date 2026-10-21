@@ -692,6 +692,23 @@ export default class OpenClawDispatchCoordinator {
     delete record.failureStage;
     try {
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
+      const claim = await this.context.dependencies.claims?.select({
+        intake,
+        client,
+        caller,
+        hasCapacity: capacity.available > 0,
+      });
+      if (claim && claim.status !== 'owned') {
+        if (claim.status === 'recovery-required') throw new Error(claim.code);
+        await save();
+        return {
+          status: 'claim-waiting' as const,
+          id: record.id,
+          claim,
+          nextAction: 'next' as const,
+        };
+      }
+      if (claim) record.claimId = claim.winnerId;
       const evidence = await client.getItemContext(
         repo.owner.login,
         repo.name,
