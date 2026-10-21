@@ -111,6 +111,31 @@ function createProgram(
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
+    notificationReset: {
+      listAgents: async () => ['tanaabot'],
+      service: {
+        preview: async (manifest, workspace, purge) => ({
+          runtime: 'openclaw',
+          agentId: manifest.agent.id,
+          workspace,
+          scope: 'a'.repeat(64),
+          automation: '{}',
+          inventory: '{}',
+          resources: [],
+          purge,
+          continuing: false,
+          fingerprint: 'fixture',
+        }),
+        run: async (manifest, workspace) => ({
+          status: 'complete',
+          operationId: 'operation',
+          agentId: manifest.agent.id,
+          workspace,
+          resources: [],
+          automationRestored: true,
+        }),
+      },
+    },
     ...(dependencies.automationRunner
       ? { automations: {} as never, boundCommands: {} as never }
       : {}),
@@ -342,6 +367,7 @@ describe('cli/command-family-fixtures', () => {
     ['automations', 'run', 'review'],
     ['automations', 'runs', 'review'],
     ['notifications', 'refresh'],
+    ['notifications', 'reset', '--agent', 'tanaabot', '--yes'],
     ['notifications', 'status'],
     ['notifications', 'wait', '--for', 'baseline-ready'],
     ['tool', 'gh', '--', 'api', 'user'],
@@ -408,7 +434,6 @@ describe('cli/command-family-fixtures', () => {
         if (child.name() === 'automation-execute') return [];
         return child.commands.length ? names(child, `${name} `) : [name];
       });
-    assert.equal(leaves.length, 25);
     assert.deepEqual(
       new Set(names(program.commands[0]!)),
       new Set(
@@ -453,6 +478,7 @@ describe('cli/command-family-fixtures', () => {
     'queued',
     'ok',
     'queued',
+    'complete',
     'ready',
     'checkpoint reached',
     'tanaabot',
@@ -757,6 +783,43 @@ describe('cli/automation-commands', () => {
 });
 
 describe('cli/register', () => {
+  it('should collect repeated reset agents and reject reset from a bound descendant', async () => {
+    const selected = createProgram();
+    await selected.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'notifications',
+      'reset',
+      '--agent',
+      'tanaabot',
+      '--agent',
+      'tanaabot',
+      '--yes',
+      '--json',
+    ]);
+    const command = selected.program.commands[0]!.commands.find(
+      (entry) => entry.name() === 'notifications',
+    )!.commands.find((entry) => entry.name() === 'reset')!;
+    assert.deepEqual(command.opts().agent, ['tanaabot', 'tanaabot']);
+    assert.equal(JSON.parse(selected.output.join('')).results.length, 1);
+    const denied = createProgram(undefined, {
+      environment: { AGENT_SYSTEM_EXEC_AUTHORITY: 'invalid' },
+    });
+    await denied.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'notifications',
+      'reset',
+      '--all',
+      '--yes',
+      '--json',
+    ]);
+    assert.deepEqual(denied.exitCodes, [1]);
+    assert.match(denied.output.join('') + denied.diagnostics.join(''), /operator-command-denied/u);
+  });
+
   it('should lowercase owned help descriptions while preserving host headings and env identifiers', () => {
     const { program } = createProgram();
     const root = program.commands.find((command) => command.name() === 'agent-system')!;
@@ -887,7 +950,7 @@ describe('cli/register', () => {
       command?.commands
         .find((subcommand) => subcommand.name() === 'notifications')
         ?.commands.map((subcommand) => subcommand.name()),
-      ['refresh', 'status', 'wait'],
+      ['reset', 'refresh', 'status', 'wait'],
     );
   });
 

@@ -1,4 +1,5 @@
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
+import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
 import { join, resolve } from 'node:path';
 
 import { Type, type Static } from 'typebox';
@@ -176,6 +177,7 @@ export function intakeLocation(input: {
   namespace: string;
   workspaceDir: string;
   agentId: string;
+  resetRoot?: string;
 }) {
   const scope = automationHash({
     runtime: input.runtime,
@@ -187,6 +189,7 @@ export function intakeLocation(input: {
     root: resolve(input.root),
     scope,
     path: join(resolve(input.root), `github-intake-${scope}.json`),
+    ...(input.resetRoot ? { resetRoot: input.resetRoot } : {}),
   };
 }
 
@@ -252,11 +255,19 @@ export default class IntakeRecordStore {
       retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
     });
     try {
+      await assertNotificationManagement(
+        this.location.resetRoot ?? this.location.root,
+        this.location.scope,
+      );
       return await withPrivateStateLock(lock, async () =>
         operation(
           await this.read(),
           async (state) => {
             lock.assertHeld();
+            await assertNotificationManagement(
+              this.location.resetRoot ?? this.location.root,
+              this.location.scope,
+            );
             if (!Value.Check(stateSchema, state) || state.scope !== this.location.scope)
               throw new IntakeError('intake-state-invalid');
             const contents = JSON.stringify(state);
@@ -270,5 +281,21 @@ export default class IntakeRecordStore {
     } finally {
       await lock.release();
     }
+  }
+
+  async reset(baselineAt: number): Promise<void> {
+    await this.exclusive(async (state, save) => {
+      if (!state) throw new IntakeError('intake-activation-required');
+      await save({
+        version: 1,
+        scope: state.scope,
+        workspaceDir: state.workspaceDir,
+        agentId: state.agentId,
+        account: state.account,
+        policyDigest: state.policyDigest,
+        baselineAt,
+        records: [],
+      });
+    });
   }
 }

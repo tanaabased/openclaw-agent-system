@@ -1,4 +1,5 @@
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
+import runCodexNotificationReset from './codex-notification-reset.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import codexRuntimeRequest from './codex-runtime-request.ts';
 import runCodexContinuation from './codex-continuation.ts';
@@ -311,6 +312,12 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     writeJson(await runCodexDispatch(pluginData, action, input));
     return;
   }
+  if (command === 'notifications') {
+    if (args[1] !== 'reset') throw new Error('notification-reset-action-required');
+    const pluginData = parsePluginData(args.slice(2));
+    writeJson(await runCodexNotificationReset(pluginData, JSON.parse(await readStandardInput())));
+    return;
+  }
   if (command === 'model-routing') {
     const pluginData = parsePluginData(args.slice(1));
     writeJson(await codexModelRouting(pluginData, JSON.parse(await readStandardInput())));
@@ -446,7 +453,7 @@ runCodexRuntime().catch((error: unknown) => {
             error instanceof RoutingError ||
             error instanceof CodexAutomationError
           ? { code: error.code }
-          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment-result|heartbeat)-[a-z-]+$/u.test(
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment-result|heartbeat|notification-reset)-[a-z-]+$/u.test(
                 message,
               )
             ? { code: message }

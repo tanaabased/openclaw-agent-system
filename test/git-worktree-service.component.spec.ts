@@ -87,7 +87,7 @@ class FakeGitRunner implements GitWorktreeGitRunner {
     }
     if (command === 'worktree' && argv[0] === 'remove') {
       if (this.removeFails) return { exitCode: 1, stderr: 'contains modified files', stdout: '' };
-      const path = argv[1] ?? '';
+      const path = argv.at(-1) ?? '';
       this.worktrees.delete(path);
       await rm(path, { force: true, recursive: true });
     }
@@ -606,6 +606,40 @@ describe('tools/git/worktree-service', () => {
       assert.equal(
         (await service.cleanup(context, input.repositoryId, input.workId)).status,
         'missing',
+      );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should purge an explicitly selected dirty checkout while retaining its branch', async () => {
+    const { context, git, service, workspaceDir } = await fixture();
+    try {
+      const input = {
+        baseRef: 'main',
+        cloneUrl: 'https://example.com/one.git',
+        repositoryId: 'repository',
+        workId: 'one',
+      };
+      const created = await service.prepare(context, input);
+      git.dirty = true;
+      assert.equal(
+        (
+          await service.cleanup(
+            context,
+            input.repositoryId,
+            input.workId,
+            created.branch,
+            false,
+            true,
+          )
+        ).status,
+        'removed',
+      );
+      assert.equal(git.worktrees.size, 0);
+      assert.ok(git.branches.has(created.branch));
+      assert.ok(
+        git.calls.some(({ argv }) => argv.join(' ') === `worktree remove --force ${created.path}`),
       );
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });

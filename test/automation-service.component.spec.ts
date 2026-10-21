@@ -167,6 +167,23 @@ describe('agent/automation-service', () => {
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
+  it('should pause and restore exact native settings without changing the installed receipt', async () => {
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const before = await store.read();
+    const snapshot = await service.notificationResetSnapshot(manifest, root, 'check');
+    await service.notificationResetToggle(manifest, root, snapshot, false);
+    assert.equal(native[0]!.enabled, false);
+    await service.notificationResetToggle(manifest, root, snapshot, true);
+    assert.equal(native[0]!.enabled, snapshot.enabled);
+    assert.deepEqual(await store.read(), before);
+    native[0]!.name = 'changed externally';
+    await assert.rejects(
+      service.notificationResetToggle(manifest, root, snapshot, false),
+      /notification-reset-automation-changed/u,
+    );
+  });
+
   it('should defer offline install without synchronizing disabled jobs and later converge online', async () => {
     manifest.automations![0]!.enabled = false;
     const online = service.dependencies.request!;

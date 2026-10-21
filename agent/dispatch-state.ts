@@ -1,4 +1,5 @@
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import mergeStateSnapshot, {
@@ -131,6 +132,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
     {
       version: Type.Literal(1),
       scope: hash,
+      resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
       openclawOccurrence: Type.Optional(
         Type.Object(
@@ -343,6 +345,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   ): Promise<T> {
     const signal = options.signal ?? new AbortController().signal;
     signal.throwIfAborted();
+    await assertNotificationManagement(this.root, this.scope);
     const state = await this.read();
     let before = structuredClone(state);
     return run(
@@ -351,6 +354,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         signal.throwIfAborted();
         await this.exclusive(async (current, save) => {
           signal.throwIfAborted();
+          if (before.resetGeneration !== current.resetGeneration)
+            throw new Error('notification-reset-stale-operation');
           for (const record of state.records) {
             const previous = before.records.find((entry) => entry.id === record.id);
             const fresh = current.records.find((entry) => entry.id === record.id);
@@ -409,11 +414,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     });
     try {
       return await withPrivateStateLock(lock, async () => {
+        await assertNotificationManagement(this.root, this.scope);
         const state = await this.read();
         return run(
           state,
           async () => {
             lock.assertHeld();
+            await assertNotificationManagement(this.root, this.scope);
             this.validate(state);
             await this.file.write(serializeState(state));
           },
@@ -423,5 +430,18 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     } finally {
       await lock.release();
     }
+  }
+
+  async reset(generation: string): Promise<void> {
+    await this.exclusive(async (state, save) => {
+      for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
+      Object.assign(state, {
+        version: 1,
+        scope: this.scope,
+        resetGeneration: generation,
+        records: [],
+      });
+      await save();
+    }, true);
   }
 }

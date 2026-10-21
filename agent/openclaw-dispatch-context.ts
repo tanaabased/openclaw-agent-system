@@ -1,3 +1,4 @@
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import { realpath } from 'node:fs/promises';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -108,6 +109,7 @@ export default class OpenClawDispatchContext {
   constructor(readonly dependencies: OpenClawDispatchDependencies) {}
   async scope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
+    await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
     const admitted = await current.store.read();
     if (!admitted) throw new Error('dispatch-intake-activation-required');
     const selected = current.selected ?? retainedIntakePolicy(manifest, admitted, 'openclaw');

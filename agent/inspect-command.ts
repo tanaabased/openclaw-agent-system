@@ -2,7 +2,15 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 
 export interface AgentOperatorInvocation {
   recommendedTool?: string;
-  surface: 'credentials' | 'shim' | 'tool' | 'setup' | 'backup' | 'automation' | 'instance';
+  surface:
+    | 'credentials'
+    | 'shim'
+    | 'tool'
+    | 'setup'
+    | 'backup'
+    | 'automation'
+    | 'instance'
+    | 'notification-reset';
   targetAgentDynamic: boolean;
   targetAgentId?: string;
 }
@@ -193,9 +201,11 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
       'automation-execute',
       'automations',
       'instance',
+      'notifications',
     ].includes(surface ?? '')
   )
     return undefined;
+  if (surface === 'notifications' && words[index + 3] !== 'reset') return undefined;
 
   const argumentsAfterSurface = words.slice(index + 3);
   const target = readAgentSelector(argumentsAfterSurface);
@@ -204,14 +214,16 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
       ? { recommendedTool: recommendedTool(readToolCommand(argumentsAfterSurface)) }
       : {}),
     surface:
-      surface === 'automation-execute' || surface === 'automations'
-        ? 'automation'
-        : surface === 'tool' ||
-            surface === 'credentials' ||
-            surface === 'backup' ||
-            surface === 'instance'
-          ? surface
-          : 'setup',
+      surface === 'notifications'
+        ? 'notification-reset'
+        : surface === 'automation-execute' || surface === 'automations'
+          ? 'automation'
+          : surface === 'tool' ||
+              surface === 'credentials' ||
+              surface === 'backup' ||
+              surface === 'instance'
+            ? surface
+            : 'setup',
     targetAgentDynamic: target.dynamic,
     ...(target.targetAgentId ? { targetAgentId: target.targetAgentId } : {}),
   };
