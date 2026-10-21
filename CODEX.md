@@ -204,6 +204,14 @@ Approved comments must address the configured GitHub account outside quoted text
 The initial read establishes a baseline without replaying historical comments.
 Subsequent issue comments, submitted PR reviews and inline replies route to the
 original issue chat with their exact source and review context retained.
+You can also invoke `agent-system-feedback-reply` directly in the current chat
+with a selected GitHub comment/review URL, or a response and exact issue/PR
+destination. It uses your bound `agent.yaml` reply skill/guidance and voice without
+activating intake. It returns a draft; posting requires an explicit request and
+native approval. Matching managed work reuses its existing owner and receipts;
+invalid managed context never becomes a manual bypass. See the
+[reply skill](./skills/feedback-reply/SKILL.md) for selection and recovery.
+
 Public replies to inline feedback stay in the original review thread. Replies to
 submitted reviews and ordinary PR comments appear in the PR conversation.
 
@@ -435,7 +443,30 @@ through native host approval. If access is denied, it reports the reason and kee
 the work intact; it does not delete locks or loosen directory permissions. Native
 approval requests retain their native UI.
 
-To repeat assessment through assignment intake, use `dispatchRuntime` with
+For a workspace-wide notification reset, use `notificationResetRuntime` from an
+operator chat. Send `{"agent":["<bound-agent-id>"]}` on stdin to inspect the scope,
+then add `"yes":true` after confirmation. `"all":true` selects only the current
+binding; it never discovers or changes other Codex installations. Add `"purge":true`
+to include the retained resource inventory.
+
+Reset clears management and feedback state, establishes a fresh assignment
+baseline, and preserves work unless purge was selected. It prepares native
+`automation_update` requests to pause and restore intake. Execute each request once
+and repeat the same reset to verify saved state. It waits for managed turns without
+aborting them. An unverified native mutation is not issued again automatically.
+Native denial remains a stop.
+
+Purge prepares native chat archival and closes verified open unmerged PRs. Supply
+the current native `list_threads` result as `nativeInventory` when requested so
+pinned and shared resources remain protected. Codex owns managed worktree removal.
+After archival, purge waits up to 30 seconds per checkout for native cleanup.
+If a checkout remains, the operation reports incomplete and retains its recovery
+record until native worktree controls remove it. It never edits app databases or
+deletes a managed checkout behind the desktop's back. Repeat the same reset to
+reconcile completion; do not discard its recovery file. There are no separate
+workspace-reset status, retry, or resume actions.
+
+To repeat one assessment through assignment intake, use `dispatchRuntime` with
 `{"action":"reset","id":"<assessment-receipt>"}` from an operator chat, then repeat
 with the returned `digest`. Reset requires a completed assessment and native confirmation
 that its recorded result turn completed, with no later turn. It freezes the previous
@@ -452,7 +483,10 @@ Codex chats for native archival; the desktop owns worktree snapshots and reclama
 Retirement completes after archival and checkout removal are observed. The explicit
 `retire` action previews a closed issue and, after its digest is applied, queues
 the same retirement lifecycle while preserving launch and assessment evidence and
-any existing grace deadline. It accepts active or paused intake; cleanup waits for
+any existing grace deadline. Both scheduled cleanup and `retire` read the
+[shared installation setting](./CONFIG.md#shared-cleanup), not OpenClaw configuration
+or a per-agent copy. Legacy cleanup blocks hold both paths until
+[deliberate migration](./UPGRADING.md#shared-cleanup-policy). It accepts active or paused intake; cleanup waits for
 an eligible active intake run. It does not mark resources reclaimed before native
 verification.
 

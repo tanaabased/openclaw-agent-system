@@ -20,6 +20,7 @@ import type { GitHubNotificationItemSelector } from '../channels/github/provider
 
 export interface OpenClawIntakeDependencies {
   root: string;
+  resetRoot?: string;
   namespace: string;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   connect(
@@ -34,9 +35,14 @@ export interface OpenClawIntakeDependencies {
 /** V2 admission only. No sessions, assessment results, V1 files or publication. */
 export default class OpenClawIntake {
   constructor(readonly dependencies: OpenClawIntakeDependencies) {}
-  async select(manifest: AgentManifest, workspaceDir: string) {
+  async select(
+    manifest: AgentManifest,
+    workspaceDir: string,
+    options: { resolvePolicy?: boolean } = {},
+  ) {
     const workspace = await realpath(workspaceDir);
-    const selected = assignmentIntakePolicy(manifest, 'openclaw');
+    const selected =
+      options.resolvePolicy === false ? undefined : assignmentIntakePolicy(manifest, 'openclaw');
     const store = new IntakeRecordStore(
       intakeLocation({
         runtime: 'openclaw',
@@ -44,6 +50,7 @@ export default class OpenClawIntake {
         namespace: this.dependencies.namespace,
         workspaceDir: workspace,
         agentId: manifest.agent.id,
+        resetRoot: this.dependencies.resetRoot,
       }),
     );
     return { selected, store, workspace };

@@ -41,6 +41,14 @@ Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
 uncertain pushes are reconciled, and the original announcement is reused. A
 clarification request preserves implementation authority for the next admitted answer.
+Direct invocation of `agent-system-feedback-reply` can draft for a selected GitHub
+comment/review or a response with an exact issue/PR destination in the current
+OpenClaw chat, without enabling scheduled intake. It resolves the invoking agent's
+applicable `agent.yaml` reply skill/guidance and voice. Drafting does not post;
+publication requires an explicit request through native approval. Existing managed
+work retains its owner and receipts; invalid context must recover or fail, not
+silently become manual work. See the [reply skill](../../skills/feedback-reply/SKILL.md).
+
 Direct and GitHub follow-ups receive retained plan revisions, private responses,
 and partial work before interpreting the new message; that history supplies context,
 not new authority.
@@ -103,9 +111,9 @@ provider evidence or a relevant live actor-list change can resolve removal autho
 Removal authority is checked again before cleanup. Completed or uncertain native
 cleanup effects keep their receipts and are not automatically undone or repeated.
 
-Automatic cleanup defaults to enabled, with a 60-minute grace period under
-`github.notifications.cleanup`. The deadline starts when intake first observes the
-change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
+Automatic cleanup uses one [installation-wide grace period](../../CONFIG.md#shared-cleanup),
+defaulting to 60 minutes for both runtimes. There is no disable switch or per-agent
+override. The deadline starts when intake first observes the change. Polling and restart preserve it; new native activity defers cleanup. Fresh,
 verified reassignment before archival reactivates the existing conversation. A fresh
 assignment after archival or retirement can start another attempt without erasing
 prior receipts. An admitted new comment from a configured feedback author can also
@@ -135,8 +143,10 @@ Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved work. The desktop owns worktree
 snapshotting and reclamation; intake marks work retired only after observing both
 archival and removal. If desktop settings retain the checkout, cleanup stays pending
-without blocking other intake. Disabling cleanup preserves resources and marks
-inactive work retired.
+without blocking other intake. Unresolved cleanup remains pending, never complete.
+Legacy cleanup declarations hold reclamation until [explicit migration](../../UPGRADING.md#shared-cleanup-policy);
+historical retirement without native cleanup evidence is reported and preserved,
+not swept automatically.
 Run Install after an upgrade when Doctor reports changed automation machinery.
 Policy-only edits apply live.
 
@@ -232,6 +242,58 @@ the selector. It preserves the account-wide checkpoint and previously admitted w
 Pull-request selectors are unsupported; feedback remains owned by retained issue
 conversations. Without selectors, refresh requests the installed native automation
 as described above. An uncertain native enqueue is reported rather than retried.
+
+### `openclaw agent-system notifications reset`
+
+Reset notification management for selected agents. The operator sees the scope,
+confirms once, and the command pauses intake, waits for managed turns, clears
+routing and feedback records, establishes a fresh assignment baseline, and
+restores the previous intake setting. Existing assignments and comments do not
+replay; a new approved assignment after the baseline can start new work.
+
+**Options:**
+
+| Option or argument | Required | Default | Description                                                                                                                               |
+| ------------------ | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--agent <id>`     | no       | none    | Repeat to preselect multiple agents.                                                                                                      |
+| `--all`            | no       | false   | Select all configured agents with managed manifests; conflicts with `--agent`.                                                            |
+| `--json`           | no       | false   | Emit structured results; requires explicit targets and `--yes`.                                                                           |
+| `--purge`          | no       | false   | Also archive managed chats, close linked open unmerged PRs, and remove owned checkouts, including modified, untracked, and ignored files. |
+| `--yes`            | no       | false   | Confirm explicit targets without prompting; does not override ownership or activity checks.                                               |
+
+**Usage:**
+
+```sh
+openclaw agent-system notifications reset [--agent <id> ... | --all] [--purge] [--yes] [--json]
+
+# select agents interactively and confirm the reset
+openclaw agent-system notifications reset
+
+# preselect two agents while retaining the selection and confirmation prompts
+openclaw agent-system notifications reset --agent agent-one --agent agent-two
+
+# reset all managed agents without prompting
+openclaw agent-system notifications reset --all --yes
+
+# review the destructive resource inventory before purging one agent
+openclaw agent-system notifications reset --agent agent-one --purge
+```
+
+Ordinary reset preserves conversations, checkouts, commits, branches, pull requests,
+and GitHub assignments. Purge retains repositories, named and remote branches,
+merged PRs, and protected or shared resources. It reports incomplete cleanup when
+ownership, native activity, or an earlier creation cannot be verified.
+
+A private recovery record retains the exact scope, resource inventory, and prior
+intake setting before effects begin. Repeat the same reset after interruption to
+finish it; changing `--purge` while that operation is unfinished is rejected.
+The record is removed only after completion. Do not delete it to force a fresh
+reset. If automatic pause fails, pause intake in the scheduler; the command waits
+for that change and for managed turns to finish. It never aborts turns.
+
+Selected agents run independently. A failure for one agent does not undo completed
+resets for the others. This command covers the installed issue workflow; it does
+not implement the future review workflow.
 
 ### `openclaw agent-system notifications status`
 

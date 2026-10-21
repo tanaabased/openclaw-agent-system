@@ -64,6 +64,15 @@ export const openclawWorkStateSchema = Type.Object(
             ),
           ),
           pushedHead: Type.Optional(text),
+          pendingPush: Type.Optional(
+            Type.Object(
+              {
+                previousHead: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
+                head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
+              },
+              { additionalProperties: false },
+            ),
+          ),
           pullRequest: Type.Optional(
             Type.Object(
               {

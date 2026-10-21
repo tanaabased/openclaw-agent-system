@@ -85,6 +85,50 @@ describe('manifest/overlays', () => {
     assert.equal(merged.sources['/list/0']?.path, overlay.path);
   });
 
+  it('should attribute legacy cleanup values to base and overlay without making them active policy', async () => {
+    const f = await fixture(
+      false,
+      baseSource +
+        `
+github:
+  username: data
+  notifications:
+    allowed-repository-owners: [{login: owner, node-id: O_owner}]
+    cleanup: {enabled: false, grace-minutes: 17}
+`,
+    );
+    await writeFile(f.overlayPath, 'github:\n  notifications:\n    cleanup: {grace-minutes: 5}');
+    const loaded = await f.load();
+    assert.equal(loaded.status, 'loaded', JSON.stringify(loaded.diagnostics));
+    if (loaded.status !== 'loaded') throw new Error('not loaded');
+    assert.deepEqual(loaded.manifest.cleanupMigration?.declaration, {
+      enabled: false,
+      'grace-minutes': 5,
+    });
+    assert.ok(
+      loaded.manifest.cleanupMigration?.sources?.some(
+        ({ fieldPath, sourcePath }) => fieldPath.endsWith('/enabled') && sourcePath === f.path,
+      ),
+    );
+    assert.ok(
+      loaded.manifest.cleanupMigration?.sources?.some(
+        ({ fieldPath, sourcePath }) =>
+          fieldPath.endsWith('/grace-minutes') && sourcePath === f.overlayPath,
+      ),
+    );
+    assert.equal(Object.hasOwn(loaded.manifest.github!.notifications!, 'cleanup'), false);
+    assert.ok(
+      loaded.diagnostics.some(({ code }) => code === 'retirement-cleanup-migration-required'),
+    );
+    await writeFile(f.overlayPath, '{}');
+    const inherited = await f.load();
+    assert.equal(
+      inherited.status === 'loaded' &&
+        inherited.manifest.cleanupMigration?.declaration['grace-minutes'],
+      17,
+    );
+  });
+
   for (const preferred of [false, true]) {
     it(`should select only the sibling overlay for the ${preferred ? 'preferred' : 'root'} base`, async () => {
       const f = await fixture(preferred);

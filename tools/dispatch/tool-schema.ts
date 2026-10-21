@@ -5,11 +5,13 @@ import { assessmentResultSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
+import { replyRequestSchema } from './reply-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 export const dispatchParameters = Type.Union([
+  replyRequestSchema,
   object({
     action: Type.Literal('check'),
     observation: Type.Optional(

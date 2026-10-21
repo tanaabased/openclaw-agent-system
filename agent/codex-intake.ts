@@ -1,4 +1,5 @@
 import connectCodexGitHubAccount from './codex-github-client.ts';
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -7,6 +8,7 @@ import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import type readInstallationConfig from '../core/installation-config.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { CodexAutomationError } from './codex-automation-state.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
@@ -24,6 +26,7 @@ import { githubIdentityMatches } from '../channels/github/provider/work-item.ts'
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
 export interface CodexIntakeDependencies {
+  readInstallationConfig?: typeof readInstallationConfig;
   assertActive?: () => Promise<void>;
   threadId?: string;
   intakeNative?: Pick<ReturnType<typeof codexDispatchNative>, 'occurrence'>;
@@ -41,14 +44,18 @@ export async function connectCodexGitHub(
   return (await connectCodexGitHubAccount(workspace, signal, run)).client;
 }
 
-export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDependencies) {
+export async function selectCodexIntake(
+  pluginData: string,
+  deps: CodexIntakeDependencies,
+  options: { resolvePolicy?: boolean; inspectionOnly?: boolean } = {},
+) {
   const inspection = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
   if (inspection.status !== 'bound') throw new IntakeError('intake-binding-unavailable');
   if (inspection.preview.status !== 'ready' || inspection.preview.manifest.status !== 'loaded')
     throw new IntakeError('intake-manifest-unavailable');
   const loaded = inspection.preview.manifest;
   const workspace = inspection.preview.workspaceDir;
-  const policy = codexIntakePolicy(loaded.manifest);
+  const policy = options.resolvePolicy === false ? undefined : codexIntakePolicy(loaded.manifest);
   const requestedHome = resolve(
     deps.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
   );
@@ -62,6 +69,7 @@ export async function selectCodexIntake(pluginData: string, deps: CodexIntakeDep
       agentId: loaded.manifest.agent.id,
     }),
   );
+  if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
     policy,
     store,

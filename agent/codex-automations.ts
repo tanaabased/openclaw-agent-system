@@ -569,6 +569,29 @@ export async function listCodexAutomations(
   };
 }
 
+/** reset may prepare native changes, but only the desktop tool can change a saved schedule. */
+export async function codexNotificationResetAutomation(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const selected = await snapshot(pluginData, dependencies);
+  if (selected.ledger.pending) throw new Error('notification-reset-automation-operation-pending');
+  const record = selected.ledger.records.find(({ id }) => id === intakeAutomationId);
+  if (!record?.nativeId || record.removed) throw new Error('notification-reset-automation-missing');
+  const saved = (await readCodexAutomations(selected.codexHome)).find(
+    ({ id }) => id === record.nativeId,
+  );
+  if (
+    !saved ||
+    !savedMatches(
+      saved,
+      { ...record.definition, status: saved.definition.status },
+      selected.workspace,
+    )
+  )
+    throw new Error('notification-reset-automation-changed');
+  return saved;
+}
 /** no native occurrence or history API is available; never silently create a manual substitute. */
 export async function codexAutomationRunGap(
   pluginData: string,

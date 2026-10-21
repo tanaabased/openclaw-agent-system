@@ -335,7 +335,6 @@ describe('channels/github/notification-policy', () => {
       runtimes: ['openclaw', 'codex'],
       intervalMinutes: 5,
       maxConcurrentItems: 3,
-      cleanup: { enabled: true, graceMinutes: 60 },
       allowedRepositoryOwners: [{ login: owner.login, nodeId: owner['node-id'] }],
     });
     const declaration = parsed({ ...policy, 'issue-assignment': {} });
@@ -343,13 +342,19 @@ describe('channels/github/notification-policy', () => {
     assert.equal(declaration.reviewRequest, undefined);
   });
 
-  it('should configure cleanup separately from admission and reject invalid grace periods', () => {
-    assert.deepEqual(
-      parsed({ ...policy, cleanup: { enabled: false, 'grace-minutes': 30 } }).cleanup,
-      {
-        enabled: false,
-        graceMinutes: 30,
-      },
+  it('should retain cleanup declarations only as migration evidence and reject invalid legacy values', () => {
+    const input = { ...policy, cleanup: { enabled: false, 'grace-minutes': 30 } };
+    const result = parse(input);
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') throw new Error('invalid');
+    assert.deepEqual(result.manifest.cleanupMigration?.declaration, input.cleanup);
+    assert.equal(Object.hasOwn(parsed(input), 'cleanup'), false);
+    assert.equal(
+      result.diagnostics.some(
+        ({ code, severity }) =>
+          code === 'retirement-cleanup-migration-required' && severity === 'warning',
+      ),
+      true,
     );
     for (const minutes of [-1, 1.5, 43201])
       assert.equal(parse({ ...policy, cleanup: { 'grace-minutes': minutes } }).status, 'invalid');

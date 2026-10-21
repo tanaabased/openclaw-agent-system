@@ -1,7 +1,9 @@
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import { realpath } from 'node:fs/promises';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import type readInstallationConfig from '../core/installation-config.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -44,6 +46,7 @@ import openclawTurnContext from './openclaw-turn-context.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 
 export interface OpenClawDispatchDependencies {
+  readInstallationConfig?: typeof readInstallationConfig;
   root: string;
   config(): OpenClawConfig;
   intake: OpenClawIntake;
@@ -106,6 +109,7 @@ export default class OpenClawDispatchContext {
   constructor(readonly dependencies: OpenClawDispatchDependencies) {}
   async scope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
+    await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
     const admitted = await current.store.read();
     if (!admitted) throw new Error('dispatch-intake-activation-required');
     const selected = current.selected ?? retainedIntakePolicy(manifest, admitted, 'openclaw');

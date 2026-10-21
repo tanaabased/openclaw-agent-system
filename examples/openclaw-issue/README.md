@@ -23,6 +23,11 @@ openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
+# should select shared installation cleanup grace
+install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
+cp "$GITHUB_WORKSPACE/examples/openclaw-issue/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+
 # should prepare the agent with provider-verified identity pins
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/keys" "$HOME/.ssh"
 GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
@@ -264,6 +269,34 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence
 
 ```
 
+```bash
+# should draft in an ordinary chat for an unassigned issue without publishing or admitting work
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System manual reply $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct reply target; do not assign.' > "$TMPDIR/notification-manual-issue.json"
+target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
+params=$(jq -nc --arg target "$target" '{sessionKey:"agent:notifications-tanaabot:manual-reply",agentId:"notifications-tanaabot",message:("Direct reply draft target: " + $target),deliver:false,idempotencyKey:"notification-manual-draft"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-draft"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-draft 300000
+jq -es '[.[].drafts[]] | if length == 1 then .[0] else error("one manual draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-manual-draft.json"
+jq -e '.publicText != null and .receipt == null and .attempted != true' "$TMPDIR/notification-manual-draft.json"
+number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'
+jq -es '[.[].records[]] | length == 1' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should publish only after a later explicit request and reconcile without another post
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+draft_id=$(jq -er .id "$TMPDIR/notification-manual-draft.json")
+params=$(jq -nc --arg id "$draft_id" '{sessionKey:"agent:notifications-tanaabot:manual-reply",agentId:"notifications-tanaabot",message:("Direct reply publish draft: " + $id),deliver:false,idempotencyKey:"notification-manual-publish"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-publish"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-publish 300000
+number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-manual-comments.json"
+jq -e --slurpfile draft "$TMPDIR/notification-manual-draft.json" 'length == 1 and .[0].user.login == "tanaabot" and (.[0].body | startswith($draft[0].publicText)) and (.[0].body | contains("agent-system-github-publication:manual-response:"))' "$TMPDIR/notification-manual-comments.json"
+openclaw gateway call chat.history --params '{"sessionKey":"agent:notifications-tanaabot:manual-reply","inputRunIds":["notification-manual-publish"],"limit":200,"maxChars":100000}' --json > "$TMPDIR/notification-manual-history.json"
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-manual-"+n+".json","utf8")); const comment=read("comments")[0]; const history=read("history"); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId==="notification-manual-publish" && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(comment.html_url)); assert.ok(text.includes(read("draft").publicText));'
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
+```
+
 ## Cleanup
 
 The run waits up to five minutes for terminal completion and reports every wait receipt. Cleanup first stops the isolated Gateway; external fixture cleanup requires that stop to succeed so it cannot revoke an active publication's assignment or credentials.
@@ -278,6 +311,14 @@ test -f "$TMPDIR/notification-gateway-stopped"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
 if test -s "$TMPDIR/notification-issue.json"; then
   number=$(jq -er .number "$TMPDIR/notification-issue.json")
+  openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
+fi
+
+# should close the separate unassigned manual reply fixture
+test -f "$TMPDIR/notification-gateway-stopped"
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+if test -s "$TMPDIR/notification-manual-issue.json"; then
+  number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
   openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
 fi
 

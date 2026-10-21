@@ -5,6 +5,7 @@ import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
 interface DeliveryState {
   creationAttempted: boolean;
   pushedHead?: string;
+  pendingPush?: { previousHead: string; head: string };
   pullRequest?: IssueDeliveryInput['expectedPullRequest'];
   contentUpdate?: IssueDeliveryInput['contentUpdate'];
   reconciled: boolean;
@@ -53,7 +54,13 @@ export default async function publishIssueDelivery(input: {
       await save();
     },
   };
-  operation.expectedPullRequest = await provider.inspect({ ...operation, headSha: remoteHead });
+  // a prior verified push may still be absent from the provider's PR readback.
+  operation.expectedPullRequest = await provider.inspect({
+    ...operation,
+    headSha: remoteHead,
+    previousHeadSha:
+      delivery.pendingPush?.head === remoteHead ? delivery.pendingPush.previousHead : undefined,
+  });
   const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin']))
     .trim()
     .split(/\r?\n/u);
@@ -68,6 +75,9 @@ export default async function publishIssueDelivery(input: {
     throw new Error('delivery-push-destination-mismatch');
   if (remoteHead !== head) {
     await authorize();
+    if (remoteHead) delivery.pendingPush = { previousHead: remoteHead, head };
+    else delete delivery.pendingPush;
+    await save();
     if (input.push) await input.push(head, ref, remotes);
     else await git(['push', '--set-upstream', 'origin', `${head}:${ref}`]);
   }
@@ -76,9 +86,10 @@ export default async function publishIssueDelivery(input: {
   delivery.pushedHead = head;
   await save();
   await authorize();
-  // only this exact pre-push observation may lag behind a verified fast-forward.
-  if (remoteHead && remoteHead !== head) operation.previousHeadSha = remoteHead;
+  if (delivery.pendingPush?.head === head)
+    operation.previousHeadSha = delivery.pendingPush.previousHead;
   await provider.publish(operation);
+  delete delivery.pendingPush;
   delete delivery.contentUpdate;
   delivery.reconciled = true;
   await save();

@@ -84,6 +84,15 @@ function isContention(result: Record<string, unknown> | undefined) {
   );
 }
 
+function isPendingDelivery(result: Record<string, unknown>) {
+  return (
+    result.status === 'waiting' &&
+    ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
+      String(result.code),
+    )
+  );
+}
+
 const retryStage = (stage: string, attempt: number) =>
   attempt ? `${stage}_retry_${attempt}` : stage;
 
@@ -395,11 +404,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           digest: delivery.digest,
           ...(initial ? { title, body } : {}),
         });
-      for (
-        let index = 0;
-        index < 3 && delivered.code === 'github-delivery-linkage-unverified';
-        index++
-      ) {
+      for (let index = 0; index < 3 && isPendingDelivery(delivered); index++) {
+        const receipt = delivered.pullRequest as Record<string, unknown> | undefined;
+        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
         const prepared = result(`feedback-link-prepare-${index}`);
         if (!prepared)
           return dispatch(`feedback-link-prepare-${index}`, {
@@ -420,6 +427,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           });
         delivered = published;
       }
+      if (isPendingDelivery(delivered))
+        throw new Error(`notification-delivery-reconciliation-exhausted: ${delivered.code}`);
       if (delivered.status !== 'published') return;
       if (initial) {
         const composed = result('feedback-delivery-compose');
@@ -623,11 +632,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           });
         published = refreshed;
       }
-      for (
-        let index = 0;
-        index < 3 && published.code === 'github-delivery-linkage-unverified';
-        index++
-      ) {
+      for (let index = 0; index < 3 && isPendingDelivery(published); index++) {
         const receipt = published.pullRequest as Record<string, unknown> | undefined;
         if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
         const prepareStage = `delivery-link-prepare-${index}`;
@@ -654,8 +659,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           });
         published = reconciled;
       }
-      if (published.code === 'github-delivery-linkage-unverified')
-        throw new Error('notification-linkage-reconciliation-exhausted');
+      if (isPendingDelivery(published))
+        throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
       if (published.status !== 'published') return;
       if (!update && published.workflowStatus !== 'partially-delivered')
         throw new Error('published pr must retain pending announcement as partial delivery');
@@ -799,7 +804,7 @@ function response(request: ChatCompletionRequest) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)$/u.test(
+      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed))$/u.test(
         error.message,
       )
     )

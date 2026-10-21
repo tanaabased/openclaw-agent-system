@@ -776,7 +776,43 @@ for (const scenario of [
           digest,
         });
         assert.equal(matchFixture([...scenario.fixtures], stopped), null);
-        append(input, 'delivery-publish-refreshed', {
+        const waiting = {
+          status: 'waiting',
+          code: 'github-delivery-head-not-observed',
+          pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
+        };
+        for (const rejected of [
+          { ...waiting, code: 'github-delivery-binding-head-changed' },
+          { ...waiting, status: 'blocked' },
+          { ...waiting, pullRequest: undefined },
+        ]) {
+          const invalid = structuredClone(input);
+          append(invalid, 'delivery-publish-refreshed', rejected);
+          assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+        }
+        append(input, 'delivery-publish-refreshed', waiting);
+        const exhausted = structuredClone(input);
+        for (let index = 0; index < 3; index++) {
+          const reconcile = await action(exhausted, 'delivery');
+          assert.equal(reconcile.operation, 'prepare');
+          assert.equal(reconcile.id, id);
+          append(exhausted, `delivery-link-prepare-${index}`, {
+            status: 'prepared',
+            digest: refreshedDigest,
+          });
+          const publish = await action(exhausted, 'delivery');
+          assert.equal(publish.operation, 'publish');
+          assert.equal(publish.digest, refreshedDigest);
+          append(exhausted, `delivery-link-publish-${index}`, waiting);
+        }
+        assert.deepEqual(await response(exhausted), {
+          content:
+            'notification-delivery-reconciliation-exhausted: github-delivery-head-not-observed',
+        });
+        assert.equal((await action(input, 'delivery')).operation, 'prepare');
+        append(input, 'delivery-link-prepare-0', { status: 'prepared', digest: refreshedDigest });
+        assert.equal((await action(input, 'delivery')).digest, refreshedDigest);
+        append(input, 'delivery-link-publish-0', {
           status: 'published',
           workflowStatus: 'partially-delivered',
         });
