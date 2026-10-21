@@ -27,6 +27,14 @@ import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
+export const assessmentStageReceiptSchema = Type.Object(
+  {
+    binding: workflowBindingSchema,
+    resultDigest: hash,
+    selection: Type.Optional(assessmentSelectionSchema),
+  },
+  { additionalProperties: false },
+);
 export const dispatchRecordProperties = {
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   id: hash,
@@ -75,15 +83,7 @@ export const dispatchRecordProperties = {
   ),
   assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
   assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema)),
-  stageReceipt: Type.Optional(
-    Type.Object(
-      {
-        binding: workflowBindingSchema,
-        resultDigest: hash,
-      },
-      { additionalProperties: false },
-    ),
-  ),
+  stageReceipt: Type.Optional(assessmentStageReceiptSchema),
   resultTurnId: Type.Optional(text),
   reset: Type.Optional(
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),

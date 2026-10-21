@@ -2,7 +2,13 @@ import { Type, type Static } from 'typebox';
 import { isDeepStrictEqual } from 'node:util';
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 
-import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
+import DispatchStore, {
+  assessmentStageReceiptSchema,
+  dispatchRecordProperties,
+  type DispatchState,
+} from './dispatch-state.ts';
+import { assessmentResultSchema } from './assessment-result.ts';
+import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { issueTurnSchema, type OpenClawTurn } from './openclaw-turn-state.ts';
 import { openclawFeedbackSchema } from './openclaw-feedback-state.ts';
 import { openclawWorkStateSchema } from './openclaw-work-state.ts';
@@ -46,8 +52,23 @@ export const openclawDispatchRecordSchema = Type.Object(
           runId: text,
           inputEventId: text,
           evidence: Type.String({ maxLength: 96000 }),
+          selection: Type.Optional(assessmentSelectionSchema),
         },
         { additionalProperties: false },
+      ),
+    ),
+    assessmentHistory: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            runId: text,
+            inputEventId: Type.Optional(text),
+            evidence: Type.Optional(Type.String({ maxLength: 96000 })),
+            result: assessmentResultSchema,
+            receipt: assessmentStageReceiptSchema,
+          },
+          { additionalProperties: false },
+        ),
       ),
     ),
     feedback: Type.Optional(openclawFeedbackSchema),

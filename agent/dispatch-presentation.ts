@@ -29,6 +29,6 @@ export default function assessmentPresentation(
     },
     effective: record.effective,
     workspace,
-    assessment: record.assessment,
+    assessment: record.stageReceipt?.selection ?? record.assessment,
   });
 }

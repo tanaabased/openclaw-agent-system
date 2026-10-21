@@ -10,14 +10,16 @@ linked PR. Standalone Codex additionally supports declared automatic implementat
 In `agent.yaml`, omit `github.notifications.schema-version` or set it to numeric
 `2` (the default and only supported value). Declare the runtime,
 pinned repository owners, and allowed assignment actors explicitly. For OpenClaw,
-use the default assessment skill; omitted mode defaults to Auto, Plan stops after
+choose the default or an enabled assessment skill with optional inline/file guidance;
+omitted mode defaults to Auto, Plan stops after
 assessment, Work continues an actionable plan, and Auto chooses Plan or Work. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for a complete example,
 fields, defaults, and runtime limitations.
 
-Independent review requests and replacement assessment skills remain unavailable.
-They warn without stopping supported assignment intake; unavailable skills are
-never silently replaced.
+Independent review requests remain unavailable and warn without stopping supported
+assignment intake. Invalid assessment selections block actionably and are never
+silently replaced. Correct them and refresh context in the same issue chat; no
+Install or replacement conversation is needed.
 
 After reading a retained plan, ask the agent in that issue chat to implement it and
 open a PR, together or separately. The authenticated operator request authorizes

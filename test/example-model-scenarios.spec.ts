@@ -258,6 +258,32 @@ describe('scripts/example-model-scenarios', () => {
     assert.equal(matchFixture([...scenario.fixtures], stale), null);
   });
 
+  it('should match collaboration turns without treating retained results as current evidence', () => {
+    const scenario = resolveExampleModelScenario('openclaw-collaboration');
+    for (const [agent, marker, tool, fixtureIndex] of [
+      ['beta', 'collaboration-ping', '', 1],
+      ['alpha', 'collaboration-send', 'sessions_send', 2],
+      ['alpha', 'collaboration-read', 'sessions_history', 4],
+    ] as const) {
+      const input = request(agent, 'Earlier exchange', tool ? [tool] : [], {
+        callId: 'call_collaboration_send',
+        content: JSON.stringify({ status: 'ok', reply: 'collaboration-pong' }),
+      });
+      input.messages[0]!.content = `Name: ${agent === 'alpha' ? 'Alpha' : 'Beta'}`;
+      input.messages.push(
+        { role: 'user', content: marker },
+        { role: 'user', content: '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> current facts' },
+      );
+      assert.equal(matchFixture([...scenario.fixtures], input), scenario.fixtures[fixtureIndex]);
+      input.messages.push({
+        role: 'tool',
+        tool_call_id: 'unrelated-call',
+        content: 'unrelated result',
+      });
+      assert.equal(matchFixture([...scenario.fixtures], input), null);
+    }
+  });
+
   it('should verify focused collaboration history only for the requested peer transcript', () => {
     const scenario = resolveExampleModelScenario('openclaw-collaboration');
     const history = {

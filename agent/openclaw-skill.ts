@@ -23,7 +23,7 @@ export default async function openClawSkill(
     .map(sessionObject)
     .filter(
       (entry) =>
-        entry.name === name &&
+        (entry.name === name || entry.skillKey === id) &&
         entry.eligible === true &&
         entry.modelVisible === true &&
         entry.disabled !== true,
@@ -31,6 +31,7 @@ export default async function openClawSkill(
   if (matches.length !== 1) throw new Error('dispatch-assessment-skill-unavailable');
   const selected = matches[0]!;
   if (
+    typeof selected.name !== 'string' ||
     typeof selected.filePath !== 'string' ||
     !isAbsolute(selected.filePath) ||
     basename(selected.filePath) !== 'SKILL.md' ||
@@ -38,7 +39,7 @@ export default async function openClawSkill(
   )
     throw new Error('dispatch-assessment-skill-source-unsupported');
   return assessmentSkillSource({
-    name,
+    name: selected.name,
     path: selected.filePath,
     scope: selected.source,
   });

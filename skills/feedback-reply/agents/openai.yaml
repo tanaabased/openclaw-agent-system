@@ -4,4 +4,4 @@ interface:
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
   brand_color: '#00c88a'
-  default_prompt: 'Use $agent-system-feedback-reply to compose a public reply from the supplied private response and verified outcome.'
+  default_prompt: 'Use $agent-system-feedback-reply to draft a reply for the selected GitHub comment or response using my configured guidance and voice, reusing verified managed context when present. Do not post unless explicitly requested.'

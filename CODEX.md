@@ -212,6 +212,14 @@ Approved comments must address the configured GitHub account outside quoted text
 The initial read establishes a baseline without replaying historical comments.
 Subsequent issue comments, submitted PR reviews and inline replies route to the
 original issue chat with their exact source and review context retained.
+You can also invoke `agent-system-feedback-reply` directly in the current chat
+with a selected GitHub comment/review URL, or a response and exact issue/PR
+destination. It uses your bound `agent.yaml` reply skill/guidance and voice without
+activating intake. It returns a draft; posting requires an explicit request and
+native approval. Matching managed work reuses its existing owner and receipts;
+invalid managed context never becomes a manual bypass. See the
+[reply skill](./skills/feedback-reply/SKILL.md) for selection and recovery.
+
 Public replies to inline feedback stay in the original review thread. Replies to
 submitted reviews and ordinary PR comments appear in the PR conversation.
 

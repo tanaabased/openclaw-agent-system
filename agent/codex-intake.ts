@@ -47,7 +47,7 @@ export async function connectCodexGitHub(
 export async function selectCodexIntake(
   pluginData: string,
   deps: CodexIntakeDependencies,
-  inspectionOnly = false,
+  options: { resolvePolicy?: boolean; inspectionOnly?: boolean } = {},
 ) {
   const inspection = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
   if (inspection.status !== 'bound') throw new IntakeError('intake-binding-unavailable');
@@ -55,7 +55,7 @@ export async function selectCodexIntake(
     throw new IntakeError('intake-manifest-unavailable');
   const loaded = inspection.preview.manifest;
   const workspace = inspection.preview.workspaceDir;
-  const policy = codexIntakePolicy(loaded.manifest);
+  const policy = options.resolvePolicy === false ? undefined : codexIntakePolicy(loaded.manifest);
   const requestedHome = resolve(
     deps.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
   );
@@ -69,7 +69,7 @@ export async function selectCodexIntake(
       agentId: loaded.manifest.agent.id,
     }),
   );
-  if (!inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
+  if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
     policy,
     store,

@@ -128,6 +128,14 @@ describe('tools/dispatch/tool', () => {
     assert.deepEqual(f.registrationOptions?.names ?? [], []);
     assert.deepEqual(f.adapter.tool.toolNames, ['agent_system_dispatch']);
     assert.equal(f.build().name, 'agent_system_dispatch');
+    assert.equal(
+      f.adapter.tool.isConfigured({
+        ...f.manifest,
+        schemaVersion: 1,
+        github: { username: 'receiver' },
+      }),
+      true,
+    );
   });
 
   it('should isolate simultaneous caller captures across agents with the same call id', async () => {

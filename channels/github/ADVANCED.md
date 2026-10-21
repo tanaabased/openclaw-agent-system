@@ -41,6 +41,14 @@ Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
 uncertain pushes are reconciled, and the original announcement is reused. A
 clarification request preserves implementation authority for the next admitted answer.
+Direct invocation of `agent-system-feedback-reply` can draft for a selected GitHub
+comment/review or a response with an exact issue/PR destination in the current
+OpenClaw chat, without enabling scheduled intake. It resolves the invoking agent's
+applicable `agent.yaml` reply skill/guidance and voice. Drafting does not post;
+publication requires an explicit request through native approval. Existing managed
+work retains its owner and receipts; invalid context must recover or fail, not
+silently become manual work. See the [reply skill](../../skills/feedback-reply/SKILL.md).
+
 Direct and GitHub follow-ups receive retained plan revisions, private responses,
 and partial work before interpreting the new message; that history supplies context,
 not new authority.
@@ -451,7 +459,8 @@ another push. Recovery instructions skip confirmed attachments and announcements
 Explicit notification version `1` and recognizable retired keys in unversioned
 declarations are rejected with `github-notification-v1-retired`; current-format
 declarations may omit the version and default to `2`. The polling channel, its Work/guided engine,
-reply-staging tool, and task-PR tool have been removed. Independent review requests and custom assessment skills remain unavailable.
+reply-staging tool, and task-PR tool have been removed. Independent review requests remain unavailable. Assessment skills and optional inline/file
+guidance use the shared [assessment selection](../../MANIFEST.md#assessment-selection) contract.
 Retirement does not imply feature parity.
 
 The channel id `agent-system-github` remains registered as a read-only readiness

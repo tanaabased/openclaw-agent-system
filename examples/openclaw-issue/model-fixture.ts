@@ -39,6 +39,11 @@ const dispatchStages = [
   'feedback-preview',
   'feedback-publish',
   'direct-question-context',
+  'manual-compose',
+  'manual-candidate',
+  'manual-preview',
+  'manual-publish',
+  'manual-reconcile',
 ];
 
 function currentTurn(request: ChatCompletionRequest) {
@@ -166,6 +171,63 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (duplicate.status !== 'published') return;
     return { content: published.presentation };
   };
+  const directTarget = /Direct reply draft target: (https:\/\/github\.com\/[^\s]+)/u.exec(
+    prompt,
+  )?.[1];
+  if (directTarget) {
+    const composed = result('manual-compose');
+    if (!composed)
+      return dispatch('manual-compose', {
+        action: 'reply',
+        operation: 'compose',
+        target: directTarget,
+        privateText:
+          'The disposable manual reply fixture is ready. No implementation or test result is claimed.',
+      });
+    assert.equal(composed.status, 'composition-ready');
+    assert.equal(composed.compositionContext, 'feedback/v1');
+    assert.equal(composed.factsProvenance, 'operator-supplied');
+    const selection = composed.selection as { skill: { path: string } };
+    if (openClawAIMockToolResultText(messages, prefix + 'manual-skill') === undefined)
+      return call('manual-skill', 'read', { path: selection.skill.path });
+    const candidate = result('manual-candidate');
+    if (!candidate)
+      return dispatch('manual-candidate', {
+        action: 'reply',
+        operation: 'candidate',
+        id: composed.id,
+        digest: composed.digest,
+        publicText:
+          'The disposable manual reply fixture is ready. No implementation or test result is claimed.',
+      });
+    assert.equal(candidate.status, 'candidate-recorded');
+    return { content: String(candidate.presentation) };
+  }
+  const directDraft = /Direct reply publish draft: ([a-f0-9]{64})/u.exec(prompt)?.[1];
+  if (directDraft) {
+    const preview = result('manual-preview');
+    if (!preview)
+      return dispatch('manual-preview', { action: 'reply', operation: 'publish', id: directDraft });
+    assert.equal(preview.status, 'publication-ready');
+    const published = result('manual-publish');
+    if (!published)
+      return dispatch('manual-publish', {
+        action: 'reply',
+        operation: 'publish',
+        id: directDraft,
+        digest: preview.digest,
+      });
+    assert.equal(published.status, 'published');
+    const reconciled = result('manual-reconcile');
+    if (!reconciled)
+      return dispatch('manual-reconcile', {
+        action: 'reply',
+        operation: 'reconcile',
+        id: directDraft,
+      });
+    assert.equal(reconciled.status, 'published');
+    return { content: String(reconciled.presentation) };
+  }
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
@@ -372,12 +434,16 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
-  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
+  const revision = /(Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,
-  )?.[1];
+  );
+  const id =
+    revision?.[2] ??
+    /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
-    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
+    (!revision &&
+      !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.'))
   )
     return;
   const context = result('context');
@@ -402,6 +468,13 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     context.resultContract !== 'assessment-result/v1'
   )
     return;
+  const method = (context.assessment as { skill?: { name?: string; path?: string } }).skill;
+  if (method?.name === 'generic-assessment') {
+    if (!method.path) return;
+    const methodText = openClawAIMockToolResultText(messages, prefix + 'assessment-skill');
+    if (methodText === undefined) return call('assessment-skill', 'read', { path: method.path });
+    if (!methodText.includes('Generic Assessment')) return;
+  }
   const git = result('git');
   if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
   if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
@@ -411,13 +484,23 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return dispatch('result', {
       action: 'result',
       id,
+      ...(revision ? { previousResultDigest: context.previousResultDigest } : {}),
       result: {
         version: 1,
-        outcome: 'plan-ready',
+        outcome: revision?.[1] === 'Clarify' ? 'clarification-needed' : 'plan-ready',
         summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
         assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment,
+        ...(revision?.[1] === 'Clarify'
+          ? { questions: ['Should cleanup close the issue only after evidence capture?'] }
+          : {
+              plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
+            }),
+        fullAssessment: revision
+          ? String((context.previousResult as Record<string, unknown>).fullAssessment) +
+            (revision?.[1] === 'Clarify'
+              ? '\n\nShould cleanup close the issue only after evidence capture? The ordering is unresolved.'
+              : '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.')
+          : fullAssessment,
         reviewSummary,
         evidence: [
           {
@@ -433,6 +516,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       },
     });
   if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+  if (revision) return { content: saved.presentation };
   return summary(id, saved, { fullAssessment, reviewSummary });
 }
 
@@ -475,6 +559,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
+    { id: prefix + 'assessment-skill', name: 'read' },
     { id: prefix + 'feedback-skill', name: 'read' },
     { id: prefix + 'summary-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>

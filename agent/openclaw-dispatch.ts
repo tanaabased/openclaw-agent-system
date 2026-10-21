@@ -1,4 +1,5 @@
 import pendingPublicResponse from './pending-public-response.ts';
+import openClawReply from './openclaw-reply.ts';
 import type { Static } from 'typebox';
 
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
@@ -96,6 +97,16 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
+    if (input.action === 'reply')
+      return openClawReply({
+        manifest,
+        workspace,
+        caller,
+        action: input,
+        operator,
+        authority,
+        dependencies: this.dependencies,
+      });
     if (input.action === 'check')
       return this.check(manifest, workspace, authority.signal, input.observation);
     if (input.action === 'report')

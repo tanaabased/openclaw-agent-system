@@ -705,15 +705,17 @@ export default class OpenClawDispatchIssue {
           });
         }
         const selection =
-          input.action === 'context' || !record.assessment
-            ? await selectOpenClawAssessment({
-                request,
-                record,
-                workspace: current.workspace,
-                configuration: current.policy.policy.issueAssignment?.assessment,
-                now,
-              })
-            : undefined;
+          record.resultTurnId === caller.runId && record.turnEvidence?.selection
+            ? record.turnEvidence.selection
+            : input.action === 'context' || !record.assessment
+              ? await selectOpenClawAssessment({
+                  request,
+                  record,
+                  workspace: current.workspace,
+                  configuration: current.policy.policy.issueAssignment?.assessment,
+                  now,
+                })
+              : undefined;
         const evidence =
           input.action === 'context'
             ? JSON.stringify(

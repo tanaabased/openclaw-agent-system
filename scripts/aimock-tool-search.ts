@@ -69,9 +69,11 @@ export function normalizeToolSearchRequest(
   expectedDeniedToolCalls: readonly OpenClawAIMockToolCall[] = [],
 ): ChatCompletionRequest {
   if (!controls(request)) return request;
+  const messages = currentMessages(request);
+  const historyLength = request.messages.length - messages.length;
   const available = catalog(request);
   const discoveredIds = new Map(
-    request.messages
+    messages
       .filter(
         (message) => message.role === 'tool' && message.tool_call_id?.startsWith(discoveryPrefix),
       )
@@ -80,7 +82,7 @@ export function normalizeToolSearchRequest(
       ),
   );
   const calls = new Map(
-    request.messages.flatMap((message) =>
+    messages.flatMap((message) =>
       (message.tool_calls ?? []).map((call) => [call.id, call] as const),
     ),
   );
@@ -139,7 +141,9 @@ export function normalizeToolSearchRequest(
         .filter((name) => !request.tools?.some((tool) => tool.function.name === name))
         .map((name) => ({ type: 'function' as const, function: { name } })),
     ],
-    messages: request.messages.flatMap((message) => {
+    messages: request.messages.flatMap((message, index) => {
+      // openclaw may truncate old tool envelopes; retain them as context, not execution proof.
+      if (index < historyLength) return [message];
       if (message.role === 'tool' && message.tool_call_id?.startsWith(discoveryPrefix)) return [];
       if (message.role === 'assistant') {
         const toolCalls = message.tool_calls?.filter(
@@ -151,7 +155,7 @@ export function normalizeToolSearchRequest(
             ...message,
             tool_calls: toolCalls?.map((call) => {
               if (call.function.name !== 'tool_call') return call;
-              const result = request.messages.find(
+              const result = messages.find(
                 (candidate) => candidate.role === 'tool' && candidate.tool_call_id === call.id,
               );
               if (!result) return call;
