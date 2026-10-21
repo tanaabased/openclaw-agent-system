@@ -13,6 +13,8 @@ import type BoundCommandService from '../agent/bound-command-service.ts';
 import envAgentSystem from './env.ts';
 import credentialsCache, { type OpCacheGatewayRequest } from './credentials-cache.ts';
 import doctorAgentSystem from './doctor.ts';
+import instanceCommand from './instance.ts';
+import type AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import runAgentSystemTool from './tool.ts';
 import setCredentialsAgentSystem from './credentials-set.ts';
 import unsetCredentialsAgentSystem from './credentials-unset.ts';
@@ -63,6 +65,7 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
+  instanceStore?: AssignmentClaimStore;
   automations?: AutomationService;
   boundCommands?: BoundCommandService;
   backupService?: WorkspaceBackupService;
@@ -421,6 +424,44 @@ export default function registerAgentSystemCli(
         workspaceDir: cwd(),
       });
     });
+  const instance = agentSystem
+    .command('instance')
+    .description('inspect or update this installation identity.');
+  instance.action(async () => {
+    writeHelp(instance, output);
+  });
+  for (const action of ['inspect', 'rename', 'rotate'] as const) {
+    const command = instance
+      .command(action === 'rename' ? 'rename <name>' : action)
+      .description(
+        action === 'inspect'
+          ? 'show the saved installation name and id.'
+          : action === 'rename'
+            ? 'change the readable name without changing the id.'
+            : 'explicitly replace the id and detach previous claim receipts.',
+      )
+      .option('--json', 'write structured json output.');
+    if (action === 'rotate')
+      command.option('--expected-id <id>', 'require this current full id before rotating.');
+    command.action(async (name) => {
+      const opts = command.opts();
+      if (!(await allowOperatorCommand(opts.json === true))) return;
+      await instanceCommand({
+        store: options.instanceStore,
+        action,
+        input:
+          action === 'rename'
+            ? { name }
+            : action === 'rotate'
+              ? { expectedInstanceId: opts.expectedId }
+              : {},
+        json: opts.json === true,
+        output,
+        styles: options.styles,
+        setExitCode,
+      });
+    });
+  }
   const doctor = agentSystem
     .command('doctor')
     .alias('status')

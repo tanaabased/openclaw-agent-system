@@ -151,7 +151,9 @@ setup-agent:
 
     const inspected = await inspectCodexSetup(pluginData, undefined, dependencies);
     assert.deepEqual(
-      inspected.findings.map(({ code, status, stepId }) => ({ code, status, stepId })),
+      inspected.findings
+        .filter(({ component }) => component === 'setup')
+        .map(({ code, status, stepId }) => ({ code, status, stepId })),
       [
         { code: 'setup-drift', status: 'drift', stepId: 'default' },
         { code: 'setup-manual', status: 'manual', stepId: 'codex-only' },
@@ -161,7 +163,9 @@ setup-agent:
 
     const installed = await installCodexSetup(pluginData, undefined, dependencies);
     assert.deepEqual(
-      installed.outcomes.map(({ code, status, stepId }) => ({ code, status, stepId })),
+      installed.outcomes
+        .filter(({ component }) => component === 'setup')
+        .map(({ code, status, stepId }) => ({ code, status, stepId })),
       [
         { code: 'setup-applied', status: 'updated', stepId: 'default' },
         { code: 'setup-applied', status: 'updated', stepId: 'codex-only' },
@@ -207,7 +211,9 @@ setup-agent:
     const inspected = await inspectCodexSetup(pluginData, undefined, dependencies);
 
     assert.deepEqual(
-      inspected.findings.map(({ code, status, stepId }) => ({ code, status, stepId })),
+      inspected.findings
+        .filter(({ component }) => component === 'setup')
+        .map(({ code, status, stepId }) => ({ code, status, stepId })),
       [
         { code: 'setup-healthy', status: 'healthy', stepId: 'healthy' },
         { code: 'setup-drift', status: 'drift', stepId: 'drift' },

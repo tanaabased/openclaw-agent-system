@@ -41,9 +41,17 @@ Use $agent-system-codex-binding to bind this plugin to /absolute/path/to/tanaab/
 Confirm the binding, then start a fresh task and run:
 
 ```text
-If the workspace declares setup, use $agent-system-install to install it.
+Use $agent-system-install to initialize this installation and apply declared setup.
 Then use $agent-system-doctor to check readiness.
 ```
+
+Install creates a persistent installation UUID and generated readable name. Reinstalling
+or rebinding a workspace preserves them; Doctor only inspects them. Ask Codex to
+“rename this instance to office-laptop” to customize the readable name. Even a
+request to “change the instance ID” means renaming unless you explicitly ask to
+**rotate the UUID**. Rotation detaches old claim receipts without transferring work;
+use it for a copied installation. The trusted `instanceRuntime` exposes these
+operator actions without reading OpenClaw state.
 
 ## Skills
 

@@ -136,6 +136,7 @@ export default class AssignmentClaimStore {
       save: () => Promise<void>,
       signal: AbortSignal,
     ) => Promise<T>,
+    initialize = true,
   ): Promise<T> {
     await ensurePrivateStateDirectories({
       directories: [this.root],
@@ -149,6 +150,7 @@ export default class AssignmentClaimStore {
     try {
       return await withPrivateStateLock(lock, async () => {
         const contents = await this.file.read();
+        if (contents === undefined && !initialize) throw new Error('instance-install-required');
         const value: unknown =
           contents === undefined
             ? {
@@ -183,13 +185,23 @@ export default class AssignmentClaimStore {
     }));
   }
 
+  /** inspection must never create an identity or repair private state. */
+  async inspect() {
+    const contents = await this.file.read();
+    if (contents === undefined) return undefined;
+    const state: unknown = JSON.parse(contents);
+    if (!Value.Check(schema, state) || state.retiredInstanceIds.includes(state.instanceId))
+      throw new Error('assignment-claim-state-invalid');
+    return { instanceId: state.instanceId, displayName: state.displayName };
+  }
+
   rename(name: string) {
     const displayName = normalizeInstanceName(name);
     return this.exclusive(async (state, save) => {
       state.displayName = displayName;
       await save();
       return { instanceId: state.instanceId, displayName };
-    });
+    }, false);
   }
 
   /** explicit rotation detaches old work; it never rewrites a claim or adopts copied receipts. */
@@ -200,6 +212,6 @@ export default class AssignmentClaimStore {
       state.instanceId = randomUUID();
       await save();
       return { instanceId: state.instanceId, displayName: state.displayName };
-    });
+    }, false);
   }
 }

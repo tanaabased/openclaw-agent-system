@@ -11,6 +11,7 @@ import OpenClawIntake from '../agent/openclaw-intake.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import instanceIdentity from '../agent/instance-identity.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
@@ -298,18 +299,16 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService: lifecycleManifestService,
   };
   const automationService = new AutomationService(automationDependencies);
+  const instanceStore = new AssignmentClaimStore(
+    join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
+  );
   const dispatchV2 = createDispatchTool({
     api,
-    claims: new OpenClawAssignmentClaims(
-      new AssignmentClaimStore(
-        join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
-      ),
-      (connection) => {
-        if (!(connection instanceof GitHubWorkEventClient))
-          throw new Error('claim-provider-binding-required');
-        return new GitHubAssignmentClaimClient(connection);
-      },
-    ),
+    claims: new OpenClawAssignmentClaims(instanceStore, (connection) => {
+      if (!(connection instanceof GitHubWorkEventClient))
+        throw new Error('claim-provider-binding-required');
+      return new GitHubAssignmentClaimClient(connection);
+    }),
     config: readRuntimeConfig,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
     intake: intakeV2,
@@ -556,6 +555,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     createSessionDispatchLifecycle(sessionDispatch),
+    instanceIdentity(instanceStore),
     intakeV2.contribution(),
     automationService.contribution(),
   ];
@@ -766,6 +766,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       environmentService,
       input: process.stdin,
       installService: operatorInstall,
+      instanceStore,
       automations,
       boundCommands,
       manifestService,

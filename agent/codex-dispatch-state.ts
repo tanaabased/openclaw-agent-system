@@ -50,6 +50,9 @@ const creationSchema = Type.Object(
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    claimId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+    claimPass: Type.Optional(text),
+    claimAccepted: Type.Optional(Type.Boolean()),
     previousSummaryAttempts: Type.Optional(Type.Array(attemptSchema)),
     summaryRecovery: Type.Optional(
       Type.Object(
@@ -149,7 +152,9 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
     super(root, scope, {
       runtime: 'codex',
       recordSchema: dispatchRecordSchema,
-      validRecord: (record) => !record.request || Boolean(record.project),
+      validRecord: (record) =>
+        (!record.request || Boolean(record.project)) &&
+        (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)),
     });
   }
 }

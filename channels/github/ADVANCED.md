@@ -413,3 +413,20 @@ Declare V2 authority explicitly and run Install to reconcile its owning schedule
 Old checkpoints and conversations do not establish V2 activation or completion.
 Keep the prior package and configuration backup if an old conversation still needs
 its V1 runtime; this package does not resume V1 work.
+
+## Assignment ownership across installations
+
+OpenClaw and standalone Codex use the same GitHub claim format. The first eligible
+intake occurrence registers a claim; a distinct later occurrence selects the earliest
+valid comment before preparing a chat or worktree. After native creation is verified,
+the winner reads “Assignment accepted on <name>.” Losing installations remove their
+own claims, and the winner remains for the workflow lifetime. Existing native work
+created before claiming was introduced keeps its retained custody.
+
+This adds one intake interval and may briefly show competing comments. It assumes
+GitHub exposes earlier claims and each installation has its own UUID. Missing or
+edited winners, delayed visibility, and copied installations require recovery; there
+is no timeout-based takeover. Preserve the original comment and native receipts.
+Use [instance commands](../../CLI.md#openclaw-agent-system-instance-inspect) to inspect
+or rename OpenClaw installations, and explicit rotation for a copied installation.
+[Codex Install and Doctor](../../CODEX.md#workspace-setup) own its separate identity.

@@ -2,7 +2,7 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 
 export interface AgentOperatorInvocation {
   recommendedTool?: string;
-  surface: 'credentials' | 'shim' | 'tool' | 'setup' | 'backup' | 'automation';
+  surface: 'credentials' | 'shim' | 'tool' | 'setup' | 'backup' | 'automation' | 'instance';
   targetAgentDynamic: boolean;
   targetAgentId?: string;
 }
@@ -192,6 +192,7 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
       'backup',
       'automation-execute',
       'automations',
+      'instance',
     ].includes(surface ?? '')
   )
     return undefined;
@@ -205,7 +206,10 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
     surface:
       surface === 'automation-execute' || surface === 'automations'
         ? 'automation'
-        : surface === 'tool' || surface === 'credentials' || surface === 'backup'
+        : surface === 'tool' ||
+            surface === 'credentials' ||
+            surface === 'backup' ||
+            surface === 'instance'
           ? surface
           : 'setup',
     targetAgentDynamic: target.dynamic,

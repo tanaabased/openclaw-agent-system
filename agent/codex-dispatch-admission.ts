@@ -83,7 +83,54 @@ export async function recover(
     delete record.result;
     delete record.stageReceipt;
   }
+  await save();
+  if (record.claimId && !record.claimAccepted) {
+    const { client } = await revalidateDispatchAssignment(
+      current,
+      intake,
+      deps,
+      new AbortController().signal,
+      true,
+      record,
+    );
+    await deps.claims!.accept(intake, client, record);
+    record.claimAccepted = true;
+    await save();
+  }
   return found;
+}
+
+async function selectClaim(
+  record: DispatchRecord,
+  intake: IntakeRecord,
+  client: Awaited<ReturnType<typeof revalidateDispatchAssignment>>['client'],
+  tx: CodexDispatchTransaction,
+) {
+  const { state, deps, current, save } = tx;
+  const claim = await deps.claims!.select({
+    intake,
+    client,
+    threadId: tx.caller,
+    turnId: state.run!.id,
+    hasCapacity:
+      codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available > 0,
+  });
+  if (claim.status === 'recovery-required')
+    throw new Error(claim.code ?? 'claim-recovery-required');
+  if (claim.status === 'owned') {
+    record.claimId = claim.winnerId;
+    await save();
+    return;
+  }
+  record.claimPass = state.run!.id;
+  await save();
+  return {
+    status: 'claim-waiting' as const,
+    changed: false,
+    id: record.id,
+    claim,
+    nextAction: 'next' as const,
+  };
 }
 
 function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
@@ -166,7 +213,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       !record.retirement &&
       !record.handoff &&
       record.request &&
-      !record.effective &&
+      (!record.effective || (record.claimId && !record.claimAccepted)) &&
       record.phase !== 'complete' &&
       (record.phase !== 'blocked' ||
         (record.result?.outcome === 'operator-setup-blocker' &&
@@ -250,6 +297,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     .find(
       ({ record, intake }) =>
         !record?.request &&
+        record?.claimPass !== state.run!.id &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
@@ -285,6 +333,8 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   try {
     record.intakeId = intake.id;
     const { client, repo } = await revalidateDispatchAssignment(current, intake, deps, signal);
+    const waiting = await selectClaim(record, intake, client, tx);
+    if (waiting) return waiting;
     const configuration = current.manifest.git?.worktrees ?? {};
     const repositoryId = 'github-' + repo.databaseId;
     const layout = resolveGitWorktreeLayout(current.workspace, configuration);
@@ -430,7 +480,9 @@ export async function prepareDispatch(
   )
     throw new Error('dispatch-preparation-stale');
   try {
-    await revalidateDispatchAssignment(current, intake, deps, signal);
+    const { client } = await revalidateDispatchAssignment(current, intake, deps, signal);
+    const waiting = await selectClaim(record, intake, client, tx);
+    if (waiting) return waiting;
     const snapshot = JSON.parse(record.context);
     const metadata = snapshot.metadata?.complexity;
     const decision = resolveModelRoutingRequest(

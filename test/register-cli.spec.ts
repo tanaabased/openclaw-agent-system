@@ -298,6 +298,20 @@ function createProgram(
       },
     },
     toolRuntime: {} as never,
+    instanceStore: {
+      inspect: async () => ({
+        instanceId: '11111111-1111-4111-8111-111111111111',
+        displayName: 'test-laptop',
+      }),
+      rename: async (name: string) => ({
+        instanceId: '11111111-1111-4111-8111-111111111111',
+        displayName: name,
+      }),
+      rotate: async () => ({
+        instanceId: '22222222-2222-4222-8222-222222222222',
+        displayName: 'test-laptop',
+      }),
+    } as never,
     styles: createCliStyles({ NO_COLOR: '1' }),
     terminalColumns: dependencies.terminalColumns,
   });
@@ -310,6 +324,9 @@ describe('cli/command-family-fixtures', () => {
     ['env'],
     ['doctor'],
     ['install'],
+    ['instance', 'inspect'],
+    ['instance', 'rename', 'test-laptop'],
+    ['instance', 'rotate', '--expected-id', '11111111-1111-4111-8111-111111111111'],
     ['credentials', 'set', 'op', '--from-env'],
     ['credentials', 'validate', 'op'],
     ['credentials', 'unset', 'op'],
@@ -391,7 +408,7 @@ describe('cli/command-family-fixtures', () => {
         if (child.name() === 'automation-execute') return [];
         return child.commands.length ? names(child, `${name} `) : [name];
       });
-    assert.equal(leaves.length, 22);
+    assert.equal(leaves.length, 25);
     assert.deepEqual(
       new Set(names(program.commands[0]!)),
       new Set(
@@ -401,7 +418,9 @@ describe('cli/command-family-fixtures', () => {
               0,
               argv[0] === 'credentials' && argv[1] === 'cache'
                 ? 3
-                : ['backup', 'automations', 'notifications', 'credentials'].includes(argv[0]!)
+                : ['backup', 'automations', 'notifications', 'credentials', 'instance'].includes(
+                      argv[0]!,
+                    )
                   ? 2
                   : 1,
             )
@@ -416,6 +435,9 @@ describe('cli/command-family-fixtures', () => {
     'environment',
     'workspace',
     'workspace',
+    'ready',
+    'renamed',
+    'rotated',
     'stored',
     'valid',
     'removed',
@@ -849,7 +871,17 @@ describe('cli/register', () => {
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
       command?.commands.map((subcommand) => subcommand.name()),
-      ['backup', 'validate', 'env', 'doctor', 'notifications', 'tool', 'credentials', 'install'],
+      [
+        'backup',
+        'validate',
+        'env',
+        'instance',
+        'doctor',
+        'notifications',
+        'tool',
+        'credentials',
+        'install',
+      ],
     );
     assert.deepEqual(
       command?.commands

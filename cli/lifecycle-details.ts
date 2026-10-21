@@ -25,6 +25,11 @@ export default function lifecycleDetails(
           ? 'github-channel-intake'
           : item.component;
   let message = item.message;
+  if (item.component === 'instance-identity')
+    message = message.replace(
+      /\bid: ([a-f0-9-]{36})/gu,
+      (_match, id: string) => `id: ${maskedId(id)}`,
+    );
   if (item.component === 'automations' && item.stepId) {
     const automation = automations.find(({ id }) => id === item.stepId);
     const name =

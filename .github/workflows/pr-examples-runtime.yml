@@ -16,8 +16,6 @@ env:
 
 jobs:
   examples:
-    # restore this pr's full checks when the integrated candidate is ready.
-    if: github.event.pull_request.number != 408
     name: ${{ matrix.example }} (ubuntu-24.04)
     runs-on: ubuntu-24.04
     strategy:

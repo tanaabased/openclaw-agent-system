@@ -577,6 +577,7 @@ try {
       [
         { code: 'setup-drift', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+        { code: 'instance-identity-missing', stepId: undefined },
       ],
     );
     const setupInstalled = JSON.parse(
@@ -587,6 +588,7 @@ try {
       [
         { code: 'setup-applied', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+        { code: 'instance-identity-ready', stepId: undefined },
       ],
     );
     await access(join(workspace, '.codex-installed'));

@@ -1,3 +1,4 @@
+import source from './assignment-claim-source.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -10,19 +11,6 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { DispatchCaller } from './openclaw-session-create.ts';
 
 type Connection = GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
-
-function source(intake: IntakeRecord) {
-  return {
-    owner: intake.repository.owner.login,
-    repository: intake.repository.name,
-    repositoryNodeId: intake.repository.nodeId,
-    issueNodeId: intake.issue.nodeId,
-    number: intake.issue.number,
-    receivingNodeId: intake.receiving.nodeId,
-    assignmentEventId: intake.assignment.nodeId,
-    assignerNodeId: intake.assignment.actor.nodeId,
-  };
-}
 
 /** native occurrences own the wait; verified session receipts own acceptance. */
 export default class OpenClawAssignmentClaims {
