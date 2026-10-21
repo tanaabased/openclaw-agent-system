@@ -443,7 +443,30 @@ through native host approval. If access is denied, it reports the reason and kee
 the work intact; it does not delete locks or loosen directory permissions. Native
 approval requests retain their native UI.
 
-To repeat assessment through assignment intake, use `dispatchRuntime` with
+For a workspace-wide notification reset, use `notificationResetRuntime` from an
+operator chat. Send `{"agent":["<bound-agent-id>"]}` on stdin to inspect the scope,
+then add `"yes":true` after confirmation. `"all":true` selects only the current
+binding; it never discovers or changes other Codex installations. Add `"purge":true`
+to include the retained resource inventory.
+
+Reset clears management and feedback state, establishes a fresh assignment
+baseline, and preserves work unless purge was selected. It prepares native
+`automation_update` requests to pause and restore intake. Execute each request once
+and repeat the same reset to verify saved state. It waits for managed turns without
+aborting them. An unverified native mutation is not issued again automatically.
+Native denial remains a stop.
+
+Purge prepares native chat archival and closes verified open unmerged PRs. Supply
+the current native `list_threads` result as `nativeInventory` when requested so
+pinned and shared resources remain protected. Codex owns managed worktree removal.
+After archival, purge waits up to 30 seconds per checkout for native cleanup.
+If a checkout remains, the operation reports incomplete and retains its recovery
+record until native worktree controls remove it. It never edits app databases or
+deletes a managed checkout behind the desktop's back. Repeat the same reset to
+reconcile completion; do not discard its recovery file. There are no separate
+workspace-reset status, retry, or resume actions.
+
+To repeat one assessment through assignment intake, use `dispatchRuntime` with
 `{"action":"reset","id":"<assessment-receipt>"}` from an operator chat, then repeat
 with the returned `digest`. Reset requires a completed assessment and native confirmation
 that its recorded result turn completed, with no later turn. It freezes the previous

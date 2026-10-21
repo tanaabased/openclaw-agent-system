@@ -66,6 +66,14 @@ function operatorDecision(
       severity: 'error',
     };
   }
+  if (invocations.some(({ surface }) => surface === 'notification-reset')) {
+    return {
+      blockReason:
+        'Notification reset is operator-only. Ask the operator to run it from an operator terminal.',
+      code: 'agent-notification-reset-operator-only',
+      severity: 'error',
+    };
+  }
   if (invocations.some(({ surface }) => surface === 'setup')) {
     return {
       blockReason:

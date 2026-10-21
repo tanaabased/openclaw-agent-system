@@ -104,6 +104,12 @@ this desktop skill-invocation journey.
 The disabled-workflow fixture omits the notification schema version to exercise
 the packaged default; the active fixture retains explicit version `2`.
 
+For native purge verification, reset a disposable managed issue with purge selected.
+After native chat archival, confirm purge waits for checkout removal and completes
+without manual cleanup when removal finishes within 30 seconds. If removal stays
+pending, confirm purge reports incomplete and retains its recovery record; repeating
+the same reset after native removal must finish without repeating chat archival.
+
 ## Setup
 
 ```bash
@@ -118,6 +124,19 @@ codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/
 ## Testing
 
 ```bash
+# should reject an unattended reset without an explicit target before accessing private state
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+status=0
+node "$runtime" notifications reset --plugin-data "$root/uncreated-reset-data" > "$root/reset-stdout.txt" 2> "$root/reset-result.json" <<'JSON' || status=$?
+{"yes":true}
+JSON
+test "$status" -ne 0
+test ! -s "$root/reset-stdout.txt"
+jq -e '.code == "notification-reset-explicit-bound-agent-required"' "$root/reset-result.json"
+test ! -e "$root/uncreated-reset-data"
+
 # should explain a host permission failure in one heartbeat without accessing tracking state
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -175,6 +194,10 @@ test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
 
 # should expose direct reply without intake activation while requiring an actual native caller
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
 if output=$(printf '%s\n' '{"action":"reply","operation":"compose","target":"https://github.com/tanaabased/big-test-bucket/issues/1","privateText":"A supplied response."}' | env -u CODEX_THREAD_ID node "$runtime" feedback reply compose --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "reply-native-caller-required"'
 if output=$(printf '%s\n' '{"action":"reply","operation":"publish"}' | node "$runtime" feedback reply compose --plugin-data "$plugin_data" 2>&1); then exit 1; fi

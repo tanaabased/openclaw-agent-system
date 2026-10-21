@@ -26,7 +26,7 @@ describe('agent/feedback-reply', () => {
   let posted: { nodeId: string; databaseId: number; body: string } | undefined;
   let owners: ReplyOwner[];
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'direct-reply-'));
+    root = await realpath(await mkdtemp(join(tmpdir(), 'direct-reply-')));
     await writeFile(join(root, 'SKILL.md'), '# ordinary reply composer');
     selections = writes = 0;
     lost = hidden = false;

@@ -193,6 +193,51 @@ export default class AutomationService {
     return { context, record, native };
   }
 
+  async notificationResetSnapshot(manifest: AgentManifest, workspace: string, id: string) {
+    const { native } = await this.resolveOwned(manifest, workspace, id);
+    return {
+      id,
+      nativeId: native.id,
+      enabled: native.enabled,
+      hash: nativeAutomationHash({ ...native, enabled: false }),
+      ...(typeof native.sessionTarget === 'string' && native.sessionTarget.startsWith('session:')
+        ? { sessionKey: native.sessionTarget.slice(8) }
+        : {}),
+    };
+  }
+
+  /** temporarily pause an owned job without changing its installed desired-state receipt. */
+  async notificationResetToggle(
+    manifest: AgentManifest,
+    workspace: string,
+    expected: Awaited<ReturnType<AutomationService['notificationResetSnapshot']>>,
+    restore: boolean,
+  ) {
+    const { store } = await this.scope(manifest, workspace);
+    return store.withLock(async () => {
+      const { native } = await this.resolveOwned(manifest, workspace, expected.id);
+      if (
+        native.id !== expected.nativeId ||
+        nativeAutomationHash({ ...native, enabled: false }) !== expected.hash
+      )
+        throw new Error('notification-reset-automation-changed');
+      const enabled = restore ? expected.enabled : false;
+      if (native.enabled !== enabled)
+        await this.dependencies.request!('cron.update', {
+          id: native.id,
+          expectedConfigRevision: native.configRevision,
+          patch: { enabled },
+        });
+      const after = await this.notificationResetSnapshot(manifest, workspace, expected.id);
+      if (
+        after.nativeId !== expected.nativeId ||
+        after.hash !== expected.hash ||
+        after.enabled !== enabled
+      )
+        throw new Error('notification-reset-automation-unverified');
+    });
+  }
+
   async run(manifest: AgentManifest, workspaceDir: string, id: string) {
     const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
     if (!job) throw new AutomationError('automation-id-missing');

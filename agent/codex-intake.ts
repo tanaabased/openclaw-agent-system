@@ -1,4 +1,5 @@
 import connectCodexGitHubAccount from './codex-github-client.ts';
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -44,7 +45,7 @@ export async function connectCodexGitHub(
 export async function selectCodexIntake(
   pluginData: string,
   deps: CodexIntakeDependencies,
-  options: { resolvePolicy?: boolean } = {},
+  options: { resolvePolicy?: boolean; inspectionOnly?: boolean } = {},
 ) {
   const inspection = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
   if (inspection.status !== 'bound') throw new IntakeError('intake-binding-unavailable');
@@ -66,6 +67,7 @@ export async function selectCodexIntake(
       agentId: loaded.manifest.agent.id,
     }),
   );
+  if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
     policy,
     store,

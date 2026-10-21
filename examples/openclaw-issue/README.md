@@ -239,6 +239,7 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 jq -es '[.[].records[]] | length == 1' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should publish only after a later explicit request and reconcile without another post
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
 draft_id=$(jq -er .id "$TMPDIR/notification-manual-draft.json")
 params=$(jq -nc --arg id "$draft_id" '{sessionKey:"agent:notifications-tanaabot:manual-reply",agentId:"notifications-tanaabot",message:("Direct reply publish draft: " + $id),deliver:false,idempotencyKey:"notification-manual-publish"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-publish"'
@@ -269,6 +270,8 @@ if test -s "$TMPDIR/notification-issue.json"; then
 fi
 
 # should close the separate unassigned manual reply fixture
+test -f "$TMPDIR/notification-gateway-stopped"
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
 if test -s "$TMPDIR/notification-manual-issue.json"; then
   number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
   openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
