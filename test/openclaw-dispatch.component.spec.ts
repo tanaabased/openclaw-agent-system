@@ -4236,23 +4236,80 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
-  it('should keep plan feedback in planning even when native metadata says owner', async () => {
+  it('should answer question-only plan feedback without implementation despite owner metadata', async () => {
     const { id } = await feedbackOwner(false);
     consumeSend = true;
     await service.check(manifest, root);
     await service.run(manifest, root, coordinator, { action: 'reconcile', id });
     await service.run(manifest, root, coordinator, { action: 'next' });
-    const event = (await record()).feedback!.events[0]!;
+    const before = await record();
+    const event = before.feedback!.events[0]!;
     assert.ok(event.turn);
-    const result = await service.run(
+    const who = assessor(id, event.turn.runId);
+    const context = await service.run(
       manifest,
       root,
-      assessor(id, event.turn.runId),
-      { action: 'implementation-context', id },
+      who,
+      { action: 'feedback', operation: 'context', id, eventId: event.id },
       true,
     );
-    assert.equal(result.status, 'policy-held');
-    assert.equal((await record()).progression, undefined);
+    assert.equal(context.status, 'verified');
+    assert.ok('source' in context);
+    assert.equal((context.source as GitHubCanonicalIssueComment).body, '@receiver explain this');
+    const answer = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'feedback',
+        operation: 'result',
+        id,
+        eventId: event.id,
+        privateText: 'The retained plan describes the proposed change; no implementation started.',
+        reply: false,
+      },
+      true,
+    );
+    assert.equal(answer.status, 'recorded');
+    const after = await record();
+    assert.equal(after.progression, undefined);
+    assert.equal(after.feedback!.events[0]!.work, undefined);
+    assert.deepEqual(after.work, before.work);
+    assert.deepEqual(after.result, before.result);
+  });
+
+  it('should enter work from explicit approved plan feedback without an extra decision', async () => {
+    const { id, comments } = await feedbackOwner(false);
+    comments[0]!.body = '@receiver Please implement the agreed plan.';
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const before = await record();
+    const event = before.feedback!.events[0]!;
+    assert.ok(event.turn);
+    const who = assessor(id, event.turn.runId);
+    const request = {
+      action: 'feedback' as const,
+      operation: 'implementation-context' as const,
+      id,
+      eventId: event.id,
+    };
+    await assert.rejects(
+      service.run(manifest, root, { ...who, runId: 'unbound-native-owner' }, request, true),
+      /feedback-owner-caller-required/,
+    );
+    const result = await service.run(manifest, root, who, request, true);
+    assert.equal(result.status, 'verified');
+    const after = await record();
+    assert.equal(after.progression?.stage, 'implementation');
+    assert.equal(after.progression?.via, 'operator');
+    assert.equal(after.progression?.workOwner, event.id);
+    assert.equal(after.feedback!.events[0]!.work!.decision, undefined);
+    assert.deepEqual(after.result, before.result);
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.equal(creates().length, 1);
   });
 
   it('should preserve a legacy publication-only request without promoting implementation', async () => {

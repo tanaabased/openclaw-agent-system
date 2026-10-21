@@ -131,7 +131,32 @@ describe('scripts/aimock-tool-search', () => {
       presentation: '> Retained plan',
     });
     assert.equal(saved.result.outcome, 'plan-ready');
-    assert.deepEqual((await reply(scenario, input)).response, { content: '> Retained plan' });
+    const summaryResponse = (await reply(scenario, input)).response;
+    assert.equal('content' in summaryResponse && summaryResponse.content, '> Retained plan');
+    await step('summary-compose', 'agent_system_dispatch', {
+      status: 'composition-ready',
+      digest,
+      selection: { skill: { path: '/tmp/reply/SKILL.md' } },
+    });
+    await step('summary-skill', 'read', { content: 'Compose a concise public summary.' });
+    assert.equal(
+      (await step('summary-candidate', 'agent_system_dispatch', { status: 'candidate-recorded' }))
+        .digest,
+      digest,
+    );
+    await step('summary-preview', 'agent_system_dispatch', { status: 'publication-ready', digest });
+    assert.equal(
+      (
+        await step('summary-publish', 'agent_system_dispatch', {
+          status: 'published',
+          presentation: '> Published plan summary',
+        })
+      ).digest,
+      digest,
+    );
+    assert.deepEqual((await reply(scenario, input)).response, {
+      content: '> Published plan summary',
+    });
     input.messages.push(
       { role: 'assistant', content: '> Retained plan' },
       {
