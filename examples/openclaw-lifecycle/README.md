@@ -341,6 +341,18 @@ jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == 
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-unavailable-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 
+# should record explicit retirement of open assigned work without archiving its active turn
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+conversation=$(jq -er .threadId "$TMPDIR/notification-unavailable-before.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-unavailable-before.json")
+receipt=$(jq -er .id "$TMPDIR/notification-unavailable-before.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"lifecycle-tanaabot",sessionId:$session,message:("Retire this managed task now " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-manual-retire"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-manual-retire"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-retire 300000
+jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | length == 1 and (.[0] | .retirement.reason == "operator-requested" and .retirement.eligibleAt == .retirement.operatorRequest.at and .retirement.code == "retirement-native-work-unresolved" and .retired == null and .retirement.archivedAt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")" | jq -e '.state == "open" and any(.assignees[]; .login == "tanaabot")'
+
 # should leave a managed checkout after deleting its exact completed session
 conversation=$(jq -er .threadId "$TMPDIR/notification-unavailable-before.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-unavailable-before.json")
@@ -348,10 +360,7 @@ openclaw gateway call sessions.delete --params "$(jq -nc --arg key "$conversatio
 test -d "$(jq -er .worktree "$TMPDIR/notification-unavailable-before.json")"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session == null'
 
-# should remove the preserved checkout during ordinary retirement without inventing archival
-cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
-number=$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")
-openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
+# should reconcile manual retirement of the preserved checkout without inventing archival
 # allow the bounded observation interval to elapse; cleanup grace is zero.
 sleep 61
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
@@ -359,7 +368,7 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 id=$(jq -er .id "$TMPDIR/notification-unavailable-before.json")
 jq -es --arg id "$id" '[.[].records[] | select(.id == $id)] | if length == 1 then .[0] else error("one retained record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-unavailable-after.json"
-jq -e --slurpfile before "$TMPDIR/notification-unavailable-before.json" '.retired.at != null and .retirement.sessionUnavailableObserved.session == "not-found" and .retirement.archivedAt == null and .retirement.archiveAttempt == null and .retirement.worktreeRemovalAttemptedAt != null and .retirement.worktreeRemovedAt != null and .request == $before[0].request and .sessionCreation == $before[0].sessionCreation and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-unavailable-after.json"
+jq -e --slurpfile before "$TMPDIR/notification-unavailable-before.json" '.retirement.reason == "operator-requested" and .retired.at != null and .retirement.sessionUnavailableObserved.session == "not-found" and .retirement.archivedAt == null and .retirement.archiveAttempt == null and .retirement.worktreeRemovalAttemptedAt != null and .retirement.worktreeRemovedAt != null and .request == $before[0].request and .sessionCreation == $before[0].sessionCreation and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-unavailable-after.json"
 worktree=$(jq -er .worktree "$TMPDIR/notification-unavailable-after.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'

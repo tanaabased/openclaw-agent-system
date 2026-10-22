@@ -12,6 +12,7 @@ const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 export const dispatchParameters = Type.Union([
   replyRequestSchema,
+  object({ action: Type.Literal('retire'), id: Type.Optional(id), digest: Type.Optional(id) }),
   object({
     action: Type.Literal('check'),
     observation: Type.Optional(

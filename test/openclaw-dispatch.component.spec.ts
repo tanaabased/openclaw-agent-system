@@ -627,6 +627,145 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(effects.length, 2);
   });
 
+  for (const protection of [
+    'none',
+    'running',
+    'pinned',
+    'dirty',
+    'migration',
+    'invalid-config',
+  ] as const) {
+    it(`should attempt manual retirement immediately with native protection: ${protection}`, async () => {
+      await assignments(1, 1);
+      const first = await next();
+      await prepare(first);
+      await assess(first.id);
+      await completeAssessment(first.id);
+      const before = structuredClone(await record());
+      const operator = {
+        ...coordinator,
+        sessionKey: 'agent:receiver:operator',
+        sessionId: 'operator-id',
+      };
+      const retire = (digest?: string) =>
+        service.run(
+          manifest,
+          root,
+          operator,
+          { action: 'retire', id: first.id, ...(digest ? { digest } : {}) },
+          true,
+        );
+      let removed = false;
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        if (protection === 'dirty')
+          return {
+            ...input.worktree,
+            repositoryId: 'github-10',
+            workId: 'issue-20',
+            status: 'dirty',
+          };
+        if (!input.verifyOnly) removed = true;
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: input.verifyOnly ? 'preserved' : 'removed',
+        };
+      };
+      if (protection === 'invalid-config')
+        service.dependencies.readInstallationConfig = async () =>
+          parseInstallationConfig('schema-version: 2', '/installation/config.yaml');
+      if (protection === 'running') histories.get(before.threadId!)!.active = true;
+      if (protection === 'pinned') sessions.get(before.threadId!)!.pinned = true;
+      if (protection === 'migration')
+        manifest.cleanupMigration = { declaration: { enabled: false } };
+      await assert.rejects(
+        service.run(manifest, root, operator, { action: 'retire', id: first.id }),
+        /dispatch-operator-required/,
+      );
+      const preview = await retire();
+      assert.equal(preview.status, 'retire-available');
+      assert.deepEqual(await record(), before);
+      await assert.rejects(retire('f'.repeat(64)), /dispatch-recovery-stale/);
+      const applied = await retire('digest' in preview ? String(preview.digest) : '');
+      assert.equal(applied.status, protection === 'none' ? 'retired' : 'retirement-pending');
+      const after = await record();
+      assert.equal(after.retirement!.reason, 'operator-requested');
+      assert.equal(after.retirement!.eligibleAt, service.dependencies.now!());
+      assert.equal(removed, protection === 'none');
+      assert.deepEqual(after.result, before.result);
+      assert.equal(fixture.item.state, 'open');
+      if (protection === 'none') {
+        assert.equal((await retire()).status, 'retired');
+        assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
+        await (
+          await service.scope(manifest, root)
+        ).journal.exclusive(async (state, save) => {
+          delete state.records[0]!.retirement!.archivedAt;
+          await save();
+        });
+        assert.equal((await retire()).status, 'retirement-unverified');
+      } else
+        assert.equal(
+          calls.some((call) => call.method === 'sessions.patch'),
+          false,
+        );
+    });
+  }
+
+  it('should reject a retirement preview after live settings or native identity changes', async () => {
+    await prepare(await next());
+    const target = await record();
+    const operator = { ...coordinator, sessionKey: 'operator', sessionId: 'operator-id' };
+    const retire = (digest?: string) =>
+      service.run(manifest, root, operator, { action: 'retire', id: target.id, digest }, true);
+    const preview = await retire();
+    manifest.cleanupMigration = { declaration: { enabled: false } };
+    await assert.rejects(
+      retire('digest' in preview ? String(preview.digest) : ''),
+      /dispatch-recovery-stale/,
+    );
+    assert.equal((await record()).retirement, undefined);
+    delete manifest.cleanupMigration;
+    session!.sessionId = 'replacement';
+    await assert.rejects(retire(), /retirement-session-identity-changed/);
+    assert.equal((await record()).retirement, undefined);
+    assert.equal(
+      calls.some((call) => call.method === 'sessions.patch'),
+      false,
+    );
+  });
+
+  it('should accept the exact current task but leave its active invocation pending', async () => {
+    const first = await next();
+    await prepare(first);
+    await assess(first.id);
+    const caller = assessor(first.id);
+    await assert.rejects(
+      service.run(manifest, root, { ...caller, sessionId: 'stale' }, { action: 'retire' }, true),
+      /dispatch-retire-context-mismatch/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, caller, { action: 'retire', id: 'f'.repeat(64) }, true),
+      /dispatch-retire-context-mismatch/,
+    );
+    const preview = await service.run(manifest, root, caller, { action: 'retire' }, true);
+    assert.equal(preview.status, 'retire-available');
+    const applied = await service.run(
+      manifest,
+      root,
+      caller,
+      { action: 'retire', digest: 'digest' in preview ? String(preview.digest) : '' },
+      true,
+    );
+    assert.equal(applied.status, 'retirement-pending');
+    assert.equal((await record()).retirement!.code, 'retirement-native-work-unresolved');
+    assert.equal(
+      calls.some((call) => call.method === 'sessions.patch'),
+      false,
+    );
+  });
+
   it('should archive all eligible owners before removing a shared checkout once', async () => {
     const { items } = await assignments(2, 2);
     const sharedTree = {

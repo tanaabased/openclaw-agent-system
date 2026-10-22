@@ -488,14 +488,20 @@ the missing assignment while preserving the existing chat, checkout and work sta
 admitted work remains eligible within its existing permissions, without reassignment. See the [assignment lifecycle](channels/github/ADVANCED.md#assignment-lifecycle)
 for grace periods, reactivation, and cleanup protections. Intake prepares eligible
 Codex chats for native archival; the desktop owns worktree snapshots and reclamation.
-Retirement completes after archival and checkout removal are observed. The explicit
-`retire` action previews a closed issue and, after its digest is applied, queues
-the same retirement lifecycle while preserving launch and assessment evidence and
-any existing grace deadline. Both scheduled cleanup and `retire` read the
+Retirement completes after archival and checkout removal are observed. Use `$agent-system-task-retirement` for an explicit operator request, or call
+`dispatchRuntime` with `{"action":"retire","id":"<task-id>"}` and apply its preview
+digest. The issue can remain open and assigned. The request enters the same safe
+cleanup immediately, skipping eligibility wait and grace, without waiting for an
+intake occurrence. A running task remains pending, including a request from its own
+active turn. Repeated requests reconcile the same disposition and resource receipts;
+ordinary intake cannot recreate the unchanged assignment. Native archival and
+checkout reclamation may remain asynchronous or protected.
+
+Both scheduled cleanup and `retire` read the
 [shared installation setting](./CONFIG.md#shared-cleanup), not OpenClaw configuration
 or a per-agent copy. Legacy cleanup blocks hold both paths until
-[deliberate migration](./UPGRADING.md#shared-cleanup-policy). It accepts active or paused intake; cleanup waits for
-an eligible active intake run. It does not mark resources reclaimed before native
+[deliberate migration](./UPGRADING.md#shared-cleanup-policy). Retirement does not
+change the issue or branch and never marks resources reclaimed before native
 verification.
 
 After an operator-confirmed denial, pause the schedule and use `dispatchRuntime`

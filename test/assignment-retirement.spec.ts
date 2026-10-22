@@ -50,7 +50,7 @@ function setup() {
   } = { value: parseInstallationConfig(undefined, '/installation/config.yaml') };
   const records = [record];
   const admissions = [admitted];
-  const run = () =>
+  const run = (targetId?: string) =>
     reconcile({
       configuration: settings.value,
       readConfiguration: async () => settings.value,
@@ -64,6 +64,7 @@ function setup() {
       },
       client: fixture.client,
       owner: 'intake',
+      targetId,
       now,
       save: async () => {},
       fresh: async () => {},
@@ -109,6 +110,103 @@ function setup() {
 }
 
 describe('assignment retirement', () => {
+  it('should retire one open assigned task immediately without changing scheduled peers', async () => {
+    const h = setup();
+    h.record.retirement = assignmentRetirement({
+      reason: 'operator-requested',
+      intakeId: h.admitted.id,
+      now: baseline,
+      operatorRequest: { caller: 'operator', turnId: 'turn', targetId: h.record.id, at: baseline },
+    });
+    h.record.lifecycleCheckedAt = baseline;
+    h.records.push({ ...h.record, id: 'peer', retirement: undefined });
+    await h.run(h.record.id);
+    assert.equal(h.cleanups(), 1);
+    assert.ok(h.record.retired);
+    assert.equal(h.record.retirement?.reason, 'operator-requested');
+    assert.equal(h.records[1]!.retirement, undefined);
+    assert.equal(h.fixture.item.state, 'open');
+    await h.run(h.record.id);
+    assert.equal(h.cleanups(), 1);
+  });
+
+  it('should fence admissions at the operator request rather than an older cleanup observation', async () => {
+    const h = setup();
+    h.record.retirement = assignmentRetirement({
+      previous: assignmentRetirement({
+        reason: 'issue-closed',
+        intakeId: h.admitted.id,
+        now: baseline - 60000,
+        graceMinutes: 60,
+      }),
+      reason: 'operator-requested',
+      intakeId: h.admitted.id,
+      now: baseline,
+      operatorRequest: { caller: 'operator', turnId: 'turn', targetId: h.record.id, at: baseline },
+    });
+    const successor = {
+      ...h.admitted,
+      id: 'successor',
+      assignment: { ...h.admitted.assignment, createdAt: new Date(baseline - 30000).toISOString() },
+    };
+    h.admissions.push(successor);
+    await h.run(h.record.id);
+    assert.ok(h.record.retired);
+    assert.equal(h.record.retirement!.at, baseline - 60000);
+    const intake = { records: h.admissions } as IntakeState;
+    assert.deepEqual(pendingAssignments({ records: h.records }, intake), []);
+    const fresh = {
+      ...successor,
+      id: 'fresh',
+      assignment: { ...successor.assignment, createdAt: new Date(baseline + 1).toISOString() },
+    };
+    h.admissions.push(fresh);
+    assert.deepEqual(pendingAssignments({ records: h.records }, intake), [
+      { intake: fresh, record: undefined },
+    ]);
+  });
+
+  it('should retain manual intent through activity and idle transitions without restarting grace', async () => {
+    const h = setup();
+    h.record.retirement = assignmentRetirement({
+      reason: 'operator-requested',
+      intakeId: h.admitted.id,
+      now: baseline,
+      operatorRequest: { caller: 'operator', turnId: 'turn', targetId: h.record.id, at: baseline },
+    });
+    h.setBusy(true);
+    await h.run(h.record.id);
+    assert.equal(h.cleanups(), 0);
+    assert.equal(h.record.retirement?.code, 'retirement-native-work-unresolved');
+    h.advance(1);
+    h.activity();
+    h.setBusy(false);
+    await h.run();
+    assert.equal(h.cleanups(), 1);
+    assert.equal(h.record.retirement?.eligibleAt, baseline);
+  });
+
+  it('should preserve a manual request while current cleanup configuration blocks effects', async () => {
+    const h = setup();
+    h.record.retirement = assignmentRetirement({
+      reason: 'operator-requested',
+      intakeId: h.admitted.id,
+      now: baseline,
+      operatorRequest: { caller: 'operator', turnId: 'turn', targetId: h.record.id, at: baseline },
+    });
+    h.settings.value = {
+      status: 'blocked',
+      code: 'retirement-cleanup-migration-required',
+      legacy: { declaration: { enabled: false } },
+    };
+    await h.run(h.record.id);
+    assert.equal(h.cleanups(), 0);
+    assert.equal(h.record.retirement?.code, 'retirement-cleanup-migration-required');
+    h.settings.value = parseInstallationConfig(undefined, '/installation/config.yaml');
+    await h.run(h.record.id);
+    assert.ok(h.record.retired);
+  });
+
   for (const shared of [false, true]) {
     it(`should ${shared ? 'block' : 'complete'} unavailable-session retirement ${shared ? 'with' : 'without'} an active shared owner`, async () => {
       const h = setup();

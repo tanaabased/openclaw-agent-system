@@ -1,3 +1,4 @@
+import { unverifiedLegacyRetirement } from './assignment-retirement.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
@@ -170,6 +171,16 @@ export async function runCodexDispatch(
           nextAction: 'next',
         };
       }
+      if (record.retired && operatorRetire && record.sourceThreadId === activation.sourceThreadId)
+        return unverifiedLegacyRetirement(record)
+          ? {
+              status: 'retirement-unverified',
+              id: record.id,
+              code: 'retirement-legacy-outcome-unverified',
+              instruction:
+                'Recover native session and checkout outcomes through the owning lifecycle; the historical retired marker alone is not completion evidence.',
+            }
+          : { status: 'retired', id: record.id, retirement: record.retirement };
       if (record.retired || (record.retirement && !operatorRetire))
         throw new Error('dispatch-assessment-retired');
       if (record.handoff && !operatorRetire && action !== 'summary')
@@ -269,6 +280,16 @@ export async function runCodexDispatch(
       }
       throw new Error('dispatch-action-invalid');
     }, waitForLock)
+    .then(async (result) => {
+      if (operatorRetire && input.digest !== undefined && result?.status === 'retirement-pending')
+        return (
+          (await reconcileCodexLifecycle(pluginData, deps, input.threads, {
+            id: String(input.id),
+            caller,
+          })) ?? result
+        );
+      return result;
+    })
     .catch((error: unknown) => {
       if (nativeObject(error) && error.code === 'private-state-file-lock-busy')
         return {

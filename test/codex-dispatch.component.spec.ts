@@ -217,7 +217,14 @@ describe('agent/codex-dispatch', () => {
         async unsubmittedCreation() {
           return undefined;
         },
-        async occurrence() {
+        async operatorInput() {
+          return { turnId: 'operator-' + now, inputId: 'operator-input' };
+        },
+        async occurrence(threadId) {
+          assert.ok(
+            !['operator', 'issue-thread'].includes(threadId),
+            'manual callers must not require a heartbeat',
+          );
           return {
             id: 'run-' + now,
             automationId: 'native-intake',
@@ -756,6 +763,7 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(after[0]!.result, before[0]!.result);
     assert.equal(after[0]!.worktree, worktree);
     assert.equal((await request('handoff', { id: prepared.id }, operator)).changed, false);
+    const retirementRead = deps.native!.find;
     deps.native!.find = async () => {
       throw new Error('must not poll handed-off chat');
     };
@@ -765,6 +773,7 @@ describe('agent/codex-dispatch', () => {
       /dispatch-assessment-handed-off/,
     );
     fixture.item.state = 'closed';
+    deps.native!.find = retirementRead;
     const retire = await request('retire', { id: prepared.id }, { threadId: 'operator' });
     assert.equal(retire.status, 'retire-available');
   });
@@ -1467,7 +1476,7 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should share scheduled and operator grace and reject legacy cleanup in both paths', async () => {
+  it('should skip only operator grace while both paths retain live cleanup configuration holds', async () => {
     const prepared = await prepare();
     created();
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
@@ -1482,7 +1491,8 @@ describe('agent/codex-dispatch', () => {
     const operator = { threadId: 'operator' };
     const preview = await request('retire', { id: prepared.id }, operator);
     const queued = await request('retire', { id: prepared.id, digest: preview.digest }, operator);
-    assert.equal((queued.retirement as { eligibleAt: number }).eligibleAt, now + 17 * 60_000);
+    assert.equal(queued.status, 'retirement-inventory-required');
+    const requestedAt = now;
     now += 60_000;
     await next();
     const selected = await selectCodexIntake(pluginData, deps);
@@ -1491,13 +1501,16 @@ describe('agent/codex-dispatch', () => {
       selected.store.location.scope,
     );
     const deadline = (await journal.read()).records[0]!.retirement!.eligibleAt;
-    assert.equal(deadline, now + 17 * 60_000);
+    assert.equal(deadline, requestedAt);
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     configured.github.notifications.cleanup = { enabled: false, 'grace-minutes': 2 };
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     const held = await request('retire', { id: prepared.id }, operator);
-    assert.equal(held.code, 'retirement-cleanup-migration-required');
-    now = deadline;
+    const appliedHold = await request('retire', { id: prepared.id, digest: held.digest }, operator);
+    assert.equal(
+      (appliedHold.retirement as { code: string }).code,
+      'retirement-cleanup-migration-required',
+    );
     await next();
     const current = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
@@ -1515,7 +1528,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(resumed.retirement?.eligibleAt, deadline);
   });
 
-  it('should queue manual retirement without losing evidence or restarting its grace period', async () => {
+  it('should enter manual retirement for open assigned work immediately and retain its request', async () => {
     const first = await prepare();
     const operator = {
       threadId: 'operator',
@@ -1531,11 +1544,29 @@ describe('agent/codex-dispatch', () => {
       },
     };
     await assert.rejects(request('retire', { id: first.id }), /dispatch-operator-caller-required/);
+
+    let connected = false;
     await assert.rejects(
-      request('retire', { id: first.id }, operator),
-      /dispatch-retire-closed-issue-required/,
+      request(
+        'retire',
+        { id: first.id },
+        {
+          ...operator,
+          native: {
+            ...deps.native!,
+            operatorInput: async () => {
+              throw new Error('reply-native-user-input-required');
+            },
+          },
+          connect: async (...args) => {
+            connected = true;
+            return deps.connect!(...args);
+          },
+        },
+      ),
+      /reply-native-user-input-required/,
     );
-    fixture.item.state = 'closed';
+    assert.equal(connected, false);
     const before = (await request('inspect')).records as Record<string, unknown>[];
     const preview = await request('retire', { id: first.id }, operator);
     assert.equal(preview.status, 'retire-available');
@@ -1548,18 +1579,18 @@ describe('agent/codex-dispatch', () => {
     assert.equal(applied.status, 'retirement-pending');
     const after = (await request('inspect')).records as Record<string, unknown>[];
     assert.equal(after[0]!.retired, undefined);
-    assert.deepEqual(after[0], {
-      ...before[0],
-      retirement: {
-        reason: 'issue-closed',
-        at: now,
-        intakeId: before[0]!.intakeId,
-        checkedAt: now,
-        reactivationAfter: now,
-        eligibleAt: now + 60 * 60_000,
-      },
-      workflowStatus: 'retirement-pending',
-    });
+    const disposition = after[0]!.retirement as {
+      reason: string;
+      eligibleAt: number;
+      operatorRequest: { caller: string; targetId: string };
+    };
+    assert.equal(disposition.reason, 'operator-requested');
+    assert.equal(disposition.eligibleAt, now);
+    assert.equal(disposition.operatorRequest.caller, 'operator');
+    assert.equal(disposition.operatorRequest.targetId, first.id);
+    assert.equal(after[0]!.workflowStatus, 'retirement-pending');
+    assert.equal(after[0]!.lifecycleCheckedAt, now);
+    assert.equal(fixture.item.state, 'open');
     now += 60_001;
     const repeated = await request('retire', { id: first.id }, operator);
     await request('retire', { id: first.id, digest: repeated.digest }, operator);
@@ -1578,6 +1609,23 @@ describe('agent/codex-dispatch', () => {
       request('context', { id: first.id }, { threadId: 'issue-thread' }),
       /dispatch-assessment-retired/,
     );
+  });
+
+  it('should retain a self-retirement request without archiving the active caller', async () => {
+    const prepared = await prepare();
+    created();
+    await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    const caller = { threadId: 'issue-thread' };
+    const preview = await request('retire', { id: prepared.id }, caller);
+    const applied = await request('retire', { id: prepared.id, digest: preview.digest }, caller);
+    assert.equal(applied.status, 'retirement-pending');
+    assert.equal(
+      (applied.retirement as { code: string }).code,
+      'retirement-native-work-unresolved',
+    );
+    assert.equal(fixture.item.state, 'open');
   });
 
   it('should allow retirement from a handed-off operator chat but not an active issue chat', async () => {
@@ -2465,7 +2513,7 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
-  for (const reason of ['closure', 'approved removal'] as const) {
+  for (const reason of ['closure', 'approved removal', 'operator request'] as const) {
     it(`should prepare native archival during intake and retire only after observed reclamation: ${reason}`, async () => {
       worktree = join(codexHome, 'worktrees', 'retiring', 'repo');
       await mkdir(worktree, { recursive: true });
@@ -2475,15 +2523,18 @@ describe('agent/codex-dispatch', () => {
       native!.status = 'idle';
       native!.turnEnded = true;
       if (reason === 'closure') fixture.item.state = 'closed';
-      else removeFixtureAssignment(fixture);
-      now += 60_000;
-      await next();
+      else if (reason === 'approved removal') removeFixtureAssignment(fixture);
+      if (reason !== 'operator request') {
+        now += 60_000;
+        await next();
+      }
       const current = await selectCodexIntake(pluginData, deps);
       const store = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
       );
-      now = (await store.read()).records[0]!.retirement!.eligibleAt;
+      if (reason !== 'operator request')
+        now = (await store.read()).records[0]!.retirement!.eligibleAt;
       const git = deps.git!;
       deps.git = async (path, args) =>
         args[0] === 'for-each-ref' ? 'refs/heads/preserved' : git(path, args);
@@ -2491,15 +2542,28 @@ describe('agent/codex-dispatch', () => {
         worktreeUsers: async () => ['issue-thread'],
         archiveOutcome: async () => 'unverified',
       };
-      const archived = await request('next', {
-        projects,
-        threads: {
-          schemaVersion: 4,
-          pinnedThreads: [],
-          unavailableHosts: [],
-          unavailableSources: [],
-        },
-      });
+      const threads = {
+        schemaVersion: 4,
+        pinnedThreads: [],
+        unavailableHosts: [],
+        unavailableSources: [],
+      };
+      const operator = { threadId: 'operator' };
+      const preview =
+        reason === 'operator request'
+          ? await request('retire', { id: prepared.id }, operator)
+          : undefined;
+      const archived = preview
+        ? await request('retire', { id: prepared.id, digest: preview.digest, threads }, operator)
+        : await request('next', { projects, threads });
+      if (preview) {
+        assert.equal(fixture.item.state, 'open');
+        assert.equal((await store.read()).records[0]!.retirement!.eligibleAt, now);
+        assert.equal(
+          (await store.read()).records[0]!.retirement!.archiveAttempt!.sourceThreadId,
+          'operator',
+        );
+      }
       assert.equal(archived.status, 'retirement-prepared');
       assert.deepEqual(archived.request, {
         threadId: 'issue-thread',
@@ -2519,6 +2583,17 @@ describe('agent/codex-dispatch', () => {
       const retired = (await store.read()).records[0]!;
       assert.equal(retired.retired?.at, now);
       assert.equal(retired.result?.summary, result.summary);
+      if (reason === 'operator request') {
+        assert.equal((await request('retire', { id: prepared.id }, operator)).status, 'retired');
+        await store.exclusive(async (state, save) => {
+          delete state.records[0]!.retirement!.archivedAt;
+          await save();
+        });
+        assert.equal(
+          (await request('retire', { id: prepared.id }, operator)).status,
+          'retirement-unverified',
+        );
+      }
     });
   }
 

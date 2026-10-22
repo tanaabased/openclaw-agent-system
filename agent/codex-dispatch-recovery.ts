@@ -1,7 +1,4 @@
-import {
-  cleanupConfigurationDiagnostic,
-  type CleanupConfiguration,
-} from './cleanup-configuration.ts';
+import { type CleanupConfiguration } from './cleanup-configuration.ts';
 import { automationHash } from './automation-hash.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -52,10 +49,13 @@ export default async function recoverDispatch(
     if (
       state.records.some(
         (entry) =>
-          !entry.handoff && (entry.threadId === caller || entry.receiptThreadId === caller),
+          !entry.handoff &&
+          entry.id !== record.id &&
+          (entry.threadId === caller || entry.receiptThreadId === caller),
       )
     )
       throw new Error('dispatch-operator-caller-required');
+    const nativeCaller = await withNative((host) => host.operatorInput(caller));
     const client = await connect();
     const item = await client.getItem(
       intake.repository.owner.login,
@@ -67,21 +67,37 @@ export default async function recoverDispatch(
       item.nodeId !== intake.issue.nodeId ||
       item.databaseId !== intake.issue.databaseId ||
       item.itemType !== 'issue' ||
-      item.state !== 'closed'
+      item.number !== intake.issue.number ||
+      record.sourceThreadId !== sourceThreadId
     )
-      throw new Error('dispatch-retire-closed-issue-required');
+      throw new Error('dispatch-retire-target-mismatch');
+    const repo = await client.getRepository(intake.repository.owner.login, intake.repository.name);
+    if (
+      repo.nodeId !== intake.repository.nodeId ||
+      repo.databaseId !== intake.repository.databaseId
+    )
+      throw new Error('dispatch-repository-identity-changed');
+    const threadId = record.threadId ?? record.receiptThreadId;
+    if (threadId && record.request) {
+      const target = await withNative((host) =>
+        host.find({
+          sourceThreadId: record.sourceThreadId,
+          prompt: record.request!.prompt,
+          createdAfter: record.createdAt,
+          threadId,
+          observationOnly: true,
+        }),
+      );
+      if (!target || target.cwd !== record.worktree)
+        throw new Error('dispatch-retire-target-mismatch');
+    }
     const configuration = await context.readConfiguration();
-    if (configuration.status === 'blocked')
-      return {
-        status: 'retirement-pending',
-        id: record.id,
-        code: configuration.code,
-        diagnostic: cleanupConfigurationDiagnostic(configuration),
-      };
     const digest = automationHash({
       record,
       manifest: manifestDigest,
-      configuration: configuration.digest,
+      configuration,
+      caller,
+      nativeCaller,
     });
     await fresh();
     if (input.digest === undefined)
@@ -92,23 +108,34 @@ export default async function recoverDispatch(
         issue: issueUrl,
         threadId: record.threadId ?? record.receiptThreadId,
         instruction:
-          'Queue this closed issue for retirement, preserving its evidence and any existing grace deadline. The owning intake performs configured cleanup after verifying native inactivity and preservation. A paused intake must resume before cleanup can proceed.',
+          'Retire this exact managed task now, leaving its issue and branch unchanged. Reuse safe native cleanup immediately without grace; running work, preservation blockers and asynchronous reclamation remain pending.',
       };
     if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
     const verifiedConfiguration = await context.readConfiguration();
-    if (
-      verifiedConfiguration.status !== 'ready' ||
-      verifiedConfiguration.digest !== configuration.digest
-    )
+    if (automationHash(verifiedConfiguration) !== automationHash(configuration))
       throw new Error('retirement-configuration-changed');
+    const verifiedCaller = await withNative((host) => host.operatorInput(caller));
+    if (
+      verifiedCaller.turnId !== nativeCaller.turnId ||
+      verifiedCaller.inputId !== nativeCaller.inputId
+    )
+      throw new Error('dispatch-native-caller-changed');
     record.reservationVersion = 1;
     record.retirement = assignmentRetirement({
       previous: record.retirement,
-      reason: 'issue-closed',
+      reason: 'operator-requested',
+      operatorRequest: {
+        caller,
+        turnId: nativeCaller.turnId,
+        inputId: nativeCaller.inputId,
+        targetId: record.id,
+        at: now,
+      },
       intakeId: record.intakeId,
       now,
-      graceMinutes: configuration.graceMinutes,
+      ...(configuration.status === 'ready' ? { graceMinutes: configuration.graceMinutes } : {}),
     });
+    delete record.feedbackReactivation;
     await save();
     return { status: 'retirement-pending', id: record.id, retirement: record.retirement };
   }

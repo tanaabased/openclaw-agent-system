@@ -19,6 +19,7 @@ export default async function codexRetirementCleanup(input: {
   inventory: unknown;
   now: number;
   turnId: string;
+  sourceThreadId?: string;
   native: ReturnType<typeof codexRetirementNative>;
   git?: DispatchGit;
   fresh(): Promise<void>;
@@ -41,10 +42,13 @@ export default async function codexRetirementCleanup(input: {
   if (input.archived) return pending('retirement-native-reclamation-pending');
   if (retirement.archiveAttempt) {
     const outcome = await input.native.archiveOutcome(
-      record.sourceThreadId,
+      retirement.archiveAttempt.sourceThreadId ?? record.sourceThreadId,
       threadId,
       retirement.archiveAttempt,
-      input.turnId,
+      (retirement.archiveAttempt.sourceThreadId ?? record.sourceThreadId) ===
+        (input.sourceThreadId ?? record.sourceThreadId)
+        ? input.turnId
+        : undefined,
     );
     if (outcome !== 'unsubmitted')
       return pending(
@@ -121,7 +125,11 @@ export default async function codexRetirementCleanup(input: {
   )
     return pending('retirement-worktree-unpreserved');
   await input.fresh();
-  retirement.archiveAttempt = { at: input.now, turnId: input.turnId };
+  retirement.archiveAttempt = {
+    at: input.now,
+    turnId: input.turnId,
+    ...(input.sourceThreadId ? { sourceThreadId: input.sourceThreadId } : {}),
+  };
   await input.save();
   return {
     ...pending('retirement-native-archive-pending'),

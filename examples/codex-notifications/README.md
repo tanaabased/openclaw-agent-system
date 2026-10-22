@@ -127,7 +127,7 @@ show the user journey and documentation/test impact without the engineering sour
 Implementation context must still receive the complete saved assessment and plan; a
 different chat must not read them.
 
-Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the [shared installation grace period](../../CONFIG.md#shared-cleanup). Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success.
+Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the [shared installation grace period](../../CONFIG.md#shared-cleanup). Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success. Invoke `$agent-system-task-retirement` on a second open assigned task: inspect and apply its exact preview, verify grace is skipped, then redeem only the prepared native archive request. A request from its own active turn must stay pending. Repeat the same entry after archival and desktop reclamation; verify one archive effect and retained assessment/history with no duplicate admission of the unchanged assignment. These native manual outcomes require installed desktop evidence, not the headless activation check below.
 
 For direct reply verification in a fresh native Codex task, invoke
 `agent-system-feedback-reply` for a selected disposable comment or response URL
@@ -290,7 +290,7 @@ if output=$(printf '%s\n' '{"action":"reconcile","id":"aaaaaaaaaaaaaaaaaaaaaaaaa
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .operation == "dispatch:reconcile"'
 test ! -d "$CODEX_HOME/automations"
 
-# should require a reconciled intake before operator retirement can queue cleanup
+# should require a reconciled native owner before operator retirement can start cleanup
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
