@@ -34,7 +34,7 @@ describe('assignment intake policy', () => {
     manifest.cleanupMigration = { declaration: { enabled: false, 'grace-minutes': 17 } };
     const migration = assignmentIntakePolicy(manifest, 'openclaw')!;
     assert.equal(migration.digest, active.digest);
-    assert.notEqual(migration.legacyDigest, active.legacyDigest);
+    assert.deepEqual(migration, active);
     assert.equal(Object.hasOwn(migration.policy, 'cleanup'), false);
     delete manifest.cleanupMigration;
     assert.deepEqual(assignmentIntakePolicy(manifest, 'openclaw'), active);

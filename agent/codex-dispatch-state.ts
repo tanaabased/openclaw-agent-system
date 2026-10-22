@@ -153,7 +153,13 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
       runtime: 'codex',
       recordSchema: dispatchRecordSchema,
       validRecord: (record) =>
-        (!record.request || Boolean(record.project)) &&
+        (!record.request || Boolean(record.project && record.reservationVersion === 1)) &&
+        (!(
+          record.continuation?.attempt ||
+          record.continuation?.binding ||
+          record.continuation?.result
+        ) ||
+          record.progression?.stage === 'implementation') &&
         (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)),
     });
   }

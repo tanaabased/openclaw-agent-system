@@ -30,8 +30,7 @@ export default async function observeResetUnresolved(
     if (history.sessionInfo.hasActiveRun !== false || history.pendingInputs.total !== 0)
       idle = false;
   };
-  const key =
-    entry.request && 'key' in entry.request ? entry.request.key : entry.native?.sessionKey;
+  const key = entry.request?.key;
   if (key) {
     const result = await request('sessions.describe', { key });
     if (!nativeObject(result) || !(result.session === null || nativeObject(result.session)))
@@ -56,7 +55,7 @@ export default async function observeResetUnresolved(
     for (const row of result.sessions) await observe(row);
     if (result.sessions.length === 100) continue;
     if (found) {
-      const warning = `notification-reset-unresolved-session-preserved: ${workspaceDir}; native conversations and their checkout were preserved because the old creation receipt does not identify an owned chat`;
+      const warning = `notification-reset-unresolved-session-preserved: ${workspaceDir}; native conversations and their checkout were preserved because the creation receipt does not identify an owned chat`;
       reset.warnings = [...new Set([...(reset.warnings ?? []), warning])];
       for (const resource of reset.resources) {
         if (

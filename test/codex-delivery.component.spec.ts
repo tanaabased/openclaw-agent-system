@@ -146,7 +146,7 @@ describe('agent/codex-delivery', () => {
         turnId: 'turn',
         request: { threadId: 'child', prompt: 'feedback', model: 'model', thinking: 'high' },
       };
-      record.progression = { stage: 'implementation', via: 'legacy' };
+      record.progression = { stage: 'implementation', via: 'operator' };
       await beginFeedbackWork({
         record,
         event,
@@ -304,6 +304,7 @@ describe('agent/codex-delivery', () => {
         phase: 'assessing',
         createdAt: baseline,
         manifestDigest: current.digest,
+        reservationVersion: 1,
         project: {
           id: 'project',
           path: source,
@@ -859,7 +860,12 @@ describe('agent/codex-delivery', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
     assert.match(
       String((await request('present')).presentation),
-      /Issue link verified after retry/,
+      /🔬 Debug[\s\S]*Delivery recovery[\s\S]*Issue link verified after retry/,
+    );
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: false }));
+    assert.doesNotMatch(
+      String((await request('present')).presentation),
+      /🔬 Debug|Issue link verified after retry/,
     );
     assert.match(String(presented.presentation), /PR attachment needs a check/);
     assert.equal(creates, 1);

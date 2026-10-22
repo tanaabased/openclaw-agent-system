@@ -77,7 +77,7 @@ export default async function advanceOpenClawWork(input: {
   }
   const slot = openClawWorkSlot(record, input.mode);
   if (!slot) return { status: 'implementation-idle', id: record.id };
-  // Older direct handoffs retained custody without a coordinator turn. Adopt it before any send.
+  // a current handoff can precede implementation-context; reconcile its exact native receipt before sending.
   if (slot === 'turn' && !record.work?.turn && record.work?.implementation) {
     const source = record.work.implementation;
     const native = await nativeInputEvent({

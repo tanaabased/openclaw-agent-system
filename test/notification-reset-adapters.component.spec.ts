@@ -182,7 +182,7 @@ describe('agent/notification reset runtime adapters', () => {
     assert.ok((await new OpenClawDispatchStore(root, scope).read()).resetGeneration);
   });
 
-  it('should finish a retained openclaw reset with obsolete creation metadata after fresh is selected', async () => {
+  it('should finish a retained openclaw reset with unresolved current creation after fresh is selected', async () => {
     const scope = 'c'.repeat(64);
     const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
     await seed(intake);
@@ -200,14 +200,21 @@ describe('agent/notification reset runtime adapters', () => {
         routing: '{}',
         routingNote: 'fixture',
         worktree: join(root, 'old-checkout'),
+        sessionCreation: {
+          attempted: true,
+          sourceSessionId: 'source',
+          sourceRunId: 'run',
+          sourceToolCallId: 'call',
+        },
         request: {
-          task: 'old request',
+          key: 'agent:receiver:issue:unresolved',
+          idempotencyKey: 'creation',
+          agentId: 'receiver',
           label: 'issue',
+          category: 'issues',
           cwd: join(root, 'old-checkout'),
           model: 'fixture',
-          runtime: 'subagent',
-          visible: true,
-          cleanup: 'keep',
+          thinkingLevel: 'low',
         },
       });
       await save();
@@ -353,6 +360,7 @@ describe('agent/notification reset runtime adapters', () => {
           phase: 'creating',
           createdAt: 2000,
           manifestDigest: 'manifest',
+          reservationVersion: 1,
           context: '{}',
           routing: '{}',
           routingNote: 'fixture',

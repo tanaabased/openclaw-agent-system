@@ -230,7 +230,6 @@ export async function runCodexIntake(
       agentId: current.agentId,
       policy,
       policyDigest: digest,
-      legacyPolicyDigest: current.policy.legacyDigest,
       now: (deps.now ?? Date.now)(),
       activate,
       async connect(signal) {

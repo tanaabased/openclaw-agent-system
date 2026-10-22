@@ -435,13 +435,16 @@ destination restrictions, and sensitive-archive handling.
 | ------- | -------- | ------- |
 | boolean | no       | `false` |
 
-Set `debug: true` at the top level to show private workflow instruction cards:
-selected skills (including defaults), guidance sources, and retained inline guidance.
-Codex uses this for assessment, implementation delivery, and feedback replies;
-OpenClaw's assessment and feedback renderers use the same switch. When omitted or false,
-these cards are hidden. Errors, blockers, responses, and publication outcomes remain
-visible. This controls presentation only; it does not enable runtime logging,
-change permissions, or change the skill or guidance applied to a turn.
+Set `debug: true` at the top level to show private **🔬 Debug** cards: selected
+skills (including defaults), guidance sources, retained inline guidance, historical
+missing cleanup evidence, and successful no-action delivery recovery details.
+Codex and OpenClaw read the current bound manifest for visibility; omitted or false
+hides these details, including on repeated reports. Historical detail does not
+trigger notifications by itself or establish that resources remain or cleanup
+succeeded. Unchanged healthy OpenClaw intake stays silent, even with debug enabled.
+Errors, blockers, responses, and publication outcomes remain visible. This controls
+presentation only; it does not enable runtime logging, change permissions, or
+change the skill or guidance applied to a turn.
 
 Inline guidance links to its verified manifest source when available. The text
 shown is the retained snapshot, while the linked file may have changed since then.

@@ -161,45 +161,6 @@ recovery_run=$(jq -ers '[.[].records[].summaryRecovery.turn.runId] | if length =
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$recovery_run" 300000
 jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | if length == 1 then .[0] else error("one retained owner required") end | .result == $before[0].result and .assessmentRevision == $before[0].assessmentRevision and .resultTurnId == $before[0].resultTurnId and .threadId == $before[0].threadId and .worktree == $before[0].worktree and (.assessmentRevision as $revision | any(.assessmentSummaries[]; .revision == $revision and .receipt.databaseId > 0))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
-# should recover a historical configuration blocker in its existing issue conversation after restart
-cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
-openclaw-gateway stop --timeout 340
-node --import tsx --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
-const { default: parse } = await import(process.env.GITHUB_WORKSPACE + '/manifest/parse.ts');
-const { originalIntakeDigest } = await import(process.env.GITHUB_WORKSPACE + '/test/github-intake-fixture.ts');
-const { automationHash } = await import(process.env.GITHUB_WORKSPACE + '/agent/automation-hash.ts');
-const parsed = parse(readFileSync('agent.yaml', 'utf8'));
-assert.equal(parsed.status, 'valid');
-const before = JSON.parse(readFileSync(process.env.TMPDIR + '/notification-dispatch-before.json', 'utf8'));
-const directory = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
-let found = 0;
-for (const file of readdirSync(directory).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json'))) {
-  const path = directory + '/' + file;
-  const state = JSON.parse(readFileSync(path, 'utf8'));
-  for (const record of state.records.filter(record => record.id === before.id)) {
-    found++;
-    record.manifestDigest = automationHash({ policy: originalIntakeDigest(parsed.manifest), models: parsed.manifest.models });
-    record.phase = "blocked";
-    record.blocker = "dispatch-policy-changed";
-    writeFileSync(process.env.TMPDIR + '/notification-historical-before.json', JSON.stringify(record));
-  }
-  writeFileSync(path, JSON.stringify(state));
-}
-assert.equal(found, 1);
-NODE
-openclaw-gateway start
-conversation=$(jq -er .threadId "$TMPDIR/notification-historical-before.json")
-session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-historical-before.json")
-receipt=$(jq -er .id "$TMPDIR/notification-historical-before.json")
-leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
-params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"lifecycle-tanaabot",sessionId:$session,message:("Refresh retained assessment for managed issue " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-historical-context"}')"
-node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-historical-context"'
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-historical-context 300000
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one original owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-jq -e --slurpfile before "$TMPDIR/notification-historical-before.json" '. as $after | $before[0] as $before | ([.id,.intakeId,.threadId,.sessionCreation,.worktree,.routing,.effective,.manifestDigest,.assessmentTurn] == [$before.id,$before.intakeId,$before.threadId,$before.sessionCreation,$before.worktree,$before.routing,$before.effective,$before.manifestDigest,$before.assessmentTurn]) and .blocker == null and (.compatibilityRecovery.codes | index("dispatch-policy-changed")) != null and .resultTurnId == "notification-historical-context" and .assessmentRevision == ($before.assessmentRevision + 1) and .result.plan == $before.result.plan and (.result.fullAssessment | contains($before.result.fullAssessment)) and .assessmentCaller.inputEventId != null and .stageReceipt.binding.turnId == .resultTurnId and .handoff == null and .reset == null and .retirement == null and .retired == null' "$TMPDIR/notification-dispatch-before.json"
-
 # should hold and resume feedback authors without reinstalling the parent automation
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
 node --input-type=module <<'NODE'

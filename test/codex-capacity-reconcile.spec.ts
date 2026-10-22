@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import reconcile from '../agent/codex-capacity-reconcile.ts';
-import codexCapacity, {
-  legacyRetiredReservation,
-  codexUnresolvedRetirement,
-} from '../agent/codex-capacity.ts';
+import codexCapacity, { codexUnresolvedRetirement } from '../agent/codex-capacity.ts';
 import pending, { issueKey } from '../agent/dispatch-pending.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { IntakeState, IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -18,7 +15,7 @@ function record(): DispatchRecord {
   } as DispatchRecord;
 }
 describe('agent/codex-capacity-reconcile', () => {
-  it('should preserve a legacy retirement without claiming inactivity or allowing same-issue duplication', () => {
+  it('should preserve unresolved retirement custody without claiming inactivity or allowing duplicates', () => {
     const owner = record();
     const item = {
       id: 'new',
@@ -30,8 +27,7 @@ describe('agent/codex-capacity-reconcile', () => {
     } as IntakeRecord;
     owner.issueKey = issueKey(item);
     const state = { records: [owner] };
-    assert.equal(legacyRetiredReservation(owner), true);
-    assert.equal(codexCapacity([owner], 3).occupied, 0);
+    assert.equal(codexCapacity([owner], 3).occupied, 1);
     assert.equal(owner.nativeInactive, undefined);
     assert.deepEqual(
       pending(state, { records: [item] } as IntakeState, codexUnresolvedRetirement),

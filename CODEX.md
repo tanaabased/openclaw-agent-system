@@ -303,9 +303,9 @@ and native receipts without renewed stage approval. Policy-only edits take effec
 without Install. Disabled effects and currently ineligible authors are held and
 reconsidered automatically. Preserve completed work, explicit cancellations, native
 denials, and uncertain submissions. Choose current implementation instructions
-before preparing a new send; never rewrite a submitted request. Older issues recover
-their implementation stage from retained execution receipts without recreating
-the chat, repeating the handoff, or requiring Install.
+before preparing a new send; never rewrite a submitted request. Current issues retain
+their explicit implementation stage and exact execution receipts across interruption
+without recreating the chat, repeating the handoff, or requiring Install.
 Implementation and delivery count against workflow capacity;
 intake reports stay limited to admission and capacity.
 

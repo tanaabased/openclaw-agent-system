@@ -127,6 +127,7 @@ cp "$TMPDIR/notification-issue-1.json" "$TMPDIR/notification-issue.json"
 
 # should start three native assessments in one automation run before any plan completes
 cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+printf '\ndebug: true\n' >> agent.yaml
 for slot in 1 2 3; do
   number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
   openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed"'
@@ -153,6 +154,11 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]] | length == 3 and all(.[]; .assessmentTurn.status == "completed" and .result.outcome == "plan-ready")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
+# should present stage-specific instructions through the shared debug card from the live manifest
+for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json"); do
+  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e '[.messages[] | select(.role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; contains("🔬 Debug") and contains("Assessment instructions") and contains("Skill"))'
+done
+
 # should retain complete results and native bindings for all three owners
 cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
 for slot in 1 2 3; do
@@ -164,6 +170,8 @@ openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktree
 
 # should preserve all three native owners on a repeat intake scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+sed 's/debug: true/debug: false/' agent.yaml > "$TMPDIR/intake-debug-off.yaml"
+mv "$TMPDIR/intake-debug-off.yaml" agent.yaml
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-all-after.json"

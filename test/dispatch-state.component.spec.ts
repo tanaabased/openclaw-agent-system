@@ -28,13 +28,20 @@ function prepared(): OpenClawDispatchRecord {
     routingNote: 'selected',
     worktree: '/worktree',
     request: {
-      runtime: 'subagent',
-      visible: true,
-      cleanup: 'keep',
+      key: 'agent:receiver:issue:one',
+      idempotencyKey: 'creation',
+      agentId: 'receiver',
       cwd: '/worktree',
       label: '#1: ASSESS',
-      task: 'Assess only',
+      category: 'issues',
       model: 'provider/model',
+      thinkingLevel: 'high',
+    },
+    sessionCreation: {
+      attempted: true,
+      sourceSessionId: 'source',
+      sourceRunId: 'run',
+      sourceToolCallId: 'call',
     },
   };
 }
@@ -116,7 +123,7 @@ describe('agent/shared dispatch state', () => {
     assert.equal(state.records[0]!.phase, 'creating');
   });
 
-  it('should recover a known legacy blocker on read and persist it only through an owner save', async () => {
+  it('should preserve recorded blockers without repairing workflow state on read', async () => {
     const store = new CodexDispatchStore(root, scope);
     const original = {
       ...pending(),
@@ -136,6 +143,7 @@ describe('agent/shared dispatch state', () => {
       routing: '{}',
       routingNote: 'selected',
       effective: { status: 'verified' as const },
+      reservationVersion: 1 as const,
       project: {
         id: 'project',
         path: '/repo',
@@ -165,19 +173,17 @@ describe('agent/shared dispatch state', () => {
     const before = await readFile(store.path, 'utf8');
     const restarted = new CodexDispatchStore(root, scope);
     const recovered = (await restarted.read()).records[0]!;
-    assert.equal(recovered.phase, 'assessing');
-    assert.equal(recovered.result, undefined);
-    assert.deepEqual(recovered.compatibilityRecovery?.previousResult, original.result);
+    assert.equal(recovered.phase, 'blocked');
+    assert.deepEqual(recovered.result, original.result);
     assert.deepEqual(recovered.request, original.request);
     assert.equal(recovered.threadId, original.threadId);
     assert.equal(recovered.worktree, original.worktree);
-    assert.deepEqual(recovered.compatibilityRecovery?.codes, ['dispatch-policy-changed']);
     assert.equal(await readFile(store.path, 'utf8'), before);
     await restarted.exclusive(async (_state, save) => {
       await save();
     });
     assert.deepEqual((await new CodexDispatchStore(root, scope).read()).records[0], recovered);
-    assert.notEqual(await readFile(store.path, 'utf8'), before);
+    assert.equal(await readFile(store.path, 'utf8'), before);
   });
 
   it('should reject duplicate identities and invalid transitions before replacing valid evidence', async () => {
@@ -219,8 +225,18 @@ describe('agent/shared dispatch state', () => {
     const store = new OpenClawDispatchStore(root, scope);
     for (const value of [
       { version: 1, scope: 'c'.repeat(64), records: [] },
-      { version: 1, scope, records: [{ ...pending(), clientThreadId: 'codex' }] },
-      { version: 1, scope, records: [{ ...prepared(), native: { sessionKey: 'different' } }] },
+      {
+        version: 1,
+        scope,
+        resetGeneration: 'current',
+        records: [{ ...pending(), clientThreadId: 'codex' }],
+      },
+      {
+        version: 1,
+        scope,
+        resetGeneration: 'current',
+        records: [{ ...prepared(), native: { sessionKey: 'different' } }],
+      },
     ]) {
       const contents = JSON.stringify(value);
       await store.file.write(contents);

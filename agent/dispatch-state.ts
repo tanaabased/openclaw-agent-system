@@ -15,11 +15,9 @@ import { assignmentObservationSchema, retirementSchema } from './assignment-reti
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSummarySchema } from './assessment-summary-state.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
-import { codexNoticeSchema, codexNoticeLimit } from './codex-notice-outbox.ts';
 import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
-import recoverTaskBlockers from './recover-task-blockers.ts';
-import { issueProgressionSchema, retainedIssueProgression } from './issue-progression.ts';
+import { issueProgressionSchema } from './issue-progression.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
@@ -71,16 +69,6 @@ export const dispatchRecordProperties = {
     ),
   ),
   result: Type.Optional(assessmentResultSchema),
-  compatibilityRecovery: Type.Optional(
-    Type.Object(
-      {
-        version: Type.Literal(1),
-        codes: Type.Array(text),
-        previousResult: Type.Optional(assessmentResultSchema),
-      },
-      { additionalProperties: false },
-    ),
-  ),
   assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
   assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema)),
   stageReceipt: Type.Optional(assessmentStageReceiptSchema),
@@ -111,7 +99,6 @@ export const dispatchRecordProperties = {
       { additionalProperties: false },
     ),
   ),
-  notice: Type.Optional(hash), // legacy presentation metadata; never used for intake decisions.
   dispatchedAt: Type.Optional(Type.Integer({ minimum: 0 })),
   intakeReportedAt: Type.Optional(Type.Integer({ minimum: 0 })),
   retry: Type.Optional(
@@ -160,6 +147,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
             actions: Type.Integer({ minimum: 0, maximum: 12 }),
             stopped: Type.Optional(Type.Literal('blocked')),
             response: Type.Optional(Type.String({ maxLength: 128000 })),
+            reportVersion: Type.Optional(Type.Literal(1)),
           },
           { additionalProperties: false },
         ),
@@ -168,6 +156,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
         Type.Object(
           {
             fingerprint: hash,
+            reportVersion: Type.Optional(Type.Literal(1)),
             problems: Type.Array(Type.String({ maxLength: 256 }), { maxItems: 256 }),
             runId: text,
             response: Type.String({ maxLength: 128000 }),
@@ -191,25 +180,11 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
         ),
       ),
       intakeHealth: Type.Optional(Type.String({ maxLength: 128 })),
+      intakeHealthVersion: Type.Optional(Type.Literal(1)),
       checked: Type.Optional(
         Type.Object(
           { at: Type.Integer({ minimum: 0 }), digest: hash },
           { additionalProperties: false },
-        ),
-      ),
-      notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
-      reports: Type.Optional(
-        Type.Array(
-          Type.Object(
-            {
-              response: Type.String({ minLength: 1, maxLength: 128000 }),
-              automationId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-              createdAt: Type.Integer({ minimum: 0 }),
-              notices: Type.Array(hash, { maxItems: 100 }),
-            },
-            { additionalProperties: false },
-          ),
-          { maxItems: 8 },
         ),
       ),
     },
@@ -231,7 +206,6 @@ function serializeState<R extends SharedDispatchRecord>(state: DispatchState<R>)
     Buffer.byteLength(
       JSON.stringify({
         ...state,
-        reports: undefined,
         run: state.run && { ...state.run, response: undefined },
       }),
     ) > contentBytes
@@ -306,7 +280,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   }
   async read(): Promise<DispatchState<R>> {
     const contents = await this.file.read();
-    let state: unknown = { version: 1, scope: this.scope, records: [] };
+    let state: unknown = { version: 1, scope: this.scope, resetGeneration: 'initial', records: [] };
     if (contents !== undefined) {
       try {
         state = JSON.parse(contents);
@@ -314,19 +288,18 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         throw new Error('dispatch-state-invalid');
       }
     }
+    if (
+      state &&
+      typeof state === 'object' &&
+      'scope' in state &&
+      state.scope === this.scope &&
+      'records' in state &&
+      Array.isArray(state.records) &&
+      state.records.length > 0 &&
+      !('resetGeneration' in state)
+    )
+      throw new Error('notification-state-reset-required');
     this.validate(state);
-    for (let index = 0; index < state.records.length; index++) {
-      const candidate = structuredClone(state.records[index]!);
-      recoverTaskBlockers(candidate);
-      const progression = retainedIssueProgression(candidate);
-      if (progression) candidate.progression = progression;
-      // incomplete native custody remains for its owning reconciliation route.
-      if (this.contract.validRecord(candidate)) state.records[index] = candidate;
-    }
-    this.validate(state);
-    // discard obsolete presentation queues, preserving all assignment and assessment records.
-    delete state.notices;
-    delete state.reports;
     serializeState(state);
     return state;
   }

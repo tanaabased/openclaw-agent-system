@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { codexNoticeSchema, codexNoticeLimit } from '../../../agent/codex-notice-outbox.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
@@ -121,8 +120,6 @@ const stateSchema = Type.Object(
       ),
     ),
     records: Type.Array(intakeRecordSchema),
-    notices: Type.Optional(Type.Array(codexNoticeSchema, { maxItems: codexNoticeLimit })),
-    noticePending: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -230,9 +227,6 @@ export default class IntakeRecordStore {
         )
       )
         throw new Error('invalid state');
-      // old notification backlogs never control admission or survive the next save.
-      delete value.notices;
-      delete value.noticePending;
       return value;
     } catch {
       throw new IntakeError('intake-state-invalid');

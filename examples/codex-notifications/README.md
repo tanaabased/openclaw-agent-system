@@ -26,7 +26,14 @@ observation separately from component results; headless planning is not UI proof
 For report presentation verification, use an explicitly authorized disposable native
 desktop setup with updated installed instructions, or operator-provided captures.
 Observe one healthy status report and one warning report without manufacturing a
-production intake failure. For each, retain separately:
+production intake failure. Include historical retired records without stored cleanup
+evidence: false/omitted debug must hide those details, while true shows a separate
+🔬 Debug card, never a warning or a cleanup-success claim. Toggle the live manifest
+and repeat the same report to verify visibility changes without replaying starts
+or changing its notification decision. Repeat an unchanged scheduled check with
+DONT_NOTIFY. Also capture assessment skill/guidance and successful delivery recovery
+under the same Debug heading with their stage context; real blockers remain visible
+with debug off. For each, retain separately:
 
 1. The runtime's complete returned `response`.
 2. The actual final assistant text from native history or export, compared exactly
@@ -236,6 +243,22 @@ node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
+
+# should preserve restored pre-reset history and reject it before any workflow execution
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+scope=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -er .scope)
+state="$plugin_data/codex-dispatch-$scope.json"
+umask 077
+jq -nc --arg scope "$scope" '{version:1,scope:$scope,records:[{retired:{at:1,by:"historical-owner"},result:{decision:{action:"proceed"}}}]}' > "$state"
+cp "$state" "$root/pre-reset-before.json"
+if output=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "notification-state-reset-required" and (.notice.next | contains("Preserve the original file"))'
+cmp "$state" "$root/pre-reset-before.json"
+mv "$state" "$root/pre-reset-history.json"
+printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -e '.records == [] and .resetGeneration == "initial"'
 
 # should expose direct reply without intake activation while requiring an actual native caller
 root="$TMPDIR/agent-system-codex-notifications"
