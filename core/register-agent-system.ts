@@ -317,7 +317,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
-    async assessmentGit({ manifest, caller, cwd, argv, signal }) {
+    async assessmentGit({ manifest, workspace, caller, cwd, argv, signal }) {
       const result = await toolRuntime.executeCli(
         gitCapability.definition,
         { argv, cwd },
@@ -325,6 +325,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           source: 'tool',
           toolContext: {
             agentId: manifest.agent.id,
+            workspaceDir: workspace,
             sessionKey: caller.sessionKey,
             sessionId: caller.sessionId,
           },
