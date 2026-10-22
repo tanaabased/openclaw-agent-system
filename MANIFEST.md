@@ -961,7 +961,10 @@ the default.
 
 Commands start in the bound workspace with closed stdin and a 64 KiB combined
 output capture limit. Timeouts terminate the command's process tree. Ordinary
-runs report step ids and diagnostic codes without raw command output. When
+runs report step ids, setup owner (`setup-host` or `setup-agent`), check/apply
+phase (including checks after apply), and known exit codes, timeouts, signals, or
+execution failures. Unavailable termination details stay unknown; command
+declarations, environment values, and raw command output remain excluded. When
 GitHub Actions runner debug is enabled, setup commands receive only the exact
 `RUNNER_DEBUG=1` signal. Standalone Codex relays bounded `debug: ` lines from
 captured standard error to its own standard error. Standard output, other

@@ -72,4 +72,26 @@ describe('channels/github/feedback-policy', () => {
       'invalid',
     );
   });
+
+  it('should open admission for unresolved references without granting feedback authority', () => {
+    for (const reviewers of [['@reviewer'], ['U_reviewer']]) {
+      const result = parse({ allowed: [], reviewers });
+      assert.ok(result.status === 'valid');
+      const policy = result.manifest.github!.notifications!;
+      const workflow = policy.issueAssignment!;
+      assert.equal(workflowFeedbackAccepting(policy, 'issue-assignment'), true);
+      assert.throws(
+        () => feedbackIdentities(workflow.allowed, workflow.feedback),
+        /github-notification-feedback-identity-conflict/u,
+      );
+    }
+    assert.throws(
+      () =>
+        feedbackIdentities([{ login: 'actor', nodeId: 'U_actor' }], {
+          inherit: true,
+          allowed: [{ login: 'actor', nodeId: 'U_other' }],
+        }),
+      /github-notification-feedback-identity-conflict/u,
+    );
+  });
 });

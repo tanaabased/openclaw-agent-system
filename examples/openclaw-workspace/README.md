@@ -56,4 +56,15 @@ printf '%s\n' "$output" | jq -e '.findings | any(.stepId == "agent-ready" and .c
 test ! -e agent-ready
 printf 'host\nagent\n' | diff - setup-runs
 cmp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-doctor.json"
+
+# should report safe setup termination through the installed cli without leaking child output
+cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
+export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
+cp setup.yaml "$TMPDIR/workspace-setup-before-failure.yaml"
+trap 'cp "$TMPDIR/workspace-setup-before-failure.yaml" setup.yaml' EXIT
+cp setup-failure.yaml setup.yaml
+if output=$(openclaw agent-system install --yes --json 2> "$TMPDIR/workspace-install-failure.stderr"); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.blocked.code == "setup-apply-failed" and .blocked.stepId == "diagnostic-failure" and (.blocked.message | contains("setup-agent") and contains("apply") and contains("exit code 23"))'
+if printf '%s\n' "$output" | grep -Fq 'workspace-private-value'; then exit 1; fi
+if grep -Fq 'workspace-private-value' "$TMPDIR/workspace-install-failure.stderr"; then exit 1; fi
 ```

@@ -103,7 +103,7 @@ replacing the chat or its receipts.
 # should assign one disposable issue from emori to tanaabot after the safe intake baseline
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
-openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
+openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id,default_branch}' > "$TMPDIR/notification-repository.json"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System lifecycle flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-lifecycle/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
@@ -247,6 +247,11 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
 worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
+# preserve a distinct local commit as evidence that fresh work does not reset the old branch.
+git -C "$worktree" -c user.name=Fixture -c user.email=fixture@example.test -c commit.gpgsign=false commit --allow-empty -m 'preserve retired attempt'
+git -C "$worktree" rev-parse HEAD > "$TMPDIR/notification-retired-tip"
+git -C "$worktree" rev-parse --path-format=absolute --git-common-dir > "$TMPDIR/notification-git-dir"
+git -C "$worktree" branch --show-current > "$TMPDIR/notification-retired-branch"
 repository_id=$(openclaw agent-system tool worktree -- list | jq -er --arg path "$worktree" '.[] | select(.path == $path) | .repositoryId')
 work_id="issue-$(jq -er .id "$TMPDIR/notification-issue.json")"
 openclaw agent-system tool worktree -- remove "$repository_id" "$work_id"
@@ -261,6 +266,38 @@ openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversat
 worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
+
+# should prepare a fresh assignment from the base while preserving the retired branch
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=open | jq -e '.state == "open"'
+openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot'
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --timeout 600 --json | jq -e '.status == "completed"'
+jq -es --slurpfile old "$TMPDIR/notification-retired.json" '[.[].records[] | select(.issueKey == $old[0].issueKey)] | if length == 2 then map(select(.retired == null))[0] else error("exactly two attempts required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-fresh.json"
+jq -e --slurpfile old "$TMPDIR/notification-retired.json" '.id != $old[0].id and .worktreeAttemptId == .id and .threadId != $old[0].threadId and .sessionCreation.verified == true and .result.outcome == "plan-ready"' "$TMPDIR/notification-fresh.json"
+worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
+test "$(git -C "$worktree" branch --show-current)" != "$(cat "$TMPDIR/notification-retired-branch")"
+test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-retired-branch")")" = "$(cat "$TMPDIR/notification-retired-tip")"
+test "$(git -C "$worktree" rev-parse HEAD)" = "$(git -C "$worktree" rev-parse "origin/$(jq -er .default_branch "$TMPDIR/notification-repository.json")")"
+run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-fresh.json")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+
+# should clean up the fresh fixture before resetting management
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+repository_id=$(jq -er '.[0].repositoryId' "$TMPDIR/notification-worktrees-before.json")
+work_id="issue-$(jq -er .id "$TMPDIR/notification-issue.json")"
+openclaw agent-system tool worktree -- remove "$repository_id" "$work_id"
+sleep 61
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --arg id "$(jq -er .id "$TMPDIR/notification-fresh.json")" '[.[].records[] | select(.id == $id)] | length == 1 and .[0].retired.at != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should reset local management with a fresh coordinator and restore the installed intake setting
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"

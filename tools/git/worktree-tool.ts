@@ -53,7 +53,7 @@ export type GitWorktreeToolDefinition = GitWorktreeToolDefinitionBase & {
     input: GitWorktreePrepareToolInput,
     configuration: ResolvedGitWorktreeToolConfiguration,
     scope: GitWorktreeToolExecutionScope,
-    issueBranch?: { number: number; suffix: string; title: string },
+    issueBranch?: { number: number; suffix: string; title: string; attemptId?: string },
   ): Promise<GitWorktreeResult>;
 };
 
@@ -170,7 +170,7 @@ export function createGitWorktreeToolDefinition(
     configuration: ResolvedGitWorktreeToolConfiguration,
     scope: GitWorktreeToolExecutionScope,
     reconcileOrigin: boolean,
-    issueBranch?: { number: number; suffix: string; title: string },
+    issueBranch?: { number: number; suffix: string; title: string; attemptId?: string },
   ): Promise<GitWorktreeResult | GitWorktreeResult[]> {
     const lease = await dependencies.runnerFactory.acquire(
       configuration,

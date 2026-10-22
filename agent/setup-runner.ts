@@ -38,6 +38,8 @@ export interface SetupCommandResult {
   exitCode: number | null;
   timedOut: boolean;
   truncated: boolean;
+  termination?: SetupProcessResult['termination'];
+  signal?: string | null;
 }
 
 export interface SetupProcessResult {
@@ -260,6 +262,8 @@ export default function createSetupCommandRunner(dependencies: {
       return {
         exitCode: timedOut ? null : result.code,
         timedOut,
+        termination: result.termination,
+        signal: result.signal,
         truncated: (result.stdoutTruncatedBytes ?? 0) > 0 || (result.stderrTruncatedBytes ?? 0) > 0,
       };
     } catch (error) {

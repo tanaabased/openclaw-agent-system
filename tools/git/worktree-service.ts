@@ -10,6 +10,7 @@ import type acquirePrivateStateFileLock from '../../core/private-state-file-lock
 import isPathContained from '../../utils/is-path-contained.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import GitCommandError from './command-error.ts';
+import GitWorktreeConflict from './worktree-conflict.ts';
 import GitRepositoryService, { type ResolvedRepository } from './repository-service.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
@@ -42,7 +43,7 @@ export interface GitWorktreeServiceContext {
 export interface GitWorktreePrepareInput {
   baseRef: string;
   cloneUrl?: string;
-  issueBranch?: { number: number; suffix: string; title: string };
+  issueBranch?: { number: number; suffix: string; title: string; attemptId?: string };
   reconcileOrigin?: boolean;
   repositoryId: string;
   workId: string;
@@ -184,7 +185,7 @@ export default class GitWorktreeService {
     const existing = registered.find((worktree) => worktree.path === path);
     if (existing) {
       if (
-        existing.branch !== stableName &&
+        (existing.branch !== stableName || input.issueBranch?.attemptId !== undefined) &&
         (!input.issueBranch ||
           !isGitHubIssueBranchName(
             existing.branch,
@@ -192,12 +193,18 @@ export default class GitWorktreeService {
             input.issueBranch.suffix,
           ))
       ) {
-        throw new Error('The deterministic Git worktree path uses another branch.');
+        throw new GitWorktreeConflict(
+          'owner-mismatch',
+          'The deterministic Git worktree path uses another branch.',
+        );
       }
       return this.#result(input.repositoryId, input.workId, existing, 'existing');
     }
     if ((await pathKind(path)) !== 'absent') {
-      throw new Error('The deterministic Git worktree path is already occupied.');
+      throw new GitWorktreeConflict(
+        'path-occupied',
+        'The deterministic Git worktree path is already occupied.',
+      );
     }
     if (repository.refreshBeforeCreate) {
       requireGitSuccess(
@@ -233,7 +240,8 @@ export default class GitWorktreeService {
         ])
       ).exitCode === 0;
     if (branchExists && input.issueBranch) {
-      throw new Error(
+      throw new GitWorktreeConflict(
+        'branch-exists',
         'The readable GitHub issue branch already exists outside its owned worktree.',
       );
     }
@@ -390,7 +398,10 @@ export default class GitWorktreeService {
       input.issueBranch &&
       (!Number.isSafeInteger(input.issueBranch.number) ||
         input.issueBranch.number < 1 ||
-        !/^[a-f0-9]{5}$/u.test(input.issueBranch.suffix))
+        !(input.issueBranch.attemptId === undefined
+          ? /^[a-f0-9]{5}$/u.test(input.issueBranch.suffix)
+          : /^[a-f0-9]{64}$/u.test(input.issueBranch.attemptId) &&
+            /^[a-f0-9]{16}$/u.test(input.issueBranch.suffix)))
     ) {
       throw new Error('The GitHub issue branch identity is invalid.');
     }

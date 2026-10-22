@@ -170,6 +170,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             throw new Error('retirement-repository-identity-changed');
           const worktreeInput = {
             agentId: manifest.agent.id,
+            attemptId: record.worktreeAttemptId,
             cloneUrl: repo.cloneUrl,
             defaultBranch: repo.defaultBranch,
             repositoryDatabaseId: repo.databaseId,

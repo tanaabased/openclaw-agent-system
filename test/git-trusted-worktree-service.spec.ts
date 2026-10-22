@@ -168,6 +168,43 @@ function fixture(
 }
 
 describe('tools/git/trusted-worktree-service', () => {
+  it('should bind preparation inspection and cleanup to the same assignment attempt', async () => {
+    const input = {
+      agentId: 'data',
+      cloneUrl: 'https://github.com/owner/repo.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemNumber: 42,
+      itemType: 'issue' as const,
+      repositoryDatabaseId: 7,
+      title: 'Fix agent path resolution',
+      attemptId: 'a'.repeat(64),
+    };
+    const { service } = fixture();
+    const a = await service.prepareGitHub(input);
+    const b = await service.prepareGitHub({ ...input, attemptId: 'b'.repeat(64) });
+    assert.notEqual(a.branch, b.branch);
+    assert.equal(a.path, b.path);
+    const retained = fixture({ listed: true, listedBranch: a.branch });
+    assert.equal((await retained.service.inspectGitHub(input))?.branch, a.branch);
+    assert.equal(
+      (await retained.service.cleanupGitHub({ ...input, worktree: a })).status,
+      'removed',
+    );
+    await assert.rejects(retained.service.inspectGitHub({ ...input, attemptId: 'b'.repeat(64) }), {
+      code: 'git-worktree-owner-mismatch',
+    });
+    await assert.rejects(
+      retained.service.cleanupGitHub({ ...input, attemptId: 'b'.repeat(64), worktree: a }),
+      { code: 'git-worktree-owner-mismatch' },
+    );
+    await assert.rejects(fixture({ listed: true }).service.inspectGitHub(input), {
+      code: 'git-worktree-owner-mismatch',
+    });
+    await assert.rejects(service.prepareGitHub({ ...input, attemptId: 'untrusted-title' }), {
+      code: 'invalid_arguments',
+    });
+  });
   it('should authorize before resolving values and reuse the worktree definition', async () => {
     const { events, prepared, service } = fixture();
 
