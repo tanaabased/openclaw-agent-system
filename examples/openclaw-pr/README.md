@@ -187,9 +187,8 @@ jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.
 # should prepare delivery with a newly configured compact reviewer without requesting a review
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
 cp agent.yaml "$TMPDIR/notification-pre-reviewer.yaml"
-sed '/  issue-assignment:/a\
-    reviewers: ["@emoriwan"]
-' "$TMPDIR/notification-pre-reviewer.yaml" > agent.yaml
+trap 'cp "$TMPDIR/notification-pre-reviewer.yaml" "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot/agent.yaml"' EXIT
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parseDocument} from "yaml"; const doc=parseDocument(readFileSync("agent.yaml","utf8")); doc.setIn(["github","issue-assignment","reviewers"],["@emoriwan"]); writeFileSync("agent.yaml",String(doc));'
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
 receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
@@ -198,6 +197,7 @@ params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg lea
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-reviewer-preview"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-reviewer-preview" 300000
 cp "$TMPDIR/notification-pre-reviewer.yaml" agent.yaml
+trap - EXIT
 pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr/requested_reviewers" --jq '.users' | jq -e 'length == 0'
 
