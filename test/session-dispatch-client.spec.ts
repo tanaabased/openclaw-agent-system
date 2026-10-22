@@ -3,12 +3,174 @@ import assert from 'node:assert/strict';
 import {
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
+  type GatewayClientOptions,
 } from '@openclaw/gateway-client';
 
-import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
-import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+import {
+  sessionDispatchRequest,
+  useSessionDispatchClient,
+} from '../credentials/session-dispatch-client.ts';
+import type {
+  DispatchCredential,
+  DispatchRequest,
+  DispatchAuthority,
+} from '../credentials/session-dispatch.ts';
+
+function connectionFixture(
+  start: (options: GatewayClientOptions, deadline: () => void) => void,
+  authority: DispatchAuthority = {},
+  shutdownFails = false,
+) {
+  const calls: string[] = [];
+  let deadline = () => {};
+  const record: DispatchCredential = {
+    version: 1,
+    device: {
+      deviceId: 'a'.repeat(64),
+      privateKeyPem: 'fixture-private-key',
+      publicKeyPem: 'fixture-public-key',
+    },
+    token: 'fixture-device-token',
+  };
+  return {
+    calls,
+    run: () =>
+      useSessionDispatchClient(
+        {},
+        record,
+        false,
+        authority,
+        async () => {
+          calls.push('operation');
+          return 'ready';
+        },
+        {
+          createClient(options) {
+            assert.deepEqual(options.env, {});
+            assert.equal(options.deviceToken, record.token);
+            assert.equal(options.deviceIdentity, record.device);
+            return {
+              start() {
+                calls.push('start');
+                start(options, () => deadline());
+              },
+              stop() {
+                calls.push('stop');
+              },
+              async stopAndWait() {
+                calls.push('shutdown');
+                if (shutdownFails) throw new Error('private-shutdown-token');
+              },
+              async request<T>() {
+                return undefined as T;
+              },
+            };
+          },
+          scheduleDeadline(callback, milliseconds) {
+            assert.equal(milliseconds, 12_000);
+            deadline = callback;
+            return () => {
+              calls.push('clear-deadline');
+            };
+          },
+        },
+      ),
+  };
+}
 
 describe('credentials/session-dispatch-client', () => {
+  for (const deadline of [false, true]) {
+    it(`should retain safe connection evidence from the ${deadline ? 'deadline' : 'callback'}`, async () => {
+      const f = connectionFixture((options, expire) => {
+        if (deadline) expire();
+        else
+          options.onConnectError!(
+            Object.assign(new Error('private-token'), { code: 'ECONNREFUSED' }),
+          );
+      });
+      await assert.rejects(f.run(), (error: unknown) => {
+        assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+        assert.deepEqual(
+          error.sessionDispatchDiagnostic,
+          deadline
+            ? { category: 'timeout', phase: 'unknown', reasonCode: 'enrollment-deadline' }
+            : { category: 'transport', phase: 'connection', reasonCode: 'connection-refused' },
+        );
+        assert.equal(error.cause, undefined);
+        assert.ok(!JSON.stringify(error).includes('private-token'));
+        return true;
+      });
+      assert.ok(f.calls.includes('clear-deadline'));
+      assert.equal(f.calls.at(-1), 'shutdown');
+      assert.ok(!f.calls.includes('operation'));
+    });
+  }
+
+  it('should preserve cancellation and authority failures during both connection outcomes', async () => {
+    for (const remoteFails of [false, true]) {
+      for (const cancelled of [false, true]) {
+        const controller = new AbortController();
+        const failure = new Error('authority-changed');
+        let changed = false;
+        const f = connectionFixture(
+          (options) => {
+            changed = true;
+            if (cancelled) controller.abort(failure);
+            if (remoteFails) options.onConnectError!(new Error('private-token'));
+            else
+              options.onHelloOk!({ auth: { scopes: [] } } as unknown as Parameters<
+                NonNullable<GatewayClientOptions['onHelloOk']>
+              >[0]);
+          },
+          {
+            signal: controller.signal,
+            assertEnrollmentCurrent() {
+              if (changed && !cancelled) throw failure;
+            },
+          },
+        );
+        await assert.rejects(f.run(), (error: unknown) => error === failure);
+        assert.ok(!f.calls.includes('operation'));
+        assert.equal(f.calls.at(-1), 'shutdown');
+        const stopped = f.calls.filter((call) => call === 'stop').length;
+        controller.abort();
+        assert.equal(f.calls.filter((call) => call === 'stop').length, stopped);
+      }
+    }
+  });
+
+  it('should preserve the primary failure and sanitize a cleanup-only failure', async () => {
+    for (const remoteFails of [false, true]) {
+      const f = connectionFixture(
+        (options) => {
+          if (remoteFails)
+            options.onConnectError!(
+              Object.assign(new Error('private-token'), { code: 'ECONNREFUSED' }),
+            );
+          else
+            options.onHelloOk!({ auth: { scopes: [] } } as unknown as Parameters<
+              NonNullable<GatewayClientOptions['onHelloOk']>
+            >[0]);
+        },
+        {},
+        true,
+      );
+      await assert.rejects(f.run(), (error: unknown) => {
+        assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+        assert.deepEqual(
+          error.sessionDispatchDiagnostic,
+          remoteFails
+            ? { category: 'transport', phase: 'connection', reasonCode: 'connection-refused' }
+            : { category: 'unknown', phase: 'unknown', reasonCode: 'unknown' },
+        );
+        assert.ok(
+          ![error.message, error.stack, JSON.stringify(error)].join('').includes('private-'),
+        );
+        return true;
+      });
+    }
+  });
+
   it('should identify rejected methods without exposing provider payloads or retrying', async () => {
     for (const [method, expected] of [
       ['sessions.create', 'session-dispatch-create-request-invalid'],

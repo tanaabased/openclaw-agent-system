@@ -4,10 +4,16 @@ import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import ansis from 'ansis';
 
 import installAgentSystem from '../cli/install.ts';
-import { AgentInstallError, type AgentInstallResult } from '../agent/install-service.ts';
+import AgentInstallService, {
+  AgentInstallError,
+  type AgentInstallResult,
+} from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { createCliStyles, type CliStyles } from '../cli/output.ts';
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import AgentSystemLifecycleRegistry, {
+  AgentSystemLifecycleError,
+} from '../core/lifecycle-registry.ts';
+import { dispatchCredentialError } from '../credentials/session-dispatch.ts';
 import { installOutcomes } from './lifecycle-presentation-fixtures.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
@@ -23,6 +29,7 @@ const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
 function createHarness(
   options: {
     install?: AgentInstallResult | Error;
+    installService?: Pick<AgentInstallService, 'install'>;
     json?: boolean;
     manifest?: AgentManifestLoadResult;
     rebuildCodexPath?: boolean;
@@ -53,7 +60,7 @@ function createHarness(
     output,
     run: () =>
       installAgentSystem({
-        installService: {
+        installService: options.installService ?? {
           async install(input) {
             calls.install.push(input);
             if (options.install instanceof Error) throw options.install;
@@ -109,6 +116,90 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should carry safe enrollment evidence through registry, install service and both cli projections', async () => {
+    const diagnostic = {
+      category: 'transport' as const,
+      phase: 'connection' as const,
+      reasonCode: 'connection-refused' as const,
+    };
+    const registry = new AgentSystemLifecycleRegistry(
+      [
+        {
+          id: 'session-dispatch',
+          isConfigured: () => true,
+          async reconcile() {
+            dispatchCredentialError(
+              'session-dispatch-enrollment-unverified',
+              'Enrollment could not be verified.',
+              Object.assign({}, diagnostic, { token: 'private-token' }),
+            );
+          },
+        },
+        {
+          id: 'models',
+          isConfigured: () => true,
+          async reconcile() {
+            throw new Error('must remain unattempted');
+          },
+        },
+      ],
+      {
+        inspect: async () => [],
+        reconcile: async () => ({
+          outcomes: [
+            {
+              component: 'setup',
+              stepId: 'host-step',
+              code: 'setup-applied',
+              status: 'updated',
+              message: 'Setup step host-step',
+            },
+          ],
+          warnings: [],
+        }),
+      },
+    );
+    const manifest = {
+      ...validResult,
+      manifest: {
+        ...validResult.manifest,
+        setupHost: {
+          steps: [
+            {
+              id: 'host-step',
+              apply: { kind: 'exec' as const, executable: 'fixture', args: [], timeoutSeconds: 1 },
+            },
+          ],
+        },
+      },
+    };
+    const installService = new AgentInstallService({ lifecycleRegistry: registry });
+    for (const json of [false, true]) {
+      const harness = createHarness({ installService, manifest, json });
+      await harness.run();
+      assert.deepEqual(harness.exitCodes, [1]);
+      const output = harness.output.join('');
+      const diagnostics = harness.diagnostics.join('');
+      assert.ok(!harness.events.join('').includes('private-token'));
+      assert.match(diagnostics, /category=transport; phase=connection; reason=connection-refused/);
+      if (json) {
+        const result = JSON.parse(output);
+        assert.deepEqual(result.blocked.sessionDispatchDiagnostic, diagnostic);
+        assert.equal(result.blocked.code, 'session-dispatch-enrollment-unverified');
+        assert.equal(result.outcomes[0].component, 'setup');
+        assert.equal(result.outcomes[0].status, 'updated');
+        assert.deepEqual(result.unattempted, [{ component: 'models' }]);
+        assert.equal(result.earlierChangesRemainApplied, true);
+      } else {
+        assert.equal(diagnostics.match(/^messages$/gmu)?.length, 1);
+        assert.ok(
+          harness.events.join('').indexOf('workspace') <
+            harness.events.join('').indexOf('messages'),
+        );
+      }
+    }
+  });
+
   it('should share doctor row details on success and partial failure without changing json', async () => {
     const outcomes = [
       {

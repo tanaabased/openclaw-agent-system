@@ -13,6 +13,45 @@ const manifest: AgentManifest = {
 const context = { manifest, workspaceDir: '/workspace', runtime: 'openclaw' as const };
 
 describe('core/lifecycle-registry', () => {
+  it('should rebuild enrollment diagnostics while accumulating lifecycle progress', async () => {
+    const diagnostic = {
+      category: 'timeout' as const,
+      phase: 'unknown' as const,
+      reasonCode: 'enrollment-deadline' as const,
+    };
+    const failure = new AgentSystemLifecycleError(
+      'session-dispatch',
+      'session-dispatch-pairing-pending',
+      'Approve exact request.',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      diagnostic,
+    );
+    Object.assign(failure.sessionDispatchDiagnostic!, { payload: 'private-token' });
+    const registry = new AgentSystemLifecycleRegistry([
+      {
+        id: 'session-dispatch',
+        isConfigured: () => true,
+        async reconcile() {
+          throw failure;
+        },
+      },
+      { id: 'models', isConfigured: () => true },
+    ]);
+    await assert.rejects(registry.reconcile(context), (error: unknown) => {
+      assert.ok(error instanceof AgentSystemLifecycleError);
+      assert.deepEqual(error.sessionDispatchDiagnostic, diagnostic);
+      assert.notEqual(error.sessionDispatchDiagnostic, failure.sessionDispatchDiagnostic);
+      assert.ok(!JSON.stringify(error).includes('private-token'));
+      assert.deepEqual(error.progress?.unattempted, [{ component: 'models' }]);
+      assert.equal(error.code, 'session-dispatch-pairing-pending');
+      assert.equal(error.rawMessage, 'Approve exact request.');
+      return true;
+    });
+  });
+
   it('should collect configured validation, inspection, and reconciliation results', async () => {
     const registry = new AgentSystemLifecycleRegistry([
       {

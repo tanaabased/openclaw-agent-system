@@ -74,6 +74,12 @@ cd "$GITHUB_WORKSPACE/examples/os-install/data"
 if output=$(openclaw agent-system doctor --json); then exit 1; fi
 printf '%s\n' "$output" | jq -e 'any(.findings[]; .code == "session-dispatch-credential-missing")'
 
+# should report bounded enrollment failure while the gateway is unavailable
+export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
+cd "$GITHUB_WORKSPACE/examples/os-install/data"
+if openclaw agent-system install --yes --json >"$TMPDIR/enrollment-failed.json"; then exit 1; fi
+jq -e '.status == "failed" and .blocked.code == "session-dispatch-enrollment-unverified" and (.blocked.sessionDispatchDiagnostic | (.category == "transport" or .category == "timeout") and (.phase == "connection" or .phase == "unknown") and (.reasonCode | type == "string"))' "$TMPDIR/enrollment-failed.json"
+
 # should start the gateway for owner-consented device enrollment
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
 openclaw-gateway start
@@ -84,6 +90,8 @@ export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 openclaw agent-system install --yes --json | tee "$TMPDIR/enrollment-install.json"
 jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated")' "$TMPDIR/enrollment-install.json"
+retained_device=$(jq -er '.blocked.message | capture("device (?<id>[a-f0-9]{64})").id' "$TMPDIR/enrollment-failed.json")
+jq -e --arg device "$retained_device" 'any(.outcomes[]; .code == "session-dispatch-enrolled" and (.message | contains($device)))' "$TMPDIR/enrollment-install.json"
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == false)'
 
 # should reuse enrollment without another explicit consent or bootstrap

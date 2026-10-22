@@ -704,6 +704,14 @@ Devices, then rerun Install with enrollment consent to replace the retained
 identity. There is no separate session-dispatch reset command. Credential
 readiness alone does not establish end-to-end issue or review dispatch.
 
+Enrollment connection failures include a bounded category, phase, and reason code;
+with `--json`, these are in `blocked.sessionDispatchDiagnostic`. `unknown` means
+the available evidence cannot establish that detail. For connectivity failures,
+check Gateway availability before rerunning Install to resume the retained identity;
+a connection failure alone does not authorize replacement. Gateway rejection or
+pending pairing still requires its specific recovery action, including approval
+of the exact device request when present. Install does not retry automatically.
+
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;
 rerun install after fixing the blocker. With `--json`, stdout contains one

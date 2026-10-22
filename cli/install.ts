@@ -1,5 +1,7 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 
+import { retainSessionDispatchDiagnostic } from '../credentials/session-dispatch-diagnostic.ts';
+
 import { manifestNotices, lifecycleWarningNotice } from './diagnostic-notices.ts';
 import confirmSessionDispatch from './session-dispatch-consent.ts';
 import lifecycleDetails from './lifecycle-details.ts';
@@ -212,6 +214,13 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
       code: failure?.code ?? (error instanceof AgentInstallError ? error.code : 'install-failed'),
       message: error instanceof Error ? error.message : 'Installation failed.',
       ...(failure?.stepId ? { stepId: failure.stepId } : {}),
+      ...(failure?.sessionDispatchDiagnostic
+        ? {
+            sessionDispatchDiagnostic: retainSessionDispatchDiagnostic(
+              failure.sessionDispatchDiagnostic,
+            ),
+          }
+        : {}),
     };
     const unattempted = failure?.progress?.unattempted ?? [{ component: 'lifecycle' }];
     const outcomes = failure?.progress?.outcomes ?? [];

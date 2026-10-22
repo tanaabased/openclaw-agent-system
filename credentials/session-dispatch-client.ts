@@ -4,10 +4,16 @@ import {
   GatewayClient,
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
+  type GatewayClientOptions,
 } from '@openclaw/gateway-client';
 import { PROTOCOL_VERSION } from '@openclaw/gateway-protocol/version';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import {
+  classifySessionDispatchFailure,
+  SessionDispatchConnectionError,
+  sessionDispatchDeadlineError,
+} from './session-dispatch-diagnostic.ts';
 import {
   dispatchCredentialError,
   type DispatchAuthority,
@@ -15,6 +21,21 @@ import {
   type DispatchRequest,
 } from './session-dispatch.ts';
 import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
+
+interface SessionDispatchClientDependencies {
+  createClient(
+    options: GatewayClientOptions,
+  ): Pick<GatewayClient, 'start' | 'stop' | 'stopAndWait' | 'request'>;
+  scheduleDeadline(callback: () => void, milliseconds: number): () => void;
+}
+
+const clientDependencies: SessionDispatchClientDependencies = {
+  createClient: (options) => new GatewayClient(options),
+  scheduleDeadline(callback, milliseconds) {
+    const timer = setTimeout(callback, milliseconds);
+    return () => clearTimeout(timer);
+  },
+};
 
 /** authenticate only with the retained service identity, never ambient gateway credentials. */
 export default async function connectSessionDispatch(
@@ -38,6 +59,7 @@ export async function useSessionDispatchClient<T>(
   bootstrap: boolean,
   authority: DispatchAuthority,
   operation: (request: DispatchRequest, hello: { token?: string; scopes: string[] }) => Promise<T>,
+  dependencies: SessionDispatchClientDependencies = clientDependencies,
 ) {
   if (config.gateway?.tls?.enabled)
     dispatchCredentialError(
@@ -56,7 +78,7 @@ export async function useSessionDispatchClient<T>(
   };
   assertCurrent();
   const ready = Promise.withResolvers<{ token?: string; scopes: string[] }>();
-  const client = new GatewayClient({
+  const client = dependencies.createClient({
     url: `ws://127.0.0.1:${port}`,
     env: {},
     clientName: 'gateway-client',
@@ -87,31 +109,45 @@ export async function useSessionDispatchClient<T>(
     },
     onHelloOk: (hello) =>
       ready.resolve({ token: hello.auth?.deviceToken, scopes: hello.auth?.scopes ?? [] }),
-    onConnectError: () => ready.reject(new Error('session-dispatch-connect-failed')),
+    onConnectError: (error) =>
+      ready.reject(new SessionDispatchConnectionError(classifySessionDispatchFailure(error))),
   });
   const abort = () => {
     ready.reject(new Error('session-dispatch-connect-cancelled'));
     client.stop();
   };
   authority.signal?.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(
-    () => ready.reject(new Error('session-dispatch-connect-timeout')),
+  const clearDeadline = dependencies.scheduleDeadline(
+    () => ready.reject(sessionDispatchDeadlineError()),
     12_000,
   );
+  let failed = false;
   try {
     assertCurrent();
     client.start();
-    const hello = await ready.promise;
-    clearTimeout(timer);
+    const hello = await ready.promise.catch((error: unknown) => {
+      assertCurrent();
+      throw error;
+    });
+    clearDeadline();
     assertCurrent();
     return await operation(
       sessionDispatchRequest((method, params) => client.request(method, params), authority),
       hello,
     );
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    clearTimeout(timer);
+    clearDeadline();
     authority.signal?.removeEventListener('abort', abort);
-    await client.stopAndWait({ timeoutMs: 1500 });
+    await client.stopAndWait({ timeoutMs: 1500 }).catch(() => {
+      // cleanup must not hide the original failure or expose unrestricted sdk errors.
+      if (!failed) {
+        assertCurrent();
+        throw new SessionDispatchConnectionError(classifySessionDispatchFailure(undefined));
+      }
+    });
   }
 }
 
