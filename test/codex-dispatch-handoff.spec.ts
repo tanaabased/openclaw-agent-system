@@ -111,6 +111,8 @@ describe('agent/codex-dispatch-handoff', () => {
       else await test.send('retirement');
       assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [archive.request]);
       await assert.rejects(test.send('retirement'), /retirement-prepared-request-unavailable/);
+      await assert.rejects(test.execute({ action: 'reconcile' }), /operation-evidence-unavailable/);
+      assert.equal(test.commands.length, 1);
     }
   });
 
@@ -202,6 +204,40 @@ describe('agent/codex-dispatch-handoff', () => {
     const test = fixture([access, new Error('native rejection'), success(prepared)]);
     await assert.rejects(test.execute(), /native rejection/);
     assert.equal(test.commands.length, 2);
+  });
+
+  it('should retain only operation identity for evidence reconciliation after a refused preparation', async () => {
+    const test = fixture([
+      success(routing),
+      access,
+      new Error('native rejection'),
+      success({ status: 'blocked', nextAction: 'next' }),
+    ]);
+    await test.execute();
+    await assert.rejects(
+      test.execute({ action: 'prepare', title: 'poem', assessment: {} }),
+      /native rejection/,
+    );
+    await assert.rejects(test.send(), /prepared-request-unavailable/);
+    await test.execute({ action: 'reconcile' });
+    const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
+    assert.deepEqual(input, { action: 'reconcile', id: routing.id });
+    assert.equal(test.commands.length, 4);
+    assert.equal(test.creations.length, 0);
+  });
+
+  it('should reconcile a refused creation without resending its consumed handoff', async () => {
+    const test = fixture(
+      [success(prepared), success({ status: 'blocked', nextAction: 'next' })],
+      true,
+    );
+    await test.execute();
+    await assert.rejects(test.send(), /native rejection/);
+    await test.execute({ action: 'reconcile' });
+    const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
+    assert.deepEqual(input, { action: 'reconcile', id: prepared.id });
+    await assert.rejects(test.send(), /prepared-request-unavailable/);
+    assert.equal(test.creations.length, 1);
   });
 
   it('should bound busy and access retries without retaining a sendable request', async () => {

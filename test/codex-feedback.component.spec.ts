@@ -169,6 +169,8 @@ describe('agent/codex-feedback', () => {
         },
       }),
       native: {
+        intakeDenial: async () => undefined,
+        intakeBoundary: async () => 'routing-command',
         assessmentSkill: async (_cwd: string, name: string) => ({
           name,
           path: '/trusted/feedback/SKILL.md',

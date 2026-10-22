@@ -9,7 +9,7 @@ export default function codexDispatchHandoff(runtime: CodexRuntimeIdentity) {
   return `const runtime = ${JSON.stringify(runtime)};
 ${String.raw`const actions = {
   intake: ['scan', 'failure-response'],
-  dispatch: ['next', 'prepare', 'reconcile', 'report'],
+  dispatch: ['observe-denials', 'next', 'prepare', 'reconcile', 'report'],
   continuation: ['next', 'reconcile'],
   feedback: ['reconcile']
 };
@@ -22,6 +22,14 @@ if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
   if (!retained || retained.status !== 'routing-required' || !retained.id || !retained.digest) throw new Error('dispatch-routing-evidence-unavailable');
   if (Object.keys(input).some(key => !['action', 'title', 'assessment', 'fallback'].includes(key))) throw new Error('dispatch-routing-input-invalid');
   input = {...input, id: retained.id, digest: retained.digest};
+}
+if (runtimeRoute === 'dispatch' && input.action === 'reconcile' && input.id === undefined) {
+  const observation = load(key + ':observation');
+  if (!observation?.id) throw new Error('dispatch-operation-evidence-unavailable');
+  input = {...input, id: observation.id};
+}
+if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
+  store(key + ':observation', {id: input.id, digest: input.digest, operation: 'prepare'});
 }
 const argv = [runtime.nodeExecutable, runtime.entrypoint, runtimeRoute];
 argv.push(input.action);
@@ -63,6 +71,7 @@ while (true) {
   if (busy) break;
   if (result.exit_code !== 0 || !response) throw new Error('native-handoff-preparation-failed; inspect the command result and reconcile before retrying');
   store(key, response);
+  store(key + ":observation", null);
   break;
 }`}`;
 }
@@ -85,5 +94,6 @@ export function codexNativeHandoff(
   return `const prepared = load(${key});
 if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prepared-request-unavailable');
 store(${key}, null);
+${route === 'dispatch' ? `store(${key} + ':observation', {id: prepared.id, operation: 'create'});` : ''}
 text({id: prepared.id, native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
 }

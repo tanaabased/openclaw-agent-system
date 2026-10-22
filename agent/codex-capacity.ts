@@ -5,6 +5,7 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 /** unresolved native custody reserves capacity until current native evidence releases it. */
 function reserved(record: DispatchRecord): boolean {
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
+  if (record.denial) return false;
   if (record.reset || !record.request) return false;
   const progress = issueWorkflowProgress(record);
   const { action } = progress;
