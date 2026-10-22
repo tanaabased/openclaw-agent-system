@@ -166,6 +166,17 @@ and roots, then reconcile through Install. Interrupted clones also require recov
 at their original location before selecting another destination. Once the saved project is verified, dispatch refreshes the
 default branch and pins the exact starting commit for the native issue worktree.
 
+For assessment without assignment, invoke `$agent-system-issue-assessment` with an
+explicit GitHub issue URL and an existing local checkout root in the current chat.
+It uses the bound agent's [assessment selection](./MANIFEST.md#assessment-selection)
+and returns a saved plan, questions or a setup blocker. No intake activation, new
+chat, checkout preparation, implementation or GitHub posting occurs, even with Work
+or Auto defaults. Matching managed work reuses its verified context and results;
+invalid managed ownership must recover through its owner, never a manual fallback.
+Ask for a revision after answering questions, or for the full assessment to inspect
+its retained source. An unavailable checkout or invalid explicit skill/guidance must
+be corrected before retrying in the same chat.
+
 Bounded issue evidence and structured metadata inform the shared model router.
 The saved model and effort are passed explicitly to native creation and retained
 on continuation. Requested settings and verified effective settings remain distinct.

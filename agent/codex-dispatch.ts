@@ -1,3 +1,4 @@
+import codexAssessmentEntry from './codex-assessment-entry.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
@@ -35,6 +36,12 @@ export async function runCodexDispatch(
   input: unknown,
   deps: CodexDispatchDependencies = {},
 ) {
+  if (action === 'assessment')
+    return codexAssessmentEntry(
+      pluginData,
+      { ...(input as Record<string, unknown>), action },
+      deps,
+    );
   validateDispatchRequest(action, input);
   deps = {
     ...deps,

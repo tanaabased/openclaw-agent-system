@@ -1,5 +1,6 @@
 const actions: Record<string, readonly string[]> = {
   dispatch: [
+    'assessment',
     'inspect',
     'next',
     'prepare',
@@ -50,7 +51,10 @@ export default function codexRuntimeRequest(route: string, args: string[], input
   const request = { ...input } as Record<string, unknown>;
   const [action, operation] = args.slice(0, index);
   if (!action) {
-    if (route === 'feedback' && request.action === 'reply')
+    if (
+      (route === 'feedback' && request.action === 'reply') ||
+      (route === 'dispatch' && request.action === 'assessment')
+    )
       throw new Error('workflow-command-operation-required');
     return { pluginData: args[index + 1]!, request };
   }
@@ -74,17 +78,21 @@ export default function codexRuntimeRequest(route: string, args: string[], input
   } else if (operation) {
     if (
       !(
-        (route === 'dispatch' && action === 'summary') ||
+        (route === 'dispatch' && ['summary', 'assessment'].includes(action)) ||
         (route === 'feedback' && action === 'reply')
       ) ||
-      !['compose', 'candidate', 'publish', 'reconcile'].includes(operation)
+      !(
+        action === 'assessment'
+          ? ['context', 'result', 'present']
+          : ['compose', 'candidate', 'publish', 'reconcile']
+      ).includes(operation)
     )
       throw new Error('workflow-command-operation-invalid');
     if (request.operation !== undefined && request.operation !== operation)
       throw new Error('workflow-command-action-mismatch');
     request.operation = operation;
   } else if (
-    (route === 'dispatch' && action === 'summary') ||
+    (route === 'dispatch' && ['summary', 'assessment'].includes(action)) ||
     (route === 'feedback' && action === 'reply')
   ) {
     throw new Error('workflow-command-operation-required');
