@@ -311,6 +311,7 @@ openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversat
 # allow the bounded observation interval to elapse; cleanup grace is zero.
 sleep 61
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
+number=$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 id=$(jq -er .id "$TMPDIR/notification-unavailable-before.json")
