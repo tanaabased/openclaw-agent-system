@@ -1128,6 +1128,43 @@ describe('agent/openclaw issue dispatch', () => {
       authority,
     );
   }
+  it('should route with verified complexity despite a conflicting content assessment', async () => {
+    service.dependencies.connect = async () => ({
+      ...fixture.client,
+      getItemContext: async () => ({
+        title: 'Repair the result',
+        body: 'Return the missing result.',
+        comments: [],
+        labels: [],
+        truncated: false,
+        routingMetadata: {
+          complexity: { status: 'verified', source: 'native', value: 'medium' },
+          workSize: { status: 'missing', source: 'native' },
+        },
+      }),
+    });
+    const input = await next();
+    await service.run(
+      manifest,
+      root,
+      coordinator,
+      {
+        action: 'prepare',
+        id: input.id,
+        digest: input.digest,
+        title: 'repair the result',
+        assessment: { complexity: 'high', reason: 'Issue prose sounds architectural.' },
+      },
+      false,
+      {},
+    );
+    const decision = JSON.parse((await record()).routing!);
+    assert.equal(decision.complexity, 'medium');
+    assert.equal(decision.source, 'native');
+    assert.equal(decision.profile, 'medium');
+    assert.equal(creates().length, 1);
+  });
+
   async function record(key?: string) {
     const records = (await (await service.scope(manifest, root)).journal.read()).records;
     return (key ? records.find((record) => record.threadId === key) : records[0])!;

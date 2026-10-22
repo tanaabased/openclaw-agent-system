@@ -6,6 +6,14 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For routing verification, include an issue with verified medium Complexity and a
+coordinator assessment of high. Preparation must select the configured medium
+profile, retain the verified metadata source and reason, and create only one chat.
+Without verified Complexity, the bounded content assessment must still select the
+profile. Repeat this native preparation check in OpenClaw intake; neither path
+should require editing credentials or reassigning the issue to resolve a content
+assessment disagreement.
+
 For pause parity, use that disposable native setup to compare UI Pause/Resume with
 `paused: true`/`paused: false` followed by Install. Record the same automation and
 intake chat IDs, baseline, pending event IDs, and delivery receipts before and

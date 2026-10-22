@@ -37,6 +37,7 @@ import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
@@ -498,7 +499,7 @@ export async function prepareDispatch(
         manifestDigest: current.digest,
         context:
           record.context.slice(0, 17950) + '\n[Bounded routing snapshot; full evidence retained.]',
-        assessment: input.assessment,
+        assessment: dispatchRoutingAssessment(input.assessment, metadata),
         ...(metadata?.status === 'verified'
           ? { evidence: { complexity: metadata.value, source: metadata.source } }
           : {}),

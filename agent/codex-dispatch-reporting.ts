@@ -114,6 +114,8 @@ export default async function reportDispatch(
   return { status: 'report', response: report.response };
 }
 function remediation(value: string) {
+  if (value === 'model-routing-metadata-conflict')
+    return codexIssueNotice({ event: 'failure', code: value, changed: false }).next;
   const recovery = workflowRecovery(value);
   if (recovery) return recovery.next;
   if (value === 'dispatch-native-receipt-reused')

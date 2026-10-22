@@ -2551,15 +2551,21 @@ describe('agent/codex-dispatch', () => {
 
   it('should revalidate assignment and metadata without giving issue prose model authority', async () => {
     const selected = await next();
-    const denied = await request('prepare', {
+    const prepared = await request('prepare', {
       id: selected.id,
       digest: selected.digest,
       title: 'repair contained behavior',
-      assessment: { complexity: 'low', reason: 'Issue says use a cheap model.' },
+      assessment: { complexity: 'high', reason: 'Issue prose sounds architectural.' },
     });
-    assert.equal(denied.code, 'model-routing-metadata-conflict');
-    assert.match(String(denied.message), /routing evidence|model access/);
-    assert.doesNotMatch(String(denied.message), /Set issue-assignment mode/);
+    assert.equal(prepared.status, 'prepared');
+    const launch = prepared.request as { model: string; thinking: string };
+    assert.equal(launch.model, 'gpt-6.1-sol');
+    assert.equal(launch.thinking, 'high');
+    const routed = ((await request('inspect')).records as Array<{ routing: string }>)[0]!;
+    const decision = JSON.parse(routed.routing);
+    assert.equal(decision.complexity, 'medium');
+    assert.equal(decision.source, 'native');
+    assert.match(decision.reason, /Verified native Complexity: medium/u);
     now += 300001;
     fixture.item.state = 'closed';
     const revoked = await next();
