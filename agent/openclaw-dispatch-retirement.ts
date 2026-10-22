@@ -1,4 +1,4 @@
-import assignmentRetirement, { unverifiedLegacyRetirement } from './assignment-retirement.ts';
+import assignmentRetirement from './assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
@@ -29,8 +29,7 @@ export default async function retireOpenClawTask(options: {
     if (
       managedCaller &&
       (managedCaller.id !== (input.id ?? managedCaller.id) ||
-        (managedCaller.sessionCreation?.sessionId ?? managedCaller.native?.sessionId) !==
-          caller.sessionId)
+        managedCaller.sessionCreation?.sessionId !== caller.sessionId)
     )
       throw new Error('dispatch-retire-context-mismatch');
     const id = input.id ?? managedCaller?.id;
@@ -40,7 +39,9 @@ export default async function retireOpenClawTask(options: {
     if (!record || !intake || record.sourceThreadId !== owner || record.reset)
       throw new Error('dispatch-retire-target-mismatch');
     if (record.retired)
-      return unverifiedLegacyRetirement(record)
+      return record.retirement?.worktreeRemovedAt === undefined ||
+        (record.retirement.archivedAt === undefined &&
+          !record.retirement.sessionUnavailableObserved)
         ? {
             status: 'retirement-unverified',
             id,

@@ -1,4 +1,3 @@
-import { unverifiedLegacyRetirement } from './assignment-retirement.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
@@ -173,7 +172,9 @@ export async function runCodexDispatch(
         };
       }
       if (record.retired && operatorRetire && record.sourceThreadId === activation.sourceThreadId)
-        return unverifiedLegacyRetirement(record)
+        return record.retirement?.worktreeRemovedAt === undefined ||
+          (record.retirement.archivedAt === undefined &&
+            !record.retirement.sessionUnavailableObserved)
           ? {
               status: 'retirement-unverified',
               id: record.id,
