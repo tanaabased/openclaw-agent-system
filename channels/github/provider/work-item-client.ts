@@ -1,3 +1,4 @@
+import resolveGitHubIdentity from './resolve-identity.ts';
 import {
   githubResponseBoolean,
   githubResponseGitRef,
@@ -42,6 +43,10 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
 
   constructor(api: GitHubWorkEventApiClient) {
     this.#api = api;
+  }
+
+  resolveIdentity(reference: string) {
+    return resolveGitHubIdentity(this.#api, reference);
   }
 
   get identity(): GitHubIdentity {

@@ -3,7 +3,7 @@
 This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, read-only model routing, and value-free lifecycle logging without depending on live model behavior.
 
 The readiness turn uses a GitHub-shaped session key after the installed agent's
-manifest declares notification V2. It must reach the mock model using passive
+manifest declares notification V3. It must reach the mock model using passive
 manifest discovery. Both workflows declare paused schedules, and their intake has
 not been installed; this tests passive loading without activating notification work.
 The routing turn also requests issue-session dispatch before intake activation and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
@@ -38,10 +38,11 @@ openclaw gateway call agents.list --params '{}' --json | jq -e 'any(.agents[]; .
 cd "$GITHUB_WORKSPACE/examples/openclaw-agent/retired-notifications"
 if openclaw agent-system validate --json > "$TMPDIR/retired-notifications.stdout" 2> "$TMPDIR/retired-notifications.stderr"; then exit 1; fi
 test ! -s "$TMPDIR/retired-notifications.stdout"
-grep -F 'code=github-notification-v1-retired' "$TMPDIR/retired-notifications.stderr"
+grep -F 'code=manifest-unknown-key' "$TMPDIR/retired-notifications.stderr"
 
-# should load a v2 agent without activating notification work
-cat "$GITHUB_WORKSPACE/examples/openclaw-agent/v2-notifications.yaml" >> "$GITHUB_WORKSPACE/examples/openclaw-agent/data/agent.yaml"
+# should load a v3 agent without activating notification work
+cat "$GITHUB_WORKSPACE/examples/openclaw-agent/v3-notifications.yaml" >> "$GITHUB_WORKSPACE/examples/openclaw-agent/data/agent.yaml"
+openclaw agent-system migrate-github --agent data --json | jq -e '.status == "already-v3" and .resolutions == []'
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-github:data:direct:github:issue:r_example:1 \

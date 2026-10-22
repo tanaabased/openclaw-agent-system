@@ -29,7 +29,7 @@ export function originalIntakeDigest(manifest: AgentManifest) {
 }
 export function intakeFixture() {
   const policy: GitHubNotificationPolicy = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     runtimes: ['codex'],
     intervalMinutes: 5,
     maxConcurrentItems: 2,

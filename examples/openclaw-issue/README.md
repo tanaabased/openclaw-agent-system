@@ -134,18 +134,18 @@ conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 openclaw gateway call sessions.patch --params "$(jq -nc --arg key "$conversation" '{key:$key,label:"Renamed issue conversation",category:"Operator grouping"}')" --json > "$TMPDIR/notification-renamed.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.label == "Renamed issue conversation" and .session.category == "Operator grouping"'
 
-# should exclude a parent actor through an empty replacement author list
+# should exclude feedback after removing the approved actor
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 node --input-type=module <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse, stringify } from 'yaml';
 const manifest = parse(readFileSync('agent.yaml', 'utf8'));
-manifest.github.notifications['issue-assignment'].feedback = { inherit: false, allowed: [] };
+manifest.github['issue-assignment'].allowed = [];
 writeFileSync('agent.yaml', stringify(manifest));
 NODE
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot this author is excluded by the replacement policy.' > "$TMPDIR/notification-excluded-source.json"
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot this author is excluded by the current actor policy.' > "$TMPDIR/notification-excluded-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
@@ -154,7 +154,7 @@ node --input-type=module <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse, stringify } from 'yaml';
 const manifest = parse(readFileSync('agent.yaml', 'utf8'));
-delete manifest.github.notifications['issue-assignment'].feedback;
+manifest.github['issue-assignment'].allowed = ['@emoriwan'];
 writeFileSync('agent.yaml', stringify(manifest));
 NODE
 

@@ -90,7 +90,7 @@ proof that the model is available or that a task is using it.
 
 ## GitHub Notification Policy
 
-Version 2 [notification policy](./MANIFEST.md#githubnotifications) supports issue-assignment
+V3 [notification policy](./MANIFEST.md#githubnotifications) supports issue-assignment
 intake through one managed `github-issue-assignment` schedule and one retained chat,
 `ISSUE ASSIGNMENTS`, displayed under `AGENT SYSTEM`. The automation is named
 `📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
@@ -115,14 +115,14 @@ successful activation establishes a historical baseline; reinstall and restart
 retain it and deduplicate assignments by event identity.
 
 To pause future issue-intake occurrences on this machine, set `paused: true` under
-`github.notifications.issue-assignment`, then authorize Install to pause and verify
+`github.issue-assignment`, then authorize Install to pause and verify
 the owned schedule. Native UI pause stops the same future work. An accepted
 occurrence and already-running issue turns may finish; authorization, feedback,
 checkpoints, and completed receipts remain unchanged. Set `paused: false` and run
 Install to resume the same schedule and chat. Eligible assignments and comments
 that arrived during the pause can then be discovered without repeating completed
 effects. Install can reverse a UI-only pause if the manifest still requests active
-intake. Legacy `enabled` is an inverse alias with a deprecation warning.
+intake. V3 uses `paused`; `enabled` is rejected.
 You choose which machine runs each workflow; two active machines do not coordinate
 or deduplicate work between them.
 
@@ -175,7 +175,7 @@ completed/remaining investigation. A user follow-up may revise the assessment in
 the same chat. A result never authorizes implementation or publication.
 
 Use [assessment selection](./MANIFEST.md#assessment-selection) under
-`github.notifications.issue-assignment` to select an active skill and optional inline
+`github.issue-assignment` to select an active skill and optional inline
 or file guidance. Dispatch resolves the ID through native skill discovery and retains
 the selected name, source path, instruction digest, and guidance snapshot. The child
 verifies that same skill in its actual worktree before beginning. A missing or changed
@@ -203,10 +203,9 @@ assignment and review requests; the removed global setting requires an explicit 
 
 ### Issue Feedback
 
-An active issue workflow supplies feedback and inherits approved assigners by
-default. Use `{ inherit: true, allowed: [...] }` to add pinned contributors, or
-`{ inherit: false, allowed: [...] }` to replace them. An empty replacement list
-approves nobody. Author and reply-policy changes apply live; the parent workflow
+An active issue workflow derives feedback authors from its allowed assignment
+actors and configured reviewers. Both lists empty approves nobody. `feedback`
+accepts only skill and guidance customization. Author and reply-policy changes apply live; the parent workflow
 needs its installed intake schedule, with no separate feedback activation.
 Approved comments must address the configured GitHub account outside quoted text.
 The initial read establishes a baseline without replaying historical comments.
@@ -270,7 +269,7 @@ new feedback admission with a diagnostic; they do not silently discard comments.
 
 ### Auto Mode
 
-Set `github.notifications.issue-assignment.mode: auto`, then authorize Install to
+Set `github.issue-assignment.mode: auto`, then authorize Install to
 reconcile the saved workflow. Auto uses your existing assessment skill and guidance
 to choose `decision.mode: work` or `decision.mode: plan`, with reasons shown in the issue chat. Clear, bounded
 work can continue through the configured implementation and managed PR delivery;
@@ -288,7 +287,7 @@ a verified Work decision before implementation. OpenClaw uses the same Plan/Work
 
 ### Work Mode
 
-Set `github.notifications.issue-assignment.mode: work`, optionally override its
+Set `github.issue-assignment.mode: work`, optionally override its
 implementation skill or guidance. Initial setup uses Install to create the native
 schedule; later mode and guidance edits apply without Install. Work mode permits
 assessment, implementation, and PR publication without routine

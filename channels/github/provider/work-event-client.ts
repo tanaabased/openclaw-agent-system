@@ -67,6 +67,10 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     return this.#comments.listIssueCommentPage(owner, name, number, page, since);
   }
 
+  resolveIdentity(reference: string) {
+    return this.#items.resolveIdentity(reference);
+  }
+
   get identity(): GitHubIdentity {
     return this.#api.identity;
   }

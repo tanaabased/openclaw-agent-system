@@ -47,6 +47,26 @@ describe('channels/github/intake/records', () => {
     };
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should resolve compact ${runtime} policy before owner filtering and assignment admission`, async () => {
+      const { input, store, policy, client, events, repository } = setup(runtime);
+      policy.allowedRepositoryOwners = [
+        { login: '', nodeId: repository.owner.nodeId, reference: repository.owner.nodeId },
+      ];
+      policy.issueAssignment!.allowed = [{ login: 'receiver', nodeId: '', reference: '@receiver' }];
+      client.resolveIdentity = async (reference) =>
+        reference === repository.owner.nodeId ? repository.owner : client.identity;
+      const assigned = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assigned);
+      const result = await scanAssignments({ ...input, now: baseline + 120000 });
+      assert.equal(result.admitted, 1);
+      const record = (await store.read())!.records[0]!;
+      assert.equal(record.repository.owner.nodeId, repository.owner.nodeId);
+      assert.equal(record.assignment.actor.nodeId, client.identity.nodeId);
+      assert.equal((await scanAssignments({ ...input, now: baseline + 180000 })).admitted, 0);
+    });
+  }
+  for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should upgrade unchanged ${runtime} legacy policy during normal intake without duplicating admissions`, async () => {
       const { input, store } = setup(runtime);
       await scanAssignments({ ...input, activate: true, now: baseline + 120000 });

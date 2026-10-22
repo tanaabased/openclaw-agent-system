@@ -258,7 +258,7 @@ describe('openclaw v2 intake slice', () => {
     const reconciled = await registry.reconcile(context);
     assert.deepEqual(
       new Set(validated.diagnostics.map(({ fieldPath }) => fieldPath)),
-      new Set(['/github/notifications/review-request']),
+      new Set(['/github/review-request']),
     );
     assert.deepEqual(
       reconciled.warnings.map(getCliDiagnosticContext),
@@ -336,7 +336,7 @@ describe('openclaw v2 intake slice', () => {
       [
         {
           code: 'github-notification-runtime-unsupported',
-          fieldPath: '/github/notifications/review-request',
+          fieldPath: '/github/review-request',
           severity: 'warning',
         },
       ],

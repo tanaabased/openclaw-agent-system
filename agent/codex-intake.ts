@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
@@ -69,6 +70,7 @@ export async function selectCodexIntake(
       agentId: loaded.manifest.agent.id,
     }),
   );
+  await new GitHubIdentityCache(store.location).hydrate(loaded.manifest.github?.notifications);
   if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
     policy,
@@ -130,6 +132,7 @@ async function connectSelected(
   if (!current.policy) throw new IntakeError('intake-policy-disabled');
   const { policy, username } = current.policy;
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
+  await new GitHubIdentityCache(current.store.location).resolve(policy, client, 'assignment');
   const pin = policy.issueAssignment?.allowed.find(
     (actor) => actor.login.toLowerCase() === username.toLowerCase(),
   );

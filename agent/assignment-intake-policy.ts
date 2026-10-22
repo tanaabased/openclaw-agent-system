@@ -9,8 +9,7 @@ export default function assignmentIntakePolicy(
   runtime: 'codex' | 'openclaw',
 ) {
   const policy = manifest.github?.notifications;
-  if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime) || !policy.issueAssignment)
-    return;
+  if (!policy || !policy.runtimes.includes(runtime) || !policy.issueAssignment) return;
   const username = manifest.github?.username;
   if (typeof username !== 'string') throw new IntakeError('intake-literal-identity-required');
   return {

@@ -1,0 +1,12 @@
+github:
+  username: example
+  schema-version: 3
+  runtimes:
+    - openclaw
+  allowed-repository-owners:
+    - login: example
+      node-id: O_example
+  issue-assignment:
+    paused: true
+  review-request:
+    paused: true

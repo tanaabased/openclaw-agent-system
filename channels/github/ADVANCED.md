@@ -2,8 +2,8 @@
 
 ## Configuration Reference
 
-`github.notifications.schema-version` is optional and defaults to `2`; only
-numeric `2` is supported when explicit. See the
+`github.schema-version: 3` is required for V3 workflows; issue assignment is
+declared directly under `github`. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
 authority, runtime selection, and current support. OpenClaw supports
 Plan, Work, and Auto issue assignment with configured feedback
@@ -55,8 +55,7 @@ not new authority.
 No separate repair policy or author list is required.
 
 Discovery retains bounded observations independently of reply eligibility.
-Feedback follows its parent workflow and inherits approved assigners unless an
-explicit author policy replaces them. Activity observed while no authors are
+Feedback authors are the union of configured allowed actors and reviewers. Activity observed while no authors are
 approved stays in GitHub history and is not queued for later dispatch. When the runtime observes acceptance resume, it saves an admission
 cutoff for the issue and its PR using the previous policy-check time. Approved
 comments or revisions after that cutoff become new feedback, including those
@@ -77,11 +76,8 @@ readiness account and dispatch enrollment remain configured. Install follows the
 manifest, so it can reverse a UI-only pause when the manifest still requests an
 active schedule.
 
-The deprecated `enabled` alias is inverse: `enabled: false` means `paused: true`,
-and `enabled: true` means `paused: false`. Validate, Doctor, and Install warn with
-the exact replacement. Consistent pairs are accepted; contradictory pairs fail
-validation. Omission keeps the existing scheduling default. `review-request`
-accepts the same declaration but still has no execution adapter.
+V3 rejects `enabled`; use `paused`. Review-request declarations reserve the same
+pause field but still have no execution adapter.
 
 Install reconciles changes to installed scheduling machinery. Policy-only edits do
 not change the orchestration definition. Native execution facts, explicit task

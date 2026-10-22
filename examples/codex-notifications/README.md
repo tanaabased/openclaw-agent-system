@@ -147,8 +147,8 @@ results and receipts are reused. Invalid managed context must not become manual
 authority. The packaged checks below establish command/binding boundaries, not
 this desktop skill-invocation journey.
 
-The disabled-workflow fixture omits the notification schema version to exercise
-the packaged default; the active fixture retains explicit version `2`.
+Both active and paused fixtures declare V3. The paused fixture retains its
+workflow configuration while Install leaves future schedule occurrences disabled.
 
 For native purge verification, reset a disposable managed issue with purge selected.
 After native chat archival, confirm purge waits for checkout removal and completes
@@ -233,6 +233,7 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
+node "$runtime" migrate-github --plugin-data "$plugin_data" | jq -e '.status == "already-v3" and .resolutions == []'
 node "$runtime" intake inspect --plugin-data "$plugin_data" \
   | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
@@ -271,23 +272,23 @@ if output=$(printf '%s\n' '{"action":"reply","operation":"publish"}' | node "$ru
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-command-action-mismatch"'
 test ! -d "$CODEX_HOME/automations"
 
-# should expose the legacy cleanup migration condition without rejecting unrelated manifest work
+# should report ignored legacy configuration when v3 is selected
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-sed 's/    schema-version: 2/    schema-version: 2\n    cleanup: {enabled: false, grace-minutes: 30}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/legacy-agent.yaml"
+sed 's/  schema-version: 3/  schema-version: 3\n  notifications: {obsolete: true}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/ignored-agent.yaml"
 cp "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" "$root/original-agent.yaml"
-cp "$root/legacy-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and any(.manifest.diagnostics[]; .code == "retirement-cleanup-migration-required")'
+cp "$root/ignored-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and any(.manifest.diagnostics[]; .code == "github-v2-ignored")'
 cp "$root/original-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and all(.manifest.diagnostics[]; .code != "retirement-cleanup-migration-required")'
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and all(.manifest.diagnostics[]; .code != "github-v2-ignored")'
 
 # should reject removed global feedback before binding or activation
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/removed-feedback" \
-  | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-notification-global-feedback-removed")'
+  | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
 test ! -d "$CODEX_HOME/automations"
 
 # should expose packaged dispatch without letting intake-only state launch work
@@ -431,7 +432,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/before-timing.json"
-sed 's/    schema-version: 2/    schema-version: 2\n    interval-minutes: 17\n    max-concurrent-items: 8/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/timing-agent.yaml"
+sed 's/  schema-version: 3/  schema-version: 3\n  interval-minutes: 17\n  max-concurrent-items: 8/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/timing-agent.yaml"
 mv "$root/timing-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
 printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/after-timing.json"
 jq -es '.[0].actions[0].expected.prompt as $before | .[1].actions[0].expected | (.prompt != null and .prompt == $before) and (.rrule | contains("INTERVAL=17"))' "$root/before-timing.json" "$root/after-timing.json"

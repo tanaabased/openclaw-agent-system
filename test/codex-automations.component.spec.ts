@@ -228,14 +228,12 @@ describe('agent/codex-automations', () => {
         },
         github: {
           username: 'receiver',
-          notifications: {
-            'schema-version': 2,
-            runtimes: ['codex'],
-            'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
-            'issue-assignment': {
-              mode: 'plan',
-              allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
-            },
+          'schema-version': 3,
+          runtimes: ['codex'],
+          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          'issue-assignment': {
+            mode: 'plan',
+            allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
           },
         },
       }),

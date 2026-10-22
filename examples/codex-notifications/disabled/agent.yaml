@@ -7,28 +7,26 @@ models:
   medium: { model: openai/gpt-6-luna, effort: medium }
   high: { model: openai/gpt-6-luna, effort: medium }
 github:
+  schema-version: 3
   username: example-agent
-  notifications:
-    allowed-repository-owners:
-      - login: example-owner
-        node-id: O_example
-    issue-assignment:
-      enabled: false
-      allowed:
-        - login: example-operator
-          node-id: U_operator
-      implementation:
-        skill: company:implement
-      feedback:
-        inherit: true
-        allowed:
-          - login: example-feedback
-            node-id: U_feedback
-    review-request:
-      enabled: false
-      allowed:
-        - login: example-operator
-          node-id: U_operator
-      review:
-        skill: company:review
-      feedback: true
+  allowed-repository-owners:
+    - login: example-owner
+      node-id: O_example
+  issue-assignment:
+    paused: true
+    allowed:
+      - login: example-operator
+        node-id: U_operator
+    implementation:
+      skill: company:implement
+    reviewers:
+      - name: example-feedback
+        node-id: U_feedback
+  review-request:
+    paused: true
+    allowed:
+      - login: example-operator
+        node-id: U_operator
+    review:
+      skill: company:review
+    feedback: {}

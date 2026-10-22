@@ -42,14 +42,12 @@ const manifest = {
   models,
   github: {
     username: 'receiver',
-    notifications: {
-      'schema-version': 2,
-      runtimes: ['codex'],
-      'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
-      'issue-assignment': {
-        mode: 'plan',
-        allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
-      },
+    'schema-version': 3,
+    runtimes: ['codex'],
+    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    'issue-assignment': {
+      mode: 'plan',
+      allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
     },
   },
 };
@@ -86,12 +84,9 @@ describe('agent/codex-intake', () => {
         ...manifest,
         github: {
           ...manifest.github,
-          notifications: {
-            ...manifest.github.notifications,
-            'interval-minutes': 15,
-            'max-concurrent-items': 8,
-            cleanup: { enabled: true, 'grace-minutes': 30 },
-          },
+          ...manifest.github,
+          'interval-minutes': 15,
+          'max-concurrent-items': 8,
         },
       }),
     );
@@ -326,7 +321,7 @@ describe('agent/codex-intake', () => {
     await runCodexIntake(pluginData, true, deps);
     const before = await inspectCodexIntake(pluginData, deps);
     const disabled = structuredClone(manifest);
-    Object.assign(disabled.github.notifications['issue-assignment'], { enabled: false });
+    Object.assign(disabled.github['issue-assignment'], { paused: true });
     fixture.events[0]!.createdAt = new Date(baseline + 1000).toISOString();
     const raced = await runCodexIntake(pluginData, false, {
       ...deps,
@@ -609,7 +604,7 @@ describe('agent/codex-intake', () => {
     if (disable === 'workflow disable') {
       for (const mode of ['work', 'auto']) {
         const work = structuredClone(manifest);
-        Object.assign(work.github.notifications['issue-assignment'], {
+        Object.assign(work.github['issue-assignment'], {
           mode,
           implementation: { skill: 'company:implement' },
         });
@@ -631,7 +626,7 @@ describe('agent/codex-intake', () => {
       }
     }
     const disabled = structuredClone(manifest);
-    Object.assign(disabled.github.notifications['issue-assignment'], { enabled: false });
+    Object.assign(disabled.github['issue-assignment'], { paused: true });
     await writeFile(
       join(workspace, 'agent.yaml'),
       disable === 'manifest corruption' ? '{broken' : JSON.stringify(disabled),
@@ -716,7 +711,7 @@ describe('agent/codex-intake', () => {
   }
   it('should retain legacy codex schedule consent and upgrade intake without reactivation', async () => {
     const value = structuredClone(manifest);
-    value.github.notifications.runtimes = ['openclaw', 'codex'];
+    value.github.runtimes = ['openclaw', 'codex'];
     await checkReconciliation('workflow disable', value, true);
   });
   for (const disable of ['manifest corruption', 'workflow disable'] as const)

@@ -97,7 +97,11 @@ export function githubIdentityMatches(
   left: Pick<GitHubIdentity, 'login' | 'nodeId'>,
   right: Pick<GitHubIdentity, 'login' | 'nodeId'>,
 ): boolean {
-  return left.nodeId === right.nodeId && left.login.toLowerCase() === right.login.toLowerCase();
+  return (
+    Boolean(left.nodeId && right.nodeId && left.login && right.login) &&
+    left.nodeId === right.nodeId &&
+    left.login.toLowerCase() === right.login.toLowerCase()
+  );
 }
 
 /** merge matching pins while rejecting conflicting immutable identities. */
@@ -108,6 +112,7 @@ export function githubIdentitySet<T extends Pick<GitHubIdentity, 'login' | 'node
   const nodes = new Map<string, T>();
   const logins = new Map<string, string>();
   for (const identity of identities) {
+    if (!identity.login || !identity.nodeId) throw new Error('github-identity-unresolved');
     const normalized = identity.login.toLowerCase();
     const previous = nodes.get(identity.nodeId);
     if (

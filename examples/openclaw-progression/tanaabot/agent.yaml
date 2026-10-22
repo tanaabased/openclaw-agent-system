@@ -27,19 +27,11 @@ github:
   ssh-keys:
     path: keys/id_ed25519.pub
     title: agent-system-progression-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__
-  notifications:
-    schema-version: 2
-    runtimes: [openclaw]
-    interval-minutes: 1440
-    max-concurrent-items: 1
-    allowed-repository-owners:
-      - login: tanaabased
-        node-id: __OWNER_NODE_ID__
-    issue-assignment:
-      mode: plan
-      feedback:
-        inherit: false
-        allowed: []
-      allowed:
-        - login: emoriwan
-          node-id: __ACTOR_NODE_ID__
+  schema-version: 3
+  runtimes: [openclaw]
+  interval-minutes: 1440
+  max-concurrent-items: 1
+  allowed-repository-owners: [__OWNER_NODE_ID__]
+  issue-assignment:
+    mode: plan
+    allowed: [__ACTOR_NODE_ID__]

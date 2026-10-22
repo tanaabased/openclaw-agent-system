@@ -162,15 +162,13 @@ describe('manifest/service', () => {
         git: { policy: { 'force-push': 'deny' } },
         github: {
           username: 'tanaabot',
-          notifications: {
-            'schema-version': 2,
-            runtimes: ['openclaw'],
-            'allowed-repository-owners': [{ login: 'example', 'node-id': 'O_example' }],
-            'issue-assignment': {
-              paused: false,
-              mode: 'work',
-              allowed: [{ login: 'operator', 'node-id': 'U_operator' }],
-            },
+          'schema-version': 3,
+          runtimes: ['openclaw'],
+          'allowed-repository-owners': [{ login: 'example', 'node-id': 'O_example' }],
+          'issue-assignment': {
+            paused: false,
+            mode: 'work',
+            allowed: [{ login: 'operator', 'node-id': 'U_operator' }],
           },
         },
       }),

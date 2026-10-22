@@ -14,7 +14,7 @@ const skill = {
 };
 describe('agent/feedback-stage', () => {
   const policy: GitHubNotificationPolicy = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     runtimes: ['codex'],
     intervalMinutes: 5,
     maxConcurrentItems: 3,

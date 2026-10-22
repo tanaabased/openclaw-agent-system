@@ -176,14 +176,26 @@ export async function loadDiscoveredManifest(
   const { value, sources } = mergeManifestDocuments(base, overlay);
   const parsed = normalizeAgentManifest(value);
   const attributeDiagnostics = (diagnostics: ManifestDiagnostic[]): ManifestDiagnostic[] =>
-    diagnostics.map((diagnostic) => ({
-      ...diagnostic,
-      ...(diagnostic.fieldPath === undefined || diagnostic.sourcePath !== undefined
-        ? {}
-        : {
-            sourcePath: manifestSourceForField(sources, diagnostic.fieldPath)?.path,
-          }),
-    }));
+    diagnostics.flatMap((diagnostic) => {
+      if (diagnostic.code === 'github-v2-ignored') {
+        return [base, overlay].flatMap((document) => {
+          const value = document?.value;
+          const github =
+            value && typeof value === 'object' && 'github' in value ? value.github : undefined;
+          return github && typeof github === 'object' && Object.hasOwn(github, 'notifications')
+            ? [{ ...diagnostic, sourcePath: document!.path }]
+            : [];
+        });
+      }
+      return [
+        {
+          ...diagnostic,
+          ...(diagnostic.fieldPath === undefined || diagnostic.sourcePath !== undefined
+            ? {}
+            : { sourcePath: manifestSourceForField(sources, diagnostic.fieldPath)?.path }),
+        },
+      ];
+    });
   parsed.diagnostics = attributeDiagnostics(parsed.diagnostics);
   if (parsed.status === 'invalid') {
     return invalidManifestResult(

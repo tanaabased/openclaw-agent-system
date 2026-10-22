@@ -19,7 +19,7 @@ export default function createIntakeTool(
     id: 'intake',
     commands: [],
     toolNames: ['agent_system_intake'],
-    isConfigured: (manifest) => manifest.github?.notifications?.schemaVersion === 2,
+    isConfigured: (manifest) => Boolean(manifest.github?.notifications),
     invoke() {
       throw new AgentSystemToolError('tool_unavailable', 'Use the bound native intake tool.');
     },
