@@ -1,5 +1,6 @@
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
+import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -92,6 +93,8 @@ export interface OpenClawDispatchDependencies {
 }
 
 export function openClawDispatchFailureCode(error: unknown): string {
+  const conflict = error instanceof AgentSystemToolError ? error.cause : error;
+  if (conflict instanceof GitWorktreeConflict) return conflict.code;
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
   if (
     code === privateStateFileLockBusyErrorCode ||
@@ -247,6 +250,7 @@ export default class OpenClawDispatchContext {
           : (await inspectAdmittedIssue(intake, client)).repo;
     const worktreeInput = {
       agentId: manifest.agent.id,
+      attemptId: record.worktreeAttemptId,
       cloneUrl: repo.cloneUrl,
       defaultBranch: repo.defaultBranch,
       itemDatabaseId: intake.issue.databaseId,

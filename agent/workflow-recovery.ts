@@ -19,6 +19,18 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'git-worktree-branch-exists': [
+      'This attempt already has a branch, but its owned checkout is absent.',
+      'Preserve the branch and reconcile the retained preparation before retrying. Do not reset it or create another attempt to bypass an uncertain Git effect.',
+    ],
+    'git-worktree-owner-mismatch': [
+      'The issue checkout belongs to a different branch or assignment attempt.',
+      'Inspect the retained owner and finish its verified retirement before retrying this assignment. Preserve existing work; do not adopt or reset the checkout.',
+    ],
+    'git-worktree-path-occupied': [
+      'The issue checkout path is occupied without matching managed Git ownership.',
+      'Inspect and preserve the existing directory, reconcile its ownership, then retry this assignment through the operator retry action.',
+    ],
     'notification-state-reset-required': [
       'Restored notification tracking predates the required reset; no workflow was resumed.',
       'Preserve the original file. Restore backups into staging and use the compatible reset-capable release to complete an explicit notification reset before upgrading. Do not delete journals or recreate assignments to bypass this boundary.',

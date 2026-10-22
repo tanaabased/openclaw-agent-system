@@ -16,6 +16,7 @@ import AgentSystemToolError from '../api/error.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import GitCommandError from '../tools/git/command-error.ts';
+import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
@@ -432,6 +433,7 @@ describe('agent/openclaw issue dispatch', () => {
     await current.journal.exclusive(async (state, save) => {
       const historical = structuredClone(state.records[0]!);
       historical.id = 'f'.repeat(64);
+      delete historical.worktreeAttemptId;
       historical.intakeId = 'e'.repeat(64);
       historical.retired = { at: baseline, by: 'old-owner' };
       state.records.push(historical);
@@ -557,6 +559,76 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should retry an already waiting legacy collision with one durable worktree attempt', async () => {
+    await next();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.phase = 'waiting';
+      record.blocker = 'dispatch-tool-execution-failed';
+      record.failureStage = 'worktree';
+      delete record.context;
+      await save();
+    });
+    const id = (await record()).id;
+    const retry = () => service.run(manifest, root, coordinator, { action: 'retry', id }, true);
+    assert.equal((await retry()).status, 'routing-required');
+    coordinator.runId = 'fresh-preparation';
+    const original = service.dependencies.worktrees.prepareGitHub;
+    const attempts: string[] = [];
+    let interrupted = true;
+    service.dependencies.worktrees.prepareGitHub = async (input) => {
+      assert.equal(input.attemptId, id);
+      assert.equal((await record()).worktreeAttemptId, id);
+      attempts.push(input.attemptId!);
+      const prepared = await original(input);
+      if (interrupted) {
+        interrupted = false;
+        throw new Error('lost-preparation-result');
+      }
+      return prepared;
+    };
+    await prepare(await next());
+    assert.equal((await record()).request, undefined);
+    assert.equal(creates().length, 0);
+    assert.equal((await retry()).status, 'routing-required');
+    coordinator.runId = 'retry-preparation';
+    assert.equal((await prepare(await next())).status, 'session-created');
+    assert.deepEqual(attempts, [id, id]);
+    assert.equal(creates().length, 1);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    assert.equal(creates().length, 1);
+  });
+
+  it('should retain a bounded worktree conflict without creating a session', async () => {
+    const selected = await next();
+    service.dependencies.worktrees.prepareGitHub = async () => {
+      const error = new AgentSystemToolError('execution_failed', 'bounded conflict');
+      error.cause = new GitWorktreeConflict('owner-mismatch', 'occupied by another attempt');
+      throw error;
+    };
+    const result = await prepare(selected);
+    assert.ok('code' in result && result.code === 'git-worktree-owner-mismatch');
+    assert.equal((await record()).blocker, 'git-worktree-owner-mismatch');
+    assert.equal(creates().length, 0);
+  });
+
+  it('should preserve a recorded legacy checkout during preparation', async () => {
+    const selected = await next();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.worktree = join(root, 'worktree');
+      await save();
+    });
+    const original = service.dependencies.worktrees.prepareGitHub;
+    service.dependencies.worktrees.prepareGitHub = async (input) => {
+      assert.equal(input.attemptId, undefined);
+      return original(input);
+    };
+    assert.equal((await prepare(selected)).status, 'session-created');
+    assert.equal((await record()).worktreeAttemptId, undefined);
+  });
+
   it('should defer reporting during an overlapping journal operation without changing work', async () => {
     const current = await service.scope(manifest, root);
     await current.journal.exclusive(async (state) => {
@@ -631,6 +703,7 @@ describe('agent/openclaw issue dispatch', () => {
       return tree && !removed.has(tree.path) ? tree : undefined;
     };
     service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      assert.equal(input.attemptId, closed.id);
       effects.push([input.verifyOnly ? 'verify' : 'remove', input.worktree.path]);
       if (!input.verifyOnly) {
         removed.add(input.worktree.path);
@@ -1725,6 +1798,7 @@ describe('agent/openclaw issue dispatch', () => {
         (entry) => !state.records.some((record) => record.intakeId === entry.id),
       )!;
       reservation.id = 'f'.repeat(64);
+      reservation.worktreeAttemptId = reservation.id;
       reservation.intakeId = admission.id;
       reservation.issueKey = issueKey(admission);
       reservation.threadId = `agent:receiver:dashboard:agent-system-issue-${reservation.id}`;

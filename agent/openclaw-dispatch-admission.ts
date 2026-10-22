@@ -95,8 +95,14 @@ export default class OpenClawDispatchAdmission {
       if (!('candidate' in routing) || routing.candidate?.status !== 'mapped')
         throw new Error('dispatch-routing-unresolved');
       setStage('worktree');
+      if (!record.worktree && !record.worktreeAttemptId) {
+        // Save before Git runs so a lost preparation result still retries the same attempt.
+        record.worktreeAttemptId = record.id;
+        await save();
+      }
       const worktree = await this.context.dependencies.worktrees.prepareGitHub({
         ...worktreeInput,
+        attemptId: record.worktreeAttemptId,
         title: input.title,
       });
       record.worktree = worktree.path;

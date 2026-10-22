@@ -3,6 +3,7 @@ import { basename, dirname, resolve } from 'node:path';
 import type AgentEnvironmentService from '../../environment/service.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import AgentSystemToolError from '../../api/error.ts';
+import GitWorktreeConflict from './worktree-conflict.ts';
 import resolveManifestValue from '../../manifest/resolve-value.ts';
 import type { GitWorktreeToolDefinition } from './worktree-tool.ts';
 import type { GitWorktreeToolInput } from './worktree-tool-schema.ts';
@@ -16,6 +17,7 @@ import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-ser
 
 export interface TrustedGitHubWorktreeInput {
   agentId: string;
+  attemptId?: string;
   cloneUrl: string;
   defaultBranch: string;
   itemDatabaseId: number;
@@ -71,6 +73,17 @@ function unavailable(agentId: string, reason: string): AgentSystemToolError {
   );
 }
 
+function attemptIdentity(input: TrustedGitHubWorktreeInput): string | undefined {
+  if (input.attemptId === undefined) return undefined;
+  if (input.itemType !== 'issue' || !/^[a-f0-9]{64}$/.test(input.attemptId)) {
+    throw new AgentSystemToolError(
+      'invalid_arguments',
+      'The GitHub worktree attempt id is invalid.',
+    );
+  }
+  return input.attemptId;
+}
+
 /** Inspect or prepare one provider-admitted worktree through the existing Git definition. */
 export default class TrustedGitWorktreeService {
   readonly #dependencies: TrustedGitWorktreeServiceDependencies;
@@ -82,6 +95,7 @@ export default class TrustedGitWorktreeService {
   public async inspectGitHub(
     input: TrustedGitHubWorktreeInput,
   ): Promise<TrustedGitHubWorktreeResult | undefined> {
+    const attemptId = attemptIdentity(input);
     const agentId = requiredText(input.agentId, 'The notification agent id');
     const repositoryDatabaseId = positiveInteger(
       input.repositoryDatabaseId,
@@ -119,14 +133,20 @@ export default class TrustedGitWorktreeService {
         basename(worktree.path) === stableName &&
         basename(dirname(worktree.path)) === repositoryDirectory,
     );
-    if (match && match.branch !== stableName) {
-      const suffix = gitHubIssueBranchSuffix(agentId, workspaceDir, repositoryId, workId);
+    if (match && (match.branch !== stableName || attemptId !== undefined)) {
+      const suffix = gitHubIssueBranchSuffix(
+        agentId,
+        workspaceDir,
+        repositoryId,
+        workId,
+        attemptId,
+      );
       if (
         input.itemType !== 'issue' ||
         !isGitHubIssueBranchName(match.branch, itemNumber, suffix)
       ) {
-        throw new AgentSystemToolError(
-          'execution_failed',
+        throw new GitWorktreeConflict(
+          'owner-mismatch',
           'The owned GitHub worktree path uses an unrelated branch.',
         );
       }
@@ -137,6 +157,7 @@ export default class TrustedGitWorktreeService {
   public async prepareGitHub(
     input: TrustedGitHubWorktreePrepareInput,
   ): Promise<TrustedGitHubWorktreeResult> {
+    const attemptId = attemptIdentity(input);
     const agentId = requiredText(input.agentId, 'The notification agent id');
     const defaultBranch = requiredText(input.defaultBranch, 'The GitHub default branch');
     const repositoryDatabaseId = positiveInteger(
@@ -167,7 +188,13 @@ export default class TrustedGitWorktreeService {
       agentId,
       toolInput,
       input.signal,
-      input.itemType === 'issue' ? { number: itemNumber, title: input.title } : undefined,
+      input.itemType === 'issue'
+        ? {
+            number: itemNumber,
+            title: input.title,
+            ...(attemptId === undefined ? {} : { attemptId }),
+          }
+        : undefined,
     );
     if (
       Array.isArray(result) ||
@@ -309,7 +336,7 @@ export default class TrustedGitWorktreeService {
     agentId: string,
     toolInput: GitWorktreeToolInput,
     signal?: AbortSignal,
-    issueBranch?: { number: number; title: string },
+    issueBranch?: { number: number; title: string; attemptId?: string },
   ): Promise<{ result: GitWorktreeResult | GitWorktreeResult[]; workspaceDir: string }> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
@@ -388,6 +415,7 @@ export default class TrustedGitWorktreeService {
                     scope.workspaceDir,
                     toolInput.repository.id,
                     toolInput.workId,
+                    issueBranch.attemptId,
                   ),
                 },
           )
