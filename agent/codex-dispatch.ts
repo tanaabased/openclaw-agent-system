@@ -150,6 +150,7 @@ export async function runCodexDispatch(
           intakeStore: current.store,
           now,
           save,
+          debug: current.manifest.debug,
           slots: codexIntakePolicy(current.manifest)?.policy.maxConcurrentItems ?? 3,
         });
       if (action === 'next') return nextDispatch(input, tx);

@@ -14,6 +14,7 @@ import {
   repository,
   type CodexDispatchTransaction,
 } from './codex-dispatch-context.ts';
+import intakeDebug from './intake-debug.ts';
 import prepareDispatchReport from './codex-dispatch-report.ts';
 import { type DispatchState, type DispatchRecord } from './codex-dispatch-state.ts';
 
@@ -33,6 +34,7 @@ export default async function reportDispatch(
     intakeStore: IntakeRecordStore;
     now: number;
     slots: number;
+    debug?: boolean;
     save(): Promise<void>;
   },
 ) {
@@ -56,7 +58,20 @@ export default async function reportDispatch(
       },
       instruction: 'Call report with this scheduled occurrence; do not finish yet.',
     };
-  if (run.response) return { status: 'report', response: run.response };
+  const present = (response: string) => {
+    const diagnostic = intakeDebug(context.debug, state.records, (record) => {
+      const item = context.admitted.records.find((entry) => entry.id === record.intakeId);
+      return item ? repository(item) + '#' + item.issue.number : 'Issue';
+    });
+    return diagnostic
+      ? response.replace(
+          /<\/message>\n<\/heartbeat>$/u,
+          () => '\n\n' + diagnostic + '</message>\n</heartbeat>',
+        )
+      : response;
+  };
+  if (run.response && run.reportVersion === 1)
+    return { status: 'report', response: present(run.response) };
   const occurrence = Date.parse(input.currentTimeIso);
   if (!Number.isFinite(occurrence)) throw new Error('heartbeat-request-invalid');
   const scan = await intakeStore.read();
@@ -108,10 +123,12 @@ export default async function reportDispatch(
       if (report.sent.includes(event.id)) event.reported = true;
   if (state.discoveryProgress) state.discoveryProgress.reported = state.discoveryProgress.pending;
   state.intakeHealth = report.health;
+  state.intakeHealthVersion = 1;
   // this is a report attempt, not proof of delivery; prose never gates new assignments.
   run.response = report.response;
+  run.reportVersion = 1;
   await save();
-  return { status: 'report', response: report.response };
+  return { status: 'report', response: present(run.response) };
 }
 function remediation(value: string) {
   const recovery = workflowRecovery(value);

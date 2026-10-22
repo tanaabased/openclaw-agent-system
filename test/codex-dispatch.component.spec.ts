@@ -913,6 +913,56 @@ describe('agent/codex-dispatch', () => {
     );
   });
 
+  it('should apply live debug edits to cached intake reports without replaying starts', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
+    await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const historical = structuredClone(state.records[0]!);
+      historical.id = 'f'.repeat(64);
+      historical.intakeId = 'e'.repeat(64);
+      historical.retired = { at: now, by: 'old-owner' };
+      historical.phase = 'blocked';
+      historical.request = undefined;
+      historical.threadId = undefined;
+      historical.effective = undefined;
+      state.records.push(historical);
+      await save();
+    });
+    await next();
+    const first = await report();
+    assert.equal(first.status, 'report');
+    assert.match(String(first.response), /1 issue started/);
+    const saved = await store.read();
+    const record = structuredClone(saved.records[0]);
+    const operational = saved.run!.response;
+    for (const debug of [true, false, true]) {
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug }));
+      const repeated = await report();
+      assert.equal(repeated.status, 'report');
+      assert.equal(String(repeated.response).includes('🔬 Debug'), debug);
+      assert.equal(String(repeated.response).includes('retirement-legacy-unverified'), debug);
+      assert.match(String(repeated.response), /1 issue started/);
+      assert.equal((await store.read()).run!.response, operational);
+      assert.deepEqual((await store.read()).records[0], record);
+    }
+    await store.exclusive(async (state, save) => {
+      state.run!.response = 'obsolete retirement-legacy-unverified warning';
+      delete state.run!.reportVersion;
+      state.run!.actions = 12;
+      await save();
+    });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: false }));
+    const upgraded = await report();
+    assert.equal(upgraded.status, 'report');
+    assert.match(String(upgraded.response), /DONT_NOTIFY/);
+    assert.doesNotMatch(String(upgraded.response), /obsolete|legacy-unverified|1 issue started/);
+    assert.deepEqual((await store.read()).records[0], record);
+  });
+
   it('should preserve a handoff preview across feedback scans and intake presentation updates', async () => {
     const prepared = await prepare();
     created();

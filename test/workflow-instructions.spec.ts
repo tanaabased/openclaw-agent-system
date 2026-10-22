@@ -47,7 +47,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       '/workspace',
       { debug: true },
     )!;
-    assert.ok(card.startsWith('> ## 🧩 Feedback reply instructions\n>\n> -'));
+    assert.ok(card.startsWith('> ## 🔬 Debug\n>\n> -'));
     assert.ok(card.includes('[piroplugin:piro-feedback-reply](</skills/latin%20reply/SKILL.md>)'));
     assert.ok(
       card.includes('[.agent-system/reply #1.md](</workspace/.agent-system/reply%20%231.md>)'),

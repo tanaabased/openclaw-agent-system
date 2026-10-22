@@ -281,7 +281,7 @@ assessment, questions, or action; the reference section must not be their only h
 The framing follows the structured result; prose headings never select state.
 
 When debug presentation is enabled, follow Model routing with a quoted
-**🧩 Assessment instructions** card. Show the retained **Skill**, including the
+**🔬 Debug** card with **Context: Assessment instructions**. Show the retained **Skill**, including the
 default, linked to its resolved `SKILL.md`. Show file **Guidance** as a linked
 workspace-relative label. For inline guidance, link “Inline guidance” to its
 verified manifest source when available, then show the retained text in a literal
@@ -289,8 +289,8 @@ block preserving whitespace and Markdown characters. The source file may change;
 the retained text records what the turn used. Keep these links and instructions
 private. Selection metadata is not proof of compliance.
 
-Reuse the same component as **🧩 Implementation instructions** immediately after the
-PR card and as **🧩 Feedback reply instructions** after the public reply quote and
+Reuse the same **🔬 Debug** component with **Implementation instructions** context
+immediately after the PR card and **Feedback reply instructions** context after the public reply quote and
 publication link or obstacle. With debug off, omit instruction cards entirely,
 including custom selections and guidance. Errors, blockers, private responses,
 and publication outcomes remain visible. Do not put reply instructions in the
@@ -344,7 +344,11 @@ PR announcements use this same renderer with the exact public announcement, incl
 its PR link, below the complete private **Pull request opened** card. Preserve native
 PR attachment. Keep failed, withheld, pending, or uncertain publication visible in
 separate warning callouts, with debug off too. Successful no-action recovery details,
-such as verified issue linkage after retry, appear only with debug enabled.
+such as verified issue linkage after retry, use **🔬 Debug** with delivery recovery
+context only when debug is enabled. Historical missing archive/removal evidence
+uses the same card with intake context, separate from actionable warnings. Omit
+empty debug cards. Visibility changes are not cleanup recovery; unchanged debug
+detail does not wake quiet intake or create repeated notifications.
 
 ## Private and Public Composition
 

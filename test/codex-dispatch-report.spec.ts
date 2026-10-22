@@ -4,7 +4,7 @@ import type { DispatchState, DispatchRecord } from '../agent/codex-dispatch-stat
 import { issueKey } from '../agent/dispatch-pending.ts';
 import type { IntakeState, IntakeRecord } from '../channels/github/intake/record-store.ts';
 
-const state: DispatchState = { version: 1, scope: 'scope', records: [] };
+const state: DispatchState = { version: 1, scope: 'scope', records: [], intakeHealthVersion: 1 };
 const intake: IntakeState = {
   version: 1,
   scope: 'scope',
@@ -379,7 +379,9 @@ describe('agent/codex-dispatch-report', () => {
         state: { ...state, records: [structuredClone(record)] },
       });
     const unverified = report();
-    assert.match(unverified.response, /retirement-legacy-unverified/);
+    assert.doesNotMatch(unverified.response, /retirement-legacy-unverified|🔬|⚠️/);
+    assert.equal(unverified.health, '');
+    assert.match(unverified.response, /DONT_NOTIFY/);
     assert.match(
       prepareDispatchReport({
         ...input,
@@ -414,7 +416,7 @@ describe('agent/codex-dispatch-report', () => {
       intake: currentIntake,
       state: { ...state, records: [record, laterRetired] },
     });
-    assert.match(finished.response, /retirement-legacy-unverified/);
+    assert.doesNotMatch(finished.response, /retirement-legacy-unverified/);
     assert.match(
       prepareDispatchReport({
         ...input,
@@ -429,5 +431,84 @@ describe('agent/codex-dispatch-report', () => {
     record.capacityObservation = { at: 3, code: 'dispatch-capacity-native-active' };
     assert.match(report().response, /dispatch-capacity-native-active/);
     assert.match(report().response, /Slots:\*\* 1\/2/);
+  });
+  it('should gate historical diagnostics without changing health, decisions, or resource evidence', () => {
+    const legacy = {
+      id: 'old',
+      intakeId: 'old',
+      retired: { at: 1 },
+      threadId: 'old-chat',
+    } as DispatchRecord;
+    const records = [legacy];
+    const before = structuredClone(records);
+    for (const debug of [undefined, false, true, false, true]) {
+      const report = prepareDispatchReport({ ...input, debug, state: { ...state, records } });
+      assert.equal(report.health, '');
+      assert.match(report.response, /<decision>DONT_NOTIFY<\/decision>/);
+      assert.equal(report.response.includes('> ## 🔬 Debug'), debug === true);
+      assert.equal(report.response.includes('retirement-legacy-unverified'), debug === true);
+      assert.doesNotMatch(report.response, /⚠️|Intake resumed|problem has cleared/);
+      if (debug)
+        assert.match(report.response, /neither remaining live resources nor successful cleanup/);
+    }
+    assert.deepEqual(records, before);
+    for (const code of [
+      'retirement-worktree-dirty',
+      'retirement-worktree-shared',
+      'retirement-native-resource-protected',
+      'retirement-worktree-unpreserved',
+    ]) {
+      const blocked = { id: 'blocked', retirement: { code, eligibleAt: 1 } } as DispatchRecord;
+      for (const debug of [undefined, false, true]) {
+        const report = prepareDispatchReport({
+          ...input,
+          debug,
+          state: { ...state, records: [legacy, blocked] },
+        });
+        assert.notEqual(report.health, '');
+        assert.match(report.response, /<decision>NOTIFY<\/decision>/);
+        assert.ok(report.response.includes(code));
+        assert.equal(report.response.includes('🔬 Debug'), debug === true);
+        assert.match(
+          prepareDispatchReport({
+            ...input,
+            debug,
+            state: { ...state, records: [legacy, blocked], intakeHealth: report.health },
+          }).response,
+          /DONT_NOTIFY/,
+        );
+      }
+    }
+    const denied = {
+      id: 'denied',
+      phase: 'blocked',
+      result: {
+        outcome: 'operator-setup-blocker',
+        code: 'native-approval-denied',
+        remediation: 'Native approval denied chat creation.',
+      },
+    } as DispatchRecord;
+    for (const debug of [undefined, false, true]) {
+      const report = prepareDispatchReport({
+        ...input,
+        debug,
+        state: { ...state, records: [legacy, denied] },
+      });
+      assert.notEqual(report.health, '');
+      assert.match(report.response, /<decision>NOTIFY<\/decision>/);
+      assert.match(report.response, /native-approval-denied/);
+      assert.equal(report.response.includes('🔬 Debug'), debug === true);
+    }
+  });
+  it('should establish an operational baseline without inventing recovery from an opaque old hash', () => {
+    const old = {
+      ...state,
+      intakeHealth: 'unknown-mixed-legacy-health',
+      intakeHealthVersion: undefined,
+    };
+    const report = prepareDispatchReport({ ...input, state: old, debug: true });
+    assert.equal(report.health, '');
+    assert.match(report.response, /DONT_NOTIFY/);
+    assert.doesNotMatch(report.response, /Intake resumed|problem has cleared|🔬 Debug/);
   });
 });

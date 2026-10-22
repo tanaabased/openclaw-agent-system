@@ -426,6 +426,44 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(result.status, 'reported');
   }
 
+  it('should apply current debug visibility to a cached intake report without repeating report effects', async () => {
+    await prepare(await next());
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const historical = structuredClone(state.records[0]!);
+      historical.id = 'f'.repeat(64);
+      historical.intakeId = 'e'.repeat(64);
+      historical.retired = { at: baseline, by: 'old-owner' };
+      state.records.push(historical);
+      await save();
+    });
+    const caller = { ...coordinator, runId: 'debug-report' };
+    const first = await service.run(manifest, root, caller, { action: 'report' });
+    assert.equal(first.status, 'reported');
+    assert.ok('response' in first);
+    assert.match(String(first.response), /1 issue started/);
+    assert.doesNotMatch(String(first.response), /🔬|retirement-legacy-unverified/);
+    const saved = await current.journal.read();
+    for (const debug of [true, false, true]) {
+      manifest.debug = debug;
+      const repeated = await service.run(manifest, root, caller, { action: 'report' });
+      assert.ok('response' in repeated);
+      assert.equal(String(repeated.response).includes('🔬 Debug'), debug);
+      assert.equal(String(repeated.response).includes('retirement-legacy-unverified'), debug);
+      assert.deepEqual(await current.journal.read(), saved);
+    }
+    await current.journal.exclusive(async (state, save) => {
+      state.intakeReport!.response = 'obsolete retirement-legacy-unverified warning';
+      delete state.intakeReport!.reportVersion;
+      await save();
+    });
+    manifest.debug = false;
+    const upgraded = await service.run(manifest, root, caller, { action: 'report' });
+    assert.ok('response' in upgraded);
+    assert.equal(upgraded.response, '');
+    assert.deepEqual((await current.journal.read()).records, saved.records);
+  });
+
   it('should retain legacy dispatch custody when assigner defaults change', async () => {
     manifest.github!.notifications!.runtimes = ['openclaw', 'codex'];
     await service.dependencies.intake.run(manifest, root, 'activate');
