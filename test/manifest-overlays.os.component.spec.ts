@@ -85,7 +85,7 @@ describe('manifest/overlays', () => {
     assert.equal(merged.sources['/list/0']?.path, overlay.path);
   });
 
-  it('should attribute ignored legacy blocks to their source without affecting v3 policy', async () => {
+  it('should reject unsupported workflow keys and attribute their source', async () => {
     const f = await fixture(
       false,
       baseSource +
@@ -99,21 +99,22 @@ github:
     );
     await writeFile(f.overlayPath, 'github:\n  interval-minutes: 17');
     const loaded = await f.load();
-    assert.equal(loaded.status, 'loaded', JSON.stringify(loaded.diagnostics));
-    if (loaded.status !== 'loaded') throw new Error('not loaded');
-    assert.equal(loaded.manifest.github!.notifications!.intervalMinutes, 17);
-    assert.equal(loaded.manifest.cleanupMigration, undefined);
-    const warning = loaded.diagnostics.find(({ code }) => code === 'github-v2-ignored');
-    assert.ok(warning);
-    assert.equal(warning.sourcePath, f.path);
+    assert.equal(loaded.status, 'invalid');
+    assert.equal(
+      loaded.diagnostics.find(({ fieldPath }) => fieldPath === '/github/notifications')?.sourcePath,
+      f.path,
+    );
+    await writeFile(
+      f.path,
+      (await readFile(f.path, 'utf8')).replace('  notifications: {obsolete: true}\n', ''),
+    );
     await writeFile(f.overlayPath, 'github:\n  notifications: {obsolete: false}');
-    const both = await f.load();
-    assert.equal(both.status, 'loaded');
-    assert.deepEqual(
-      both.diagnostics
-        .filter(({ code }) => code === 'github-v2-ignored')
-        .map(({ sourcePath }) => sourcePath),
-      [f.path, f.overlayPath],
+    const overlay = await f.load();
+    assert.equal(overlay.status, 'invalid');
+    assert.equal(
+      overlay.diagnostics.find(({ fieldPath }) => fieldPath === '/github/notifications')
+        ?.sourcePath,
+      f.overlayPath,
     );
   });
 

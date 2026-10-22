@@ -19,14 +19,13 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 - Reevaluate already admitted, unprocessed work after policy changes without
   rebuilding its queue, replaying completed effects, or requiring Install.
 - Feedback belongs to its parent workflow and inherits its approved actors by default.
-  Explicit additions and replacement lists control authors, never a second enable flag.
-  Keep legacy booleans and implicit replacement policies only for the bounded V2 transition.
+  Configured reviewers extend issue feedback authors; feedback customization never grants authority.
 - Feedback observed while no authors are eligible remains history
   and never becomes an automatic backlog. When acceptance resumes, use the previous policy-check time as
   the cutoff shared by the issue and its PR. Admit subsequent approved comments
   or revisions, including the interval between checks; do not replay older history. Preserve work
   admitted before the author-policy change. Do not send a retrospective assessment automatically.
-- Treat workflow `paused` as native scheduler desired state, reconciled by Install. Pause stops future occurrences, never an accepted occurrence or running issue turn. Retain discovery, admission, queues, and effect receipts; pause is not a feedback cutoff or policy hold. The deprecated `enabled` alias is its inverse.
+- Treat workflow `paused` as native scheduler desired state, reconciled by Install. Pause stops future occurrences, never an accepted occurrence or running issue turn. Retain discovery, admission, queues, and effect receipts; pause is not a feedback cutoff or policy hold.
 - Use reversible policy holds for disabled effects and ineligible actors. Turning
   the setting back on resumes eligible pending work automatically. A hold is not
   cancellation, lost identity, native denial, or a request for renewed consent.

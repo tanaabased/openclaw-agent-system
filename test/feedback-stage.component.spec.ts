@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import selectFeedbackStage from '../agent/feedback-stage.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 const skill = {
   name: 'custom:reply',
@@ -19,8 +19,8 @@ describe('agent/feedback-stage', () => {
     intervalMinutes: 5,
     maxConcurrentItems: 3,
     allowedRepositoryOwners: [],
-    issueAssignment: { mode: 'plan', allowed: [], feedback: true },
-    reviewRequest: { allowed: [], feedback: true },
+    issueAssignment: { mode: 'plan', allowed: [], feedback: { inherit: true, allowed: [] } },
+    reviewRequest: { allowed: [], feedback: { inherit: true, allowed: [] } },
   };
   it('should share the bundled default and honor independent skill and guidance overrides', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'feedback-stage-'));

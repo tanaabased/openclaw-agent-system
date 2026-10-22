@@ -64,10 +64,9 @@ export default async function retireOpenClawTask(options: {
       loaded.manifest.agent.id !== manifest.agent.id
     )
       throw new Error('dispatch-workspace-binding-changed');
-    const configuration = await cleanupConfiguration(
-      loaded.manifest,
-      service.dependencies.readInstallationConfig,
-    );
+    const configuration = await (
+      service.dependencies.readInstallationConfig ?? cleanupConfiguration
+    )();
     const digest = automationHash({
       record,
       configuration,

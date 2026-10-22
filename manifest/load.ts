@@ -176,26 +176,12 @@ export async function loadDiscoveredManifest(
   const { value, sources } = mergeManifestDocuments(base, overlay);
   const parsed = normalizeAgentManifest(value);
   const attributeDiagnostics = (diagnostics: ManifestDiagnostic[]): ManifestDiagnostic[] =>
-    diagnostics.flatMap((diagnostic) => {
-      if (diagnostic.code === 'github-v2-ignored') {
-        return [base, overlay].flatMap((document) => {
-          const value = document?.value;
-          const github =
-            value && typeof value === 'object' && 'github' in value ? value.github : undefined;
-          return github && typeof github === 'object' && Object.hasOwn(github, 'notifications')
-            ? [{ ...diagnostic, sourcePath: document!.path }]
-            : [];
-        });
-      }
-      return [
-        {
-          ...diagnostic,
-          ...(diagnostic.fieldPath === undefined || diagnostic.sourcePath !== undefined
-            ? {}
-            : { sourcePath: manifestSourceForField(sources, diagnostic.fieldPath)?.path }),
-        },
-      ];
-    });
+    diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      ...(diagnostic.fieldPath === undefined || diagnostic.sourcePath !== undefined
+        ? {}
+        : { sourcePath: manifestSourceForField(sources, diagnostic.fieldPath)?.path }),
+    }));
   parsed.diagnostics = attributeDiagnostics(parsed.diagnostics);
   if (parsed.status === 'invalid') {
     return invalidManifestResult(
@@ -203,19 +189,6 @@ export async function loadDiscoveredManifest(
       [...discovery.diagnostics, ...parsed.diagnostics],
       selected.path,
     );
-  }
-
-  if (parsed.manifest.cleanupMigration) {
-    const migration = parsed.manifest.cleanupMigration;
-    const fieldPath = '/github/notifications/cleanup';
-    migration.sourcePath = manifestSourceForField(sources, fieldPath)?.path;
-    migration.sources = [
-      fieldPath,
-      ...Object.keys(migration.declaration).map((key) => `${fieldPath}/${key}`),
-    ].flatMap((fieldPath) => {
-      const sourcePath = manifestSourceForField(sources, fieldPath)?.path;
-      return sourcePath ? [{ fieldPath, sourcePath }] : [];
-    });
   }
 
   if (expectedAgentId && parsed.manifest.agent.id !== expectedAgentId) {

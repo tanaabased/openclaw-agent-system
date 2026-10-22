@@ -32,7 +32,7 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubNotificationProviderClient } from '../channels/github/provider/work-event-types.ts';
 import type GitHubReviewReplyClient from '../channels/github/provider/review-reply-client.ts';

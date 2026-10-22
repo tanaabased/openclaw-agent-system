@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import continueOpenClawResponse, {
   openClawResponseEligible,
 } from './openclaw-response-continuation.ts';
@@ -600,6 +601,12 @@ export default class OpenClawDispatchIssue {
             connect: async () => {
               if (!this.context.dependencies.delivery)
                 throw new Error('delivery-runtime-unavailable');
+              if (['prepare', 'publish', 'reconcile'].includes(input.operation))
+                await new GitHubIdentityCache(current.store.location).resolve(
+                  current.policy.policy,
+                  client,
+                  'delivery',
+                );
               return this.context.dependencies.delivery({
                 manifest,
                 workspaceDir: current.workspace,

@@ -9,7 +9,7 @@ describe('agent/notification policy provenance', () => {
   it('should key default feedback by current parent actors and preserve equivalent legacy grants', () => {
     const policy = intakeFixture().policy;
     const inherited = feedbackAuthorityDigest(policy);
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     assert.equal(feedbackAuthorityDigest(policy), inherited);
     delete policy.issueAssignment!.feedback;
     policy.issueAssignment!.allowed = [{ login: 'other', nodeId: 'U_other' }];
@@ -18,9 +18,9 @@ describe('agent/notification policy provenance', () => {
     const replacement = feedbackAuthorityDigest(policy);
     policy.issueAssignment!.allowed = [];
     assert.equal(feedbackAuthorityDigest(policy), replacement);
-    policy.issueAssignment!.feedback = false;
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
     assert.equal(feedbackAuthorityDigest(policy), replacement);
-    policy.issueAssignment!.enabled = false;
+    policy.issueAssignment!.paused = true;
     assert.equal(feedbackAuthorityDigest(policy), replacement);
   });
   it('should canonicalize observation cache keys without mutating configuration', () => {
@@ -30,9 +30,8 @@ describe('agent/notification policy provenance', () => {
     policy.issueAssignment!.allowed.push({
       login: 'other',
       nodeId: 'U_other',
-      operatorOwner: true,
     });
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     policy.issueAssignment!.pullRequest = {
       recipients: [
         { login: 'receiver', nodeId: 'U_receiver', roles: ['assignee', 'reviewer'] },
@@ -51,7 +50,7 @@ describe('agent/notification policy provenance', () => {
       recipient.roles.reverse();
     assert.equal(notificationAuthorityDigest(policy), workflow);
     assert.equal(feedbackAuthorityDigest(policy), reply);
-    policy.issueAssignment!.allowed[0]!.operatorOwner = false;
+    policy.issueAssignment!.allowed[0]!.nodeId = 'U_changed';
     assert.notEqual(notificationAuthorityDigest(policy), workflow);
   });
 });

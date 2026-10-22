@@ -1,11 +1,7 @@
 import decodeGitHubV3, { githubV3Properties } from '../channels/github/v3-config-schema.ts';
 import { Type, type Static } from 'typebox';
 
-import {
-  decodeGitHubNotifications,
-  externalGitHubNotificationsSchema,
-  type GitHubNotificationsDeclaration,
-} from '../channels/github/config-schema.ts';
+import type { GitHubNotificationsDeclaration } from '../channels/github/workflow-policy.ts';
 import {
   decodeGitHubToolConfiguration,
   externalGitHubToolSectionProperties,
@@ -25,10 +21,7 @@ const sharedGitHubProperties = {
   token: Type.Optional(externalEnvironmentBindingSchema),
 };
 export const externalGitHubSectionSchema = Type.Union([
-  Type.Object(
-    { ...sharedGitHubProperties, notifications: Type.Optional(externalGitHubNotificationsSchema) },
-    { additionalProperties: false },
-  ),
+  Type.Object(sharedGitHubProperties, { additionalProperties: false }),
   Type.Object(
     { ...sharedGitHubProperties, ...githubV3Properties },
     { additionalProperties: false },
@@ -49,11 +42,7 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
   return {
     ...decodeGitHubToolConfiguration(value),
     ...(value.host ? { host: value.host } : {}),
-    ...('schema-version' in value
-      ? { notifications: decodeGitHubV3(value) }
-      : value.notifications
-        ? { notifications: decodeGitHubNotifications(value.notifications) }
-        : {}),
+    ...('schema-version' in value ? { notifications: decodeGitHubV3(value) } : {}),
     ...(value.token ? { token: value.token } : {}),
     ...(value.username ? { username: decodeResolvableString(value.username) } : {}),
   };

@@ -1,13 +1,4 @@
 export default function retirementNotice(code: string, diagnostic?: string) {
-  if (code === 'retirement-cleanup-migration-required')
-    return {
-      severity: 'warning' as const,
-      title: 'Cleanup configuration needs migration',
-      summary: 'The legacy per-agent cleanup block holds automatic resource cleanup.',
-      next:
-        diagnostic ??
-        'Choose the installation cleanup.grace-minutes, then deliberately remove github.notifications.cleanup from agent.yaml and overlays. Removing enabled: false opts this agent into normal safe cleanup.',
-    };
   if (
     code === 'retirement-configuration-invalid' ||
     code === 'retirement-configuration-unavailable'

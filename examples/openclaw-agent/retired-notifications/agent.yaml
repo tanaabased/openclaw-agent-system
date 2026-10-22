@@ -2,5 +2,10 @@ schema-version: 1
 agent:
   id: retired-notifications
 github:
-  schema-version: 3
-  approved-actors: []
+  username: tanaabot
+  notifications:
+    schema-version: 2
+    runtimes: [openclaw]
+    allowed-repository-owners: [{ login: tanaabased, node-id: O_owner }]
+    issue-assignment:
+      allowed: [{ login: tanaabot, node-id: U_actor }]

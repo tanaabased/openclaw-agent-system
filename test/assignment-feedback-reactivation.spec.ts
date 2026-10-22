@@ -11,7 +11,7 @@ import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
 
 function fixture() {
   const provider = intakeFixture();
-  provider.policy.issueAssignment!.feedback = true;
+  provider.policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
   const intake = {
     receiving: account,
     repository: provider.repository,
@@ -127,10 +127,10 @@ describe('assignment feedback reactivation', () => {
     const h = fixture();
     assert.equal(await h.run(), true);
     const eventId = h.record.feedback!.events[0]!.id;
-    h.provider.policy.issueAssignment!.feedback = false;
+    h.provider.policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
     assert.equal(await h.run(), false);
     assert.equal(h.record.feedbackReactivation, undefined);
-    h.provider.policy.issueAssignment!.feedback = true;
+    h.provider.policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     assert.equal(await h.run(), true);
     assert.equal(h.record.feedback!.events.length, 1);
     const reactivation = () => h.record.feedbackReactivation;
@@ -139,9 +139,9 @@ describe('assignment feedback reactivation', () => {
 
   it('should exclude feedback from the disabled period when reactivating an unassigned owner', async () => {
     const h = fixture();
-    h.provider.policy.issueAssignment!.feedback = false;
+    h.provider.policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
     assert.equal(await h.run(), false);
-    h.provider.policy.issueAssignment!.feedback = true;
+    h.provider.policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     assert.equal(await h.run(), false);
     assert.equal(h.record.feedback!.events.length, 0);
     h.comment.body = '@receiver a new question';
@@ -176,7 +176,8 @@ describe('assignment feedback reactivation', () => {
       if (kind === 'unapproved') h.comment.author = { ...account, nodeId: 'other' };
       if (kind === 'quoted') h.comment.body = '> @receiver explain';
       if (kind === 'incidental') h.comment.body = 'An ordinary comment.';
-      if (kind === 'disabled') h.provider.policy.issueAssignment!.feedback = false;
+      if (kind === 'disabled')
+        h.provider.policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
       if (kind === 'own-summary')
         h.record.assessmentSummaries = [
           { receipt: { nodeId: 'comment', databaseId: 42 } },

@@ -18,6 +18,9 @@ Failed agent installation or intake activation reports allowlisted saved configu
 
 A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
+The operator delivery preview adds a compact reviewer after intake, then removes it before
+publication. It exercises reviewer resolution without requesting a review from a production agent.
+
 ## Setup
 
 ```bash
@@ -180,6 +183,23 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-announcements.json"
 jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].work.delivery.announcement.receipt.nodeId and (.[0].body | contains($delivery[0].work.delivery.announcement.publicText)) and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
+
+# should prepare delivery with a newly configured compact reviewer without requesting a review
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+cp agent.yaml "$TMPDIR/notification-pre-reviewer.yaml"
+sed '/  issue-assignment:/a\
+    reviewers: ["@emoriwan"]
+' "$TMPDIR/notification-pre-reviewer.yaml" > agent.yaml
+conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
+receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"notifications-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Preview reviewer delivery without publishing."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-reviewer-preview"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-reviewer-preview"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-reviewer-preview" 300000
+cp "$TMPDIR/notification-pre-reviewer.yaml" agent.yaml
+pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr/requested_reviewers" --jq '.users' | jq -e 'length == 0'
 
 # should update the existing pr after a follow-up commit without another announcement
 test -f "$TMPDIR/notification-activation-ready"

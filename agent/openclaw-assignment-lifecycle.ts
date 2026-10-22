@@ -20,9 +20,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   activeSessionKey?: string;
 }) {
   const { service, manifest, workspace, authority } = input;
-  let cleanupManifest = manifest;
-  const readConfiguration = () =>
-    cleanupConfiguration(cleanupManifest, service.dependencies.readInstallationConfig);
+  const readConfiguration = service.dependencies.readInstallationConfig ?? cleanupConfiguration;
   const configuration = await readConfiguration();
   const current = await service.scope(manifest, workspace);
   current.policy.policy.issueAssignment!.allowed =
@@ -53,7 +51,6 @@ export default async function reconcileOpenClawLifecycle(input: {
     );
     if (loaded.status !== 'loaded' || loaded.scope.workspaceDir !== workspace)
       throw new Error('retirement-workflow-changed');
-    cleanupManifest = loaded.manifest;
     const selected = await service.scope(loaded.manifest, workspace);
     current.policy.policy = selected.policy.policy;
     current.policy.policy.issueAssignment!.allowed =

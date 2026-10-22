@@ -3,7 +3,7 @@ import feedbackDiscovery from './feedback-discovery.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
 import type { FeedbackSourceState, FeedbackSourceEvent } from './feedback-state.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import {
   feedbackIdentities,
   workflowFeedbackAccepting,

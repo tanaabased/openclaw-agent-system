@@ -78,7 +78,7 @@ export default class GitHubIdentityCache {
 
   /** Passive selection may read existing metadata, but cannot resolve or persist identities. */
   async hydrate(policy: GitHubNotificationPolicy | undefined) {
-    if (policy?.schemaVersion !== 3) return;
+    if (!policy) return;
     const state = await this.read();
     for (const { pin, user } of pins(policy)) {
       const cached = state.entries[key(pin)];
@@ -95,7 +95,7 @@ export default class GitHubIdentityCache {
     client: Pick<GitHubNotificationIntakeClient, 'resolveIdentity'>,
     purpose: Purpose = 'all',
   ) {
-    if (policy?.schemaVersion !== 3) return;
+    if (!policy) return;
     const selected = pins(policy, purpose);
     if (!client.resolveIdentity) {
       if (selected.some(({ pin }) => pin.reference))

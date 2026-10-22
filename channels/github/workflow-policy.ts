@@ -13,23 +13,22 @@ export type GitHubPullRequestRecipient = (GitHubIdentityPin | { source: 'assignm
   roles: GitHubRecipientRole[];
 };
 
-export interface GitHubApprovedActor extends GitHubIdentityPin {
-  operatorOwner?: boolean;
-}
+export type GitHubApprovedActor = GitHubIdentityPin;
 
-export type GitHubFeedbackPolicy =
-  boolean | ({ inherit: boolean; allowed: GitHubIdentityPin[] } & AssessmentConfiguration);
+export type GitHubFeedbackPolicy = {
+  inherit: boolean;
+  allowed: GitHubIdentityPin[];
+} & AssessmentConfiguration;
 
-/** effective workflow controls shared by the configuration decoders and native runtimes. */
+/** effective workflow controls shared by the configuration decoder and native runtimes. */
 export interface GitHubNotificationPolicy {
-  schemaVersion: 2 | 3;
+  schemaVersion: 3;
   runtimes: Array<'openclaw' | 'codex'>;
   intervalMinutes: number;
   maxConcurrentItems: number;
   allowedRepositoryOwners: GitHubIdentityPin[];
   issueAssignment?: {
     paused?: boolean;
-    enabled?: boolean;
     allowed: GitHubApprovedActor[];
     mode: 'plan' | 'work' | 'auto';
     assessment?: AssessmentConfiguration;
@@ -40,15 +39,9 @@ export interface GitHubNotificationPolicy {
   reviewRequest?: {
     paused?: boolean;
     allowed: GitHubApprovedActor[];
-    enabled?: boolean;
     review?: AssessmentConfiguration;
     feedback?: GitHubFeedbackPolicy;
   };
 }
 
 export type GitHubNotificationsDeclaration = GitHubNotificationPolicy;
-
-/** Map normalized controls back to the selected public declaration for source diagnostics. */
-export function githubWorkflowPath(policy: GitHubNotificationPolicy | undefined, suffix: string) {
-  return `${policy?.schemaVersion === 3 ? '/github' : '/github/notifications'}/${suffix}`;
-}

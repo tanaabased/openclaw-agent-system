@@ -484,10 +484,10 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.schedule.everyMs, 600000);
     assert.ok(native[0]!.trigger);
-    policy.issueAssignment!.enabled = false;
+    policy.issueAssignment!.paused = true;
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.enabled, false);
-    policy.issueAssignment!.enabled = true;
+    policy.issueAssignment!.paused = false;
     await service.reconcile(manifest, root);
     assert.equal(native.length, 1);
     assert.equal(native[0]!.id, identity);

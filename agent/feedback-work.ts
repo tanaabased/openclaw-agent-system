@@ -6,7 +6,7 @@ import type { FeedbackSourceEvent } from './feedback-state.ts';
 import issueProgression, { retainedIssueProgression } from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 export const feedbackDecisionSchema = Type.Object(
   {

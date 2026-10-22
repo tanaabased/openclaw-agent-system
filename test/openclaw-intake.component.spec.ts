@@ -228,7 +228,7 @@ describe('openclaw v2 intake slice', () => {
     const notifications = f.value.github.notifications;
     notifications.intervalMinutes++;
     await inspect('healthy', 'intake-ready');
-    notifications.issueAssignment!.feedback = true;
+    notifications.issueAssignment!.feedback = { inherit: true, allowed: [] };
     await inspect('healthy', 'intake-ready');
   });
 
@@ -249,7 +249,7 @@ describe('openclaw v2 intake slice', () => {
     f.value.github.notifications.issueAssignment!.assessment = { skill: 'replacement-skill' };
     f.value.github.notifications.issueAssignment!.feedback = { inherit: true, allowed: [] };
     f.value.github.notifications.reviewRequest = {
-      enabled: true,
+      paused: false,
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     const registry = new AgentSystemLifecycleRegistry([f.service.contribution()]);
@@ -325,7 +325,7 @@ describe('openclaw v2 intake slice', () => {
     const f = fixture();
     f.value.github.notifications.issueAssignment!.feedback = { inherit: true, allowed: [] };
     f.value.github.notifications.reviewRequest = {
-      enabled: true,
+      paused: false,
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     const contribution = f.service.contribution();
@@ -421,7 +421,7 @@ describe('openclaw v2 intake slice', () => {
       'unchanged',
     );
     assert.equal((await store.read())!.baselineAt, baseline);
-    f.value.github!.notifications!.issueAssignment!.feedback = true;
+    f.value.github!.notifications!.issueAssignment!.feedback = { inherit: true, allowed: [] };
     assert.equal((await f.service.run(f.value, root, 'scan', digest)).status, 'ready');
     await f.service.contribution().reconcile!(context);
     assert.equal((await store.read())!.baselineAt, baseline);

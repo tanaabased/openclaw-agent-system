@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 
-import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import readInstallationConfig, { parseInstallationConfig } from '../core/installation-config.ts';
 import installationConfigRoot from '../core/installation-config-root.ts';
-import type { AgentManifest } from '../manifest/types.ts';
 
 const path = '/config/tanaab/agent-system/config.yaml';
-const manifest: AgentManifest = { schemaVersion: 1, agent: { id: 'first' } };
 
 describe('core/installation-config', () => {
   it('should select the trusted absolute installation root independently of runtime paths', () => {
@@ -75,13 +72,10 @@ describe('core/installation-config', () => {
       readInstallationConfig({ XDG_CONFIG_HOME: '/config', CODEX_HOME: '/ignored-one' }, read);
     const codex = () =>
       readInstallationConfig({ XDG_CONFIG_HOME: '/config', CODEX_HOME: '/ignored-two' }, read);
-    const first = await cleanupConfiguration(manifest, openclaw);
-    assert.deepEqual(
-      await cleanupConfiguration({ ...manifest, agent: { id: 'second' } }, codex),
-      first,
-    );
+    const first = await openclaw();
+    assert.deepEqual(await codex(), first);
     source = 'schema-version: 1\ncleanup: {grace-minutes: 0}';
-    const changed = await cleanupConfiguration(manifest, codex);
+    const changed = await codex();
     assert.equal(changed.status === 'ready' && changed.graceMinutes, 0);
     assert.notDeepEqual(changed, first);
     assert.deepEqual(paths, [path, path, path]);
@@ -97,35 +91,5 @@ describe('core/installation-config', () => {
       path,
       code: 'retirement-configuration-unavailable',
     });
-    const pending = await cleanupConfiguration(
-      { ...manifest, environment: { op: ['never-resolve'] } },
-      async () => result,
-    );
-    assert.deepEqual(pending, result);
-  });
-
-  it('should hold every explicit legacy block without selecting one agents old timing', async () => {
-    for (const declaration of [
-      {},
-      { enabled: true },
-      { enabled: false },
-      { 'grace-minutes': 60 },
-      { 'grace-minutes': 17 },
-    ]) {
-      const legacy = await cleanupConfiguration(
-        { ...manifest, cleanupMigration: { declaration } },
-        async () => parseInstallationConfig(undefined, path),
-      );
-      assert.equal(legacy.status, 'blocked');
-      assert.equal(
-        legacy.status === 'blocked' && legacy.code,
-        'retirement-cleanup-migration-required',
-      );
-    }
-    assert.equal(
-      (await cleanupConfiguration(manifest, async () => parseInstallationConfig(undefined, path)))
-        .status,
-      'ready',
-    );
   });
 });
