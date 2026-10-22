@@ -68,11 +68,22 @@ while (true) {
 }
 
 /** consume the exact request once, separately from host-access preparation. */
-export function codexNativeHandoff(pluginData: string, route: 'dispatch' | 'continuation') {
-  const key = JSON.stringify(`agent-system:${route}:${pluginData}`);
-  const tool = route === 'dispatch' ? 'create_thread' : 'send_message_to_thread';
+export function codexNativeHandoff(
+  pluginData: string,
+  route: 'dispatch' | 'continuation' | 'retirement',
+) {
+  const key = JSON.stringify(
+    `agent-system:${route === 'retirement' ? 'dispatch' : route}:${pluginData}`,
+  );
+  const status = route === 'retirement' ? 'retirement-prepared' : 'prepared';
+  const tool =
+    route === 'retirement'
+      ? 'set_thread_archived'
+      : route === 'dispatch'
+        ? 'create_thread'
+        : 'send_message_to_thread';
   return `const prepared = load(${key});
-if (!prepared || prepared.status !== 'prepared') throw new Error('${route}-prepared-request-unavailable');
+if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prepared-request-unavailable');
 store(${key}, null);
 text({id: prepared.id, native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
 }

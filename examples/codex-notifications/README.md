@@ -6,6 +6,12 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For retirement, verify that the native archive arguments exactly match the retained
+`retirement-prepared` request. A lookup or unavailable-host error must retain its
+actual diagnostic rather than being reported as an approval denial. The next
+scheduled run reconciles the attempt before preparing another archive; an uncertain
+write or explicit denial must not trigger a blind retry.
+
 For routing verification, include an issue with verified medium Complexity and a
 coordinator assessment of high. Preparation must select the configured medium
 profile, retain the verified metadata source and reason, and create only one chat.
