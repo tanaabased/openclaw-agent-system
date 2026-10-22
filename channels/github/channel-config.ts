@@ -25,15 +25,7 @@ export function githubChannelAccounts(
 export function wantsGitHubChannel(manifest: AgentManifest): boolean {
   const policy = manifest.github?.notifications;
   return Boolean(
-    policy?.schemaVersion === 2 &&
-    policy.runtimes.includes('openclaw') &&
-    [policy.issueAssignment, policy.reviewRequest].some(
-      (workflow) =>
-        workflow &&
-        (workflow.paused !== undefined ||
-          workflow.enabled !== undefined ||
-          Boolean(workflow.allowed.length)),
-    ),
+    policy !== undefined && policy.runtimes.includes('openclaw') && Boolean(policy.issueAssignment),
   );
 }
 

@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -31,7 +32,12 @@ export async function scanCodexFeedback(input: {
   const { current, provider, now } = input;
   const budget = input.budget ?? new DiscoveryBudget();
   const policy = current.manifest.github?.notifications;
-  if (policy?.schemaVersion !== 2 || !current.policy) throw new Error('feedback-intake-missing');
+  if (!policy || !current.policy) throw new Error('feedback-intake-missing');
+  await new GitHubIdentityCache(current.store.location).resolve(
+    policy,
+    provider.client,
+    'feedback',
+  );
   const intake = await current.store.read();
   if (!intake) throw new Error('feedback-intake-missing');
   const records = input.state.records

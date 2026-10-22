@@ -453,7 +453,7 @@ export async function inspectCodexDispatchActivation(
     capability === 'review' ||
     (!retainedWork &&
       (pausedRecovery ||
-        selected.loaded.manifest.github?.notifications?.schemaVersion !== 2 ||
+        !selected.loaded.manifest.github?.notifications ||
         (capability === 'feedback'
           ? !workflowFeedbackAvailable(
               selected.loaded.manifest.github.notifications,

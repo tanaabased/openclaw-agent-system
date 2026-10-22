@@ -9,14 +9,13 @@ git: {}
 
 github:
   username: install-data
-  notifications:
-    schema-version: 2
-    runtimes: [openclaw]
-    allowed-repository-owners:
-      - login: example
-        node-id: O_example
-    review-request:
-      paused: false
-      allowed:
-        - login: operator
-          node-id: U_operator
+  schema-version: 3
+  runtimes: [openclaw]
+  allowed-repository-owners:
+    - login: example
+      node-id: O_example
+  review-request:
+    paused: false
+    allowed:
+      - login: operator
+        node-id: U_operator

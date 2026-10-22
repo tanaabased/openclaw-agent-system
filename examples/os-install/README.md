@@ -61,7 +61,7 @@ cd "$GITHUB_WORKSPACE/examples/os-install/data"
 openclaw agent-system install --yes --json >"$TMPDIR/review-install.json" 2>"$TMPDIR/review-install.stderr"
 jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")' "$TMPDIR/review-install.json"
 test "$(grep -Fc 'code=github-notification-runtime-unsupported' "$TMPDIR/review-install.stderr")" -eq 1
-grep -F 'field=/github/notifications/review-request' "$TMPDIR/review-install.stderr"
+grep -F 'field=/github/review-request' "$TMPDIR/review-install.stderr"
 openclaw agent-system tool git -- --version | grep -F 'git version'
 
 # should warn about unavailable reviews without blocking unrelated readiness

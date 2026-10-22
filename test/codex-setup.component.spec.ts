@@ -36,7 +36,7 @@ describe('agent/codex-setup', () => {
     baseEnvironment: { HOME: '/tmp', PATH: '/bin:/usr/bin' },
   };
 
-  it('should plan paused workflows without github access and surface inverse alias warnings', async () => {
+  it('should plan paused workflows without github access and report unsupported reviews', async () => {
     await manifest(`models:
   default: {model: openai/gpt-6-luna, effort: medium}
   low: {model: openai/gpt-6-luna, effort: medium}
@@ -44,19 +44,18 @@ describe('agent/codex-setup', () => {
   high: {model: openai/gpt-6-luna, effort: medium}
 github:
   username: pirog
-  notifications:
-    schema-version: 2
-    runtimes: [codex]
-    allowed-repository-owners:
-      - login: tanaabased
-        node-id: O_owner
-    issue-assignment:
-      enabled: false
-      allowed: [{login: pirog, node-id: U_pirog}]
-    review-request:
-      enabled: false
-      allowed: [{login: pirog, node-id: U_pirog}]
-      feedback: true
+  schema-version: 3
+  runtimes: [codex]
+  allowed-repository-owners:
+    - login: tanaabased
+      node-id: O_owner
+  issue-assignment:
+    paused: true
+    allowed: [{login: pirog, node-id: U_pirog}]
+  review-request:
+    paused: true
+    allowed: [{login: pirog, node-id: U_pirog}]
+    feedback: {}
 `);
     const deps = {
       ...dependencies,
@@ -70,17 +69,11 @@ github:
     const installed = await installCodexSetup(pluginData, undefined, deps);
     assert.equal(installed.status, 'requires-native-app-sync');
     assert.equal(installed.automations.actions.length, 0);
-    const warnings = installed.warnings.filter(
-      ({ code }) => code === 'github-notification-enabled-deprecated',
-    );
-    assert.equal(warnings.length, 2);
-    assert.ok(warnings.every(({ message }) => message.includes('paused: true')));
-    const inspected = await inspectCodexSetup(pluginData, undefined, deps);
     assert.equal(
-      inspected.findings.filter(({ code }) => code === 'github-notification-enabled-deprecated')
-        .length,
-      2,
+      installed.warnings.some(({ code }) => code === 'github-notification-enabled-deprecated'),
+      false,
     );
+    const inspected = await inspectCodexSetup(pluginData, undefined, deps);
     assert.ok(
       inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
     );
@@ -94,22 +87,20 @@ github:
   high: { model: openai/gpt-6-luna, effort: medium }
 github:
   username: pirog
-  notifications:
-    schema-version: 2
-    review-request:
-      allowed:
-        - login: pirog
-          node-id: U_pirog
-    runtimes: [codex]
-    allowed-repository-owners:
-      - login: tanaabased
-        node-id: O_owner
-    issue-assignment:
-      mode: plan
-      allowed:
-        - login: pirog
-          node-id: U_pirog
-          operator-owner: true
+  schema-version: 3
+  review-request:
+    allowed:
+      - login: pirog
+        node-id: U_pirog
+  runtimes: [codex]
+  allowed-repository-owners:
+    - login: tanaabased
+      node-id: O_owner
+  issue-assignment:
+    mode: plan
+    allowed:
+      - login: pirog
+        node-id: U_pirog
 setup-agent:
   apply: touch .setup-applied
 `);

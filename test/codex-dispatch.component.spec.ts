@@ -43,15 +43,13 @@ const manifest = {
   models,
   github: {
     username: 'receiver',
-    notifications: {
-      'schema-version': 2,
-      'max-concurrent-items': 2,
-      runtimes: ['codex'],
-      'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
-      'issue-assignment': {
-        mode: 'plan',
-        allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
-      },
+    'schema-version': 3,
+    'max-concurrent-items': 2,
+    runtimes: ['codex'],
+    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    'issue-assignment': {
+      mode: 'plan',
+      allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
     },
   },
 };
@@ -366,7 +364,17 @@ describe('agent/codex-dispatch', () => {
           assert.deepEqual(argv.slice(-2), ['--hostname', 'github.com']);
           const endpoint = argv.slice(1).find((arg) => arg.startsWith('/'));
           let value: unknown;
-          if (endpoint === '/user') value = fixture.client.identity;
+          if (argv.includes('graphql')) {
+            const nodeId = JSON.parse(options.input).variables.id;
+            const identity = [fixture.repository.owner, fixture.client.identity].find(
+              (entry) => entry.nodeId === nodeId,
+            )!;
+            value = {
+              data: {
+                node: { id: identity.nodeId, login: identity.login, __typename: identity.type },
+              },
+            };
+          } else if (endpoint === '/user') value = fixture.client.identity;
           else if (endpoint === '/repos/owner/repo') value = fixture.repository;
           else if (endpoint === '/repos/owner/repo/issues/3') {
             value = {
@@ -986,7 +994,7 @@ describe('agent/codex-dispatch', () => {
 
   async function configureAssessment(assessment: unknown) {
     const configured = structuredClone(manifest);
-    Object.assign(configured.github.notifications['issue-assignment'], { assessment });
+    Object.assign(configured.github['issue-assignment'], { assessment });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     await runCodexIntake(pluginData, true, {
       codexHome,
@@ -997,8 +1005,8 @@ describe('agent/codex-dispatch', () => {
 
   async function workflow(enabled: boolean) {
     const configured = structuredClone(manifest);
-    configured.github.notifications['issue-assignment'].allowed = enabled
-      ? manifest.github.notifications['issue-assignment'].allowed
+    configured.github['issue-assignment'].allowed = enabled
+      ? manifest.github['issue-assignment'].allowed
       : [];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
   }
@@ -1033,7 +1041,7 @@ describe('agent/codex-dispatch', () => {
       };
       if (pause === 'manifest') {
         const configured = structuredClone(manifest);
-        Object.assign(configured.github.notifications['issue-assignment'], { paused: true });
+        Object.assign(configured.github['issue-assignment'], { paused: true });
         await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
       }
       paused = true;
@@ -1085,8 +1093,8 @@ describe('agent/codex-dispatch', () => {
     const child = { threadId: 'issue-thread' };
     await request('context', { id: prepared.id }, child);
     const configured = structuredClone(manifest);
-    Object.assign(configured.github.notifications['issue-assignment'], {
-      enabled: false,
+    Object.assign(configured.github['issue-assignment'], {
+      paused: true,
       allowed: [{ login: 'other', 'node-id': 'U_other' }],
     });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -1466,7 +1474,7 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should share scheduled and operator grace and reject legacy cleanup in both paths', async () => {
+  it('should share installation-owned grace between scheduled and operator retirement', async () => {
     const prepared = await prepare();
     created();
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
@@ -1491,21 +1499,9 @@ describe('agent/codex-dispatch', () => {
     );
     const deadline = (await journal.read()).records[0]!.retirement!.eligibleAt;
     assert.equal(deadline, now + 17 * 60_000);
-    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    configured.github.notifications.cleanup = { enabled: false, 'grace-minutes': 2 };
-    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-    const held = await request('retire', { id: prepared.id }, operator);
-    assert.equal(held.code, 'retirement-cleanup-migration-required');
     now = deadline;
-    await next();
     const current = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    const blocked = (await store.read()).records[0]!;
-    assert.equal(blocked.retirement?.code, 'retirement-cleanup-migration-required');
-    assert.equal(blocked.retired, undefined);
-    assert.equal(blocked.retirement?.eligibleAt, deadline);
-    delete configured.github.notifications.cleanup;
-    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 0}');
     now += 60_000;
     await next();
@@ -2847,7 +2843,7 @@ describe('agent/codex-dispatch', () => {
     assessmentGuidance?: string | { file: string },
   ) {
     const configured = structuredClone(manifest);
-    Object.assign(configured.github.notifications['issue-assignment'], {
+    Object.assign(configured.github['issue-assignment'], {
       mode,
       ...(assessmentGuidance ? { assessment: { guidance: assessmentGuidance } } : {}),
       implementation: { ...(skill ? { skill } : {}), guidance },
@@ -3336,10 +3332,9 @@ describe('agent/codex-dispatch', () => {
     it(`should continue ${mode} after timing and capacity edits without replacing its assessment`, async () => {
       const work = mode === 'auto' ? await autoIssue() : await workIssue();
       const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-      Object.assign(configured.github.notifications, {
+      Object.assign(configured.github, {
         'interval-minutes': 17,
         'max-concurrent-items': 8,
-        cleanup: { enabled: true, 'grace-minutes': 30 },
       });
       await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
       assert.equal((await work.run('next')).status, 'prepared');
@@ -3351,8 +3346,8 @@ describe('agent/codex-dispatch', () => {
   it('should start admitted work after intake disablement and original assigner removal', async () => {
     const work = await workIssue();
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    configured.github.notifications['issue-assignment'].enabled = false;
-    configured.github.notifications['issue-assignment'].allowed = [
+    configured.github['issue-assignment'].paused = true;
+    configured.github['issue-assignment'].allowed = [
       { login: 'someone-else', 'node-id': 'U_other' },
     ];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -3396,7 +3391,7 @@ describe('agent/codex-dispatch', () => {
     const work = await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
     assert.equal((await work.run('next')).status, 'idle');
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    configured.github.notifications['issue-assignment'].mode = 'work';
+    configured.github['issue-assignment'].mode = 'work';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     const prepared = await work.run('next');
     assert.equal(prepared.status, 'prepared');
@@ -3413,12 +3408,12 @@ describe('agent/codex-dispatch', () => {
     const before = (await store.read()).records[0]!;
     assert.equal(before.progression?.via, 'work');
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    configured.github.notifications['issue-assignment'].mode = 'plan';
+    configured.github['issue-assignment'].mode = 'plan';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     assert.equal((await work.run('next')).status, 'pending');
     work.receive();
     assert.equal((await work.run('context', {}, true)).status, 'verified');
-    configured.github.notifications['issue-assignment'].mode = 'auto';
+    configured.github['issue-assignment'].mode = 'auto';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     assert.equal((await work.run('context', {}, true)).status, 'verified');
     const after = (await store.read()).records[0]!;
@@ -3431,7 +3426,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should apply live work mode to a plan admission without reinstalling', async () => {
     const configured = structuredClone(manifest);
-    Object.assign(configured.github.notifications['issue-assignment'], { mode: 'work' });
+    Object.assign(configured.github['issue-assignment'], { mode: 'work' });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     const prepared = await prepare();
     created();
@@ -3480,7 +3475,7 @@ describe('agent/codex-dispatch', () => {
         );
         const before = (await store.read()).records[0]!;
         const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-        configured.github.notifications['issue-assignment'].mode = 'auto';
+        configured.github['issue-assignment'].mode = 'auto';
         await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
         const prepared = await work.run('next');
         assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
@@ -3589,7 +3584,7 @@ describe('agent/codex-dispatch', () => {
   it('should resume an ended auto decision without a result in the existing issue', async () => {
     const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    configured.github.notifications['issue-assignment'].mode = 'auto';
+    configured.github['issue-assignment'].mode = 'auto';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     assert.equal((await work.run('next')).status, 'prepared');
     work.receive();
@@ -3610,7 +3605,7 @@ describe('agent/codex-dispatch', () => {
   it('should retain an auto decision denial without sending implementation after a mode edit', async () => {
     const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    configured.github.notifications['issue-assignment'].mode = 'auto';
+    configured.github['issue-assignment'].mode = 'auto';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     assert.equal((await work.run('next')).status, 'prepared');
     work.continuation.continuationNative = async () => ({
@@ -3618,7 +3613,7 @@ describe('agent/codex-dispatch', () => {
       code: 'continuation-native-send-failed',
     });
     assert.equal((await work.run('reconcile')).status, 'blocked');
-    configured.github.notifications['issue-assignment'].mode = 'work';
+    configured.github['issue-assignment'].mode = 'work';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     assert.equal((await work.run('next')).status, 'idle');
     const current = await selectCodexIntake(pluginData, deps);
@@ -3862,7 +3857,7 @@ describe('agent/codex-dispatch', () => {
   it('should not reinterpret an auto assignment under changed work authority', async () => {
     const work = await autoIssue();
     const changed = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    changed.github.notifications['issue-assignment'].mode = 'work';
+    changed.github['issue-assignment'].mode = 'work';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(changed));
     assert.equal((await work.run('next')).status, 'prepared');
     work.receive();
@@ -3949,8 +3944,8 @@ describe('agent/codex-dispatch', () => {
     await work.run('next');
     work.receive();
     const changed = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    Object.assign(changed.github.notifications['issue-assignment'], {
-      enabled: false,
+    Object.assign(changed.github['issue-assignment'], {
+      paused: true,
       allowed: [],
       mode: 'plan',
     });

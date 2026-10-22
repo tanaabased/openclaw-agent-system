@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
 import type CodexAssignmentClaims from './codex-assignment-claims.ts';
@@ -59,6 +60,11 @@ export async function revalidateDispatchAssignment(
   dispatchRecord?: DispatchRecord,
 ) {
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
+  await new GitHubIdentityCache(current.store.location).resolve(
+    current.manifest.github?.notifications,
+    client,
+    'assignment',
+  );
   const repo = retainedWork
     ? (
         await inspectContinuedIssue(

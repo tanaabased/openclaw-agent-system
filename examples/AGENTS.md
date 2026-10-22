@@ -32,6 +32,8 @@
 
 ## Assertions
 
+- Deliberately vary equivalent supported schema forms across existing fixtures when their normal behavior exercises them. Keep the variation deterministic and readable, preserve it through setup helpers, and supplement focused schema tests without adding a combinatorial matrix.
+
 - Start each executable block with one fully lowercase `# should ...` statement and keep one observable behavior per block. Preserve required casing only in commands, inputs, and expected contract values.
 - Keep every command in a `# should ...` block directly tied to preparing, invoking, or asserting the behavior named by that statement; remove unrelated preflights, repeated assertions, and third-party re-tests.
 - Prefer public commands and direct fixed-string assertions over repository-specific wrappers.

@@ -249,7 +249,7 @@ describe('agent/codex-context', () => {
           git: { worktrees: { root: 'worktrees' } },
           github: {
             notifications: {
-              schemaVersion: 2,
+              schemaVersion: 3,
               runtimes: ['codex'],
               allowedRepositoryOwners: [{ login: 'example', nodeId: 'O_example' }],
               intervalMinutes: 5,

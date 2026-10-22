@@ -97,7 +97,7 @@ export default class OpenClawNotifications {
       capacity: {
         active: 0,
         queued: 0,
-        limit: policy?.schemaVersion === 2 ? policy.maxConcurrentItems : 0,
+        limit: policy !== undefined ? policy.maxConcurrentItems : 0,
       },
       code: 'github-notification-status-pending',
       items: [],
@@ -110,7 +110,7 @@ export default class OpenClawNotifications {
       diagnosticCode: code,
       status: 'degraded',
     });
-    if (policy?.schemaVersion !== 2 || !policy.runtimes.includes('openclaw'))
+    if (!policy || !policy.runtimes.includes('openclaw'))
       return blocked('github-notification-runtime-unsupported');
     const runtimeBlocker = githubNotificationRuntimeBlocker(policy, 'openclaw');
     if (runtimeBlocker) return blocked('github-notification-workflow-unsupported');

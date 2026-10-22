@@ -28,6 +28,7 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 - [`openclaw agent-system instance inspect`](#openclaw-agent-system-instance-inspect)
 - [`openclaw agent-system instance rename`](#openclaw-agent-system-instance-rename)
 - [`openclaw agent-system instance rotate`](#openclaw-agent-system-instance-rotate)
+- [`openclaw agent-system migrate-github`](#openclaw-agent-system-migrate-github)
 - [`openclaw agent-system tool`](#openclaw-agent-system-tool)
 - [`openclaw agent-system validate`](#openclaw-agent-system-validate)
 
@@ -811,6 +812,21 @@ openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 | `agent_system_git_worktree` | `worktree` | [Usage](./tools/git/README.md#cli)                    | none                                                               |
 | `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli)                 | [Packaged shim](./tools/github/README.md#shim)                     |
 | `agent_system_google`       | `gog`      | [Usage](./tools/google/README.md#agent_system_google) | [Packaged shim](./tools/google/README.md#gog-and-agent_system_gog) |
+
+## `openclaw agent-system migrate-github`
+
+Preview a V3 workflow fragment from the effective GitHub policy, including base and
+overlay source locations. This command does not edit files or resolve credentials.
+See [GitHub V3 migration](./UPGRADING.md#github-v3-configuration) for application and
+readiness checks. Incompatible feedback grants or recipients return
+`requires-resolution` and a nonzero exit status.
+
+```text
+openclaw agent-system migrate-github [--agent <id>] [--json]
+```
+
+Omit `--agent` to discover the current workspace. `--json` returns the status,
+sources, resolutions and draft YAML as one structured result.
 
 ## `openclaw agent-system validate`
 

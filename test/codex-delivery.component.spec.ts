@@ -32,15 +32,13 @@ const manifest = {
   agent: { id: 'receiver' },
   github: {
     username: 'receiver',
-    notifications: {
-      'schema-version': 2,
-      runtimes: ['codex'],
-      'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
-      'issue-assignment': {
-        mode: 'plan',
-        allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
-        'pull-request': { recipients: [] },
-      },
+    'schema-version': 3,
+    runtimes: ['codex'],
+    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    'issue-assignment': {
+      mode: 'plan',
+      allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
+      reviewers: [] as Array<{ login: string; 'node-id': string }>,
     },
   },
 };
@@ -58,6 +56,7 @@ describe('agent/codex-delivery', () => {
   let deps: CodexDeliveryDependencies, fixture: ReturnType<typeof intakeFixture>;
   let head: string, remote: string, dirty: boolean, attached: boolean, creates: number;
   let failCreate: boolean, failLink: boolean, failRecipient: boolean, wrongIssueLink: boolean;
+  let assignedRecipients: string[], requestedReviewers: string[];
   let pr: Record<string, unknown> | undefined;
   let providerLink: boolean | undefined;
   let bindingOverride: Record<string, unknown>;
@@ -85,9 +84,9 @@ describe('agent/codex-delivery', () => {
   }
   async function feedbackWorkFixture() {
     const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-    declaration.github.notifications['issue-assignment'].feedback = {
-      allowed: [{ login: 'reviewer', 'node-id': 'U_reviewer' }],
-    };
+    declaration.github['issue-assignment'].reviewers = [
+      { login: 'reviewer', 'node-id': 'U_reviewer' },
+    ];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
     await publish();
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
@@ -345,6 +344,8 @@ describe('agent/codex-delivery', () => {
     failCreate = false;
     failLink = false;
     failRecipient = false;
+    assignedRecipients = [];
+    requestedReviewers = [];
     pr = undefined;
     providerLink = undefined;
     bindingOverride = {};
@@ -469,8 +470,24 @@ describe('agent/codex-delivery', () => {
                 });
               return result(pr);
             }
-            if (endpoint?.startsWith('users/') && failRecipient)
-              throw new Error('recipient unavailable');
+            if (endpoint?.startsWith('users/')) {
+              if (failRecipient) throw new Error('recipient unavailable');
+              const login = endpoint.slice('users/'.length);
+              return result([
+                { login, nodeId: login === 'reviewer' ? 'U_reviewer' : account.nodeId },
+              ]);
+            }
+            if (endpoint === 'repos/owner/repo/issues/7')
+              return result(assignedRecipients.map((login) => ({ login, nodeId: account.nodeId })));
+            if (endpoint === 'repos/owner/repo/issues/7/assignees') {
+              assignedRecipients = JSON.parse(stdin!).assignees;
+              return result(assignedRecipients);
+            }
+            if (endpoint === 'repos/owner/repo/pulls/7/requested_reviewers') {
+              if (argv.includes('POST')) requestedReviewers = JSON.parse(stdin!).reviewers;
+              return result(requestedReviewers);
+            }
+            if (endpoint === 'repos/owner/repo/pulls/7/reviews') return result([]);
             throw new Error('unexpected provider request: ' + argv.join(' '));
           },
         },
@@ -484,11 +501,9 @@ describe('agent/codex-delivery', () => {
   for (const deny of [false, true])
     it(`should let github ${deny ? 'reject' : 'accept'} recipient changes without permission preflights`, async () => {
       const configured = structuredClone(manifest);
-      Object.assign(configured.github.notifications['issue-assignment']['pull-request'], {
-        recipients: [
-          { login: account.login, 'node-id': account.nodeId, roles: ['assignee', 'reviewer'] },
-        ],
-      });
+      configured.github['issue-assignment'].reviewers = [
+        { login: account.login, 'node-id': account.nodeId },
+      ];
       await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
       const connect = deps.connect!;
       let assigned = false,
@@ -656,7 +671,7 @@ describe('agent/codex-delivery', () => {
   });
   it('should show feedback under a verified replacement scheduler without changing the issue owner', async () => {
     const configured = structuredClone(manifest);
-    Object.assign(configured.github.notifications['issue-assignment'], { feedback: true });
+    Object.assign(configured.github['issue-assignment'], { feedback: {} });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
     const authority = {
@@ -757,13 +772,12 @@ describe('agent/codex-delivery', () => {
     failLink = false;
     failRecipient = true;
     const changed = structuredClone(manifest);
-    delete (
-      changed.github.notifications['issue-assignment']['pull-request'] as { recipients?: unknown }
-    ).recipients;
+    changed.github['issue-assignment'].reviewers = [{ login: 'reviewer', 'node-id': 'U_reviewer' }];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(changed));
     await assert.rejects(publish(), /recipient unavailable/);
     saved = (await store.read()).records[0]!.delivery!;
     assert.equal(saved.pullRequest!.pullRequestNodeId, 'PR_7');
+    failRecipient = false;
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
@@ -962,7 +976,7 @@ describe('agent/codex-delivery', () => {
   });
   async function workSchedule() {
     const configured = structuredClone(manifest);
-    configured.github.notifications['issue-assignment'].mode = 'work';
+    configured.github['issue-assignment'].mode = 'work';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
     const selected = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
     const current = {

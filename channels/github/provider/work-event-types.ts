@@ -59,6 +59,7 @@ export interface GitHubIssueCommentPage {
 }
 
 export interface GitHubNotificationIntakeClient {
+  resolveIdentity?(reference: string): Promise<GitHubIdentity>;
   readonly identity: GitHubIdentity;
   discoverAssigned(
     updatedSince: string,

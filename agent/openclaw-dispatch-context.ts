@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import { realpath } from 'node:fs/promises';
@@ -151,6 +152,9 @@ export default class OpenClawDispatchContext {
     if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
     if (!intake) throw new Error('dispatch-admission-missing');
+    await new GitHubIdentityCache(current.store.location).hydrate(
+      fresh.manifest.github?.notifications,
+    );
     const held = liveWorkflowPolicy(
       fresh.manifest,
       'openclaw',
@@ -198,6 +202,13 @@ export default class OpenClawDispatchContext {
         { manifest, workspaceDir: current.workspace },
         signal ?? AbortSignal.timeout(25000),
       ));
+    const identities = new GitHubIdentityCache(current.store.location);
+    await identities.resolve(
+      liveManifest.github?.notifications,
+      client,
+      feedback ? 'feedback' : 'assignment',
+    );
+    await identities.hydrate(manifest.github?.notifications);
     const repo =
       (record.sessionCreation?.verified || record.effective?.status === 'verified') && !feedback
         ? (
