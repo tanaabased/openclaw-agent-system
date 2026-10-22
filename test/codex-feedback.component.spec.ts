@@ -127,6 +127,7 @@ describe('agent/codex-feedback', () => {
         worktree,
         effective: { status: 'verified', model: 'model', effort: 'high' },
         project: { id: 'project', path: source, commonDir, ref: 'main', commit: 'a'.repeat(40) },
+        reservationVersion: 1,
         request: {
           title: 'issue',
           prompt: 'assessment',

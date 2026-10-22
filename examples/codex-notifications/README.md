@@ -242,16 +242,16 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
-scope=$(node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -er .scope)
+scope=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -er .scope)
 state="$plugin_data/codex-dispatch-$scope.json"
 umask 077
 jq -nc --arg scope "$scope" '{version:1,scope:$scope,records:[{retired:{at:1,by:"historical-owner"},result:{decision:{action:"proceed"}}}]}' > "$state"
 cp "$state" "$root/pre-reset-before.json"
-if output=$(node "$runtime" dispatch inspect --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+if output=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "notification-state-reset-required" and (.notice.next | contains("Preserve the original file"))'
 cmp "$state" "$root/pre-reset-before.json"
 mv "$state" "$root/pre-reset-history.json"
-node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -e '.records == [] and .resetGeneration == "initial"'
+printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -e '.records == [] and .resetGeneration == "initial"'
 
 # should expose direct reply without intake activation while requiring an actual native caller
 root="$TMPDIR/agent-system-codex-notifications"
