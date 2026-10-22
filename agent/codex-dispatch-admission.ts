@@ -1,6 +1,6 @@
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -182,6 +182,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     .filter(
       (entry) =>
         entry.request &&
+        !entry.denial &&
         !entry.handoff &&
         (codexUnresolvedRetirement(entry) ||
           ((entry.threadId || entry.receiptThreadId) &&
@@ -215,6 +216,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   if (observations.length) await save();
   for (const pending of state.records.filter(
     (record) =>
+      !record.denial &&
       !record.retired &&
       !record.retirement &&
       !record.handoff &&
@@ -299,6 +301,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     .filter(({ intake }) => !liveWorkflowPolicy(current.manifest, 'codex', intake))
     .find(
       ({ record, intake }) =>
+        !record?.denial &&
         !record?.request &&
         (!deps.claims || record?.claimPass !== state.run!.id) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
@@ -434,6 +437,25 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     record.context = JSON.stringify(snapshot);
     record.manifestDigest = current.digest;
     record.phase = 'routing';
+    record.preparationObservation = {
+      sourceThreadId: activation.sourceThreadId,
+      turnId: state.run!.id,
+      intakeId: intake.id,
+      at: now,
+      digest: automationHash({
+        context: record.context,
+        project: record.project,
+        manifest: record.manifestDigest,
+      }),
+      runtime: {
+        nodeExecutable: process.execPath,
+        entrypoint: resolve(process.argv[1]!),
+        pluginData: tx.pluginData,
+      },
+      afterItemId: await withNative(current, deps, (native) =>
+        native.intakeBoundary(activation.sourceThreadId, state.run!.id),
+      ),
+    };
     delete record.result;
     delete record.stageReceipt;
     await fresh();
@@ -468,6 +490,7 @@ export async function prepareDispatch(
 ) {
   const { pluginData, current, deps, state, now, signal, save, fresh } = tx;
   const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
+  if (record.denial) throw new Error('dispatch-denial-held');
   if (record.request)
     return { status: 'reconcile-required' as const, changed: false, id: record.id };
   if (
@@ -560,6 +583,11 @@ export async function prepareDispatch(
     );
     record.createdAt = now;
     record.preparationTurnId = state.run!.id;
+    record.sourceThreadId = tx.activation.sourceThreadId;
+    record.creationAfterItemId = await withNative(current, deps, (native) =>
+      native.intakeBoundary(record.sourceThreadId, state.run!.id),
+    );
+    delete record.preparationObservation;
     delete record.retry;
     delete record.retryAfter;
     record.reservationVersion = 1;

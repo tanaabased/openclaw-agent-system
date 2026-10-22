@@ -6,6 +6,7 @@ describe('agent/codex-runtime-request', () => {
   it('should expose each workflow effect without moving request data into argv', () => {
     for (const [route, action] of [
       ['dispatch', 'context'],
+      ['dispatch', 'observe-denials'],
       ['continuation', 'result'],
       ['feedback', 'publish'],
       ['feedback', 'implementation-context'],

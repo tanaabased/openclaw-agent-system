@@ -14,7 +14,9 @@ import {
   type CodexDispatchDependencies,
   type CodexDispatchTransaction,
 } from './codex-dispatch-context.ts';
+import reconcileIntakeDenial from './codex-dispatch-denial.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
+import liveWorkflowPolicy from './live-workflow-policy.ts';
 import reportDispatch, { failDispatch, notice } from './codex-dispatch-reporting.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
@@ -48,11 +50,24 @@ export async function runCodexDispatch(
     claimStore: deps.claimStore ?? codexInstanceStore(pluginData),
   };
   if (action === 'next') {
+    const observation = await executeCodexDispatch(pluginData, 'observe-denials', {}, deps);
+    if (!observation || !('status' in observation) || observation.status !== 'ready')
+      return observation;
     const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
     if (retirement) return retirement;
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
   }
+  return executeCodexDispatch(pluginData, action, input, deps);
+}
+
+async function executeCodexDispatch(
+  pluginData: string,
+  action: string,
+  input: unknown,
+  deps: CodexDispatchDependencies,
+) {
+  validateDispatchRequest(action, input);
   const current = await selectCodexIntake(pluginData, deps);
   const retainedAdmission = await current.store.read();
   if (retainedAdmission?.records.length)
@@ -113,7 +128,7 @@ export async function runCodexDispatch(
             ),
           save,
         );
-        if (action !== 'report') {
+        if (action !== 'report' && action !== 'observe-denials') {
           if (state.run!.actions >= 12) {
             await save();
             return { status: 'budget-exhausted', changed: false, nextAction: 'report' };
@@ -160,6 +175,27 @@ export async function runCodexDispatch(
           debug: current.manifest.debug,
           slots: codexIntakePolicy(current.manifest)?.policy.maxConcurrentItems ?? 3,
         });
+      if (action === 'observe-denials') {
+        // reconcile anchored refusals before selecting or reclassifying any pending operation.
+        for (const record of state.records.filter(
+          (entry) => !entry.retired && !entry.reset && !entry.retirement,
+        )) {
+          try {
+            await reconcileIntakeDenial(record, tx);
+          } catch (error) {
+            const result = await fail(record, error);
+            if (state.run) state.run.stopped = 'blocked';
+            await save();
+            return {
+              ...result,
+              nextAction: 'report',
+              instruction:
+                'Native refusal evidence is shared, ambiguous, or unavailable. Stop this occurrence and report it; do not retry the held action.',
+            };
+          }
+        }
+        return { status: 'ready', changed: false, nextAction: 'next' };
+      }
       if (action === 'next') return nextDispatch(input, tx);
       if (typeof input.id !== 'string') throw new Error('dispatch-request-invalid');
       const record = state.records.find((entry) => entry.id === input.id);
@@ -211,20 +247,39 @@ export async function runCodexDispatch(
               deps.readInstallationConfig,
             ),
           save,
-          fresh,
-          revalidate: () =>
-            revalidateDispatchAssignment(
-              current,
+          fresh: async () => {
+            await fresh();
+            if (
+              action === 'retry-denied' &&
+              (await selectCodexIntake(pluginData, deps)).digest !== current.digest
+            )
+              throw new Error('dispatch-recovery-stale');
+          },
+          revalidate: () => {
+            const latest =
               action === 'retry-denied'
                 ? (admitted.records.findLast((entry) => issueKey(entry) === record.issueKey) ??
-                    intake)
-                : intake,
-              deps,
-              signal,
-            ),
+                  intake)
+                : intake;
+            if (action === 'retry-denied' && liveWorkflowPolicy(current.manifest, 'codex', latest))
+              throw new Error('dispatch-recovery-policy-held');
+            return revalidateDispatchAssignment(current, latest, deps, signal);
+          },
           connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
           withNative: (operation) => withNative(current, deps, operation),
         });
+      if (action === 'prepare' || action === 'reconcile') {
+        if (
+          await reconcileIntakeDenial(
+            record,
+            tx,
+            action === 'prepare' &&
+              record.preparationObservation?.sourceThreadId === caller &&
+              record.preparationObservation?.turnId === state.run?.id,
+          )
+        )
+          return { ...notice(record, intake), denial: record.denial };
+      }
       if (action === 'prepare') return prepareDispatch(input, record, intake, tx);
       if (action === 'reconcile' || childAction) {
         try {

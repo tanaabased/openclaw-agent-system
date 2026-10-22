@@ -1,6 +1,8 @@
+import providerErrorMessage from '../utils/provider-error-message.ts';
 import intakeDebug from './intake-debug.ts';
 import retirementNotice from './retirement-notice.ts';
 import codexFeedbackProblem from './codex-feedback-problem.ts';
+import { denialRecovery } from './codex-dispatch-denial.ts';
 import workflowStatus from './workflow-status.ts';
 import discoveryNotice from './discovery-notice.ts';
 import codexCapacity, { codexItemOccupied, codexUnresolvedRetirement } from './codex-capacity.ts';
@@ -117,7 +119,9 @@ export default function prepareDispatchReport(input: {
     })),
     ...problems.map((record) => ({
       id: record.id,
-      operation: 'assignment preparation',
+      operation:
+        record.denial?.operation === 'create' ? 'native chat creation' : 'assignment preparation',
+      denial: record.denial,
       code: record.result!.outcome === 'operator-setup-blocker' ? record.result!.code : '',
     })),
   ];
@@ -226,8 +230,15 @@ export default function prepareDispatchReport(input: {
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
       `  **Operation:** ${notice.operation}`,
-      `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
+      `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${record?.denial ? 'This action remains held; unrelated eligible intake can continue.' : notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
       ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
+      ...(record?.denial
+        ? [
+            `  **Denied action:** ${record.denial.operation === 'prepare' ? 'dispatch:prepare' : 'create_thread'}`,
+            `  **Reason:** ${text(providerErrorMessage(record.denial.reason) ?? 'Unavailable in native evidence.')}`,
+            `  **Recovery:** ${denialRecovery} Retained id: ${text(notice.id)}; denied call: ${text(record.denial.callId)}.`,
+          ]
+        : []),
       `  **Diagnostic:** \`${notice.code}\``,
     );
     if (

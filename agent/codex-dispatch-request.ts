@@ -10,6 +10,7 @@ const object = (properties: Parameters<typeof Type.Object>[0]) =>
 const recovery = { id, digest };
 const schemas = {
   inspect: object({}),
+  'observe-denials': object({}),
   next: object({ projects: Type.Optional(Type.Unknown()), threads: Type.Optional(Type.Unknown()) }),
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
   handoff: object(recovery),

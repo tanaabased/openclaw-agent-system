@@ -47,9 +47,53 @@ const creationSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const preparationObservationSchema = Type.Object(
+  {
+    sourceThreadId: text,
+    turnId: text,
+    intakeId: text,
+    digest: text,
+    afterItemId: text,
+    at: Type.Integer({ minimum: 0 }),
+    runtime: Type.Object(
+      { nodeExecutable: text, entrypoint: text, pluginData: text },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+export type PreparationObservation = Static<typeof preparationObservationSchema>;
+export const intakeDenialSchema = Type.Object(
+  {
+    sourceThreadId: text,
+    turnId: text,
+    callId: text,
+    operation: Type.Union([Type.Literal('prepare'), Type.Literal('create')]),
+    automatic: Type.Boolean(),
+    reason: Type.Optional(text),
+    observedAt: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type IntakeDenial = Static<typeof intakeDenialSchema>;
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    preparationObservation: Type.Optional(preparationObservationSchema),
+    denial: Type.Optional(intakeDenialSchema),
+    recoveredDenials: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            denial: intakeDenialSchema,
+            observation: Type.Optional(preparationObservationSchema),
+            recoveredAt: Type.Integer({ minimum: 0 }),
+            approvedBy: text,
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     claimId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
     claimPass: Type.Optional(text),
     claimAccepted: Type.Optional(Type.Boolean()),
@@ -105,6 +149,7 @@ export const dispatchRecordSchema = Type.Object(
     ),
     request: Type.Optional(creationSchema),
     preparationTurnId: Type.Optional(text),
+    creationAfterItemId: Type.Optional(text),
     unsubmittedCreations: Type.Optional(
       Type.Array(
         Type.Object(
