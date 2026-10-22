@@ -405,8 +405,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           ...(initial ? { title, body } : {}),
         });
       for (let index = 0; index < 3 && isPendingDelivery(delivered); index++) {
-        const receipt = delivered.pullRequest as Record<string, unknown> | undefined;
-        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
         const prepared = result(`feedback-link-prepare-${index}`);
         if (!prepared)
           return dispatch(`feedback-link-prepare-${index}`, {
@@ -416,6 +414,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             ...(initial ? { title, body } : {}),
           });
         if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+        // feedback's waiting envelope may omit the receipt; preparation reads the saved operation.
+        const operation = prepared.operation as Record<string, unknown> | undefined;
+        const receipt = (operation?.pullRequest ?? delivered.pullRequest) as
+          Record<string, unknown> | undefined;
+        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
         const published = result(`feedback-link-publish-${index}`);
         if (!published)
           return dispatch(`feedback-link-publish-${index}`, {
