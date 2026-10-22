@@ -106,6 +106,41 @@ export default class GitHubIdentityCache {
       directories: [this.location.root],
       label: 'GitHub identity cache',
     });
+    // Resolve outside the file lease so provider latency cannot block other issue turns.
+    // Commit each verified pin before the next lookup, preserving partial progress.
+    for (const { pin, user } of selected) {
+      const reference = key(pin);
+      let identity = this.refreshed.get(reference);
+      if (!identity) {
+        const retained = (await this.read()).entries[reference];
+        identity = await client.resolveIdentity(retained?.nodeId ?? pin.reference ?? pin.nodeId);
+        if (!Value.Check(identitySchema, identity) || (user && identity.type !== 'User'))
+          throw new Error('github-identity-type-invalid');
+        if (retained && identity.nodeId !== retained.nodeId)
+          throw new Error('github-identity-conflict');
+      }
+      if (user && identity.type !== 'User') throw new Error('github-identity-type-invalid');
+      if (pin.reference && !pin.reference.startsWith('@') && pin.reference !== identity.nodeId)
+        throw new Error('github-identity-conflict');
+      if (
+        !pin.reference &&
+        (pin.nodeId !== identity.nodeId || pin.login.toLowerCase() !== identity.login.toLowerCase())
+      )
+        throw new Error('github-identity-conflict');
+      await this.retain(reference, identity);
+      this.refreshed.set(reference, identity);
+      Object.assign(pin, { login: identity.login, nodeId: identity.nodeId });
+    }
+  }
+
+  private async retain(reference: string, identity: GitHubIdentity) {
+    const unchanged = (retained: GitHubIdentity | undefined) => {
+      // Another consumer may have pinned this name while our lookup was in flight.
+      if (retained && retained.nodeId !== identity.nodeId)
+        throw new Error('github-identity-conflict');
+      return retained?.login === identity.login && retained?.type === identity.type;
+    };
+    if (unchanged((await this.read()).entries[reference])) return;
     const lock = await acquirePrivateStateFileLock(this.path, {
       staleMs: 30_000,
       retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
@@ -113,43 +148,9 @@ export default class GitHubIdentityCache {
     try {
       await withPrivateStateLock(lock, async () => {
         const state = await this.read();
-        const resolved = this.refreshed;
-        // Commit successful first resolutions even when a later entry fails: a retry must
-        // never silently bind the same name to a different account.
-        for (const { pin, user } of selected) {
-          const reference = key(pin);
-          let identity = resolved.get(reference);
-          if (!identity) {
-            const retained = state.entries[reference];
-            const lookup = retained?.nodeId ?? pin.reference ?? pin.nodeId;
-            identity = await client.resolveIdentity!(lookup);
-            if (!Value.Check(identitySchema, identity) || (user && identity.type !== 'User'))
-              throw new Error('github-identity-type-invalid');
-            if (
-              (retained && identity.nodeId !== retained.nodeId) ||
-              (pin.reference &&
-                !pin.reference.startsWith('@') &&
-                pin.reference !== identity.nodeId) ||
-              (!pin.reference &&
-                (identity.nodeId !== pin.nodeId ||
-                  identity.login.toLowerCase() !== pin.login.toLowerCase()))
-            )
-              throw new Error('github-identity-conflict');
-            state.entries[reference] = identity;
-            await this.file.write(JSON.stringify(state));
-            resolved.set(reference, identity);
-          }
-          if (user && identity.type !== 'User') throw new Error('github-identity-type-invalid');
-          if (pin.reference && !pin.reference.startsWith('@') && pin.reference !== identity.nodeId)
-            throw new Error('github-identity-conflict');
-          if (
-            !pin.reference &&
-            (pin.nodeId !== identity.nodeId ||
-              pin.login.toLowerCase() !== identity.login.toLowerCase())
-          )
-            throw new Error('github-identity-conflict');
-          Object.assign(pin, { login: identity.login, nodeId: identity.nodeId });
-        }
+        if (unchanged(state.entries[reference])) return;
+        state.entries[reference] = identity;
+        await this.file.write(JSON.stringify(state));
       });
     } finally {
       await lock.release();

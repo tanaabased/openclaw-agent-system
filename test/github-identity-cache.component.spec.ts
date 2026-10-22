@@ -120,4 +120,41 @@ describe('channels/github/identity-cache', () => {
     assert.equal(fresh.issueAssignment!.allowed[0]!.nodeId, 'U_actor');
     assert.equal(fresh.issueAssignment!.allowed.length, 2);
   });
+
+  it('should allow concurrent lookups without transferring a name pinned during the lookup', async () => {
+    for (const conflict of [false, true]) {
+      const location = { root, scope: conflict ? 'conflict' : 'matching' };
+      const input = () => decode({ 'schema-version': 3, 'allowed-repository-owners': ['@actor'] });
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const slow = new GitHubIdentityCache(location).resolve(input(), {
+        resolveIdentity: async () => {
+          started.resolve();
+          await release.promise;
+          return conflict ? { ...actor, nodeId: 'U_replacement' } : actor;
+        },
+      });
+      const outcome = slow.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await started.promise;
+      try {
+        await new GitHubIdentityCache(location).resolve(input(), { resolveIdentity });
+        assert.equal(
+          (await new GitHubIdentityCache(location).read()).entries['@actor']?.nodeId,
+          actor.nodeId,
+        );
+      } finally {
+        release.resolve();
+      }
+      const error = await outcome;
+      if (conflict) assert.match(String(error), /github-identity-conflict/);
+      else assert.equal(error, undefined);
+      assert.equal(
+        (await new GitHubIdentityCache(location).read()).entries['@actor']?.nodeId,
+        actor.nodeId,
+      );
+    }
+  });
 });

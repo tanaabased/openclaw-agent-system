@@ -164,22 +164,21 @@ jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].reco
 # should hold and resume feedback authors without reinstalling the parent automation
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
 node --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-const text = readFileSync('agent.yaml', 'utf8');
-assert.ok(!text.includes('feedback:'));
-writeFileSync('agent.yaml', text.replace('    issue-assignment:', '    issue-assignment:\n      feedback: {inherit: false, allowed: []}'));
+import { parse, stringify } from 'yaml';
+const original = readFileSync('agent.yaml', 'utf8');
+writeFileSync(process.env.TMPDIR + '/lifecycle-feedback-policy.yaml', original);
+const manifest = parse(original);
+manifest.github['issue-assignment'].allowed = [];
+writeFileSync('agent.yaml', stringify(manifest));
 NODE
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].feedback.admission.enabled == false and .[0].feedback.admission.observedAt > 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 node --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-const text = readFileSync('agent.yaml', 'utf8');
-assert.ok(text.includes('feedback: {inherit: false, allowed: []}'));
-writeFileSync('agent.yaml', text.replace('      feedback: {inherit: false, allowed: []}\n', ''));
+writeFileSync('agent.yaml', readFileSync(process.env.TMPDIR + '/lifecycle-feedback-policy.yaml'));
 NODE
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000

@@ -99,7 +99,7 @@ native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId'
 openclaw cron edit "$native" --disable --json | jq -e '.enabled == false'
 openclaw cron edit "$native" --enable --json | jq -e '.enabled == true'
 cp agent.yaml "$TMPDIR/intake-active-agent.yaml"
-sed 's/    issue-assignment:/    issue-assignment:\n      paused: true/' "$TMPDIR/intake-active-agent.yaml" > agent.yaml
+sed 's/  issue-assignment:/  issue-assignment:\n    paused: true/' "$TMPDIR/intake-active-agent.yaml" > agent.yaml
 openclaw agent-system install --yes --json | jq -e 'all(.outcomes[]; .code != "session-dispatch-enrolled")'
 openclaw agent-system automations list --json | jq -e --arg id "$native" 'any(.jobs[]; .id == "github-issue-assignment" and .nativeId == $id and .nativeEnabled == false)'
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["intake-tanaabot"].enabled == true'
