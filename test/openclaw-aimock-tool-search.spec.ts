@@ -207,14 +207,6 @@ describe('scripts/aimock-tool-search', () => {
       },
     );
     await discover();
-    await step('handoff-preview', 'agent_system_dispatch', {
-      status: 'handoff-available',
-      digest,
-    });
-    assert.equal(
-      (await step('handoff', 'agent_system_dispatch', { status: 'handed-off' })).digest,
-      digest,
-    );
     await step('work-context', 'agent_system_dispatch', {
       status: 'verified',
       runtime: 'openclaw',

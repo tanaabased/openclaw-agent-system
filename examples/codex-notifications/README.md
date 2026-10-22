@@ -122,6 +122,17 @@ Check the full private answer in the native chat and the public reply at its exa
 GitHub source. Controlled component pairs cover state and context; headless checks
 and OpenClaw-hosted Codex do not establish standalone desktop display or interpretation.
 
+For direct implementation in a fresh native chat, invoke the implementation skill
+with an authorized plan, issue and existing checkout, then repeat with a retained
+plan. Verify the selected body runs once, including an explicitly configured default
+wrapper. No assessment, notification activation or chat creation should occur.
+Confirm local-only scope cannot publish, explicit PR scope uses retained delivery,
+and interrupted or completed results resume without duplicate commits or PRs.
+In a managed issue, invoke the same skill and verify its original stage/source
+receipts and partial work survive; stale or other-session ownership must stop,
+not fall back to manual entry. Headless source tests do not establish this native
+instruction-following journey or desktop display.
+
 For removal-authority verification in the desktop, remove an admitted assignment
 through an actor outside the live `issue-assignment.allowed` list. Confirm inspection
 reports missing assignment and unresolved authority, preserves the exact chat,

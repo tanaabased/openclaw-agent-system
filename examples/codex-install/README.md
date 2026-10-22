@@ -107,6 +107,20 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(env -u CODEX_THREAD_ID node "$runtime" dispatch assessment context --plugin-data "$root/plugin-data" <<<'{"action":"assessment","operation":"context","target":"https://github.com/tanaabased/big-test-bucket/issues/1","path":"/unused"}' 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
 
+# should expose direct implementation without intake activation while requiring native custody
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(env -u CODEX_THREAD_ID node "$runtime" dispatch implementation context --plugin-data "$root/plugin-data" <<<'{"target":"https://github.com/tanaabased/big-test-bucket/issues/1","path":"/unused","plan":"Implement the authorized change locally and run focused checks."}' 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
+
+# should reject a hidden direct implementation publication effect before runtime access
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(node "$runtime" dispatch implementation prepare --plugin-data "$root/plugin-data" <<<'{"operation":"delivery","deliveryOperation":"publish"}' 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.message == "workflow-command-action-mismatch"'
+
 # should inspect and install only setup applicable to standalone codex
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

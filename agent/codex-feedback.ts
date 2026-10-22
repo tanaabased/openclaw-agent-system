@@ -1,3 +1,4 @@
+import implementationContext from './implementation-context.ts';
 import { githubWorkflowPath } from '../channels/github/workflow-policy.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -511,7 +512,15 @@ export default async function runCodexFeedback(
             });
             await save();
             return {
-              status: 'verified',
+              ...implementationContext({
+                runtime: 'codex',
+                id: record.id,
+                path: record.worktree!,
+                assessment: record.result,
+                plan: event.work?.decision?.plan,
+                implementation,
+                previousResult: event.work?.result,
+              }),
               assignmentObservation: record.assignmentObservation,
               assignmentWarning:
                 record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),

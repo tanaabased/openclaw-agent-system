@@ -1,6 +1,7 @@
 const actions: Record<string, readonly string[]> = {
   dispatch: [
     'assessment',
+    'implementation',
     'inspect',
     'observe-denials',
     'next',
@@ -54,7 +55,7 @@ export default function codexRuntimeRequest(route: string, args: string[], input
   if (!action) {
     if (
       (route === 'feedback' && request.action === 'reply') ||
-      (route === 'dispatch' && request.action === 'assessment')
+      (route === 'dispatch' && ['assessment', 'implementation'].includes(String(request.action)))
     )
       throw new Error('workflow-command-operation-required');
     return { pluginData: args[index + 1]!, request };
@@ -76,14 +77,27 @@ export default function codexRuntimeRequest(route: string, args: string[], input
     if (nested.action !== undefined && nested.action !== operation)
       throw new Error('workflow-command-action-mismatch');
     request.delivery = { ...nested, action: operation };
+  } else if (
+    route === 'dispatch' &&
+    action === 'implementation' &&
+    ['prepare', 'publish', 'reconcile', 'delivery-present'].includes(operation ?? '')
+  ) {
+    const effect = operation === 'delivery-present' ? 'present' : operation;
+    if (
+      (request.operation !== undefined && request.operation !== 'delivery') ||
+      (request.deliveryOperation !== undefined && request.deliveryOperation !== effect)
+    )
+      throw new Error('workflow-command-action-mismatch');
+    request.operation = 'delivery';
+    request.deliveryOperation = effect;
   } else if (operation) {
     if (
       !(
-        (route === 'dispatch' && ['summary', 'assessment'].includes(action)) ||
+        (route === 'dispatch' && ['summary', 'assessment', 'implementation'].includes(action)) ||
         (route === 'feedback' && action === 'reply')
       ) ||
       !(
-        action === 'assessment'
+        ['assessment', 'implementation'].includes(action)
           ? ['context', 'result', 'present']
           : ['compose', 'candidate', 'publish', 'reconcile']
       ).includes(operation)
@@ -93,7 +107,7 @@ export default function codexRuntimeRequest(route: string, args: string[], input
       throw new Error('workflow-command-action-mismatch');
     request.operation = operation;
   } else if (
-    (route === 'dispatch' && ['summary', 'assessment'].includes(action)) ||
+    (route === 'dispatch' && ['summary', 'assessment', 'implementation'].includes(action)) ||
     (route === 'feedback' && action === 'reply')
   ) {
     throw new Error('workflow-command-operation-required');

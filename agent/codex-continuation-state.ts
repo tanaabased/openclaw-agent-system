@@ -10,7 +10,8 @@ const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const attemptSchema = Type.Object(
   {
     id: hash,
-    origin: Type.Optional(Type.Literal('assessment')),
+    origin: Type.Optional(Type.Union([Type.Literal('assessment'), Type.Literal('input')])),
+    inputId: Type.Optional(text),
     sourceThreadId: Type.Optional(text),
     sourceTurnId: text,
     beforeTurnId: text,
@@ -47,6 +48,7 @@ export const codexContinuationStateSchema = Type.Object(
       ),
     ),
     retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
+    scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
     policyDigest: hash,
     policyHeld: Type.Optional(text),
     clarificationTurnId: Type.Optional(text),

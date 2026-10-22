@@ -654,15 +654,11 @@ for (const scenario of [
         });
     }
     if (scenario.id === 'openclaw-pr') {
-      it('should wait for native handoff before implementation and use the same delivery for an operator retry', async () => {
+      it('should collect direct implementation context and use the same delivery for an operator retry', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
-        await action(input, 'handoff');
-        append(input, 'handoff-preview', { status: 'handoff-available', digest });
-        assert.equal((await action(input, 'handoff')).digest, digest);
-        append(input, 'handoff', { status: 'handed-off' });
-        await action(input, 'implementation-context');
+        assert.equal((await action(input, 'implementation')).operation, 'context');
         append(input, 'work-context', {
           status: 'verified',
           runtime: 'openclaw',
@@ -821,11 +817,11 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).operation, 'present');
       });
 
-      it('should stop when native authority rejects the operator handoff', async () => {
+      it('should stop when native authority rejects direct implementation context', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
-        append(input, 'handoff-preview', { status: 'blocked', code: 'dispatch-operator-required' });
+        append(input, 'work-context', { status: 'blocked', code: 'dispatch-operator-required' });
         assert.equal(matchFixture([...scenario.fixtures], input), null);
       });
     } else {

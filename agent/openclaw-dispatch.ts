@@ -1,3 +1,4 @@
+import openClawImplementationEntry from './openclaw-implementation-entry.ts';
 import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
 import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
 import pendingPublicResponse from './pending-public-response.ts';
@@ -99,6 +100,34 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
+    if (input.action === 'implementation') {
+      const context = await openClawImplementationEntry({
+        manifest,
+        workspace,
+        caller,
+        action: input,
+        operator,
+        authority,
+        dependencies: this.dependencies,
+      });
+      if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
+      const id = context.owner.id;
+      input =
+        input.operation === 'delivery'
+          ? {
+              action: 'delivery',
+              id,
+              operation: input.deliveryOperation ?? 'prepare',
+              title: input.title,
+              body: input.body,
+              digest: input.digest,
+            }
+          : input.operation === 'context'
+            ? { action: 'implementation-context', id, scope: input.scope }
+            : input.operation === 'result' && input.result
+              ? { action: 'implementation-result', id, implementationResult: input.result }
+              : { action: 'implementation-context', id };
+    }
     if (input.action === 'assessment')
       return openClawAssessmentEntry({
         manifest,

@@ -1,3 +1,6 @@
+import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
+import codexImplementationEntry from './codex-implementation-entry.ts';
+import runCodexContinuation from './codex-continuation.ts';
 import codexAssessmentEntry from './codex-assessment-entry.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import { nativeObject } from './automation-gateway.ts';
@@ -38,6 +41,54 @@ export async function runCodexDispatch(
   input: unknown,
   deps: CodexDispatchDependencies = {},
 ) {
+  if (action === 'implementation') {
+    const request = parseDirectImplementationRequest({
+      ...(input as Record<string, unknown>),
+      action,
+    });
+    const context = await codexImplementationEntry(pluginData, request, deps);
+    if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
+    if (context.owner.eventId) {
+      if (request.scope) throw new Error('implementation-feedback-scope-owner-required');
+      if (request.operation === 'delivery')
+        throw new Error('implementation-feedback-delivery-owner-required');
+      return runCodexFeedback(
+        pluginData,
+        {
+          action:
+            request.operation === 'result' ? 'implementation-result' : 'implementation-context',
+          id: context.owner.id,
+          eventId: context.owner.eventId,
+          ...(request.result ? { implementationResult: request.result } : {}),
+        },
+        deps,
+      );
+    }
+    return runCodexContinuation(
+      pluginData,
+      {
+        action:
+          request.operation === 'delivery'
+            ? 'delivery'
+            : request.operation === 'result'
+              ? 'result'
+              : 'context',
+        id: context.owner.id,
+        ...(request.result ? { result: request.result } : {}),
+        ...(request.operation === 'delivery'
+          ? {
+              delivery: {
+                action: request.deliveryOperation,
+                title: request.title,
+                body: request.body,
+                digest: request.digest,
+              },
+            }
+          : {}),
+      },
+      { ...deps, directOperator: true, directScope: request.scope },
+    );
+  }
   if (action === 'assessment')
     return codexAssessmentEntry(
       pluginData,

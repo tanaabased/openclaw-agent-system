@@ -1,3 +1,4 @@
+import { directImplementationRequestSchema } from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
 import { Type, type TProperties } from 'typebox';
@@ -14,6 +15,7 @@ const object = <P extends TProperties>(properties: P) =>
 export const dispatchParameters = Type.Union([
   replyRequestSchema,
   directAssessmentRequestSchema,
+  directImplementationRequestSchema,
   object({ action: Type.Literal('retire'), id: Type.Optional(id), digest: Type.Optional(id) }),
   object({
     action: Type.Literal('check'),
@@ -54,7 +56,11 @@ export const dispatchParameters = Type.Union([
     ),
     digest: Type.Optional(id),
   }),
-  object({ action: Type.Literal('implementation-context'), id }),
+  object({
+    action: Type.Literal('implementation-context'),
+    id,
+    scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
+  }),
   object({
     action: Type.Literal('implementation-result'),
     id,

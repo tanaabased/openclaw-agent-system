@@ -23,6 +23,22 @@ export const implementationResultSchema = Type.Union([
   ),
 ]);
 
+export type ImplementationResult = Static<typeof implementationResultSchema>;
+
+/** saved readback never enters implementation or schedules publication. */
+export function implementationReadback(id: string, result?: ImplementationResult) {
+  if (!result) throw new Error('implementation-result-missing');
+  return {
+    status: 'presented' as const,
+    id,
+    retained: true,
+    previousResult: result,
+    presentation: implementationPresentation(result),
+    instruction:
+      'Show the saved implementation result. This read grants no execution or publication authority; do not repeat implementation or schedule delivery.',
+  };
+}
+
 export function implementationPresentation(result: Static<typeof implementationResultSchema>) {
   return result.outcome === 'clarification-needed'
     ? githubNotificationQuote(

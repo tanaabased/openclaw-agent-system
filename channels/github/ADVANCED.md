@@ -439,6 +439,14 @@ missing checkout or invalid explicit skill/guidance and retry in the same chat.
 A later answer can revise the saved direct assessment; ask for the full assessment
 for source readback. This does not launch the full issue workflow.
 
+For direct implementation in the current chat, invoke
+`$agent-system-issue-implementation` with an explicitly authorized actionable plan,
+issue URL and existing checkout, or reuse matching retained work. The collector
+uses the same configured implementation context as managed execution; no new
+assessment, chat or notification setup is required. Manual entry defaults to local
+work; only an explicit PR request selects publication. Resume its returned handoff
+and original receipts; invalid managed ownership never falls back to manual work.
+
 An authenticated operator can continue a retained Plan-mode assessment in its
 owning issue chat. An actionable Plan-mode issue needs human direction to enter implementation;
 once there, ordinary PR delivery needs no separate publication grant. The agent retains the

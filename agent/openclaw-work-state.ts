@@ -10,6 +10,7 @@ const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const input = Type.Object({ runId: text, inputEventId: text }, { additionalProperties: false });
 export const openclawWorkStateSchema = Type.Object(
   {
+    scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
     assessmentDigest: hash,
     turn: Type.Optional(issueTurnSchema),
     previousTurns: Type.Optional(
