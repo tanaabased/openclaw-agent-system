@@ -12,17 +12,17 @@ models:
 
 environment:
   set:
-    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
-  required: [GH_TOKEN_TANAABOT]
+    GH_TOKEN_FIXTURE: synthetic-os-enrollment-token
 
 git: {}
 
 github:
-  username: tanaabot
-  token: GH_TOKEN_TANAABOT
+  username: install-data
+  host: fixture.invalid
+  token: GH_TOKEN_FIXTURE
   schema-version: 3
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  allowed-repository-owners: ['@fixture']
   issue-assignment:
     paused: true
     allowed: []

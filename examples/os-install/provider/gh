@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { spawnSync } = require('node:child_process');
+
+// isolate incidental provider reads while exercising real gateway device enrollment.
+const args = process.argv.slice(2);
+assert.equal(process.env.GH_HOST, 'fixture.invalid');
+assert.equal(args.shift(), 'api');
+let endpoint;
+let filter;
+let include = false;
+const fields = {};
+for (let index = 0; index < args.length; index++) {
+  const arg = args[index];
+  if (arg === '--include') include = true;
+  else if (arg === '--jq') filter = args[++index];
+  else if (arg === '--method') assert.equal(args[++index], 'GET');
+  else if (arg === '--input') assert.equal(args[++index], '-');
+  else if (arg === '-f' || arg === '-F') {
+    const value = args[++index];
+    const separator = value.indexOf('=');
+    fields[value.slice(0, separator)] = value.slice(separator + 1);
+  } else {
+    assert.equal(endpoint, undefined, 'unexpected fixture argument');
+    endpoint = arg;
+  }
+}
+let response;
+if (endpoint === 'user') response = { login: 'install-data', node_id: 'U_install' };
+else if (endpoint === '/users/fixture')
+  response = { login: 'fixture', node_id: 'O_fixture', type: 'Organization' };
+else if (endpoint === 'graphql') {
+  const input = JSON.parse(readFileSync(0, 'utf8'));
+  assert.equal(
+    input.query,
+    'query($id:ID!){node(id:$id){__typename ... on User{id login} ... on Organization{id login}}}',
+  );
+  assert.deepEqual(input.variables, { id: 'O_fixture' });
+  response = { data: { node: { __typename: 'Organization', id: 'O_fixture', login: 'fixture' } } };
+} else if (endpoint === '/search/issues') {
+  assert.match(fields.q, /^assignee:install-data state:open updated:>=\S+ is:issue$/);
+  assert.deepEqual(Object.keys(fields).sort(), ['order', 'page', 'per_page', 'q', 'sort']);
+  assert.equal(fields.page, '1');
+  response = { total_count: 0, incomplete_results: false, items: [] };
+} else throw Error('unexpected enrollment fixture request');
+let output = JSON.stringify(response);
+if (filter) {
+  const result = spawnSync('jq', ['-c', filter], { input: output, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  output = result.stdout;
+}
+if (include) process.stdout.write('HTTP/2.0 200 OK\r\ncontent-type: application/json\r\n\r\n');
+process.stdout.write(output + '\n');
