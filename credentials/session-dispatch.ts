@@ -3,6 +3,10 @@ import { createHash, createPublicKey, generateKeyPairSync } from 'node:crypto';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import {
+  classifySessionDispatchFailure,
+  type SessionDispatchDiagnostic,
+} from './session-dispatch-diagnostic.ts';
 import type { CredentialKey, CredentialStore } from './types.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
@@ -65,8 +69,21 @@ export interface DispatchCredentialDependencies {
   now?(): number;
 }
 
-export function dispatchCredentialError(code: string, message: string): never {
-  throw new AgentSystemLifecycleError('session-dispatch', code, message);
+export function dispatchCredentialError(
+  code: string,
+  message: string,
+  diagnostic?: SessionDispatchDiagnostic,
+): never {
+  throw new AgentSystemLifecycleError(
+    'session-dispatch',
+    code,
+    message,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    diagnostic,
+  );
 }
 
 /** retain enrollment intent before issuance; never replace an unusable credential silently. */
@@ -110,8 +127,10 @@ export default class SessionDispatchCredential {
     try {
       const connected = await this.dependencies.connect(record, false, {});
       this.verifyScopes(connected.scopes);
-    } catch {
+    } catch (error) {
+      const sessionDispatchDiagnostic = classifySessionDispatchFailure(error);
       return {
+        sessionDispatchDiagnostic,
         code: 'session-dispatch-verification-unavailable',
         status: 'blocked' as const,
         message: `Session dispatch device-only connection could not be verified.${suffix}`,
@@ -142,6 +161,7 @@ export default class SessionDispatchCredential {
       let record = await this.read();
       if (record?.token) {
         const finding = await this.inspect();
+        await guard();
         if (
           finding.code === 'session-dispatch-credential-revoked' &&
           authority.sessionDispatchConsent
@@ -155,7 +175,11 @@ export default class SessionDispatchCredential {
           await this.clearRetained(record, guard);
           record = undefined;
         } else if (finding.status !== 'healthy') {
-          dispatchCredentialError(finding.code, `${finding.message} ${finding.remediation ?? ''}`);
+          dispatchCredentialError(
+            finding.code,
+            `${finding.message} ${finding.remediation ?? ''}`,
+            finding.sessionDispatchDiagnostic,
+          );
         } else {
           await guard();
           if (record.bootstrap) {
@@ -219,7 +243,7 @@ export default class SessionDispatchCredential {
       let connected;
       try {
         connected = await this.dependencies.connect(record, true, authority);
-      } catch {
+      } catch (error) {
         await guard();
         const pairing = await this.dependencies.pairing(record.device.deviceId);
         dispatchCredentialError(
@@ -229,6 +253,7 @@ export default class SessionDispatchCredential {
           pairing.requestId
             ? `Approve device ${record.device.deviceId}, request ${pairing.requestId}, in Devices or with openclaw devices approve ${pairing.requestId}; rerun Install to resume.`
             : `Enrollment could not be verified for device ${record.device.deviceId}; rerun Install to resume this identity.`,
+          classifySessionDispatchFailure(error),
         );
       }
       this.verifyScopes(connected.scopes);
@@ -245,7 +270,9 @@ export default class SessionDispatchCredential {
       await guard();
       await this.write(record);
       const finding = await this.inspect();
-      if (finding.status !== 'healthy') dispatchCredentialError(finding.code, finding.message);
+      await guard();
+      if (finding.status !== 'healthy')
+        dispatchCredentialError(finding.code, finding.message, finding.sessionDispatchDiagnostic);
       await guard();
       return {
         code: 'session-dispatch-enrolled',
