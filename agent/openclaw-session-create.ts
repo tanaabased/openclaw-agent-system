@@ -127,7 +127,11 @@ export default async function createIssueSession(input: {
       creation.attempted = true;
       await save();
       await guard();
-      const created = sessionObject(await request('sessions.create', params));
+      // labels are unique even for archived sessions; issue titles may repeat after retirement.
+      const { label, ...creationParams } = params;
+      const created = sessionObject(
+        await request('sessions.create', { ...creationParams, displayName: label }),
+      );
       if (
         created.key !== params.key ||
         typeof created.sessionId !== 'string' ||

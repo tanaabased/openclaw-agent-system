@@ -261,6 +261,7 @@ describe('agent/openclaw issue dispatch', () => {
                     sessionId: multiple ? `ordinary-${persisted.id}` : 'ordinary-id',
                     spawnedCwd: params.cwd,
                     label: params.label,
+                    displayName: params.displayName,
                     category: params.category,
                     modelProvider: String(params.model).split('/')[0],
                     model: String(params.model).split('/').slice(1).join('/'),
@@ -1738,7 +1739,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 3);
     const state = await (await service.scope(manifest, root)).journal.read();
     assert.deepEqual(
-      creates().map(({ params }) => params.label),
+      creates().map(({ params }) => params.displayName),
       ['#3: REPAIR THE RESULT', '#4: REPAIR THE RESULT', '#5: REPAIR THE RESULT'],
     );
     const later = { ...coordinator, runId: 'later-pass' };
@@ -1835,6 +1836,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 0);
   });
 
+  it('should create a fresh issue session without reserving its archived predecessors label', async () => {
+    const archived = { label: '#3: REPAIR THE RESULT', archived: true };
+    sessions.set('retired-issue', archived);
+    onCreate = () => {
+      const params = creates().at(-1)!.params;
+      if (params.label && [...sessions.values()].some((entry) => entry.label === params.label))
+        throw new GatewayClientRequestError({
+          code: 'INVALID_REQUEST',
+          message: 'label already in use',
+        });
+    };
+    const input = await next();
+    assert.equal((await prepare(input)).status, 'session-created');
+    assert.equal(creates()[0]!.params.displayName, archived.label);
+    assert.equal(creates()[0]!.params.label, undefined);
+    assert.deepEqual(sessions.get('retired-issue'), archived);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id });
+    assert.equal(creates().length, 1);
+  });
+
   it('should create one ordinary issue session with routed settings and no initial turn', async () => {
     assert.equal((await service.check(manifest, root)).changed, true);
     const input = await next();
@@ -1844,7 +1865,8 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(request.model, 'openai/gpt-6.1-sol');
     assert.equal(request.thinkingLevel, 'high');
     assert.equal(request.category, 'repo');
-    assert.equal(request.label, '#3: REPAIR THE RESULT');
+    assert.equal(request.displayName, '#3: REPAIR THE RESULT');
+    assert.equal(request.label, undefined);
     assert.equal(request.agentId, 'receiver');
     assert.equal(request.cwd, join(root, 'worktree'));
     assert.equal(request.key, `agent:receiver:dashboard:agent-system-issue-${input.id}`);
