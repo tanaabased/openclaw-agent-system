@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import ansis from 'ansis';
 
+import SetupLifecycleService from '../agent/setup-lifecycle.ts';
+import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
 import installAgentSystem from '../cli/install.ts';
 import { AgentInstallError, type AgentInstallResult } from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -717,6 +719,62 @@ describe('cli/install', () => {
     assert.ok(text.indexOf('unattempted work') < text.indexOf('earlier completed'));
     assert.match(text, /code=collaboration-failed/u);
     assert.deepEqual(exitCodes, [1]);
+  });
+
+  it('should preserve safe setup termination through plain and json failure presentation', async () => {
+    const setup = normalizeAgentSetup({
+      steps: [
+        { id: 'done', apply: 'private command' },
+        { id: 'broken', apply: 'private secret' },
+        { id: 'later', apply: 'private later' },
+      ],
+    });
+    assert.equal(setup.status, 'valid');
+    let calls = 0;
+    const service = new SetupLifecycleService({
+      async run() {
+        return {
+          exitCode: calls++ === 0 ? 0 : 23,
+          timedOut: false,
+          truncated: false,
+          stdout: 'private output',
+          stderr: 'debug: private error',
+          diagnostic: 'private diagnostic',
+        };
+      },
+    });
+    let failure: Error | undefined;
+    try {
+      await service.reconcile({
+        runtime: 'openclaw',
+        workspaceDir: '/workspace',
+        manifest: {
+          ...validResult.manifest,
+          setup: setup.setup,
+        },
+      });
+    } catch (error) {
+      assert.ok(error instanceof AgentSystemLifecycleError);
+      failure = error;
+    }
+    assert.ok(failure);
+    for (const json of [false, true]) {
+      const harness = createHarness({ json, install: failure });
+      await harness.run();
+      const stderr = harness.diagnostics.join('');
+      assert.match(stderr, /broken.*setup-agent.*apply/u);
+      assert.match(stderr.replace(/\s+/gu, ' '), /exit code 23/u);
+      assert.doesNotMatch(harness.output.join('') + stderr, /private/u);
+      assert.deepEqual(harness.exitCodes, [1]);
+      if (json) {
+        assert.equal(harness.output.length, 1);
+        const result = JSON.parse(harness.output[0]!);
+        assert.match(result.blocked.message, /broken.*setup-agent.*apply.*exit code 23/u);
+        assert.equal(result.blocked.code, 'setup-apply-failed');
+        assert.equal(result.outcomes[0].stepId, 'done');
+        assert.equal(result.unattempted[0].stepId, 'later');
+      } else assert.equal(stderr.match(/messages/gu)?.length, 1);
+    }
   });
 
   it('should report installation failures and set a failing exit code', async () => {

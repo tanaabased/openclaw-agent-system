@@ -1,0 +1,6 @@
+steps:
+  - id: diagnostic-failure
+    apply: |
+      printf 'workspace-private-value\n'
+      printf 'debug: workspace-private-value\n' >&2
+      exit 23

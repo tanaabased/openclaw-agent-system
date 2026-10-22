@@ -110,6 +110,8 @@ describe('agent/setup-runner', () => {
     });
     assert.deepEqual(await run(shell(script), context(), controller.signal), {
       exitCode: 1,
+      termination: 'exit',
+      signal: null,
       timedOut: false,
       truncated: false,
     });
@@ -417,15 +419,24 @@ describe('agent/setup-runner', () => {
 
   it('should sanitize launch errors and clean scripts after failure, timeout, and cancellation', async () => {
     const results: HostResult[] = [
-      { ...success, code: 124, termination: 'timeout' },
-      { ...success, code: null, termination: 'signal' },
+      { ...success, code: 124, signal: 'SIGKILL', termination: 'timeout' },
+      { ...success, code: 0, signal: 'SIGTERM', termination: 'no-output-timeout' },
+      { ...success, code: null, signal: 'SIGTERM', termination: 'signal' },
+      { ...success, code: 23 },
       { ...success, stdoutTruncatedBytes: 50 },
     ];
     for (const result of results) {
-      const output = await runner(async () => result)(shell(), context());
+      const output = await runner(async () => ({
+        ...result,
+        stdout: 'private stdout',
+        stderr: 'debug: private stderr',
+      }))(shell('private command'), context());
+      assert.doesNotMatch(JSON.stringify(output), /private/u);
       assert.deepEqual(output, {
-        exitCode: result.termination === 'timeout' ? null : result.code,
-        timedOut: result.termination === 'timeout',
+        exitCode: result.termination.endsWith('timeout') ? null : result.code,
+        timedOut: result.termination.endsWith('timeout'),
+        termination: result.termination,
+        signal: result.signal,
         truncated: Boolean(result.stdoutTruncatedBytes),
       });
       assert.deepEqual(await readdir(temporaryDirectory), []);
