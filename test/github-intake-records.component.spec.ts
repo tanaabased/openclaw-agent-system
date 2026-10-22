@@ -54,7 +54,6 @@ describe('channels/github/intake/records', () => {
       const next = {
         ...input,
         policyDigest: 'canonical',
-        legacyPolicyDigest: input.policyDigest,
         now: baseline + 180000,
       };
       await scanAssignments(next);

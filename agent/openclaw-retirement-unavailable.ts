@@ -23,17 +23,8 @@ export default async function observeUnavailableRetirementSession(input: {
   )
     return undefined;
   const intent = record.request;
-  const key = 'key' in intent ? intent.key : (record.native?.sessionKey ?? record.threadId);
-  if (
-    key === owner ||
-    (record.threadId && key !== record.threadId) ||
-    ('key' in intent
-      ? intent.agentId !== agentId
-      : !record.creationCall ||
-        (record.native &&
-          (record.native.sourceSessionId !== record.creationCall.sessionId ||
-            record.native.toolCallId !== record.creationCall.toolCallId)))
-  )
+  const key = intent.key;
+  if (key === owner || (record.threadId && key !== record.threadId) || intent.agentId !== agentId)
     return undefined;
   if (!key) return 'identity-unresolved' as const;
   const description = await request('sessions.describe', { key }).then(

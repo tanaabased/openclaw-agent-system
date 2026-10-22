@@ -120,16 +120,3 @@ export default function assignmentRetirement(input: {
     ...(input.activityId ? { activityId: input.activityId } : {}),
   };
 }
-
-/** historical terminal status alone does not prove that resources were reclaimed. */
-export function unverifiedLegacyRetirement(record: {
-  retired?: unknown;
-  retirement?: Retirement;
-}): boolean {
-  return Boolean(
-    record.retired &&
-    (record.retirement?.worktreeRemovedAt === undefined ||
-      (record.retirement.archivedAt === undefined &&
-        !record.retirement.sessionUnavailableObserved)),
-  );
-}

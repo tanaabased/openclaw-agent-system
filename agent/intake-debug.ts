@@ -1,4 +1,4 @@
-import { unverifiedLegacyRetirement, type Retirement } from './assignment-retirement.ts';
+import type { Retirement } from './assignment-retirement.ts';
 import debugCard from '../channels/github/presentation/debug.ts';
 import { githubNotificationMarkdownText as text } from '../channels/github/presentation/card.ts';
 
@@ -11,7 +11,12 @@ export default function intakeDebug<
   label: (record: T) => string,
 ): string | undefined {
   const historical = records.filter(
-    (record) => !record.reset && unverifiedLegacyRetirement(record),
+    (record) =>
+      !record.reset &&
+      record.retired &&
+      (record.retirement?.worktreeRemovedAt === undefined ||
+        (record.retirement.archivedAt === undefined &&
+          !record.retirement.sessionUnavailableObserved)),
   );
   return debugCard({
     debug,

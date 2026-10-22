@@ -139,10 +139,7 @@ export default async function reconcileOpenClawLifecycle(input: {
           }
           const owners = new Set(
             [record, ...shared].flatMap((entry) => {
-              const key =
-                entry.request && 'key' in entry.request
-                  ? entry.request.key
-                  : entry.native?.sessionKey;
+              const key = entry.request?.key;
               return key ? [key, `session:${key}`] : [];
             }),
           );

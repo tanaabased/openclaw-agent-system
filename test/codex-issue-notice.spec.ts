@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import codexIssueNotice from '../agent/codex-issue-notice.ts';
 
 describe('agent/codex-issue-notice', () => {
+  it('should distinguish metadata conflicts from unavailable model access', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'model-routing-metadata-conflict',
+      changed: true,
+    });
+    assert.equal(notice.severity, 'warning');
+    assert.match(notice.summary, /complexity.*verified issue Complexity/u);
+    assert.match(notice.next, /retained assignment.*verified Complexity/u);
+    assert.doesNotMatch(notice.next, /check model access/iu);
+  });
+
   it('should distinguish pending retirement observations from actionable cleanup blockers', () => {
     for (const code of [
       'retirement-native-archive-unverified',

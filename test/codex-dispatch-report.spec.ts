@@ -353,15 +353,7 @@ describe('agent/codex-dispatch-report', () => {
     record.feedback!.events = [{ phase: 'queued' } as never];
     assert.match(report().response, /dispatch-issue-closed/);
   });
-  it('should report unverified historical retirement separately from obstructing reservations', () => {
-    const record = {
-      id: 'legacy',
-      intakeId: 'old',
-      phase: 'blocked',
-      request: {},
-      retired: { at: 1 },
-      capacityObservation: { at: 2, code: 'dispatch-capacity-creation-unresolved' },
-    } as DispatchRecord;
+  it('should retain unresolved native reservations regardless of debug visibility', () => {
     const successor = {
       id: 'new',
       scope: 'scope',
@@ -370,67 +362,44 @@ describe('agent/codex-dispatch-report', () => {
       issue: { nodeId: 'issue', number: 1 },
       assignment: { createdAt: new Date(3).toISOString() },
     } as IntakeRecord;
-    record.issueKey = issueKey(successor);
-    const currentIntake = { ...intake, records: [] as IntakeRecord[] };
-    const report = () =>
-      prepareDispatchReport({
+    const record = {
+      id: 'retired',
+      issueKey: issueKey(successor),
+      intakeId: 'old',
+      phase: 'blocked',
+      request: {},
+      retired: { at: 1 },
+      capacityObservation: { at: 2, code: 'dispatch-capacity-creation-unresolved' },
+    } as DispatchRecord;
+    for (const debug of [undefined, false, true]) {
+      const current = {
         ...input,
-        intake: currentIntake,
-        state: { ...state, records: [structuredClone(record)] },
+        debug,
+        intake: { ...intake, records: [successor] },
+        state: { ...state, records: [record] },
+      };
+      const report = prepareDispatchReport(current);
+      assert.notEqual(report.health, '');
+      assert.match(report.response, /Slots:\*\* 1\/2/);
+      assert.match(report.response, /Historical reservations:\*\* 1 unresolved/);
+      assert.match(report.response, /dispatch-capacity-creation-unresolved/);
+      assert.match(report.response, /same issue remains fenced/);
+      assert.equal(report.response.includes('🔬 Debug'), debug === true);
+      assert.match(
+        prepareDispatchReport({
+          ...current,
+          state: { ...current.state, intakeHealth: report.health },
+        }).response,
+        /DONT_NOTIFY/,
+      );
+      const resolved = prepareDispatchReport({
+        ...current,
+        state: { ...state, records: [{ ...record, nativeInactive: true }] },
       });
-    const unverified = report();
-    assert.doesNotMatch(unverified.response, /retirement-legacy-unverified|🔬|⚠️/);
-    assert.equal(unverified.health, '');
-    assert.match(unverified.response, /DONT_NOTIFY/);
-    assert.match(
-      prepareDispatchReport({
-        ...input,
-        intake: currentIntake,
-        state: { ...state, records: [structuredClone(record)], intakeHealth: unverified.health },
-      }).response,
-      /DONT_NOTIFY/,
-    );
-    assert.doesNotMatch(unverified.response, /Historical reservations/);
-    assert.ok(record.request);
-    currentIntake.records = [successor];
-    const first = report();
-    assert.match(first.response, /Slots:\*\* 0\/2/);
-    assert.match(first.response, /Historical reservations:\*\* 1 unresolved/);
-    assert.match(first.response, /preparation turn/);
-    assert.match(
-      prepareDispatchReport({
-        ...input,
-        intake: currentIntake,
-        state: { ...state, intakeHealth: first.health, records: [record] },
-      }).response,
-      /DONT_NOTIFY/,
-    );
-    const laterRetired = {
-      ...record,
-      id: 'later',
-      intakeId: successor.id,
-      retired: { at: 4, by: 'operator' },
-    };
-    const finished = prepareDispatchReport({
-      ...input,
-      intake: currentIntake,
-      state: { ...state, records: [record, laterRetired] },
-    });
-    assert.doesNotMatch(finished.response, /retirement-legacy-unverified/);
-    assert.match(
-      prepareDispatchReport({
-        ...input,
-        intake: currentIntake,
-        state: { ...state, records: [record, laterRetired], intakeHealth: finished.health },
-      }).response,
-      /DONT_NOTIFY/,
-    );
-    assert.doesNotMatch(finished.response, /Historical reservations/);
-    currentIntake.records = [];
-    record.reservationVersion = 1;
-    record.capacityObservation = { at: 3, code: 'dispatch-capacity-native-active' };
-    assert.match(report().response, /dispatch-capacity-native-active/);
-    assert.match(report().response, /Slots:\*\* 1\/2/);
+      assert.equal(resolved.health, '');
+      assert.match(resolved.response, /Slots:\*\* 0\/2/);
+      assert.doesNotMatch(resolved.response, /Historical reservations/);
+    }
   });
   it('should gate historical diagnostics without changing health, decisions, or resource evidence', () => {
     const legacy = {

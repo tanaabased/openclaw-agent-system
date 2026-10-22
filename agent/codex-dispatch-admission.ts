@@ -37,6 +37,7 @@ import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
@@ -222,9 +223,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       record.phase !== 'complete' &&
       (record.phase !== 'blocked' ||
         (record.result?.outcome === 'operator-setup-blocker' &&
-          ['dispatch-assignment-superseded', 'dispatch-assignment-authority-revoked'].includes(
-            record.result.code,
-          ))) &&
+          record.result.code === 'dispatch-assignment-superseded')) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
@@ -281,7 +280,6 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
             delete pending.request;
             delete pending.result;
             delete pending.stageReceipt;
-            delete pending.notice;
             delete pending.retryAfter;
             delete pending.preparationTurnId;
             pending.phase = 'routing';
@@ -498,7 +496,7 @@ export async function prepareDispatch(
         manifestDigest: current.digest,
         context:
           record.context.slice(0, 17950) + '\n[Bounded routing snapshot; full evidence retained.]',
-        assessment: input.assessment,
+        assessment: dispatchRoutingAssessment(input.assessment, metadata),
         ...(metadata?.status === 'verified'
           ? { evidence: { complexity: metadata.value, source: metadata.source } }
           : {}),

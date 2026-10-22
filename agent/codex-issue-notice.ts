@@ -292,6 +292,13 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       summary: 'A required project, assessment instruction, or model setting is unavailable.',
       next: 'Correct the indicated project, instruction, or model setting, then retry the retained operation. Live policy changes do not require Install.',
     };
+  if (code === 'model-routing-metadata-conflict')
+    return {
+      severity: 'warning',
+      title: 'Routing assessment conflicts with issue metadata',
+      summary: 'The submitted complexity disagrees with the verified issue Complexity.',
+      next: 'Refresh the retained assignment routing context and use its verified Complexity with the configured profile. No credential change, reset, or reassignment is needed.',
+    };
   if (/model|routing/u.test(code))
     return {
       severity: 'error',

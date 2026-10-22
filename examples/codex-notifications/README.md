@@ -6,6 +6,14 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. The generated transport has controlled unit coverage, but desktop approval behavior still requires this live evidence.
 
+For routing verification, include an issue with verified medium Complexity and a
+coordinator assessment of high. Preparation must select the configured medium
+profile, retain the verified metadata source and reason, and create only one chat.
+Without verified Complexity, the bounded content assessment must still select the
+profile. Repeat this native preparation check in OpenClaw intake; neither path
+should require editing credentials or reassigning the issue to resolve a content
+assessment disagreement.
+
 For pause parity, use that disposable native setup to compare UI Pause/Resume with
 `paused: true`/`paused: false` followed by Install. Record the same automation and
 intake chat IDs, baseline, pending event IDs, and delivery receipts before and
@@ -235,6 +243,22 @@ node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
+
+# should preserve restored pre-reset history and reject it before any workflow execution
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+scope=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -er .scope)
+state="$plugin_data/codex-dispatch-$scope.json"
+umask 077
+jq -nc --arg scope "$scope" '{version:1,scope:$scope,records:[{retired:{at:1,by:"historical-owner"},result:{decision:{action:"proceed"}}}]}' > "$state"
+cp "$state" "$root/pre-reset-before.json"
+if output=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "notification-state-reset-required" and (.notice.next | contains("Preserve the original file"))'
+cmp "$state" "$root/pre-reset-before.json"
+mv "$state" "$root/pre-reset-history.json"
+printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -e '.records == [] and .resetGeneration == "initial"'
 
 # should expose direct reply without intake activation while requiring an actual native caller
 root="$TMPDIR/agent-system-codex-notifications"

@@ -3,6 +3,7 @@ import type { Static } from 'typebox';
 
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { automationHash } from './automation-hash.ts';
+import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { selectOpenClawAssessment } from './openclaw-assessment.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
@@ -83,7 +84,7 @@ export default class OpenClawDispatchAdmission {
           action: 'resolve',
           manifestDigest: current.manifestDigest,
           context: record.context.slice(0, 17950) + '\n[Bounded routing snapshot.]',
-          assessment: input.assessment,
+          assessment: dispatchRoutingAssessment(input.assessment, metadata),
           ...(metadata?.status === 'verified'
             ? { evidence: { complexity: metadata.value, source: metadata.source } }
             : {}),
@@ -130,8 +131,8 @@ export default class OpenClawDispatchAdmission {
       input.action === 'start' ||
       input.action === 'assess'
     ) {
-      if (!record.sessionCreation || !record.request || !('key' in record.request))
-        throw new Error('dispatch-legacy-handoff-retained');
+      if (!record.sessionCreation || !record.request)
+        throw new Error('dispatch-session-creation-required');
       if (
         record.request.agentId !== manifest.agent.id ||
         record.request.key !==

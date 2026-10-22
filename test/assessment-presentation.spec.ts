@@ -135,8 +135,8 @@ describe('channels/github/presentation/assessment-result', () => {
   });
 
   it('should show auto decisions regardless of debug without claiming authority or leaking credentials', () => {
-    for (const { action, debug } of (['proceed', 'wait'] as const).flatMap((action) =>
-      [false, true].map((debug) => ({ action, debug })),
+    for (const { mode, debug } of (['work', 'plan'] as const).flatMap((mode) =>
+      [false, true].map((debug) => ({ mode, debug })),
     )) {
       const output = renderAssessmentResult(
         {
@@ -144,18 +144,16 @@ describe('channels/github/presentation/assessment-result', () => {
           outcome: 'plan-ready',
           assessment: 'Observed.',
           plan: 'Retained plan.',
-          decision: { action, reasons: ['Scope is bounded.', 'api_key=private-value'] },
+          decision: { mode, reasons: ['Scope is bounded.', 'api_key=private-value'] },
         },
         { ...context, debug },
       );
-      assert.ok(output.includes('## ' + (action === 'wait' ? '⏸️' : '▶️') + ' Auto mode decision'));
-      assert.ok(
-        output.includes('**Decision:** `' + (action === 'proceed' ? 'work' : 'plan') + '`'),
-      );
+      assert.ok(output.includes('## ' + (mode === 'plan' ? '⏸️' : '▶️') + ' Auto mode decision'));
+      assert.ok(output.includes('**Decision:** `' + (mode === 'work' ? 'work' : 'plan') + '`'));
       assert.match(output, /Scope is bounded/);
       assert.match(
         output,
-        action === 'wait' ? /Next.*Await your direction/ : /Next.*once runtime checks pass/,
+        mode === 'plan' ? /Next.*Await your direction/ : /Next.*once runtime checks pass/,
       );
       assert.match(output, /private content withheld/);
       assert.doesNotMatch(output, /private-value/);
@@ -272,7 +270,7 @@ describe('channels/github/presentation/assessment-result', () => {
         assessment: 'Plan assessment prose.',
         planSummary: 'Plan summary.',
         plan: 'Complete plan.',
-        decision: { action: 'proceed', reasons: ['Bounded work.'] },
+        decision: { mode: 'work', reasons: ['Bounded work.'] },
       },
       {
         ...common,

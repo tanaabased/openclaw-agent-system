@@ -49,22 +49,6 @@ describe('agent/openclaw-retirement-unavailable', () => {
     assert.deepEqual(f.record, before);
     assert.deepEqual(f.calls, ['sessions.describe']);
   });
-  it('should identify a legacy attempt with no child identity without inventing one', async () => {
-    const f = fixture();
-    f.record.request = {
-      runtime: 'subagent',
-      cwd: f.record.worktree,
-    } as OpenClawDispatchRecord['request'];
-    f.record.creationCall = { sessionId: 'parent', runId: 'run', toolCallId: 'create' };
-    delete f.record.threadId;
-    delete f.record.sessionCreation;
-    assert.equal(
-      await observeUnavailable({ ...f.input, code: 'retirement-session-identity-unresolved' }),
-      'identity-unresolved',
-    );
-    assert.deepEqual(f.calls, []);
-    assert.equal(f.record.native, undefined);
-  });
   it('should not infer loss from timeouts, malformed responses, or a visible replacement', async () => {
     for (const response of [undefined, null, [], {}, 'access-denied', { session: {} }]) {
       const f = fixture();

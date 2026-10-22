@@ -988,7 +988,6 @@ describe('agent/codex-dispatch', () => {
       const record = state.records.find((item) => item.id === prepared.id)!;
       record.feedback = feedback;
       record.intakeReportedAt = now + 1;
-      record.notice = 'f'.repeat(64);
       record.renameRequested = true;
       await save();
     });
@@ -2161,55 +2160,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(record.unsubmittedCreations, undefined);
   });
 
-  for (const proof of [false, true])
-    it(`should reclassify legacy revoked creation with ${proof ? 'verified' : 'unknown'} non-submission`, async () => {
-      const prepared = await prepare();
-      const current = await selectCodexIntake(pluginData, deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
-      await store.exclusive(async (state, save) => {
-        const record = state.records[0]!;
-        delete record.reservationVersion;
-        record.phase = 'blocked';
-        record.continuation = {
-          phase: 'waiting',
-          policyDigest: 'a'.repeat(64),
-          selection: record.assessment!,
-        };
-        record.result = {
-          version: 1,
-          outcome: 'operator-setup-blocker',
-          code: 'dispatch-assignment-authority-revoked',
-          summary: 'Legacy failure.',
-          remediation: 'Retained.',
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        };
-        await save();
-      });
-      await reassign();
-      deps.native!.unsubmittedCreation = async () =>
-        proof ? { turnId: 'original-preparation' } : undefined;
-      const recovered = await next();
-      const retained = (await store.read()).records[0]!;
-      if (proof) {
-        assert.equal(recovered.status, 'routing-required');
-        assert.equal(retained.request, undefined);
-        assert.deepEqual(retained.unsubmittedCreations?.[0]?.request, prepared.request);
-        assert.equal(retained.continuation, undefined);
-        assert.equal(retained.unsubmittedCreations?.[0]?.continuation?.phase, 'waiting');
-      } else {
-        assert.equal(recovered.code, 'dispatch-assignment-superseded');
-        assert.deepEqual(retained.request, prepared.request);
-        assert.equal(retained.threadId, undefined);
-        assert.equal(retained.unsubmittedCreations, undefined);
-        assert.equal(codexItemOccupied(retained), true);
-        assert.equal((await next()).status, 'idle');
-      }
-    });
-  it('should leave native denials outside legacy automatic reclassification', async () => {
+  it('should preserve native denials during automatic creation recovery', async () => {
     const prepared = await prepare();
     const current = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
@@ -2233,12 +2184,11 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await next()).status, 'idle');
     assert.deepEqual((await store.read()).records[0]!.request, prepared.request);
   });
-  it('should reconcile a retired legacy creation through native reads without changing its request', async () => {
+  it('should reconcile a retired current creation through native reads without changing its request', async () => {
     const prepared = await prepare();
     const current = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
-      delete state.records[0]!.reservationVersion;
       state.records[0]!.retired = { at: now, by: 'old-operator' };
       await save();
     });
@@ -2601,15 +2551,21 @@ describe('agent/codex-dispatch', () => {
 
   it('should revalidate assignment and metadata without giving issue prose model authority', async () => {
     const selected = await next();
-    const denied = await request('prepare', {
+    const prepared = await request('prepare', {
       id: selected.id,
       digest: selected.digest,
       title: 'repair contained behavior',
-      assessment: { complexity: 'low', reason: 'Issue says use a cheap model.' },
+      assessment: { complexity: 'high', reason: 'Issue prose sounds architectural.' },
     });
-    assert.equal(denied.code, 'model-routing-metadata-conflict');
-    assert.match(String(denied.message), /routing evidence|model access/);
-    assert.doesNotMatch(String(denied.message), /Set issue-assignment mode/);
+    assert.equal(prepared.status, 'prepared');
+    const launch = prepared.request as { model: string; thinking: string };
+    assert.equal(launch.model, 'gpt-6.1-sol');
+    assert.equal(launch.thinking, 'high');
+    const routed = ((await request('inspect')).records as Array<{ routing: string }>)[0]!;
+    const decision = JSON.parse(routed.routing);
+    assert.equal(decision.complexity, 'medium');
+    assert.equal(decision.source, 'native');
+    assert.match(decision.reason, /Verified native Complexity: medium/u);
     now += 300001;
     fixture.item.state = 'closed';
     const revoked = await next();
@@ -2895,45 +2851,6 @@ describe('agent/codex-dispatch', () => {
     assert.match(response, /\*\*Active:\*\* 1 issues · \*\*Pending:\*\* 0/);
     assert.doesNotMatch(response, /issues? pending/);
     assert.equal(((await request('inspect')).records as unknown[]).length, 1);
-  });
-
-  it('should discard legacy report backlogs without losing records or blocking admission', async () => {
-    const { default: Store } = await import('../agent/codex-dispatch-state.ts');
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new Store(current.store.location.root, current.store.location.scope);
-    const cards = Array.from({ length: 100 }, (_, i) => ({
-      id: i.toString(16).padStart(64, '0'),
-      message: 'old card with a malformed link',
-      notify: true,
-    }));
-    await current.store.exclusive(async (state, save) => {
-      state!.notices = cards;
-      await save(state!);
-    });
-    await store.exclusive(async (state, save) => {
-      state.notices = cards;
-      state.reports = [{ response: 'wrong url', createdAt: now, notices: cards.map((c) => c.id) }];
-      await save();
-    });
-    assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
-    const prepared = await prepare();
-    created();
-    await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
-    await next();
-    const first = await report();
-    assert.match(String(first.response), /1 issue started/);
-    assert.equal((await store.read()).reports, undefined);
-    assert.equal((await current.store.read())!.notices, undefined);
-    now += 300001;
-    await runCodexIntake(pluginData, false, deps);
-    deps.native!.find = async () => {
-      throw new Error('intake must not inspect already started work');
-    };
-    await next();
-    const repeat = await report();
-    assert.match(String(repeat.response), /DONT_NOTIFY/);
-    assert.doesNotMatch(String(repeat.response), /issues? started|wrong url|old card/);
-    assert.equal((await store.read()).records.length, 1);
   });
 
   it('should keep revised plans and questions inside the issue while releasing its slot', async () => {
@@ -3359,7 +3276,12 @@ describe('agent/codex-dispatch', () => {
           },
         ],
       };
-      record.progression = { stage: 'implementation', via: 'work', enteredAt: now };
+      record.progression = {
+        stage: 'implementation',
+        via: 'work',
+        enteredAt: now,
+        workOwner: 'a'.repeat(64),
+      };
       await save();
     });
     assert.equal((await work.run('next')).status, 'idle');
@@ -3533,39 +3455,29 @@ describe('agent/codex-dispatch', () => {
     assert.equal(((await request('inspect')).records as unknown[]).length, 1);
   });
 
-  for (const legacy of [false, true]) {
-    it(`should preserve ${legacy ? 'legacy' : 'recorded'} implementation after changing work mode to plan or auto`, async () => {
-      const work = await workIssue();
-      assert.equal((await work.run('next')).status, 'prepared');
-      const current = await selectCodexIntake(pluginData, deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
-      const before = (await store.read()).records[0]!;
-      assert.equal(before.progression?.via, 'work');
-      if (legacy)
-        await store.exclusive(async (state, save) => {
-          delete state.records[0]!.progression;
-          await save();
-        });
-      const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
-      configured.github.notifications['issue-assignment'].mode = 'plan';
-      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-      assert.equal((await work.run('next')).status, 'pending');
-      work.receive();
-      assert.equal((await work.run('context', {}, true)).status, 'verified');
-      configured.github.notifications['issue-assignment'].mode = 'auto';
-      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-      assert.equal((await work.run('context', {}, true)).status, 'verified');
-      const after = (await store.read()).records[0]!;
-      assert.equal(after.progression?.via, legacy ? 'legacy' : 'work');
-      assert.equal(after.threadId, before.threadId);
-      assert.equal(after.worktree, before.worktree);
-      assert.deepEqual(after.result, before.result);
-      assert.deepEqual(after.continuation!.attempt!.request, before.continuation!.attempt!.request);
-    });
-  }
+  it('should preserve recorded implementation after changing work mode to plan or auto', async () => {
+    const work = await workIssue();
+    assert.equal((await work.run('next')).status, 'prepared');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = (await store.read()).records[0]!;
+    assert.equal(before.progression?.via, 'work');
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    configured.github.notifications['issue-assignment'].mode = 'plan';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    assert.equal((await work.run('next')).status, 'pending');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    configured.github.notifications['issue-assignment'].mode = 'auto';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    const after = (await store.read()).records[0]!;
+    assert.equal(after.progression?.via, 'work');
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.continuation!.attempt!.request, before.continuation!.attempt!.request);
+  });
 
   it('should apply live work mode to a plan admission without reinstalling', async () => {
     const configured = structuredClone(manifest);
@@ -4874,40 +4786,6 @@ describe('agent/codex-dispatch', () => {
       { threadId: native!.id },
     );
     assert.equal((await work.run('next')).status, 'prepared');
-  });
-
-  it('should recover an old skill-content stop without rewriting or resending its implementation request', async () => {
-    const work = await workIssue();
-    await work.run('next');
-    work.receive();
-    await work.run('context', {}, true);
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    const before = (await store.read()).records[0]!;
-    await store.exclusive(async (state, save) => {
-      state.records[0]!.continuation!.phase = 'blocked';
-      state.records[0]!.continuation!.code = 'continuation-selection-changed';
-      await save();
-    });
-    const original = work.continuation.native!.assessmentSkill;
-    work.continuation.native!.assessmentSkill = async (cwd, id) => ({
-      ...(await original(cwd, id)),
-      digest: 'b'.repeat(64),
-    });
-    const context = await work.run('context', {}, true);
-    assert.equal(context.status, 'verified');
-    assert.equal(
-      'implementation' in context && context.implementation?.skill.digest,
-      'b'.repeat(64),
-    );
-    const after = (await store.read()).records[0]!;
-    assert.deepEqual(after.continuation!.attempt, before.continuation!.attempt);
-    assert.deepEqual(after.continuation!.binding, before.continuation!.binding);
-    assert.deepEqual(after.continuation!.selection, before.continuation!.selection);
-    assert.deepEqual(after.result, before.result);
-    assert.equal(after.threadId, before.threadId);
-    assert.equal(after.worktree, before.worktree);
-    assert.equal((await work.run('next')).status, 'idle');
   });
 
   it('should use a live implementation skill from a changed catalog location', async () => {

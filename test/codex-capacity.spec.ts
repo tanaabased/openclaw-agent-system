@@ -23,6 +23,7 @@ describe('agent/codex-capacity', () => {
     item.continuation = { phase: 'waiting' } as DispatchRecord['continuation'];
     assert.equal(codexCapacity([item], 1).occupied, 1);
     item.feedback!.events[0]!.work = { selection: {} as never };
+    item.progression = { stage: 'implementation', via: 'work', workOwner: 'feedback' };
     assert.equal(codexCapacity([item], 1).occupied, 0);
     item.feedback!.events[0]!.phase = 'running';
     assert.equal(codexCapacity([item], 1).occupied, 1);

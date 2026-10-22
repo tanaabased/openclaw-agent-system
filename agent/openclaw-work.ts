@@ -121,7 +121,7 @@ export default async function openClawWorkAction(input: {
     record.work ??= { assessmentDigest };
     if (action.permission !== 'publication')
       record.progression = { ...input.progression, workOwner: 'issue' };
-    // legacy permission spelling is accepted; implementation includes ordinary pr delivery.
+    // publication-only input retains its own scope without entering implementation.
     if (action.permission !== 'publication') record.work.implementation ??= source;
     else record.work.publication = source;
     record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
