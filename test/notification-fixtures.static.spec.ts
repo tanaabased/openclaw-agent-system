@@ -23,6 +23,9 @@ for (const id of [
       assert.equal(policy?.issueAssignment?.mode, 'plan');
       assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
         { source: 'assignment-actor', roles: ['assignee'] },
+        ...(id === 'openclaw-issue'
+          ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
+          : []),
       ]);
     });
   });
