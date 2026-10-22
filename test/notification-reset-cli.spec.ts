@@ -1,3 +1,4 @@
+import { withNotificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import reset, { type ResetNotificationsOptions } from '../channels/github/cli/reset.ts';
@@ -229,6 +230,42 @@ describe('channels/github/cli/reset', () => {
       JSON.parse(f.stdout.join('')).results[0].code,
       'notification-reset-operation-changed',
     );
+    assert.equal(f.code(), 1);
+  });
+  it('should report the failed phase and operation, masking chat ids only in human diagnostics', async () => {
+    const f = fixture();
+    f.options.agents = ['one'];
+    f.options.service.run = async () =>
+      withNotificationResetDiagnostic(
+        {
+          phase: 'drain',
+          operation: 'sessions.describe',
+          resource: { kind: 'chat', description: 'agent:emori:12345678' },
+        },
+        async () => {
+          throw new Error('session-dispatch-describe-forbidden');
+        },
+      );
+    await reset(f.options);
+    const result = JSON.parse(f.stdout.join('')).results[0];
+    assert.equal(result.code, 'session-dispatch-describe-forbidden');
+    assert.equal(result.phase, 'drain');
+    assert.equal(result.operation, 'sessions.describe');
+    assert.equal(result.resource.description, 'agent:emori:12345678');
+    assert.match(f.stderr.join(''), /chat: \*\*\*5678/u);
+    assert.ok(!f.stderr.join('').includes('agent:emori:12345678'));
+    assert.equal(f.code(), 1);
+  });
+
+  it('should withhold unknown upstream messages from both output streams', async () => {
+    const f = fixture();
+    f.options.agents = ['one'];
+    f.options.service.run = async () => {
+      throw new Error('token=private');
+    };
+    await reset(f.options);
+    assert.equal(JSON.parse(f.stdout.join('')).results[0].code, 'notification-reset-failed');
+    assert.ok(![...f.stdout, ...f.stderr].join('').includes('token=private'));
     assert.equal(f.code(), 1);
   });
 });

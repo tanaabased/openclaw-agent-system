@@ -1,3 +1,4 @@
+import { notificationResetDiagnostic } from '../../../agent/notification-reset-diagnostic.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import type { Readable } from 'node:stream';
 import { createClackPrompter } from 'openclaw/plugin-sdk/setup-runtime';
@@ -184,15 +185,22 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
           throw new Error('notification-reset-operation-changed');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      const code = /^notification-reset-[a-z-]+$/u.test(message)
-        ? message
-        : 'notification-reset-failed';
-      results.push({ status: 'incomplete', agentId: loaded.manifest.agent.id, code });
+      const diagnostic = notificationResetDiagnostic(error);
+      const { code, phase, operation, resource } = diagnostic;
+      const details = [
+        `agent: ${loaded.manifest.agent.id}`,
+        phase && `phase: ${phase}`,
+        operation && `operation: ${operation}`,
+        resource &&
+          `${resource.kind}: ${resource.kind === 'worktree' ? resource.description : `***${resource.description.slice(-4)}`}`,
+      ]
+        .filter(Boolean)
+        .join('; ');
+      results.push({ status: 'incomplete', agentId: loaded.manifest.agent.id, ...diagnostic });
       writeCliDiagnosticNotices(options, [
         {
           severity: 'error',
-          message: `${code}: correct the obstacle and rerun the same reset; the recovery record is retained`,
+          message: `${code}; ${details}; the recovery record is retained; resolve this failure before rerunning the same reset`,
         },
       ]);
       options.setExitCode(1);

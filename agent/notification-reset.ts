@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { withNotificationResetDiagnostic } from './notification-reset-diagnostic.ts';
 
 import { automationHash } from './automation-hash.ts';
 import type NotificationResetStore from './notification-reset-state.ts';
@@ -115,6 +116,21 @@ export default async function resetNotifications(input: {
       await save(record);
       return record;
     });
+    const step = <T>(
+      operation: string,
+      run: () => Promise<T>,
+      resource?: NotificationResetResource,
+    ) =>
+      withNotificationResetDiagnostic(
+        {
+          phase: record.phase,
+          operation,
+          ...(resource
+            ? { resource: { kind: resource.kind, description: resource.description } }
+            : {}),
+        },
+        run,
+      );
     const pending = async (effect: NotificationResetEffect) => {
       if (effect.request) {
         const request = JSON.stringify(effect.request);
@@ -142,20 +158,24 @@ export default async function resetNotifications(input: {
       };
     };
     if (record.phase !== 'pause' && record.phase !== 'restore' && record.phase !== 'coordinator') {
-      const effect = await adapter.pause({ ...record, pauseAttempted: true });
+      const effect = await step('pause-intake', () =>
+        adapter.pause({ ...record, pauseAttempted: true }),
+      );
       if (effect.status !== 'done') return pending(effect);
     }
     if (record.phase === 'pause') {
       const previous = record.pauseAttempted;
       record.pauseAttempted = true;
       await save(record);
-      const effect = await adapter.pause({ ...record, pauseAttempted: previous });
+      const effect = await step('pause-intake', () =>
+        adapter.pause({ ...record, pauseAttempted: previous }),
+      );
       if (effect.status !== 'done') return pending(effect);
       record.phase = 'drain';
       await save(record);
     }
     if (record.phase !== 'restore' && record.phase !== 'coordinator') {
-      const effect = await adapter.idle(record);
+      const effect = await step('observe-active-turns', () => adapter.idle(record));
       await save(record);
       if (effect.status !== 'done') return pending(effect);
       if (record.phase === 'drain') {
@@ -164,7 +184,7 @@ export default async function resetNotifications(input: {
       }
     }
     if (record.phase === 'clear') {
-      await adapter.clear(record);
+      await step('clear-tracking', () => adapter.clear(record));
       record.phase = record.purge ? 'purge' : 'baseline';
       await save(record);
     }
@@ -185,7 +205,11 @@ export default async function resetNotifications(input: {
         const previous = resource.state;
         resource.state = 'attempted';
         await save(record);
-        const effect = await adapter.purge(record, { ...resource, state: previous });
+        const effect = await step(
+          'purge-resource',
+          () => adapter.purge(record, { ...resource, state: previous }),
+          resource,
+        );
         await save(record);
         if (effect.status !== 'done') return pending(effect);
         if (record.resources.find(({ id }) => id === resource.id)?.state !== 'preserved')
@@ -198,12 +222,14 @@ export default async function resetNotifications(input: {
     if (record.phase === 'baseline') {
       record.baselineAt ??= (input.now ?? Date.now)();
       await save(record);
-      await adapter.baseline(record);
+      await step('establish-baseline', () => adapter.baseline(record));
       record.phase = 'coordinator';
       await save(record);
     }
     if (record.phase === 'coordinator') {
-      const replacement = await adapter.coordinator(record, save);
+      const replacement = await step('replace-coordinator', () =>
+        adapter.coordinator(record, save),
+      );
       if (replacement.status !== 'done') return pending(replacement);
       if (replacement.automation) record.automation = replacement.automation;
       for (const resource of record.resources) {
@@ -212,7 +238,7 @@ export default async function resetNotifications(input: {
       record.phase = 'restore';
       await save(record);
     }
-    const effect = await adapter.restore(record);
+    const effect = await step('restore-intake', () => adapter.restore(record));
     if (effect.status !== 'done') return pending(effect);
     await remove();
     return {

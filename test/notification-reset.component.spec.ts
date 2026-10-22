@@ -1,3 +1,4 @@
+import { notificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -137,7 +138,15 @@ describe('agent/notification reset recovery', () => {
       if (resource.id === 'second') throw new Error('connection lost');
       return { status: 'done' };
     };
-    await assert.rejects(run(true), /connection lost/u);
+    await assert.rejects(run(true), (error) => {
+      assert.deepEqual(notificationResetDiagnostic(error), {
+        code: 'notification-reset-failed',
+        phase: 'purge',
+        operation: 'purge-resource',
+        resource: { kind: 'chat', description: 'second' },
+      });
+      return true;
+    });
     assert.deepEqual(
       (await store.read())!.resources.map(({ state }) => state),
       ['done', 'attempted'],

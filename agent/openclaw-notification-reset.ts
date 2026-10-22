@@ -1,3 +1,5 @@
+import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+import { withNotificationResetDiagnostic } from './notification-reset-diagnostic.ts';
 import { lstat } from 'node:fs/promises';
 import type { AgentManifest } from '../manifest/types.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
@@ -65,7 +67,23 @@ export default class OpenClawNotificationReset {
         !inventory(record).records.some((entry) => entry.threadId || entry.request)
       )
         return true;
-      return deps.credential.use({}, async (request) => {
+      return deps.credential.use({}, async (transport) => {
+        const request: DispatchRequest = (method, params) => {
+          const key = params.sessionKey ?? params.key;
+          const cwd = params.workspaceDir;
+          return withNotificationResetDiagnostic(
+            {
+              phase: record.phase,
+              operation: method,
+              ...(typeof key === 'string'
+                ? { resource: { kind: 'chat' as const, description: key } }
+                : typeof cwd === 'string'
+                  ? { resource: { kind: 'worktree' as const, description: cwd } }
+                  : {}),
+            },
+            () => transport(method, params),
+          );
+        };
         for (const key of sources) {
           const gateway = async (method: string, params: Record<string, unknown>) => {
             const result = await request(method, params);
