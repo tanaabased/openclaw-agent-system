@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
-import dispatchHistory from './codex-dispatch-history.ts';
+import dispatchHistory, { dispatchHistoryPages } from './codex-dispatch-history.ts';
+import intakeDenial from './codex-intake-denial.ts';
 import creationHistory from './codex-dispatch-creation-history.ts';
 import unsubmittedCreation from './codex-dispatch-unsubmitted.ts';
 
@@ -129,6 +130,27 @@ export function codexDispatchNative(request: CodexThreadRequest) {
     };
   }
   return {
+    intakeDenial: (
+      record: Parameters<typeof intakeDenial>[1],
+      observingPreparation = false,
+      recoveryCallId?: string,
+    ) => intakeDenial(request, record, observingPreparation, recoveryCallId),
+    async intakeBoundary(threadId: string, turnId: string) {
+      const items = await dispatchHistoryPages(request, 'thread/items/list', {
+        threadId,
+        turnId,
+        sortDirection: 'asc',
+      });
+      const last = items.at(-1);
+      if (
+        !last ||
+        last.turnId !== turnId ||
+        !nativeObject(last.item) ||
+        typeof last.item.id !== 'string'
+      )
+        throw new Error('dispatch-denial-history-unavailable');
+      return last.item.id;
+    },
     unsubmittedCreation: (
       threadId: string,
       prepared: { createdAt: number; turnId?: string; prompt?: string },

@@ -282,7 +282,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a closed issue and queues the shared retirement lifecycle while preserving evidence and the existing grace deadline. It accepts active or paused intake; configured cleanup proceeds on the next eligible active intake run. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, observe-denials, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a closed issue and queues the shared retirement lifecycle while preserving evidence and the existing grace deadline. It accepts active or paused intake; configured cleanup proceeds on the next eligible active intake run. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }
@@ -294,6 +294,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       typeof action !== 'string' ||
       ![
         'inspect',
+        'observe-denials',
         'next',
         'prepare',
         'reconcile',

@@ -447,8 +447,17 @@ A quiet report requires a current scan and a completed dispatch check.
 
 An `EPERM` or `EACCES` failure can mean the sandbox cannot write private tracking
 files under the plugin data directory. The agent retries the same command once
-through native host approval. If access is denied, it reports the reason and keeps
-the work intact; it does not delete locks or loosen directory permissions. Native
+through native host approval. A verified issue-specific preparation or chat-creation
+denial is held across runs and reassignment without retrying that action. Unrelated
+eligible assignments continue when native host authority and capacity permit; if the
+host ends the turn, the next permitted run reconciles the refusal before selecting work.
+Shared refusals, ambiguous scope, and unavailable native evidence still stop intake.
+The report identifies the blocked issue, denied action, redacted native reason (or
+its unavailability), and recovery identifiers. From an operator chat, request
+`dispatch retry-denied` for the retained `id`; approve the exact `approvedCallId`
+when required, preview recovery, then apply its fresh `digest`. Recovery rechecks
+native non-execution and current assignment authority; it does not guarantee approval
+of the new attempt. It never deletes locks or loosens directory permissions. Native
 approval requests retain their native UI.
 
 For a workspace-wide notification reset, invoke `$agent-system-notifications-reset`, which uses `notificationResetRuntime` from an

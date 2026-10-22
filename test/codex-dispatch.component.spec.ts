@@ -214,6 +214,8 @@ describe('agent/codex-dispatch', () => {
         return '';
       },
       native: {
+        intakeDenial: async () => undefined,
+        intakeBoundary: async () => 'routing-command',
         async unsubmittedCreation() {
           return undefined;
         },
@@ -1708,6 +1710,282 @@ describe('agent/codex-dispatch', () => {
     const records = (await request('inspect')).records as { reset?: unknown; result: unknown }[];
     assert.equal(records[0]!.reset, undefined);
     assert.deepEqual(records[0]!.result, result);
+  });
+
+  async function addPendingSecondIssue() {
+    const current = await selectCodexIntake(pluginData, deps);
+    const admission = structuredClone((await current.store.read())!.records[0]!);
+    admission.issue = { ...admission.issue, number: 4, nodeId: 'I_second', databaseId: 21 };
+    admission.id = automationHash([
+      admission.scope,
+      admission.repository.nodeId,
+      admission.issue.nodeId,
+      admission.assignment.nodeId,
+    ]);
+    await current.store.exclusive(async (state, save) => {
+      state!.records.push(admission);
+      await save(state!);
+    });
+    const connect = deps.connect!;
+    deps.connect = async (...args) => {
+      const client = await connect(...args);
+      return {
+        ...client,
+        getItem: async (owner, name, number) =>
+          number === 4
+            ? { ...fixture.item, ...admission.issue }
+            : client.getItem(owner, name, number),
+      };
+    };
+  }
+
+  it('should retain a denied preparation across occurrences and start an unrelated issue', async () => {
+    const first = await next();
+    await addPendingSecondIssue();
+    Object.assign(deps.native!, {
+      intakeDenial: async (record: { id: string }) =>
+        record.id === first.id
+          ? {
+              sourceThreadId: 'intake-thread',
+              turnId: 'denied-turn',
+              callId: 'denied-prepare',
+              operation: 'prepare',
+              automatic: true,
+              reason: 'Repository permission denied.',
+            }
+          : undefined,
+    });
+    // the host ended the occurrence before any post-denial tracking command could run.
+    now += 300001;
+    await runCodexIntake(pluginData, false, deps);
+    const second = await next();
+    assert.equal(second.status, 'routing-required');
+    assert.notEqual(second.id, first.id);
+    const records = (await request('inspect')).records as { id: string; denial?: unknown }[];
+    assert.ok(records.find((record) => record.id === first.id)!.denial);
+    const prepared = await request('prepare', {
+      id: second.id,
+      digest: second.digest,
+      title: 'repair unrelated issue',
+      assessment: { complexity: 'medium', reason: 'Contained.' },
+    });
+    assert.equal(prepared.status, 'prepared');
+    created();
+    await request('reconcile', { id: second.id, receipt: { threadId: native!.id } });
+    assert.equal((await next()).status, 'idle');
+    const response = String((await report()).response);
+    assert.ok(response.includes('owner/repo#3'));
+    assert.ok(response.includes('[owner/repo#4](codex://threads/issue-thread)'));
+    assert.match(response, /Repository permission denied/);
+    assert.match(response, /retry-denied/);
+    now += 300001;
+    await runCodexIntake(pluginData, false, deps);
+    assert.equal((await next()).status, 'idle');
+    assert.ok(String((await report()).response).includes('DONT_NOTIFY'));
+    await reassign();
+    assert.equal((await next()).status, 'idle');
+    const operator = { threadId: 'operator' };
+    await assert.rejects(request('retry-denied', { id: first.id }, operator), /approval-required/);
+    const preview = await request(
+      'retry-denied',
+      { id: first.id, approvedCallId: 'denied-prepare' },
+      operator,
+    );
+    await assert.rejects(
+      request(
+        'retry-denied',
+        { id: first.id, approvedCallId: 'denied-prepare', digest: 'stale' },
+        operator,
+      ),
+      /recovery-stale/,
+    );
+    assert.equal(
+      (
+        await request(
+          'retry-denied',
+          { id: first.id, approvedCallId: 'denied-prepare', digest: preview.digest },
+          operator,
+        )
+      ).status,
+      'retry-ready',
+    );
+    Object.assign(deps.native!, { intakeDenial: async () => undefined });
+    assert.equal((await next()).id, first.id);
+  });
+
+  it('should reconcile a current occurrence refusal without repeating preparation', async () => {
+    const first = await next();
+    await addPendingSecondIssue();
+    deps.native!.intakeDenial = async (record) =>
+      record.id === first.id
+        ? {
+            sourceThreadId: 'intake-thread',
+            turnId: 'denied-turn',
+            callId: 'refused',
+            operation: 'prepare',
+            automatic: false,
+          }
+        : undefined;
+    const reconciled = await request('reconcile', { id: first.id });
+    assert.equal(reconciled.nextAction, 'next');
+    assert.equal(reconciled.status, 'blocked');
+    const held = await request('prepare', {
+      id: first.id,
+      digest: first.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Contained.' },
+    });
+    assert.equal(held.status, 'blocked');
+    assert.notEqual((await next()).id, first.id);
+    const retained = (
+      (await request('inspect')).records as { request?: unknown; denial?: unknown }[]
+    )[0]!;
+    assert.equal(retained.request, undefined);
+    assert.ok(retained.denial);
+  });
+
+  it('should release only a verified denied creation reservation and keep its request', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: {
+          ...manifest.github,
+          notifications: { ...manifest.github.notifications, 'max-concurrent-items': 1 },
+        },
+      }),
+    );
+    const first = await prepare();
+    await addPendingSecondIssue();
+    await next();
+    assert.equal((await next()).status, 'at-capacity');
+    deps.native!.intakeDenial = async (record) =>
+      record.id === first.id
+        ? {
+            sourceThreadId: 'intake-thread',
+            turnId: 'denied-turn',
+            callId: 'denied-call',
+            operation: 'create',
+            automatic: false,
+          }
+        : undefined;
+    const second = await next();
+    assert.equal(second.status, 'routing-required');
+    assert.notEqual(second.id, first.id);
+    const retained = (
+      (await request('inspect')).records as { request: unknown; denial?: { operation: string } }[]
+    )[0]!;
+    assert.deepEqual(retained.request, first.request);
+    assert.equal(retained.denial!.operation, 'create');
+    const operator = { threadId: 'operator' };
+    const preview = await request('retry-denied', { id: first.id }, operator);
+    assert.equal(
+      (await request('retry-denied', { id: first.id, digest: preview.digest }, operator)).status,
+      'retry-ready',
+    );
+  });
+
+  for (const code of ['dispatch-denial-scope-unresolved', 'dispatch-denial-history-unavailable'])
+    it('should stop unrelated intake on ' + code, async () => {
+      const first = await next();
+      await addPendingSecondIssue();
+      deps.native!.intakeDenial = async () => {
+        throw new Error(code);
+      };
+      const stopped = await next();
+      assert.equal(stopped.nextAction, 'report');
+      assert.equal(stopped.code, code);
+      now += 300001;
+      await runCodexIntake(pluginData, false, deps);
+      assert.equal((await next()).nextAction, 'report');
+      const records = (await request('inspect')).records as { id: string; request?: unknown }[];
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.id, first.id);
+      assert.equal(records[0]!.request, undefined);
+    });
+
+  it('should stop on shared authentication but continue past a repository permission failure', async () => {
+    await addPendingSecondIssue();
+    const connect = deps.connect!;
+    for (const classification of ['permission', 'authentication'] as const) {
+      deps.connect = async (...args) => {
+        const client = await connect(...args);
+        return {
+          ...client,
+          getItemContext: async () => {
+            throw Object.assign(new Error('provider-unavailable'), {
+              providerDiagnostic: providerDiagnostic('github', 'api-request', classification),
+            });
+          },
+        };
+      };
+      const failed = await next();
+      assert.equal(failed.nextAction, classification === 'permission' ? 'next' : 'report');
+    }
+  });
+
+  it('should not guess missing native anchors for a legacy routing attempt', async () => {
+    const first = await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.preparationObservation;
+      await save();
+    });
+    const blocked = await next();
+    assert.equal(blocked.code, 'dispatch-denial-history-unavailable');
+    assert.equal(blocked.nextAction, 'report');
+    assert.equal(blocked.id, first.id);
+  });
+
+  it('should keep a denied preparation through coordinator replacement and exact operator recovery', async () => {
+    const first = await next();
+    const denial = {
+      sourceThreadId: 'intake-thread',
+      turnId: 'denied-turn',
+      callId: 'refused',
+      operation: 'prepare' as const,
+      automatic: true,
+    };
+    deps.native!.intakeDenial = async () => denial;
+    deps.activation = async () => ({ sourceThreadId: 'replacement' });
+    deps.threadId = 'replacement';
+    now += 300001;
+    await runCodexIntake(pluginData, false, deps);
+    assert.equal((await next()).status, 'idle');
+    await assert.rejects(
+      request('retry-denied', { id: first.id, approvedCallId: 'refused' }),
+      /operator-caller-required/,
+    );
+    const operator = { threadId: 'operator' };
+    const preview = await request(
+      'retry-denied',
+      { id: first.id, approvedCallId: 'refused' },
+      operator,
+    );
+    deps.native!.intakeDenial = async () => undefined;
+    await assert.rejects(
+      request(
+        'retry-denied',
+        { id: first.id, approvedCallId: 'refused', digest: preview.digest },
+        operator,
+      ),
+      /denial-unverified/,
+    );
+    deps.native!.intakeDenial = async () => denial;
+    await request(
+      'retry-denied',
+      { id: first.id, approvedCallId: 'refused', digest: preview.digest },
+      operator,
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const restored = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    const record = (await restored.read()).records[0]!;
+    assert.equal(record.denial, undefined);
+    assert.equal(record.recoveredDenials![0]!.denial.sourceThreadId, 'intake-thread');
   });
 
   it('should retry a verified denial only through a fresh operator recovery preview', async () => {

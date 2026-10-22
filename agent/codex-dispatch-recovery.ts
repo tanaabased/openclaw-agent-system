@@ -162,7 +162,74 @@ export default async function recoverDispatch(
   }
   if (action === 'retry-denied') {
     if (
-      record.sourceThreadId !== sourceThreadId ||
+      state.records.some((entry) =>
+        [
+          entry.sourceThreadId,
+          entry.preparationObservation?.sourceThreadId,
+          entry.threadId,
+          entry.receiptThreadId,
+        ].includes(caller),
+      )
+    )
+      throw new Error('dispatch-operator-caller-required');
+    if (record.denial?.operation === 'prepare') {
+      if (
+        !record.preparationObservation ||
+        record.request ||
+        record.threadId ||
+        record.worktree ||
+        record.clientThreadId ||
+        record.receiptThreadId ||
+        record.continuation?.attempt ||
+        record.continuation?.publicationAttempt
+      )
+        throw new Error('dispatch-denial-unverified');
+      await revalidate();
+      const evidence = await withNative((native) =>
+        native.intakeDenial(record, false, record.denial!.callId),
+      );
+      const retained = {
+        sourceThreadId: record.denial.sourceThreadId,
+        turnId: record.denial.turnId,
+        callId: record.denial.callId,
+        operation: record.denial.operation,
+        automatic: record.denial.automatic,
+        ...(record.denial.reason ? { reason: record.denial.reason } : {}),
+      };
+      if (!evidence || automationHash(evidence) !== automationHash(retained))
+        throw new Error('dispatch-denial-unverified');
+      // command readback does not distinguish human refusal from automatic review.
+      if (input.approvedCallId !== evidence.callId)
+        throw new Error('dispatch-denial-approval-required');
+      const digest = automationHash({
+        record,
+        manifest: manifestDigest,
+        denial: evidence,
+        approvedCallId: input.approvedCallId,
+      });
+      await fresh();
+      if (input.digest === undefined)
+        return { status: 'retry-available', id: record.id, digest, denial: record.denial };
+      if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+      (record.recoveredDenials ??= []).push({
+        denial: record.denial,
+        observation: record.preparationObservation,
+        recoveredAt: now,
+        approvedBy: caller,
+      });
+      delete record.denial;
+      delete record.preparationObservation;
+      delete record.result;
+      delete record.stageReceipt;
+      delete record.notice;
+      delete record.retry;
+      delete record.retryAfter;
+      record.phase = 'routing';
+      await save();
+      return { status: 'retry-ready', changed: true, id: record.id };
+    }
+    if (
+      (!record.denial && record.sourceThreadId !== sourceThreadId) ||
       !record.request ||
       !['creating', 'blocked', 'waiting', 'retrying'].includes(record.phase) ||
       record.clientThreadId ||
@@ -210,6 +277,16 @@ export default async function recoverDispatch(
         ...(input.approvedCallId ? { approvedBy: caller } : {}),
       },
     ];
+    if (record.denial) {
+      (record.recoveredDenials ??= []).push({
+        denial: record.denial,
+        recoveredAt: now,
+        approvedBy: caller,
+      });
+      delete record.denial;
+    }
+    delete record.creationAfterItemId;
+    delete record.preparationObservation;
     delete record.continuation;
     delete record.preparationTurnId;
     delete record.request;

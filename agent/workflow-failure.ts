@@ -35,6 +35,7 @@ export function workflowFailureScope(runtime: 'codex' | 'openclaw', route: strin
   const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   const actions = new Set([
     'inspect',
+    'observe-denials',
     'next',
     'prepare',
     'publish',

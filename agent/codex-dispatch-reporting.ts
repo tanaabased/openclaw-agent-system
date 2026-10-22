@@ -114,6 +114,8 @@ export default async function reportDispatch(
   return { status: 'report', response: report.response };
 }
 function remediation(value: string) {
+  if (value.startsWith('dispatch-denial-'))
+    return 'Native refusal history is incomplete, ambiguous, or conflicts with execution evidence. Stop this intake occurrence. Restore access to the original native turn and inspect the retained operation before using exact operator recovery; do not clear tracking, infer non-execution, or retry the denied action.';
   if (value === 'model-routing-metadata-conflict')
     return codexIssueNotice({ event: 'failure', code: value, changed: false }).next;
   const recovery = workflowRecovery(value);
@@ -206,6 +208,7 @@ export function notice(record: DispatchRecord, intake?: IntakeRecord) {
       record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
     changed: Boolean(record.dispatchedAt && !record.intakeReportedAt) || Boolean(failure),
     threadId: record.threadId,
+    ...(record.denial ? { denial: record.denial } : {}),
     ...(failure
       ? {
           code: failure.code,
@@ -293,13 +296,23 @@ export async function failDispatch(
       'Automatic recovery will retry at or after ' +
       new Date(record.retryAfter).toISOString() +
       '. Preserve the retained request; no new stage approval is needed.';
-  // an item failure does not end the shared intake occurrence.
-  if (state.run) delete state.run.stopped;
+  const shared = ['authentication', 'missing-credential'].includes(
+    workflowFailure(error, 'dispatch-operation-failed').providerDiagnostic?.classification ?? '',
+  );
+  if (state.run) {
+    if (shared) state.run.stopped = 'blocked';
+    else delete state.run.stopped;
+  }
   const result = notice(
     record,
     admitted.records.find((entry) => entry.id === record.intakeId),
   );
   Object.assign(result, workflowFailure(error, 'dispatch-operation-failed'));
+  if (shared) {
+    result.nextAction = 'report';
+    result.instruction =
+      'Shared authentication is unavailable. Stop this occurrence and report the failure; do not continue unrelated work through another credential or route.';
+  }
   result.changed = previousCode !== code(error);
   if ('notify' in result) result.notify = result.changed;
   await save();

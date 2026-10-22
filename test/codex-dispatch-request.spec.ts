@@ -6,6 +6,7 @@ describe('agent/codex-dispatch-request', () => {
     for (const [action, input] of [
       ['toString', {}],
       ['inspect', { id: 'other' }],
+      ['observe-denials', { denial: 'model claim' }],
       ['context', {}],
       ['next', { workspace: '/other' }],
       ['reset', { id: 'id', digest: 3 }],
@@ -19,6 +20,7 @@ describe('agent/codex-dispatch-request', () => {
     validateDispatchRequest('reconcile', { id: 'id', receipt: { unexpected: true } });
     validateDispatchRequest('result', { id: 'id', result: 'invalid owner value' });
     validateDispatchRequest('next', {});
+    validateDispatchRequest('observe-denials', {});
     validateDispatchRequest('retry-denied', { id: 'id', approvedCallId: 'call' });
   });
 });
