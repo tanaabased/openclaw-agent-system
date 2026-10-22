@@ -6,6 +6,12 @@ These headless checks establish activation and authority boundaries. Successful 
 
 For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. With disposable assigned issues A and B, decline A's exact `dispatch:prepare` escalation before it executes. Verify B starts in the current permitted occurrence, or in the next permitted occurrence if the host ends the turn. Repeat after restarting and replacing the coordinator, then reassign A: its hold and original source receipts must survive, with no repeated prepare approval or duplicate chat/send. Verify one report contains A's operation, safely redacted actual reason (or explicitly unavailable reason), recovery identifiers, and B's started link. From an operator chat, preview and apply `retry-denied` against A's exact call and current digest; only then may A receive a fresh preparation attempt. Repeat with denied `create_thread` and one available slot: verified non-execution releases capacity, but an uncertain creation retains it. A shared refusal, unrelated denied effect, incomplete history, or altered command must not authorize continued intake. The generated transport and journal have controlled unit/component coverage, but desktop approval/readback behavior still requires genuine native evidence; this headless scenario cannot supply it.
 
+For retirement, verify that the native archive arguments exactly match the retained
+`retirement-prepared` request. A lookup or unavailable-host error must retain its
+actual diagnostic rather than being reported as an approval denial. The next
+scheduled run reconciles the attempt before preparing another archive; an uncertain
+write or explicit denial must not trigger a blind retry.
+
 For routing verification, include an issue with verified medium Complexity and a
 coordinator assessment of high. Preparation must select the configured medium
 profile, retain the verified metadata source and reason, and create only one chat.

@@ -49,6 +49,11 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
         if (failCreation) throw new Error('native rejection');
         return { threadId: 'child' };
       },
+      mcp__codex_app__set_thread_archived: async (input: unknown) => {
+        creations.push(input);
+        if (failCreation) throw new Error('native rejection');
+        return {};
+      },
       mcp__codex_app__send_message_to_thread: async (input: unknown) => {
         creations.push(input);
         if (failCreation) throw new Error('native rejection');
@@ -65,7 +70,7 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
     context.runtimeInput = input;
     return runInNewContext('(async () => {' + codexDispatchHandoff(runtime) + '})()', context);
   };
-  const send = (route: 'dispatch' | 'continuation' = 'dispatch') =>
+  const send = (route: 'dispatch' | 'continuation' | 'retirement' = 'dispatch') =>
     runInNewContext(
       '(async () => {' + codexNativeHandoff(runtime.pluginData, route) + '})()',
       context,
@@ -86,6 +91,29 @@ describe('agent/codex-dispatch-handoff', () => {
     await test.send();
     assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [request]);
     await assert.rejects(test.send(), /prepared-request-unavailable/);
+  });
+
+  it('should archive the exact prepared thread once and require fresh evidence after failure', async () => {
+    const archive = {
+      status: 'retirement-prepared',
+      id: 'retirement',
+      request: {
+        threadId: '01a161b4-d350-70a0-89a6-52d293cf0d11',
+        archived: true,
+        hostId: 'local',
+      },
+    };
+    for (const fail of [false, true]) {
+      const test = fixture([success(archive)], fail);
+      await test.execute();
+      await assert.rejects(test.send(), /dispatch-prepared-request-unavailable/);
+      if (fail) await assert.rejects(test.send('retirement'), /native rejection/);
+      else await test.send('retirement');
+      assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [archive.request]);
+      await assert.rejects(test.send('retirement'), /retirement-prepared-request-unavailable/);
+      await assert.rejects(test.execute({ action: 'reconcile' }), /operation-evidence-unavailable/);
+      assert.equal(test.commands.length, 1);
+    }
   });
 
   it('should reject supplied identifiers and missing or replaced routing evidence', async () => {
