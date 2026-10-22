@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { observeRetiringSession } from '../agent/openclaw-assignment-lifecycle.ts';
+import observeRetirementSession, {
+  observeRetiringSession,
+} from '../agent/openclaw-retirement-observation.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
@@ -81,5 +83,25 @@ describe('agent/openclaw retirement observation', () => {
         });
       }
     }
+  });
+  it('should share missing-session recovery without claiming archival or idleness', async () => {
+    const f = fixture();
+    f.record.sourceThreadId = 'coordinator';
+    const observed = await observeRetirementSession(
+      async () => ({ session: null }),
+      f.record,
+      'owner',
+      'coordinator',
+    );
+    assert.deepEqual(observed, {
+      row: undefined,
+      archived: false,
+      idle: false,
+      unavailableSession: 'not-found',
+    });
+    await assert.rejects(
+      observeRetirementSession(async () => ({ session: null }), f.record, 'owner', 'other'),
+      /dispatch-session-response-invalid-sessions-describe-session-null/u,
+    );
   });
 });

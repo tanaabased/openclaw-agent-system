@@ -520,7 +520,7 @@ describe('agent/notification reset runtime adapters', () => {
     );
   });
 
-  it('should preserve pinned and shared openclaw resources and reconcile partial purge', async () => {
+  async function verifyOpenClawPurge(missing: boolean) {
     const scope = 'c'.repeat(64);
     const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
     const fixture = intakeFixture();
@@ -643,7 +643,7 @@ describe('agent/notification reset runtime adapters', () => {
     });
     const native = coordinator();
     native.missing();
-    let pinned = true;
+    let pinned = !missing;
     let shared = true;
     let archived = false;
     let enabled = true;
@@ -678,7 +678,8 @@ describe('agent/notification reset runtime adapters', () => {
                 messages: [],
               };
             if (method === 'cron.list') return { jobs: [], hasMore: false };
-            if (method === 'sessions.describe')
+            if (method === 'sessions.describe') {
+              if (missing) return { session: null };
               return {
                 session: {
                   key,
@@ -690,8 +691,14 @@ describe('agent/notification reset runtime adapters', () => {
                   lifecycleRevision: 'revision',
                 },
               };
+            }
             if (method === 'sessions.list')
-              return { sessions: [{ key }, ...(shared ? [{ key: 'unrelated' }] : [])] };
+              return {
+                sessions: [
+                  ...(missing ? [] : [{ key }]),
+                  ...(shared ? [{ key: 'unrelated' }] : []),
+                ],
+              };
             assert.equal(method, 'sessions.patch');
             assert.equal(params.expectedLifecycleRevision, 'revision');
             archives++;
@@ -732,17 +739,25 @@ describe('agent/notification reset runtime adapters', () => {
     });
     const run = async () =>
       service.run(manifest, root, await service.preview(manifest, root, true));
-    await assert.rejects(run(), /notification-reset-resource-protected/u);
-    assert.equal(archives, 0);
-    assert.equal(removals, 0);
+    if (!missing) {
+      await assert.rejects(run(), /notification-reset-resource-protected/u);
+      assert.equal(archives, 0);
+      assert.equal(removals, 0);
+    }
     pinned = false;
     await assert.rejects(run(), /notification-reset-worktree-shared/u);
-    assert.equal(archives, 1);
+    assert.equal(archives, missing ? 0 : 1);
     assert.equal(removals, 0);
     shared = false;
-    assert.equal((await run()).status, 'complete');
-    assert.equal(archives, 1);
+    const completed = await run();
+    assert.equal(completed.status, 'complete');
+    if (missing) assert.equal(completed.warnings, undefined);
+    assert.equal(archives, missing ? 0 : 1);
     assert.equal(removals, 1);
     assert.equal(enabled, true);
-  });
+  }
+
+  for (const missing of [false, true])
+    it(`should preserve protected openclaw resources and purge with a ${missing ? 'missing' : 'present'} chat`, () =>
+      verifyOpenClawPurge(missing));
 });

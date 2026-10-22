@@ -12,7 +12,7 @@ import automationThreadGateway from './automation-thread-gateway.ts';
 import observeResetUnresolved from './openclaw-reset-unresolved.ts';
 import { listNativeAutomations, nativeObject } from './automation-gateway.ts';
 import { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
-import { observeRetiringSession } from './openclaw-assignment-lifecycle.ts';
+import observeRetirementSession from './openclaw-retirement-observation.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import NotificationResetStore, {
   type NotificationResetRecord,
@@ -56,6 +56,23 @@ export default class OpenClawNotificationReset {
       JSON.parse(record.inventory) as Omit<ResetInventory, 'records'> & {
         records: OpenClawDispatchRecord[];
       };
+    const observeSession = async (
+      request: DispatchRequest,
+      record: NotificationResetRecord,
+      entry: OpenClawDispatchRecord,
+    ) => {
+      const current = await observeRetirementSession(
+        request,
+        entry,
+        manifest.agent.id,
+        entry.sourceThreadId,
+      );
+      if (current?.unavailableSession && current.unavailableSession !== 'not-found') {
+        const warning = `notification-reset-session-unavailable: chat ***${entry.threadId?.slice(-4) ?? 'none'}; ${current.unavailableSession}; native archival is not verified; checkout cleanup remains independently checked`;
+        record.warnings = [...new Set([...(record.warnings ?? []), warning])];
+      }
+      return current;
+    };
     const observe = async (record: NotificationResetRecord, protect = false) => {
       const automation = JSON.parse(record.automation);
       const sources = new Set(
@@ -141,9 +158,9 @@ export default class OpenClawNotificationReset {
             throw new Error('notification-reset-session-creation-unresolved');
           }
           if (!entry.threadId) continue;
-          const current = await observeRetiringSession(request, entry, manifest.agent.id);
+          const current = await observeSession(request, record, entry);
           if (!current) throw new Error('notification-reset-session-unverified');
-          if (!current.idle) return false;
+          if (!current.idle && !current.unavailableSession) return false;
           if (protect) {
             const owned = (value: unknown): boolean =>
               value === entry.threadId ||
@@ -151,7 +168,7 @@ export default class OpenClawNotificationReset {
               (Array.isArray(value)
                 ? value.some(owned)
                 : nativeObject(value) && Object.values(value).some(owned));
-            if (current.row.pinned === true || owners.has(entry.threadId) || owned(jobs))
+            if (current.row?.pinned === true || owners.has(entry.threadId) || owned(jobs))
               throw new Error('notification-reset-resource-protected');
           }
         }
@@ -366,7 +383,8 @@ export default class OpenClawNotificationReset {
         if (!entry) throw new Error('notification-reset-resource-identity-missing');
         if (resource.kind === 'chat') {
           await deps.credential.use({}, async (request) => {
-            const current = await observeRetiringSession(request, entry, manifest.agent.id);
+            const current = await observeSession(request, record, entry);
+            if (current?.unavailableSession) return;
             if (!current?.idle) throw new Error('notification-reset-turns-active');
             if (!current.archived)
               await request('sessions.patch', {
@@ -377,8 +395,8 @@ export default class OpenClawNotificationReset {
                   : {}),
                 archived: true,
               });
-            const after = await observeRetiringSession(request, entry, manifest.agent.id);
-            if (!after?.archived || !after.idle)
+            const after = await observeSession(request, record, entry);
+            if (!after?.unavailableSession && (!after?.archived || !after.idle))
               throw new Error('notification-reset-archive-unverified');
           });
           return { status: 'done' };

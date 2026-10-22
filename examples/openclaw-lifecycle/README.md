@@ -10,6 +10,9 @@ For operator reset recovery, retain a prepared session request whose exact nativ
 key is absent. After the coordinator drains, reset must confirm that absence and
 finish; a resolved or ambiguous key must retain the recovery inventory. The
 component suite covers these lookup outcomes and purge of the owned checkout.
+Reset and retirement share session observation, including unavailable-session
+recovery. An already-missing chat needs no archival; checkout identity and shared
+use remain independently verified before purge.
 Reset failures report the safe underlying code, failed phase and operation, and
 affected resource when available. Chat identifiers are masked in terminal
 diagnostics and retained in JSON; raw provider errors remain private. The component

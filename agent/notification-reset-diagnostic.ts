@@ -44,7 +44,7 @@ export function notificationResetDiagnostic(error: unknown) {
       (value): value is string =>
         typeof value === 'string' &&
         value.length <= 160 &&
-        (/^(?:notification-reset|session-dispatch|automation|dispatch-session)-[a-z-]+$/u.test(
+        (/^(?:notification-reset|session-dispatch|automation|dispatch-session|retirement)-[a-z-]+$/u.test(
           value,
         ) ||
           [
