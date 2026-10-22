@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { automationHash } from '../agent/automation-hash.ts';
 
 import openclawIntakeReport from '../agent/openclaw-intake-report.ts';
 import type { OpenClawDispatchState } from '../agent/openclaw-dispatch-state.ts';
@@ -52,6 +53,29 @@ describe('agent/openclaw-intake-report', () => {
     assert.equal(complete.changed, false);
     assert.match(complete.response, /Retirement pending:\*\* 0/);
     assert.doesNotMatch(complete.response, /Intake resumed/);
+  });
+
+  it('should keep historical missing-evidence records quiet without deleting evidence', () => {
+    const journal = state();
+    const record = {
+      id: 'legacy',
+      retired: { at: 1, by: 'old-owner' },
+      threadId: 'original',
+    } as OpenClawDispatchState['records'][number];
+    journal.records.push(record);
+    const input = {
+      state: journal,
+      slots: 3,
+      observation: { status: 'ready' as const, changed: false },
+    };
+    const before = structuredClone(record);
+    const first = openclawIntakeReport(input);
+    assert.equal(first.changed, false);
+    assert.deepEqual(first.problems, []);
+    assert.doesNotMatch(first.response, /retirement-legacy-unverified|🔬|⚠️/);
+    journal.intakeReport = { ...first, runId: 'first' };
+    assert.equal(openclawIntakeReport(input).changed, false);
+    assert.deepEqual(record, before);
   });
 
   it('should report deferred assignments as item failures and recognize their recovery', () => {
@@ -201,5 +225,107 @@ describe('agent/openclaw-intake-report', () => {
     assert.match(report.response, /Status:\*\* waiting/);
     assert.match(report.response, /assignment-history/);
     assert.doesNotMatch(report.response, /pending assignments are unknown/);
+  });
+  it('should keep debug toggles and historical reclassification out of notification and recovery decisions', () => {
+    const journal = state();
+    const legacy = { id: 'legacy', retired: { at: 1 } } as OpenClawDispatchState['records'][number];
+    journal.records.push(legacy);
+    const input = {
+      state: journal,
+      slots: 3,
+      observation: { status: 'ready' as const, changed: false },
+    };
+    const before = structuredClone(journal.records);
+    const oldProblems = ['legacy:retirement-legacy-unverified'];
+    journal.intakeReport = {
+      problems: oldProblems,
+      runId: 'old',
+      response: 'old warning',
+      fingerprint: automationHash({
+        problems: oldProblems,
+        managing: 0,
+        pending: null,
+        capacity: { occupied: 0, available: 3 },
+      }),
+    };
+    for (const debug of [undefined, true, false, true]) {
+      const report = openclawIntakeReport({ ...input, debug });
+      assert.equal(report.changed, false);
+      assert.deepEqual(report.problems, []);
+      assert.equal(report.response.includes('🔬 Debug'), debug === true);
+      assert.equal(report.response.includes('retirement-legacy-unverified'), debug === true);
+      assert.doesNotMatch(report.response, /⚠️|cleared|Intake resumed/);
+      journal.intakeReport = { ...report, runId: 'new' };
+    }
+    assert.deepEqual(journal.records, before);
+    for (const code of [
+      'retirement-worktree-dirty',
+      'retirement-worktree-shared',
+      'retirement-native-resource-protected',
+      'retirement-worktree-unpreserved',
+    ]) {
+      journal.records.push({
+        id: 'blocked',
+        retirement: { code },
+      } as OpenClawDispatchState['records'][number]);
+      for (const debug of [undefined, false, true]) {
+        const report = openclawIntakeReport({ ...input, debug });
+        assert.equal(report.changed, true);
+        assert.deepEqual(report.problems, ['blocked:' + code]);
+        assert.ok(report.response.includes(code));
+        assert.equal(report.response.includes('🔬 Debug'), debug === true);
+      }
+      journal.records.pop();
+    }
+    journal.records.push({
+      id: 'denied',
+      phase: 'waiting',
+      blocker: 'native-approval-denied',
+    } as OpenClawDispatchState['records'][number]);
+    for (const debug of [undefined, false, true]) {
+      const report = openclawIntakeReport({ ...input, debug });
+      assert.equal(report.changed, true);
+      assert.deepEqual(report.problems, ['denied:native-approval-denied']);
+      assert.match(report.response, /native-approval-denied/);
+      assert.equal(report.response.includes('🔬 Debug'), debug === true);
+    }
+  });
+  it('should preserve a real blocker and its recovery across a mixed historical warning baseline', () => {
+    const journal = state();
+    const legacy = { id: 'legacy', retired: { at: 1 } } as OpenClawDispatchState['records'][number];
+    const blocked = {
+      id: 'blocked',
+      retirement: { code: 'retirement-worktree-dirty' },
+    } as OpenClawDispatchState['records'][number];
+    journal.records.push(legacy, blocked);
+    const problems = ['blocked:retirement-worktree-dirty', 'legacy:retirement-legacy-unverified'];
+    journal.intakeReport = {
+      problems,
+      runId: 'old',
+      response: 'old warning',
+      fingerprint: automationHash({
+        problems,
+        managing: 0,
+        pending: null,
+        capacity: { occupied: 0, available: 3 },
+      }),
+    };
+    const input = {
+      state: journal,
+      slots: 3,
+      observation: { status: 'ready' as const, changed: false },
+    };
+    const unchanged = openclawIntakeReport({ ...input, debug: true });
+    assert.equal(unchanged.changed, false);
+    assert.deepEqual(unchanged.problems, ['blocked:retirement-worktree-dirty']);
+    assert.match(unchanged.response, /⚠️/);
+    assert.doesNotMatch(unchanged.response, /cleared/);
+    journal.intakeReport = { ...unchanged, runId: 'current' };
+    blocked.retirement!.code = undefined;
+    const recovered = openclawIntakeReport(input);
+    assert.equal(recovered.changed, true);
+    assert.match(recovered.response, /Retirement blocker cleared/);
+    assert.match(recovered.response, /retirement-worktree-dirty/);
+    assert.doesNotMatch(recovered.response, /legacy-unverified/);
   });
 });

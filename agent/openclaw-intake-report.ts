@@ -1,3 +1,4 @@
+import intakeDebug from './intake-debug.ts';
 import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
@@ -24,6 +25,7 @@ export default function openclawIntakeReport(input: {
   intake?: IntakeState;
   observation: IntakeObservation;
   slots: number;
+  debug?: boolean;
 }) {
   const { state, intake, observation } = input;
   const active = state.records.filter(
@@ -79,7 +81,8 @@ export default function openclawIntakeReport(input: {
   ].sort((a, b) => (a.id + a.code).localeCompare(b.id + b.code));
   const problems = failures.map(({ id, code }) => id + ':' + code);
   const recovered = (state.intakeReport?.problems ?? []).filter((problem) => {
-    if (problems.includes(problem)) return false;
+    if (problem.endsWith(':retirement-legacy-unverified') || problems.includes(problem))
+      return false;
     const id = problem.slice(0, problem.indexOf(':'));
     if (id === 'intake') return observation.status === 'ready';
     if (id.startsWith('deferred-')) return true;
@@ -97,15 +100,24 @@ export default function openclawIntakeReport(input: {
     const record = active.find((entry) => entry.id === id);
     return Boolean(record && !record.blocker);
   });
-  const fingerprint = automationHash({
+  const fingerprintFacts = {
     problems,
     managing: managing.length,
     pending: pending ?? null,
     capacity,
-  });
+  };
+  const fingerprint = automationHash(fingerprintFacts);
+  const previousProblems = state.intakeReport?.problems ?? [];
+  const reclassifiedOnly =
+    previousProblems.some((p) => p.endsWith(':retirement-legacy-unverified')) &&
+    JSON.stringify(previousProblems.filter((p) => !p.endsWith(':retirement-legacy-unverified'))) ===
+      JSON.stringify(problems) &&
+    state.intakeReport?.fingerprint ===
+      automationHash({ ...fingerprintFacts, problems: previousProblems });
   const changed =
     started.length > 0 ||
-    (fingerprint !== state.intakeReport?.fingerprint &&
+    (!reclassifiedOnly &&
+      fingerprint !== state.intakeReport?.fingerprint &&
       (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
   const automationNotice = intakeAutomationNotice(observation.code ?? '');
   const title =
@@ -264,6 +276,11 @@ export default function openclawIntakeReport(input: {
     fingerprint,
     problems,
     started: started.map((record) => record.id),
-    response: githubNotificationQuote(lines.join('\n')),
+    response: [
+      githubNotificationQuote(lines.join('\n')),
+      intakeDebug(input.debug, state.records, label),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
   };
 }

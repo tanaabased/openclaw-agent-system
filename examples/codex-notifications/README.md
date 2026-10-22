@@ -26,7 +26,14 @@ observation separately from component results; headless planning is not UI proof
 For report presentation verification, use an explicitly authorized disposable native
 desktop setup with updated installed instructions, or operator-provided captures.
 Observe one healthy status report and one warning report without manufacturing a
-production intake failure. For each, retain separately:
+production intake failure. Include historical retired records without stored cleanup
+evidence: false/omitted debug must hide those details, while true shows a separate
+🔬 Debug card, never a warning or a cleanup-success claim. Toggle the live manifest
+and repeat the same report to verify visibility changes without replaying starts
+or changing its notification decision. Repeat an unchanged scheduled check with
+DONT_NOTIFY. Also capture assessment skill/guidance and successful delivery recovery
+under the same Debug heading with their stage context; real blockers remain visible
+with debug off. For each, retain separately:
 
 1. The runtime's complete returned `response`.
 2. The actual final assistant text from native history or export, compared exactly

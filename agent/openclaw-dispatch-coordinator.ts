@@ -35,6 +35,7 @@ import type OpenClawDispatchIssue from './openclaw-dispatch-issue.ts';
 import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
+import intakeDebug from './intake-debug.ts';
 import openclawIntakeReport, { type IntakeObservation } from './openclaw-intake-report.ts';
 import { verifyEmptyIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -126,6 +127,7 @@ export default class OpenClawDispatchCoordinator {
       intake: await reporting.store.read(),
       slots: reporting.selected.policy.maxConcurrentItems,
       observation: intake,
+      debug: manifest.debug,
     });
     if (intake.status !== 'ready' && intake.code !== 'intake-search-incomplete')
       return {
@@ -270,10 +272,20 @@ export default class OpenClawDispatchCoordinator {
     const observation = await this.context.observe(manifest, workspace);
     const intake = await current.store.read();
     return current.journal.exclusive(async (state, save) => {
-      if (state.intakeReport?.runId === caller.runId)
+      const present = (response: string) => {
+        if (!response) return '';
+        const diagnostic = intakeDebug(manifest.debug, state.records, (record) => {
+          const item = intake?.records.find((entry) => entry.id === record.intakeId);
+          return item
+            ? item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number
+            : 'Issue';
+        });
+        return [response, diagnostic].filter(Boolean).join('\n\n');
+      };
+      if (state.intakeReport?.runId === caller.runId && state.intakeReport.reportVersion === 1)
         return {
           status: 'reported' as const,
-          response: state.intakeReport.response,
+          response: present(state.intakeReport.response),
           instructions: 'Reproduce response unchanged. An empty response means no card.',
         };
       const report = openclawIntakeReport({
@@ -284,6 +296,7 @@ export default class OpenClawDispatchCoordinator {
       });
       const response = report.changed ? report.response : '';
       state.intakeReport = {
+        reportVersion: 1,
         fingerprint: report.fingerprint,
         problems: report.problems,
         runId: caller.runId,
@@ -297,7 +310,7 @@ export default class OpenClawDispatchCoordinator {
       await save();
       return {
         status: 'reported' as const,
-        response,
+        response: present(response),
         instructions:
           'Reproduce response unchanged. An empty response means no card. This receipt records report preparation, not verified visible delivery.',
       };

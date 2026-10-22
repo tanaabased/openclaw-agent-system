@@ -234,11 +234,11 @@ describe('channels/github/presentation/assessment-result', () => {
             assessment: { defaultSkill: !custom, skill: { name: 'cats:assess' }, guidance },
           });
           assert.equal(output.includes('Assessment instructions'), true);
-          assert.ok(!output.includes('> > ## 🧩 Assessment instructions'));
+          assert.ok(!output.includes('> > ## 🔬 Debug'));
           assert.equal(output.includes('cats:assess'), true);
           assert.equal(output.includes('**Guidance:**'), !!guidance);
           if (custom || guidance) {
-            const position = output.indexOf('> ## 🧩 Assessment instructions');
+            const position = output.indexOf('> ## 🔬 Debug');
             assert.ok(position > output.indexOf('Effective settings'));
             assert.ok(position < output.indexOf('## Reference material'));
           }
@@ -293,7 +293,7 @@ describe('channels/github/presentation/assessment-result', () => {
           assessment: { defaultSkill: true, skill: { name: 'agent-system-issue-assessment' } },
         });
         const routing = output.indexOf('> ## 🧠 Model routing');
-        const instructions = output.indexOf('> ## 🧩 Assessment instructions');
+        const instructions = output.indexOf('> ## 🔬 Debug');
         assert.ok(routing >= 0);
         if ('assessment' in result) assert.ok(output.indexOf(result.assessment) < routing);
         assert.equal(instructions >= 0, debug);

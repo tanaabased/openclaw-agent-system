@@ -147,6 +147,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
             actions: Type.Integer({ minimum: 0, maximum: 12 }),
             stopped: Type.Optional(Type.Literal('blocked')),
             response: Type.Optional(Type.String({ maxLength: 128000 })),
+            reportVersion: Type.Optional(Type.Literal(1)),
           },
           { additionalProperties: false },
         ),
@@ -155,6 +156,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
         Type.Object(
           {
             fingerprint: hash,
+            reportVersion: Type.Optional(Type.Literal(1)),
             problems: Type.Array(Type.String({ maxLength: 256 }), { maxItems: 256 }),
             runId: text,
             response: Type.String({ maxLength: 128000 }),
@@ -178,6 +180,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
         ),
       ),
       intakeHealth: Type.Optional(Type.String({ maxLength: 128 })),
+      intakeHealthVersion: Type.Optional(Type.Literal(1)),
       checked: Type.Optional(
         Type.Object(
           { at: Type.Integer({ minimum: 0 }), digest: hash },

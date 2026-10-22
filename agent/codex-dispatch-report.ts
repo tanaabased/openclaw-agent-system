@@ -1,3 +1,4 @@
+import intakeDebug from './intake-debug.ts';
 import retirementNotice from './retirement-notice.ts';
 import codexFeedbackProblem from './codex-feedback-problem.ts';
 import workflowStatus from './workflow-status.ts';
@@ -21,6 +22,7 @@ export default function prepareDispatchReport(input: {
   state: DispatchState;
   intake: IntakeState;
   slots: number;
+  debug?: boolean;
   automationId: string;
   currentTimeIso: string;
 }) {
@@ -152,7 +154,8 @@ export default function prepareDispatchReport(input: {
     (entry, index) => !entry.code.startsWith('retirement-') || notices[index]!.severity !== 'info',
   );
   const health = failures.length || history.length ? automationHash({ failures, history }) : '';
-  const recovered = !health && Boolean(state.intakeHealth);
+  // older opaque hashes mixed historical diagnostics with failures; they cannot prove recovery.
+  const recovered = !health && state.intakeHealthVersion === 1 && Boolean(state.intakeHealth);
   const severity = notices.some((notice) => notice.severity === 'error')
     ? 'error'
     : notices.some((notice) => notice.severity === 'warning')
@@ -270,15 +273,26 @@ export default function prepareDispatchReport(input: {
         ? 'Pending issues will start when a slot becomes available.'
         : 'Intake will continue pending assignments on the next check.',
     );
+  const diagnostic = intakeDebug(input.debug, state.records, (record) => {
+    const item = intake.records.find((entry) => entry.id === record.intakeId);
+    return item
+      ? item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number
+      : 'Issue';
+  });
+  const operational = [githubNotificationQuote(lines.join('\n')), discovery]
+    .filter(Boolean)
+    .join('\n\n');
+  const notify =
+    Boolean(discovery) ||
+    started.length > 0 ||
+    sent.length > 0 ||
+    recovered ||
+    (Boolean(health) && health !== state.intakeHealth);
   return {
     response: codexHeartbeatEnvelope(
       input.automationId,
-      [githubNotificationQuote(lines.join('\n')), discovery].filter(Boolean).join('\n\n'),
-      Boolean(discovery) ||
-        started.length > 0 ||
-        sent.length > 0 ||
-        recovered ||
-        (Boolean(health) && health !== state.intakeHealth),
+      [operational, diagnostic].filter(Boolean).join('\n\n'),
+      notify,
     ),
     health,
     sent: sent.map(({ event }) => event.id),
