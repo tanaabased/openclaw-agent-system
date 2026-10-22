@@ -18,7 +18,7 @@ git: {}
 
 github:
   username: install-data
-  host: fixture.invalid
+  host: github.com
   token: GH_TOKEN_FIXTURE
   schema-version: 3
   runtimes: [openclaw]
