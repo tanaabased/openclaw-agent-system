@@ -1,5 +1,5 @@
 import openClawResponseAuthority from './openclaw-response-authority.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import assessmentHandoff from './assessment-handoff.ts';
 import { feedbackWorkContext } from './feedback-work.ts';
 import { assessmentSummaryInstructions } from './assessment-summary-state.ts';

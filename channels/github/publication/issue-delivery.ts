@@ -5,7 +5,7 @@ import {
   withProviderDiagnostic,
   type ProviderDiagnostic,
 } from '../../../utils/provider-diagnostic.ts';
-import type { GitHubIdentityPin, GitHubPullRequestRecipient } from '../config-schema.ts';
+import type { GitHubIdentityPin, GitHubPullRequestRecipient } from '../workflow-policy.ts';
 import { githubIdentitySet } from '../provider/work-item.ts';
 import resolvePullRequestRecipients from '../pull-request-recipients.ts';
 import abortableDelay from '../../../utils/abortable-delay.ts';

@@ -110,13 +110,25 @@ describe('channels/github/v3 configuration', () => {
     ]);
   });
 
-  it('should select v3 completely and attribute the ignored block diagnostic', () => {
-    const { manifest, diagnostics } = load({ notifications: { malformed: true } });
-    assert.equal(manifest.github!.notifications!.intervalMinutes, 5);
-    assert.deepEqual(
-      diagnostics.map(({ code, fieldPath }) => ({ code, fieldPath })),
-      [{ code: 'github-v2-ignored', fieldPath: '/github/notifications' }],
-    );
+  it('should reject unsupported workflow versions and nested notification blocks', () => {
+    for (const github of [
+      { username: 'agent', notifications: {} },
+      { username: 'agent', notifications: { 'schema-version': 2 } },
+      { ...base.github, 'schema-version': 2 },
+      { ...base.github, notifications: {} },
+      {
+        ...base.github,
+        notifications: { 'schema-version': 2, 'issue-assignment': { allowed: [actor] } },
+      },
+    ]) {
+      const result = normalizeAgentManifest({ ...base, github });
+      assert.equal(result.status, 'invalid');
+      assert.ok(result.diagnostics.some(({ severity }) => severity === 'error'));
+      assert.equal('manifest' in result, false);
+    }
+    const cli = normalizeAgentManifest({ ...base, github: { username: 'agent' } });
+    assert.equal(cli.status, 'valid');
+    if (cli.status === 'valid') assert.equal(cli.manifest.github?.notifications, undefined);
   });
 
   it('should reject invalid selected configuration without fallback', () => {
@@ -130,7 +142,7 @@ describe('channels/github/v3 configuration', () => {
     ]) {
       const result = normalizeAgentManifest({
         ...base,
-        github: { ...base.github, notifications: {}, 'issue-assignment': workflow },
+        github: { ...base.github, 'issue-assignment': workflow },
       });
       assert.equal(result.status, 'invalid', JSON.stringify(workflow));
     }

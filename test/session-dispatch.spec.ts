@@ -420,7 +420,7 @@ describe('agent/session-dispatch-requirements', () => {
     if (policy.schemaVersion !== 3) throw new Error();
     policy.reviewRequest = { ...policy.issueAssignment! };
     assert.equal(sessionDispatchRequirements(value).length, 1);
-    policy.issueAssignment!.enabled = false;
+    policy.issueAssignment!.paused = true;
     assert.deepEqual(
       sessionDispatchRequirements(value).map(({ id }) => id),
       ['github-issue-assignment'],

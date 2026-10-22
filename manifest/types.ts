@@ -12,12 +12,6 @@ import type { BackupConfiguration } from './backup-schema.ts';
 export interface AgentManifest {
   schemaVersion: 1;
   debug?: boolean;
-  /** migration evidence only; never a per-agent cleanup policy. */
-  cleanupMigration?: {
-    declaration: { enabled?: boolean; 'grace-minutes'?: number };
-    sourcePath?: string;
-    sources?: Array<{ fieldPath: string; sourcePath: string }>;
-  };
   automations?: ResolvedAutomation[];
   agent: {
     id: string;

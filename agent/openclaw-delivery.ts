@@ -20,7 +20,7 @@ import IssueDeliveryProvider, {
 } from '../channels/github/publication/issue-delivery.ts';
 import resolvePullRequestRecipients from '../channels/github/pull-request-recipients.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
-import type { GitHubPullRequestRecipient } from '../channels/github/config-schema.ts';
+import type { GitHubPullRequestRecipient } from '../channels/github/workflow-policy.ts';
 import type { ConnectedGitHubAccountClient } from '../core/github-account-client.ts';
 import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
 

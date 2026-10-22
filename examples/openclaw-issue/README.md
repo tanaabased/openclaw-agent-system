@@ -136,13 +136,14 @@ conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 openclaw gateway call sessions.patch --params "$(jq -nc --arg key "$conversation" '{key:$key,label:"Renamed issue conversation",category:"Operator grouping"}')" --json > "$TMPDIR/notification-renamed.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.label == "Renamed issue conversation" and .session.category == "Operator grouping"'
 
-# should exclude feedback after removing the approved actor
+# should exclude feedback while all approved authors are removed
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 node --input-type=module <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse, stringify } from 'yaml';
 const manifest = parse(readFileSync('agent.yaml', 'utf8'));
 manifest.github['issue-assignment'].allowed = [];
+manifest.github['issue-assignment'].reviewers = [];
 writeFileSync('agent.yaml', stringify(manifest));
 NODE
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
@@ -151,12 +152,13 @@ openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bu
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
-jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-excluded-source.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and all(.[0].feedback.events[]; .sourceId != $source)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-excluded-source.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].feedback.admission.enabled == false and all(.[0].feedback.events[]; .sourceId != $source)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 node --input-type=module <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse, stringify } from 'yaml';
 const manifest = parse(readFileSync('agent.yaml', 'utf8'));
 manifest.github['issue-assignment'].allowed = ['@emoriwan'];
+manifest.github['issue-assignment'].reviewers = ['@tanaabot'];
 writeFileSync('agent.yaml', stringify(manifest));
 NODE
 

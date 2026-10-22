@@ -524,6 +524,18 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   }
   const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
+    if (prompt.includes('Preview reviewer delivery without publishing.')) {
+      const prepared = result('delivery-prepare');
+      if (!prepared)
+        return dispatch('delivery-prepare', {
+          action: 'delivery',
+          operation: 'prepare',
+          id: operatorId,
+        });
+      assert.equal(prepared.status, 'prepared');
+      return { content: 'Reviewer delivery prepared without publication.' };
+    }
+
     const update = prompt.includes(
       'Add a follow-up commit and update the existing PR title and body.',
     );

@@ -239,7 +239,6 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
-node "$runtime" migrate-github --plugin-data "$plugin_data" | jq -e '.status == "already-v3" and .resolutions == []'
 node "$runtime" intake inspect --plugin-data "$plugin_data" \
   | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
@@ -278,16 +277,18 @@ if output=$(printf '%s\n' '{"action":"reply","operation":"publish"}' | node "$ru
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-command-action-mismatch"'
 test ! -d "$CODEX_HOME/automations"
 
-# should report ignored legacy configuration when v3 is selected
+# should reject unsupported configuration before binding
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-sed 's/  schema-version: 3/  schema-version: 3\n  notifications: {obsolete: true}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/ignored-agent.yaml"
+sed 's/  schema-version: 3/  schema-version: 3\n  notifications: {obsolete: true}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/unsupported-agent.yaml"
 cp "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" "$root/original-agent.yaml"
-cp "$root/ignored-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and any(.manifest.diagnostics[]; .code == "github-v2-ignored")'
+trap 'cp "$root/original-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"' EXIT
+cp "$root/unsupported-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
 cp "$root/original-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid" and all(.manifest.diagnostics[]; .code != "github-v2-ignored")'
+trap - EXIT
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid"'
 
 # should reject removed global feedback before binding or activation
 root="$TMPDIR/agent-system-codex-notifications"

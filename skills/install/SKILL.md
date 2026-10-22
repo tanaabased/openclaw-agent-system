@@ -94,7 +94,7 @@ its native settings before replanning; do not change an existing ready chat's pe
 An automatic-review denial must remain a blocker and be reported with its reason.
 Saved settings do not prove a scheduled poll ran; verify execution separately when authorized.
 
-For v2 issue intake, include the reserved `github-issue-assignment` job and retained
+For issue intake, include the reserved `github-issue-assignment` job and retained
 chat in the authorized plan. Its model and effort come from `models.low`. Use native
 sidebar tools to reuse or create `AGENT SYSTEM` and place the exact owned
 `ISSUE ASSIGNMENTS` chat there; preserve its workspace and history. Sidebar

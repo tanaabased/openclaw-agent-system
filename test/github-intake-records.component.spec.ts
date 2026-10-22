@@ -129,12 +129,12 @@ describe('channels/github/intake/records', () => {
       ...input,
       now: baseline + 120000,
       readPolicy: async () => {
-        input.policy.issueAssignment!.enabled = false;
+        input.policy.issueAssignment!.paused = true;
         throw new IntakeError('intake-policy-disabled');
       },
     });
     assert.equal(held.code, 'intake-policy-disabled');
-    input.policy.issueAssignment!.enabled = true;
+    input.policy.issueAssignment!.paused = false;
     const resumed = await scanAssignments({ ...input, now: baseline + 120001 });
     assert.equal(resumed.status, 'ready');
     assert.equal(resumed.admitted, 1);

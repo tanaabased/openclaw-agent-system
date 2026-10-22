@@ -3,16 +3,15 @@ import type {
   GitHubFeedbackPolicy,
   GitHubIdentityPin,
   GitHubNotificationPolicy,
-} from './config-schema.ts';
+} from './workflow-policy.ts';
 
 function configuredFeedbackIdentities(
   allowed: readonly GitHubIdentityPin[],
   feedback: GitHubFeedbackPolicy | undefined,
 ): GitHubIdentityPin[] {
-  if (feedback === false) return [];
   return [
-    ...(feedback === undefined || feedback === true || feedback.inherit ? allowed : []),
-    ...(typeof feedback === 'object' ? feedback.allowed : []),
+    ...(feedback === undefined || feedback.inherit ? allowed : []),
+    ...(feedback?.allowed ?? []),
   ];
 }
 

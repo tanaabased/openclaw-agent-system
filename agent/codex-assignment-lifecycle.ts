@@ -23,9 +23,7 @@ export default async function reconcileCodexLifecycle(
   manual?: { id: string; caller: string },
 ) {
   const current = await selectCodexIntake(pluginData, deps);
-  let cleanupManifest = current.manifest;
-  const readConfiguration = () =>
-    cleanupConfiguration(cleanupManifest, deps.readInstallationConfig);
+  const readConfiguration = deps.readInstallationConfig ?? cleanupConfiguration;
   const configuration = await readConfiguration();
   const retained = await current.store.read();
   if (!retained?.records.length) return;
@@ -96,7 +94,6 @@ export default async function reconcileCodexLifecycle(
           if (manual && (await native.operatorInput(caller)).turnId !== occurrence.id)
             throw new Error('dispatch-native-caller-changed');
           const selected = await selectCodexIntake(pluginData, deps);
-          cleanupManifest = selected.manifest;
           const live = retainedIntakePolicy(selected.manifest, admitted, 'codex');
           current.policy!.policy = live.policy;
           current.policy!.policy.issueAssignment!.allowed =

@@ -470,9 +470,7 @@ identifiers remain literal and are never casing-converted. See
 
 Declare `github.schema-version: 3` explicitly for workflow configuration. The
 outer workspace manifest remains `schema-version: 1`; GitHub CLI-only configuration
-needs no workflow version. When V3 and a legacy `github.notifications` block coexist,
-V3 supplies the entire policy after normal base/overlay merging. The legacy block
-is ignored with `github-v2-ignored`; invalid V3 never falls back to V2.
+needs no workflow version. Unsupported keys and workflow versions fail validation.
 
 **Current support:** V3 parsing, defaults, identity validation, Codex issue-assignment
 intake, and assessment dispatch are implemented. Authorized Install reconciles the
@@ -533,8 +531,7 @@ native chat Install/Doctor cannot yet reconcile or inspect the scheduler.
 See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
 
 Cleanup is installation-wide, not a notification declaration. See
-[shared cleanup settings](./CONFIG.md#shared-cleanup) and
-[legacy cleanup migration](./UPGRADING.md#shared-cleanup-policy).
+[shared cleanup settings](./CONFIG.md#shared-cleanup).
 
 #### Version 3 fields
 
@@ -623,10 +620,6 @@ Author and customization edits apply live; scheduler pause does not revoke
 feedback authority. Empty actor and reviewer lists approve nobody while retaining
 the parent machinery. Source verification, stage restrictions, admission cutoffs,
 and duplicate-publication protection still apply.
-
-Use the [explicit migration preview](./UPGRADING.md#github-v3-configuration) before
-adopting V3 from narrower feedback policies or recipient overrides. Production V2
-decoding remains temporarily available; it does not supply missing V3 values.
 
 #### Assessment selection
 

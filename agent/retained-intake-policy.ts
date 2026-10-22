@@ -15,7 +15,7 @@ export default function retainedIntakePolicy(
         ...manifest.github,
         username: state.account.login,
         notifications: {
-          schemaVersion: 2,
+          schemaVersion: 3,
           intervalMinutes: 5,
           maxConcurrentItems: 3,
           ...manifest.github?.notifications,

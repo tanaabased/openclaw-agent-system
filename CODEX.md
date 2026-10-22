@@ -518,8 +518,7 @@ checkout reclamation may remain asynchronous or protected.
 
 Both scheduled cleanup and `retire` read the
 [shared installation setting](./CONFIG.md#shared-cleanup), not OpenClaw configuration
-or a per-agent copy. Legacy cleanup blocks hold both paths until
-[deliberate migration](./UPGRADING.md#shared-cleanup-policy). Retirement does not
+or a per-agent copy. Retirement does not
 change the issue or branch and never marks resources reclaimed before native
 verification.
 

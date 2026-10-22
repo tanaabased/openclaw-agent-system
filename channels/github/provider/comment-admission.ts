@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { GitHubIdentityPin } from '../config-schema.ts';
+import type { GitHubIdentityPin } from '../workflow-policy.ts';
 import { defaultMaximumCommentCharacters } from './comment-limit.ts';
 import type { GitHubIdentity } from './work-item.ts';
 

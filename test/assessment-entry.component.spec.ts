@@ -463,10 +463,17 @@ describe('agent/native-assessment-entry', () => {
         truncated: false,
       }),
     };
-    const manifest = {
+    const manifest: AgentManifest = {
+      schemaVersion: 1,
       agent: { id: 'receiver' },
-      github: { notifications: { issueAssignment: { mode: 'work' } } },
-    } as AgentManifest;
+      github: {
+        notifications: {
+          ...fixture.policy,
+          runtimes: ['openclaw'],
+          issueAssignment: { ...fixture.policy.issueAssignment!, mode: 'work' },
+        },
+      },
+    };
     const calls: string[] = [];
     const service = new OpenClawDispatch({
       root: join(root, 'dispatch'),

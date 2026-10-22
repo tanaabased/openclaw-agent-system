@@ -5,7 +5,7 @@ import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.t
 
 import { GitHubWorkEventClientError } from '../provider/work-event-api-client.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
-import type { GitHubNotificationPolicy } from '../config-schema.ts';
+import type { GitHubNotificationPolicy } from '../workflow-policy.ts';
 import type { GitHubNotificationIntakeClient } from '../provider/work-event-types.ts';
 import {
   githubRepositoryPath,

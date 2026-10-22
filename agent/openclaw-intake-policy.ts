@@ -1,6 +1,5 @@
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import workflowPaused from '../channels/github/workflow-paused.ts';
 import { projectRoutingProfile } from './model-routing.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
@@ -39,7 +38,7 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
     ...jobs,
     {
       id: openclawIntakeAutomationId,
-      enabled: !workflowPaused(selected.policy.issueAssignment!),
+      enabled: !selected.policy.issueAssignment!.paused,
       runtimes: ['openclaw'],
       schedule: {
         kind: 'every',

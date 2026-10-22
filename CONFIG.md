@@ -31,8 +31,7 @@ cleanup:
 
 A missing file or omitted grace uses 60 minutes. An unreadable, unsafe, malformed,
 or unsupported file holds cleanup with a diagnostic instead of using a fallback.
-There is no enable/disable switch or per-agent override. Legacy manifest cleanup
-blocks require [deliberate migration](./UPGRADING.md#shared-cleanup-policy).
+There is no enable/disable switch or per-agent override.
 
 Both runtimes reread settings each lifecycle pass and before resource effects;
 a change during final verification defers the effect to the next pass. Existing

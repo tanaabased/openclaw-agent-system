@@ -831,11 +831,11 @@ describe('agent/openclaw-feedback', () => {
     revoked = true;
     await assert.rejects(action('publish', { digest }), /feedback-authority-revoked/);
     revoked = false;
-    input.policy.issueAssignment!.feedback = false;
+    input.policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
     await assert.rejects(action('publish', { digest }), /workflow-policy-held/);
     assert.equal(writes, 0);
     input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
-    input.policy.issueAssignment!.enabled = false;
+    input.policy.issueAssignment!.paused = true;
     assert.equal((await action('publish', { digest })).status, 'published');
     assert.equal(writes, 1);
     assert.match(event.result!.privateText, /Full private/);

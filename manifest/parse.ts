@@ -18,12 +18,7 @@ import {
 } from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
-import { externalGitHubNotificationsSchema } from '../channels/github/config-schema.ts';
-import {
-  githubFeedbackCompatibilityDiagnostics,
-  githubPauseCompatibilityDiagnostics,
-  validateGitHubNotificationPolicy,
-} from '../channels/github/notification-policy.ts';
+import { validateGitHubNotificationPolicy } from '../channels/github/notification-policy.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import { decodeBackup, externalBackupSchema } from './backup-schema.ts';
@@ -172,24 +167,6 @@ function modelTierGroupDiagnostics(value: unknown): ManifestDiagnostic[] {
       code: 'manifest-model-tier-group-incomplete',
       fieldPath: '/models',
       message: `Model work tiers must declare low, medium, and high together. Missing: ${missing.join(', ')}.`,
-      severity: 'error',
-    },
-  ];
-}
-
-function globalFeedbackDiagnostics(value: unknown): ManifestDiagnostic[] {
-  const github = isRecord(value) && value.github;
-  const notifications = isRecord(github) && github.notifications;
-  if (!isRecord(notifications) || !Object.hasOwn(notifications, 'feedback')) return [];
-  const policy = { ...notifications };
-  delete policy.feedback;
-  if (!Value.Check(externalGitHubNotificationsSchema, policy)) return [];
-  return [
-    {
-      code: 'github-notification-global-feedback-removed',
-      fieldPath: '/github/notifications/feedback',
-      message:
-        'Global feedback is no longer supported. Remove it and explicitly choose feedback under issue-assignment and/or review-request: false, true to inherit allowed identities, or {inherit, allowed}. No permissions are migrated automatically.',
       severity: 'error',
     },
   ];
@@ -365,19 +342,6 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
 
 /** validate and normalize an effective document before any external values are resolved. */
 export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
-  const ignoredV2 =
-    isRecord(value) &&
-    isRecord(value.github) &&
-    value.github['schema-version'] === 3 &&
-    Object.hasOwn(value.github, 'notifications');
-  if (ignoredV2 && isRecord(value) && isRecord(value.github)) {
-    const github = { ...value.github };
-    delete github.notifications;
-    value = { ...value, github };
-  }
-
-  const notifications =
-    isRecord(value) && isRecord(value.github) ? value.github.notifications : undefined;
   const agentKey = isRecord(value) && Object.hasOwn(value, 'setup-agent') ? 'setup-agent' : 'setup';
   const declarations = (['setup-host', agentKey] as const).flatMap((key) => {
     if (!isRecord(value) || !Object.hasOwn(value, key)) return [];
@@ -422,30 +386,8 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,
     ]),
-    ...(isRecord(notifications) &&
-    (notifications['schema-version'] === 1 ||
-      (notifications['schema-version'] === undefined &&
-        [
-          'approved-actors',
-          'approved-issue-assigners',
-          'assignment-types',
-          'initial-mode',
-          'max-concurrent-issues',
-          'pull-request',
-        ].some((key) => Object.hasOwn(notifications, key))))
-      ? [
-          {
-            code: 'github-notification-v1-retired',
-            fieldPath: '/github/notifications',
-            message:
-              'V1 GitHub notifications have been retired. Declare schema-version: 2 and explicit runtime, owner and trigger policies; old state is retained and is not migrated automatically.',
-            severity: 'error' as const,
-          },
-        ]
-      : []),
     ...legacyPolicyDiagnostics(value),
     ...modelTierGroupDiagnostics(value),
-    ...globalFeedbackDiagnostics(value),
   ];
   if (declarationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
     const declarationPaths = new Set(
@@ -489,23 +431,7 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const host = declarations.find(({ key }) => key === 'setup-host');
   const agent = declarations.find(({ key }) => key === agentKey);
   const manifest = decodeManifest(value);
-  const legacyNotifications =
-    value.github && 'notifications' in value.github ? value.github.notifications : undefined;
-  const notificationDiagnostics: ManifestDiagnostic[] = [
-    ...(ignoredV2
-      ? [
-          {
-            code: 'github-v2-ignored',
-            severity: 'warning' as const,
-            fieldPath: '/github/notifications',
-            message:
-              'GitHub V3 configuration is selected. The legacy notifications block is ignored; remove it from the source manifest and overlays. Invalid V3 never falls back to V2.',
-          },
-        ]
-      : []),
-    ...validateGitHubNotificationPolicy(manifest.github),
-    ...githubPauseCompatibilityDiagnostics(legacyNotifications),
-  ];
+  const notificationDiagnostics = validateGitHubNotificationPolicy(manifest.github);
   if (notificationDiagnostics.some(({ severity }) => severity === 'error')) {
     return { status: 'invalid', diagnostics: notificationDiagnostics };
   }
@@ -514,11 +440,6 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
     status: 'valid',
     manifest: {
       ...manifest,
-      ...(legacyNotifications?.cleanup === undefined
-        ? {}
-        : {
-            cleanupMigration: { declaration: { ...legacyNotifications.cleanup } },
-          }),
       ...(host?.setup?.status === 'valid' ? { setupHost: host.setup.setup } : {}),
       ...(agent?.setup?.status === 'valid' ? { setup: agent.setup.setup } : {}),
     },
@@ -533,17 +454,6 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       : {}),
     diagnostics: [
       ...notificationDiagnostics,
-      ...(legacyNotifications?.cleanup === undefined
-        ? []
-        : [
-            {
-              code: 'retirement-cleanup-migration-required',
-              fieldPath: '/github/notifications/cleanup',
-              severity: 'warning' as const,
-              message: `Legacy cleanup declaration ${JSON.stringify(legacyNotifications.cleanup)} holds automatic cleanup. Choose cleanup.grace-minutes in the installation config.yaml, then deliberately remove every github.notifications.cleanup block, including overlays. Removing enabled: false opts this agent into normal safe cleanup.`,
-            },
-          ]),
-      ...githubFeedbackCompatibilityDiagnostics(legacyNotifications),
       ...(isRecord(value) && Object.hasOwn(value, 'setup')
         ? [
             {

@@ -1,4 +1,4 @@
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
