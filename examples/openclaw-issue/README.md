@@ -283,6 +283,30 @@ number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'
 jq -es '[.[].records[]] | length == 1' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
+# should assess an unassigned issue through the default wrapper without new managed work or publication
+cp "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/agent.yaml" "$TMPDIR/notification-before-direct.yaml"
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const doc=YAML.parse(readFileSync(path,"utf8")); doc.github["issue-assignment"].assessment={skill:"agent-system:agent-system-issue-assessment"}; doc.github["issue-assignment"].mode="work"; writeFileSync(path,YAML.stringify(doc));' "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/agent.yaml"
+target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
+checkout=$(jq -er .worktree "$TMPDIR/notification-ordinary-Answer.json")
+params=$(jq -nc --arg target "$target" --arg checkout "$checkout" '{sessionKey:"agent:notifications-tanaabot:manual-assessment",agentId:"notifications-tanaabot",message:("Direct issue assessment target: " + $target + " checkout: " + $checkout),deliver:false,idempotencyKey:"notification-manual-assessment"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-assessment"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-assessment 300000
+jq -es '[.[].entries[]] | length == 1 and .[0].result.outcome == "plan-ready" and .[0].selection.skill.name == "agent-system-issue-assessment" and .[0].resultTurnId == "notification-manual-assessment"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-assessment-*.json
+number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'
+jq -es '[.[].records[]] | length == 1 and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+cp "$TMPDIR/notification-before-direct.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue/tanaabot/agent.yaml"
+
+# should reuse a managed assessment without resubmission or changing its receipts
+conversation=$(jq -er .threadId "$TMPDIR/notification-ordinary-Answer.json")
+checkout=$(jq -er .worktree "$TMPDIR/notification-ordinary-Answer.json")
+target=$(jq -er .html_url "$TMPDIR/notification-issue.json")
+params=$(jq -nc --arg key "$conversation" --arg target "$target" --arg checkout "$checkout" '{sessionKey:$key,agentId:"notifications-tanaabot",message:("Direct issue assessment target: " + $target + " checkout: " + $checkout),deliver:false,idempotencyKey:"notification-managed-assessment-read"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-managed-assessment-read"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-managed-assessment-read 300000
+jq -es --slurpfile before "$TMPDIR/notification-ordinary-Answer.json" '[.[].records[]] | length == 1 and .[0].result == $before[0].result and .[0].stageReceipt == $before[0].stageReceipt and .[0].assessmentHistory == $before[0].assessmentHistory and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
 # should publish only after a later explicit request and reconcile without another post
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue/emori"
 draft_id=$(jq -er .id "$TMPDIR/notification-manual-draft.json")

@@ -1,3 +1,4 @@
+import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
 import { Type, type TProperties } from 'typebox';
 import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
@@ -12,6 +13,7 @@ const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 export const dispatchParameters = Type.Union([
   replyRequestSchema,
+  directAssessmentRequestSchema,
   object({ action: Type.Literal('retire'), id: Type.Optional(id), digest: Type.Optional(id) }),
   object({
     action: Type.Literal('check'),

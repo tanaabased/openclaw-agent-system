@@ -67,6 +67,14 @@ export interface OpenClawDispatchDependencies {
     presentationOnly?: boolean,
   ): Promise<string>;
   credential: Pick<SessionDispatchCredential, 'use'>;
+  assessmentGit?(input: {
+    manifest: AgentManifest;
+    workspace: string;
+    caller: DispatchCaller;
+    cwd: string;
+    argv: string[];
+    signal: AbortSignal;
+  }): Promise<string>;
   now?: () => number;
   feedbackConnect?(
     input: { manifest: AgentManifest; workspaceDir: string },

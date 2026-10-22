@@ -296,7 +296,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, observe-denials, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. operator-only retire accepts an exact owned task, including open assigned work, and enters the existing safe retirement lifecycle immediately without eligibility wait or grace. native ownership, running work, preservation and current configuration still apply; incomplete archival or reclamation remains pending. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, observe-denials, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, retire, or assessment context|result|present. Direct assessment uses an explicit issue target and existing checkout path in the current chat without assignment or intake activation; it never authorizes implementation or publication. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. operator-only retire accepts an exact owned task, including open assigned work, and enters the existing safe retirement lifecycle immediately without eligibility wait or grace. native ownership, running work, preservation and current configuration still apply; incomplete archival or reclamation remains pending. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }
@@ -307,6 +307,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     if (
       typeof action !== 'string' ||
       ![
+        'assessment',
         'inspect',
         'observe-denials',
         'next',
@@ -468,7 +469,7 @@ runCodexRuntime().catch((error: unknown) => {
             error instanceof RoutingError ||
             error instanceof CodexAutomationError
           ? { code: error.code }
-          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment-result|heartbeat|notification-reset)-[a-z-]+$/u.test(
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|heartbeat|notification-reset)-[a-z-]+$/u.test(
                 message,
               )
             ? { code: message }

@@ -1,3 +1,4 @@
+import { assessmentEntriesSchema } from './assessment-entry-state.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import { join } from 'node:path';
@@ -34,6 +35,7 @@ export const assessmentStageReceiptSchema = Type.Object(
   { additionalProperties: false },
 );
 export const dispatchRecordProperties = {
+  directAssessments: Type.Optional(assessmentEntriesSchema),
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   id: hash,
   intakeId: hash,

@@ -91,6 +91,34 @@ describe('agent/codex-runtime-request', () => {
     ] as const)
       assert.throws(() => parse(route, [...args], {}), /workflow-command-/);
   });
+  it('should expose direct assessment operations and reject hidden or substituted operations', () => {
+    for (const operation of ['context', 'result', 'present']) {
+      assert.equal(
+        parse('dispatch', ['assessment', operation, '--plugin-data', '/private/plugin'], {}).request
+          .operation,
+        operation,
+      );
+    }
+    assert.throws(
+      () =>
+        parse('dispatch', ['--plugin-data', '/private/plugin'], {
+          action: 'assessment',
+          operation: 'context',
+        }),
+      /workflow-command-operation-required/,
+    );
+    assert.throws(
+      () =>
+        parse('dispatch', ['assessment', 'context', '--plugin-data', '/private/plugin'], {
+          operation: 'result',
+        }),
+      /workflow-command-action-mismatch/,
+    );
+    assert.throws(
+      () => parse('dispatch', ['assessment', 'publish', '--plugin-data', '/private/plugin'], {}),
+      /workflow-command-operation-invalid/,
+    );
+  });
   it('should preserve legacy saved requests without changing their effect', () => {
     const request = {
       action: 'delivery',

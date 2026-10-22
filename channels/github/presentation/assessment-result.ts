@@ -14,7 +14,8 @@ import githubNotificationCard, {
 interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
   includeDetails?: boolean;
   issue: { label: string; url: string };
-  routing: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
+  assessmentOnly?: boolean;
+  routing?: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
     model: string;
     effort: string;
   };
@@ -39,7 +40,7 @@ export default function renderAssessmentResult(
   };
   const { routing, effective, assessment } = context;
   const text = githubNotificationMarkdownText;
-  const routingCard = modelRoutingCard({ routing, effective });
+  const routingCard = routing ? modelRoutingCard({ routing, effective }) : undefined;
   const instructionsCard = workflowInstructions(
     'Assessment',
     assessment,
@@ -50,6 +51,9 @@ export default function renderAssessmentResult(
     [
       '## ' + titles[result.outcome],
       result.summary,
+      ...(context.assessmentOnly
+        ? ['Assessment only. No implementation or publication is authorized.']
+        : []),
       '**Issue:** [' + text(context.issue.label) + '](' + context.issue.url + ')',
       ...(result.outcome === 'operator-setup-blocker'
         ? ['## Action', result.remediation, '**Diagnostic:** `' + result.code + '`']
@@ -65,9 +69,9 @@ export default function renderAssessmentResult(
     ...(!reviewOnly && 'assessment' in result && needsSection(result.assessment)
       ? ['## Assessment', result.assessment]
       : []),
-    routingCard,
+    ...(routingCard ? [routingCard] : []),
     ...(instructionsCard ? [instructionsCard] : []),
-    ...(result.decision
+    ...(result.decision && !context.assessmentOnly
       ? [
           githubNotificationCard({
             emoji: assessmentDecisionMode(result.decision) === 'plan' ? '⏸️' : '▶️',

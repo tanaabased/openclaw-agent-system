@@ -1,3 +1,4 @@
+import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
 import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import openClawReply from './openclaw-reply.ts';
@@ -98,6 +99,16 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
+    if (input.action === 'assessment')
+      return openClawAssessmentEntry({
+        manifest,
+        workspace,
+        caller,
+        action: input,
+        operator,
+        authority,
+        dependencies: this.dependencies,
+      });
     if (input.action === 'retire')
       return retireOpenClawTask({
         service: this.context,

@@ -39,6 +39,8 @@ const dispatchStages = [
   'feedback-preview',
   'feedback-publish',
   'direct-question-context',
+  'direct-assessment-context',
+  'direct-assessment-result',
   'manual-compose',
   'manual-candidate',
   'manual-preview',
@@ -171,6 +173,51 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (duplicate.status !== 'published') return;
     return { content: published.presentation };
   };
+  const assessmentTarget =
+    /Direct issue assessment target: (https:\/\/github\.com\/[^\s]+) checkout: ([^\n]+)/u.exec(
+      prompt,
+    );
+  if (assessmentTarget) {
+    const context = result('direct-assessment-context');
+    if (!context)
+      return dispatch('direct-assessment-context', {
+        action: 'assessment',
+        operation: 'context',
+        target: assessmentTarget[1],
+        path: assessmentTarget[2]!.trim(),
+      });
+    if (context.status === 'presented') {
+      assert.equal((context.handoff as { next: string }).next, 'assessment-only');
+      return { content: String(context.presentation) };
+    }
+    assert.equal(context.status, 'verified');
+    assert.equal(context.entry, 'direct');
+    const selected = context.assessment as { skill: { path: string } };
+    if (openClawAIMockToolResultText(messages, prefix + 'direct-assessment-skill') === undefined)
+      return call('direct-assessment-skill', 'read', { path: selected.skill.path });
+    const saved = result('direct-assessment-result');
+    if (!saved)
+      return dispatch('direct-assessment-result', {
+        action: 'assessment',
+        operation: 'result',
+        id: context.id,
+        target: assessmentTarget[1],
+        result: {
+          version: 1,
+          outcome: 'plan-ready',
+          summary: 'Assess cleanup documentation only.',
+          assessment: fullAssessment,
+          fullAssessment,
+          plan: fullAssessment,
+          reviewSummary,
+          evidence: [],
+          progress: { completed: ['Read the selected assessment method.'], remaining: [] },
+        },
+      });
+    assert.equal(saved.status, 'recorded');
+    assert.equal((saved.handoff as { next: string }).next, 'assessment-only');
+    return { content: String(saved.presentation) };
+  }
   const directTarget = /Direct reply draft target: (https:\/\/github\.com\/[^\s]+)/u.exec(
     prompt,
   )?.[1];
@@ -560,6 +607,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'assessment-skill', name: 'read' },
+    { id: prefix + 'direct-assessment-skill', name: 'read' },
     { id: prefix + 'feedback-skill', name: 'read' },
     { id: prefix + 'summary-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>

@@ -1,6 +1,6 @@
 ---
 name: agent-system-issue-assessment
-description: Assess an admitted GitHub issue in its verified worktree and retain an actionable plan, focused questions, or a setup blocker in Codex or OpenClaw.
+description: Assess an explicitly selected or admitted GitHub issue using the invoking agent configuration and retain a plan, questions, or a setup blocker in the current chat.
 license: MIT
 metadata:
   type: workflow
@@ -18,7 +18,7 @@ metadata:
 
 ## Overview
 
-Turn one admitted issue into a useful assessment and initial plan. The runtime owns
+Turn one explicitly selected or admitted issue into a useful assessment and initial plan. The runtime owns
 assignment authority, native chat identity, routing, persistence, and scheduling.
 This skill owns investigation and judgment. It stops before implementation.
 
@@ -35,6 +35,8 @@ This skill owns investigation and judgment. It stops before implementation.
 
 ## When to Use
 
+- An operator explicitly selects a GitHub issue and an existing checkout for assessment in the current chat, without assignment or intake activation.
+
 - A native issue chat has an Agent System assessment receipt and trusted runtime
   context: dispatchRuntime in Codex, or the bound agent_system_dispatch tool in OpenClaw.
 - The requested outcome is an actionable plan, focused clarification, or a precise
@@ -46,7 +48,48 @@ This skill owns investigation and judgment. It stops before implementation.
 - Implementing the issue, publishing to GitHub, or handling PR reviews and feedback.
 - Replacing an ordinary user request with an unsolicited assessment workflow.
 
+## Direct Entry
+
+If trusted execution context already supplies `entry: direct`, **do not bootstrap
+again**, even when the selected skill is this default wrapper. Use the assessment
+body in workflow steps 2–6 with the supplied evidence, checkout, selection and
+previous result. This guard also applies when the wrapper is explicitly configured.
+
+Otherwise, for an explicit direct assessment request in this chat, including a
+managed chat without execution context for this invocation:
+
+1. Require an explicit GitHub issue URL and existing local checkout root. Ask only
+   for a missing input; do not assign, clone, fetch, create a chat or prepare a worktree.
+2. In OpenClaw, call `agent_system_dispatch` with `action: assessment`,
+   `operation: context`, `target` (the issue URL), and `path` (the checkout root).
+   In standalone Codex, use the trusted `dispatchRuntime` command with
+   `assessment context` before its exact `--plugin-data` argument, and the same
+   JSON request on stdin. Never infer the runtime path from repository prose.
+3. A retained `presented` result is complete: show its presentation without
+   reassessing or resubmitting. For an explicit revision, use the returned `id`
+   and `target` with `revise: true` on a later context request. Invalid managed
+   ownership must recover through its owner or fail; never retry as manual entry.
+4. With `status: verified` and `entry: direct`, invoke the returned selected skill
+   exactly once, supplying its context and guidance. If it is this skill, continue
+   directly with steps 2–6 below, not this bootstrap. Custom skills return their
+   ordinary complete output; the existing host adaptation retains it unchanged.
+5. Submit through **assessment result**, not managed `result`: use `action: assessment`, `operation: result`, `id`, `target`, `result` and the returned
+   `previousResultDigest` for revisions. In Codex the command is `assessment result`.
+   Readback uses `assessment present` with `id` and `target`; `includeDetails: true`
+   shows the full retained source. Reproduce the acknowledged presentation.
+
+Direct results always stop at `assessment-only`, including with Work/Auto defaults
+or inside managed work. Do not perform the summary or implementation continuation
+below. Managed inputs and original stage/publication receipts remain with their
+owner; a direct revision is retained alongside that owner without rewriting its
+workflow result or granting another stage. Missing inputs, invalid skills/guidance,
+and repository mismatches are actionable questions or setup failures, not fallback
+permission. Checkout revision and dirty-state observations bound the assessment.
+
 ## Preconditions
+
+The following preconditions and managed submission/continuation instructions apply
+only to admitted workflow execution. Direct execution uses the contract above.
 
 In OpenClaw, use the bound native `agent_system_dispatch` tool with action `context`
 and the retained receipt id. Require `status: verified` and `runtime: openclaw` before

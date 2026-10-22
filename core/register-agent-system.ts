@@ -317,6 +317,25 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     automations: automationService,
     manifestService: lifecycleManifestService,
     worktrees: gitCapability.trustedWorktreeService,
+    async assessmentGit({ manifest, workspace, caller, cwd, argv, signal }) {
+      const result = await toolRuntime.executeCli(
+        gitCapability.definition,
+        { argv, cwd },
+        {
+          source: 'tool',
+          toolContext: {
+            agentId: manifest.agent.id,
+            workspaceDir: workspace,
+            sessionKey: caller.sessionKey,
+            sessionId: caller.sessionId,
+          },
+        },
+        signal,
+      );
+      if (result.output.exitCode !== 0 || result.output.truncated)
+        throw new Error('assessment-git-operation-failed');
+      return result.output.stdout;
+    },
     async feedbackConnect(input, signal, connection) {
       if (connection instanceof GitHubWorkEventClient) return connection;
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
