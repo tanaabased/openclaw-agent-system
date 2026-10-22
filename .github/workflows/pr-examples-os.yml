@@ -73,6 +73,7 @@ jobs:
         shell: bash
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
           DBUS_SESSION_BUS_ADDRESS: unix:path=${{ runner.temp }}/secret-service-bus
