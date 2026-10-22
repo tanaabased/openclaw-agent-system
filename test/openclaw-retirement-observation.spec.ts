@@ -9,15 +9,8 @@ function fixture() {
   const record = {
     threadId: 'agent:owner:subagent:old',
     worktree: '/work/issue',
-    request: { runtime: 'subagent', cwd: '/work/issue' },
-    creationCall: { sessionId: 'parent', runId: 'creation-run', toolCallId: 'create' },
-    native: {
-      sessionKey: 'agent:owner:subagent:old',
-      sessionId: 'child',
-      runId: 'run',
-      sourceSessionId: 'parent',
-      toolCallId: 'create',
-    },
+    request: { key: 'agent:owner:subagent:old', agentId: 'owner', cwd: '/work/issue' },
+    sessionCreation: { attempted: true, sessionId: 'child' },
   } as OpenClawDispatchRecord;
   const row: Record<string, unknown> = {
     key: record.threadId,
@@ -41,7 +34,7 @@ function fixture() {
 }
 
 describe('agent/openclaw retirement observation', () => {
-  it('should verify historical native receipts without replacing them', async () => {
+  it('should verify current native receipts without replacing them', async () => {
     const f = fixture();
     const before = structuredClone(f.record);
     const observed = await observeRetiringSession(f.request, f.record, 'owner');
@@ -59,7 +52,7 @@ describe('agent/openclaw retirement observation', () => {
       );
     }
     const f = fixture();
-    delete f.record.native;
+    delete f.record.sessionCreation;
     await assert.rejects(
       observeRetiringSession(f.request, f.record, 'owner'),
       /retirement-session-identity-unresolved/,

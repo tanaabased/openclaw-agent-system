@@ -137,12 +137,7 @@ export default class OpenClawNotifications {
           ? waiting.record
           : journal.records.findLast((entry) => entry.issueKey === issueKey(item));
         const prepared = Boolean(
-          record?.worktree &&
-          record.threadId &&
-          (record.sessionCreation?.verified ||
-            (record.native?.sessionKey === record.threadId &&
-              record.effective?.status === 'verified' &&
-              record.setupComplete)),
+          record?.worktree && record.threadId && record.sessionCreation?.verified,
         );
         const feedback = record?.feedback;
         const latestFeedback = feedback?.events.at(-1);

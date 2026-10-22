@@ -374,7 +374,7 @@ export default async function runCodexDelivery(
         else if (record.handoff || found.followUpUserTurn)
           record.progression ??= {
             stage: 'implementation',
-            via: record.handoff ? 'legacy' : 'operator',
+            via: 'operator',
           };
         else throw new WorkflowPolicyHeld('implementation-disabled');
       }

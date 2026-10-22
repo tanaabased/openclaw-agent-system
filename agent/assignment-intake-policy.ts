@@ -1,4 +1,4 @@
-import { notificationAuthority, legacyNotificationAuthority } from './notification-authority.ts';
+import { notificationAuthority } from './notification-authority.ts';
 import { automationHash } from './automation-hash.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -13,18 +13,13 @@ export default function assignmentIntakePolicy(
     return;
   const username = manifest.github?.username;
   if (typeof username !== 'string') throw new IntakeError('intake-literal-identity-required');
-  const digest = (project: typeof notificationAuthority) =>
-    automationHash({
-      username,
-      host: manifest.github?.host,
-      policy: project({ ...policy, reviewRequest: undefined }),
-    });
   return {
     policy,
     username,
-    digest: digest(notificationAuthority),
-    legacyDigest: digest((policy) =>
-      legacyNotificationAuthority(policy, manifest.cleanupMigration?.declaration.enabled ?? true),
-    ),
+    digest: automationHash({
+      username,
+      host: manifest.github?.host,
+      policy: notificationAuthority({ ...policy, reviewRequest: undefined }),
+    }),
   };
 }

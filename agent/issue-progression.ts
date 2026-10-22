@@ -5,12 +5,7 @@ import { assessmentDecisionMode } from './assessment-result.ts';
 export const issueProgressionSchema = Type.Object(
   {
     stage: Type.Literal('implementation'),
-    via: Type.Union([
-      Type.Literal('work'),
-      Type.Literal('auto'),
-      Type.Literal('operator'),
-      Type.Literal('legacy'),
-    ]),
+    via: Type.Union([Type.Literal('work'), Type.Literal('auto'), Type.Literal('operator')]),
     workOwner: Type.Optional(
       Type.Union([Type.Literal('issue'), Type.String({ pattern: '^[a-f0-9]{64}$' })]),
     ),
@@ -28,7 +23,7 @@ interface Issue {
   handoff?: unknown;
   result?: {
     outcome: string;
-    decision?: { mode: 'plan' | 'work' } | { action: 'wait' | 'proceed' };
+    decision?: { mode: 'plan' | 'work' };
   };
   continuation?: {
     phase?: string;
@@ -40,17 +35,9 @@ interface Issue {
   work?: { implementation?: unknown };
 }
 
-/** recover stage from execution receipts, never from a default mode or a plan alone. */
+/** current workflows retain their explicit implementation transition. */
 export function retainedIssueProgression(issue: Issue): IssueProgression | undefined {
-  return (
-    issue.progression ??
-    (issue.continuation?.attempt ||
-    issue.continuation?.binding ||
-    issue.continuation?.result ||
-    issue.work?.implementation
-      ? { stage: 'implementation', via: 'legacy' }
-      : undefined)
-  );
+  return issue.progression;
 }
 
 /** mode governs entry once; lifecycle stops remain independent of the retained stage. */

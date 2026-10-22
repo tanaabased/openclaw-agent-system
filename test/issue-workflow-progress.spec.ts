@@ -88,4 +88,10 @@ describe('agent/issue-workflow-progress', () => {
       'wait-input',
     );
   });
+  it('should require current completion receipts instead of trusting an old complete phase', () => {
+    assert.deepEqual(
+      issueWorkflowProgress({ phase: 'complete', continuation: { phase: 'complete' } }),
+      { action: 'wait-input', status: 'result-missing' },
+    );
+  });
 });

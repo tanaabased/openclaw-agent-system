@@ -56,7 +56,6 @@ function fixture() {
     policy: provider.policy,
     username: 'receiver',
     digest: 'digest',
-    legacyDigest: 'legacy',
   };
   const input = {
     record,

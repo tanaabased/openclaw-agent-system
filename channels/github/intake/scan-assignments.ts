@@ -26,7 +26,6 @@ export interface AssignmentScanInput {
   agentId: string;
   policy: GitHubNotificationPolicy;
   policyDigest: string;
-  legacyPolicyDigest?: string;
   now: number;
   activate?: boolean;
   budget?: DiscoveryBudget;

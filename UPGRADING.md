@@ -66,10 +66,24 @@ agent's automatic cleanup while unrelated issue work remains usable.
 
 Existing deadlines and uncertain cleanup receipts remain intact. Retirement first
 observed while settings are blocked starts its grace only after configuration is
-usable. Older terminal records without verified native completion are reported as
-`retirement-legacy-unverified` and preserved; this upgrade does not sweep or revive
-historically retired resources. Exact native/operator recovery is required for those
-resources, subject to ownership and work preservation.
+usable. Historical terminal records do not authorize cleanup or revive managed work.
+Preserve archived resources and their ownership evidence.
+
+## Notification workflow state
+
+Legacy workflow decoding and repair are removed after the accepted reset rollout in
+[#426](https://github.com/tanaabased/openclaw-agent-system/issues/426). Current work
+keeps its explicit stage and native execution/publication receipts. Retained pre-reset
+history is inert; it is not scanned, repaired, or resumed as active workflow state.
+
+Restore backups into staging. Do not copy pre-reset notification tracking into the
+active state directory: a nonempty store without a reset generation stops with
+`notification-state-reset-required`, and retired schema fields are rejected. The
+original files are preserved. If old tracking must be restored, perform the supported
+notification reset with its compatible reset-capable release before upgrading; do
+not delete journals or invent assignment events to force intake. Ordinary reset
+preserves issue chats, checkouts, branches, commits, pull requests, and assignments.
+Current interrupted-work recovery and reset-generation fencing remain supported.
 
 ## Managed collaboration
 

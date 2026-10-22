@@ -22,10 +22,6 @@ describe('agent/assessment-result', () => {
       assessment: 'Observed.',
       plan: 'Small change.',
     };
-    for (const action of ['proceed', 'wait']) {
-      const value = { ...plan, decision: { action, reasons: ['The scope is understood.'] } };
-      assert.deepEqual(parseAssessmentResult(value), value);
-    }
     for (const mode of ['plan', 'work'] as const) {
       const value = { ...plan, decision: { mode, reasons: ['The scope is understood.'] } };
       assert.deepEqual(parseAssessmentResult(value), value);
@@ -37,12 +33,7 @@ describe('agent/assessment-result', () => {
     }
     for (const action of ['wait', 'proceed'] as const) {
       const value = { ...plan, decision: { action, reasons: ['Legacy decision.'] } };
-      const source = JSON.stringify(value);
-      assert.equal(
-        assessmentDecisionMode(parseAssessmentResult(value).decision),
-        action === 'wait' ? 'plan' : 'work',
-      );
-      assert.equal(JSON.stringify(value), source);
+      assert.throws(() => parseAssessmentResult(value), /assessment-result-invalid/);
       assert.equal(
         Value.Check(JSON.parse(JSON.stringify(assessmentResultContextSchema)), value),
         false,
@@ -69,7 +60,7 @@ describe('agent/assessment-result', () => {
           outcome: 'clarification-needed',
           assessment: 'Unknown retention.',
           questions: ['How long?'],
-          decision: { action: 'proceed', reasons: ['Try anyway.'] },
+          decision: { mode: 'work', reasons: ['Try anyway.'] },
         }),
       /assessment-decision-conflict/,
     );

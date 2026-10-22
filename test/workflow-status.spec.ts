@@ -16,7 +16,10 @@ describe('agent/workflow-status', () => {
       'blocked',
       'cancelled',
     ])
-      assert.equal(workflowStatus({ ...record, continuation: { phase } }), phase);
+      assert.equal(
+        workflowStatus({ ...record, continuation: { phase } }),
+        phase === 'complete' ? 'result-missing' : phase,
+      );
     assert.equal(record.autoDecision.ended, false);
   });
   it('should report openclaw work and questions while the original decision receipt is pending', () => {
@@ -159,7 +162,10 @@ describe('agent/workflow-status', () => {
     const assessment = { phase: 'complete', result: { outcome: 'plan-ready' } };
     assert.equal(workflowStatus(assessment), 'plan-ready');
     for (const phase of ['waiting', 'prepared', 'running', 'delivery', 'complete'])
-      assert.equal(workflowStatus({ ...assessment, continuation: { phase } }), phase);
+      assert.equal(
+        workflowStatus({ ...assessment, continuation: { phase } }),
+        phase === 'complete' ? 'result-missing' : phase,
+      );
     for (const [status, expected] of [
       ['attempted', 'uncertain'],
       ['accepted', 'prepared'],

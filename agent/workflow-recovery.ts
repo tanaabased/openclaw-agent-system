@@ -19,6 +19,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'notification-state-reset-required': [
+      'Restored notification tracking predates the required reset; no workflow was resumed.',
+      'Preserve the original file. Restore backups into staging and use the compatible reset-capable release to complete an explicit notification reset before upgrading. Do not delete journals or recreate assignments to bypass this boundary.',
+    ],
     'instance-install-required': [
       'This installation has no saved identity.',
       'Run Install to create its persistent UUID and readable name before claiming assignments.',

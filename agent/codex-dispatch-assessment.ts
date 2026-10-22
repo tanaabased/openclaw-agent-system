@@ -175,7 +175,6 @@ export async function handoffDispatch(
       record: {
         ...record,
         feedback: undefined,
-        notice: undefined,
         intakeReportedAt: undefined,
         renameRequested: undefined,
       },

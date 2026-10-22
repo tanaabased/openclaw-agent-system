@@ -406,28 +406,6 @@ describe('agent/openclaw-notifications', () => {
     });
     assert.equal(result.status, 'completed');
     assert.equal(result.observation.items[0]?.workflow?.conversation, 'issue-chat');
-    delete r.sessionCreation;
-    r.native = {
-      sessionKey: 'issue-chat',
-      sessionId: 'session',
-      runId: 'run',
-      sourceSessionId: 'coordinator',
-      toolCallId: 'tool',
-    };
-    r.effective = { status: 'verified' };
-    r.setupComplete = true;
-    result = await f.service.wait(f.manifest, '/workspace', {
-      selector,
-      target: 'prepared',
-      timeoutMs: 1,
-      refresh: false,
-    });
-    assert.equal(
-      result.status,
-      'completed',
-      'retained verified native bindings must remain observable',
-    );
-
     r.phase = 'assessing';
     result = await f.service.wait(f.manifest, '/workspace', {
       selector,

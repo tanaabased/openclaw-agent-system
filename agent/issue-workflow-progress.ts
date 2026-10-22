@@ -124,8 +124,8 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
       };
   }
   if (continuation) {
-    // retain old phase-only records until the separately approved compatibility cutover.
-    if (continuation.phase === 'complete') return { action: 'complete', status: 'complete' };
+    if (continuation.phase === 'complete')
+      return { action: 'wait-input', status: 'result-missing' };
     return {
       action: continuation.phase === 'delivery' ? 'delivery' : 'implementation',
       ...(continuation.phase === 'delivery' ? { publicationPending: true } : {}),
