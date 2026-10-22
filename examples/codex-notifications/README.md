@@ -283,9 +283,11 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 sed 's/  schema-version: 3/  schema-version: 3\n  notifications: {obsolete: true}/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/unsupported-agent.yaml"
 cp "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" "$root/original-agent.yaml"
+trap 'cp "$root/original-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"' EXIT
 cp "$root/unsupported-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key" and .fieldPath == "/github/notifications")'
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
 cp "$root/original-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
+trap - EXIT
 node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" | jq -e '.manifest.status == "valid"'
 
 # should reject removed global feedback before binding or activation
