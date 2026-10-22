@@ -370,32 +370,33 @@ describe('tools/dispatch/tool', () => {
     }
     assert.equal(f.hooks.has('agent_end'), false);
   });
-  it('should require both native requester and factory owner evidence for work actions', async () => {
-    const f = fixture();
-    const values: boolean[] = [];
-    f.adapter.service.run = async (_manifest, _workspace, _who, _input, owner) => {
-      values.push(owner === true);
-      return { status: 'idle' };
-    };
-    const request = {
-      ...event,
-      params: { action: 'handoff', id: 'a'.repeat(64), permission: 'implementation' },
-    };
-    for (const [hookOwner, factoryOwner] of [
-      [true, true],
-      [true, false],
-      [false, true],
-      [undefined, true],
-    ]) {
-      await f.hook(request, { ...coordinator, requester: { senderIsOwner: hookOwner } });
-      await f
-        .build({
-          ...coordinator,
-          workspaceDir: '/workspaces/receiver',
-          senderIsOwner: factoryOwner,
-        })
-        .execute(request.toolCallId, request.params);
-    }
-    assert.deepEqual(values, [true, false, false, false]);
-  });
+  for (const action of ['handoff', 'retire'] as const)
+    it(`should require both native requester and factory owner evidence for ${action}`, async () => {
+      const f = fixture();
+      const values: boolean[] = [];
+      f.adapter.service.run = async (_manifest, _workspace, _who, _input, owner) => {
+        values.push(owner === true);
+        return { status: 'idle' };
+      };
+      const request = {
+        ...event,
+        params: { action, id: 'a'.repeat(64) },
+      };
+      for (const [hookOwner, factoryOwner] of [
+        [true, true],
+        [true, false],
+        [false, true],
+        [undefined, true],
+      ]) {
+        await f.hook(request, { ...coordinator, requester: { senderIsOwner: hookOwner } });
+        await f
+          .build({
+            ...coordinator,
+            workspaceDir: '/workspaces/receiver',
+            senderIsOwner: factoryOwner,
+          })
+          .execute(request.toolCallId, request.params);
+      }
+      assert.deepEqual(values, [true, false, false, false]);
+    });
 });

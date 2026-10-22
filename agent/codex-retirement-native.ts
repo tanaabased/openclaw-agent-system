@@ -134,7 +134,7 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
       sourceThreadId: string,
       threadId: string,
       attempt: { at: number; turnId: string },
-      currentTurnId: string,
+      currentTurnId?: string,
     ): Promise<'unsubmitted' | 'denied' | 'unverified'> {
       const history = await creationHistory(
         request,

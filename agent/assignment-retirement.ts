@@ -35,10 +35,24 @@ export const retirementSchema = Type.Object(
       Type.Literal('issue-closed'),
       Type.Literal('assignment-removed'),
       Type.Literal('chat-archived'),
+      Type.Literal('operator-requested'),
     ]),
     at: time,
     intakeId: text,
     checkedAt: time,
+    operatorRequest: Type.Optional(
+      Type.Object(
+        {
+          caller: text,
+          turnId: text,
+          targetId: text,
+          at: time,
+          inputId: Type.Optional(text),
+          sessionId: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     reactivationAfter: Type.Optional(time),
     removalEventId: Type.Optional(text),
     eligibleAt: time,
@@ -60,7 +74,10 @@ export const retirementSchema = Type.Object(
     ),
     archivedAt: Type.Optional(time),
     archiveAttempt: Type.Optional(
-      Type.Object({ at: time, turnId: text }, { additionalProperties: false }),
+      Type.Object(
+        { at: time, turnId: text, sourceThreadId: Type.Optional(text) },
+        { additionalProperties: false },
+      ),
     ),
     worktreeRemovalObserved: Type.Optional(
       Type.Object(
@@ -91,30 +108,36 @@ export default function assignmentRetirement(input: {
   graceMinutes?: number;
   activityId?: string;
   reactivate?: boolean;
+  operatorRequest?: Retirement['operatorRequest'];
 }): Retirement | undefined {
   if (input.reactivate) return undefined;
   if (!input.reason && !input.previous) return undefined;
   const previous = input.previous;
+  const operatorRequest = previous?.operatorRequest ?? input.operatorRequest;
   const activity = Boolean(
     previous && input.activityId && previous.activityId !== input.activityId,
   );
   return {
     ...previous,
-    reason: input.reason ?? previous!.reason,
+    reason: operatorRequest ? 'operator-requested' : (input.reason ?? previous!.reason),
+    ...(operatorRequest ? { operatorRequest, reactivationAfter: operatorRequest.at } : {}),
     at: previous?.at ?? input.now,
     intakeId: previous?.intakeId ?? input.intakeId,
     checkedAt: input.now,
-    ...(input.reason === 'issue-closed' && previous?.reason !== 'issue-closed'
+    ...(!operatorRequest && input.reason === 'issue-closed' && previous?.reason !== 'issue-closed'
       ? { reactivationAfter: input.now }
       : {}),
-    eligibleAt:
-      !previous || activity || previous.deadlinePending
+    eligibleAt: operatorRequest
+      ? operatorRequest.at
+      : !previous || activity || previous.deadlinePending
         ? input.graceMinutes === undefined
           ? (previous?.eligibleAt ?? input.now)
           : input.now + input.graceMinutes * 60_000
         : previous.eligibleAt,
     deadlinePending:
-      (!previous || activity || previous.deadlinePending) && input.graceMinutes === undefined
+      !operatorRequest &&
+      (!previous || activity || previous.deadlinePending) &&
+      input.graceMinutes === undefined
         ? true
         : undefined,
     ...(input.activityId ? { activityId: input.activityId } : {}),

@@ -16,6 +16,8 @@ export default async function reconcileOpenClawLifecycle(input: {
   manifest: AgentManifest;
   workspace: string;
   authority: DispatchAuthority;
+  targetId?: string;
+  activeSessionKey?: string;
 }) {
   const { service, manifest, workspace, authority } = input;
   let cleanupManifest = manifest;
@@ -34,7 +36,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       (record) =>
         !record.retired &&
         !record.reset &&
-        (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now,
+        (input.targetId === record.id || (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now),
     )
   )
     return;
@@ -62,9 +64,16 @@ export default async function reconcileOpenClawLifecycle(input: {
     )
       throw new Error('retirement-workflow-changed');
   };
-  const observe = (request: DispatchRequest, record: OpenClawDispatchRecord) =>
-    observeRetirementSession(request, record, manifest.agent.id, owner);
+  const observe = async (request: DispatchRequest, record: OpenClawDispatchRecord) => {
+    const observed = await observeRetirementSession(request, record, manifest.agent.id, owner);
+    return (
+      observed && { ...observed, idle: observed.idle && record.threadId !== input.activeSessionKey }
+    );
+  };
   return current.journal.exclusive(async (state, save) => {
+    const target = input.targetId && state.records.find((record) => record.id === input.targetId);
+    if (input.targetId && (!target || target.retirement?.operatorRequest?.targetId !== target.id))
+      throw new Error('dispatch-retire-target-mismatch');
     await reconcileAssignmentLifecycle({
       configuration,
       readConfiguration,
@@ -73,6 +82,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       policy: current.policy,
       client,
       owner,
+      targetId: input.targetId,
       now,
       fresh,
       save,
@@ -255,5 +265,11 @@ export default async function reconcileOpenClawLifecycle(input: {
         });
       },
     });
+    if (target)
+      return {
+        status: target.retired ? 'retired' : target.retirement ? 'retirement-pending' : 'active',
+        id: target.id,
+        retirement: target.retirement,
+      };
   });
 }

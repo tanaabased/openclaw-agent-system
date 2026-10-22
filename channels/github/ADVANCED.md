@@ -107,6 +107,18 @@ provider evidence or a relevant live actor-list change can resolve removal autho
 Removal authority is checked again before cleanup. Completed or uncertain native
 cleanup effects keep their receipts and are not automatically undone or repeated.
 
+For an explicit operator request, use `$agent-system-task-retirement`. In OpenClaw,
+`agent_system_dispatch` action `retire` previews one exact owned task by `id` (or
+its current verified issue session); repeat with the returned `digest` to apply.
+Standalone Codex uses the [native dispatch entry](../../CODEX.md#github-notification-policy).
+The request records operator intent and attempts the existing safe cleanup now,
+skipping only scheduled eligibility, observation cadence and grace. It leaves the
+issue open/assigned and branch unchanged. Running work, pins, shared ownership,
+unpreserved changes and unfinished native cleanup remain pending. A task cannot
+archive its own active turn. Repeat the same operation or let intake reconcile it;
+only verified native-session and checkout outcomes complete retirement. Stale or
+invalid managed context must recover through its owner, never generic cleanup.
+
 Automatic cleanup uses one [installation-wide grace period](../../CONFIG.md#shared-cleanup),
 defaulting to 60 minutes for both runtimes. There is no disable switch or per-agent
 override. The deadline starts when intake first observes the change. Polling and restart preserve it; new native activity defers cleanup. Fresh,

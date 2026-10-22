@@ -82,6 +82,24 @@ describe('codex retirement cleanup', () => {
     await rm(h.input.record.worktree!, { recursive: true });
     assert.deepEqual(await h.run(), { archived: true, worktreeRemoved: true });
   });
+  it('should reconcile a manual archive from its retained operator thread during scheduled cleanup', async () => {
+    const h = await fixture();
+    h.input.sourceThreadId = 'operator';
+    await h.run();
+    assert.equal(h.input.record.retirement!.archiveAttempt!.sourceThreadId, 'operator');
+    h.input.sourceThreadId = 'owner';
+    h.input.turnId = 'scheduled';
+    h.input.native.archiveOutcome = async (source, target, attempt, currentTurnId) => {
+      assert.equal(source, 'operator');
+      assert.equal(target, 'child');
+      assert.equal(attempt.turnId, 'turn');
+      assert.equal(currentTurnId, undefined);
+      return 'unverified';
+    };
+    assert.equal((await h.run()).code, 'retirement-native-archive-unverified');
+    assert.equal(h.saved(), 1);
+  });
+
   it('should permit verified retiring peers while protecting pinned or unowned peers', async () => {
     const h = await fixture();
     h.input.shared = [{ ...h.input.record, id: 'peer', threadId: 'peer' }];
