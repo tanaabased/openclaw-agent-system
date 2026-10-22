@@ -131,6 +131,15 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
+  const publicText = (composed: Record<string, unknown>, text: string) => {
+    const selected = composed.selection as {
+      defaultSkill: boolean;
+      guidance?: { content: string };
+    };
+    if (selected.defaultSkill) return text;
+    assert.match(selected.guidance!.content, /Evidence first/u);
+    return `Evidence first: ${text} Live interpretation remains untested.`;
+  };
   const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
     if (!presentation) {
       const shown = result('recovery-present');
@@ -160,8 +169,10 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         ...args,
         operation: 'candidate',
         digest: composed.digest,
-        publicText:
+        publicText: publicText(
+          composed,
           'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
+        ),
       });
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('summary-preview');
@@ -454,7 +465,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             operation: 'delivery',
             deliveryOperation: 'candidate',
             digest: composed.digest,
-            publicText: 'Adds the disposable issue cleanup note.',
+            publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
           });
         if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
           return;
@@ -501,9 +512,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         ...args,
         operation: 'candidate',
         digest: composition.digest,
-        publicText: initial
-          ? 'Implemented the agreed cleanup note, checked the diff, and published its linked PR.'
-          : 'Added the requested note about keeping feedback changes on the original PR, checked the diff, and pushed the commit to this PR.',
+        publicText: publicText(
+          composition,
+          initial
+            ? 'Implemented the agreed cleanup note, checked the diff, and published its linked PR.'
+            : 'Added the requested note about keeping feedback changes on the original PR, checked the diff, and pushed the commit to this PR.',
+        ),
       });
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('feedback-preview');
@@ -519,7 +533,100 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
-  const operatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
+    prompt,
+  )?.[1];
+  let automaticId: string | undefined;
+  if (
+    id &&
+    prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
+  ) {
+    const context = result('context');
+    if (!context) {
+      const privateContext = request.messages
+        .map(({ content }) => getTextContent(content) ?? '')
+        .join('\n');
+      if (
+        !privateContext.includes('Agent System model-only current-turn facts') ||
+        !privateContext.includes('notification-hidden-initial-fact')
+      )
+        return;
+      return dispatch('context', { action: 'context', id });
+    }
+    const project = context.project as { path?: unknown } | undefined;
+    if (
+      context.status !== 'verified' ||
+      context.runtime !== 'openclaw' ||
+      context.id !== id ||
+      typeof project?.path !== 'string' ||
+      !context.assessment ||
+      context.resultContract !== 'assessment-result/v1'
+    )
+      return;
+    const git = result('git');
+    if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
+    if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
+      return;
+    const selection = context.assessment as {
+      defaultSkill: boolean;
+      skill: { path: string };
+      guidance?: { content: string };
+    };
+    if (openClawAIMockToolResultText(messages, prefix + 'assessment-skill') === undefined)
+      return call('assessment-skill', 'read', { path: selection.skill.path });
+    if (!selection.defaultSkill) {
+      assert.match(selection.guidance!.content, /Preserve the evidence limit/u);
+      assert.match(
+        openClawAIMockToolResultText(messages, prefix + 'assessment-skill')!,
+        /cleanup sequence/u,
+      );
+    }
+    const saved = result('result');
+    if (!saved)
+      return dispatch('result', {
+        action: 'result',
+        id,
+        result: {
+          version: 1,
+          ...(context.mode === 'auto'
+            ? {
+                decision: {
+                  mode: 'work',
+                  reasons: ['A bounded disposable documentation change with explicit cleanup.'],
+                },
+              }
+            : {}),
+          outcome: 'plan-ready',
+          summary: 'Document disposable issue cleanup.',
+          assessment: 'The admitted issue requests a small documentation change.',
+          planSummary: 'Describe closing disposable test issues after capturing evidence.',
+          plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
+          fullAssessment:
+            'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.' +
+            (!selection.defaultSkill
+              ? ' Retain sanitized evidence before cleanup; live interpretation remains untested.'
+              : ''),
+          evidence: [
+            {
+              source: project.path,
+              status: 'observed',
+              detail: 'Managed Git confirmed this worktree.',
+            },
+          ],
+          progress: {
+            completed: ['Verified the managed worktree.'],
+            remaining: ['Implement after approval.'],
+          },
+        },
+      });
+    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    const summarized = summary(id, saved.presentation);
+    if (!summarized || 'toolCalls' in summarized) return summarized;
+    if ((saved.handoff as { next?: string })?.next !== 'implementation') return summarized;
+    automaticId = id;
+  }
+  const operatorId =
+    automaticId ?? /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
     const update = prompt.includes(
       'Add a follow-up commit and update the existing PR title and body.',
@@ -532,21 +639,23 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
-      const preview = result('handoff-preview');
-      if (!preview)
-        return dispatch('handoff-preview', {
-          action: 'handoff',
-          id: operatorId,
-        });
-      if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
-      const handed = result('handoff');
-      if (!handed)
-        return dispatch('handoff', {
-          action: 'handoff',
-          id: operatorId,
-          digest: preview.digest,
-        });
-      if (handed.status !== 'handed-off') return;
+      if (!automaticId) {
+        const preview = result('handoff-preview');
+        if (!preview)
+          return dispatch('handoff-preview', {
+            action: 'handoff',
+            id: operatorId,
+          });
+        if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
+        const handed = result('handoff');
+        if (!handed)
+          return dispatch('handoff', {
+            action: 'handoff',
+            id: operatorId,
+            digest: preview.digest,
+          });
+        if (handed.status !== 'handed-off') return;
+      }
       const context = result('work-context');
       if (!context)
         return dispatch('work-context', { action: 'implementation-context', id: operatorId });
@@ -558,12 +667,28 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         context.publicationAuthorized !== true
       )
         return;
+      const selected = context.implementation as {
+        defaultSkill: boolean;
+        skill: { path: string };
+        guidance?: { content: string };
+      };
+      if (openClawAIMockToolResultText(messages, prefix + 'implementation-skill') === undefined)
+        return call('implementation-skill', 'read', { path: selected.skill.path });
+      const customized = !selected.defaultSkill;
+      if (customized) {
+        assert.match(selected.guidance!.content, /Retain sanitized evidence/u);
+        assert.match(
+          openClawAIMockToolResultText(messages, prefix + 'implementation-skill')!,
+          /cleanup sequence/u,
+        );
+      }
       const file = `notification-fixture-${operatorId}.md`;
       const patch = update
         ? `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1,2 @@\n Close disposable test issues after capturing their evidence.\n+Verify the same PR and announcement after follow-up commits.\n`
-        : `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`;
+        : `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${customized ? 2 : 1} @@\n+Close disposable test issues after capturing their evidence.\n${customized ? '+Retain sanitized evidence before cleanup.\n' : ''}`;
       const steps = [
         { stage: 'apply', argv: ['apply', '-'], stdin: patch },
+        { stage: 'check', argv: ['diff', '--check'] },
         { stage: 'add', argv: ['add', '--', file] },
         {
           stage: 'commit',
@@ -589,7 +714,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             outcome: 'done',
             summary: 'Committed the disposable cleanup note.',
             fullResult:
-              'Committed the requested cleanup note change through managed Git in the verified issue worktree.',
+              'Committed and diff-checked the cleanup note in the verified worktree.' +
+              (customized ? ' Retained sanitized evidence before cleanup.' : ''),
           },
         });
       const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
@@ -685,7 +811,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           operation: 'candidate',
           id: operatorId,
           digest: composed.digest,
-          publicText: 'Adds the disposable issue cleanup note.',
+          publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
         });
       if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
         return;
@@ -698,9 +824,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           digest: candidate.digest,
         });
       if (announced.status !== 'announced') return;
-      return {
-        content: 'Publication retained. Presentation intentionally deferred for recovery coverage.',
-      };
+      if (!automaticId)
+        return {
+          content:
+            'Publication retained. Presentation intentionally deferred for recovery coverage.',
+        };
     }
     if (retry) {
       const plan = result('assessment-present');
@@ -733,69 +861,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         .join('\n\n'),
     };
   }
-  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
-    prompt,
-  )?.[1];
-  if (
-    !id ||
-    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
-  )
-    return;
-  const context = result('context');
-  if (!context) {
-    const privateContext = request.messages
-      .map(({ content }) => getTextContent(content) ?? '')
-      .join('\n');
-    if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('notification-hidden-initial-fact')
-    )
-      return;
-    return dispatch('context', { action: 'context', id });
-  }
-  const project = context.project as { path?: unknown } | undefined;
-  if (
-    context.status !== 'verified' ||
-    context.runtime !== 'openclaw' ||
-    context.id !== id ||
-    typeof project?.path !== 'string' ||
-    !context.assessment ||
-    context.resultContract !== 'assessment-result/v1'
-  )
-    return;
-  const git = result('git');
-  if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
-  if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
-    return;
-  const saved = result('result');
-  if (!saved)
-    return dispatch('result', {
-      action: 'result',
-      id,
-      result: {
-        version: 1,
-        outcome: 'plan-ready',
-        summary: 'Document disposable issue cleanup.',
-        assessment: 'The admitted issue requests a small documentation change.',
-        planSummary: 'Describe closing disposable test issues after capturing evidence.',
-        plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment:
-          'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.',
-        evidence: [
-          {
-            source: project.path,
-            status: 'observed',
-            detail: 'Managed Git confirmed this worktree.',
-          },
-        ],
-        progress: {
-          completed: ['Verified the managed worktree.'],
-          remaining: ['Implement after approval.'],
-        },
-      },
-    });
-  if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  return summary(id, saved.presentation);
 }
 
 function response(request: ChatCompletionRequest) {
@@ -838,6 +903,8 @@ export const prExampleScenario: OpenClawAIMockScenario = {
     { id: prefix + 'feedback-implementation-skill', name: 'read' },
     { id: prefix + 'delivery-skill', name: 'read' },
     { id: prefix + 'summary-skill', name: 'read' },
+    { id: prefix + 'assessment-skill', name: 'read' },
+    { id: prefix + 'implementation-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + retryStage(stage, attempt),
@@ -847,6 +914,7 @@ export const prExampleScenario: OpenClawAIMockScenario = {
     ...[
       'git',
       'apply',
+      'check',
       'add',
       'commit',
       'feedback-branch',

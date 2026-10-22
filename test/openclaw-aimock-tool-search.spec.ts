@@ -157,7 +157,7 @@ describe('scripts/aimock-tool-search', () => {
           runtime: 'openclaw',
           id,
           project: { path: '/tmp/owned' },
-          assessment: {},
+          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
           resultContract: 'assessment-result/v1',
         })
       ).id,
@@ -168,6 +168,7 @@ describe('scripts/aimock-tool-search', () => {
       stdout: '/tmp/owned\n',
       truncated: false,
     });
+    await step('assessment-skill', 'read', 'Default assessment.');
     const saved = await step('result', 'agent_system_dispatch', {
       status: 'recorded',
       presentation: '> Retained plan',
@@ -178,7 +179,7 @@ describe('scripts/aimock-tool-search', () => {
     await step('summary-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
-      selection: { skill: { path: '/tmp/reply/SKILL.md' } },
+      selection: { defaultSkill: true, skill: { path: '/tmp/reply/SKILL.md' } },
     });
     await step('summary-skill', 'read', { content: 'Compose a concise public summary.' });
     assert.equal(
@@ -220,8 +221,10 @@ describe('scripts/aimock-tool-search', () => {
       runtime: 'openclaw',
       publicationAuthorized: true,
       project: { path: '/tmp/owned' },
+      implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
     });
-    for (const stage of ['apply', 'add', 'commit']) {
+    await step('implementation-skill', 'read', 'Default implementation.');
+    for (const stage of ['apply', 'check', 'add', 'commit']) {
       assert.equal(
         (await step(stage, 'agent_system_git', { exitCode: 0, truncated: false })).cwd,
         '/tmp/owned',
@@ -247,7 +250,7 @@ describe('scripts/aimock-tool-search', () => {
     await step('delivery-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
-      selection: { skill: { path: '/skills/reply/SKILL.md' } },
+      selection: { defaultSkill: true, skill: { path: '/skills/reply/SKILL.md' } },
     });
     await step('delivery-skill', 'read', { content: 'Reply skill instructions.' });
     await step('delivery-candidate', 'agent_system_dispatch', {

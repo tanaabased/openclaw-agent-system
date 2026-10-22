@@ -252,16 +252,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         result: {
           ...(fresh.previousResult as Record<string, unknown>),
           decision: {
-            mode: 'work',
-            reasons: ['The retained documentation plan is bounded and actionable.'],
+            mode: 'plan',
+            reasons: ['Cleanup timing needs operator confirmation before implementation.'],
           },
         },
       });
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    if ((saved.handoff as { next?: string } | undefined)?.next !== 'implementation') return;
+    assert.equal((saved.handoff as { next?: string } | undefined)?.next, 'planning');
+    return summary(decisionId, saved.presentation);
   }
   const automaticId =
-    decisionId ??
+    /Continue plan for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1] ??
     /Call agent_system_dispatch action implementation-context with id ([a-f0-9]{64})/u.exec(
       prompt,
     )?.[1];

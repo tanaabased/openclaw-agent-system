@@ -18,6 +18,8 @@ Failed agent installation or intake activation reports allowlisted saved configu
 
 A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
 
+The original Plan-to-Work journey independently selects a custom public-reply skill for summaries, announcements, and feedback. Three additional bounded assignments exercise initial default Work, combined custom Work, and Auto Work through PR delivery in the assessment turn. Ordinary fixture skills have no Agent System commands or required output headings. The strict model consumes their independently selected guidance; this proves installed wiring, not genuine-model interpretation. Component tests own exhaustive configuration and failure permutations.
+
 ## Setup
 
 ```bash
@@ -315,6 +317,52 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence
 
 ```
 
+## Testing Automatic Delivery
+
+```bash
+# should apply the independently selected public reply to issue and pr feedback
+jq -e 'all(.feedback.events[]; .composition.skill.name == "cleanup-reply" and (.result.publicText | contains("Evidence first")) and (.result.publicText | contains("Live interpretation remains untested")))' "$TMPDIR/notification-feedback.json"
+
+# should deliver default and customized work plus auto work in the initial native turn
+set -euo pipefail
+test -f "$TMPDIR/notification-activation-ready"
+for variant in default-work custom-work auto-work; do
+  cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+  node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const p="agent.yaml"; const manifest=YAML.parse(fs.readFileSync(p,"utf8")); const assignment=manifest.github.notifications["issue-assignment"]; for(const key of ["assessment","implementation","feedback"]) delete assignment[key]; Object.assign(assignment,JSON.parse(fs.readFileSync("../work-variants.json","utf8"))[process.argv[1]]); fs.writeFileSync(p,YAML.stringify(manifest));' "$variant"
+  cd "$GITHUB_WORKSPACE/examples/openclaw-pr/emori"
+  openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System $variant $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-pr/work-issue.md" > "$TMPDIR/$variant-issue.json"
+  number=$(jq -er .number "$TMPDIR/$variant-issue.json")
+  openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+  cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+  run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+  node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+  openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json > "$TMPDIR/$variant-plan.json"
+  conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/$variant-plan.json")
+  run_id=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0].assessmentTurn.runId else error("one conversation required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+  node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+  jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | .[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/$variant-delivery.json"
+  jq -e --arg run "$run_id" --arg variant "$variant" '.progression.stage == "implementation" and .progression.via == (if $variant == "auto-work" then "auto" else "work" end) and .work.turn.runId == $run and .work.turn.origin == "assessment" and .work.result.outcome == "done" and .work.delivery.reconciled and .work.delivery.pullRequest.pullRequestNodeId != null and .work.delivery.announcement.receipt.nodeId != null and (.work.delivery.presentation | length > 0) and .stageReceipt.binding.worktree == .worktree and .stageReceipt.binding.threadId == .threadId and (.result.fullAssessment | length > 0) and .assessmentSummaries[0].receipt.nodeId != null and (.feedback.events | length) == 0 and (if $variant == "auto-work" then .result.decision.mode == "work" and (.result.decision.reasons | length > 0) else true end)' "$TMPDIR/$variant-delivery.json"
+  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/$variant-history.json"
+  jq -e --arg run "$run_id" --arg card "$(jq -er .work.delivery.presentation "$TMPDIR/$variant-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($card)))' "$TMPDIR/$variant-history.json"
+  openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile saved "$TMPDIR/$variant-delivery.json" '.session.sessionId == $saved[0].sessionCreation.sessionId and .session.spawnedCwd == $saved[0].worktree and .session.thinkingLevel == $saved[0].request.thinkingLevel'
+  pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/$variant-delivery.json")
+  openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json assignees,closingIssuesReferences | jq -e --argjson issue "$number" 'any(.assignees[]; .login == "tanaabot") and any(.closingIssuesReferences[]; .number == $issue)'
+  run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+  node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+  branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/$variant-delivery.json")
+  openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
+  openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/$variant-comments.json"
+  jq -e --slurpfile saved "$TMPDIR/$variant-delivery.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $saved[0].assessmentSummaries[0].receipt.nodeId) and any(.[]; .node_id == $saved[0].work.delivery.announcement.receipt.nodeId)' "$TMPDIR/$variant-comments.json"
+done
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
+
+# should consume three independent custom stages without replacing the complete private results
+jq -e '.stageReceipt.selection.skill.name == "cleanup-assessment" and .work.selection.skill.name == "cleanup-implementation" and .assessmentSummaries[0].selection.skill.name == "cleanup-reply" and .work.delivery.announcement.composition.skill.name == "cleanup-reply" and (.result.fullAssessment | contains("live interpretation remains untested")) and (.work.result.fullResult | contains("Retained sanitized evidence")) and (.assessmentSummaries[0].publicText | contains("Evidence first")) and (.work.delivery.announcement.publicText | contains("Evidence first"))' "$TMPDIR/custom-work-delivery.json"
+worktree=$(jq -er .worktree "$TMPDIR/custom-work-delivery.json")
+git -C "$worktree" show HEAD | grep -F 'Retain sanitized evidence before cleanup.'
+jq -e 'all(.[] | select(.user.login == "tanaabot"); (.body | contains("Evidence first")) and (.body | contains("Live interpretation remains untested")))' "$TMPDIR/custom-work-comments.json"
+```
+
 ## Cleanup
 
 The run waits up to five minutes for terminal completion and reports every wait receipt. Cleanup first stops the isolated Gateway; external fixture cleanup requires that stop to succeed so it cannot revoke an active publication's assignment or credentials.
@@ -323,6 +371,27 @@ The run waits up to five minutes for terminal completion and reports every wait 
 # should stop the isolated gateway before changing external fixture state
 openclaw-gateway stop --timeout 340
 touch "$TMPDIR/notification-gateway-stopped"
+
+# should clean up only the additional automatic delivery fixtures
+set -euo pipefail
+test -f "$TMPDIR/notification-gateway-stopped"
+for variant in default-work custom-work auto-work; do
+  if test -s "$TMPDIR/$variant-issue.json"; then
+    number=$(jq -er .number "$TMPDIR/$variant-issue.json")
+    issue=$(jq -er .node_id "$TMPDIR/$variant-issue.json")
+    cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
+    branch=$(jq -rs --arg issue "$issue" '[.[].records[] | select(.stageReceipt.binding.subjectId == $issue)] | .[0].work.delivery.binding.branch // empty' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+    if test -n "$branch"; then
+      openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state open --json number | jq -r 'if length <= 1 then .[].number else error("ambiguous fixture PR") end' > "$TMPDIR/$variant-cleanup-pr"
+      if test -s "$TMPDIR/$variant-cleanup-pr"; then
+        openclaw agent-system tool gh -- pr close "$(cat "$TMPDIR/$variant-cleanup-pr")" --repo tanaabased/big-test-bucket
+      fi
+      openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/git/refs/heads/$branch"
+    fi
+    cd "$GITHUB_WORKSPACE/examples/openclaw-pr/emori"
+    openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
+  fi
+done
 
 # should close only this issue's delivery pull request and remove its disposable branch
 test -f "$TMPDIR/notification-gateway-stopped"

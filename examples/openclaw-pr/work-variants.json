@@ -1,0 +1,20 @@
+{
+  "default-work": { "mode": "work" },
+  "custom-work": {
+    "mode": "work",
+    "assessment": {
+      "skill": "cleanup-assessment",
+      "guidance": "Preserve the evidence limit.\nExplain cleanup ordering."
+    },
+    "implementation": {
+      "skill": "cleanup-implementation",
+      "guidance": { "file": "implementation-guidance.md" }
+    },
+    "feedback": {
+      "inherit": true,
+      "skill": "cleanup-reply",
+      "guidance": "Evidence first: lead with the result.\nKeep the live interpretation limit."
+    }
+  },
+  "auto-work": { "mode": "auto" }
+}
